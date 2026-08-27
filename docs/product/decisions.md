@@ -4211,3 +4211,32 @@ two writers.
 *Status: standing — SKUs exist in Connect. Closes #44 on this PR. Do not
 deploy migration 70 from this work (70 is `delete_secret` on master). Do not
 ship Connect dollar amounts in the IPA. Do not Submit.*
+
+**D-119 · 2026-08-27 · The week's crown rides week-scoped lenses. Month
+answers the month.**
+
+D-110 put the phone's week crown on every Calendar lens because it had shipped
+Month-only, and a crown you reach by backing out to the month is a crown you
+don't have. That diagnosis still holds. What it got wrong is the *home* lens:
+month is not weak week-context, it is a **different question** (P8) — where is
+this span heavy, and what's on the day you tapped. The week plan sitting above
+a month grid is the surface arguing with itself, the same way a five-project
+slate would be.
+
+So the crown stays on **List · Day · Week** — the lenses that are actually
+reading a Tuesday against the week — and comes off Month and Year. The space
+under the month grid is the selected day's plan (`MonthDayPreview`), not a
+second copy of the slate. Tap a day still drills in; the preview is the glance
+you get while the month is the subject.
+
+Traversal is one motion on every lens. `TimePager` owns it: swipe left is
+later, swipe right is earlier; the leaving page exits the way you pushed it
+and the arriving page comes in from the other side; the ‹ › buttons play the
+same settle. Month peeks the adjacent grid under the finger so a swipe is not
+a show-and-hide. Reduced motion skips the travel.
+
+Does not reopen N-16 (no desktop Agenda). Does not add a pool or a name. W2
+stays answered on the week-scoped lenses, on both shells.
+
+*Status: standing — refines D-110's "every lens" clause, does not replace the
+read model.*

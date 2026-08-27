@@ -12,7 +12,7 @@
 // scroll position is deliberately KEPT across swipes so the same hours stay
 // under your thumb while you compare days.
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { addDays, format, startOfDay, startOfWeek } from "date-fns";
 import { fmtMins } from "../../lib/now";
 import type { CalendarTap } from "./MobileEventSheet";
@@ -30,7 +30,7 @@ import {
   tapFor,
   type DayCtx,
 } from "./dayPlan";
-import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
+import TimePager from "./TimePager";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
 import { blockDesignation } from "../../lib/slots";
 
@@ -135,24 +135,12 @@ export default function MobileDayView({
   }, [winStart, winEnd]);
 
   // Day traversal — swipe is primary; the strip and the pinned Today chip are
-  // the tap paths. The arriving day slides in from the direction you moved.
-  const [slide, setSlide] = useState<"fwd" | "back" | null>(null);
+  // the tap paths. TimePager owns the motion: swipe left is later, swipe right
+  // is earlier, and the ‹ › / Today / strip paths play the same settle.
   const go = (d: Date) => {
     const target = startOfDay(d);
     if (dayKey(target) === dayKey(selected)) return;
-    setSlide(target > selected ? "fwd" : "back");
     onSelect(target);
-  };
-  const touch = useRef<SwipeTracker | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    touch.current = startSwipe(e, scrollParent(rootRef.current));
-  };
-  const onTouchMove = () => trackSwipe(touch.current);
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const dir = endSwipe(touch.current, e);
-    touch.current = null;
-    if (dir === "left") go(addDays(selected, 1));
-    else if (dir === "right") go(addDays(selected, -1));
   };
 
   // The strip — the same chips as the List lens, but here they *select* the
@@ -278,18 +266,18 @@ export default function MobileDayView({
         </div>
       </div>
 
-      {/* The day itself — swipe left/right to traverse. touch-pan-y keeps the
-          vertical scroll native while we watch for the horizontal gesture;
-          swipe.ts ignores edge starts (iOS back) and anything that scrolled. */}
-      <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+      {/* The day itself — TimePager walks a day at a time. Vertical scroll
+          stays native (touch-pan-y); iOS back still owns the left-edge strip. */}
+      <TimePager
+        pageKey={dayKey(selected)}
+        onPrev={() => go(addDays(selected, -1))}
+        onNext={() => go(addDays(selected, 1))}
+      >
         {/* Don't claim a day is open before the calendar has answered. */}
         {loading && plan.timed.length === 0 && plan.allDay.length === 0 && plan.anytime.length === 0 ? (
           <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
         ) : (
-        <div
-          key={dayKey(selected)}
-          className={slide === "fwd" ? "day-in-fwd" : slide === "back" ? "day-in-back" : undefined}
-        >
+        <div>
           {/* Day header — the same read as the List lens's day card. */}
           <div className="flex items-baseline justify-between gap-2 px-4 pb-1 pt-3">
             <div className="flex items-baseline gap-2">
@@ -543,7 +531,7 @@ export default function MobileDayView({
           </div>
         </div>
         )}
-      </div>
+      </TimePager>
     </div>
   );
 }

@@ -36,16 +36,17 @@ import {
   type DayCtx,
   type DayPlan,
 } from "./dayPlan";
-import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 import MobileWeekView from "./MobileWeekView";
 import MobileYearView, { mobileYearRange } from "./MobileYearView";
 import MobileWeekCrown from "./MobileWeekCrown";
+import TimePager from "./TimePager";
 import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
-//     arrow between months, tap any day to drop into its schedule.
+//     arrow between months, tap any day to drop into its schedule. The selected
+//     day's plan sits under the grid (D-119) — not the week's crown.
 //   • Schedule (List) — a 14-day agenda from the selected day, where each day
 //     shows its commitments AND its open windows, computed by the same readDay()
 //     Now uses.
@@ -54,7 +55,8 @@ import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 //   • Year — the whole year shaded by load (MobileYearView), reached by tapping
 //     the year beside the month name; a month taps back down into the grid.
 // All read from one buildDayPlan() (dayPlan.ts), so "what counts as busy" lives
-// in one place.
+// in one place. Time travel (left = later, right = earlier) is one TimePager
+// on every paged lens — finger-follow + in/out, never a show-and-hide.
 
 const HORIZON_DAYS = 14;
 // The schedule opens on the anchor day (today) as the FIRST rendered day, so the
@@ -94,6 +96,7 @@ export default function MobileCalendar({
   onOpenProject,
   renderCrownTask,
   onPlanWeek,
+  initialMode,
 }: {
   now: Date;
   onTapEvent?: (tap: CalendarTap) => void;
@@ -108,6 +111,8 @@ export default function MobileCalendar({
   /** how the week crown renders a project's work — see `RenderCrownTask`. */
   renderCrownTask?: RenderCrownTask;
   onPlanWeek?: () => void;
+  /** Harnesses pin a lens without writing `nuvo-mobile-cal-mode`. */
+  initialMode?: Mode;
 }) {
   const { settings } = useSettings();
 
@@ -118,9 +123,11 @@ export default function MobileCalendar({
   const firstDay = firstDayOfWeek(settings);
   const weekOpts = useMemo(() => ({ weekStartsOn: firstDay }), [firstDay]);
 
-  const [mode, setModeState] = useState<Mode>(readMode);
+  const persistMode = initialMode == null;
+  const [mode, setModeState] = useState<Mode>(() => initialMode ?? readMode());
   const setMode = (m: Mode) => {
     setModeState(m);
+    if (!persistMode) return;
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {
@@ -177,8 +184,11 @@ export default function MobileCalendar({
   const range = useMemo(() => {
     if (mode === "year") return mobileYearRange(yearCursor);
     if (mode === "month") {
-      const gridStart = startOfWeek(startOfMonth(monthCursor), weekOpts);
-      const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), weekOpts), 1);
+      // A month either side of the cursor, so a swipe peek at the next/last
+      // month already has its dots — an empty peek that fills in after commit
+      // is the old show-and-hide wearing a slide.
+      const gridStart = startOfWeek(startOfMonth(addMonths(monthCursor, -1)), weekOpts);
+      const gridEnd = addDays(endOfWeek(endOfMonth(addMonths(monthCursor, 1)), weekOpts), 1);
       return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
     }
     // Day and Week share one window, anchored to the selected day's WEEK, so
@@ -287,17 +297,14 @@ export default function MobileCalendar({
 
   return (
     <div className="fab-clear">
-      {/* The week's crown — the Schedule rail's crown, on the phone, and the
-          Calendar tab's context strip in EVERY lens.
-          
-          It shipped on Month and Week only, on the theory that a day-scoped lens
-          answers a different question (P8). That was wrong in use: "what is this
-          week carrying" is the context you read a Tuesday *against*, so a crown
-          you can only reach by backing out to the month is a crown you don't
-          have. The desktop rail never leaves either — it is beside the day grid,
-          the week grid and the agenda alike. One position, one collapse state,
-          every lens. */}
-      {onOpenProject && renderCrownTask && onPlanWeek && (
+      {/* The week's crown — the Schedule rail's crown, on the phone.
+          It rides the week-scoped lenses (List · Day · Week): "what is this
+          week carrying" is the context you read a Tuesday against (D-110).
+          Month and Year answer a different question — where is this span
+          heavy, and what's on the day you tapped — so the crown stays off
+          them (D-119). A crown you can only reach by backing out to the month
+          was the original failure; taking it *off* the month is not that. */}
+      {onOpenProject && renderCrownTask && onPlanWeek && (mode === "schedule" || mode === "day" || mode === "week") && (
         <MobileWeekCrown
           now={now}
           onOpenProject={onOpenProject}
@@ -341,6 +348,8 @@ export default function MobileCalendar({
           onOpenYear={openYear}
           onOpenUpkeep={onOpenUpkeep}
           onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
+          onTapEvent={onTapEvent}
+          onTapTask={onTapTask}
         />
       ) : mode === "week" ? (
         <MobileWeekView
@@ -451,6 +460,8 @@ function MonthView({
   onOpenYear,
   onOpenUpkeep,
   onNewEvent,
+  onTapEvent,
+  onTapTask,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -467,44 +478,22 @@ function MonthView({
   onOpenYear: () => void;
   onOpenUpkeep?: () => void;
   onNewEvent?: () => void;
+  onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
 }) {
-  const gridStart = useMemo(
-    () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
-    [monthCursor, weekStartsOn],
-  );
-  const cells = useMemo(() => {
-    const gridEnd = endOfWeek(endOfMonth(monthCursor), { weekStartsOn });
-    const out: DayPlan[] = [];
-    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
-      out.push(buildDayPlan(d, ctx));
-    }
-    return out;
-  }, [gridStart, monthCursor, ctx, weekStartsOn]);
-
-  const weekdays = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(gridStart, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)),
-    [gridStart],
-  );
-
   const isCurrentMonth = isSameMonth(monthCursor, now);
-
-  // Lightweight swipe (no HTML5 DnD — Tauri swallows it): horizontal changes
-  // months, an upward flick drops into the schedule (the "expand" gesture).
-  // Classified by swipe.ts: fast, axis-dominant, not a page scroll, and never
-  // starting in the left edge-guard strip that belongs to iOS back.
-  const gridRef = useRef<HTMLDivElement>(null);
-  const touch = useRef<SwipeTracker | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    touch.current = startSwipe(e, scrollParent(gridRef.current));
-  };
-  const onTouchMove = () => trackSwipe(touch.current);
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const dir = endSwipe(touch.current, e);
-    touch.current = null;
-    if (dir === "up") onOpenSchedule(); // deliberate flick up → the schedule
-    else if (dir === "left") onNext();
-    else if (dir === "right") onPrev();
-  };
+  const sheet = (month: Date) => (
+    <MonthSheet
+      monthCursor={month}
+      ctx={ctx}
+      selected={selected}
+      weekStartsOn={weekStartsOn}
+      weatherIndex={weatherIndex}
+      onPick={onPick}
+      onTapEvent={onTapEvent}
+      onTapTask={onTapTask}
+    />
+  );
 
   return (
     <div>
@@ -566,7 +555,62 @@ function MonthView({
         )}
       </div>
 
-      {/* Weekday header */}
+      {/* The month itself travels — swipe left is later, swipe right is earlier.
+          Adjacent months peek under the finger so the gesture is the animation.
+          An upward flick still expands into the last drill-in lens. */}
+      <TimePager
+        pageKey={format(monthCursor, "yyyy-MM")}
+        onPrev={onPrev}
+        onNext={onNext}
+        onFlickUp={onOpenSchedule}
+        peekPrev={sheet(addMonths(monthCursor, -1))}
+        peekNext={sheet(addMonths(monthCursor, 1))}
+      >
+        {sheet(monthCursor)}
+      </TimePager>
+    </div>
+  );
+}
+
+function MonthSheet({
+  monthCursor,
+  ctx,
+  selected,
+  weekStartsOn,
+  weatherIndex,
+  onPick,
+  onTapEvent,
+  onTapTask,
+}: {
+  monthCursor: Date;
+  ctx: DayCtx;
+  selected: Date;
+  weekStartsOn: 0 | 1;
+  weatherIndex: ReturnType<typeof indexWeather> | null;
+  onPick: (d: Date) => void;
+  onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
+}) {
+  const gridStart = useMemo(
+    () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
+    [monthCursor, weekStartsOn],
+  );
+  const cells = useMemo(() => {
+    const gridEnd = endOfWeek(endOfMonth(monthCursor), { weekStartsOn });
+    const out: DayPlan[] = [];
+    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
+      out.push(buildDayPlan(d, ctx));
+    }
+    return out;
+  }, [gridStart, monthCursor, ctx, weekStartsOn]);
+
+  const weekdays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(gridStart, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)),
+    [gridStart],
+  );
+
+  return (
+    <div>
       <div className="grid grid-cols-7 px-2">
         {weekdays.map((w, i) => (
           <div key={i} className="py-1.5 text-center text-micro font-medium uppercase text-muted">
@@ -575,15 +619,7 @@ function MonthView({
         ))}
       </div>
 
-      {/* The grid — the paper itself, single-plane and transparent. touch-pan-y
-          keeps vertical scrolling native while we classify the flicks. */}
-      <div
-        ref={gridRef}
-        className="grid touch-pan-y grid-cols-7 px-2"
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
+      <div className="grid grid-cols-7 px-2">
         {cells.map((d) => (
           <MonthCell
             key={dayKey(d.date)}
@@ -616,11 +652,17 @@ function MonthView({
         )}
       </div>
 
-      {/* The availability of the selected day — a one-line answer under the grid
-          so the month view still says "are you free?". Only while the selected
-          day is in view, so the readout can't disagree with the month on screen. */}
+      {/* The selected day's plan — month's leftover space, filled with a day's
+          question, not the week's. The week crown used to sit above the grid
+          and argue with a month (D-119). Only while that day is in this month,
+          so the readout can't disagree with the grid on screen. */}
       {isSameMonth(selected, monthCursor) && (
-        <SelectedSummary day={buildDayPlan(selected, ctx)} onOpen={() => onPick(selected)} />
+        <MonthDayPreview
+          day={buildDayPlan(selected, ctx)}
+          onOpen={() => onPick(selected)}
+          onTapEvent={onTapEvent}
+          onTapTask={onTapTask}
+        />
       )}
     </div>
   );
@@ -700,31 +742,128 @@ function MonthCell({
   );
 }
 
-// A single line under the grid: the tapped day and whether it's open, plus a
-// nudge into its full schedule.
-function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) {
-  const { date, timed, allDay, anytime, openMins, isPast } = day;
+// The selected day's plan under the month grid — the space the week crown
+// used to occupy, answering a day's question instead of a week's. Header
+// drills into the last lens; a row opens that commitment. Caps the list so a
+// packed day doesn't push the FAB off the paper.
+const PREVIEW_CAP = 6;
+
+function MonthDayPreview({
+  day,
+  onOpen,
+  onTapEvent,
+  onTapTask,
+}: {
+  day: DayPlan;
+  onOpen: () => void;
+  onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
+}) {
+  const { date, timed, allDay, anytime, openMins, isPast, isBygone } = day;
   const busy = timed.length + allDay.length + anytime.length;
-  const status = isPast
-    ? "done for today"
-    : openMins > 0
-      ? `${fmtMins(openMins)} open`
-      : busy > 0
-        ? "fully booked"
-        : "wide open";
+  const { text: readout, accent } = dayReadout(day);
+  const rest = Math.max(0, timed.length + allDay.length + anytime.length - PREVIEW_CAP);
+  const shownAllDay = allDay.slice(0, PREVIEW_CAP);
+  const afterAllDay = PREVIEW_CAP - shownAllDay.length;
+  const shownAnytime = anytime.slice(0, afterAllDay);
+  const afterAnytime = afterAllDay - shownAnytime.length;
+  const shownTimed = timed.slice(0, afterAnytime);
+
   return (
-    <button
-      onClick={onOpen}
-      className="tap fast mt-3 flex w-full items-center gap-2 border-t border-line px-4 py-3 text-left active:bg-surface-2"
-    >
-      <span className="text-body font-medium text-ink">
-        {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
-      </span>
-      <span className="mono text-label" style={{ color: openMins > 0 && !isPast ? "var(--accent)" : "var(--muted)" }}>
-        {status}
-      </span>
-      <span className="ml-auto text-muted">→</span>
-    </button>
+    <div className="mt-2 border-t border-line">
+      <button
+        onClick={onOpen}
+        className="tap fast flex w-full items-center gap-2 px-4 py-3 text-left active:bg-surface-2"
+      >
+        <span className="text-body font-medium text-ink">
+          {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+        </span>
+        {readout && (
+          <span className="mono text-label" style={{ color: accent ? "var(--accent)" : "var(--muted)" }}>
+            {readout}
+          </span>
+        )}
+        <span className="ml-auto text-muted">→</span>
+      </button>
+
+      {busy === 0 ? (
+        <p className="px-4 pb-3 text-body text-muted">
+          {isBygone ? "Nothing scheduled." : isPast ? "Done for today." : "No commitments — wide open."}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-0.5 px-4 pb-3">
+          {shownAllDay.map((e) => (
+            <button
+              key={e.id}
+              onClick={() =>
+                onTapEvent?.({
+                  kind: "event",
+                  id: e.id,
+                  title: e.title || "Busy",
+                  start: new Date(e.start_at),
+                  end: new Date(e.end_at),
+                  allDay: true,
+                  location: e.location,
+                  self_rsvp: e.self_rsvp ?? null,
+                  accountId: e.account_id,
+                  calendarId: e.calendar_id,
+                })
+              }
+              className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
+            >
+              <span className="mono w-[68px] shrink-0 text-right text-meta text-muted">all day</span>
+              <span className="min-w-0 truncate text-body text-ink">{e.title || "Busy"}</span>
+            </button>
+          ))}
+          {shownAnytime.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onTapTask?.(t.id)}
+              className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
+            >
+              <span className="mono w-[68px] shrink-0 text-right text-meta text-accent">anytime</span>
+              <span className="min-w-0 truncate text-body text-accent">{t.title}</span>
+            </button>
+          ))}
+          {shownTimed.map((b, i) => {
+            const isSlot = b.kind === "slot";
+            const tap: CalendarTap =
+              b.kind === "event"
+                ? { kind: "event", id: b.eventId!, title: b.title || "Untitled", start: b.start, end: b.end, location: b.location ?? null, self_rsvp: b.self_rsvp, accountId: b.accountId, calendarId: b.calendarId }
+                : isSlot
+                  ? { kind: "slot", slot: b.slot!, title: b.title || "Untitled", start: b.start, end: b.end, childCount: b.childCount ?? 0, doneCount: b.doneCount ?? 0 }
+                  : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+            const mark = isSlot ? "var(--slot)" : b.kind === "block" ? "var(--accent)" : "var(--line-strong)";
+            return (
+              <button
+                key={i}
+                onClick={() => onTapEvent?.(tap)}
+                className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
+              >
+                <span className="mono w-[68px] shrink-0 text-right text-meta" style={{ color: mark }}>
+                  {at(b.start)}
+                </span>
+                <span className={`min-w-0 truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>
+                  {b.title || "Untitled"}
+                </span>
+              </button>
+            );
+          })}
+          {rest > 0 && (
+            <button
+              onClick={onOpen}
+              className="tap fast py-1.5 text-left text-label text-muted active:opacity-70"
+            >
+              +{rest} more
+            </button>
+          )}
+          {!isPast && !isBygone && openMins > 0 && busy > 0 && (
+            <p className="pt-1 text-label text-muted">{fmtMins(openMins)} still open</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

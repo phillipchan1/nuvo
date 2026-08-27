@@ -15,7 +15,7 @@
 // phone:
 //   · It collapses, and shut it is ONE line: "This week · 2 of 6 landed", the
 //     amber loose count if anything is homeless, a chevron. Nothing else. The
-//     month grid is the screen's subject and the crown is its header; a header
+//     week-scoped lens is the screen's subject and the crown is its header; a header
 //     carrying six marks over a dense grid is a surface arguing with itself.
 //     The choice is remembered. Shut hides depth, never the fact — which is why
 //     the loose count is the one detail that survives.
@@ -33,7 +33,7 @@
 // can be TICKED from the crown. It used to be a bare `<button>` with a truncated
 // title on both shells — you could look at a project's pieces and complete none
 // of them. Fixing that on the desktop alone would have made the phone the shell
-// that couldn't. The row still carries no swipe here: the month grid under this
+// that couldn't. The row still carries no swipe here: the calendar under this
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
 import { useState } from "react";
@@ -51,7 +51,7 @@ function readOpen(): boolean {
     // would have been the same silence with an extra tap in front of it — but
     // the shut line isn't silent any more: "This week · 2 of 6 landed · 3
     // loose" is the glance, and the rows are the detail you ask for. Opening
-    // six projects over a month grid by default is the surface arguing with
+    // six projects over a week lens by default is the surface arguing with
     // itself, which is exactly how it read on a real phone.
     return localStorage.getItem(OPEN_KEY) === "1";
   } catch {

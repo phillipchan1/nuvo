@@ -13,7 +13,7 @@
 // blocks themselves (which open the same sheet as everywhere else). Traversal
 // is the house grammar — swipe left/right pages a week.
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { addDays, format, startOfDay, startOfWeek } from "date-fns";
 import type { CalendarTap } from "./MobileEventSheet";
 import TimeZoneChip from "../TimeZoneChip";
@@ -28,7 +28,7 @@ import {
   type DayPlan,
 } from "./dayPlan";
 import { CalLensPill, type CalLens } from "./MobileDayView";
-import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
+import TimePager from "./TimePager";
 
 const HOUR_PX = 52; // the week is a scan, not a canvas — half the Day lens
 const MIN_ITEM_PX = 14;
@@ -95,25 +95,12 @@ export default function MobileWeekView({
   const nowMin = ctx.now.getHours() * 60 + ctx.now.getMinutes();
   const showsToday = days.some((d) => dayKey(d.date) === todayKey);
 
-  // Week traversal — swipe pages, the arriving week slides in from the
-  // direction you moved. Same idiom as the Day lens, a week at a time.
-  const [slide, setSlide] = useState<"fwd" | "back" | null>(null);
+  // Week traversal — TimePager, a week at a time. Same direction as Day and
+  // Month: swipe left is later, swipe right is earlier.
   const goWeek = (delta: -1 | 1) => {
-    setSlide(delta > 0 ? "fwd" : "back");
     onSelect(addDays(weekStart, delta * 7));
   };
   const rootRef = useRef<HTMLDivElement>(null);
-  const touch = useRef<SwipeTracker | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    touch.current = startSwipe(e, scrollParent(rootRef.current));
-  };
-  const onTouchMove = () => trackSwipe(touch.current);
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const dir = endSwipe(touch.current, e);
-    touch.current = null;
-    if (dir === "left") goWeek(1);
-    else if (dir === "right") goWeek(-1);
-  };
 
   // Open on today's hours if today is in view — once. Later paging keeps the
   // scroll so the same hours stay under your thumb across weeks.
@@ -220,11 +207,11 @@ export default function MobileWeekView({
       {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0) ? (
         <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
       ) : (
-        <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          <div
-            key={dayKey(weekStart)}
-            className={slide === "fwd" ? "day-in-fwd" : slide === "back" ? "day-in-back" : undefined}
-          >
+        <TimePager
+          pageKey={dayKey(weekStart)}
+          onPrev={() => goWeek(-1)}
+          onNext={() => goWeek(1)}
+        >
             <div ref={canvasRef} className="relative mx-1.5 mb-8 mt-2" style={{ height: y(winEnd) + 12 }}>
               {/* Hour rules + labels — the shared time axis. */}
               {hours.map((h) => (
@@ -303,8 +290,7 @@ export default function MobileWeekView({
                 }),
               )}
             </div>
-          </div>
-        </div>
+        </TimePager>
       )}
     </div>
   );
