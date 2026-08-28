@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Btn } from "../../ui";
 import { useSubscription } from "../../../hooks/useSubscription";
-import { manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
+import { iapErrorMessage, manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, trialDaysRemaining, type Subscription } from "../../../lib/subscription";
 import { IapUpgradeModal } from "./UpgradeModal";
 
@@ -52,7 +52,7 @@ function RestorePurchases() {
             await restoreAndConfirm();
             await refetch();
           } catch (e) {
-            setError(e instanceof Error ? e.message : "Restore didn’t complete");
+            setError(iapErrorMessage(e, "Restore didn’t complete"));
           } finally {
             setBusy(false);
           }
@@ -108,7 +108,7 @@ function ActiveCard({ subscription, apple }: { subscription: Subscription; apple
     try {
       await manageIapSubscriptions();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not open subscriptions");
+      setError(iapErrorMessage(e, "Could not open subscriptions"));
     } finally {
       setBusy(false);
     }

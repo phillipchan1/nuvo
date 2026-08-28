@@ -4,6 +4,7 @@ import {
   catalogProductIds,
   confirmApplePurchase,
   fetchIapCatalog,
+  iapErrorMessage,
   loadIapProducts,
   purchaseIap,
   restoreAndConfirm,
@@ -59,7 +60,7 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
       await confirmApplePurchase(purchase);
       await refetch();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Purchase didn’t complete");
+      setError(iapErrorMessage(e, "Purchase didn’t complete"));
       setBusy(false);
     }
   };
@@ -71,7 +72,7 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
       await restoreAndConfirm();
       await refetch();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Restore didn’t complete");
+      setError(iapErrorMessage(e, "Restore didn’t complete"));
       setBusy(false);
     }
   };

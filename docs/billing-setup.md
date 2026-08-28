@@ -187,6 +187,17 @@ The StoreKit Product ID strings **are** `NUVO_IAP_MONTHLY` and
 values are Apple internal IDs only — never pass them to `product()`. Env
 may repeat the same strings; a numeric override is ignored.
 
+**The TestFlight build must carry them.** Vite bakes only the `VITE_*` vars
+that exist when the bundle is built, so the "Build signed IPA" step of
+`.github/workflows/ios-release.yml` sets `VITE_NUVO_IAP_MONTHLY` and
+`VITE_NUVO_IAP_ANNUAL` as plain values — they are public identifiers, not
+secrets. `configuredIapProductIds()` falls back to the same two strings so a
+workflow that forgets them still ships a real catalog rather than the "not
+available from the App Store on this build yet" stub, but the fallback is the
+net and the workflow is the contract; `tests/iap-catalog-env.test.ts` holds
+both. A build that reaches StoreKit and *still* gets nothing back is a Connect
+question (SKU state in the subscription group), not a build one.
+
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
 are tree-shaken out of the IPA. `tauri ios dev` still uses `isTauriIOS()` so
@@ -217,7 +228,7 @@ supabase secrets set \
 |---|---|---|
 | `NUVO_IAP_MONTHLY` | Supabase | StoreKit Product ID for Apple ID `6804259519`. **Not** the Apple ID, **not** a price. |
 | `NUVO_IAP_ANNUAL` | Supabase | StoreKit Product ID for Apple ID `6804258767`. **Not** the Apple ID, **not** a price. |
-| `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build (optional) | Same Product ID strings baked into the binary so StoreKit can be queried offline. |
+| `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build — **CI must set them** | Same Product ID strings baked into the binary so StoreKit can be queried offline. Plain values, **not** GitHub secrets: they are public identifiers. |
 | `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
 | `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. |
