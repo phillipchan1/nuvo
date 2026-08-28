@@ -1,13 +1,13 @@
-// Standalone verify harness for the Day lens — MobileDayView over fixture data
-// at phone width, so the proportional canvas (overlap columns, gap brackets,
-// now line, compact items, bygone reads) can be eyeballed and exercised without
-// a real account. Reached at ?daycal, mounted in main.tsx. Not part of any real
-// surface. Precedent: PlanWeekHarness (?planweek).
+// Standalone verify harness for the phone Calendar — Day, List, and Month
+// over fixture data at phone width. Month is here so D-121 (tap selects,
+// second tap / header opens Day, list stays on a day that isn't today) can
+// be driven without an account. Reached at ?daycal, mounted in main.tsx.
 
 import { useState } from "react";
-import { addDays, startOfDay } from "date-fns";
+import { addDays, addMonths, format, startOfDay, startOfMonth } from "date-fns";
 import MobileDayView from "./MobileDayView";
-import { ScheduleView } from "./MobileCalendar";
+import { MonthView, ScheduleView } from "./MobileCalendar";
+import { clampDayToMonth } from "./monthTap";
 import type { DayCtx } from "./dayPlan";
 import type { CalendarTap } from "./MobileEventSheet";
 import { deriveSlotTitle } from "../../lib/slots";
@@ -167,6 +167,66 @@ function Frame({ label, initial }: { label: string; initial: Date }) {
   );
 }
 
+function MonthFrame() {
+  const [selected, setSelected] = useState(today);
+  const [month, setMonth] = useState(() => startOfMonth(today));
+  const [opened, setOpened] = useState<string | null>(null);
+  const [tap, setTap] = useState<CalendarTap | null>(null);
+
+  return (
+    <div style={{ width: 375 }} className="shrink-0">
+      <div className="section-label px-3 py-2">month</div>
+      <div className="mono px-3 pb-1 text-micro text-muted" data-tapout="month">
+        {opened ? `open → ${opened}` : `sel → ${format(selected, "MMM d")}`}
+        {tap ? ` · row → ${tap.title}` : ""}
+      </div>
+      {/* h-full column, same as the live shell: grid sizes to the days, list
+          fills leftover and scrolls. overflow hidden so the page doesn't steal
+          the list's scroll. */}
+      <div className="atmosphere flex flex-col overflow-hidden border border-line" style={{ height: 720 }} data-frame="month">
+        <div className="fab-clear flex h-full min-h-0 flex-col">
+          <MonthView
+            monthCursor={month}
+            ctx={CTX}
+            now={NOW}
+            selected={selected}
+            weekStartsOn={1}
+            weatherIndex={null}
+            onPrev={() => {
+              const next = startOfMonth(addMonths(month, -1));
+              setMonth(next);
+              setSelected((s) => clampDayToMonth(s, next));
+            }}
+            onNext={() => {
+              const next = startOfMonth(addMonths(month, 1));
+              setMonth(next);
+              setSelected((s) => clampDayToMonth(s, next));
+            }}
+            onToday={() => {
+              setMonth(startOfMonth(today));
+              setSelected(today);
+            }}
+            onSelect={(d) => {
+              setOpened(null);
+              setSelected(startOfDay(d));
+              setMonth(startOfMonth(d));
+            }}
+            onOpen={(d) => {
+              setSelected(startOfDay(d));
+              setOpened(format(d, "MMM d"));
+            }}
+            onOpenSchedule={() => setOpened("schedule")}
+            onOpenYear={() => setOpened("year")}
+            onTapEvent={(t) => {
+              setTap(t);
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MobileDayHarness() {
   return (
     <div className="atmosphere min-h-screen p-4">
@@ -183,6 +243,7 @@ export default function MobileDayHarness() {
         </button>
       </div>
       <div className="flex gap-4 overflow-x-auto">
+        <MonthFrame />
         <Frame label="today" initial={today} />
         <Frame label="tomorrow" initial={addDays(today, 1)} />
         <Frame label="bygone" initial={addDays(today, -1)} />

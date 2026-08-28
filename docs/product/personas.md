@@ -155,7 +155,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 |---|---|---|---|
 | D1 | What's the one thing today that actually matters? | Sunrise · Today list · Now | ✅ |
 | D2 | What's already decided so I don't have to re-decide it? | Sunday-composed blocks | ✅ |
-| D3 | I have 40 minutes — what fits? | availability gaps (`readDay` / `toBusyBlocks`) | ◐ *gap→task matching is manual* |
+| D3 | I have 40 minutes — what fits? | availability gaps (`readDay` / `toBusyBlocks`) · **the month's selected-day list** | ◐ *gap→task matching is manual. **2026-08-27 (D-121):** the phone's month list is finally reachable for a day that isn't today — first tap selects, so "what's on Thursday / am I free" can be read without leaving the month. Stays ◐ for the original reason.* |
 | D4 | What did I say I'd do and haven't? | rollover ↻ badge · overdue pinning | ✅ |
 | D5 | Who is waiting on me? | — | ○ *no waiting-on/blocked-by surface; "In the way" lens is spec* |
 | D6 | I just thought of something — where does it go so I stop holding it? | capture (⌘K / ⌥Space / voice) | ✅ |
