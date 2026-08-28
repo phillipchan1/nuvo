@@ -4613,10 +4613,14 @@ back without drawing anything.
 **The device also reported that it never left Nuvo — no Safari.** That is true,
 and it is not evidence of a second auth path; it is the only path there is.
 Verified in the shell: no `ASWebAuthenticationSession`, no
-`SFSafariViewController`, no native Google Sign-In, no Capacitor. The iOS Swift
-in `src-tauri/plugins/` is WatchConnectivity and StoreKit; `tauri-plugin-deep-link`
-exists for the `nuvo://` widget links; `src-tauri/src/lib.rs` installs no
-navigation handler that would hand a URL to the system browser. And
+`SFSafariViewController`, no native Google Sign-In, no Capacitor. Exactly one
+provider has a native leg, and it is Apple's — `nuvo-siwa` presents
+`ASAuthorizationController` ([`apple-sign-in.md`](../apple-sign-in.md)), a system
+sheet rather than a browser session, and it never touches Google. The rest of the
+iOS Swift is
+WatchConnectivity and StoreKit; `tauri-plugin-deep-link` exists for the `nuvo://`
+widget links; `src-tauri/src/lib.rs` installs no navigation handler that would
+hand a URL to the system browser. And
 `signInWithOAuth` without `skipBrowserRedirect` does exactly one thing —
 `window.location.assign(url)`. So **the app's own WKWebView walks to Google and
 back to `tauri://localhost`**, `detectSessionInUrl` picks the session out of the

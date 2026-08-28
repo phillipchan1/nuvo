@@ -67,8 +67,8 @@ describe("Google auth asks which Google", () => {
 
   // The device report was "it never opened Safari" — and that is right. The iOS
   // shell has no ASWebAuthenticationSession, no SFSafariViewController and no
-  // native Google Sign-In (its only Swift plugins are WatchConnectivity and
-  // StoreKit); `signInWithOAuth` without `skipBrowserRedirect` does
+  // native Google Sign-In (Apple is the one provider with a native leg, a system
+  // sheet that never touches Google); `signInWithOAuth` without `skipBrowserRedirect` does
   // `window.location.assign(url)`, so the app's OWN webview walks to Google and
   // back to `tauri://localhost`. Nothing else is holding the session, which is
   // both why no chooser appeared and why one parameter is the whole fix.

@@ -12,8 +12,9 @@ import { authReturnUrl } from "./authRedirect";
  *  On iOS this happens **inside the app**: it never opens Safari, and that is not
  *  the symptom of a second auth path, it is the only path there is. The shell has
  *  no ASWebAuthenticationSession, no SFSafariViewController and no native Google
- *  Sign-In (its Swift plugins are WatchConnectivity and StoreKit; deep-link
- *  serves the `nuvo://` widgets), and `signInWithOAuth` without
+ *  Sign-In — Apple is the one provider with a native leg (`nuvo-siwa` presents
+ *  `ASAuthorizationController`, a system sheet rather than a browser session, and
+ *  it never touches Google) — and `signInWithOAuth` without
  *  `skipBrowserRedirect` just does `window.location.assign`. So the app's own
  *  WKWebView walks to Google and back to `tauri://localhost` — and that webview's
  *  cookie jar, which nothing in Nuvo can clear, outlives a Nuvo sign-out. Which
