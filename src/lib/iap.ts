@@ -18,9 +18,11 @@ export type IapProduct = {
   duration: string;
 };
 
+/** Always populated. A missing Vite env falls back to the Connect strings —
+ *  a build that forgot them still asks StoreKit for the right two products. */
 export type IapCatalog = {
-  monthly: string | null;
-  annual: string | null;
+  monthly: string;
+  annual: string;
 };
 
 export type IapPurchase = {
@@ -29,6 +31,11 @@ export type IapPurchase = {
   originalTransactionId: string | null;
 };
 
+/** `configuredIapProductIds` is the one place that decides the ids: it drops
+ *  blanks and all-digit Apple internal IDs and falls back to the Connect
+ *  strings, so an iOS build whose VITE_NUVO_IAP_* env never got set still ships
+ *  a real catalog instead of the "not available yet" stub. `ios-release.yml`
+ *  sets them anyway — the fallback is the net under CI, not a substitute. */
 function catalogFromEnv(): IapCatalog {
   return configuredIapProductIds({
     NUVO_IAP_MONTHLY: import.meta.env.VITE_NUVO_IAP_MONTHLY,
@@ -41,7 +48,7 @@ export async function fetchIapCatalog(): Promise<IapCatalog> {
 }
 
 export function catalogProductIds(catalog: IapCatalog): string[] {
-  return storeKitProductIds([catalog.monthly, catalog.annual].filter((id): id is string => Boolean(id)));
+  return storeKitProductIds([catalog.monthly, catalog.annual]);
 }
 
 async function invokeIap<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

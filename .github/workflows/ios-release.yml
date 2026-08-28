@@ -190,6 +190,13 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
           VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
+          # The StoreKit Product ID strings from App Store Connect. Public, not
+          # secrets, and never the Apple internal IDs (all digits). The binary
+          # asks StoreKit for these; without them the paywall has nothing to
+          # price. `configuredIapProductIds` falls back to the same two strings,
+          # so this is the explicit contract, not the only line of defense.
+          VITE_NUVO_IAP_MONTHLY: NUVO_IAP_MONTHLY
+          VITE_NUVO_IAP_ANNUAL: NUVO_IAP_ANNUAL
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
           IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}

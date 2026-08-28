@@ -201,6 +201,12 @@ Settings → Secrets and variables → Actions:
 
 `VITE_*` are probably already set for `release.yml`.
 
+The IAP product ids are **not** on this list on purpose: `VITE_NUVO_IAP_MONTHLY`
+and `VITE_NUVO_IAP_ANNUAL` are public Connect identifiers, so `ios-release.yml`
+sets them inline in the "Build signed IPA" step. They have to be there — Vite
+bakes only the `VITE_*` vars that exist at build time, and a binary without them
+has nothing to ask StoreKit for. See `docs/billing-setup.md` § 11.
+
 #### 7 · TestFlight internal testing
 
 1. App Store Connect → your app → **TestFlight**.
