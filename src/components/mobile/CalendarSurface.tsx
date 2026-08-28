@@ -83,6 +83,33 @@ function readMode(): CalHorizon {
   return "month";
 }
 
+/**
+ * What ONE step of travel changes — a swipe, or a tap of ‹ ›.
+ *
+ * Pure, and exported, because two places need it and they must never disagree:
+ * the surface applies it to actually move, and the data wrapper applies it to
+ * work out which windows to warm so that the move has nothing to wait for
+ * (D-123). Written as a whole-window transform rather than a patch so the
+ * wrapper can hand the result straight back to the range function.
+ *
+ * Week-start is deliberately not a parameter: stepping seven days preserves
+ * where in the week you were standing, so which day a week opens on is a
+ * question for whoever draws it, not for travel.
+ */
+export function stepCalendarWindow(win: CalWindow, delta: -1 | 1): CalWindow {
+  const { mode, selected, monthCursor, yearCursor } = win;
+  if (mode === "year") return { ...win, yearCursor: yearCursor + delta };
+  if (mode === "month") {
+    // Paging a month carries the selection with it, clamped (Aug 31 → Feb 28),
+    // or the plan under the grid goes blank the moment you page (D-121).
+    const next = startOfMonth(addMonths(monthCursor, delta));
+    return { ...win, monthCursor: next, selected: clampDayToMonth(selected, next) };
+  }
+  // Day steps a day; week and agenda step a week.
+  const d = startOfDay(addDays(selected, mode === "day" ? delta : delta * 7));
+  return { ...win, selected: d, monthCursor: startOfMonth(d), pastDays: 0 };
+}
+
 /** The window the surface opens on — shared with the data wrapper so its first
  *  fetch asks for the span the first render will actually draw. */
 export function initialCalendarWindow(now: Date, initialMode?: CalHorizon): CalWindow {
@@ -105,7 +132,6 @@ export default function CalendarSurface({
   onWindowChange,
   onTapEvent,
   onTapTask,
-  onOpenUpkeep,
   onNewEvent,
   onOpenProject,
   renderCrownTask,
@@ -122,7 +148,6 @@ export default function CalendarSurface({
   onWindowChange?: (w: CalWindow) => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
-  onOpenUpkeep?: () => void;
   onNewEvent?: (date: Date) => void;
   /** The crown's doors — omit any and the crown stays off (harnesses, embeds). */
   onOpenProject?: (id: string) => void;
@@ -269,21 +294,15 @@ export default function CalendarSurface({
 
   /** ‹ › travel one unit of whatever horizon you're on — the same direction
    *  grammar as the swipe (earlier is right/‹, later is left/›). */
-  const travel = (delta: -1 | 1) => {
-    if (mode === "year") return move({ yearCursor: yearCursor + delta });
-    if (mode === "month") {
-      // Paging a month carries the selection with it — same date-of-month,
-      // clamped (Aug 31 → Feb 28). Without this the plan under the grid goes
-      // blank the moment you page, because the selected day is in a month you
-      // are no longer looking at, and the month's second question ("what's on
-      // the day I pointed at") silently stops having an answer (D-121).
-      const next = startOfMonth(addMonths(monthCursor, delta));
-      return move({ monthCursor: next, selected: clampDayToMonth(selected, next) });
-    }
-    if (mode === "day") return selectDay(addDays(selected, delta));
-    return selectDay(addDays(selected, delta * 7)); // week and agenda
-  };
+  // One definition of travel, shared with the prefetcher — see
+  // `stepCalendarWindow`.
+  const travel = (delta: -1 | 1) => setWin((w) => stepCalendarWindow(w, delta));
 
+  // Today does two things, which is why it can be permanent rather than
+  // appearing only when it has a date to change: it brings the span back to
+  // today, AND it asks the canvas to re-park on now. On the current span only
+  // the second happens, so the control still answers instead of sitting dead.
+  const [recenter, setRecenter] = useState(0);
   const goToday = () => {
     const t = startOfDay(now);
     move({
@@ -292,6 +311,7 @@ export default function CalendarSurface({
       yearCursor: now.getFullYear(),
       pastDays: 0,
     });
+    setRecenter((n) => n + 1);
   };
 
   const jumpTo = (d: Date) => {
@@ -353,12 +373,23 @@ export default function CalendarSurface({
           format(selected, "MMM d") + " – " + format(addDays(selected, AGENDA_DAYS - 1), "MMM d"),
       };
     }
-    // Day — the label a human uses, then the date and the day's one fact.
+    // Day — the day named once, and its one read.
+    //
+    // This used to be `Today` + `Aug 27 · done for today`, under a global top
+    // bar already printing `Thu Aug 27`, above a week row drawing 27 as the lit
+    // cell: the same date three times inside 100px of the most contested screen
+    // in the app. So the hero *is* the identification and the fact is purely the
+    // read. `Today` / `Tomorrow` / `Yesterday` pin a day absolutely, so they
+    // stand alone; any other day names its date, since a bare weekday pins
+    // nothing — and neither needs the weekday spelled out, because the row
+    // underneath draws it as the lit column (D-123).
     const p = plan ?? buildDayPlan(selected, ctx);
     const read = dayReadout(p);
+    const midnight = startOfDay(now);
+    const pinned = [0, 1, -1].some((n) => isSameDay(selected, addDays(midnight, n)));
     return {
-      hero: p.label,
-      fact: `${format(selected, "MMM d")}${read.text ? ` · ${read.text}` : ""}`,
+      hero: pinned ? p.label : format(selected, "MMMM d"),
+      fact: read.text || undefined,
       accent: read.accent,
     };
   };
@@ -435,6 +466,7 @@ export default function CalendarSurface({
           onPrev={() => travel(-1)}
           onNext={() => travel(1)}
           onTapEvent={onTapEvent}
+          recenter={recenter}
         />
       );
     }
@@ -449,6 +481,7 @@ export default function CalendarSurface({
           onNext={() => travel(1)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
+          recenter={recenter}
         />
       );
     }
@@ -484,8 +517,8 @@ export default function CalendarSurface({
           travelUnit={travelUnit}
           onPrev={() => travel(-1)}
           onNext={() => travel(1)}
-          onToday={onCurrentSpan ? undefined : goToday}
-          onUpkeep={onOpenUpkeep}
+          onToday={goToday}
+          onCurrentSpan={onCurrentSpan}
           onNew={onNewEvent ? () => onNewEvent(selected) : undefined}
           now={now}
         />
