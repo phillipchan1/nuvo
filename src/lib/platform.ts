@@ -33,6 +33,16 @@ export function isDesktopTauri(): boolean {
   return isTauri() && !isMobileTauri();
 }
 
+/** A DMG is a Mac-browser act. The installed Mac app already updates itself;
+ *  the phone already has Install / Add to Home Screen; nuvo.day is the public
+ *  download door. Never offer the Mac download on a phone (D-124). */
+export function offerMacDownload(opts: {
+  desktopTauri: boolean;
+  mobile: boolean;
+}): boolean {
+  return !opts.desktopTauri && !opts.mobile;
+}
+
 /** True on macOS (whether in Tauri or a Mac browser) — used for the wordmark /
  *  traffic-light chrome. */
 export function isMac(): boolean {

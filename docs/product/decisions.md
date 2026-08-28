@@ -2267,6 +2267,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 | **N-16** | A desktop **Agenda** (list) view on the Schedule | **Built, shipped, and removed within three days — 2026-08-14 to 2026-08-15.** It existed because the 2026-08-12 audit's rank 10 asked for it ("no agenda/list on desktop"), and that line was a *symmetry* observation, not a user need: the phone has a list because a 375px screen cannot draw a week grid, and the desktop, which can, gets nothing from a list it doesn't already get from Week. Phil used it and didn't want it. **This row exists so the same audit line doesn't rebuild it next quarter** — the audit's rank-10 row has been amended to say so too. Note carefully what this is NOT: the phone's `schedule` (List) lens predates all of this, is the phone's native idiom, and is untouched (D-044) | A *desktop* reason appears that Week genuinely can't serve — e.g. reading a range longer than a week in one scroll. Symmetry with the phone is not that reason, and "the audit says so" is not either |
 | **N-17** | A public **affiliate marketplace** / partner portal, commission payouts, or in-app referral leaderboard | Wrong identity (P9 — quiet steward, not optimizer theater) and wrong scale (a handful of operators who love Nuvo need a personal **code**, not PartnerStack). Commissions imply Stripe Connect / tax forms / a second program for content partners who aren't customers. D-113 is the yes to personal codes; this row is the no to the marketplace wearing the same coat | A real non-customer partner is driving paid signups — then a *separate* affiliate program (Rewardful or equivalent), never folded into Settings or gamified |
+| **N-18** | A **Download for Mac** CTA in the phone Settings | A DMG is not a phone act. Settings → About on the phone was offering a Mac installer because the About pane treated "not the Tauri Mac app" as "web", and the iOS PWA / TestFlight shell is web. The marketing site already is the download door (D-018, D-124). Same smell as D-123's upkeep-in-the-chrome: a desktop-rank act living on a phone surface because it was easy to put there | Someone on a phone is regularly the person who installs the Mac app for themselves — evidence, not a guess. Even then the door stays on nuvo.day, not in Settings |
 
 ---
 
@@ -4483,3 +4484,22 @@ list, and a swipe back doesn't re-fetch) and `tests/calendar-prefetch.test.ts`
 which is the only reason to write them.
 
 *Status: standing — refines D-122's chrome. Read models untouched.*
+
+**D-124 · 2026-08-28 · The Mac download is a desktop-browser act, never a
+phone Settings row.**
+
+Settings → About showed **Download for Mac** on every shell that was not the
+installed Tauri app — including the iPhone. A DMG cannot run on the phone, and
+the marketing site (`nuvo.day`) is already the public install door (D-018).
+The phone's About pane keeps version, changelog, developer mode, and
+Install / Add to Home Screen. The Mac app keeps its updater. A desktop
+*browser* still sees the download, because that is the one place the operator
+can actually use a DMG without leaving the product.
+
+Closes no ledger row — "where do I get the Mac app" is not a question someone
+asks while standing in Settings on their phone. Adds no pool, no name, no
+clean-data assumption. Same principle as D-123: check the desktop rank before
+promoting an act onto the phone. Logged as **N-18** so it does not come back
+as "should we also let them download desktop from Settings".
+
+*Status: standing.*
