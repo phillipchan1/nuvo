@@ -86,21 +86,34 @@ export function useDayTasks(dateISO: string) {
 }
 
 /** Scheduled (time-blocked) tasks intersecting a calendar range. */
+export const scheduledTasksKey = (rangeStartISO: string, rangeEndISO: string) =>
+  ["tasks", "scheduled", rangeStartISO, rangeEndISO] as const;
+
+/** Outside the hook so a range can be warmed before it is displayed — see
+ *  `useCalendarRangePrefetch`. */
+export async function fetchScheduledTasksRange(
+  rangeStartISO: string,
+  rangeEndISO: string,
+): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_COLS)
+    .not("start_time", "is", null)
+    .in("status", ["planned", "done"])
+    .is("parent_task_id", null)
+    .gte("start_time", rangeStartISO)
+    .lt("start_time", rangeEndISO);
+  if (error) throw error;
+  return data as Task[];
+}
+
 export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
-    queryKey: ["tasks", "scheduled", rangeStartISO, rangeEndISO],
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select(TASK_COLS)
-        .not("start_time", "is", null)
-        .in("status", ["planned", "done"])
-        .is("parent_task_id", null)
-        .gte("start_time", rangeStartISO)
-        .lt("start_time", rangeEndISO);
-      if (error) throw error;
-      return data as Task[];
-    },
+    queryKey: scheduledTasksKey(rangeStartISO, rangeEndISO),
+    // A scheduled task IS a time block, so this blanking on a range change was
+    // half of the calendar emptying itself mid-swipe. See useExternalEvents.
+    placeholderData: (prev) => prev,
+    queryFn: () => fetchScheduledTasksRange(rangeStartISO, rangeEndISO),
   });
 }
 
@@ -113,6 +126,7 @@ export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: strin
   const endDate = rangeEndISO.substring(0, 10);
   return useQuery({
     queryKey: ["tasks", "anytime", startDate, endDate],
+    placeholderData: (prev) => prev,
     queryFn: async (): Promise<Task[]> => {
       const { data, error } = await supabase
         .from("tasks")
