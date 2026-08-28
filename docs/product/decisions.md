@@ -4597,3 +4597,78 @@ nothing in the chrome draws a heading, no ＋ at any horizon, and the band and t
 canvas share one edge and one gutter). Every one fails without its fix.
 
 *Status: standing — refines D-122 / D-123's chrome. Read models untouched.*
+---
+
+**D-126 · 2026-08-28 · Google is always asked WHICH Google.**
+
+On TestFlight 0.1.558, "Continue with Google" on a signed-out iPhone landed
+instantly in the last Google user's account. No chooser, no consent, no pause —
+so a second Google account was not merely awkward to reach, it was **unreachable
+from the phone at all**.
+
+Nothing in the app was picking that account. The authorize request carried no
+`prompt`, so Google re-used the session already in the cookie jar and redirected
+back without drawing anything.
+
+**The device also reported that it never left Nuvo — no Safari.** That is true,
+and it is not evidence of a second auth path; it is the only path there is.
+Verified in the shell: no `ASWebAuthenticationSession`, no
+`SFSafariViewController`, no native Google Sign-In, no Capacitor. Exactly one
+provider has a native leg, and it is Apple's — `nuvo-siwa` presents
+`ASAuthorizationController` ([`apple-sign-in.md`](../apple-sign-in.md)), a system
+sheet rather than a browser session, and it never touches Google. The rest of the
+iOS Swift is
+WatchConnectivity and StoreKit; `tauri-plugin-deep-link` exists for the `nuvo://`
+widget links; `src-tauri/src/lib.rs` installs no navigation handler that would
+hand a URL to the system browser. And
+`signInWithOAuth` without `skipBrowserRedirect` does exactly one thing —
+`window.location.assign(url)`. So **the app's own WKWebView walks to Google and
+back to `tauri://localhost`**, `detectSessionInUrl` picks the session out of the
+return, and the whole round trip is two invisible redirects.
+
+That is also why the phone shows this so much harder than a browser tab: the
+cookie jar belongs to the app, nothing in Nuvo can clear it, and there is no
+address bar to go and log out of Google in.
+
+**`prompt=select_account`, on every attempt** — sign-in and identity-linking
+both, since they already share one options object in `src/lib/googleAuth.ts`.
+Two alternatives rejected:
+
+- **Only when it would be ambiguous.** The app cannot read Google's cookies, so
+ "is more than one Google signed in here" is not a state it can ask about. The
+ condition doesn't exist; only the wish for it does.
+- **`prompt=consent`** (what the calendar-connect function has always sent). That
+ draws the consent screen for the account Google *already chose*, which is the
+ same trap wearing a screen.
+- **Hand the flow to `ASWebAuthenticationSession`** instead of the app's own
+ webview. Tempting, and it would buy a real thing: `prefersEphemeralWebBrowserSession`
+ gives a *clean* jar every time, so "sign out of Google" would exist. It needs
+ Swift, a custom-scheme return leg, and it moves where the session is held — a
+ native plugin's worth of risk to reach a chooser one query parameter already
+ draws. Worth revisiting only if `select_account` proves insufficient on device.
+
+The cost is one extra tap at a door most people pass through once per device. The
+thing it buys is not convenience, it's **Principle 16 being enforceable at all**:
+"make a fresh account and find out" was, on an iPhone, impossible. A defect that
+hides the act of checking for defects earns its extra tap.
+
+Closes nothing new in the ledger — it restores the front door that **O1**/**O6**
+are scored through. Adds no pool, no name, no clean-data assumption.
+
+Guarded by `tests/google-account-chooser.test.ts`: both entry points ask for the
+chooser; the in-app iOS leg keeps it while returning to `tauri://localhost` and
+never sets `skipBrowserRedirect` (on iOS there is no browser to hand the URL to,
+so skipping the redirect would strand sign-in outright); and — because passing an
+option the SDK silently drops looks exactly like the bug — the authorize URL is
+built through the real supabase-js client and checked for Google's own `prompt`.
+Four of its five assertions fail without the fix.
+
+**Left open, deliberately:** the calendar-connect flow
+(`supabase/functions/google-oauth`) still sends `prompt=consent` alone, so the
+Google account whose calendar you connect is also whichever Google the webview
+last saw. It is the same shape of bug at a different door, and it is *not* fixed
+here because Reconnect uses that same leg: adding a chooser without passing
+`login_hint` for the account being repaired invites picking the wrong one, which
+would upsert a second `calendar_accounts` row and leave the broken one broken.
+
+*Status: standing. Sign-in only; the connect leg is named above as open.*
