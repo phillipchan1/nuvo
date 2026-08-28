@@ -182,7 +182,7 @@ it needs to work on a phone.
   (D-111). Corollary: an act may live on many surfaces, a **move** lives on one — you
   complete anywhere, you re-time a block on the calendar, and other surfaces link to it
   (`revealOnCalendar`) instead of growing a second handle.
-- **Capture is ONE door, and it makes both kinds** — `mobile/MobileCapture.tsx` (D-124).
+- **Capture is ONE door, and it makes both kinds** — `mobile/MobileCapture.tsx` (D-125).
   One free-text line through `parseCapture`, plus a **Task / Event** switch; the sentence
   survives the switch and seeds the event's time. The Calendar's header ＋ is gone: two ＋s
   forty pixels apart, each making a different *kind* of object, made you classify a thought
@@ -211,7 +211,7 @@ it needs to work on a phone.
   `CalendarSurface` owns the window and the composition; `CalendarChrome` is the
   **horizon ladder** (☰ · D W M Y), travel, and the seven columns — mounted ONCE, so
   nothing in it unmounts when the horizon changes. **The hero is handed UP, not drawn**
-  (`onHero` → `MobileShell`'s top bar, D-124): it had a row of its own, and on the Week
+  (`onHero` → `MobileShell`'s top bar, D-125): it had a row of its own, and on the Week
   lens that row said "This week" directly above a crown strip already saying it. The top
   bar's date slot exists on every tab, so the span costs no vertical space there — and the
   wordmark yields on that one tab, because a calendar's title bar says the date. The five bodies (`MobileAgendaView`,
@@ -222,7 +222,7 @@ it needs to work on a phone.
   own header, and never invent a second seven-column geometry** — every band and grid wears
  `ColumnBand`, because a Friday at a different x on the month than on the week is
  exactly the jump the zoom exists to remove. **The columns are a component, not a pair of
- classnames** (D-124): `pr-2` on the band and `mx-2` on the canvas look like the same 8px
+ classnames** (D-125): `pr-2` on the band and `mx-2` on the canvas look like the same 8px
  and are not — the band's seven columns and the canvas's seven columns were divided across
  different widths and *diverged* across the row. One `CAL_EDGE`, one `CAL_GUTTER`, one
  `ColumnBand`; everything with columns starts at `CAL_EDGE + CAL_GUTTER`. Every list inside

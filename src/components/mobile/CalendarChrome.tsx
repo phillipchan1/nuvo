@@ -221,7 +221,7 @@ export interface CalendarHeaderProps {
  * the time you're at on the right. It carries no ＋. Capture is ONE act on this
  * phone and it already floats over every screen; a second ＋ up here that made a
  * different *kind* of thing was the app asking you to know, before you type,
- * whether the thought in your head was a task or an event (D-124).
+ * whether the thought in your head was a task or an event (D-125).
  */
 export function CalendarHeader({
   horizon,

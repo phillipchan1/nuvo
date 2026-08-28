@@ -96,7 +96,7 @@ export default function MobileCalendar({
   onTapEvent?: (tap: CalendarTap) => void;
   /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
   onTapTask?: (taskId: string) => void;
-  /** The span the top bar shows, handed up from the surface (D-124). */
+  /** The span the top bar shows, handed up from the surface (D-125). */
   onHero?: (h: CalHero | null) => void;
   /** The week crown's doors — omit them and the crown stays off (harnesses,
    *  and any embed that has nowhere to route a record). */

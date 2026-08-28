@@ -6,7 +6,7 @@
 // before you could type: *is the thing in your head a task or an event?* Two ＋s
 // on one screen, forty pixels apart, each making a different kind of object.
 // Capture is one act (P5), so there is now one door — `MobileCapture` — and this
-// is what it grows when the answer is "event" (D-124).
+// is what it grows when the answer is "event" (D-125).
 //
 // So it owns no title input: the title is the capture line, parsed, and it is
 // handed down. What it owns is the time (seeded from that same parse, so

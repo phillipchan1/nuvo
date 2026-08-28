@@ -58,7 +58,7 @@ const CTX: DayCtx = {
 };
 
 /** The chrome does not draw the hero any more — it hands it to the app's top
- *  bar (D-124). So the assertions read the handed object, which is also the
+ *  bar (D-125). So the assertions read the handed object, which is also the
  *  thing that would actually be wrong if the wording drifted. */
 const seen: { hero: CalHero | null } = { hero: null };
 
@@ -116,7 +116,7 @@ describe("the date is stated once", () => {
   it("hands the hero up instead of spending a row on it", () => {
     // The Week lens is the case that forced this: its hero said "This week"
     // directly above a crown strip already saying "This week", and the row cost
-    // 40px of the phone's most contested screen (D-124). Nothing in the chrome
+    // 40px of the phone's most contested screen (D-125). Nothing in the chrome
     // draws a heading now — the top bar does, in the slot every other tab
     // already reserves for a date.
     for (const m of ["month", "week", "day", "schedule", "year"] as const) {
@@ -139,7 +139,7 @@ describe("capture is one door", () => {
   it("has no ＋ in the chrome at any horizon", () => {
     // Two ＋s, forty pixels apart, each making a different KIND of object was
     // the app asking you to classify a thought before typing it. There is one
-    // capture now and it floats over every screen (D-124).
+    // capture now and it floats over every screen (D-125).
     for (const m of ["month", "week", "day", "schedule", "year"] as const) {
       const c = surface(m);
       for (const label of ["New event", "Quick task", "Capture"]) {
@@ -159,7 +159,7 @@ describe("one seven-column geometry", () => {
     // `mx-2`, so Sunday's header sat ~7px left of Sunday's column and the error
     // shrank across the row — seven columns and a half. jsdom has no layout, so
     // the assertion is on the numbers both are built from: one edge, one
-    // gutter, no classname coincidences (D-124).
+    // gutter, no classname coincidences (D-125).
     const c = surface("week");
     const band = c.container.querySelector<HTMLElement>(".grid.grid-cols-7")?.parentElement;
     expect(band).toBeTruthy();

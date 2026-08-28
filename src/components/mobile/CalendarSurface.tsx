@@ -8,7 +8,7 @@
 // makes them a place to stand rather than five headers that resemble each
 // other. The hero is the same object one level up — it is *handed* to the app's
 // top bar (`onHero`) rather than drawn in a row of its own, so it costs no
-// vertical space and cannot restate the crown strip under it (D-124).
+// vertical space and cannot restate the crown strip under it (D-125).
 //
 // Two axes, two motions, no overlap:
 //   travel  same horizon, next date  → `TimePager`, inside each body
@@ -151,7 +151,7 @@ export default function CalendarSurface({
   onWindowChange?: (w: CalWindow) => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
-  /** Where the hero goes: the app's top bar owns it, not this chrome (D-124).
+  /** Where the hero goes: the app's top bar owns it, not this chrome (D-125).
    *  Called whenever the span or its one fact changes, and with `null` on the
    *  way out so the host's bar doesn't keep a stale span. */
   onHero?: (h: CalHero | null) => void;
@@ -185,7 +185,7 @@ export default function CalendarSurface({
     }
   }, [mode, persistMode]);
 
-  // The hero is handed to the top bar rather than drawn (D-124). The jump is
+  // The hero is handed to the top bar rather than drawn (D-125). The jump is
   // wrapped once so its identity never changes — the host holds the hero object
   // in state, and a fresh callback every render would be a render loop.
   const jumpRef = useRef<(d: Date) => void>(() => {});

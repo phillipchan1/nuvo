@@ -255,7 +255,7 @@ export default function MobileShell() {
   };
 
 
-  // Capture — ONE sheet for both kinds (D-124). `null` is shut; a kind is the
+  // Capture — ONE sheet for both kinds (D-125). `null` is shut; a kind is the
   // face it opens on. The Calendar's header ＋ used to be a second door here.
   const [capture, setCapture] = useState<CaptureKind | null>(null);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
@@ -288,7 +288,7 @@ export default function MobileShell() {
 
   // What the Calendar is looking at — its hero, handed up so the top bar can
   // print it in the slot every other tab already reserves for a date, and so a
-  // capture from that tab files to the day on screen (D-124).
+  // capture from that tab files to the day on screen (D-125).
   const [calHero, setCalHero] = useState<CalHero | null>(null);
 
   const [now, setNow] = useState(() => new Date());
@@ -613,7 +613,7 @@ export default function MobileShell() {
             D-123 banned a second date up here because the top bar's "today"
             didn't describe the screen the moment you paged to September. This
             is the resolution of that, not a relapse: the bar now says exactly
-            what is on screen, and the calendar says it exactly once (D-124). */}
+            what is on screen, and the calendar says it exactly once (D-125). */}
         {tab === "calendar" ? (
           calHero && <CalendarTitle hero={calHero} />
         ) : (
@@ -666,7 +666,7 @@ export default function MobileShell() {
             onTapTask={(id) => setTaskId(id)}
             // The span the top bar prints, and the day a capture files to.
             // The Calendar hands its hero up rather than drawing a row of its
-            // own for it (D-124).
+            // own for it (D-125).
             onHero={setCalHero}
             // The week crown's three doors: a project opens its record sheet, a
             // piece of its work opens its task sheet (where it gets a time), and

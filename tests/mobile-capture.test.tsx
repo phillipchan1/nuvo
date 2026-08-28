@@ -6,7 +6,7 @@
  * the Calendar's header made an event — so you had to classify a thought before
  * you were allowed to type it, and the event half was a form with no parser at
  * all (P5's "a new object can only be created through a form"). These assert
- * the shape of the fix: one input, parsed once, feeding either branch (D-124).
+ * the shape of the fix: one input, parsed once, feeding either branch (D-125).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";

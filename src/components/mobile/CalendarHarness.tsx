@@ -194,7 +194,7 @@ const CTX: DayCtx = {
 };
 
 function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
-  // The hero lives in the app's top bar now (D-124), so the harness has to
+  // The hero lives in the app's top bar now (D-125), so the harness has to
   // mount a stand-in for it — otherwise this would be verifying a chrome the
   // phone doesn't actually wear, and the one composition question here ("does
   // anything move when the horizon does?") includes the title.
