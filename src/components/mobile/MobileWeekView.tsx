@@ -32,6 +32,7 @@ export default function MobileWeekView({
   onPrev,
   onNext,
   onTapEvent,
+  recenter = 0,
 }: {
   /** The first day of the week to draw — resolved by `CalendarSurface` from the
    *  selected day and the user's "Week starts on" setting. */
@@ -42,6 +43,8 @@ export default function MobileWeekView({
   onPrev: () => void;
   onNext: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  /** See `MobileDayView` — the chrome's Today asking for now, again. */
+  recenter?: number;
 }) {
   const days = useMemo<DayPlan[]>(
     () => Array.from({ length: 7 }, (_, i) => buildDayPlan(addDays(weekStart, i), ctx)),
@@ -81,7 +84,7 @@ export default function MobileWeekView({
   const canvasRef = useRef<HTMLDivElement>(null);
   const didAutoScroll = useRef(false);
   useLayoutEffect(() => {
-    if (didAutoScroll.current) return;
+    if (recenter === 0 && didAutoScroll.current) return;
     didAutoScroll.current = true;
     if (!showsToday || nowMin < winStart + 90) return;
     const raf = requestAnimationFrame(() => {
@@ -91,11 +94,11 @@ export default function MobileWeekView({
       const canvasTop =
         canvas.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
       const target = canvasTop + y(Math.min(nowMin, winEnd)) - stickyPx - 80;
-      if (target > 8) scroller.scrollTo({ top: target });
+      if (target > 8) scroller.scrollTo({ top: target, behavior: recenter ? "smooth" : "auto" });
     });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [recenter]);
 
   if (loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0)) {
     return <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>;

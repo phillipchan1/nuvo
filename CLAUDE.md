@@ -218,7 +218,29 @@ it needs to work on a phone.
  next to a gutter reading `9am`, and the record sheet kept a private copy). Then each line
  carries only what its neighbour can't: the Day block says the **place** (position and
  height already say when and how long), the agenda row says the **length** (the rail already
- said when). Exact minutes live in the record sheet.
+ said when). Exact minutes live in the record sheet. **The chrome obeys this too** (D-123):
+ the hero IS the identification (`Today`, or `September 14` when no relative word pins the
+ day) and the fact beside it is purely the read — the date was being said by the top bar,
+ the hero, the fact AND the lit cell of the week row. The global top bar therefore drops
+ its date **on the Calendar tab only**; elsewhere nothing else says it.
+- **Nothing in the chrome may appear, vanish or resize as you use it** (D-123). `Today` is
+ permanently mounted and quiets rather than unmounts — it used to render only off-today, so
+ crossing today's edge mid-swipe shoved the travel arrows sideways under a moving thumb.
+ Both states carry a border (one transparent) so the box is pixel-identical, and it is never
+ dead: on the current span it re-centres on now (`recenter` → the canvases re-park). A phone
+ chrome that rearranges itself is worse than one that is occasionally quiet.
+- **Don't rent the Calendar's header to a management act** (D-123). Recurring upkeep sat
+ there permanently while its *desktop* home is the calendar's `⋯` overflow — a phone surface
+ carrying something purely because it was easy to put there. It lives in **Settings →
+ Schedule**. Check the desktop rank before promoting anything into that row.
+- **Travel must never wait for data already in hand** (D-123). Range queries
+ (`useExternalEvents`, `useScheduledTasks`, `useSlots`) all set `placeholderData: (prev) =>
+ prev` — a range change used to return nothing for a whole round trip, so every block
+ blanked mid-swipe. The window is wider than the visible span on purpose, so the kept result
+ usually already contains the day you swiped to. `useCalendarRangePrefetch` warms both
+ neighbours through **`stepCalendarWindow`** — the same function the surface moves by, so
+ travel is defined once. **Never compute "the next window" a second time**: a prefetch keyed
+ a day off pays, misses, and pays again, and looks exactly like a cold swipe.
 - **The zoom is tested, not eyeballed.** 220ms is too short to review, and two versions of
  `LensZoom` have looked correct and animated nothing. It runs on `Element.animate` partly
  *because* WAAPI is observable: `tests/lens-zoom.test.tsx` asserts the keyframes and

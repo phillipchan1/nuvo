@@ -56,18 +56,28 @@ If a user can reach it on a phone, it must work on a phone.
   the **mobile Calendar** instead of FullCalendar: one chrome (hero · horizon ladder
   ☰·D W M Y · travel · seven columns, mounted once by `CalendarSurface`) over five
   bodies, all reading one `buildDayPlan`. `TimePager` travels, `LensZoom` zooms; every
-  band and grid shares `COLS` + `CAL_GUTTER`. Never give a lens its own header. D-121.
+  band and grid shares `COLS` + `CAL_GUTTER`. Never give a lens its own header. D-122.
+- **The chrome says a thing once and never rearranges itself** (D-123). The hero IS the
+  identification (`Today`, else `September 14`), the fact beside it is only the read, and
+  the top bar drops its date on the Calendar tab — the date was being said four ways. No
+  control may appear/vanish as you travel: `Today` is always mounted, quiets on the current
+  span (identical box, transparent border) and re-centres on now. Management acts don't rent
+  that row — recurring upkeep is in Settings → Schedule; check the desktop rank first.
 
 ## Reuse, don't duplicate
 
 - Day shape / availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in
   `src/lib/now.ts`. "What counts as busy" lives once in `toBusyBlocks`.
 - Calendar data: `useExternalEvents`, `useScheduledTasks`; settings via `useSettings`
-  (`work_start_minutes`/`work_end_minutes` 480/990, `hidden_calendar_ids`).
+  (`work_start_minutes`/`work_end_minutes` 480/990, `hidden_calendar_ids`). Every range
+  query keeps its previous result (`placeholderData: (prev) => prev`) — without it a swipe
+  blanks the calendar for a round trip. Neighbours are warmed by
+  `useCalendarRangePrefetch` through **`stepCalendarWindow`**, the one definition of travel;
+  never compute "the next window" a second time. D-123.
 - A scheduled task IS a time block (one `tasks` row); no separate event entity.
 - Times on the phone Calendar: `at` / `span` in `dayPlan.ts` (`9am`, `9:30am`, `9–9:30am`);
   `hourLabel` IS `at`. Never a second time format — and **a surface that draws a fact must
-  not also write it** (the Day canvas shows *place*, the agenda row *length*). D-121.
+  not also write it** (the Day canvas shows *place*, the agenda row *length*). D-122.
 - Capture = free text via `parseCapture` (`src/lib/nlp.ts`); forms are the fallback. Use
   plain text inputs so iOS dictation works.
 

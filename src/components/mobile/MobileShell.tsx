@@ -519,7 +519,13 @@ export default function MobileShell() {
       {/* Top bar */}
       <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
         <span className="wordmark wordmark-grad text-lead">Nuvo</span>
-        <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
+        {/* Today's date — everywhere except the Calendar, which says it better
+            one row down AND changes it as you travel. Two dates in the top
+            100px, one of them not describing what's on screen the moment you
+            page to September, was the worst of the congestion up there (D-123). */}
+        {tab !== "calendar" && (
+          <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
+        )}
         <div className="flex-1" />
         <button
           onClick={() => setSearchOpen(true)}
@@ -565,7 +571,6 @@ export default function MobileShell() {
             now={now}
             onTapEvent={setCalendarTap}
             onTapTask={(id) => setTaskId(id)}
-            onOpenUpkeep={() => setUpkeepOpen(true)}
             onNewEvent={setNewEventDate}
             // The week crown's three doors: a project opens its record sheet, a
             // piece of its work opens its task sheet (where it gets a time), and
@@ -799,6 +804,13 @@ export default function MobileShell() {
           accounts={accounts}
           section="appearance"
           onClose={() => setSettingsOpen(false)}
+          // Settings → Schedule is where recurring upkeep lives on the phone
+          // now (D-123). Close Settings on the way so two full-screen overlays
+          // are never stacked — back then returns to the tab, not to a modal.
+          onOpenUpkeep={() => {
+            setSettingsOpen(false);
+            setUpkeepOpen(true);
+          }}
         />
       )}
       {upkeepOpen && <RecurringUpkeepPanel onClose={() => setUpkeepOpen(false)} />}

@@ -4396,3 +4396,86 @@ motion this surface depends on gets a test, not a look.**
 
 *Status: standing — refines D-119's chrome and D-044's lens set; the read models
 (`buildDayPlan`, `useWeekCrown`) are untouched.*
+
+**D-123 · 2026-08-28 · The chrome states a fact once, and never rearranges
+itself under your thumb.**
+
+D-122 gave the phone Calendar one chrome. Used on a real phone for an hour, that
+chrome was still congested — and every cause was a rule we had already written
+down and then broken in the act of building the thing that enforces it.
+
+**The date was printed three times inside 100px.** The global top bar said
+`Thu Aug 27`; the hero said `Today`; the hero's fact said `Aug 27 · done for
+today`; the week row drew 27 as the lit cell. Four statements, one fact. Worse,
+the top bar's copy is *wrong* the moment you page to September — it says today
+while the screen is describing a different month, which is the one thing a
+persistent chrome must never do. So:
+
+- the top bar's date is gone **on the Calendar tab only** — the Calendar says it
+ better one row down, and says it about what you are actually looking at. Other
+ tabs keep it; they have nothing else that does the job.
+- the hero **is** the identification and the fact is purely the read.
+ `Today` / `Tomorrow` / `Yesterday` pin a day absolutely and stand alone; any
+ other day names its date (`September 14`) rather than saying `Monday` and
+ leaving the fact to disambiguate. Neither spells the weekday, because the row
+ underneath draws it as the lit column.
+
+This is D-122's own rule — *on a surface that draws a fact, don't also write
+it* — applied to the surface that established it.
+
+**Recurring upkeep was renting the busiest row in the app.** It is a management
+act performed a few times a year, and it held a permanent 44px beside the hero.
+On the desktop it correctly lives inside the calendar's `⋯` overflow, so the
+phone had promoted it *above its own desktop rank* — a good sign that a phone
+surface is carrying something because it was easy to put there. It moves to
+**Settings → Schedule**, which costs nothing and is still a real path: a hidden
+gesture would not have been (P-«a hidden gesture is never the only path»).
+
+**Today appeared and disappeared.** It rendered only while you were off the
+current span, so crossing today's edge mid-swipe made a control materialise and
+shove the travel arrows sideways under a thumb still moving, then vanish on the
+way back. The logic was defensible — never a dead control — and the result was
+worse than the thing it avoided. It is now permanent **and** still not dead: on
+the current span it re-centres on now, so a day canvas scrolled to 9pm comes
+back to the signal line, which is what people reach for it to do anyway. Both
+states wear a border (one transparent) so the box is pixel-identical.
+
+**Travel waited on the network for data it already had.** Reported as "swiping
+left and right lags fetching the events". It was not render cost: each range
+change minted a new query key, so `useExternalEvents` and `useScheduledTasks`
+returned nothing for the whole round trip and every block blanked and refilled —
+while `useSlots`, which had diagnosed and fixed exactly this in a comment long
+before, kept its slots on screen throughout. The fix is that comment, applied to
+the two queries that draw almost everything, plus:
+
+- **keep the previous range** while the next one fetches. The fetched window is
+ deliberately wider than the visible span, so the previous result usually
+ already *contains* the day you swiped to — keeping it makes the swipe correct
+ immediately, not merely non-empty.
+- **warm both neighbours** after a beat, through the same `stepCalendarWindow`
+ the surface moves by, so what we warm is exactly what the next gesture asks
+ for. A prefetch keyed a day off is worse than none: it pays, misses, and pays
+ again.
+- **a stale window**, so swiping to September and back doesn't re-fetch an
+ August that is already correct in the cache. Realtime invalidation is what
+ keeps that honest — a write refetches regardless.
+
+Travel is now defined **once** (`stepCalendarWindow`), because the mover and the
+prefetcher disagreeing is invisible in the network tab and indistinguishable
+from a cold swipe.
+
+Closes nothing new in the ledger; it is the cost of **W2** and **D3** dropping
+on the surface that answers them. Adds no pool, no name, no clean-data
+assumption. Strains P8 (one meaning per control) in exactly one place — Today
+now means "come back" *or* "re-centre" depending on where you stand — and that
+is the resolution, not the violation: both are the same intent, "put me where
+now is."
+
+Guarded by `tests/calendar-chrome.test.tsx` (the date is said once, Today is the
+same DOM node before and after travel, no upkeep at any horizon),
+`tests/calendar-range-keep.test.tsx` (a range change never hands back an empty
+list, and a swipe back doesn't re-fetch) and `tests/calendar-prefetch.test.ts`
+(what we warm is what the swipe asks for). All three fail without their fix,
+which is the only reason to write them.
+
+*Status: standing — refines D-122's chrome. Read models untouched.*
