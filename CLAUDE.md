@@ -322,6 +322,12 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
   id is authoritative only for a loose task. Never write `t.domain_id ?? project?.domainId`:
   that chain only runs when the copy is *missing*, never when it's *wrong*, which is how four
   projects' hours ended up credited to the wrong domains (D-088).
+- **Every Google auth start goes through `src/lib/googleAuth.ts`** — one options object for
+  sign-in *and* identity-linking, carrying `redirectTo` and **`prompt=select_account`**.
+  Never call `signInWithOAuth({ provider: "google" })` at a call site: without that prompt
+  Google silently re-uses the last account in the webview's cookie jar, which on iOS
+  outlives a Nuvo sign-out — a signed-out phone landed straight back in the previous user
+  and no second Google was reachable at all (D-126).
 - Capture via free text: `parseCapture` in `src/lib/nlp.ts` turns
   "call David tomorrow 9am 30m #work !high" into structure.
 

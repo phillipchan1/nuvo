@@ -4597,3 +4597,52 @@ nothing in the chrome draws a heading, no ＋ at any horizon, and the band and t
 canvas share one edge and one gutter). Every one fails without its fix.
 
 *Status: standing — refines D-122 / D-123's chrome. Read models untouched.*
+---
+
+**D-126 · 2026-08-28 · Google is always asked WHICH Google.**
+
+On TestFlight 0.1.558, "Continue with Google" on a signed-out iPhone landed
+instantly in the last Google user's account. No chooser, no consent, no pause —
+so a second Google account was not merely awkward to reach, it was **unreachable
+from the phone at all**.
+
+Nothing in the app was picking that account. The authorize request carried no
+`prompt`, so Google re-used the session already in the cookie jar and redirected
+back without drawing anything. In the iOS shell that jar belongs to the app's own
+WKWebView and outlives a Nuvo sign-out, which is why the phone shows this far
+more sharply than a browser tab, where a Google sign-out is one visit away.
+
+**`prompt=select_account`, on every attempt** — sign-in and identity-linking
+both, since they already share one options object in `src/lib/googleAuth.ts`.
+Two alternatives rejected:
+
+- **Only when it would be ambiguous.** The app cannot read Google's cookies, so
+ "is more than one Google signed in here" is not a state it can ask about. The
+ condition doesn't exist; only the wish for it does.
+- **`prompt=consent`** (what the calendar-connect function has always sent). That
+ draws the consent screen for the account Google *already chose*, which is the
+ same trap wearing a screen.
+
+The cost is one extra tap at a door most people pass through once per device. The
+thing it buys is not convenience, it's **Principle 16 being enforceable at all**:
+"make a fresh account and find out" was, on an iPhone, impossible. A defect that
+hides the act of checking for defects earns its extra tap.
+
+Closes nothing new in the ledger — it restores the front door that **O1**/**O6**
+are scored through. Adds no pool, no name, no clean-data assumption.
+
+Guarded by `tests/google-account-chooser.test.ts`: both entry points ask for the
+chooser, and — because passing an option the SDK silently drops looks exactly
+like the bug — the authorize URL is built through the real supabase-js client and
+checked for Google's own `prompt`. Three of its four assertions fail without the
+fix.
+
+**Left open, deliberately:** the calendar-connect flow
+(`supabase/functions/google-oauth`) still sends `prompt=consent` alone, so the
+Google account whose calendar you connect is also whichever Google the webview
+last saw. It is the same shape of bug at a different door, and it is *not* fixed
+here because Reconnect uses that same leg: adding a chooser without passing
+`login_hint` for the account being repaired invites picking the wrong one, which
+would upsert a second `calendar_accounts` row and leave the broken one broken.
+
+*Status: standing. Sign-in only; the connect leg is named above as open.*
