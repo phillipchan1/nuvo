@@ -58,6 +58,7 @@ Statuses are owned by each doc's own header.
 - [`mcp.md`](./mcp.md) — a teammate (Grok Bot) acts through the chat's tools, not a second API.
 - [`account-deletion.md`](./account-deletion.md) — in-app wipe (Settings → Account · locked screen). Type DELETE.
 - [`ios-releases.md`](./ios-releases.md) — iPhone TestFlight auto-upload, widgets + Siri roadmap.
+- [`apple-sign-in.md`](./apple-sign-in.md) — Sign in with Apple: the entitlement, the nonce, the revoke on delete, and the two-accounts-one-person case. **Guideline 4.8 — blocks the App Store submission.**
 - [`../KEYBOARD_SHORTCUTS.md`](../KEYBOARD_SHORTCUTS.md) — the keyboard model.
 
 ---

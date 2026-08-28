@@ -2047,6 +2047,7 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-nuvo-iap",
+ "tauri-plugin-nuvo-siwa",
  "tauri-plugin-nuvo-watch",
  "tauri-plugin-process",
  "tauri-plugin-shell",
@@ -3682,6 +3683,16 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-nuvo-iap"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tauri-plugin-nuvo-siwa"
 version = "0.1.0"
 dependencies = [
  "serde",

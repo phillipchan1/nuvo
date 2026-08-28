@@ -1,0 +1,31 @@
+# Sign in with Apple.
+#
+# Not optional: Nuvo offers Google Sign-In, which forfeits App Store guideline
+# 4.8's "own account system only" exemption, so the iOS binary must offer Apple
+# too. `ASAuthorizationController` is Swift-only, and a plugin crate is Tauri
+# v2's only sanctioned JS→Swift path — `tauri_plugin::Builder::ios_path` hands
+# ios/ to `swift_rs::SwiftLinker`, which compiles the SwiftPM package during
+# `cargo build` and links it into `libapp.a`. The Xcode project never learns
+# about this Swift, so none of it belongs in scripts/ios-siwa.rb (that script
+# only carries the *entitlement*).
+#
+# `links` is mandatory and must equal the package name; tauri-plugin's build
+# helper errors with `LinksMissing` otherwise.
+#
+# Desktop is a no-op reporting `supported: false` — same contract as
+# nuvo-watch / nuvo-iap, so src/lib/appleAuth.ts calls it without a platform
+# branch and the macOS build compiles this crate unchanged.
+
+[package]
+name = "tauri-plugin-nuvo-siwa"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-nuvo-siwa"
+
+[dependencies]
+tauri = "2"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
+import { appleSignInAvailable, isAppleSignInCancelled, signInWithApple } from "../lib/appleAuth";
+import { lastAuthProvider, providerLabel } from "../lib/authProviders";
 import { isMobileTauri } from "../lib/platform";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
@@ -23,6 +25,30 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
+
+  // Apple is required wherever we offer Google (App Store guideline 4.8) and
+  // must be at least as prominent, so it sits first — same size, same weight.
+  const appleAvailable = appleSignInAvailable();
+  // What this device used last. Read once, before signing in overwrites it.
+  // Supabase folds two identities onto one account only when they share a
+  // verified email — and Apple's "Hide My Email" asserts a relay address that
+  // matches nothing, so a different provider quietly opens a second, empty
+  // account. Saying it out loud here is the only prevention that works.
+  const [previous] = useState(lastAuthProvider);
+
+  const withApple = async () => {
+    setBusy(true);
+    setError(null);
+    const { error } = await signInWithApple();
+    if (error) {
+      // Backing out of Apple's sheet is not a failure to report.
+      if (!isAppleSignInCancelled(error.message)) setError(error.message);
+      setBusy(false);
+      return;
+    }
+    // Native returns here already signed in (useAuth's onAuthStateChange takes
+    // over); the web path has redirected. Either way, leave busy true.
+  };
 
   const withGoogle = async () => {
     setBusy(true);
@@ -86,6 +112,24 @@ export default function Login() {
 
         {!emailMode ? (
           <>
+            {previous && (
+              <div className="mb-3 rounded-md border border-line bg-surface-2 px-3 py-2 text-caption leading-relaxed text-muted">
+                Last time on this device you used{" "}
+                <span className="text-ink">{providerLabel(previous)}</span>. Use the same one to
+                land back in the same account.
+              </div>
+            )}
+            {appleAvailable && (
+              <button
+                type="button"
+                disabled={busy || !supabaseConfigured}
+                onClick={withApple}
+                className="apple-signin tap fast mb-3 flex w-full items-center justify-center gap-2.5 rounded-md px-3 py-3 text-body font-medium active:translate-y-px disabled:opacity-50"
+              >
+                <AppleMark />
+                Sign in with Apple
+              </button>
+            )}
             <button
               type="button"
               disabled={busy || !supabaseConfigured}
@@ -185,6 +229,18 @@ export default function Login() {
         {error && <div className="mt-3 text-caption text-signal">{error}</div>}
       </div>
     </div>
+  );
+}
+
+/** Apple's logotype. Like GoogleMark below, this is a third party's mark, so
+ *  it is the one place raw colour beats a token: it inherits `currentColor`
+ *  from `.apple-signin`, which flips black-on-white / white-on-black with the
+ *  theme (Apple permits exactly those fills, and requires one of them). */
+function AppleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 814 1000" fill="currentColor" aria-hidden>
+      <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 98.9zM554.1 159.4c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z" />
+    </svg>
   );
 }
 

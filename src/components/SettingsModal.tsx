@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { linkGoogleIdentity } from "../lib/googleAuth";
+import { appleLinkAvailable, linkAppleIdentity } from "../lib/appleAuth";
+import { readSignInMethods, type SignInMethod } from "../lib/authProviders";
 import {
   canPromptInstall,
   isIOS,
@@ -1445,14 +1447,23 @@ function LabelsPane() {
 
 function AccountPane() {
   const [email, setEmail] = useState("");
-  const [providers, setProviders] = useState<string[]>([]);
-  const [linking, setLinking] = useState(false);
+  const [methods, setMethods] = useState<SignInMethod[]>([]);
+  // Which provider is mid-redirect, if any — not a bare boolean, so two rows
+  // can coexist without both showing "Redirecting…".
+  const [linking, setLinking] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const refresh = () => {
     supabase.auth.getUser().then(({ data }) => {
       setEmail(data.user?.email ?? "");
-      setProviders((data.user?.identities ?? []).map((i) => i.provider));
+      // `app_metadata.provider` is the provider of the MOST RECENT sign-in —
+      // the honest answer to "which one did I use?". `identities` is everything
+      // attached to this one auth UUID.
+      setMethods(
+        readSignInMethods(data.user?.identities, data.user?.app_metadata?.provider, {
+          apple: appleLinkAvailable(),
+        }),
+      );
     });
   };
 
@@ -1462,17 +1473,26 @@ function AccountPane() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const googleLinked = providers.includes("google");
+  // Linking — rather than a second sign-in — is what keeps the same auth UUID.
+  // Supabase folds two identities onto one account only when they share a
+  // VERIFIED email; Apple's "Hide My Email" asserts a relay address that
+  // matches nothing, so signing in with an unlinked provider can quietly open a
+  // second, empty account instead. Nothing can pair them up afterwards, which
+  // is why this pane shows every method and its state, not just the gaps.
+  const linkFor: Record<string, () => Promise<{ error: unknown }>> = {
+    google: linkGoogleIdentity,
+    apple: linkAppleIdentity,
+  };
 
-  const linkGoogle = async () => {
-    setLinking(true);
+  const linkWith = async (provider: string, start: () => Promise<{ error: unknown }>) => {
+    setLinking(provider);
     setLinkError(null);
-    const { error } = await linkGoogleIdentity();
+    const { error } = await start();
     if (error) {
-      setLinkError(error.message);
-      setLinking(false);
+      setLinkError(error instanceof Error ? error.message : String(error));
+      setLinking(null);
     }
-    // On success the browser redirects to Google.
+    // On success the browser redirects to the provider.
   };
 
   return (
@@ -1492,23 +1512,48 @@ function AccountPane() {
         </Btn>
       </div>
 
-      {!googleLinked && (
+      {methods.length > 0 && (
         <div className="mt-5">
           <div className="section-label mb-2">Sign-in methods</div>
-          <div className="rounded-lg border border-line bg-surface-2 px-3 py-3">
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-body text-ink">Google</div>
-                <div className="text-caption text-muted">
-                  Link Google to keep this account and all your data.
+          <div className="space-y-2">
+            {methods.map((m) => (
+              <div key={m.provider} className="rounded-lg border border-line bg-surface-2 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-body text-ink">{m.label}</span>
+                      {m.current && (
+                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro uppercase tracking-wider text-accent">
+                          Signed in with this
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-caption text-muted">
+                      {m.linked
+                        ? m.relay
+                          ? `Linked. Apple is hiding your address behind ${m.email} — mail from Nuvo still reaches you.`
+                          : m.email
+                            ? `Linked as ${m.email}.`
+                            : "Linked to this account."
+                        : `Link ${m.label} to reach this same account — signing in with it unlinked starts a separate, empty one.`}
+                    </div>
+                  </div>
+                  {m.linked || !linkFor[m.provider] ? (
+                    <span className="text-caption text-muted">{m.linked ? "Linked" : "—"}</span>
+                  ) : (
+                    <Btn
+                      kind="primary"
+                      disabled={linking !== null}
+                      onClick={() => void linkWith(m.provider, linkFor[m.provider])}
+                    >
+                      {linking === m.provider ? "Redirecting…" : `Link ${m.label}`}
+                    </Btn>
+                  )}
                 </div>
               </div>
-              <Btn kind="primary" disabled={linking} onClick={linkGoogle}>
-                {linking ? "Redirecting…" : "Link Google"}
-              </Btn>
-            </div>
-            {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
+            ))}
           </div>
+          {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
         </div>
       )}
 

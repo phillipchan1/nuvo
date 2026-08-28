@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the iOS app.
+
+  Lives here, outside `src-tauri/gen/apple` (which is gitignored and rebuilt on
+  every CI run), so it is committed and reviewable. `scripts/ios-siwa.rb` reads
+  it and merges these keys into the generated target's `entitlements.properties`
+  in project.yml, then re-runs xcodegen — the same patch-the-spec-then-
+  regenerate approach the widgets and watch app use.
+
+  NOT by repointing CODE_SIGN_ENTITLEMENTS: xcodegen's `entitlements` key owns
+  that build setting and silently overwrites it, which would ship a build with
+  Tauri's empty `<dict/>` and a 4.8 rejection. See that script's header.
+
+  In-app purchase needs NO entitlement key: the capability is implicit for App
+  Store distribution (its setup is docs/billing-setup.md §11). Sign in with
+  Apple does need one, and it also needs the matching capability enabled on the
+  App ID in the Apple Developer portal — without that, signing fails outright.
+  See docs/apple-sign-in.md.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

@@ -140,6 +140,19 @@ watch with the phone app. The consequence worth naming: the watch target now
 rides *every* iOS release, so a watch build failure fails the whole thing. That
 is what the `NUVO_IOS_WATCH=0` escape hatch is for.
 
+#### 3b · Sign in with Apple (guideline 4.8) — **required**
+
+Offering Continue with Google forfeits the "own account system only" exemption,
+so the iOS binary must offer Sign in with Apple. Enabling it on App ID
+`day.nuvo.app` is also a **signing** prerequisite: without the capability, the
+build fails with "Provisioning profile doesn't include the
+com.apple.developer.applesignin entitlement". The entitlement reaches the
+generated project through `scripts/ios-siwa.rb` (run from
+`scripts/ios-postinit.sh`, before the PlistBuddy patches).
+
+Full runbook — portal, Services ID, Supabase, the revoke-on-delete secrets:
+[`apple-sign-in.md`](./apple-sign-in.md).
+
 #### 4 · App Store Connect API key (upload + automatic signing in CI)
 
 1. App Store Connect → **Users and Access** → **Integrations** → **App Store

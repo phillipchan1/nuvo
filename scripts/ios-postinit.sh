@@ -27,9 +27,9 @@ else
 fi
 
 # The watchOS companion. Same constraint as the widgets — it regenerates the
-# project, so it must run BEFORE the PlistBuddy patches below. The two injection
-# scripts are commutative with each other (each re-reads project.yml from disk),
-# so this order is only for readability.
+# project, so it must run BEFORE the PlistBuddy patches below. All three
+# injection scripts are commutative with each other (each re-reads project.yml
+# from disk), so this order is only for readability.
 #
 # Injecting the target is safe on its own: it is deliberately NOT a dependency
 # of the app (see ios-watch.rb — `tauri ios build` forces `-sdk iPhoneOS` on
@@ -42,6 +42,28 @@ if [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-watch.rb"
 else
   echo "ios-watch: skipped (NUVO_IOS_WATCH=0)"
+fi
+
+# Sign in with Apple — points the app target's CODE_SIGN_ENTITLEMENTS at the
+# committed src-tauri/ios/Nuvo.entitlements, which declares
+# com.apple.developer.applesignin. App Store guideline 4.8 makes this
+# non-optional for Nuvo: we offer Google Sign-In, which forfeits the "own
+# account system only" exemption.
+#
+# Same constraint as the two above — ios-siwa.rb runs `xcodegen generate`, so it
+# must run BEFORE the PlistBuddy patches below or they are silently reverted.
+# All three injection scripts re-read project.yml from disk, so their order
+# among themselves is only for readability.
+#
+# Needs "Sign In with Apple" enabled on App ID day.nuvo.app in the Apple
+# Developer portal, or signing fails with "Provisioning profile doesn't include
+# the com.apple.developer.applesignin entitlement" (docs/apple-sign-in.md).
+# NUVO_IOS_SIWA=0 unblocks a local build without it — never a release, which
+# would be a 4.8 rejection.
+if [ "${NUVO_IOS_SIWA:-1}" = "1" ]; then
+  ruby "${ROOT}/scripts/ios-siwa.rb"
+else
+  echo "ios-siwa: skipped (NUVO_IOS_SIWA=0)"
 fi
 
 # App Store export compliance — Nuvo uses HTTPS only (Supabase); no custom crypto.

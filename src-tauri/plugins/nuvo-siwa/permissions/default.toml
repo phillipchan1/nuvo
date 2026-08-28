@@ -1,0 +1,10 @@
+[default]
+description = """
+Default permissions for the nuvo-siwa plugin.
+
+Grants the one Sign in with Apple command. These are Tauri IPC permissions for
+the app's own webview. Nothing here is reachable from remote content, and the
+plugin never returns a Supabase session — only Apple's identity token, which
+is useless without the project's own verification.
+"""
+permissions = ["allow-sign-in"]

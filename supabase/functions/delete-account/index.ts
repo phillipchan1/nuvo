@@ -1,12 +1,19 @@
 // Wipes the caller's Nuvo account. Authenticated (verify_jwt defaults true).
 // Body: { confirm: "DELETE" }. Cancels a Stripe subscription if one exists.
 // Apple / StoreKit subscriptions cannot be cancelled here — the UI says so.
+//
+// A Sign-in-with-Apple account also has to have its Apple grant REVOKED here
+// (/auth/revoke). That is not politeness: guideline 5.1.1(v) makes it a
+// rejection reason on its own. It is still best-effort — Apple being
+// unreachable must not leave a user unable to delete their account — and the
+// response says whether it happened.
 import { admin, deleteSecret, handleOptions, json, readSecret, requireUser } from "../_shared/admin.ts";
 import {
   isAccountDeleteConfirm,
   isIgnorableStripeCancelError,
   stripeSubscriptionIdToCancel,
 } from "../_shared/accountDeletion.ts";
+import { readAppleAuthConfig, revokeAppleToken } from "../_shared/appleIdentity.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -42,6 +49,33 @@ Deno.serve(async (req) => {
     }
 
     const secretIds = new Set<string>();
+
+    // Apple first: once auth.users is gone we can no longer prove who this was,
+    // and the token lives in the vault we are about to empty.
+    let appleRevoked: boolean | null = null;
+    const { data: appleIdentity } = await admin
+      .from("apple_identities")
+      .select("refresh_token_secret_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const appleSecretId = (appleIdentity?.refresh_token_secret_id as string | null) ?? null;
+    if (appleSecretId) {
+      secretIds.add(appleSecretId);
+      const config = readAppleAuthConfig(Deno.env.toObject());
+      if (config) {
+        try {
+          const token = await readSecret(appleSecretId);
+          // null = revoke was configured but Apple refused; false is a real
+          // signal in the response, distinct from "no Apple identity here".
+          appleRevoked = token ? await revokeAppleToken(config, token) : false;
+        } catch {
+          appleRevoked = false;
+        }
+      } else {
+        appleRevoked = false;
+      }
+    }
+
     const { data: accounts } = await admin
       .from("calendar_accounts")
       .select("refresh_token_secret_id, provider")
@@ -79,7 +113,7 @@ Deno.serve(async (req) => {
     const { error } = await admin.auth.admin.deleteUser(user.id);
     if (error) return json({ error: error.message }, 500);
 
-    return json({ ok: true });
+    return json({ ok: true, appleRevoked });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : String(e);

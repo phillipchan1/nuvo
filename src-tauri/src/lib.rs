@@ -247,7 +247,13 @@ pub fn run() {
         .plugin(tauri_plugin_nuvo_watch::init())
         // StoreKit. On iOS this loads products / purchases / restores; everywhere
         // else every command is a no-op that reports `supported: false`.
-        .plugin(tauri_plugin_nuvo_iap::init());
+        .plugin(tauri_plugin_nuvo_iap::init())
+        // Sign in with Apple. On iOS this presents ASAuthorizationController and
+        // returns Apple's identity token; everywhere else `supported: false`, and
+        // src/lib/appleAuth.ts takes the web OAuth path instead. Registered
+        // unconditionally — like the other two — so there is exactly one call
+        // site and no cfg to get wrong.
+        .plugin(tauri_plugin_nuvo_siwa::init());
 
     #[cfg(desktop)]
     let builder = builder
@@ -266,17 +272,19 @@ pub fn run() {
                 .build(),
         );
 
-    // NOTE: no StoreKit registration here. b165928 added
-    // `tauri_plugin_purchases::init()` under #[cfg(mobile)] and
-    // `tauri_plugin_siwa::init()` under #[cfg(target_os = "ios")]. Neither
-    // crate exists — Cargo.toml declares `tauri-plugin-nuvo-iap`, and there is
-    // no Sign-in-with-Apple dependency at all — so every iOS TestFlight build
-    // since has died at `cargo build` with E0433, and no new build could ship.
-    // StoreKit is already registered above (`tauri_plugin_nuvo_iap::init()`, on
-    // every platform, no-op off iOS); a second registration of the same plugin
-    // panics at startup anyway. Sign in with Apple is genuinely not built yet —
-    // `scripts/ios-siwa.rb` and `src-tauri/ios/Nuvo.entitlements` are untracked
-    // local work — so it needs its crate before it can be registered here.
+    // NOTE: no StoreKit or Sign-in-with-Apple registration here — both are in
+    // the unconditional builder above. b165928 added `tauri_plugin_purchases::init()`
+    // under #[cfg(mobile)] and `tauri_plugin_siwa::init()` under
+    // #[cfg(target_os = "ios")] for crates that did not exist, so every iOS
+    // TestFlight build died at `cargo build` with E0433 and nothing could ship
+    // for four days. The crates that do exist are `tauri-plugin-nuvo-iap` and
+    // `tauri-plugin-nuvo-siwa` (src-tauri/plugins/), each registered exactly
+    // once above; a second registration of the same plugin panics at startup.
+    //
+    // The lesson, since checks.yml never compiles Rust: run BOTH
+    //   cargo check --manifest-path src-tauri/Cargo.toml --lib --release
+    //   cargo check … --release --target aarch64-apple-ios
+    // before pushing anything under src-tauri/. CI finds it after master.
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());

@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
 import { writeWasEntitled } from "../lib/subscription";
 import { isSpotlightWindow, isTauri } from "../lib/platform";
+import { rememberAuthProvider } from "../lib/authProviders";
 import {
   AUTH_REQUEST_EVENT,
   AUTH_SESSION_EVENT,
@@ -74,6 +75,12 @@ export function useAuth() {
       // and paint the signed-out card over a logged-in main window.
       if (spotlight && event === "INITIAL_SESSION" && !s) return;
       apply(s);
+      // Remember HOW this device signed in — every path lands here (Google's
+      // redirect, Apple's native sheet, an email code), so this is the one
+      // place that sees them all. The login screen says it back next time,
+      // because picking a different provider than last time is what quietly
+      // creates a second, empty account. See src/lib/authProviders.ts.
+      if (s) rememberAuthProvider(s.user.app_metadata?.provider);
       if (!spotlight) void broadcastAuthSession(s);
       // Nuvo is multi-tenant and the offline read cache is written to disk, so
       // a sign-out has to take it with it. Otherwise the next account to sign in

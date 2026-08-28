@@ -42,6 +42,11 @@ tauri-plugin-nuvo-watch = { path = "plugins/nuvo-watch" }
 # StoreKit auto-renewable IAP. iOS-only in substance; desktop commands are
 # no-ops reporting `supported: false`.
 tauri-plugin-nuvo-iap = { path = "plugins/nuvo-iap" }
+# Sign in with Apple (ASAuthorizationController). Not optional: offering Google
+# forfeits guideline 4.8's "own account system only" exemption. iOS-only in
+# substance; desktop commands are no-ops reporting `supported: false`, so the
+# SPA falls back to the web OAuth flow without a platform branch.
+tauri-plugin-nuvo-siwa = { path = "plugins/nuvo-siwa" }
 
 # Global hotkey is desktop-only; the crate doesn't build for mobile targets.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

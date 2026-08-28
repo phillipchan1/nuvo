@@ -11,6 +11,7 @@
     "process:default",
     "deep-link:default",
     "nuvo-watch:default",
-    "nuvo-iap:default"
+    "nuvo-iap:default",
+    "nuvo-siwa:default"
   ]
 }

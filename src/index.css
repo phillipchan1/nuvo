@@ -1836,6 +1836,29 @@ textarea:focus {
 /* Native select: our own chevron (via the Select primitive) replaces the OS one. */
 select.field { appearance: none; -webkit-appearance: none; }
 
+/* Sign in with Apple — Apple's button, not ours.
+ *
+ * The one deliberate exception to "colour is always a token". Apple's Human
+ * Interface Guidelines permit exactly three fills (black, white, white with a
+ * black outline) and require the button to look like one of them, at least as
+ * prominent as any other sign-in option. So this is literal black-on-white and
+ * white-on-black rather than --ink / --surface, which drift with the palette.
+ * The mark inherits currentColor. Everything else about the button (size,
+ * radius, .tap floor) is ours, and matches Continue with Google exactly.
+ *
+ * These are class rules, not token declarations, so tests/token-contrast.ts —
+ * which parses the :root / html blocks — correctly ignores them. */
+.apple-signin {
+  background: #000;
+  color: #fff;
+  border: 1px solid #000;
+}
+[data-theme="dark"] .apple-signin {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

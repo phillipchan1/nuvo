@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
 import { PaneHeader, TextInput } from "./form";
 import { Btn } from "./ui";
 
@@ -46,21 +47,6 @@ function kindLabel(scopes: string[]): string {
   return kindOf(scopes) === "account" ? "Full account" : "Inbox";
 }
 
-/** URL-safe, 43 chars of entropy from the platform CSPRNG. */
-function mintToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-/** Must match `sha256Hex` in supabase/functions/_shared/connections.ts exactly. */
-async function sha256Hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /** "lead_well" from "Lead Well" — the machine key the capture payload reports
  *  as a task's `source` when it doesn't name one itself. */
