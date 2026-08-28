@@ -19,7 +19,52 @@ export type { DayLoad };
 export const DAY_MS = 24 * 3600_000;
 
 export const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-export const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+// ── One spelling of a time ───────────────────────────────────────────────────
+// The phone Calendar labels its time axis `9am` (it has 38px to do it in) and
+// used to print `9:00 AM` everywhere else, so the Day canvas showed both
+// spellings of the same nine o'clock — the hour rule beside the block, and the
+// block's own line. Two formats on one screen is a thing the eye has to
+// reconcile before it can read either, which is precisely the tax we're trying
+// to stop charging at every horizon.
+//
+// So a time reads ONE way on this surface: the minutes appear only when there
+// are any, and the meridiem rides the numeral without a space. Built from
+// `formatToParts` rather than string surgery so a 24-hour locale gets `09` /
+// `09:30` and never a stray `am`.
+const TIME_FMT = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
+
+function timeParts(d: Date): { hour: string; minute: string; mer: string } {
+  const parts = TIME_FMT.formatToParts(d);
+  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  return {
+    hour: get("hour"),
+    minute: get("minute"),
+    mer: get("dayPeriod").replace(/\s+/g, "").toLowerCase(),
+  };
+}
+
+/** A clock time, compact: `9am` · `9:30am` · `12pm` (`09` / `09:30` on a
+ *  24-hour locale). The same spelling the hour gutter uses — see `hourLabel`. */
+export const at = (d: Date) => {
+  const { hour, minute, mer } = timeParts(d);
+  return minute === "00" ? `${hour}${mer}` : `${hour}:${minute}${mer}`;
+};
+
+/** A span of one day's clock: `9–9:30am` · `11am–1pm`. When both ends share a
+ *  meridiem it is said once, at the end — saying it twice is the noisiest
+ *  sixth of the string and it carries nothing. */
+export const span = (a: Date, b: Date) => {
+  const pa = timeParts(a);
+  const pb = timeParts(b);
+  const lead =
+    pa.mer && pa.mer === pb.mer
+      ? pa.minute === "00"
+        ? pa.hour
+        : `${pa.hour}:${pa.minute}`
+      : at(a);
+  return `${lead}–${at(b)}`;
+};
 
 // The mobile calendar renders inside the shell's <main> scroller, not its own.
 // WebKit (iOS PWA + Tauri WKWebView) has no `overflow-anchor`, so when a lens

@@ -43,7 +43,7 @@ import { Icon, type IconName } from "../Icon";
 import TimeZoneChip from "../TimeZoneChip";
 import WeatherIcon from "../WeatherIcon";
 import type { indexWeather } from "../../hooks/useWeather";
-import { buildDayPlan, dayKey, loadDots, type DayCtx, type DayPlan } from "./dayPlan";
+import { at, buildDayPlan, dayKey, loadDots, type DayCtx, type DayPlan } from "./dayPlan";
 import { prefersReducedMotion } from "./TimePager";
 
 /** The five faces of the mobile Calendar. `schedule` is the agenda (List). */
@@ -64,9 +64,21 @@ export const CAL_GUTTER = 38;
 
 /** One spelling of an hour, everywhere a time axis is labelled: `9am`, `12pm`.
  *  The Day lens printed `9 AM` and the Week lens `9am`; the compact form is the
- *  one that fits a 38px gutter, so it is the one both wear. */
-export const hourLabel = (h: number) =>
-  new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" }).replace(" ", "").toLowerCase();
+ *  one that fits a 38px gutter, so it is the one both wear — and, through `at`,
+ *  the one every other time on the surface wears too. A whole hour has no
+ *  minutes to show, so this IS `at()` on that hour. */
+export const hourLabel = (h: number) => at(new Date(2000, 0, 1, h));
+
+/**
+ * The width of a LIST's time column — the agenda's rows and the month preview's
+ * rows, the two places a time is right-aligned in a rail instead of labelling a
+ * canvas. Sized for the longest compact time (`10:30am`) and no longer: it was
+ * 68px, cut for `10:30 AM`, and on a 375px row every pixel it holds is one the
+ * title doesn't get. One number because the month preview is a single tap from
+ * the agenda, and a time that shifts sideways between them is the same
+ * fixed-point problem `CAL_GUTTER` exists to solve one horizon up.
+ */
+export const TIME_RAIL = 52;
 
 // ── The ladder ──────────────────────────────────────────────────────────────
 // Four rungs, tight to wide, plus the agenda. Single letters because five words

@@ -16,7 +16,8 @@ import { addDays, startOfDay } from "date-fns";
 import { blockDesignation } from "../../lib/slots";
 import { fmtMins } from "../../lib/now";
 import type { CalendarTap } from "./MobileEventSheet";
-import { at, buildDayPlan, dayKey, dayReadout, scrollParent, type DayCtx, type DayPlan } from "./dayPlan";
+import { TIME_RAIL } from "./CalendarChrome";
+import { at, buildDayPlan, dayKey, dayReadout, scrollParent, span, type DayCtx, type DayPlan } from "./dayPlan";
 
 /** How many days forward the agenda runs from its anchor. Exported because the
  *  chrome names the span in the hero and the data wrapper has to fetch it — one
@@ -292,7 +293,10 @@ const DayCard = memo(function DayCard({
                     : undefined
                 }
               >
-                <span className="mono w-[68px] shrink-0 text-right text-meta" style={{ color: markColor }}>
+                <span
+                  className="mono shrink-0 text-right text-meta"
+                  style={{ color: markColor, width: TIME_RAIL }}
+                >
                   {at(b.start)}
                 </span>
                 <span
@@ -326,8 +330,14 @@ const DayCard = memo(function DayCard({
                       </span>
                     )}
                   </div>
+                  {/* How long, and where. The rail to the left already said
+                      WHEN, and this line used to open by saying it again —
+                      `9am` in the column, `9–9:30am` two centimetres right of
+                      it, on every row of a two-week list. So it keeps the half
+                      the rail can't carry: the length, in the same words the
+                      day's open time is counted in (`fmtMins`), and the place. */}
                   <div className="mono text-meta text-muted">
-                    {at(b.start)}–{at(b.end)}
+                    {fmtMins(Math.max(1, Math.round((b.end.getTime() - b.start.getTime()) / 60_000)))}
                     {b.location ? ` · ${b.location}` : ""}
                   </div>
                   {isSlot && (b.children?.length ?? 0) > 0 && (
@@ -353,7 +363,7 @@ const DayCard = memo(function DayCard({
                 key={i}
                 className="rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-label font-medium text-accent"
               >
-                {at(g.start)}–{at(g.end)} · {fmtMins(g.mins)}
+                {span(g.start, g.end)} · {fmtMins(g.mins)}
               </span>
             ))}
           </div>

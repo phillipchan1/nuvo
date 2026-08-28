@@ -20,7 +20,7 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { fmtMins } from "../../lib/now";
 import type { CalendarTap } from "./MobileEventSheet";
-import { at, buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx } from "./dayPlan";
+import { buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx } from "./dayPlan";
 import { CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
@@ -302,11 +302,17 @@ export default function MobileDayView({
                           </span>
                         )}
                       </div>
-                      {!compact && (
-                        <div className="mono truncate text-micro text-muted">
-                          {at(b.start)}–{at(b.end)}
-                          {b.location ? ` · ${b.location}` : ""}
-                        </div>
+                      {/* Where — and ONLY where. This line used to lead with
+                          `9:00 AM–9:30 AM`, on a canvas whose entire premise is
+                          that a commitment's top edge is its start and its
+                          height is its length, one hour rule away from a gutter
+                          already labelled `9am`. So it restated the two facts
+                          the geometry states best, in a second spelling, on
+                          every block. The place a meeting happens is the one
+                          thing the canvas cannot draw; exact minutes are a tap
+                          away in the sheet. */}
+                      {!compact && b.location && (
+                        <div className="truncate text-micro text-muted">{b.location}</div>
                       )}
                       {showChildren && (
                         <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">

@@ -19,7 +19,7 @@ import WeatherIcon from "../WeatherIcon";
 import { Icon } from "../Icon";
 import type { CalendarTap } from "./MobileEventSheet";
 import { at, buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
-import { CAL_GUTTER, COLS, DayCell } from "./CalendarChrome";
+import { CAL_GUTTER, COLS, DayCell, TIME_RAIL } from "./CalendarChrome";
 import TimePager from "./TimePager";
 
 export default function MobileMonthView({
@@ -336,7 +336,7 @@ function MonthDayPreview({
                 onClick={() => onTapEvent?.(tap)}
                 className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
               >
-                <span className="mono w-[68px] shrink-0 text-right text-meta" style={{ color: mark }}>
+                <span className="mono shrink-0 text-right text-meta" style={{ color: mark, width: TIME_RAIL }}>
                   {at(b.start)}
                 </span>
                 <span className={`min-w-0 truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>

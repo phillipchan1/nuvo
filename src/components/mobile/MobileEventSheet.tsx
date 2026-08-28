@@ -24,6 +24,10 @@ import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from 
 import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import { eventKey } from "../../lib/now";
+// The sheet had its own copy of the clock format. The calendar it opens over
+// spells a time one way (`span` / `at` in dayPlan), so the sheet says it that
+// way too — a second definition is how the two drifted apart to begin with.
+import { span } from "./dayPlan";
 import Sheet from "./Sheet";
 
 // The shape passed from MobileCalendar when the user taps an event row.
@@ -47,7 +51,6 @@ type Mutations = ReturnType<typeof useTaskMutations>;
 
 const TRIAGE_UNDO = { undo: "toast" as const };
 
-const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const dateFmt = (d: Date) => d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
 export default function MobileEventSheet({
@@ -141,10 +144,10 @@ export default function MobileEventSheet({
     if (!onAskNuvo) return;
     const seed =
       tap.kind === "event"
-        ? `I have "${tap.title}"${!tap.allDay ? ` at ${at(tap.start)}–${at(tap.end)}` : ""}${tap.location ? ` at ${tap.location}` : ""}. Help me prepare.`
+        ? `I have "${tap.title}"${!tap.allDay ? ` at ${span(tap.start, tap.end)}` : ""}${tap.location ? ` at ${tap.location}` : ""}. Help me prepare.`
         : tap.kind === "slot"
-          ? `I have a block "${tap.title}" at ${at(tap.start)}–${at(tap.end)} holding ${tap.childCount} task${tap.childCount === 1 ? "" : "s"}. Help me think about it.`
-          : `I have a task block: "${tap.title}" at ${at(tap.start)}–${at(tap.end)}. Help me think about it.`;
+          ? `I have a block "${tap.title}" at ${span(tap.start, tap.end)} holding ${tap.childCount} task${tap.childCount === 1 ? "" : "s"}. Help me think about it.`
+          : `I have a task block: "${tap.title}" at ${span(tap.start, tap.end)}. Help me think about it.`;
     // The seed carries the whole block (title, time, place) so Nuvo doesn't have
     // to go looking; the transcript shows what the user actually pressed.
     onAskNuvo(seed, `Help me prepare for “${tap.title}”`);
@@ -154,7 +157,7 @@ export default function MobileEventSheet({
   const copyDetails = () => {
     const loc = tap.kind === "event" && tap.location ? `\n${tap.location}` : "";
     const isAllDay = tap.kind === "event" && tap.allDay;
-    const time = isAllDay ? dateFmt(tap.start) : `${dateFmt(tap.start)} · ${at(tap.start)}–${at(tap.end)}`;
+    const time = isAllDay ? dateFmt(tap.start) : `${dateFmt(tap.start)} · ${span(tap.start, tap.end)}`;
     void navigator.clipboard.writeText(`${tap.title}\n${time}${loc}`);
     onClose();
   };
@@ -332,7 +335,7 @@ export default function MobileEventSheet({
             <div className="mb-4">
               <div className="mb-1 text-head font-medium leading-snug">{tap.title}</div>
               <div className="mono text-caption text-muted">
-                {tap.allDay ? dateFmt(tap.start) : `${dateFmt(tap.start)} · ${at(tap.start)}–${at(tap.end)}`}
+                {tap.allDay ? dateFmt(tap.start) : `${dateFmt(tap.start)} · ${span(tap.start, tap.end)}`}
                 {tap.location && (
                   <>
                     {" · "}
@@ -541,7 +544,7 @@ export default function MobileEventSheet({
       <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
         <div className="mb-1 text-head font-medium leading-snug">{tap.title}</div>
         <div className="mono mb-4 text-caption text-muted">
-          {dateFmt(tap.start)} · {at(tap.start)}–{at(tap.end)}
+          {dateFmt(tap.start)} · {span(tap.start, tap.end)}
         </div>
 
         <button
@@ -751,7 +754,7 @@ function MobileSlotSheet({
           className="mb-1 w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-head font-medium outline-none focus:border-accent"
         />
         <div className="mono mb-4 text-caption text-muted">
-          {dateFmt(tap.start)} · {at(tap.start)}–{at(tap.end)}
+          {dateFmt(tap.start)} · {span(tap.start, tap.end)}
         </div>
 
         <Section label={children.length ? `${doneCount}/${children.length} done` : "Empty"}>
