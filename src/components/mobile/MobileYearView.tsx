@@ -15,8 +15,6 @@
 
 import { useMemo } from "react";
 import { addMonths, format, startOfMonth } from "date-fns";
-import { Icon } from "../Icon";
-import TimeZoneChip from "../TimeZoneChip";
 import { YearLegend, YearMonth, loadLabel, spanLoad } from "../calendar/YearParts";
 import { buildYearLoads, type DayCtx } from "./dayPlan";
 import TimePager from "./TimePager";
@@ -30,8 +28,6 @@ export default function MobileYearView({
   onPickMonth,
   onPrev,
   onNext,
-  onToday,
-  onBack,
 }: {
   year: number;
   ctx: DayCtx;
@@ -42,9 +38,6 @@ export default function MobileYearView({
   onPickMonth: (d: Date) => void;
   onPrev: () => void;
   onNext: () => void;
-  onToday: () => void;
-  /** Back to the month grid — the phone's home lens. */
-  onBack: () => void;
 }) {
   // Cached per ctx outside React — see buildYearLoads. The phone pays this on a
   // slower CPU than the desk, so re-computing it on every zoom-out would be the
@@ -55,57 +48,19 @@ export default function MobileYearView({
     return { months: ms, byMonth: byM, flat: byM.flat() };
   }, [year, ctx]);
 
-  const isCurrentYear = year === now.getFullYear();
   // The only question still asked in prose — see the header block below.
   const anyLoad = useMemo(() => flat.some((l) => l.band !== "clear"), [flat]);
   const nothingYet = loading && !anyLoad;
 
   return (
     <div>
-      {/* Back header — the phone's drill-out door, ≥44px, safe-area aware. */}
-      <div className="mobile-topbar sticky top-0 z-20 flex items-center gap-1 px-2 pt-1">
-        <button
-          onClick={onBack}
-          className="tap fast flex h-11 items-center gap-1 rounded-full pl-2 pr-3 text-label font-medium text-muted active:bg-surface-2"
-          aria-label="Back to the month"
-        >
-          <Icon name="chevron-left" size={16} />
-          Month
-        </button>
-        <div className="flex-1" />
-        <TimeZoneChip now={now} />
-        {!isCurrentYear && (
-          <button
-            onClick={onToday}
-            className="tap fast rounded-full border border-line px-3 py-1 text-label font-medium text-muted active:bg-surface-2"
-          >
-            Today
-          </button>
-        )}
-        <button
-          onClick={onPrev}
-          aria-label="Previous year"
-          className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-muted active:bg-surface-2"
-        >
-          ‹
-        </button>
-        <button
-          onClick={onNext}
-          aria-label="Next year"
-          className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-muted active:bg-surface-2"
-        >
-          ›
-        </button>
-      </div>
-
-      {/* Year and legend. The prose read this used to carry was cut with the
-          desk's — the grid says it. Screen space is scarcer here than anywhere,
-          so three lines of sentence above a heat map was the worst version of
-          the trade. See the header block in CalendarYear.tsx. */}
-      <div className="px-4 pb-2 pt-1">
-        <h2 className="text-lead masthead text-ink">{year}</h2>
-        {nothingYet && <p className="mt-0.5 text-caption text-muted">Reading your calendar…</p>}
-        <YearLegend className="mt-1.5" />
+      {/* The legend, and nothing else. The year's own numeral is the chrome's
+          hero now, and the back door is the horizon ladder — this body used to
+          repeat both. The prose read was cut with the desk's: the grid says it,
+          and screen space is scarcer here than anywhere. */}
+      <div className="px-4 pb-2 pt-2">
+        {nothingYet && <p className="pb-1 text-caption text-muted">Reading your calendar…</p>}
+        <YearLegend />
       </div>
 
       {/* The wall. Two columns at 375px (a ~22px cell still reads as a shade),
