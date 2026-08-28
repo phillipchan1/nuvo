@@ -38,6 +38,7 @@ export default function MobileDayView({
   onNext,
   onTapEvent,
   onTapTask,
+  recenter = 0,
 }: {
   selected: Date;
   ctx: DayCtx;
@@ -48,6 +49,9 @@ export default function MobileDayView({
   onNext: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  /** Bumped when the user asks to come back to now (the chrome's Today).
+   *  Re-parks the now line even though the automatic park already happened. */
+  recenter?: number;
 }) {
   const plan = useMemo(() => buildDayPlan(selected, ctx), [selected, ctx]);
   const laid = useMemo(() => layoutDay(plan.timed, selected), [plan, selected]);
@@ -82,7 +86,9 @@ export default function MobileDayView({
   const canvasRef = useRef<HTMLDivElement>(null);
   const didAutoScroll = useRef(false);
   useLayoutEffect(() => {
-    if (didAutoScroll.current) return;
+    // The once-only guard belongs to the *automatic* park on open. A bump of
+    // `recenter` is a person tapping Today, which has to land every time.
+    if (recenter === 0 && didAutoScroll.current) return;
     didAutoScroll.current = true;
     if (!plan.isToday || nowMin < winStart + 90) return;
     const raf = requestAnimationFrame(() => {
@@ -92,11 +98,11 @@ export default function MobileDayView({
       const canvasTop =
         canvas.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
       const target = canvasTop + y(Math.min(nowMin, winEnd)) - stickyPx - 100;
-      if (target > 8) scroller.scrollTo({ top: target });
+      if (target > 8) scroller.scrollTo({ top: target, behavior: recenter ? "smooth" : "auto" });
     });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [recenter]);
 
   const itemArea = `calc(100% - ${CAL_GUTTER}px)`;
 
