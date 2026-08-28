@@ -23,6 +23,21 @@ export function isShortcut(v: string | null | undefined): v is Shortcut {
   return !!v && (SHORTCUTS as readonly string[]).includes(v);
 }
 
+/** Where a capture files when you haven't named a day in the text.
+ *
+ *  A widget / icon shortcut is a thought dump — Inbox, always. The phone's
+ *  last tab is usually Calendar, so inheriting "Today" from that screen made
+ *  every lock-screen ＋ land on today. The in-app ＋ may still pre-file Today
+ *  when you are actually looking at the day. */
+export function captureDefaultDoDate(
+  source: "shortcut" | "fab",
+  lookingAtToday: boolean,
+  today: string,
+): string | null {
+  if (source === "shortcut") return null;
+  return lookingAtToday ? today : null;
+}
+
 /**
  * The act a launch URL names, or `null` when it names none.
  *
