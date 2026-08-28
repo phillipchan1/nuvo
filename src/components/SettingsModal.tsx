@@ -40,7 +40,7 @@ import { hasPushSubscription, pushConfigured, pushSupported } from "../lib/push"
 import { DEFAULT_REMINDER_PREFS, describeLead, REMINDER_LEADS } from "../../supabase/functions/_shared/reminderRules.ts";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
-import { isDesktopTauri } from "../lib/platform";
+import { isDesktopTauri, offerMacDownload } from "../lib/platform";
 import { openDevTools, useDeveloperMode } from "../lib/devtools";
 import { clearErrorLog, formatErrorLog, useErrorLog } from "../lib/appError";
 import { loadChangelog, isMinor, type ChangelogEntry } from "../lib/changelog";
@@ -1677,6 +1677,8 @@ function DeveloperControls() {
 function AboutPane({ onClose }: { onClose: () => void }) {
   const { open: openOrientation } = useOrientation();
   const desktop = isDesktopTauri();
+  const mobile = useIsMobile();
+  const showMacDownload = offerMacDownload({ desktopTauri: desktop, mobile });
   return (
     <div className="max-w-2xl">
       <PaneHeader title="About" sub="Your version, what's new, and how to get reacquainted." />
@@ -1689,10 +1691,12 @@ function AboutPane({ onClose }: { onClose: () => void }) {
         <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
       </div>
 
-      {/* Auto-update controls in the native app; a download link on web/iOS. */}
+      {/* Auto-update controls in the native Mac app; a download link on a
+          desktop browser. Hidden on the phone — a DMG is not a phone act
+          (D-124). The marketing site already offers it. */}
       {desktop ? (
         <UpdateControls />
-      ) : (
+      ) : showMacDownload ? (
         <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
           <a
             href={DOWNLOAD_MAC_URL}
@@ -1701,7 +1705,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
             Download
           </a>
         </Row>
-      )}
+      ) : null}
 
       <div className="mt-4">
         <DeveloperControls />
