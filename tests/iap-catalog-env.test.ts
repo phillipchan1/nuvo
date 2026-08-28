@@ -7,7 +7,7 @@ vi.mock("../src/lib/supabase", () => ({
   supabase: { functions: { invoke: vi.fn() } },
 }));
 
-const { catalogProductIds, fetchIapCatalog } = await import("../src/lib/iap");
+const { catalogProductIds, fetchIapCatalog, iapErrorMessage } = await import("../src/lib/iap");
 
 const MONTHLY = "NUVO_IAP_MONTHLY";
 const ANNUAL = "NUVO_IAP_ANNUAL";
@@ -45,6 +45,28 @@ describe("the iOS catalog survives a missing Vite env", () => {
   it("honours real overrides", async () => {
     vi.stubEnv("VITE_NUVO_IAP_MONTHLY", "NUVO_IAP_MONTHLY_TEST");
     expect(catalogProductIds(await fetchIapCatalog())).toEqual(["NUVO_IAP_MONTHLY_TEST", ANNUAL]);
+  });
+});
+
+/** StoreKit rejections arrive from the Tauri bridge as strings, and the paywall
+ *  used to test `instanceof Error` — so the one line that could have said why
+ *  Restore failed said "Restore didn't complete" instead. */
+describe("a StoreKit failure keeps its reason", () => {
+  it("prefers a rejected string over the fallback", () => {
+    expect(iapErrorMessage("Cannot connect to iTunes Store", "Restore didn’t complete")).toBe(
+      "Cannot connect to iTunes Store",
+    );
+  });
+
+  it("prefers an Error message", () => {
+    expect(iapErrorMessage(new Error("Purchases are not allowed"), "Purchase didn’t complete")).toBe(
+      "Purchases are not allowed",
+    );
+  });
+
+  it("keeps the fallback when there is nothing to say", () => {
+    expect(iapErrorMessage(undefined, "Restore didn’t complete")).toBe("Restore didn’t complete");
+    expect(iapErrorMessage("   ", "Restore didn’t complete")).toBe("Restore didn’t complete");
   });
 });
 

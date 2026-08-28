@@ -56,23 +56,51 @@ async function invokeIap<T>(cmd: string, args?: Record<string, unknown>): Promis
   return invoke<T>(`plugin:nuvo-iap|${cmd}`, args);
 }
 
+/** The paywall's stub is the same whether StoreKit refused the request or
+ *  recognised none of the ids, so keep the reason: Settings → Recent errors is
+ *  the only place a TestFlight build can be asked why it has no prices. */
+function noteIapFailure(error: unknown, source: string): void {
+  // Never let the log break the paywall it is describing.
+  void import("./appError")
+    .then(({ reportAppError }) => reportAppError(error, { source }))
+    .catch(() => {});
+}
+
 export async function loadIapProducts(productIds: string[]): Promise<IapProduct[]> {
   const ids = storeKitProductIds(productIds);
   if (ids.length === 0) return [];
   try {
-    const result = await invokeIap<{ products: IapProduct[]; supported?: boolean }>("products", {
-      productIds: ids,
-    });
-    return Array.isArray(result?.products)
+    const result = await invokeIap<{
+      products: IapProduct[];
+      supported?: boolean;
+      invalidIds?: string[];
+    }>("products", { productIds: ids });
+    const products = Array.isArray(result?.products)
       ? result.products.map((p) => ({
           ...p,
           displayPrice: p.displayPrice ?? "",
           duration: p.duration ?? "",
         }))
       : [];
-  } catch {
+    if (products.length === 0) {
+      const invalid = result?.invalidIds?.length ? ` invalid: ${result.invalidIds.join(", ")}` : "";
+      noteIapFailure(`StoreKit knows no products for ${ids.join(", ")}.${invalid}`, "iap-products");
+    }
+    return products;
+  } catch (e) {
+    noteIapFailure(e, "iap-products");
     return [];
   }
+}
+
+/** StoreKit rejections cross the Tauri bridge as plain strings, so the paywall's
+ *  `instanceof Error` check dropped the reason and showed only its own fallback.
+ *  Prefer the reason; keep the fallback; log it either way. */
+export function iapErrorMessage(error: unknown, fallback: string): string {
+  noteIapFailure(error, "iap");
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return fallback;
 }
 
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
