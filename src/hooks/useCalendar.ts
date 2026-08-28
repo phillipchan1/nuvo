@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
@@ -22,6 +22,22 @@ import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useOnline } from "./useOnline";
+import { fetchScheduledTasksRange, scheduledTasksKey } from "./useTasks";
+
+/**
+ * How long a fetched calendar window counts as fresh.
+ *
+ * Realtime invalidation is what keeps this honest: a write pushes an
+ * `invalidateQueries`, which refetches regardless of this number, so the window
+ * is about *redundant* fetches, not about tolerating stale data. Without it,
+ * swiping to September and back to August re-fetched August immediately —
+ * paying twice for something already correct in the cache.
+ */
+const CALENDAR_RANGE_STALE_MS = 60_000;
+
+/** A beat before warming neighbours, so a prefetch never competes with the
+ *  fetch for the screen the user is actually looking at. */
+const PREFETCH_IDLE_MS = 350;
 
 async function throwIfInvokeFailed(data: unknown, error: Error | null) {
   if (error) throw new Error((await formatAppError(error)).message);
@@ -71,32 +87,92 @@ export function useCalendarAccounts() {
  *  (insert) order, so a wide window silently comes back as the OLDEST 1000: the
  *  13-week window the domain ledger asks for lost this week entirely, and every
  *  meeting read as zero hours. Page with a stable order so the set is complete. */
+export const externalEventsKey = (rangeStartISO: string, rangeEndISO: string) =>
+  ["external_events", rangeStartISO, rangeEndISO] as const;
+
+/** The paged read itself, outside the hook so a surface can warm a range it is
+ *  about to need — see `useCalendarRangePrefetch`. */
+export async function fetchExternalEventsRange(
+  rangeStartISO: string,
+  rangeEndISO: string,
+): Promise<ExternalEvent[]> {
+  const PAGE = 1000;
+  const all: ExternalEvent[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("external_events")
+      .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
+      .lt("start_at", rangeEndISO)
+      .gt("end_at", rangeStartISO)
+      .order("start_at")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as ExternalEvent[];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
+}
+
 export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
-    queryKey: ["external_events", rangeStartISO, rangeEndISO],
+    queryKey: externalEventsKey(rangeStartISO, rangeEndISO),
     // See useSlots: an empty bound means "not yet", not "everything". Sending
     // it produced `start_at=lt.` with no value, which PostgREST 400s.
     enabled: Boolean(rangeStartISO && rangeEndISO),
-    queryFn: async (): Promise<ExternalEvent[]> => {
-      const PAGE = 1000;
-      const all: ExternalEvent[] = [];
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from("external_events")
-          .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
-          .lt("start_at", rangeEndISO)
-          .gt("end_at", rangeStartISO)
-          .order("start_at")
-          .order("id")
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        const rows = (data ?? []) as ExternalEvent[];
-        all.push(...rows);
-        if (rows.length < PAGE) break;
-      }
-      return all;
-    },
+    staleTime: CALENDAR_RANGE_STALE_MS,
+    // Keep the previous range on screen while a new one fetches. `useSlots` has
+    // done this since it was written; events never did, so paging the phone's
+    // calendar dropped every block to [] for a whole round trip while the
+    // slots stayed put — the "lag" when swiping was this, not rendering. The
+    // window is deliberately wider than the visible span, so the previous
+    // result usually already CONTAINS the day you swiped to: keeping it makes
+    // the swipe correct immediately, not merely non-empty.
+    placeholderData: (prev) => prev,
+    queryFn: () => fetchExternalEventsRange(rangeStartISO, rangeEndISO),
   });
+}
+
+/**
+ * Warm ranges the user is one gesture away from needing.
+ *
+ * Prefetch rather than one huge window: a nine-month fetch to make three months
+ * feel instant pays on every open for a swipe that may not come, and risks the
+ * 1000-row page cap that `fetchExternalEventsRange` exists to survive. These
+ * are the same query keys the live hooks use, so a prefetched range is simply a
+ * hit — and `staleTime` is what stops the hit from immediately re-fetching.
+ */
+export function useCalendarRangePrefetch(ranges: { start: string; end: string }[]) {
+  const qc = useQueryClient();
+  // Serialised, so a new array of the same ranges doesn't re-run the effect.
+  const key = ranges.map((r) => `${r.start}|${r.end}`).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    // After a beat: a swipe in progress should not contend with the fetch for
+    // the screen the user is currently looking at.
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      for (const r of ranges) {
+        if (!r.start || !r.end) continue;
+        void qc.prefetchQuery({
+          queryKey: externalEventsKey(r.start, r.end),
+          staleTime: CALENDAR_RANGE_STALE_MS,
+          queryFn: () => fetchExternalEventsRange(r.start, r.end),
+        });
+        void qc.prefetchQuery({
+          queryKey: scheduledTasksKey(r.start, r.end),
+          staleTime: CALENDAR_RANGE_STALE_MS,
+          queryFn: () => fetchScheduledTasksRange(r.start, r.end),
+        });
+      }
+    }, PREFETCH_IDLE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, qc]);
 }
 
 /** The event most callers can hide. A single occurrence carries an instance key;
