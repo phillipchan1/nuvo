@@ -200,9 +200,22 @@ it needs to work on a phone.
   `TimePager` **travels** (same horizon, next date), `LensZoom` **zooms** (same date, next
   horizon, cross-dissolving through the column of the selected day). **Never give a lens its
   own header, and never invent a second seven-column geometry** — every band and grid wears
-  `COLS` + `CAL_GUTTER`, because a Friday at a different x on the month than on the week is
-  exactly the jump the zoom exists to remove. Verify all five at `?horizon`
-  (`mobile/CalendarHarness.tsx`).
+ `COLS` + `CAL_GUTTER`, because a Friday at a different x on the month than on the week is
+ exactly the jump the zoom exists to remove. Verify all five at `?horizon`
+ (`mobile/CalendarHarness.tsx`).
+- **A time is spelled ONE way, and a surface that draws a fact doesn't also write it**
+ (D-121). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
+ `9–9:30am`, `11am–1pm` — and `hourLabel` *is* `at`, so the gutter and everything beside it
+ agree by construction. Never add a second time format (the Day canvas printed `9:00 AM`
+ next to a gutter reading `9am`, and the record sheet kept a private copy). Then each line
+ carries only what its neighbour can't: the Day block says the **place** (position and
+ height already say when and how long), the agenda row says the **length** (the rail already
+ said when). Exact minutes live in the record sheet.
+- **The zoom is tested, not eyeballed.** 220ms is too short to review, and two versions of
+ `LensZoom` have looked correct and animated nothing. It runs on `Element.animate` partly
+ *because* WAAPI is observable: `tests/lens-zoom.test.tsx` asserts the keyframes and
+ `tests/calendar-zoom-wiring.test.tsx` asserts the ladder produces them. Change the motion,
+ update those.
 
 ## One rule, two runtimes — the app and the agent must never disagree
 

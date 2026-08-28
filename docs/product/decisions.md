@@ -4320,6 +4320,21 @@ a day that is *in* the span you were reading; and a horizon change resets the
 scroller, so standing back from a day scrolled to 6pm no longer drops you into a
 month grid at an offset it doesn't have.
 
+→ **A time is spelled one way, and each line says what its neighbour cannot.**
+The Day canvas printed `9:00 AM–9:30 AM` inside a block sitting one hour rule
+away from a gutter labelled `9am` — two spellings of the same nine o'clock on one
+screen, on a canvas whose entire premise is that a block's top edge is its start
+and its height is its length. The agenda was worse: the start time in the rail,
+then the same start time again at the head of the row's second line, on every row
+of a two-week list. So: one clock vocabulary (`at` / `span`, which `hourLabel`
+now *is*, built from `formatToParts` so a 24-hour locale gets `09:30` and never a
+stray meridiem), and one rule for what a second line is for — the Day block
+carries the **place** (the one fact a to-scale canvas cannot draw), the agenda row
+carries the **length**. Exact minutes remain one tap away in the record sheet,
+which had its own private copy of the format and now imports the shared one. The
+generalisation worth keeping: *on a surface that draws a fact, do not also write
+it.*
+
 Renames: the phone's **List** lens is now **Agenda**, which is what the hero and
 the ladder call it — one name. Does not reopen **N-16** (still no desktop
 Agenda). Adds no pool, no overlapping name, needs no clean data, and holds in an
@@ -4329,6 +4344,15 @@ Verify at **?horizon** (`CalendarHarness`) — all five faces at 375px over one 
 of fixtures, each live — and at **?weekcrown**, which now renders the Calendar
 tab in situ at *two* horizons so "the strip survives the stand-back" is a thing
 you can look at.
+
+The zoom is also the one piece of this that **no screenshot can check**: it is
+over in 220ms, and two earlier versions looked right, typechecked, and animated
+nothing (a CSS transition on a just-inserted node never gets its painted starting
+frame; and a second zoom the same way would not restart a CSS animation). It is
+driven by `Element.animate`, which is *observable* — so `tests/lens-zoom.test.tsx`
+asserts the keyframes handed to WAAPI and `tests/calendar-zoom-wiring.test.tsx`
+asserts that a tap on the ladder produces them, on every rung of a chain. **A
+motion this surface depends on gets a test, not a look.**
 
 *Status: standing — refines D-119's chrome and D-044's lens set; the read models
 (`buildDayPlan`, `useWeekCrown`) are untouched.*
