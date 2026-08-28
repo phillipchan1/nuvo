@@ -3,7 +3,7 @@
 // so both can be eyeballed and *driven* (rename, retarget, pick a sigil form,
 // change the domain's light, park a task) without a real account. Reached at
 // ?domains, mounted in main.tsx. Not part of any real surface. Precedent:
-// MobileDayHarness (?daycal), PlanWeekHarness (?planweek).
+// CalendarHarness (?horizon), PlanWeekHarness (?planweek).
 //
 // The fixtures deliberately cover the states the wall has to tell apart: a
 // tended domain over its intent, one that's gone quiet, one never touched, and

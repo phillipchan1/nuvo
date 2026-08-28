@@ -2,7 +2,7 @@
 // (MobileGroom) and Shipped (MobileShipped) — plus the long-press record acts
 // (MobileRecordActions), over fixture data at phone width. Reached at ?build,
 // mounted in main.tsx. Not part of any real surface. Precedent: DomainHarness
-// (?domains), MobileDayHarness (?daycal), PlanWeekHarness (?planweek).
+// (?domains), CalendarHarness (?horizon), PlanWeekHarness (?planweek).
 //
 // Both faces existed only on the desktop until now, so this frame is where the
 // phone's version gets driven — type an outcome, add a step, add a key result,

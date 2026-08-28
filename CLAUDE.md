@@ -147,17 +147,22 @@ it needs to work on a phone.
   layouts over it. **Never re-derive the slate in a surface** — that composition
   (`weekPushes` → `pushAsRock` → `priorityWork` → `splitFor`) lived inside `WeekPanel`, and
   that is exactly why the phone couldn't say what the week was carrying at all (D-110).
-  The phone's crown rides the **week-scoped** Calendar lenses (List · Day · Week) — the
-  context you read a Tuesday against (D-110). Month and Year answer a different question
-  (where is this span heavy / what's on the day you tapped), so the crown stays off them
-  (D-119); putting it only on Month was the original failure, taking it *off* Month is not
-  that. The phone deliberately differs in three ways and no more: it collapses — and shut
+  On the phone the **shut** crown is the Calendar's ANCHOR: one line of pips, sticky under
+  the chrome at every horizon, so the answer to "what am I carrying" survives a change of
+  rung — losing it on the way out to the month was half of why standing back felt like
+  losing your place (D-122). It still only *opens* on the week-scoped lenses (Agenda · Day
+  · Week), the context you read a Tuesday against (D-110); Month and Year answer a
+  different question (where is this span heavy / what's on the day you tapped), so there
+  the strip anchors and a tap takes you to the Week rung (D-119). Putting it only on Month
+  was the original failure; taking the *slate* off Month is not that.
+  The phone deliberately differs in three ways and no more: it collapses — and shut
   it is ONE line drawn rather than written (a pip per project in its domain's hue, filled
   when it landed; one amber light when something has no time; a chevron), because a phone
   screen already saying a great deal cannot afford a header that must be *read*; there is
   no ship circle (shipping is the record sheet's act — one vocabulary), and loose work
   **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
-  (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab.
+  (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab at two
+  horizons — the frame where "the strip survives the stand-back" is visible.
 - **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
   (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:
   `FloorPane`'s `RungTabs`. Phone: the segmented header in `MobileProjects` /
@@ -184,12 +189,41 @@ it needs to work on a phone.
   ended up desktop-only. A hidden gesture is never the only path to an act.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
   *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
-  the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
-  FullCalendar: **Year → Month (home) → Day / List / Week**, all over one
-  `buildDayPlan` (`dayPlan.ts`). On Month a day tap **selects** (the list under
-  the grid is that day); a second tap or the list header opens **Day**. An
-  upward flick expands into the last drill-in lens. Week's day headers open
-  Day. See D-044, D-119, D-121.
+  the FullCalendar `CalendarPane`. Mobile uses the **mobile Calendar** instead.
+- **Each altitude has ONE tap meaning** (D-121). Year: a month opens the Month. Month: a day
+ tap **selects** it (the plan under the grid is that day) — a second tap on the selected day,
+ or the plan's own header, opens **Day**, because they pointed at a day and not a week; an
+ upward flick expands into the last drill-in lens and does *not* overwrite that memory; a
+ grey cell selects and follows the date into its month. Week: a day header opens that Day.
+ The rule lives in `mobile/monthTap.ts` (`monthDayIntent`, `clampDayToMonth`) — **never
+ re-decide select-vs-open in a surface.** Paging a month carries the selection with it,
+ clamped, or the month's second question stops having an answer.
+- **The mobile Calendar is one chrome, five bodies, two axes** (D-122). `MobileCalendar` is
+  only the data wrapper (the live queries, and the span the active lens needs);
+  `CalendarSurface` owns the window and the composition; `CalendarChrome` is the hero, the
+  **horizon ladder** (☰ · D W M Y), travel, and the seven columns — mounted ONCE, so
+  nothing in it unmounts when the horizon changes. The five bodies (`MobileAgendaView`,
+  `MobileDayView`, `MobileWeekView`, `MobileMonthView`, `MobileYearView`) render only their
+  body, all over one `buildDayPlan` (`dayPlan.ts`) — D-044. Two motions that never overlap:
+  `TimePager` **travels** (same horizon, next date), `LensZoom` **zooms** (same date, next
+  horizon, cross-dissolving through the column of the selected day). **Never give a lens its
+  own header, and never invent a second seven-column geometry** — every band and grid wears
+ `COLS` + `CAL_GUTTER`, because a Friday at a different x on the month than on the week is
+ exactly the jump the zoom exists to remove. Verify all five at `?horizon`
+ (`mobile/CalendarHarness.tsx`).
+- **A time is spelled ONE way, and a surface that draws a fact doesn't also write it**
+ (D-122). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
+ `9–9:30am`, `11am–1pm` — and `hourLabel` *is* `at`, so the gutter and everything beside it
+ agree by construction. Never add a second time format (the Day canvas printed `9:00 AM`
+ next to a gutter reading `9am`, and the record sheet kept a private copy). Then each line
+ carries only what its neighbour can't: the Day block says the **place** (position and
+ height already say when and how long), the agenda row says the **length** (the rail already
+ said when). Exact minutes live in the record sheet.
+- **The zoom is tested, not eyeballed.** 220ms is too short to review, and two versions of
+ `LensZoom` have looked correct and animated nothing. It runs on `Element.animate` partly
+ *because* WAAPI is observable: `tests/lens-zoom.test.tsx` asserts the keyframes and
+ `tests/calendar-zoom-wiring.test.tsx` asserts the ladder produces them. Change the motion,
+ update those.
 
 ## One rule, two runtimes — the app and the agent must never disagree
 

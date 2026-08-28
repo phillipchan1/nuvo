@@ -4291,3 +4291,108 @@ already-selected day, or the list header, never the first tap.
 
 *Status: standing — supersedes the "month tap drills in" clause of D-044
 and D-119. Does not replace either read model.*
+
+**D-122 · 2026-08-28 · The phone Calendar has one chrome and two axes. Changing
+horizon must not move a single fixed point.**
+
+Reported: *"going between week and month is jarring — it happens instantly, and
+the week's priorities are on the week and absent from the month, so it takes me
+a while to orient myself. The day and week views also have a lot going on."*
+Ledger row **W2** ("if I only get three real hours, where do they go?"), which
+D-110 answered on the week-scoped lenses and D-119 confirmed. Nothing in the
+ledger asks for a zoom; the finding is that the *cost of moving between
+horizons* was eating the answer.
+
+Three causes, all of them ours:
+
+1. **Every lens built its own header.** Month wore a Fraunces masthead with ‹ ›
+   and a ⋯; Agenda, Day and Week each wore a `‹ Aug 2026` back button plus a
+   28-chip date scroller plus their own day/week header; Year wore a `‹ Month`.
+   Five header shapes, four second bands, and four different ways to change
+   horizon. So the act that changes the most on screen was also the one where
+   every fixed point moved at once.
+2. **It was an instant swap.** The one transition that is genuinely an altitude
+   change had no motion at all.
+3. **The slate vanished on the way out.** Standing back from Week to Month cost
+   you the week's projects — the thing you were orienting by.
+
+→ **One chrome, mounted once** (`CalendarChrome`, composed by
+`CalendarSurface`): the hero (the span, in Fraunces, and its one mono fact), the
+**horizon ladder**, travel at that rung, and seven columns that are either the
+month's weekday letters or the **week row**. Nothing in it unmounts on a horizon
+change. The five lenses render only their bodies.
+
+→ **Two axes, two motions, no overlap.** `TimePager` travels (same horizon, next
+date — D-119's grammar, unchanged). `LensZoom` zooms (same date, next horizon):
+both bodies cross-dissolve through the **column of the day you are standing on**,
+the outgoing one rushing past while the new one rises from under it. The fade is
+linear and the scale is eased — run both on `--ease-out` and the horizon you left
+is at 15% before the eye finds it, which is the hard swap wearing 220ms. Reduced
+motion just changes.
+
+→ **ONE seven-column geometry** for the month grid, the letters and the week row.
+This is the load-bearing detail: a Friday that sits at a different x on the month
+than on the week is the jump the zoom was supposed to remove. The month grid
+therefore pays the hour gutter it has no time axis for — and gets a real door
+back for it: each row's gutter cell **opens that week**, with a chevron marking
+the row the band above is showing. Leaning into a specific week used to cost
+selecting one of its days and then tapping W.
+
+→ **The shut crown is the anchor, at every horizon.** Shut it is already one line
+of pips; it now rides sticky under the chrome on all five lenses, which makes it
+the phone's fixed point across a rung change. **D-119 still holds**: on Month and
+Year the week is not the subject, so the slate cannot *open* there — a tap goes
+to the Week rung, where it is.
+
+Simplifications that only became possible once the chrome was shared: the globe
+appears only while you are actually travelling (it sat on four of five lenses
+saying "you are where you live"); all-day events and anytime work share one chip
+row (two bands for a distinction the chip's own colour already carries); leaning
+in from Month or Year lands on a day that is *in* the span you were reading; and
+a horizon change resets the scroller, so standing back from a day scrolled to
+6pm no longer drops you into a month grid at an offset it doesn't have.
+
+**D-121's tap meanings survive this intact**, and are the thing this must not
+quietly undo — a rewrite of the chrome is exactly how a rule that lives in a
+surface gets lost. So they don't live in a surface: `monthDayIntent` and
+`clampDayToMonth` (`mobile/monthTap.ts`, with `tests/month-tap.test.ts`) are
+imported by `CalendarSurface`, the month's *open* still lands on **Day** without
+overwriting the flick's memory, paging a month still carries the selection
+clamped, and the peeking months either side of the finger are inert.
+
+→ **A time is spelled one way, and each line says what its neighbour cannot.**
+The Day canvas printed `9:00 AM–9:30 AM` inside a block sitting one hour rule
+away from a gutter labelled `9am` — two spellings of the same nine o'clock on one
+screen, on a canvas whose entire premise is that a block's top edge is its start
+and its height is its length. The agenda was worse: the start time in the rail,
+then the same start time again at the head of the row's second line, on every row
+of a two-week list. So: one clock vocabulary (`at` / `span`, which `hourLabel`
+now *is*, built from `formatToParts` so a 24-hour locale gets `09:30` and never a
+stray meridiem), and one rule for what a second line is for — the Day block
+carries the **place** (the one fact a to-scale canvas cannot draw), the agenda row
+carries the **length**. Exact minutes remain one tap away in the record sheet,
+which had its own private copy of the format and now imports the shared one. The
+generalisation worth keeping: *on a surface that draws a fact, do not also write
+it.*
+
+Renames: the phone's **List** lens is now **Agenda**, which is what the hero and
+the ladder call it — one name. Does not reopen **N-16** (still no desktop
+Agenda). Adds no pool, no overlapping name, needs no clean data, and holds in an
+empty account (every lens draws its real working window with zero data).
+
+Verify at **?horizon** (`CalendarHarness`) — all five faces at 375px over one set
+of fixtures, each live — and at **?weekcrown**, which now renders the Calendar
+tab in situ at *two* horizons so "the strip survives the stand-back" is a thing
+you can look at.
+
+The zoom is also the one piece of this that **no screenshot can check**: it is
+over in 220ms, and two earlier versions looked right, typechecked, and animated
+nothing (a CSS transition on a just-inserted node never gets its painted starting
+frame; and a second zoom the same way would not restart a CSS animation). It is
+driven by `Element.animate`, which is *observable* — so `tests/lens-zoom.test.tsx`
+asserts the keyframes handed to WAAPI and `tests/calendar-zoom-wiring.test.tsx`
+asserts that a tap on the ladder produces them, on every rung of a chain. **A
+motion this surface depends on gets a test, not a look.**
+
+*Status: standing — refines D-119's chrome and D-044's lens set; the read models
+(`buildDayPlan`, `useWeekCrown`) are untouched.*

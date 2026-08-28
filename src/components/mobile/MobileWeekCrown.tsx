@@ -65,6 +65,9 @@ export default function MobileWeekCrown({
   onOpenProject,
   onOpenDay,
   onPlanWeek,
+  anchored = false,
+  expandable = true,
+  onExpandElsewhere,
 }: {
   /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
    *  which holds the mutations and the task sheet, exactly as the rail owns it
@@ -78,6 +81,17 @@ export default function MobileWeekCrown({
   onOpenDay: (d: Date) => void;
   /** the ritual — Plan the week */
   onPlanWeek: () => void;
+  /** Ride sticky under the Calendar's chrome while SHUT, so the one line that
+   *  says what week you're in the middle of never scrolls away — the phone's
+   *  fixed point across a horizon change. Expanded it goes back into flow,
+   *  because six projects and their work is a page you read, not a strip. */
+  anchored?: boolean;
+  /** False on the lenses that answer a different question (Month, Year — see
+   *  D-119): the strip stays as the anchor, the slate can't open over them, and
+   *  a tap takes you to the rung where the week IS the subject. */
+  expandable?: boolean;
+  /** Where a tap goes when the slate can't open here. */
+  onExpandElsewhere?: () => void;
 }) {
   const crown = useWeekCrown();
   const [open, setOpenState] = useState(readOpen);
@@ -112,19 +126,38 @@ export default function MobileWeekCrown({
   // unlabelled row of dots is a puzzle to a stranger (P16). Everything the
   // words used to say is one tap below, and the screen reader still gets the
   // full sentence through `aria-label`.
-  if (!open) {
-    const openIt = () => (total === 0 ? openDoor() : setOpen(true));
+  //
+  // Shut is also the form the strip wears at EVERY horizon, sticky under the
+  // Calendar's chrome (`anchored`). The week's slate used to vanish the moment
+  // you stood back to the month, so standing back cost you the one thing you
+  // were orienting by; a row of pips costs 30px and survives the zoom. On the
+  // lenses where the week is not the subject it cannot open (`expandable`) —
+  // a tap goes to the rung where it is.
+  if (!open || !expandable) {
+    const openIt = () =>
+      !expandable && onExpandElsewhere
+        ? onExpandElsewhere()
+        : total === 0
+          ? openDoor()
+          : setOpen(true);
     return (
-      <section className="border-b border-line">
+      <section
+        className={`border-b border-line ${
+          anchored ? "sticky z-20 bg-surface/90 backdrop-blur" : ""
+        }`}
+        // Parks under the chrome rather than at the viewport top: the two are
+        // one stack, and the strip is the lower half of it.
+        style={anchored ? { top: "var(--cal-chrome, 0px)" } : undefined}
+      >
         <button
           onClick={openIt}
-          aria-expanded={false}
+          aria-expanded={expandable ? false : undefined}
           aria-label={
             total === 0
               ? "This week — nothing on it yet. Plan the week"
               : `This week — ${landed} of ${total} landed${
                   looseCount > 0 ? `, ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time yet` : ""
-                }. Show this week's projects`
+                }. ${expandable ? "Show this week's projects" : "Open the week"}`
           }
           className="tap-h fast flex w-full items-center gap-2.5 px-4 py-2 text-left active:bg-surface-2"
         >

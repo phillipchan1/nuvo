@@ -18,10 +18,25 @@ function GlobeGlyph({ size = 12 }: { size?: number }) {
 // Memoized: it rides toolbars that re-render on every data change, and its
 // tzStatus derive runs Intl formatters — real work for a chip whose answer
 // changes at most when the 30s clock prop ticks.
-export default memo(function TimeZoneChip({ now, className = "" }: { now: Date; className?: string }) {
+export default memo(function TimeZoneChip({
+  now,
+  className = "",
+  hideAtHome = false,
+}: {
+  now: Date;
+  className?: string;
+  /** Render NOTHING while the device clock is the home clock. For toolbars that
+   *  are already over-subscribed — the phone's calendar header carried this
+   *  glyph on four of five lenses, where it said only "you are where you live".
+   *  It reappears the moment it has something to report (you're travelling),
+   *  which is the only moment it was ever load-bearing. */
+  hideAtHome?: boolean;
+}) {
   const [homeTz] = useHomeTimezone();
   const deviceTz = detectDeviceTz();
   const s = tzStatus(homeTz, deviceTz, now);
+
+  if (!s.traveling && hideAtHome) return null;
 
   if (!s.traveling) {
     // At home: glyph only — the abbr lives in the tooltip so the toolbar stays quiet.

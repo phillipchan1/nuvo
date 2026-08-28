@@ -16,6 +16,7 @@ import {
   Globe,
   Hourglass,
   Info,
+  List,
   MapPin,
   Moon,
   MoreHorizontal,
@@ -66,6 +67,7 @@ import { useSkin } from "../hooks/useSkin";
    ══════════════════════════════════════════════════════════════════════════ */
 
 export type IconName =
+  | "agenda"
   | "arrow-right"
   | "bell"
   | "calendar"
@@ -109,6 +111,19 @@ type PaperGlyph = { vb: string; body: ReactNode; filled?: boolean };
 // at — same paths, same weights, same grids. Stroke widths are tuned per grid,
 // which is why the viewBox travels with the glyph instead of being normalised.
 const PAPER: Record<IconName, PaperGlyph> = {
+  // Three rules of unequal length — a list of entries, deliberately NOT the
+  // three equal bars of a hamburger, which on a phone means "menu".
+  agenda: {
+    vb: "0 0 14 14",
+    body: (
+      <path
+        d="M2.5 3.6h9M2.5 7h9M2.5 10.4h5.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    ),
+  },
   bell: {
     vb: "0 0 12 12",
     body: (
@@ -422,6 +437,7 @@ const PAPER: Record<IconName, PaperGlyph> = {
 // The flat set. Lucide draws on a 24-grid at strokeWidth 2; at the 9–19px these
 // render at, 2 reads chunky, so the component thins it to 1.75 by default.
 const FLAT: Record<IconName, LucideIcon> = {
+  agenda: List,
   "arrow-right": ArrowRight,
   bell: Bell,
   calendar: Calendar,

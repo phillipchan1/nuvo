@@ -53,7 +53,10 @@ If a user can reach it on a phone, it must work on a phone.
   mobile-routing props (e.g. `onAskNuvo`) instead of forking; desktop unchanged when omitted.
 - Desktop-only (not on mobile): rituals, Record screens, Domain chapel, Project/Initiative
   floors, Collection board/table/timeline, FullCalendar `CalendarPane`. Mobile uses
-  `MobileCalendar` (agenda + availability) instead of FullCalendar.
+  the **mobile Calendar** instead of FullCalendar: one chrome (hero · horizon ladder
+  ☰·D W M Y · travel · seven columns, mounted once by `CalendarSurface`) over five
+  bodies, all reading one `buildDayPlan`. `TimePager` travels, `LensZoom` zooms; every
+  band and grid shares `COLS` + `CAL_GUTTER`. Never give a lens its own header. D-121.
 
 ## Reuse, don't duplicate
 
@@ -62,6 +65,9 @@ If a user can reach it on a phone, it must work on a phone.
 - Calendar data: `useExternalEvents`, `useScheduledTasks`; settings via `useSettings`
   (`work_start_minutes`/`work_end_minutes` 480/990, `hidden_calendar_ids`).
 - A scheduled task IS a time block (one `tasks` row); no separate event entity.
+- Times on the phone Calendar: `at` / `span` in `dayPlan.ts` (`9am`, `9:30am`, `9–9:30am`);
+  `hourLabel` IS `at`. Never a second time format — and **a surface that draws a fact must
+  not also write it** (the Day canvas shows *place*, the agenda row *length*). D-121.
 - Capture = free text via `parseCapture` (`src/lib/nlp.ts`); forms are the fallback. Use
   plain text inputs so iOS dictation works.
 

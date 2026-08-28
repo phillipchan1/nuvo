@@ -15,7 +15,7 @@
 //
 // The writes are local state, not Supabase — this proves the gesture and the
 // render, which is exactly the half that a test can't see. Not part of any real
-// surface. Precedent: MobileDayHarness (?daycal), PlanWeekHarness (?planweek).
+// surface. Precedent: CalendarHarness (?horizon), PlanWeekHarness (?planweek).
 
 import { useMemo, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
