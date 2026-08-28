@@ -65,6 +65,29 @@ describe("Google auth asks which Google", () => {
     expect(sent(auth.signInWithOAuth).options?.redirectTo).toBe(window.location.origin);
   });
 
+  // The device report was "it never opened Safari" — and that is right. The iOS
+  // shell has no ASWebAuthenticationSession, no SFSafariViewController and no
+  // native Google Sign-In (its only Swift plugins are WatchConnectivity and
+  // StoreKit); `signInWithOAuth` without `skipBrowserRedirect` does
+  // `window.location.assign(url)`, so the app's OWN webview walks to Google and
+  // back to `tauri://localhost`. Nothing else is holding the session, which is
+  // both why no chooser appeared and why one parameter is the whole fix.
+  it("carries the chooser through the in-app iOS leg, back to tauri://localhost", async () => {
+    // Non-special schemes can serialize `location.origin` as the string "null".
+    vi.stubGlobal("location", { origin: "null", protocol: "tauri:", host: "localhost" });
+    try {
+      await signInWithGoogle();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const { options } = sent(auth.signInWithOAuth);
+    expect(options?.redirectTo).toBe("tauri://localhost");
+    expect(options?.queryParams).toEqual({ prompt: "select_account" });
+    // The chooser has to land in this webview: on iOS there is no browser to
+    // hand the URL to, so skipping the redirect would strand sign-in entirely.
+    expect(options).not.toHaveProperty("skipBrowserRedirect");
+  });
+
   it("reaches Google: the param survives supabase-js's authorize URL", async () => {
     // The real client, asked not to navigate — `data.url` is the URL the shell
     // would have opened, built by the shipped SDK rather than by this test.

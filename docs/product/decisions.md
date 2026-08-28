@@ -4608,9 +4608,23 @@ from the phone at all**.
 
 Nothing in the app was picking that account. The authorize request carried no
 `prompt`, so Google re-used the session already in the cookie jar and redirected
-back without drawing anything. In the iOS shell that jar belongs to the app's own
-WKWebView and outlives a Nuvo sign-out, which is why the phone shows this far
-more sharply than a browser tab, where a Google sign-out is one visit away.
+back without drawing anything.
+
+**The device also reported that it never left Nuvo — no Safari.** That is true,
+and it is not evidence of a second auth path; it is the only path there is.
+Verified in the shell: no `ASWebAuthenticationSession`, no
+`SFSafariViewController`, no native Google Sign-In, no Capacitor. The iOS Swift
+in `src-tauri/plugins/` is WatchConnectivity and StoreKit; `tauri-plugin-deep-link`
+exists for the `nuvo://` widget links; `src-tauri/src/lib.rs` installs no
+navigation handler that would hand a URL to the system browser. And
+`signInWithOAuth` without `skipBrowserRedirect` does exactly one thing —
+`window.location.assign(url)`. So **the app's own WKWebView walks to Google and
+back to `tauri://localhost`**, `detectSessionInUrl` picks the session out of the
+return, and the whole round trip is two invisible redirects.
+
+That is also why the phone shows this so much harder than a browser tab: the
+cookie jar belongs to the app, nothing in Nuvo can clear it, and there is no
+address bar to go and log out of Google in.
 
 **`prompt=select_account`, on every attempt** — sign-in and identity-linking
 both, since they already share one options object in `src/lib/googleAuth.ts`.
@@ -4622,6 +4636,12 @@ Two alternatives rejected:
 - **`prompt=consent`** (what the calendar-connect function has always sent). That
  draws the consent screen for the account Google *already chose*, which is the
  same trap wearing a screen.
+- **Hand the flow to `ASWebAuthenticationSession`** instead of the app's own
+ webview. Tempting, and it would buy a real thing: `prefersEphemeralWebBrowserSession`
+ gives a *clean* jar every time, so "sign out of Google" would exist. It needs
+ Swift, a custom-scheme return leg, and it moves where the session is held — a
+ native plugin's worth of risk to reach a chooser one query parameter already
+ draws. Worth revisiting only if `select_account` proves insufficient on device.
 
 The cost is one extra tap at a door most people pass through once per device. The
 thing it buys is not convenience, it's **Principle 16 being enforceable at all**:
@@ -4632,10 +4652,12 @@ Closes nothing new in the ledger — it restores the front door that **O1**/**O6
 are scored through. Adds no pool, no name, no clean-data assumption.
 
 Guarded by `tests/google-account-chooser.test.ts`: both entry points ask for the
-chooser, and — because passing an option the SDK silently drops looks exactly
-like the bug — the authorize URL is built through the real supabase-js client and
-checked for Google's own `prompt`. Three of its four assertions fail without the
-fix.
+chooser; the in-app iOS leg keeps it while returning to `tauri://localhost` and
+never sets `skipBrowserRedirect` (on iOS there is no browser to hand the URL to,
+so skipping the redirect would strand sign-in outright); and — because passing an
+option the SDK silently drops looks exactly like the bug — the authorize URL is
+built through the real supabase-js client and checked for Google's own `prompt`.
+Four of its five assertions fail without the fix.
 
 **Left open, deliberately:** the calendar-connect flow
 (`supabase/functions/google-oauth`) still sends `prompt=consent` alone, so the

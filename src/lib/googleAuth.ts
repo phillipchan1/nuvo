@@ -8,9 +8,16 @@ import { authReturnUrl } from "./authRedirect";
  *  webview and returns immediately, so on a signed-out iPhone "Continue with
  *  Google" landed straight back in the previous user's account and there was no
  *  moment at which a second Google could be chosen — no chooser, nothing to tap.
- *  The consent page loads in the app's own WKWebView, whose cookie jar outlives
- *  a Nuvo sign-out, which is why the phone shows this far more sharply than a
- *  browser tab does.
+ *
+ *  On iOS this happens **inside the app**: it never opens Safari, and that is not
+ *  the symptom of a second auth path, it is the only path there is. The shell has
+ *  no ASWebAuthenticationSession, no SFSafariViewController and no native Google
+ *  Sign-In (its Swift plugins are WatchConnectivity and StoreKit; deep-link
+ *  serves the `nuvo://` widgets), and `signInWithOAuth` without
+ *  `skipBrowserRedirect` just does `window.location.assign`. So the app's own
+ *  WKWebView walks to Google and back to `tauri://localhost` — and that webview's
+ *  cookie jar, which nothing in Nuvo can clear, outlives a Nuvo sign-out. Which
+ *  is why one parameter on this one request is the whole fix.
  *
  *  Sent on every attempt, not only when it would be ambiguous: the app cannot
  *  read Google's cookies, so "is more than one Google signed in here" is not a
