@@ -222,6 +222,16 @@ export default function CalendarSurface({
     move({ selected: d, monthCursor: startOfMonth(d), pastDays: 0, mode: lens });
   };
 
+  /** Lean in on a whole row of the month grid — the door in its left gutter.
+   *  Lands on today when today is in that week, so the commonest case opens
+   *  where you already are rather than on a Sunday you didn't ask about. */
+  const openWeek = (weekStart: Date) => {
+    drill.current = "week";
+    const inWeek = startOfWeek(startOfDay(now), weekOpts).getTime() === weekStart.getTime();
+    const d = inWeek ? startOfDay(now) : startOfDay(weekStart);
+    move({ selected: d, monthCursor: startOfMonth(d), pastDays: 0, mode: "week" });
+  };
+
   /** Move to a horizon. Leaning in from a stand-back lens has to land on a day
    *  that is actually IN the span you were looking at — you were reading
    *  September, so "W" must not open a week in August because that is where the
@@ -384,6 +394,7 @@ export default function CalendarSurface({
           // day's plan under the grid could only ever show TODAY.
           onPick={(d) => (isSameDay(d, selected) ? openDay(d) : selectDay(d))}
           onOpenDay={openDay}
+          onOpenWeek={openWeek}
           onFlickUp={() => openDay(selected)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}

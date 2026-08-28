@@ -2,7 +2,7 @@
 // `MobileWeekCrown` (at 375px) and the desktop's `WeekPanel` beside it, over
 // ONE set of fixtures. Reached at ?weekcrown, mounted in main.tsx. Not part of
 // any real surface. Precedent: DomainHarness (?domains), BuildFacesHarness
-// (?build), MobileDayHarness (?daycal).
+// (?build), CalendarHarness (?horizon).
 //
 // The two crowns share `useWeekCrown`, so this frame is where a divergence
 // would show up as a difference you can *see*: the same project must report the
@@ -285,49 +285,17 @@ export default function WeekCrownHarness() {
                 </div>
               </div>
 
-              {/* In situ — the crown where it actually ships, above a week-
-                  scoped lens (D-119). The calendar's own queries aren't seeded,
-                  so the grid is empty here; what this frame verifies is the
-                  composition: the crown, the week header under it, and no
-                  horizontal scroll. */}
-              <div>
-                <div className="section-label !p-0 !pb-1">Phone · in situ (Calendar tab)</div>
-                <div
-                  className="overflow-hidden rounded-[28px] border border-line-strong"
-                  style={{ width: 375, height: 640 }}
-                >
-                  <div className="atmosphere h-full overflow-y-auto">
-                    {/* Wired exactly as `MobileShell` wires it — including the
-                        ＋, so the lens headers here are as crowded as the real
-                        ones. A frame missing a control measures a header the
-                        phone never has. */}
-                    <MobileCalendar
-                      now={new Date()}
-                      initialMode="week"
-                      onOpenProject={(id) => say(`open project ${id}`)}
-                      onPlanWeek={() => say("plan the week")}
-                      renderCrownTask={(t, { action, whenShown, draggable, dragData }) => (
-                        <TaskRow
-                          key={t.id}
-                          task={t}
-                          labels={[]}
-                          selected={false}
-                          draggable={draggable ?? false}
-                          action={action}
-                          whenShown={whenShown}
-                          dragData={dragData}
-                          onSelect={() => say(`select ${t.title}`)}
-                          onOpen={() => say(`open ${t.title}`)}
-                          onToggleDone={() => say(`toggle ${t.title}`)}
-                        />
-                      )}
-                      onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
-                      onTapEvent={() => say("tap event")}
-                      onOpenUpkeep={() => say("open upkeep")}
-                    />
-                  </div>
-                </div>
-              </div>
+              {/* In situ, at two horizons — the whole point of the strip. The
+                  slate used to be on the week-scoped lenses and absent from the
+                  month, so standing back cost you the one thing you were
+                  orienting by. Now it rides sticky under the chrome at BOTH, and
+                  on the month it can't open (D-119 still holds: the month
+                  answers a different question) — a tap takes you to the week.
+                  The calendar's own queries aren't seeded here, so the bodies
+                  are empty; what these frames verify is the composition — the
+                  chrome, the strip under it, and no horizontal scroll. */}
+              <InSitu label="in situ · week (slate opens)" mode="week" say={say} />
+              <InSitu label="in situ · month (slate anchors)" mode="month" say={say} />
 
               {/* The desktop rail crown, over the same fixtures. */}
               <div>
@@ -377,5 +345,57 @@ export default function WeekCrownHarness() {
         </AppNavigationProvider>
       </VerticalStoreProvider>
     </QueryClientProvider>
+  );
+}
+
+/** The real Calendar tab at 375px, wired exactly as `MobileShell` wires it —
+ *  including the ＋ and the upkeep glyph, so the header here is as crowded as
+ *  the real one. A frame missing a control measures a header the phone never
+ *  has. Parameterised by horizon, because "the strip survives the stand-back"
+ *  is only verifiable by looking at two horizons at once. */
+function InSitu({
+  label,
+  mode,
+  say,
+}: {
+  label: string;
+  mode: "week" | "month";
+  say: (s: string) => void;
+}) {
+  return (
+    <div>
+      <div className="section-label !p-0 !pb-1">Phone · {label}</div>
+      <div
+        className="overflow-hidden rounded-[28px] border border-line-strong"
+        style={{ width: 375, height: 640 }}
+      >
+        <div className="atmosphere h-full overflow-y-auto">
+          <MobileCalendar
+            now={new Date()}
+            initialMode={mode}
+            onOpenProject={(id) => say(`open project ${id}`)}
+            onPlanWeek={() => say("plan the week")}
+            renderCrownTask={(t, { action, whenShown, draggable, dragData }) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                labels={[]}
+                selected={false}
+                draggable={draggable ?? false}
+                action={action}
+                whenShown={whenShown}
+                dragData={dragData}
+                onSelect={() => say(`select ${t.title}`)}
+                onOpen={() => say(`open ${t.title}`)}
+                onToggleDone={() => say(`toggle ${t.title}`)}
+              />
+            )}
+            onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
+            onTapEvent={() => say("tap event")}
+            onOpenUpkeep={() => say("open upkeep")}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

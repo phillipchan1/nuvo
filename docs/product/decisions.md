@@ -4257,3 +4257,78 @@ task copy). Developer mode is on every shell. `isMobileTauri()` is UA-only.
 
 *Status: shipped in code; DevTools in the installed Mac app needs the next
 desktop build.*
+
+**D-121 · 2026-08-28 · The phone Calendar has one chrome and two axes. Changing
+horizon must not move a single fixed point.**
+
+Reported: *"going between week and month is jarring — it happens instantly, and
+the week's priorities are on the week and absent from the month, so it takes me
+a while to orient myself. The day and week views also have a lot going on."*
+Ledger row **W2** ("if I only get three real hours, where do they go?"), which
+D-110 answered on the week-scoped lenses and D-119 confirmed. Nothing in the
+ledger asks for a zoom; the finding is that the *cost of moving between
+horizons* was eating the answer.
+
+Three causes, all of them ours:
+
+1. **Every lens built its own header.** Month wore a Fraunces masthead with ‹ ›
+   and a ⋯; Agenda, Day and Week each wore a `‹ Aug 2026` back button plus a
+   28-chip date scroller plus their own day/week header; Year wore a `‹ Month`.
+   Five header shapes, four second bands, and four different ways to change
+   horizon. So the act that changes the most on screen was also the one where
+   every fixed point moved at once.
+2. **It was an instant swap.** The one transition that is genuinely an altitude
+   change had no motion at all.
+3. **The slate vanished on the way out.** Standing back from Week to Month cost
+   you the week's projects — the thing you were orienting by.
+
+→ **One chrome, mounted once** (`CalendarChrome`, composed by
+`CalendarSurface`): the hero (the span, in Fraunces, and its one mono fact), the
+**horizon ladder**, travel at that rung, and seven columns that are either the
+month's weekday letters or the **week row**. Nothing in it unmounts on a horizon
+change. The five lenses render only their bodies.
+
+→ **Two axes, two motions, no overlap.** `TimePager` travels (same horizon, next
+date — D-119's grammar, unchanged). `LensZoom` zooms (same date, next horizon):
+both bodies cross-dissolve through the **column of the day you are standing on**,
+the outgoing one rushing past while the new one rises from under it. The fade is
+linear and the scale is eased — run both on `--ease-out` and the horizon you left
+is at 15% before the eye finds it, which is the hard swap wearing 220ms. Reduced
+motion just changes.
+
+→ **ONE seven-column geometry** for the month grid, the letters and the week row.
+This is the load-bearing detail: a Friday that sits at a different x on the month
+than on the week is the jump the zoom was supposed to remove. The month grid
+therefore pays the hour gutter it has no time axis for — and gets a real door
+back for it: each row's gutter cell **opens that week**, with a chevron marking
+the row the band above is showing. Leaning into a specific week used to cost
+selecting one of its days and then tapping W.
+
+→ **The shut crown is the anchor, at every horizon.** Shut it is already one line
+of pips; it now rides sticky under the chrome on all five lenses, which makes it
+the phone's fixed point across a rung change. **D-119 still holds**: on Month and
+Year the week is not the subject, so the slate cannot *open* there — a tap goes
+to the Week rung, where it is.
+
+Simplifications that only became possible once the chrome was shared: the globe
+appears only while you are actually travelling (it sat on four of five lenses
+saying "you are where you live"); all-day events and anytime work share one chip
+row (two bands for a distinction the chip's own colour already carries); a
+month day's first tap **reads** the day and a second leans in, so the plan under
+the grid can show a day other than today; leaning in from Month or Year lands on
+a day that is *in* the span you were reading; and a horizon change resets the
+scroller, so standing back from a day scrolled to 6pm no longer drops you into a
+month grid at an offset it doesn't have.
+
+Renames: the phone's **List** lens is now **Agenda**, which is what the hero and
+the ladder call it — one name. Does not reopen **N-16** (still no desktop
+Agenda). Adds no pool, no overlapping name, needs no clean data, and holds in an
+empty account (every lens draws its real working window with zero data).
+
+Verify at **?horizon** (`CalendarHarness`) — all five faces at 375px over one set
+of fixtures, each live — and at **?weekcrown**, which now renders the Calendar
+tab in situ at *two* horizons so "the strip survives the stand-back" is a thing
+you can look at.
+
+*Status: standing — refines D-119's chrome and D-044's lens set; the read models
+(`buildDayPlan`, `useWeekCrown`) are untouched.*

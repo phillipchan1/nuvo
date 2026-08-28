@@ -53,7 +53,10 @@ If a user can reach it on a phone, it must work on a phone.
   mobile-routing props (e.g. `onAskNuvo`) instead of forking; desktop unchanged when omitted.
 - Desktop-only (not on mobile): rituals, Record screens, Domain chapel, Project/Initiative
   floors, Collection board/table/timeline, FullCalendar `CalendarPane`. Mobile uses
-  `MobileCalendar` (agenda + availability) instead of FullCalendar.
+  the **mobile Calendar** instead of FullCalendar: one chrome (hero · horizon ladder
+  ☰·D W M Y · travel · seven columns, mounted once by `CalendarSurface`) over five
+  bodies, all reading one `buildDayPlan`. `TimePager` travels, `LensZoom` zooms; every
+  band and grid shares `COLS` + `CAL_GUTTER`. Never give a lens its own header. D-121.
 
 ## Reuse, don't duplicate
 

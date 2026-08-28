@@ -16,9 +16,10 @@ import { addDays, addMonths, endOfMonth, endOfWeek, format, isSameDay, isSameMon
 import { fmtMins } from "../../lib/now";
 import type { indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
+import { Icon } from "../Icon";
 import type { CalendarTap } from "./MobileEventSheet";
 import { at, buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
-import { DayCell } from "./CalendarChrome";
+import { CAL_GUTTER, COLS, DayCell } from "./CalendarChrome";
 import TimePager from "./TimePager";
 
 export default function MobileMonthView({
@@ -31,6 +32,7 @@ export default function MobileMonthView({
   onNext,
   onPick,
   onOpenDay,
+  onOpenWeek,
   onFlickUp,
   onTapEvent,
   onTapTask,
@@ -46,6 +48,8 @@ export default function MobileMonthView({
   onPick: (d: Date) => void;
   /** Lean in on a day, from the preview's own header. */
   onOpenDay: (d: Date) => void;
+  /** Lean in on a whole row — the door in the grid's left gutter. */
+  onOpenWeek: (weekStart: Date) => void;
   onFlickUp: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
@@ -58,6 +62,7 @@ export default function MobileMonthView({
       weekStartsOn={weekStartsOn}
       weatherIndex={weatherIndex}
       onPick={onPick}
+      onOpenWeek={onOpenWeek}
     />
   );
 
@@ -99,6 +104,7 @@ function MonthSheet({
   weekStartsOn,
   weatherIndex,
   onPick,
+  onOpenWeek,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -106,36 +112,67 @@ function MonthSheet({
   weekStartsOn: 0 | 1;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   onPick: (d: Date) => void;
+  onOpenWeek: (weekStart: Date) => void;
 }) {
-  const cells = useMemo(() => {
+  // Cut into weeks, because a week is a row you can act on — see the door in
+  // the gutter below.
+  const weeks = useMemo(() => {
     const gridStart = startOfWeek(startOfMonth(monthCursor), { weekStartsOn });
     const gridEnd = endOfWeek(endOfMonth(monthCursor), { weekStartsOn });
-    const out: DayPlan[] = [];
-    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) out.push(buildDayPlan(d, ctx));
+    const out: DayPlan[][] = [];
+    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 7)) {
+      out.push(Array.from({ length: 7 }, (_, i) => buildDayPlan(addDays(d, i), ctx)));
+    }
     return out;
   }, [monthCursor, ctx, weekStartsOn]);
 
   return (
     <div>
-      <div className="grid grid-cols-7 px-2">
-        {cells.map((d) => {
-          const isSel = isSameDay(d.date, selected);
-          return (
-            <DayCell
-              key={dayKey(d.date)}
-              day={d}
-              selected={isSel}
-              dim={!isSameMonth(d.date, monthCursor)}
-              square
-              // The cell the zoom is anchored on, so leaning in emanates from
-              // the day you tapped rather than from the middle of the grid.
-              focal={isSel}
-              wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
-              onPick={onPick}
-            />
-          );
-        })}
-      </div>
+      {weeks.map((week) => {
+        const holdsSelected = week.some((d) => isSameDay(d.date, selected));
+        return (
+          <div key={dayKey(week[0].date)} className="flex items-stretch pr-2">
+            {/* The gutter. A month has no time axis, but the geometry is shared
+                with the two canvases that do (see `COLS`), so this column
+                exists — and rather than 38px of blank paper it is the door to
+                that week: leaning into a specific week used to cost selecting
+                one of its days and then tapping W. The chevron marks the row
+                the band above is currently showing. */}
+            <button
+              type="button"
+              onClick={() => onOpenWeek(week[0].date)}
+              aria-label={`Open the week of ${format(week[0].date, "MMMM d")}`}
+              className="tap fast flex shrink-0 items-center justify-center rounded-l-xl active:bg-surface-2"
+              style={{ width: CAL_GUTTER }}
+            >
+              <Icon
+                name="chevron-right"
+                size={12}
+                className={holdsSelected ? "text-accent" : "text-muted opacity-40"}
+              />
+            </button>
+            <div className={`${COLS} flex-1 !pr-0`}>
+              {week.map((d) => {
+                const isSel = isSameDay(d.date, selected);
+                return (
+                  <DayCell
+                    key={dayKey(d.date)}
+                    day={d}
+                    selected={isSel}
+                    dim={!isSameMonth(d.date, monthCursor)}
+                    square
+                    // The cell the zoom is anchored on, so leaning in emanates
+                    // from the day you tapped rather than from the middle.
+                    focal={isSel}
+                    wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
+                    onPick={onPick}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* What the marks mean — colour alone is not a legend, and a legend that
           names only some of what's on screen is worse than none: it reads as a

@@ -302,26 +302,29 @@ export function CalendarHeader({
 }
 
 // ── The seven columns ───────────────────────────────────────────────────────
-// One geometry, shared by the month's weekday letters and the week row, so the
-// columns line up across a zoom: `grid-cols-7 px-2`, exactly what MonthSheet
-// draws its cells in.
-
-const COLS = "grid grid-cols-7 px-2";
-/** The week row's own geometry: the same seven columns, indented by the hour
- *  gutter so each cell sits over the column it heads on the Day / Week
- *  canvases. The month's letters keep the bare `px-2`, because a month grid has
- *  no time axis to make room for — the horizontal offset between the two is the
- *  one place the zoom's shared geometry is approximate, and it is worth it: the
- *  alternative is a day header that doesn't point at its own column. */
-const ROW_COLS = "grid grid-cols-7 pr-2";
+/**
+ * ONE seven-column geometry, for every band and every grid on this surface: the
+ * hour gutter, then seven equal columns, then the right margin. The month's
+ * letters, the week row, and the month grid itself all wear it.
+ *
+ * It has to be one, because a Friday that sits at a different x on the month
+ * than it does on the week is the jump the zoom was supposed to remove — the
+ * band would slide 38px sideways while the body scaled, and a fixed point that
+ * moves is not a fixed point. So the month grid pays the gutter it has no time
+ * axis for, and gets something real back for it: see `MonthSheet`'s week door.
+ */
+export const COLS = "grid grid-cols-7 pr-2";
+export const COLS_INSET = { paddingLeft: CAL_GUTTER } as const;
 
 /** The month's column letters. Hoisted out of the paging month body: the
  *  letters are the same in every month, so paging them was motion that carried
- *  no information — and out here they hold still under the zoom. */
+ *  no information — and out here they hold still under the zoom. Leaning in
+ *  from the month, these letters don't move at all; the numerals and dots grow
+ *  underneath them into the week row below. */
 export function WeekdayLetters({ weekStartsOn }: { weekStartsOn: 0 | 1 }) {
   const start = startOfWeek(new Date(2024, 0, 7), { weekStartsOn });
   return (
-    <div className={COLS} aria-hidden>
+    <div className={COLS} style={COLS_INSET} aria-hidden>
       {Array.from({ length: 7 }, (_, i) => (
         <div key={i} className="py-1 text-center text-micro font-medium uppercase text-muted">
           {addDays(start, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)}
@@ -440,7 +443,7 @@ export function WeekRow({
 }) {
   const selKey = dayKey(selected);
   return (
-    <div className={ROW_COLS} style={{ paddingLeft: CAL_GUTTER }}>
+    <div className={COLS} style={COLS_INSET}>
       {Array.from({ length: 7 }, (_, i) => {
         const plan = buildDayPlan(addDays(weekStart, i), ctx);
         return (
@@ -461,15 +464,42 @@ export function WeekRow({
 
 // ── The zoom ────────────────────────────────────────────────────────────────
 
-type ZoomState =
-  | { t: "idle" }
-  | { t: "zoom"; leaving: ReactNode; dir: ZoomDir; on: boolean; origin: string };
+type ZoomState = { t: "idle" } | { t: "zoom"; leaving: ReactNode; dir: ZoomDir; origin: string };
 
+/** Where each layer starts and ends. Leaning in, the horizon you left rushes
+ *  PAST you (out through the glass) and the new one rises from under it;
+ *  standing back, the reverse. Equal rungs only cross-fade — a scale would
+ *  claim an altitude change that didn't happen. */
 const SCALE = {
-  in: { leaveTo: 1.14, enterFrom: 0.9 },
-  out: { leaveTo: 0.9, enterFrom: 1.14 },
-  lateral: { leaveTo: 1, enterFrom: 1 },
+  in: { leave: 1.14, enter: 0.9 },
+  out: { leave: 0.9, enter: 1.14 },
+  lateral: { leave: 1, enter: 1 },
 } as const;
+
+/** Read a motion token so the zoom obeys the same clock as everything else.
+ *  Cheap, and only on a horizon change. */
+function motion(): { ms: number; easing: string } {
+  const cs = typeof window === "undefined" ? null : getComputedStyle(document.documentElement);
+  const raw = cs?.getPropertyValue("--d-base").trim() || "220ms";
+  const ms = raw.endsWith("ms") ? parseFloat(raw) : raw.endsWith("s") ? parseFloat(raw) * 1000 : 220;
+  return {
+    ms: Number.isFinite(ms) && ms > 0 ? ms : 220,
+    easing: cs?.getPropertyValue("--ease-out").trim() || "cubic-bezier(0.22, 1, 0.36, 1)",
+  };
+}
+
+/**
+ * The fade is LINEAR while the scale is eased, and they are separate animations
+ * for that reason alone.
+ *
+ * `--ease-out` is a quint — 85% of the way there in a third of the duration.
+ * That is right for something arriving, and wrong for a cross-dissolve: run the
+ * two opacities on it and the horizon you left is at 15% before the eye has
+ * found it, which is the hard swap again wearing 220ms. Linear keeps the two
+ * layers summing to one, so what you see is genuinely one horizon becoming the
+ * other rather than a flicker between them.
+ */
+const FADE = "linear";
 
 /**
  * The zoom axis, given motion.
@@ -501,13 +531,13 @@ export function LensZoom({
 }) {
   const [mode, setMode] = useState<ZoomState>({ t: "idle" });
   const keyRef = useRef(zoomKey);
-  const childrenRef = useRef(children);
   const settledRef = useRef(children);
   const dirRef = useRef(dir);
   const originRef = useRef(origin);
-  childrenRef.current = children;
   dirRef.current = dir;
   originRef.current = origin;
+  const asideRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const reduce = prefersReducedMotion();
 
   // Keep the last settled body, so there is something to send away.
@@ -523,54 +553,75 @@ export function LensZoom({
       setMode({ t: "idle" });
       return;
     }
-    setMode({ t: "zoom", leaving: settledRef.current, dir: d, on: false, origin: originRef.current });
-    const raf = requestAnimationFrame(() =>
-      requestAnimationFrame(() => setMode((m) => (m.t === "zoom" ? { ...m, on: true } : m))),
-    );
-    return () => cancelAnimationFrame(raf);
+    setMode({ t: "zoom", leaving: settledRef.current, dir: d, origin: originRef.current });
   }, [zoomKey, reduce]);
 
-  // `transitionend` is easy to miss (tab backgrounded, a reduced-motion flip
-  // mid-flight). Never leave a layer stranded mid-zoom.
-  useEffect(() => {
+  // Driven by `Element.animate` rather than a CSS transition, for two reasons a
+  // transition can't answer. The outgoing layer is a BRAND NEW element every
+  // zoom, and a transition on a just-inserted node needs a painted starting
+  // frame — which React never gives it, so the layer sat frozen at scale 1
+  // while the arriving one moved: a cross-fade with only one half. And zooming
+  // twice the same way in a row (month → week → day) would not restart a CSS
+  // animation, because nothing about the class changed. `animate()` has neither
+  // problem: it always starts, on any element, from the values given here.
+  useLayoutEffect(() => {
     if (mode.t !== "zoom") return;
-    const t = window.setTimeout(() => setMode({ t: "idle" }), 420);
-    return () => window.clearTimeout(t);
+    const s = SCALE[mode.dir];
+    const { ms, easing } = motion();
+    const running: Animation[] = [];
+    const layer = (el: HTMLElement | null, from: number, to: number, fadeTo: 0 | 1) => {
+      if (!el) return;
+      running.push(
+        el.animate([{ transform: `scale(${from})` }, { transform: `scale(${to})` }], {
+          duration: ms,
+          easing,
+          fill: "both",
+        }),
+      );
+      running.push(
+        el.animate([{ opacity: 1 - fadeTo }, { opacity: fadeTo }], {
+          duration: ms,
+          easing: FADE,
+          fill: "both",
+        }),
+      );
+    };
+    layer(asideRef.current, 1, s.leave, 0);
+    layer(mainRef.current, s.enter, 1, 1);
+    // Belt and braces: `onfinish` never arriving (a backgrounded tab, a
+    // mid-flight remount) must not leave the outgoing horizon on screen.
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      setMode({ t: "idle" });
+    };
+    for (const a of running) a.onfinish = settle;
+    const t = window.setTimeout(settle, ms + 200);
+    return () => {
+      window.clearTimeout(t);
+      for (const a of running) a.cancel();
+    };
   }, [mode]);
 
   const zooming = mode.t === "zoom";
-  const s = zooming ? SCALE[mode.dir] : null;
 
   return (
     <div className={`lens-zoom ${zooming ? "is-zooming" : ""}`}>
       {zooming && (
         <div
-          className="lens-zoom-layer is-aside is-moving"
+          ref={asideRef}
+          className="lens-zoom-layer is-aside"
           aria-hidden
-          style={{
-            transformOrigin: mode.origin,
-            transform: mode.on ? `scale(${s!.leaveTo})` : "scale(1)",
-            opacity: mode.on ? 0 : 1,
-          }}
+          style={{ transformOrigin: mode.origin }}
         >
           {mode.leaving}
         </div>
       )}
       <div
-        className={`lens-zoom-layer ${zooming ? "is-moving" : ""}`}
-        style={
-          zooming
-            ? {
-                transformOrigin: mode.origin,
-                transform: mode.on ? "scale(1)" : `scale(${s!.enterFrom})`,
-                opacity: mode.on ? 1 : 0,
-              }
-            : undefined
-        }
-        onTransitionEnd={(e) => {
-          if (e.target !== e.currentTarget) return;
-          setMode({ t: "idle" });
-        }}
+        ref={mainRef}
+        className="lens-zoom-layer"
+        style={zooming ? { transformOrigin: mode.origin } : undefined}
       >
         {children}
       </div>
