@@ -91,10 +91,8 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
   { id: "inbox", label: "Inbox" },
 ];
 
-// Trash is the fourth lens, and it only exists when it holds something — a
-// permanently visible fourth segment would tax a three-segment control for a
-// face most days never need (P9, P10).
-const TRASH_SUBTAB: { id: MobileTab; label: string } = { id: "trash", label: "Trash" };
+// Trash is recovery, not a fourth peer segment (P9, P10, D-104). It only
+// appears when it holds something, and only as an icon beside the strip.
 
 const isTab = (v: string | null): v is Tab => !!v && NAV.some((t) => t.id === v);
 
@@ -616,6 +614,7 @@ export default function MobileShell() {
               setSub={setSub}
               count={subCount}
               showTrash={trashed.length > 0}
+              trashCount={trashed.length}
               filter={
                 // Inert on Trash for the same reason as the desktop rail: the
                 // trash is a recovery surface, and a filtered one could hide the
@@ -936,24 +935,27 @@ function NavTab({
 }
 
 // The Today / Week / Inbox lens switch inside the Tasks screen.
+// Trash is recovery, not a peer segment — an icon when it holds something.
 function TaskSubtabs({
   sub,
   setSub,
   count,
   showTrash = false,
+  trashCount = 0,
   filter,
 }: {
   sub: MobileTab;
   setSub: (s: MobileTab) => void;
   count: (s: MobileTab) => number;
-  /** The trash holds something, so its lens is reachable. */
+  /** The trash holds something, so its icon is reachable. */
   showTrash?: boolean;
+  trashCount?: number;
   /** The filter control, rendered at the end of the strip. Null on Trash. */
   filter?: React.ReactNode;
 }) {
   return (
     <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-      {(showTrash ? [...SUBTABS, TRASH_SUBTAB] : SUBTABS).map((t) => {
+      {SUBTABS.map((t) => {
         const on = sub === t.id;
         const c = count(t.id);
         return (
@@ -979,15 +981,28 @@ function TaskSubtabs({
                   border: on ? "none" : "1px solid var(--line-strong)",
                 }}
               >
-                {/* The trash query is capped, so its count is a floor, not a
-                    total — "100+", never a false exact 100. */}
                 {c}
-                {t.id === "trash" && c >= TRASH_LIMIT ? "+" : ""}
               </span>
             )}
           </button>
         );
       })}
+      {showTrash && (
+        <button
+          type="button"
+          aria-label={`Trash${trashCount >= TRASH_LIMIT ? `, ${TRASH_LIMIT}+ items` : `, ${trashCount} items`}`}
+          onClick={() => setSub("trash")}
+          className={`tap fast flex shrink-0 items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 ${
+            sub === "trash" ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
+          }`}
+        >
+          <Icon name="trash" size={16} />
+          <span className="mono text-micro font-semibold opacity-80">
+            {trashCount}
+            {trashCount >= TRASH_LIMIT ? "+" : ""}
+          </span>
+        </button>
+      )}
       {filter}
     </div>
   );
