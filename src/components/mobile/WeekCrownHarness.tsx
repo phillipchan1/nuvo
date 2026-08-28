@@ -392,7 +392,6 @@ function InSitu({
             )}
             onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
             onTapEvent={() => say("tap event")}
-            onOpenUpkeep={() => say("open upkeep")}
           />
         </div>
       </div>

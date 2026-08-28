@@ -25,7 +25,7 @@
 import { useMemo, useState } from "react";
 import { addDays, addMonths, endOfMonth, endOfWeek, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
-import { useExternalEvents } from "../../hooks/useCalendar";
+import { useCalendarRangePrefetch, useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks, usePlannedAnytimeTasks } from "../../hooks/useTasks";
 import { useSlots, useSlotTasks } from "../../hooks/useSlots";
 import { useVertical } from "../../hooks/useVertical";
@@ -37,7 +37,11 @@ import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 import type { CalendarTap } from "./MobileEventSheet";
 import { DAY_MS, type DayCtx } from "./dayPlan";
 import type { CalHorizon } from "./CalendarChrome";
-import CalendarSurface, { initialCalendarWindow, type CalWindow } from "./CalendarSurface";
+import CalendarSurface, {
+  initialCalendarWindow,
+  stepCalendarWindow,
+  type CalWindow,
+} from "./CalendarSurface";
 import { AGENDA_DAYS } from "./MobileAgendaView";
 import { mobileYearRange } from "./MobileYearView";
 
@@ -45,11 +49,42 @@ import { mobileYearRange } from "./MobileYearView";
 const WEEK_FETCH_BEHIND = 7;
 const WEEK_FETCH_AHEAD = 21;
 
+/** The span a given standing-place needs fetched. Pure, so the same function
+ *  can size the live query AND the neighbours we warm behind it. */
+export function calendarRange(
+  win: CalWindow,
+  weekOpts: { weekStartsOn: 0 | 1 },
+): { start: string; end: string } {
+  const { mode, selected, monthCursor, yearCursor, pastDays } = win;
+  if (mode === "year") return mobileYearRange(yearCursor);
+  if (mode === "month") {
+    const gridStart = startOfWeek(startOfMonth(addMonths(monthCursor, -1)), weekOpts);
+    const gridEnd = addDays(endOfWeek(endOfMonth(addMonths(monthCursor, 1)), weekOpts), 1);
+    return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
+  }
+  if (mode === "day" || mode === "week") {
+    const wk = startOfWeek(startOfDay(selected), weekOpts);
+    return {
+      start: addDays(wk, -WEEK_FETCH_BEHIND).toISOString(),
+      end: addDays(wk, WEEK_FETCH_AHEAD + 1).toISOString(),
+    };
+  }
+  // The agenda. Its own week row still needs the days either side of the
+  // anchor's week, so the row's dots are never blank while the list below is
+  // full — the row is the one thing that has to hold still.
+  const anchor = startOfDay(selected);
+  const wk = startOfWeek(anchor, weekOpts);
+  const start = addDays(anchor, -pastDays);
+  return {
+    start: (wk < start ? wk : start).toISOString(),
+    end: new Date(anchor.getTime() + (AGENDA_DAYS + 1) * DAY_MS).toISOString(),
+  };
+}
+
 export default function MobileCalendar({
   now,
   onTapEvent,
   onTapTask,
-  onOpenUpkeep,
   onNewEvent,
   onOpenProject,
   renderCrownTask,
@@ -60,7 +95,6 @@ export default function MobileCalendar({
   onTapEvent?: (tap: CalendarTap) => void;
   /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
   onTapTask?: (taskId: string) => void;
-  onOpenUpkeep?: () => void;
   /** Opens the new-event sheet, seeded on the day the user was looking at. */
   onNewEvent?: (date: Date) => void;
   /** The week crown's doors — omit them and the crown stays off (harnesses,
@@ -86,32 +120,23 @@ export default function MobileCalendar({
   // will actually draw.
   const [win, setWin] = useState<CalWindow>(() => initialCalendarWindow(now, initialMode));
 
-  const range = useMemo(() => {
-    const { mode, selected, monthCursor, yearCursor, pastDays } = win;
-    if (mode === "year") return mobileYearRange(yearCursor);
-    if (mode === "month") {
-      const gridStart = startOfWeek(startOfMonth(addMonths(monthCursor, -1)), weekOpts);
-      const gridEnd = addDays(endOfWeek(endOfMonth(addMonths(monthCursor, 1)), weekOpts), 1);
-      return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
-    }
-    if (mode === "day" || mode === "week") {
-      const wk = startOfWeek(startOfDay(selected), weekOpts);
-      return {
-        start: addDays(wk, -WEEK_FETCH_BEHIND).toISOString(),
-        end: addDays(wk, WEEK_FETCH_AHEAD + 1).toISOString(),
-      };
-    }
-    // The agenda. Its own week row still needs the days either side of the
-    // anchor's week, so the row's dots are never blank while the list below is
-    // full — the row is the one thing that has to hold still.
-    const anchor = startOfDay(selected);
-    const wk = startOfWeek(anchor, weekOpts);
-    const start = addDays(anchor, -pastDays);
-    return {
-      start: (wk < start ? wk : start).toISOString(),
-      end: new Date(anchor.getTime() + (AGENDA_DAYS + 1) * DAY_MS).toISOString(),
-    };
-  }, [win, weekOpts]);
+  const range = useMemo(() => calendarRange(win, weekOpts), [win, weekOpts]);
+
+  // Warm the two windows a swipe can reach, so travel is a cache read instead
+  // of a round trip. The lag was never the rendering: paging a month shifted
+  // the query key by a month, and the *visible* month then waited on the
+  // network even though two thirds of what came back was already in hand.
+  // `stepCalendarWindow` is the same function the surface moves by, so what we
+  // warm is exactly what the next swipe asks for — a prefetch keyed a day off
+  // is worse than none, because it pays twice and still misses.
+  const neighbours = useMemo(
+    () => [
+      calendarRange(stepCalendarWindow(win, -1), weekOpts),
+      calendarRange(stepCalendarWindow(win, 1), weekOpts),
+    ],
+    [win, weekOpts],
+  );
+  useCalendarRangePrefetch(neighbours);
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
@@ -189,7 +214,6 @@ export default function MobileCalendar({
       onWindowChange={setWin}
       onTapEvent={onTapEvent}
       onTapTask={onTapTask}
-      onOpenUpkeep={onOpenUpkeep}
       onNewEvent={onNewEvent}
       onOpenProject={onOpenProject}
       renderCrownTask={renderCrownTask}
