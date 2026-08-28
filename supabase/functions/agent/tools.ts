@@ -2570,15 +2570,22 @@ export async function executeTool(
 
     case "restore_task": {
       const before = await resolveTrashedTask(userId, args);
-      // The destination is the resting status, not "wherever it was" — the same
-      // rule the UI's Restore uses (restingStatus in lib/types.ts). A task
-      // deleted three weeks ago must not come back dated to a day that passed.
+      // The destination is the undated resting status, not "wherever it was" —
+      // the same rule the UI's Restore uses (`restoreFromTrashPatch` in
+      // lib/types.ts). A task deleted three weeks ago must not come back dated
+      // to a day that passed, so the schedule fields clear with the trash stamp.
       const resting = before.project_id || before.initiative_id || before.domain_id || before.sprint_id
         ? "backlog"
         : "inbox";
       const { error } = await admin
         .from("tasks")
-        .update({ status: resting, trashed_at: null })
+        .update({
+          status: resting,
+          trashed_at: null,
+          do_date: null,
+          start_time: null,
+          slot_id: null,
+        })
         .eq("id", before.id)
         .eq("user_id", userId);
       if (error) throw new Error(error.message);

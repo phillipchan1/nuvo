@@ -8,7 +8,7 @@ import { acceptPatch, dismissPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useSettings } from "../hooks/useSettings";
-import { DEFAULT_DURATION_MINUTES } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch } from "../lib/types";
 import { useVertical } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
 import TaskFilter from "./TaskFilter";
@@ -188,9 +188,17 @@ export default function LeftRail({
 
   // The tab can vanish under the user (restore the last row, empty the trash),
   // and a rail left on a face that no longer exists renders nothing at all.
+  // Restore navigates itself (to Inbox when that's where the row landed); this
+  // is the fallback for Empty trash / purge-all, which have nowhere better.
   useEffect(() => {
     if (tab === "trash" && trashed.length === 0) setTab("today");
   }, [tab, trashed.length, setTab]);
+
+  // A release over a tab is a *drop*, not a navigation. pointerup clears
+  // `draggingId` before the synthetic click fires, so without this latch a
+  // drop aimed near Trash (which used to arm as if it were a destination)
+  // would flip the strip to Trash and make the row look like it was deleted.
+  const suppressTabClickRef = useRef(false);
 
   const visible: Task[] =
     tab === "inbox"
@@ -333,7 +341,15 @@ export default function LeftRail({
         case "u":
           if (tab === "trash" && targets.length) {
             e.preventDefault();
-            targets.forEach((t) => mutations.restore(t));
+            // Same destination rule as the Restore button — follow the last
+            // restored row so emptying the trash doesn't dump you on Today
+            // while the row landed in the Inbox.
+            let face: "inbox" | "today" = "today";
+            targets.forEach((t) => {
+              face = restoreFromTrashPatch(t).face;
+              mutations.restore(t);
+            });
+            setTab(face);
             setSelectedId(null);
             setSelectedIds(new Set());
           }
@@ -563,11 +579,17 @@ export default function LeftRail({
     bandIds: (band) => bands.ids.get(band) ?? [],
     // A tab only offers itself when the act would change something: you can't
     // take an inbox row off the day, and a row already on the day is already there.
+    // Geometry, not elementFromPoint: FullCalendar's drag mirror sits over the
+    // strip and would steal the hit, so a drop aimed at Inbox would miss. Trash
+    // is deliberately NOT a zone (D-104) — it is a face, not a destination.
     externalDropAt: (x, y) => {
-      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-      if (!hit) return null;
-      if (tab === "today" && hit.closest("[data-inbox-tab]")) return "inbox";
-      if (tab === "inbox" && hit.closest("[data-today-tab]")) return "today";
+      const inRect = (el: Element | null) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      };
+      if (tab === "today" && inRect(document.querySelector("[data-inbox-tab]"))) return "inbox";
+      if (tab === "inbox" && inRect(document.querySelector("[data-today-tab]"))) return "today";
       return null;
     },
     onExternalDrop: (key, id) => {
@@ -582,6 +604,11 @@ export default function LeftRail({
       preDragSelection.current = selectedIdRef.current;
     },
     onDragEnd: () => {
+      // Latch through the synthetic click that follows pointerup.
+      suppressTabClickRef.current = true;
+      requestAnimationFrame(() => {
+        suppressTabClickRef.current = false;
+      });
       setSelectedId(preDragSelection.current);
       setSelectedIds(new Set());
     },
@@ -784,16 +811,24 @@ export default function LeftRail({
             // Three states, because "you could drop here" and "you are about to"
             // are different promises: resting · armed (a compatible row is in
             // hand) · ready (the pointer is on it, release commits).
-            const armed = Boolean(draggingId) && t !== tab;
+            // Only the tabs that are real drop acts arm — Trash is a face, not
+            // a destination (D-104). Arming it next to Inbox made a drop aimed
+            // at Inbox look like it might delete, and a release over Trash
+            // flipped the strip there so the row appeared to vanish into it.
+            const canDrop = t === "inbox" || t === "today";
+            const armed = Boolean(draggingId) && canDrop && t !== tab;
             const ready = zone === t;
             return (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => {
+                  if (suppressTabClickRef.current) return;
+                  setTab(t);
+                }}
                 {...(t === "inbox"
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
                   : t === "trash"
-                    ? {}
+                    ? { "data-trash-tab": "" }
                     : { "data-today-tab": "" })}
                 className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
                   tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
@@ -871,7 +906,15 @@ export default function LeftRail({
             tasks={trashed}
             selectedId={selectedId}
             onSelect={setSelectedId}
-            onRestore={(t) => mutations.restore(t)}
+            onRestore={(t) => {
+              // Navigate before the cache drops the last row — otherwise the
+              // empty-trash effect parks you on Today while an inbox restore
+              // sits somewhere you aren't looking.
+              const { face } = restoreFromTrashPatch(t);
+              mutations.restore(t);
+              setTab(face);
+              setSelectedId(null);
+            }}
             onPurge={(t) => void mutations.purge(t)}
             onPurgeAll={() => void mutations.purgeAll(trashed)}
           />

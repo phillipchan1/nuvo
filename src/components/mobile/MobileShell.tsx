@@ -660,6 +660,7 @@ export default function MobileShell() {
               mutations={mutations}
               now={now}
               onTapTask={(t) => setTaskId(t.id)}
+              onRestored={(face) => setSub(face)}
               selection={
                 sub === "trash"
                   ? undefined
