@@ -1534,6 +1534,47 @@ body.nuvo-selecting * {
   .time-pager-layer.is-settling { transition-duration: 1ms; }
 }
 
+/* ── The zoom axis (mobile Calendar) ───────────────────────────────────────
+   `.time-pager` travels (same horizon, next date); this ZOOMS (same date, next
+   horizon). Both layers scale through one origin — the column of the day you
+   are standing on — so leaning in reads as the horizon you left rushing past
+   and the new one rising from under it, rather than a hard swap. The leaving
+   layer is absolute so the container's height is the ARRIVING body's from the
+   first frame: no reflow mid-zoom. */
+.lens-zoom {
+  position: relative;
+}
+.lens-zoom.is-zooming {
+  overflow: hidden;
+}
+.lens-zoom-layer {
+  width: 100%;
+  /* Positioned so `LensZoom`'s layers are the containing block, and so the
+     leaving one can be lifted out of flow without collapsing the pane. */
+  position: relative;
+  backface-visibility: hidden;
+}
+.lens-zoom-layer.is-aside {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  pointer-events: none;
+}
+.lens-zoom-layer.is-moving {
+  transition:
+    transform var(--d-base) var(--ease-out),
+    opacity var(--d-base) var(--ease-out);
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The horizon just changes. `LensZoom` already skips the layer entirely when
+     reduced motion is on; this is the belt to that braces. */
+  .lens-zoom-layer.is-moving {
+    transition-duration: 1ms;
+  }
+}
+
 /* Kept as aliases so a leftover `day-in-*` class still reduces. The pager
    owns traversal now — these 16px fades were the "show and hide". */
 @keyframes day-in-fwd {

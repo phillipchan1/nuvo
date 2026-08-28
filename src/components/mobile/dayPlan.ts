@@ -464,6 +464,16 @@ type CalendarTapLike =
   | { kind: "slot"; slot: Slot; title: string; start: Date; end: Date; childCount: number; doneCount: number }
   | { kind: "block"; taskId: string; title: string; start: Date; end: Date; done: boolean };
 
+/** The density marks a day wears wherever it appears as a *cell* — the month
+ *  grid and the week row draw the same three dots, tasks (accent) before events
+ *  (neutral), so a Tuesday is the same picture at both horizons. One rule here
+ *  rather than two `slice(0, 3)`s that drift. */
+export function loadDots(day: DayPlan): ("block" | "event")[] {
+  const blocks = day.timed.filter((t) => t.kind === "block" || t.kind === "slot").length + day.anytime.length;
+  const events = day.timed.filter((t) => t.kind === "event").length + day.allDay.length;
+  return [...Array(blocks).fill("block"), ...Array(events).fill("event")].slice(0, 3) as ("block" | "event")[];
+}
+
 /** The day's one-line availability answer — shared by the agenda's day header
  *  and the Day lens header, so the two lenses can't disagree about a day. A
  *  past date is a record of what happened, not an availability question — its
