@@ -173,6 +173,45 @@ export function restingStatus(
 }
 
 /**
+ * Bring a trashed task back into the funnel (D-104).
+ *
+ * Restore is not "undo the delete onto the same day" — a task trashed from
+ * Today three weeks ago must not reappear dated to a day that has passed. The
+ * schedule fields clear, and the destination is the undated resting place:
+ * inbox if it has no home, otherwise its project's (or domain's) backlog.
+ * The agent’s `restore_task` applies the same patch.
+ */
+export function restoreFromTrashPatch(
+  t: Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id" | "start_time" | "slot_id" | "status" | "trashed_at">,
+): {
+  before: Partial<Task>;
+  patch: Partial<Task>;
+  /** Rail / phone face that can show the row after restore. Backlog has no face. */
+  face: "inbox" | "today";
+} {
+  const status = restingStatus({ ...t, do_date: null });
+  return {
+    before: {
+      status: t.status,
+      trashed_at: t.trashed_at,
+      do_date: t.do_date,
+      start_time: t.start_time,
+      slot_id: t.slot_id,
+    },
+    patch: {
+      status,
+      trashed_at: null,
+      do_date: null,
+      start_time: null,
+      slot_id: null,
+    },
+    // Inbox is a rail face; backlog isn't. Today is the least-wrong place to
+    // land after restoring a parented row — the toast names the real home.
+    face: status === "inbox" ? "inbox" : "today",
+  };
+}
+
+/**
  * A "big rock" — one of the week's named OUTCOMES that sit above the task
  * funnel (a rock is served by tasks and time, in service of a bet). Held on
  * Today all week, read back in the Gain. Stored as `big_rocks` jsonb on the

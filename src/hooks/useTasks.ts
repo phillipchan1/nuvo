@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
-import { DEFAULT_DURATION_MINUTES, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
 import { useOptionalUndoStack } from "./useUndoStack";
@@ -778,14 +778,26 @@ export function useTaskMutations() {
     /**
      * Bring a trashed task back.
      *
-     * The destination is `restingStatus`, not "wherever it was" — a task
-     * deleted from Today three weeks ago should not reappear dated to a day
-     * that has passed. The state machine already knows where an undated,
-     * unparented task belongs, and there is exactly one of it.
+     * The destination is the undated resting place (inbox or backlog), not
+     * "wherever it was" — see `restoreFromTrashPatch` / D-104. Clearing the
+     * schedule fields is load-bearing: passing the row through `restingStatus`
+     * with its old `do_date` still set would put it back on a day that may
+     * have passed, and the trash face's "restore then kick to Today" would
+     * leave an inbox-bound row nowhere visible.
      */
-    restore: (t: Task, opts?: UndoOpts) =>
-      track("restore", t, { status: t.status, trashed_at: t.trashed_at }, { status: restingStatus(t), trashed_at: null },
-      opts),
+    restore: (t: Task, opts?: UndoOpts) => {
+      const { before, patch } = restoreFromTrashPatch(t);
+      const home =
+        patch.status === "inbox"
+          ? "Inbox"
+          : t.project_id
+            ? "its project's backlog"
+            : "backlog";
+      track("restore", t, before, patch, {
+        ...opts,
+        label: opts?.label ?? `Restored to ${home} — ${t.title}`,
+      });
+    },
 
     /**
      * Delete for real. The one act in the app with no undo, so every caller

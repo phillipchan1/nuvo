@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Label, Task } from "../../lib/types";
+import { restoreFromTrashPatch } from "../../lib/types";
 import { TRASH_RETENTION_DAYS, type useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { isOverdue, todayISO, tomorrowISO } from "../../lib/dates";
@@ -39,6 +40,7 @@ export default function MobileTaskList({
   pending = false,
   filterNote = null,
   selection,
+  onRestored,
 }: {
   tab: MobileTab;
   inbox: Task[];
@@ -65,6 +67,8 @@ export default function MobileTaskList({
     begin: (id: string) => void;
     toggle: (id: string) => void;
   };
+  /** After Restore — follow the row (inbox when that's where it landed). */
+  onRestored?: (face: "inbox" | "today") => void;
 }) {
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
@@ -111,7 +115,11 @@ export default function MobileTaskList({
     return (
       <MobileTrash
         tasks={trashed}
-        onRestore={(t) => mutations.restore(t)}
+        onRestore={(t) => {
+          const { face } = restoreFromTrashPatch(t);
+          mutations.restore(t);
+          onRestored?.(face);
+        }}
         onPurge={(t) => void mutations.purge(t)}
         onPurgeAll={() => void mutations.purgeAll(trashed)}
       />

@@ -2032,7 +2032,11 @@ invisible.
 
 The trash is **not** a sixth destination (P10) — it is a face on the tab strip
 that already exists, on both shells, and it appears only when it holds something.
-Restore lands via `restingStatus()`, never on a date that has since passed.
+Restore lands via `restoreFromTrashPatch()` (undated `restingStatus`), never on a date
+that has since passed — and the trash face follows the row (Inbox when that's where it
+landed) instead of dumping you on Today after the last restore. The strip never arms
+Trash as a drop target during a drag: it is a face, not a destination, and lighting it
+next to Inbox made a Today → Inbox drop look like a delete.
 Permanent deletion is the one act in Nuvo with no undo, so it confirms in place,
 never rides a bare keystroke, and the agent's version is confirm-token gated and
 searches the trash rather than live tasks.
