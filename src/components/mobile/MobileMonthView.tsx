@@ -19,7 +19,7 @@ import WeatherIcon from "../WeatherIcon";
 import { Icon } from "../Icon";
 import type { CalendarTap } from "./MobileEventSheet";
 import { at, buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
-import { CAL_GUTTER, COLS, DayCell, TIME_RAIL } from "./CalendarChrome";
+import { ColumnBand, DayCell, TIME_RAIL } from "./CalendarChrome";
 import { clampDayToMonth } from "./monthTap";
 import TimePager from "./TimePager";
 
@@ -139,47 +139,48 @@ function MonthSheet({
       {weeks.map((week) => {
         const holdsSelected = week.some((d) => isSameDay(d.date, selected));
         return (
-          <div key={dayKey(week[0].date)} className="flex items-stretch pr-2">
-            {/* The gutter. A month has no time axis, but the geometry is shared
-                with the two canvases that do (see `COLS`), so this column
-                exists — and rather than 38px of blank paper it is the door to
-                that week: leaning into a specific week used to cost selecting
-                one of its days and then tapping W. The chevron marks the row
-                the band above is currently showing. */}
-            <button
-              type="button"
-              onClick={() => onOpenWeek?.(week[0].date)}
-              disabled={!onOpenWeek}
-              aria-label={`Open the week of ${format(week[0].date, "MMMM d")}`}
-              className="tap fast flex shrink-0 items-center justify-center rounded-l-xl active:bg-surface-2"
-              style={{ width: CAL_GUTTER }}
-            >
-              <Icon
-                name="chevron-right"
-                size={12}
-                className={holdsSelected ? "text-accent" : "text-muted opacity-40"}
-              />
-            </button>
-            <div className={`${COLS} flex-1 !pr-0`}>
-              {week.map((d) => {
-                const isSel = isSameDay(d.date, selected);
-                return (
-                  <DayCell
-                    key={dayKey(d.date)}
-                    day={d}
-                    selected={isSel}
-                    dim={!isSameMonth(d.date, monthCursor)}
-                    square
-                    // The cell the zoom is anchored on, so leaning in emanates
-                    // from the day you tapped rather than from the middle.
-                    focal={isSel}
-                    wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
-                    onPick={onPick ?? noop}
-                  />
-                );
-              })}
-            </div>
-          </div>
+          <ColumnBand
+            key={dayKey(week[0].date)}
+            // The gutter. A month has no time axis, but the geometry is shared
+            // with the two canvases that do (see `ColumnBand`), so this column
+            // exists — and rather than 38px of blank paper it is the door to
+            // that week: leaning into a specific week used to cost selecting
+            // one of its days and then tapping W. The chevron marks the row
+            // the band above is currently showing.
+            gutter={
+              <button
+                type="button"
+                onClick={() => onOpenWeek?.(week[0].date)}
+                disabled={!onOpenWeek}
+                aria-label={`Open the week of ${format(week[0].date, "MMMM d")}`}
+                className="tap fast flex h-full w-full items-center justify-center rounded-l-xl active:bg-surface-2"
+              >
+                <Icon
+                  name="chevron-right"
+                  size={12}
+                  className={holdsSelected ? "text-accent" : "text-muted opacity-40"}
+                />
+              </button>
+            }
+          >
+            {week.map((d) => {
+              const isSel = isSameDay(d.date, selected);
+              return (
+                <DayCell
+                  key={dayKey(d.date)}
+                  day={d}
+                  selected={isSel}
+                  dim={!isSameMonth(d.date, monthCursor)}
+                  square
+                  // The cell the zoom is anchored on, so leaning in emanates
+                  // from the day you tapped rather than from the middle.
+                  focal={isSel}
+                  wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
+                  onPick={onPick ?? noop}
+                />
+              );
+            })}
+          </ColumnBand>
         );
       })}
 
@@ -259,7 +260,7 @@ function MonthDayPreview({
     >
       <button
         onClick={onOpen}
-        className="tap fast flex w-full items-center gap-2 px-4 py-3 text-left active:bg-surface-2"
+        className="tap fast flex w-full items-center gap-2 px-3 py-3 text-left active:bg-surface-2"
       >
         <span className="text-body font-medium text-ink">
           {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
@@ -273,11 +274,11 @@ function MonthDayPreview({
       </button>
 
       {busy === 0 ? (
-        <p className="px-4 pb-3 text-body text-muted">
+        <p className="px-3 pb-3 text-body text-muted">
           {isBygone ? "Nothing scheduled." : isPast ? "Done for today." : "No commitments — wide open."}
         </p>
       ) : (
-        <div className="flex flex-col gap-0.5 px-4 pb-3">
+        <div className="flex flex-col gap-0.5 px-3 pb-3">
           {shownAllDay.map((e) => (
             <button
               key={e.id}

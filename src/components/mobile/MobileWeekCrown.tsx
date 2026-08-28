@@ -159,7 +159,7 @@ export default function MobileWeekCrown({
                   looseCount > 0 ? `, ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time yet` : ""
                 }. ${expandable ? "Show this week's projects" : "Open the week"}`
           }
-          className="tap-h fast flex w-full items-center gap-2.5 px-4 py-2 text-left active:bg-surface-2"
+          className="tap-h fast flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2"
         >
           <span className="section-label !p-0 shrink-0">This week</span>
           {total === 0 ? (
@@ -186,7 +186,7 @@ export default function MobileWeekCrown({
   }
 
   return (
-    <section className="border-b border-line px-4 pb-2 pt-3">
+    <section className="border-b border-line px-3 pb-2 pt-3">
       <div className="flex items-start gap-2">
         {/* Open: the span it covers, and the door. No scoreboard sentence — the
             rows ARE the scoreboard once you can see them, and a header that

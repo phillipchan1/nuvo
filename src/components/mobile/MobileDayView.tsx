@@ -21,7 +21,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { fmtMins } from "../../lib/now";
 import type { CalendarTap } from "./MobileEventSheet";
 import { buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx } from "./dayPlan";
-import { CAL_GUTTER, hourLabel } from "./CalendarChrome";
+import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
 import { blockDesignation } from "../../lib/slots";
@@ -121,7 +121,7 @@ export default function MobileDayView({
                 They were two stacked bands for a distinction the chip's colour
                 already carries. */}
             {(plan.allDay.length > 0 || plan.anytime.length > 0) && (
-              <div className="flex flex-wrap gap-1.5 px-4 pb-1 pt-2">
+              <div className="flex flex-wrap gap-1.5 px-3 pb-1 pt-2">
                 {plan.allDay.map((e) => (
                   <button
                     key={e.id}
@@ -161,15 +161,17 @@ export default function MobileDayView({
               plan.timed.length === 0 &&
               plan.allDay.length === 0 &&
               plan.anytime.length === 0 && (
-                <div className="px-4 pt-3 text-body text-muted">Nothing scheduled.</div>
+                <div className="px-3 pt-3 text-body text-muted">Nothing scheduled.</div>
               )}
 
             {/* The canvas — transparent on the paper; hairline hour rules carry
                 the structure. A bygone day reads as history, quieter. */}
             <div
               ref={canvasRef}
-              className={`relative mx-2 mb-8 mt-2 ${plan.isBygone ? "opacity-70" : ""}`}
-              style={{ height: y(winEnd) + 14 }}
+              className={`relative mb-8 mt-2 ${plan.isBygone ? "opacity-70" : ""}`}
+              // The surface's one edge — see `CAL_EDGE`. The column this canvas
+              // draws has to begin where the week row's lit cell does.
+              style={{ height: y(winEnd) + 14, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
             >
               {hours.map((h) => (
                 <div key={h} className="absolute inset-x-0" style={{ top: y(h * 60) }}>

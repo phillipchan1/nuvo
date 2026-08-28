@@ -1,8 +1,9 @@
 // The mobile Calendar — the data wrapper.
 //
 // Everything about *what the calendar looks like* moved into
-// `CalendarSurface`: one chrome (hero · horizon ladder · travel · seven
-// columns), one sticky week strip, five bodies, and the two axes of motion
+// `CalendarSurface`: one chrome (horizon ladder · travel · seven columns), the
+// hero it hands to the top bar, one sticky week strip, five bodies, and the two
+// axes of motion
 // (`TimePager` travels, `LensZoom` zooms). What is left here is the only thing
 // a harness could never share — the live queries, and the window they're asked
 // for.
@@ -36,7 +37,7 @@ import type { Task } from "../../lib/types";
 import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 import type { CalendarTap } from "./MobileEventSheet";
 import { DAY_MS, type DayCtx } from "./dayPlan";
-import type { CalHorizon } from "./CalendarChrome";
+import type { CalHero, CalHorizon } from "./CalendarChrome";
 import CalendarSurface, {
   initialCalendarWindow,
   stepCalendarWindow,
@@ -85,7 +86,7 @@ export default function MobileCalendar({
   now,
   onTapEvent,
   onTapTask,
-  onNewEvent,
+  onHero,
   onOpenProject,
   renderCrownTask,
   onPlanWeek,
@@ -95,8 +96,8 @@ export default function MobileCalendar({
   onTapEvent?: (tap: CalendarTap) => void;
   /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
   onTapTask?: (taskId: string) => void;
-  /** Opens the new-event sheet, seeded on the day the user was looking at. */
-  onNewEvent?: (date: Date) => void;
+  /** The span the top bar shows, handed up from the surface (D-124). */
+  onHero?: (h: CalHero | null) => void;
   /** The week crown's doors — omit them and the crown stays off (harnesses,
    *  and any embed that has nowhere to route a record). */
   onOpenProject?: (id: string) => void;
@@ -214,7 +215,7 @@ export default function MobileCalendar({
       onWindowChange={setWin}
       onTapEvent={onTapEvent}
       onTapTask={onTapTask}
-      onNewEvent={onNewEvent}
+      onHero={onHero}
       onOpenProject={onOpenProject}
       renderCrownTask={renderCrownTask}
       onPlanWeek={onPlanWeek}

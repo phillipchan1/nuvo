@@ -250,7 +250,7 @@ One launch vocabulary, three doors into it:
   `tests/shortcuts.test.ts` holds it. **Add a door → add it here**, never a second
   parser.
 - **`MobileShell.applyShortcut`** is the only applier — capture opens the
-  `QuickTaskSheet`, chat opens the Nuvo overlay, today lands on the Tasks/Today
+  `MobileCapture`, chat opens the Nuvo overlay, today lands on the Tasks/Today
   segment. Opening either composer also lands the caret and (in the native
   shell) raises the keyboard — `useRaiseKeyboard` plus the WKWebView flag in
   `NuvoWatchPlugin.load` (D-115). A widget ＋ that still needs a second tap

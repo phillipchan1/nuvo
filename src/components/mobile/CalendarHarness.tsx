@@ -16,9 +16,10 @@
 // and it has its own frame — in situ, above both a week-scoped lens and the
 // month — in `WeekCrownHarness` (?weekcrown).
 
+import { useState } from "react";
 import { startOfDay } from "date-fns";
 import CalendarSurface from "./CalendarSurface";
-import type { CalHorizon } from "./CalendarChrome";
+import type { CalHero, CalHorizon } from "./CalendarChrome";
 import type { DayCtx } from "./dayPlan";
 import { deriveSlotTitle } from "../../lib/slots";
 import type { VerticalData } from "../../lib/vertical";
@@ -193,6 +194,11 @@ const CTX: DayCtx = {
 };
 
 function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
+  // The hero lives in the app's top bar now (D-124), so the harness has to
+  // mount a stand-in for it — otherwise this would be verifying a chrome the
+  // phone doesn't actually wear, and the one composition question here ("does
+  // anything move when the horizon does?") includes the title.
+  const [hero, setHero] = useState<CalHero | null>(null);
   return (
     <div style={{ width: 375 }} className="shrink-0">
       <div className="section-label px-3 py-2">{label}</div>
@@ -204,6 +210,30 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
         style={{ height: 720 }}
         data-frame={label}
       >
+        {/* The shell's top bar, in miniature — wordmark, the span, the icons. */}
+        <div className="flex items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
+          {/* No wordmark: on the Calendar tab the bar's title IS the span. */}
+          {hero && (
+            <div className="flex min-w-0 items-baseline gap-1.5 px-1">
+              <span className="masthead shrink-0 text-head text-ink">{hero.hero}</span>
+              {hero.fact && (
+                <span
+                  className="mono min-w-0 truncate text-label"
+                  style={{ color: hero.factAccent ? "var(--accent)" : "var(--muted)" }}
+                >
+                  {hero.fact}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="flex-1" />
+          {/* Three of them, because the real bar has three (search · theme ·
+              settings) and a mock with one would prove the span fits when it
+              doesn't. */}
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="h-9 w-9 shrink-0 rounded-full border border-line" />
+          ))}
+        </div>
         <CalendarSurface
           now={NOW}
           ctx={CTX}
@@ -211,6 +241,7 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
           weekStartsOn={0}
           weatherIndex={null}
           initialMode={mode}
+          onHero={setHero}
         />
       </div>
     </div>

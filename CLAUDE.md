@@ -182,6 +182,14 @@ it needs to work on a phone.
   (D-111). Corollary: an act may live on many surfaces, a **move** lives on one — you
   complete anywhere, you re-time a block on the calendar, and other surfaces link to it
   (`revealOnCalendar`) instead of growing a second handle.
+- **Capture is ONE door, and it makes both kinds** — `mobile/MobileCapture.tsx` (D-124).
+  One free-text line through `parseCapture`, plus a **Task / Event** switch; the sentence
+  survives the switch and seeds the event's time. The Calendar's header ＋ is gone: two ＋s
+  forty pixels apart, each making a different *kind* of object, made you classify a thought
+  before typing it. The switch is not "where does this go" (a scheduled task IS a time
+  block, P1) — it is **who else needs to see it**, which is why only the Event branch has
+  guests, Meet and a calendar picker (`EventComposer`). **Never add a second ＋**, and never
+  let a kind of object be creatable only through a form (P5).
 - **A record's lifecycle acts live in one vocabulary** — `src/lib/recordActions.ts`
   (Open · Ship/Reopen · Park/Resume · Delete). The desktop reaches it by right-click
   (`RecordContextMenu`), the phone by long-press *and* the record sheet's visible ⋯
@@ -200,17 +208,26 @@ it needs to work on a phone.
  clamped, or the month's second question stops having an answer.
 - **The mobile Calendar is one chrome, five bodies, two axes** (D-122). `MobileCalendar` is
   only the data wrapper (the live queries, and the span the active lens needs);
-  `CalendarSurface` owns the window and the composition; `CalendarChrome` is the hero, the
+  `CalendarSurface` owns the window and the composition; `CalendarChrome` is the
   **horizon ladder** (☰ · D W M Y), travel, and the seven columns — mounted ONCE, so
-  nothing in it unmounts when the horizon changes. The five bodies (`MobileAgendaView`,
+  nothing in it unmounts when the horizon changes. **The hero is handed UP, not drawn**
+  (`onHero` → `MobileShell`'s top bar, D-124): it had a row of its own, and on the Week
+  lens that row said "This week" directly above a crown strip already saying it. The top
+  bar's date slot exists on every tab, so the span costs no vertical space there — and the
+  wordmark yields on that one tab, because a calendar's title bar says the date. The five bodies (`MobileAgendaView`,
   `MobileDayView`, `MobileWeekView`, `MobileMonthView`, `MobileYearView`) render only their
   body, all over one `buildDayPlan` (`dayPlan.ts`) — D-044. Two motions that never overlap:
   `TimePager` **travels** (same horizon, next date), `LensZoom` **zooms** (same date, next
   horizon, cross-dissolving through the column of the selected day). **Never give a lens its
   own header, and never invent a second seven-column geometry** — every band and grid wears
- `COLS` + `CAL_GUTTER`, because a Friday at a different x on the month than on the week is
- exactly the jump the zoom exists to remove. Verify all five at `?horizon`
- (`mobile/CalendarHarness.tsx`).
+ `ColumnBand`, because a Friday at a different x on the month than on the week is
+ exactly the jump the zoom exists to remove. **The columns are a component, not a pair of
+ classnames** (D-124): `pr-2` on the band and `mx-2` on the canvas look like the same 8px
+ and are not — the band's seven columns and the canvas's seven columns were divided across
+ different widths and *diverged* across the row. One `CAL_EDGE`, one `CAL_GUTTER`, one
+ `ColumnBand`; everything with columns starts at `CAL_EDGE + CAL_GUTTER`. Every list inside
+ the Calendar sits on `CAL_EDGE` too, so the surface has one left edge, not four. Verify all
+ five at `?horizon` (`mobile/CalendarHarness.tsx`).
 - **A time is spelled ONE way, and a surface that draws a fact doesn't also write it**
  (D-122). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
  `9–9:30am`, `11am–1pm` — and `hourLabel` *is* `at`, so the gutter and everything beside it

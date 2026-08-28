@@ -4483,3 +4483,97 @@ list, and a swipe back doesn't re-fetch) and `tests/calendar-prefetch.test.ts`
 which is the only reason to write them.
 
 *Status: standing — refines D-122's chrome. Read models untouched.*
+
+---
+
+**D-124 · 2026-08-28 · One capture, one title bar, one column geometry.**
+
+Three reports from the same phone screenshot, and they turn out to be the same
+mistake three times: *the surface says something twice.*
+
+**Two ＋s, forty pixels apart.** The floating ＋ made a **task**; a second ＋ in
+the Calendar's header made an **event**. Same glyph, same accent, different
+object — so the app asked you to classify a thought *before* you were allowed to
+type it, which is the exact tax capture exists to remove (**D6** — *I just
+thought of something, where does it go so I stop holding it?*). Worse, the event
+half was a **form**: a title box and three pickers, no parser. **P5** says free
+text is the front door and forms are the fallback, and one whole kind of object
+could only be made through the fallback.
+
+→ **One door.** `MobileCapture` — one free-text line through `parseCapture` (the
+same grammar the desktop command bar speaks), and one **Task / Event** switch
+under it. The sentence survives the switch; the times it gave seed the event, so
+`lunch with sam friday 12pm 1h` arrives already filled in. `EventComposer` keeps
+what only an event has (repeat · guests · Meet · which calendar) folded behind
+one disclosure, because the common event is a name and a time.
+
+The switch is **not** "where does this go" — it is **who else needs to see it**.
+A scheduled task IS a time block (**P1**), so a capture with a time lands on the
+calendar either way; **Event** is the answer when the thing must exist on your
+*external* calendar. That is why Task is the default, and why the branch that
+carries guests is the other one. With no writable calendar connected, Event is
+disabled and *says why* rather than sitting dead (**P7**).
+
+**The hero said "This week" directly above a crown strip saying "This week".**
+Two rows, one at the top of the other, restating each other, on the phone's most
+contested screen — and the top row cost 40px of a calendar, which is a surface
+where vertical space *is* the product.
+
+→ **The hero moves to the app's top bar**, in the slot every other tab already
+reserves for a date, and the Calendar's chrome drops the row entirely. `D-123`
+banned a second date up there because the bar's "today" stopped describing the
+screen the moment you paged to September; this is that objection's *resolution*
+rather than a relapse — the bar now says exactly what is on screen, and the
+calendar says it exactly once. The wordmark yields on that one tab (a calendar's
+title bar says the date on every phone ever made; the bottom bar still says which
+screen you are on). Chrome went from **145px to 112px** with nothing lost: the
+hero is still Fraunces, still the jump-anywhere date picker, and now never
+scrolls away. The surface hands it up (`onHero`) instead of drawing it, so
+`CalendarSurface` still owns what the hero *says*.
+
+**Two seven-column geometries wearing the same 8px.** The band measured its
+inset from 0 (`pl-38 pr-2`); the canvases measured theirs from inside `mx-2`.
+Seven columns divided across two different widths don't just start in different
+places, they **diverge** — Sunday's header sat ~7px left of Sunday's column and
+the error shrank across the row. That is the fixed point D-122 built the whole
+chrome around, quietly not being fixed, and it is what "the dates row doesn't
+span the full width, weird gap on the left" actually was.
+
+→ **`CAL_EDGE`, and `ColumnBand`.** The edge is a number (12), the gutter is a
+number (38), and the columns are a *component* — because classnames are exactly
+what failed to guarantee it. Band, month grid, day canvas and week canvas now
+begin at `CAL_EDGE + CAL_GUTTER` and end at `CAL_EDGE`, by construction. Verified
+to the sub-pixel in a browser at 375px: cells at 50 · 94.4 · 138.8 · 183.3 ·
+227.7 · 271.8 · 316.6, separators at 94.4 · 138.8 · 183.3 · 227.7 · 272.1 ·
+316.6.
+
+And the 38px the band cannot give back (the canvas needs it for `9am`) stops
+being a void: **it names the month.** Seven numerals roll 30 · 31 · 1 · 2 across
+a week's end and could never say which month they were in; the hero used to be
+asked for that, two rows up.
+
+**The rest of the spacing pass**, since "everything looks a little bit off" is
+usually a stack of 4px staggers: every list inside the Calendar (agenda sections,
+the month's day preview, the day's all-day chips, the year's grid) and the week
+crown's strip now sit on the same left edge as the band and the canvas — one line
+straight down the surface instead of four. Travel became one object — `‹ Today ›`
+— so the control that puts you back is physically on the axis it acts on. The
+event composer's when-row was two rows that cannot wrap, replacing one
+`flex-wrap` row that broke after the dash and orphaned the end time.
+
+Closes nothing new in the ledger; it is **D6** and **W2** costing less on the
+shell where they are asked most. Adds no pool and no altitude. Adds one
+user-facing name — **Capture** (the sheet) — logged in
+[`glossary.md`](./glossary.md); it replaces "Quick task", which was never true of
+the ＋ that also made events. Strains **P8** (one surface, one question) in one
+place: the capture sheet now answers "what is it" *and* "who sees it". The
+resolution is that those were always one act performed at two doors, and the
+second door is what made it two questions.
+
+Guarded by `tests/mobile-capture.test.tsx` (one sentence, either kind; the words
+survive the switch; the event is seeded from the parse; Event says why when it
+can't be used) and `tests/calendar-chrome.test.tsx` (the hero is handed up and
+nothing in the chrome draws a heading, no ＋ at any horizon, and the band and the
+canvas share one edge and one gutter). Every one fails without its fix.
+
+*Status: standing — refines D-122 / D-123's chrome. Read models untouched.*

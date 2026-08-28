@@ -13,12 +13,22 @@
 // Now there is one chrome, mounted ONCE (by `CalendarLenses`), and the lenses
 // render only their bodies underneath it:
 //
-//   row A   the hero — the span you are looking at, and its one fact
-//   row B   the horizon ladder (☰ · D W M Y) and travel at that horizon
+//   row     the horizon ladder (☰ · D W M Y) and travel at that horizon
 //   band    seven columns: the month's weekday letters, or THE WEEK ROW
 //
+// The hero — the span you are looking at, and its one fact — is NOT here any
+// more. It had a row of its own, and on the Week lens that row said "This week"
+// directly above a crown strip already saying "This week": the most contested
+// 40px on the phone spent restating the line under it. It now rides the app's
+// top bar, in the slot every other tab already reserves for a date (see
+// `CalendarSurface`'s `onHero` and `MobileShell`'s header) — which is where a
+// calendar's title belongs on a phone anyway, and where it costs no vertical
+// space at all. D-123's rule survives the move intact: the date is still stated
+// exactly once, and the top bar's date is now the span you are actually looking
+// at rather than an unrelated "today".
+//
 // The week row is the point. It is the same seven columns as one row of the
-// month grid, in the same geometry (`grid-cols-7 px-2`), so when you lean into
+// month grid, in the same geometry (`ColumnBand`), so when you lean into
 // a day the row you were looking at is still on screen in the same place — the
 // eye keeps something to hold while the body zooms. Nothing here unmounts on a
 // horizon change, which is what makes it a persistent object rather than a
@@ -61,6 +71,25 @@ export type CalHorizon = "schedule" | "day" | "week" | "month" | "year";
  * makes them readable as day headers rather than a decoration above a grid.
  */
 export const CAL_GUTTER = 38;
+
+/**
+ * The surface's outer inset — the one left/right margin every column-bearing
+ * thing on this Calendar wears.
+ *
+ * It exists because the band and the canvases had drifted apart. The two
+ * canvases sat inside `mx-2` and measured their gutter from there, so their
+ * columns began at 8+38; the band above measured from 0, so its began at 38.
+ * Seven columns divided across two different widths do not merely start in
+ * different places, they *diverge*: Sunday's header sat 7px left of Sunday's
+ * column and the error shrank across the row. That is a 7-column geometry and a
+ * half — the exact thing D-122 says must never exist — and it is most of why
+ * the band read as "shifted left with a weird gap" on a real phone.
+ *
+ * So the edge is a number too, and `ColumnBand` is the only way to draw the
+ * columns. Everything with columns now begins at `CAL_EDGE + CAL_GUTTER` and
+ * ends at `CAL_EDGE`, by construction rather than by matching classnames.
+ */
+export const CAL_EDGE = 12;
 
 /** One spelling of an hour, everywhere a time axis is labelled: `9am`, `12pm`.
  *  The Day lens printed `9 AM` and the Week lens `9am`; the compact form is the
@@ -151,17 +180,24 @@ function HorizonLadder({
 
 // ── The header ──────────────────────────────────────────────────────────────
 
-export interface CalendarHeaderProps {
-  /** The span you're looking at, in Fraunces — "Today", "Aug 24 – 30", "2026". */
+/** What the top bar says about where the Calendar is standing. Handed up by
+ *  `CalendarSurface` rather than drawn here — see the note at the top of this
+ *  file, and `MobileShell`'s header. */
+export interface CalHero {
+  /** The span you're looking at, in Fraunces — "Today", "This week", "2026". */
   hero: string;
-  /** The one fact about it, in mono beside the hero — the day's free/busy read. */
-  heroFact?: string;
+  /** The one fact about it, in mono beside the hero — a span, or a day's read. */
+  fact?: string;
   /** True when that fact is the accent-worthy one (open time, not a count). */
-  heroFactAccent?: boolean;
-  /** Tapping the hero opens the OS date picker — the "jump anywhere" path the
-   *  agenda's calendar glyph used to be. Omitted where a date makes no sense. */
-  jumpDate?: Date;
-  onJump?: (d: Date) => void;
+  factAccent?: boolean;
+  /** The day the OS date picker opens on — and the day a capture files to.
+   *  Null on Year, where a single date means nothing. */
+  date: Date | null;
+  /** Travel anywhere. Stable across renders, so a host can hold it in state. */
+  onJump: (d: Date) => void;
+}
+
+export interface CalendarHeaderProps {
   horizon: CalHorizon;
   onHorizon: (h: CalHorizon) => void;
   /** What ‹ › move, in words, for the accessible name: "day" / "week" / … */
@@ -172,135 +208,55 @@ export interface CalendarHeaderProps {
    *  on the current span, so it is never a dead control and never a control
    *  that appears and disappears under your thumb. */
   onToday: () => void;
-  onNew?: () => void;
   now: Date;
   /** True while the visible span already contains today, which only quiets
    *  Today's styling — it does NOT unmount it. */
   onCurrentSpan?: boolean;
 }
 
+/**
+ * One row: where you are on the ladder, and travel at that rung.
+ *
+ * Two clusters and the air between them — the altitude you're at on the left,
+ * the time you're at on the right. It carries no ＋. Capture is ONE act on this
+ * phone and it already floats over every screen; a second ＋ up here that made a
+ * different *kind* of thing was the app asking you to know, before you type,
+ * whether the thought in your head was a task or an event (D-124).
+ */
 export function CalendarHeader({
-  hero,
-  heroFact,
-  heroFactAccent,
-  jumpDate,
-  onJump,
   horizon,
   onHorizon,
   travelUnit,
   onPrev,
   onNext,
   onToday,
-  onNew,
   now,
   onCurrentSpan,
 }: CalendarHeaderProps) {
-  const jumpRef = useRef<HTMLInputElement>(null);
-  const canJump = !!(jumpDate && onJump);
-
-  const heroInner = (
-    <>
-      <h2 className="text-lead masthead min-w-0 truncate text-ink">{hero}</h2>
-      {heroFact && (
-        <span
-          className="mono shrink-0 text-label"
-          style={{ color: heroFactAccent ? "var(--accent)" : "var(--muted)" }}
-        >
-          {heroFact}
-        </span>
-      )}
-    </>
-  );
-
   return (
-    <>
-      {/* Row A — the subject. */}
-      <div className="flex items-center gap-2 px-3 pt-2">
-        {canJump ? (
-          <button
-            type="button"
-            onClick={() => {
-              const el = jumpRef.current;
-              if (!el) return;
-              // `showPicker` where it exists (iOS 16+, every engine we ship on);
-              // focus is the honest fallback rather than a dead hero.
-              try {
-                el.showPicker();
-              } catch {
-                el.focus();
-              }
-            }}
-            aria-label={`${hero} — jump to another date`}
-            className="tap-h fast -ml-1 flex min-w-0 flex-1 items-baseline gap-2 rounded-lg px-1 text-left active:bg-surface-2"
-          >
-            {heroInner}
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-baseline gap-2">{heroInner}</div>
-        )}
-        {canJump && (
-          // `sr-only` and opened by the button above: iOS paints a date input's
-          // own value at the control's intrinsic width while its picker is
-          // open, which used to smear "Aug 17," across the header.
-          <input
-            ref={jumpRef}
-            type="date"
-            value={jumpDate!.toLocaleDateString("en-CA")}
-            onChange={(e) => {
-              const [y, m, d] = e.target.value.split("-").map(Number);
-              if (y && m && d) onJump!(new Date(y, m - 1, d));
-            }}
-            aria-label="Jump to date"
-            className="sr-only"
-            tabIndex={-1}
-          />
-        )}
-        {/* The clock these times are in — a glyph only while you're away from
-            home (see TimeZoneChip). It used to sit on four of the five lenses
-            saying nothing at all. */}
-        <TimeZoneChip now={now} hideAtHome />
-        {/* No ↻ here. Recurring upkeep is a *management* act you perform a few
-            times a year, and it was holding a permanent 44px of the phone's most
-            contested row — on desktop it correctly lives inside the calendar's
-            ⋯ overflow, so the phone had promoted it above its own desktop rank.
-            It lives in Settings → Schedule now (D-123). */}
-        {onNew && (
-          <button
-            type="button"
-            onClick={onNew}
-            aria-label="New event"
-            className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-accent active:bg-surface-2"
-          >
-            <Icon name="plus" size={16} />
-          </button>
-        )}
-      </div>
+    <div className="flex items-center gap-1 py-1.5" style={{ paddingLeft: CAL_EDGE, paddingRight: CAL_EDGE }}>
+      <HorizonLadder horizon={horizon} onHorizon={onHorizon} />
+      <div className="flex-1" />
+      {/* The clock these times are in — a glyph only while you're away from
+          home (see TimeZoneChip). It used to sit on four of the five lenses
+          saying nothing at all, and it lives in the slack between the two
+          clusters so that appearing costs neither of them a pixel. */}
+      <TimeZoneChip now={now} hideAtHome />
+      {/* Travel, as one object: the two directions with "now" between them, so
+          the control that puts you back is physically on the axis it acts on.
+          ‹ is earlier and › is later — the same grammar as the swipe.
 
-      {/* Row B — where you are on the ladder, and travel at that rung. One
-          direction grammar with the swipe: ‹ is earlier, › is later. */}
-      <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
-        <HorizonLadder horizon={horizon} onHorizon={onHorizon} />
-        <div className="flex-1" />
-        {/* Always mounted. It used to render only while you were away from
-            today, so the instant a swipe crossed today's edge this button
-            appeared — shoving the travel arrows sideways under a thumb that was
-            still moving — and vanished again on the way back. A control that
-            materialises mid-gesture is worse than one that is sometimes quiet.
-            It is also never dead, which is what the old show/hide was avoiding:
-            on the current span it re-centres on now, so a day canvas you have
-            scrolled to 9pm comes back to the signal line — which is what people
-            reach for it to do anyway. Both states wear a border (one of them
-            transparent) so the box is pixel-identical either way (D-123). */}
-        <button
-          type="button"
-          onClick={onToday}
-          aria-label={onCurrentSpan ? "Back to now" : "Back to today"}
-          className={`tap-h fast mr-0.5 rounded-full border px-2.5 py-1 text-label font-medium active:bg-surface-2 ${
-            onCurrentSpan ? "border-transparent text-muted opacity-60" : "border-line text-ink"
-          }`}
-        >
-          Today
-        </button>
+          Today is always mounted. It used to render only while you were away
+          from today, so the instant a swipe crossed today's edge this button
+          appeared — shoving the arrows sideways under a thumb that was still
+          moving — and vanished again on the way back. A control that
+          materialises mid-gesture is worse than one that is sometimes quiet.
+          It is also never dead, which is what the old show/hide was avoiding:
+          on the current span it re-centres on now, so a day canvas you have
+          scrolled to 9pm comes back to the signal line — which is what people
+          reach for it to do anyway. Both states wear a border (one of them
+          transparent) so the box is pixel-identical either way (D-123). */}
+      <div className="flex shrink-0 items-center">
         <button
           type="button"
           onClick={onPrev}
@@ -311,6 +267,16 @@ export function CalendarHeader({
         </button>
         <button
           type="button"
+          onClick={onToday}
+          aria-label={onCurrentSpan ? "Back to now" : "Back to today"}
+          className={`tap-h fast rounded-full border px-2.5 py-1 text-label font-medium active:bg-surface-2 ${
+            onCurrentSpan ? "border-transparent text-muted opacity-60" : "border-line text-ink"
+          }`}
+        >
+          Today
+        </button>
+        <button
+          type="button"
           onClick={onNext}
           aria-label={`Next ${travelUnit}`}
           className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2"
@@ -318,24 +284,55 @@ export function CalendarHeader({
           <Icon name="chevron-right" size={15} />
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
 // ── The seven columns ───────────────────────────────────────────────────────
 /**
  * ONE seven-column geometry, for every band and every grid on this surface: the
- * hour gutter, then seven equal columns, then the right margin. The month's
- * letters, the week row, and the month grid itself all wear it.
+ * outer edge, then the gutter, then seven equal columns, then the outer edge
+ * again. The month's letters, the week row, the month grid and both canvases
+ * all wear it.
  *
  * It has to be one, because a Friday that sits at a different x on the month
  * than it does on the week is the jump the zoom was supposed to remove — the
- * band would slide 38px sideways while the body scaled, and a fixed point that
- * moves is not a fixed point. So the month grid pays the gutter it has no time
- * axis for, and gets something real back for it: see `MonthSheet`'s week door.
+ * band would slide sideways while the body scaled, and a fixed point that moves
+ * is not a fixed point. It is a *component* rather than a pair of classnames
+ * because that is what the classnames failed to guarantee: `pr-2` on the band
+ * and `mx-2` on the canvas look like the same 8px and are not, and the
+ * divergence they caused (see `CAL_EDGE`) survived two passes over this file.
+ *
+ * So the month grid pays a gutter it has no time axis for, and gets something
+ * real back for it: the week door in `MobileMonthView`, and the month's name
+ * above the week row here.
  */
-export const COLS = "grid grid-cols-7 pr-2";
-export const COLS_INSET = { paddingLeft: CAL_GUTTER } as const;
+export function ColumnBand({
+  gutter,
+  className = "",
+  children,
+}: {
+  /** What stands in the axis column — an hour label's worth of width. */
+  gutter?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`flex items-stretch ${className}`}
+      style={{ paddingLeft: CAL_EDGE, paddingRight: CAL_EDGE }}
+    >
+      <div
+        className="flex shrink-0 items-center justify-center"
+        style={{ width: CAL_GUTTER }}
+        aria-hidden={gutter ? undefined : true}
+      >
+        {gutter}
+      </div>
+      <div className="grid min-w-0 flex-1 grid-cols-7">{children}</div>
+    </div>
+  );
+}
 
 /** The month's column letters. Hoisted out of the paging month body: the
  *  letters are the same in every month, so paging them was motion that carried
@@ -345,13 +342,13 @@ export const COLS_INSET = { paddingLeft: CAL_GUTTER } as const;
 export function WeekdayLetters({ weekStartsOn }: { weekStartsOn: 0 | 1 }) {
   const start = startOfWeek(new Date(2024, 0, 7), { weekStartsOn });
   return (
-    <div className={COLS} style={COLS_INSET} aria-hidden>
+    <ColumnBand>
       {Array.from({ length: 7 }, (_, i) => (
-        <div key={i} className="py-1 text-center text-micro font-medium uppercase text-muted">
+        <div key={i} className="py-1 text-center text-micro font-medium uppercase text-muted" aria-hidden>
           {addDays(start, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)}
         </div>
       ))}
-    </div>
+    </ColumnBand>
   );
 }
 
@@ -399,7 +396,7 @@ export const DayCell = memo(function DayCell({
       }`}
       aria-current={isToday ? "date" : undefined}
       aria-pressed={selected}
-      className={`tap fast relative flex flex-col items-center justify-start gap-0.5 rounded-xl py-1.5 ${
+      className={`tap fast relative flex flex-col items-center justify-start gap-0.5 rounded-xl py-1 ${
         square ? "aspect-square" : ""
       } ${selected ? "glass-lift" : "active:bg-surface-2"}`}
     >
@@ -464,7 +461,17 @@ export function WeekRow({
 }) {
   const selKey = dayKey(selected);
   return (
-    <div className={COLS} style={COLS_INSET}>
+    <ColumnBand
+      // The axis column, labelled. It is 38px the band cannot give back — the
+      // canvas underneath needs it for `9am` and the row has to line up with
+      // that canvas — so it was 38px of blank paper that read, correctly, as a
+      // gap. It carries the one thing seven numerals cannot say: which month
+      // they are in. The numerals roll 30 · 31 · 1 · 2 across a week's end and
+      // used to leave you to infer it from a hero two rows up.
+      gutter={
+        <span className="mono text-micro leading-none text-muted">{format(selected, "MMM")}</span>
+      }
+    >
       {Array.from({ length: 7 }, (_, i) => {
         const plan = buildDayPlan(addDays(weekStart, i), ctx);
         return (
@@ -479,7 +486,7 @@ export function WeekRow({
           />
         );
       })}
-    </div>
+    </ColumnBand>
   );
 }
 

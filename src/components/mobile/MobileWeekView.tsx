@@ -18,7 +18,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { addDays } from "date-fns";
 import type { CalendarTap } from "./MobileEventSheet";
 import { buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx, type DayPlan } from "./dayPlan";
-import { CAL_GUTTER, hourLabel } from "./CalendarChrome";
+import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
 
 const HOUR_PX = 52; // the week is a scan, not a canvas — half the Day lens
@@ -107,7 +107,12 @@ export default function MobileWeekView({
   return (
     <div ref={rootRef}>
       <TimePager pageKey={dayKey(weekStart)} onPrev={onPrev} onNext={onNext}>
-        <div className="relative mx-2 mb-8 mt-2" style={{ height: y(winEnd) + 12 }}>
+        {/* The canvas wears the surface's one edge, so its seven columns begin
+            exactly where the week row's seven cells do — see `CAL_EDGE`. */}
+        <div
+          className="relative mb-8 mt-2"
+          style={{ height: y(winEnd) + 12, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
+        >
           {/* Hour rules + labels — the shared time axis, in the same gutter and
               the same words as the Day lens. */}
           {hours.map((h) => (

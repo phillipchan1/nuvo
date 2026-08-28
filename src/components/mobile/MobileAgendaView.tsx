@@ -184,7 +184,7 @@ const DayCard = memo(function DayCard({
   const { text: readout, accent: readoutAccent } = dayReadout(day);
 
   return (
-    <section ref={innerRef} className="px-4 py-3.5" style={{ scrollMarginTop: stickyPx }}>
+    <section ref={innerRef} className="px-3 py-3.5" style={{ scrollMarginTop: stickyPx }}>
       {/* Day header */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">

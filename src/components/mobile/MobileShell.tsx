@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
-import { todayISO } from "../../lib/dates";
+import { todayISO, toDateISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useSettings } from "../../hooks/useSettings";
@@ -38,6 +38,7 @@ import { useBulkOps } from "../../hooks/useBulkOps";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { describeQuery, queryFacetCount } from "../../lib/taskFilter";
 import MobileCalendar from "./MobileCalendar";
+import type { CalHero } from "./CalendarChrome";
 import TaskRow from "../TaskRow";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
@@ -52,11 +53,10 @@ import { eventHitDateISO, type EventHit } from "../../lib/eventSearch";
 import PullIndicator from "./PullIndicator";
 import MobileDetailSheet from "./detail/MobileDetailSheet";
 import type { DetailTarget, Frame } from "./detail/verticalDetail";
-import QuickTaskSheet from "./QuickTaskSheet";
+import MobileCapture, { type CaptureKind } from "./MobileCapture";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
-import MobileNewEventSheet from "./MobileNewEventSheet";
 
 // Top-level destinations — the five surfaces you work from on the phone, the
 // desktop altitudes in order: Calendar · Tasks, then the three strategic ones —
@@ -131,6 +131,81 @@ function readSub(): MobileTab {
   return "today";
 }
 
+/**
+ * The Calendar's hero, in the top bar.
+ *
+ * It had a row of its own inside the Calendar's chrome — 40px on the phone's
+ * most contested screen — and on the Week lens it spent them saying "This week"
+ * directly above a crown strip already saying "This week". Up here it costs
+ * nothing: this slot exists on every other tab to print today's date.
+ *
+ * Still Fraunces, because it is still the hero, and still the jump-anywhere
+ * door: tapping it opens the OS date picker, which is the only way to reach a
+ * date that is more than a few swipes away.
+ */
+function CalendarTitle({ hero }: { hero: CalHero }) {
+  const jumpRef = useRef<HTMLInputElement>(null);
+  const canJump = Boolean(hero.date);
+
+  const inner = (
+    <>
+      {/* The hero is bounded by this surface's own vocabulary — "Today",
+          "This week", "September 30" — so it takes the room it needs and the
+          FACT is what gives way. The other way round truncated "Agenda" to
+          "Age…" beside a full-width span, which is the wrong half to lose. */}
+      <span className="masthead shrink-0 text-head text-ink">{hero.hero}</span>
+      {hero.fact && (
+        <span
+          className="mono min-w-0 truncate text-label"
+          style={{ color: hero.factAccent ? "var(--accent)" : "var(--muted)" }}
+        >
+          {hero.fact}
+        </span>
+      )}
+    </>
+  );
+
+  if (!canJump) return <div className="flex min-w-0 items-baseline gap-1.5">{inner}</div>;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          const el = jumpRef.current;
+          if (!el) return;
+          // `showPicker` where it exists (iOS 16+, every engine we ship on);
+          // focus is the honest fallback rather than a dead hero.
+          try {
+            el.showPicker();
+          } catch {
+            el.focus();
+          }
+        }}
+        aria-label={`${hero.hero} — jump to another date`}
+        className="tap-h fast flex min-w-0 items-baseline gap-1.5 rounded-lg px-1 text-left active:bg-surface-2"
+      >
+        {inner}
+      </button>
+      {/* `sr-only` and opened by the button above: iOS paints a date input's own
+          value at the control's intrinsic width while its picker is open, which
+          used to smear "Aug 17," across the header. */}
+      <input
+        ref={jumpRef}
+        type="date"
+        value={hero.date!.toLocaleDateString("en-CA")}
+        onChange={(e) => {
+          const [y, m, d] = e.target.value.split("-").map(Number);
+          if (y && m && d) hero.onJump(new Date(y, m - 1, d));
+        }}
+        aria-label="Jump to date"
+        className="sr-only"
+        tabIndex={-1}
+      />
+    </>
+  );
+}
+
 export default function MobileShell() {
   const [tab, setTabState] = useState<Tab>(readTab);
   const [sub, setSubState] = useState<MobileTab>(readSub);
@@ -180,14 +255,15 @@ export default function MobileShell() {
   };
 
 
-  const [quickOpen, setQuickOpen] = useState(false);
+  // Capture — ONE sheet for both kinds (D-124). `null` is shut; a kind is the
+  // face it opens on. The Calendar's header ＋ used to be a second door here.
+  const [capture, setCapture] = useState<CaptureKind | null>(null);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
   const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
   const [chatOpen, setChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
-  const [newEventDate, setNewEventDate] = useState<Date | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upkeepOpen, setUpkeepOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -203,13 +279,17 @@ export default function MobileShell() {
   // breadcrumb frame its own entry via useMobileSheetStackHistory.)
   useMobileOverlayHistory(chatOpen, () => setChatOpen(false), "chat");
   useMobileOverlayHistory(planOpen, () => setPlanOpen(false), "plan");
-  useMobileOverlayHistory(quickOpen, () => setQuickOpen(false), "quick");
+  useMobileOverlayHistory(Boolean(capture), () => setCapture(null), "capture");
   useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
   useMobileOverlayHistory(Boolean(calendarTap), () => setCalendarTap(null), "event");
-  useMobileOverlayHistory(Boolean(newEventDate), () => setNewEventDate(null), "new-event");
   useMobileOverlayHistory(settingsOpen, () => setSettingsOpen(false), "settings");
   useMobileOverlayHistory(upkeepOpen, () => setUpkeepOpen(false), "upkeep");
   useMobileOverlayHistory(searchOpen, () => setSearchOpen(false), "search");
+
+  // What the Calendar is looking at — its hero, handed up so the top bar can
+  // print it in the slot every other tab already reserves for a date, and so a
+  // capture from that tab files to the day on screen (D-124).
+  const [calHero, setCalHero] = useState<CalHero | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -224,9 +304,9 @@ export default function MobileShell() {
   const applyShortcut = useCallback((act: Shortcut) => {
     if (act === "capture") {
       setChatOpen(false);
-      setQuickOpen(true);
+      setCapture("task");
     } else if (act === "chat") {
-      setQuickOpen(false);
+      setCapture(null);
       setChatOpen(true);
     } else {
       setTabState("tasks");
@@ -518,19 +598,32 @@ export default function MobileShell() {
     <div className="atmosphere fixed inset-0 flex flex-col">
       {/* Top bar */}
       <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
-        <span className="wordmark wordmark-grad text-lead">Nuvo</span>
-        {/* Today's date — everywhere except the Calendar, which says it better
-            one row down AND changes it as you travel. Two dates in the top
-            100px, one of them not describing what's on screen the moment you
-            page to September, was the worst of the congestion up there (D-123). */}
-        {tab !== "calendar" && (
+        {/* The wordmark yields to the Calendar's span, and only there. Three
+            things competing in one bar — name, span, read — meant the span had
+            to truncate ("Age…" over a full-width "Aug 28 – Sep 10"), and a
+            calendar's title bar says the date on every phone ever made. Four of
+            the five tabs still wear the name; the bottom bar always says which
+            screen you're on. */}
+        {tab !== "calendar" && <span className="wordmark wordmark-grad text-lead">Nuvo</span>}
+        {/* One date slot, two tenants. Everywhere but the Calendar it is today,
+            plainly. On the Calendar it is the SPAN YOU ARE LOOKING AT — which
+            is what a calendar's title bar says on every phone ever made, and
+            what lets the surface below stop spending a whole row on it.
+
+            D-123 banned a second date up here because the top bar's "today"
+            didn't describe the screen the moment you paged to September. This
+            is the resolution of that, not a relapse: the bar now says exactly
+            what is on screen, and the calendar says it exactly once (D-124). */}
+        {tab === "calendar" ? (
+          calHero && <CalendarTitle hero={calHero} />
+        ) : (
           <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
         )}
         <div className="flex-1" />
         <button
           onClick={() => setSearchOpen(true)}
           aria-label="Search"
-          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-muted active:scale-95"
         >
           <Icon name="search" size={16} />
         </button>
@@ -541,14 +634,14 @@ export default function MobileShell() {
             })
           }
           aria-label="Toggle theme"
-          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           <Icon name="moon" size={16} />
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           <Icon name="settings" size={16} />
         </button>
@@ -571,7 +664,10 @@ export default function MobileShell() {
             now={now}
             onTapEvent={setCalendarTap}
             onTapTask={(id) => setTaskId(id)}
-            onNewEvent={setNewEventDate}
+            // The span the top bar prints, and the day a capture files to.
+            // The Calendar hands its hero up rather than drawing a row of its
+            // own for it (D-124).
+            onHero={setCalHero}
             // The week crown's three doors: a project opens its record sheet, a
             // piece of its work opens its task sheet (where it gets a time), and
             // the door opens the same ritual the Week segment's card does — no
@@ -717,8 +813,8 @@ export default function MobileShell() {
             </button>
             {/* Capture — the one primary action. */}
             <button
-              onClick={() => setQuickOpen(true)}
-              aria-label="Quick task"
+              onClick={() => setCapture("task")}
+              aria-label="Capture"
               data-teach="capture"
               className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-on-accent active:scale-95"
             >
@@ -756,12 +852,23 @@ export default function MobileShell() {
       {detailTarget && (
         <MobileDetailSheet target={detailTarget} onClose={closeDetail} onFrameChange={setDetailFrame} />
       )}
-      {quickOpen && (
-        <QuickTaskSheet
+      {capture && (
+        <MobileCapture
           labels={labels}
           onCreate={mutations.create}
-          onClose={() => setQuickOpen(false)}
-          defaultDoDate={tab === "calendar" || (tab === "tasks" && sub === "today") ? today : null}
+          onClose={() => setCapture(null)}
+          initialKind={capture}
+          // The day the screen is about. On the Calendar that is the day you
+          // travelled to, not today: you are looking at the 12th because the
+          // 12th is what you're thinking about, and filing the thought to
+          // today would be the app ignoring where you stand.
+          defaultDoDate={
+            tab === "calendar"
+              ? toDateISO(calHero?.date ?? now)
+              : tab === "tasks" && sub === "today"
+                ? today
+                : null
+          }
         />
       )}
       {openTask && (
@@ -784,9 +891,6 @@ export default function MobileShell() {
           onAskNuvo={openChat}
           onEditTask={(id) => { setCalendarTap(null); setTaskId(id); }}
         />
-      )}
-      {newEventDate && (
-        <MobileNewEventSheet initialDate={newEventDate} onClose={() => setNewEventDate(null)} />
       )}
       {searchOpen && (
         <MobileSearch

@@ -36,7 +36,7 @@ export default function ChatPane({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const kbInset = useKeyboardInset();
-  // Same composer-first landing as QuickTaskSheet — in-app ✦ is a gesture;
+  // Same composer-first landing as MobileCapture — in-app ✦ is a gesture;
   // the lock-screen widget is not. See useRaiseKeyboard / D-115.
   useRaiseKeyboard(inputRef);
 

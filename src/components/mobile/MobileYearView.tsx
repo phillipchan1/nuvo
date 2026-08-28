@@ -58,7 +58,7 @@ export default function MobileYearView({
           hero now, and the back door is the horizon ladder — this body used to
           repeat both. The prose read was cut with the desk's: the grid says it,
           and screen space is scarcer here than anywhere. */}
-      <div className="px-4 pb-2 pt-2">
+      <div className="px-3 pb-2 pt-2">
         {nothingYet && <p className="pb-1 text-caption text-muted">Reading your calendar…</p>}
         <YearLegend />
       </div>

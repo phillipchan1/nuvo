@@ -6,12 +6,13 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDialogFocus } from "../src/hooks/useDialogFocus";
 import { useRaiseKeyboard } from "../src/hooks/useRaiseKeyboard";
-import QuickTaskSheet from "../src/components/mobile/QuickTaskSheet";
+import MobileCapture from "../src/components/mobile/MobileCapture";
 
 function RaiseHost() {
   const ref = useRef<HTMLInputElement>(null);
@@ -33,7 +34,7 @@ function DialogHost({ withField = true }: { withField?: boolean }) {
 describe("one hook, not three timers", () => {
   it("capture, chat, and search all call useRaiseKeyboard", () => {
     const src = join(__dirname, "..", "src", "components", "mobile");
-    for (const file of ["QuickTaskSheet.tsx", "ChatPane.tsx", "MobileSearch.tsx"]) {
+    for (const file of ["MobileCapture.tsx", "ChatPane.tsx", "MobileSearch.tsx"]) {
       const text = readFileSync(join(src, file), "utf8");
       expect(text, file).toContain("useRaiseKeyboard");
       expect(text, file).not.toMatch(/setTimeout\(\(\) => \w+\.current\?\.focus/);
@@ -123,11 +124,16 @@ describe("useDialogFocus", () => {
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   });
 
-  it("QuickTaskSheet lands the caret in the field, not on ✕", () => {
+  it("MobileCapture lands the caret in the field, not on ✕", () => {
+    // Capture reads the writable calendars now — it is one door for both kinds,
+    // and the Event face has to know whether there is anywhere to write.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QuickTaskSheet labels={[]} onCreate={async () => {}} onClose={() => {}} />,
+      <QueryClientProvider client={qc}>
+        <MobileCapture labels={[]} onCreate={async () => {}} onClose={() => {}} />
+      </QueryClientProvider>,
     );
-    expect(screen.getByLabelText("New task")).toHaveFocus();
+    expect(screen.getByLabelText("Capture a task or event")).toHaveFocus();
     expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
   });
 

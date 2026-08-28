@@ -3,10 +3,12 @@
 // This is the state machine and the composition; `MobileCalendar` is the data
 // wrapper around it, and `CalendarHarness` (?horizon) mounts this same
 // component over fixtures. The lenses themselves render only their BODY: the
-// hero, the horizon ladder, travel, the seven columns and the week's crown are
-// mounted here, exactly once, and never unmount when the horizon changes. That
-// is what makes them a place to stand rather than five headers that resemble
-// each other.
+// horizon ladder, travel, the seven columns and the week's crown are mounted
+// here, exactly once, and never unmount when the horizon changes. That is what
+// makes them a place to stand rather than five headers that resemble each
+// other. The hero is the same object one level up — it is *handed* to the app's
+// top bar (`onHero`) rather than drawn in a row of its own, so it costs no
+// vertical space and cannot restate the crown strip under it (D-124).
 //
 // Two axes, two motions, no overlap:
 //   travel  same horizon, next date  → `TimePager`, inside each body
@@ -17,7 +19,7 @@
 // only thing that moves is the body, scaling through the column of the day you
 // are standing on — the same column the week row above it occupies.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -41,6 +43,7 @@ import {
   WeekRow,
   WeekdayLetters,
   zoomDir,
+  type CalHero,
   type CalHorizon,
 } from "./CalendarChrome";
 // The month grid's tap meaning, and "keep the selection when the month moves",
@@ -132,7 +135,7 @@ export default function CalendarSurface({
   onWindowChange,
   onTapEvent,
   onTapTask,
-  onNewEvent,
+  onHero,
   onOpenProject,
   renderCrownTask,
   onPlanWeek,
@@ -148,7 +151,10 @@ export default function CalendarSurface({
   onWindowChange?: (w: CalWindow) => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
-  onNewEvent?: (date: Date) => void;
+  /** Where the hero goes: the app's top bar owns it, not this chrome (D-124).
+   *  Called whenever the span or its one fact changes, and with `null` on the
+   *  way out so the host's bar doesn't keep a stale span. */
+  onHero?: (h: CalHero | null) => void;
   /** The crown's doors — omit any and the crown stays off (harnesses, embeds). */
   onOpenProject?: (id: string) => void;
   renderCrownTask?: RenderCrownTask;
@@ -178,6 +184,14 @@ export default function CalendarSurface({
       /* ignore */
     }
   }, [mode, persistMode]);
+
+  // The hero is handed to the top bar rather than drawn (D-124). The jump is
+  // wrapped once so its identity never changes — the host holds the hero object
+  // in state, and a fresh callback every render would be a render loop.
+  const jumpRef = useRef<(d: Date) => void>(() => {});
+  const stableJump = useCallback((d: Date) => jumpRef.current(d), []);
+  const heroSink = useRef(onHero);
+  heroSink.current = onHero;
 
   // The last drill-in lens — where a second tap on a month day lands you.
   // Month and Year are stand-backs, so neither can ever be the answer: landing
@@ -323,6 +337,7 @@ export default function CalendarSurface({
       pastDays: 0,
     });
   };
+  jumpRef.current = jumpTo;
 
   // "Take me to that day" — landing here from a calendar search hit. The bus
   // rather than a prop, for the reason in lib/calendarReveal.ts; and the
@@ -394,6 +409,19 @@ export default function CalendarSurface({
     };
   };
   const h = hero();
+
+  const heroDate = mode === "year" ? null : selected;
+  useEffect(() => {
+    heroSink.current?.({
+      hero: h.hero,
+      fact: h.fact,
+      factAccent: h.accent,
+      date: heroDate,
+      onJump: stableJump,
+    });
+  }, [h.hero, h.fact, h.accent, heroDate, stableJump]);
+  // Leaving the tab must clear the bar, or it keeps a span nothing is showing.
+  useEffect(() => () => heroSink.current?.(null), []);
 
   const onCurrentSpan =
     mode === "year"
@@ -507,11 +535,6 @@ export default function CalendarSurface({
         className="sticky top-0 z-30 border-b border-line bg-surface/90 backdrop-blur"
       >
         <CalendarHeader
-          hero={h.hero}
-          heroFact={h.fact}
-          heroFactAccent={h.accent}
-          jumpDate={mode === "year" ? undefined : selected}
-          onJump={mode === "year" ? undefined : jumpTo}
           horizon={mode}
           onHorizon={setHorizon}
           travelUnit={travelUnit}
@@ -519,7 +542,6 @@ export default function CalendarSurface({
           onNext={() => travel(1)}
           onToday={goToday}
           onCurrentSpan={onCurrentSpan}
-          onNew={onNewEvent ? () => onNewEvent(selected) : undefined}
           now={now}
         />
         {/* Seven columns, in the same place at every horizon that has them: the

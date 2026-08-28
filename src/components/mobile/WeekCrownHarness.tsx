@@ -390,7 +390,6 @@ function InSitu({
                 onToggleDone={() => say(`toggle ${t.title}`)}
               />
             )}
-            onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
             onTapEvent={() => say("tap event")}
           />
         </div>
