@@ -168,11 +168,15 @@ export interface CalendarHeaderProps {
   travelUnit: string;
   onPrev: () => void;
   onNext: () => void;
-  /** Present only while you're off the current span — never a dead control. */
-  onToday?: () => void;
-  onUpkeep?: () => void;
+  /** Always mounted — see the button. Re-centres on now when you're already
+   *  on the current span, so it is never a dead control and never a control
+   *  that appears and disappears under your thumb. */
+  onToday: () => void;
   onNew?: () => void;
   now: Date;
+  /** True while the visible span already contains today, which only quiets
+   *  Today's styling — it does NOT unmount it. */
+  onCurrentSpan?: boolean;
 }
 
 export function CalendarHeader({
@@ -187,9 +191,9 @@ export function CalendarHeader({
   onPrev,
   onNext,
   onToday,
-  onUpkeep,
   onNew,
   now,
+  onCurrentSpan,
 }: CalendarHeaderProps) {
   const jumpRef = useRef<HTMLInputElement>(null);
   const canJump = !!(jumpDate && onJump);
@@ -255,17 +259,11 @@ export function CalendarHeader({
             home (see TimeZoneChip). It used to sit on four of the five lenses
             saying nothing at all. */}
         <TimeZoneChip now={now} hideAtHome />
-        {onUpkeep && (
-          <button
-            type="button"
-            onClick={onUpkeep}
-            aria-label="Recurring upkeep"
-            title="Recurring upkeep"
-            className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2"
-          >
-            <Icon name="repeat" size={15} />
-          </button>
-        )}
+        {/* No ↻ here. Recurring upkeep is a *management* act you perform a few
+            times a year, and it was holding a permanent 44px of the phone's most
+            contested row — on desktop it correctly lives inside the calendar's
+            ⋯ overflow, so the phone had promoted it above its own desktop rank.
+            It lives in Settings → Schedule now (D-123). */}
         {onNew && (
           <button
             type="button"
@@ -283,15 +281,26 @@ export function CalendarHeader({
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
         <HorizonLadder horizon={horizon} onHorizon={onHorizon} />
         <div className="flex-1" />
-        {onToday && (
-          <button
-            type="button"
-            onClick={onToday}
-            className="tap-h fast mr-0.5 rounded-full border border-line px-2.5 py-1 text-label font-medium text-muted active:bg-surface-2"
-          >
-            Today
-          </button>
-        )}
+        {/* Always mounted. It used to render only while you were away from
+            today, so the instant a swipe crossed today's edge this button
+            appeared — shoving the travel arrows sideways under a thumb that was
+            still moving — and vanished again on the way back. A control that
+            materialises mid-gesture is worse than one that is sometimes quiet.
+            It is also never dead, which is what the old show/hide was avoiding:
+            on the current span it re-centres on now, so a day canvas you have
+            scrolled to 9pm comes back to the signal line — which is what people
+            reach for it to do anyway. Both states wear a border (one of them
+            transparent) so the box is pixel-identical either way (D-123). */}
+        <button
+          type="button"
+          onClick={onToday}
+          aria-label={onCurrentSpan ? "Back to now" : "Back to today"}
+          className={`tap-h fast mr-0.5 rounded-full border px-2.5 py-1 text-label font-medium active:bg-surface-2 ${
+            onCurrentSpan ? "border-transparent text-muted opacity-60" : "border-line text-ink"
+          }`}
+        >
+          Today
+        </button>
         <button
           type="button"
           onClick={onPrev}

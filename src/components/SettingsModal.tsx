@@ -481,9 +481,12 @@ function TimeZonePicker() {
 function SchedulePane({
   settings,
   updateSettings,
+  onOpenUpkeep,
 }: {
   settings: UserSettings | undefined;
   updateSettings: (patch: Partial<UserSettings>) => void;
+  /** Supplied by the mobile shell, whose Calendar has no ⋯ to hold it. */
+  onOpenUpkeep?: () => void;
 }) {
   const setWork = (key: "work_start_minutes" | "work_end_minutes") => (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) return;
@@ -664,6 +667,27 @@ function SchedulePane({
             label="Weather"
           />
         </Row>
+
+        {/* The phone's door to recurring upkeep. On the desktop this lives in
+            the calendar's ⋯ overflow; on the phone it had been promoted to a
+            permanent icon in the Calendar's busiest row, which is a lot of
+            standing rent for something you edit a few times a year. Here it
+            costs nothing and is still a real path — not a hidden gesture. */}
+        {onOpenUpkeep && (
+          <Row
+            layout="stack"
+            title="Recurring upkeep"
+            desc="The chores that repeat — what they are, how often, and when they next come due."
+          >
+            <button
+              type="button"
+              onClick={onOpenUpkeep}
+              className="tap-h fast self-start rounded-full border border-line px-3 py-1.5 text-label font-medium text-ink hover:bg-accent-soft"
+            >
+              Open upkeep
+            </button>
+          </Row>
+        )}
       </div>
     </div>
   );
@@ -1670,12 +1694,16 @@ export default function SettingsModal({
   accounts,
   section,
   onClose,
+  onOpenUpkeep,
 }: {
   settings: UserSettings | undefined;
   updateSettings: (patch: Partial<UserSettings>) => void;
   accounts: CalendarAccount[];
   section: SettingsSection;
   onClose: () => void;
+  /** Mobile only — the phone's Calendar has no ⋯ overflow to hold this, so
+   *  Schedule carries the door instead of the Calendar's busiest row. */
+  onOpenUpkeep?: () => void;
 }) {
   const { setSettingsSection } = useAppNavigation();
   const isMobile = useIsMobile();
@@ -1698,7 +1726,13 @@ export default function SettingsModal({
   const pane = (
     <>
       {active === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
-      {active === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
+      {active === "schedule" && (
+        <SchedulePane
+          settings={settings}
+          updateSettings={updateSettings}
+          onOpenUpkeep={onOpenUpkeep}
+        />
+      )}
       {active === "reminders" && <RemindersPane settings={settings} updateSettings={updateSettings} />}
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
