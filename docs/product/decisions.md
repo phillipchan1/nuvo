@@ -1150,8 +1150,9 @@ answers *"what's coming, and when am I free"* across two weeks; **Day** answers
 *"what is this day's shape"* — so neither replaces the other:
 
 - **They coexist behind the calendar view-pill** (List | Day) in the drill-in
-  header; the month grid stays home, and a month tap opens whichever lens you
-  used last. A lens, not a place — the bottom bar is untouched (Principle 10).
+  header; the month grid stays home. A month *tap* selects the day (D-121);
+  an upward flick — not the first tap — opens whichever lens you used last.
+  A lens, not a place — the bottom bar is untouched (Principle 10).
 - **One computation, two projections.** Both render `buildDayPlan` (now
   `dayPlan.ts`), so the Day lens's `--slot` brackets are the *same* gaps the
   list prints as Free chips, sized (`readDay`), and the header readout is one
@@ -4226,8 +4227,8 @@ slate would be.
 So the crown stays on **List · Day · Week** — the lenses that are actually
 reading a Tuesday against the week — and comes off Month and Year. The space
 under the month grid is the selected day's plan (`MonthDayPreview`), not a
-second copy of the slate. Tap a day still drills in; the preview is the glance
-you get while the month is the subject.
+second copy of the slate. A day tap *selects* (D-121); the preview is the glance
+you get while the month is the subject. An upward flick still expands.
 
 Traversal is one motion on every lens. `TimePager` owns it: swipe left is
 later, swipe right is earlier; the leaving page exits the way you pushed it
@@ -4258,7 +4259,40 @@ task copy). Developer mode is on every shell. `isMobileTauri()` is UA-only.
 *Status: shipped in code; DevTools in the installed Mac app needs the next
 desktop build.*
 
-**D-121 · 2026-08-28 · The phone Calendar has one chrome and two axes. Changing
+**D-121 · 2026-08-27 · On the month, a day tap selects. Zoom is a second act.**
+
+D-044 and D-119 both said a month tap drills in — last lens, or Day, either
+way *away* from the month. That made `MonthDayPreview` (D-119's leftover
+space) unreachable for any date but today: the list sat under a grid whose
+every tap left the surface. The list was correct. The tap was the lie.
+
+So each altitude keeps one tap meaning (P8):
+
+- **Year** — tap a month → Month.
+- **Month** — first tap a day → select it (the list is that day). Second tap
+  on the selected day, or the list header → **Day** (they pointed at a day,
+  not a week). An upward flick expands into the last drill-in lens (List /
+  Day / Week) and does not overwrite that memory. A row opens that
+  commitment. Paging a month keeps the list alive (same date-of-month,
+  clamped). Grey cells select and follow the date into that month; they do
+  not zoom.
+- **Week** — a day header opens that Day; a block opens its sheet.
+- **Day / List** — the pill switches; back returns to the month.
+
+The grid cells drop `aspect-square` so a six-week month still leaves room
+for the list on a 375px phone; the list fills leftover space and scrolls
+instead of capping and pushing the FAB off the paper.
+
+Closes the month half of "what's on this day / am I free?" (D3-adjacent).
+W2 stays on the week-scoped lenses. Does not add a pool or a name. Does
+not reopen N-16. Strains P8 only in the sense that we almost gave a day
+tap two meanings — select vs zoom — and resolved it by making zoom the
+already-selected day, or the list header, never the first tap.
+
+*Status: standing — supersedes the "month tap drills in" clause of D-044
+and D-119. Does not replace either read model.*
+
+**D-122 · 2026-08-28 · The phone Calendar has one chrome and two axes. Changing
 horizon must not move a single fixed point.**
 
 Reported: *"going between week and month is jarring — it happens instantly, and
@@ -4313,12 +4347,18 @@ to the Week rung, where it is.
 Simplifications that only became possible once the chrome was shared: the globe
 appears only while you are actually travelling (it sat on four of five lenses
 saying "you are where you live"); all-day events and anytime work share one chip
-row (two bands for a distinction the chip's own colour already carries); a
-month day's first tap **reads** the day and a second leans in, so the plan under
-the grid can show a day other than today; leaning in from Month or Year lands on
-a day that is *in* the span you were reading; and a horizon change resets the
-scroller, so standing back from a day scrolled to 6pm no longer drops you into a
-month grid at an offset it doesn't have.
+row (two bands for a distinction the chip's own colour already carries); leaning
+in from Month or Year lands on a day that is *in* the span you were reading; and
+a horizon change resets the scroller, so standing back from a day scrolled to
+6pm no longer drops you into a month grid at an offset it doesn't have.
+
+**D-121's tap meanings survive this intact**, and are the thing this must not
+quietly undo — a rewrite of the chrome is exactly how a rule that lives in a
+surface gets lost. So they don't live in a surface: `monthDayIntent` and
+`clampDayToMonth` (`mobile/monthTap.ts`, with `tests/month-tap.test.ts`) are
+imported by `CalendarSurface`, the month's *open* still lands on **Day** without
+overwriting the flick's memory, paging a month still carries the selection
+clamped, and the peeking months either side of the finger are inert.
 
 → **A time is spelled one way, and each line says what its neighbour cannot.**
 The Day canvas printed `9:00 AM–9:30 AM` inside a block sitting one hour rule

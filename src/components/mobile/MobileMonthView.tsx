@@ -20,7 +20,10 @@ import { Icon } from "../Icon";
 import type { CalendarTap } from "./MobileEventSheet";
 import { at, buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
 import { CAL_GUTTER, COLS, DayCell, TIME_RAIL } from "./CalendarChrome";
+import { clampDayToMonth } from "./monthTap";
 import TimePager from "./TimePager";
+
+const noop = () => {};
 
 export default function MobileMonthView({
   monthCursor,
@@ -54,15 +57,19 @@ export default function MobileMonthView({
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
 }) {
-  const sheet = (month: Date) => (
+  // The peeking months are inert: a cell that is half off-screen under a moving
+  // finger is a mis-tap, not a choice. They also carry the selection *clamped*
+  // into their own month, so the row the band is showing reads plausibly while
+  // it slides rather than losing its mark (D-121).
+  const sheet = (month: Date, interactive: boolean) => (
     <MonthSheet
       monthCursor={month}
       ctx={ctx}
-      selected={selected}
+      selected={interactive ? selected : clampDayToMonth(selected, month)}
       weekStartsOn={weekStartsOn}
       weatherIndex={weatherIndex}
-      onPick={onPick}
-      onOpenWeek={onOpenWeek}
+      onPick={interactive ? onPick : undefined}
+      onOpenWeek={interactive ? onOpenWeek : undefined}
     />
   );
 
@@ -76,10 +83,10 @@ export default function MobileMonthView({
         onPrev={onPrev}
         onNext={onNext}
         onFlickUp={onFlickUp}
-        peekPrev={sheet(addMonths(monthCursor, -1))}
-        peekNext={sheet(addMonths(monthCursor, 1))}
+        peekPrev={sheet(addMonths(monthCursor, -1), false)}
+        peekNext={sheet(addMonths(monthCursor, 1), false)}
       >
-        {sheet(monthCursor)}
+        {sheet(monthCursor, true)}
       </TimePager>
 
       {/* Outside the pager on purpose: this is a list you scroll, not a page
@@ -111,8 +118,9 @@ function MonthSheet({
   selected: Date;
   weekStartsOn: 0 | 1;
   weatherIndex: ReturnType<typeof indexWeather> | null;
-  onPick: (d: Date) => void;
-  onOpenWeek: (weekStart: Date) => void;
+  /** Omitted on a peeking month — see `sheet()`. */
+  onPick?: (d: Date) => void;
+  onOpenWeek?: (weekStart: Date) => void;
 }) {
   // Cut into weeks, because a week is a row you can act on — see the door in
   // the gutter below.
@@ -140,7 +148,8 @@ function MonthSheet({
                 the band above is currently showing. */}
             <button
               type="button"
-              onClick={() => onOpenWeek(week[0].date)}
+              onClick={() => onOpenWeek?.(week[0].date)}
+              disabled={!onOpenWeek}
               aria-label={`Open the week of ${format(week[0].date, "MMMM d")}`}
               className="tap fast flex shrink-0 items-center justify-center rounded-l-xl active:bg-surface-2"
               style={{ width: CAL_GUTTER }}
@@ -165,7 +174,7 @@ function MonthSheet({
                     // from the day you tapped rather than from the middle.
                     focal={isSel}
                     wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
-                    onPick={onPick}
+                    onPick={onPick ?? noop}
                   />
                 );
               })}

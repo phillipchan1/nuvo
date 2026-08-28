@@ -43,6 +43,9 @@ import {
   zoomDir,
   type CalHorizon,
 } from "./CalendarChrome";
+// The month grid's tap meaning, and "keep the selection when the month moves",
+// live in one tested module — not re-decided here (D-121).
+import { clampDayToMonth, monthDayIntent } from "./monthTap";
 import MobileMonthView from "./MobileMonthView";
 import MobileAgendaView, { AGENDA_DAYS } from "./MobileAgendaView";
 import MobileDayView from "./MobileDayView";
@@ -222,6 +225,14 @@ export default function CalendarSurface({
     move({ selected: d, monthCursor: startOfMonth(d), pastDays: 0, mode: lens });
   };
 
+  /** Opening a day FROM THE MONTH always lands on Day — they pointed at a day,
+   *  not a week — and deliberately does not overwrite `drill`, so the upward
+   *  flick still expands into whichever lens you actually live in (D-121). */
+  const openMonthDay = (date: Date) => {
+    const d = startOfDay(date);
+    move({ selected: d, monthCursor: startOfMonth(d), pastDays: 0, mode: "day" });
+  };
+
   /** Lean in on a whole row of the month grid — the door in its left gutter.
    *  Lands on today when today is in that week, so the commonest case opens
    *  where you already are rather than on a Sunday you didn't ask about. */
@@ -260,7 +271,15 @@ export default function CalendarSurface({
    *  grammar as the swipe (earlier is right/‹, later is left/›). */
   const travel = (delta: -1 | 1) => {
     if (mode === "year") return move({ yearCursor: yearCursor + delta });
-    if (mode === "month") return move({ monthCursor: startOfMonth(addMonths(monthCursor, delta)) });
+    if (mode === "month") {
+      // Paging a month carries the selection with it — same date-of-month,
+      // clamped (Aug 31 → Feb 28). Without this the plan under the grid goes
+      // blank the moment you page, because the selected day is in a month you
+      // are no longer looking at, and the month's second question ("what's on
+      // the day I pointed at") silently stops having an answer (D-121).
+      const next = startOfMonth(addMonths(monthCursor, delta));
+      return move({ monthCursor: next, selected: clampDayToMonth(selected, next) });
+    }
     if (mode === "day") return selectDay(addDays(selected, delta));
     return selectDay(addDays(selected, delta * 7)); // week and agenda
   };
@@ -372,8 +391,11 @@ export default function CalendarSurface({
           onPrev={() => travel(-1)}
           onNext={() => travel(1)}
           onPickMonth={(m) => {
-            const landing = isSameMonth(now, m) ? startOfDay(now) : startOfMonth(m);
-            move({ mode: "month", monthCursor: startOfMonth(m), selected: startOfDay(landing) });
+            // Landing in the month you tapped: today if it lives there,
+            // otherwise carry the day you had, clamped into it.
+            const next = startOfMonth(m);
+            const landing = isSameMonth(now, m) ? startOfDay(now) : clampDayToMonth(selected, next);
+            move({ mode: "month", monthCursor: next, selected: landing });
           }}
         />
       );
@@ -391,9 +413,11 @@ export default function CalendarSurface({
           // First tap reads the day (the plan under the grid answers it without
           // leaving the month); a second tap, or the preview's own header,
           // leans in. Tapping a day used to drill instantly, which meant the
-          // day's plan under the grid could only ever show TODAY.
-          onPick={(d) => (isSameDay(d, selected) ? openDay(d) : selectDay(d))}
-          onOpenDay={openDay}
+          // day's plan under the grid could only ever show TODAY. The rule
+          // itself lives in `monthTap.ts` so it can be tested without mounting
+          // a calendar — never re-decide select-vs-open in a surface.
+          onPick={(d) => (monthDayIntent(selected, d) === "open" ? openMonthDay(d) : selectDay(d))}
+          onOpenDay={openMonthDay}
           onOpenWeek={openWeek}
           onFlickUp={() => openDay(selected)}
           onTapEvent={onTapEvent}

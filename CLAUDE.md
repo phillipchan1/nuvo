@@ -150,7 +150,7 @@ it needs to work on a phone.
   On the phone the **shut** crown is the Calendar's ANCHOR: one line of pips, sticky under
   the chrome at every horizon, so the answer to "what am I carrying" survives a change of
   rung — losing it on the way out to the month was half of why standing back felt like
-  losing your place (D-121). It still only *opens* on the week-scoped lenses (Agenda · Day
+  losing your place (D-122). It still only *opens* on the week-scoped lenses (Agenda · Day
   · Week), the context you read a Tuesday against (D-110); Month and Year answer a
   different question (where is this span heavy / what's on the day you tapped), so there
   the strip anchors and a tap takes you to the Week rung (D-119). Putting it only on Month
@@ -190,7 +190,15 @@ it needs to work on a phone.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
   *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses the **mobile Calendar** instead.
-- **The mobile Calendar is one chrome, five bodies, two axes** (D-121). `MobileCalendar` is
+- **Each altitude has ONE tap meaning** (D-121). Year: a month opens the Month. Month: a day
+ tap **selects** it (the plan under the grid is that day) — a second tap on the selected day,
+ or the plan's own header, opens **Day**, because they pointed at a day and not a week; an
+ upward flick expands into the last drill-in lens and does *not* overwrite that memory; a
+ grey cell selects and follows the date into its month. Week: a day header opens that Day.
+ The rule lives in `mobile/monthTap.ts` (`monthDayIntent`, `clampDayToMonth`) — **never
+ re-decide select-vs-open in a surface.** Paging a month carries the selection with it,
+ clamped, or the month's second question stops having an answer.
+- **The mobile Calendar is one chrome, five bodies, two axes** (D-122). `MobileCalendar` is
   only the data wrapper (the live queries, and the span the active lens needs);
   `CalendarSurface` owns the window and the composition; `CalendarChrome` is the hero, the
   **horizon ladder** (☰ · D W M Y), travel, and the seven columns — mounted ONCE, so
@@ -204,7 +212,7 @@ it needs to work on a phone.
  exactly the jump the zoom exists to remove. Verify all five at `?horizon`
  (`mobile/CalendarHarness.tsx`).
 - **A time is spelled ONE way, and a surface that draws a fact doesn't also write it**
- (D-121). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
+ (D-122). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
  `9–9:30am`, `11am–1pm` — and `hourLabel` *is* `at`, so the gutter and everything beside it
  agree by construction. Never add a second time format (the Day canvas printed `9:00 AM`
  next to a gutter reading `9am`, and the record sheet kept a private copy). Then each line
