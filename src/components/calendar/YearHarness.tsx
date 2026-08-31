@@ -52,7 +52,7 @@ const blk = (dayOffset: number, h: number, m: number, durMins: number, title: st
     duration_minutes: durMins,
     status: "ready",
     project_id: null,
-  }) as Task;
+  }) as unknown as Task;
 
 // Enough spread to paint every band: a packed day, a light one, a clear run,
 // and an overcommitted Tuesday — so the numeral can be judged on every fill

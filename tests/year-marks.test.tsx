@@ -8,12 +8,24 @@
  * cannot prove a 9.5px glyph survives a 17px cell; that is ?year.
  */
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { YearMonth, type DayLoad } from "../src/components/calendar/YearParts";
 import CalendarYear from "../src/components/CalendarYear";
 import MobileYearView from "../src/components/mobile/MobileYearView";
 import type { DayCtx } from "../src/components/mobile/dayPlan";
 import type { Slot, Task } from "../src/lib/types";
+
+const realRO = globalThis.ResizeObserver;
+beforeEach(() => {
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+afterEach(() => {
+  globalThis.ResizeObserver = realRO;
+});
 
 const NOW = new Date(2026, 7, 31, 10, 15);
 const JAN = new Date(2026, 0, 1);
