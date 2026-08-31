@@ -1,13 +1,14 @@
 // The desktop Year — the Schedule's furthest-out lens.
 //
 // A year of boxes is a browsing surface, and Principle 10 says a new place has
-// to be paid for. So this one is not a grid of dates you can click; it is a
-// grid of *load*. Every square is shaded by how much of that day is already
-// promised, which makes the whole year answer one question no other surface in
-// Nuvo answers at day altitude: **where is this heavy, and where is there
-// nothing.** On Deck answers it for projects across weeks. Nothing answered it
-// for days, which is why "when could this actually go?" always meant paging the
-// week grid eleven times.
+// to be paid for. So this one is a grid of *load*, not a date browser: every
+// square is shaded by how much of that day is already promised, which makes
+// the whole year answer one question no other surface in Nuvo answers at day
+// altitude: **where is this heavy, and where is there nothing.** The numeral
+// on the square is the index of that answer, not a second one (D-127). On
+// Deck answers the same question for projects across weeks. Nothing answered
+// it for days, which is why "when could this actually go?" always meant paging
+// the week grid eleven times.
 //
 // Like the other non-FullCalendar lens before it, it computes nothing of its
 // own. The shading comes from `dayLoad` in `_shared/dayShape.ts` — the same
@@ -101,9 +102,11 @@ export default function CalendarYear({
         </div>
 
         {/* Column count is chosen so the narrowest month a breakpoint can
-            produce still holds a two-digit numeral: the tightest case is 2
-            columns at a 300px pane, which leaves ~124px per month and ~17px
-            per cell against a 9.5px numeral. Every wider case is roomier. */}
+            produce still holds a two-digit numeral (D-127 — the numeral is
+            the index, so a cell that clips "28" has failed): the tightest
+            case is 2 columns at a 300px pane, which leaves ~124px per month
+            and ~17px per cell against a 9.5px numeral. Every wider case is
+            roomier. */}
         <div className="grid grid-cols-1 gap-x-5 gap-y-4 @[300px]:grid-cols-2 @[660px]:grid-cols-3 @[980px]:grid-cols-4">
           {months.map((m, i) => (
             <YearMonth

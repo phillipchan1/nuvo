@@ -2116,7 +2116,9 @@ Standing this up found a pre-existing collision worth recording: `WeekBoard` had
 its own `dayLoad`, measuring something genuinely different (how much of the
 *work window* is spoken for, **including** unscheduled intentions, **excluding**
 evenings). Two questions, so two names — it is now `dayCapacity`, and the kernel
-test forbids a third. *Status: standing.*
+test forbids a third. *Status: standing — the load thesis holds. The "does not
+draw dates" clause was amended by D-127: dates are the index, not a second
+question.*
 
 ---
 
@@ -4672,3 +4674,52 @@ here because Reconnect uses that same leg: adding a chooser without passing
 would upsert a second `calendar_accounts` row and leave the broken one broken.
 
 *Status: standing. Sign-in only; the connect leg is named above as open.*
+
+---
+
+**D-127 · 2026-08-31 · The Year's dates are the index, not a second question.**
+
+D-106 paid for the Year as a view of **load**: twelve month grids that answer
+*where is this heavy, and where is there nothing*. That thesis holds. What it
+over-corrected was the next sentence — "so the Year does not draw dates."
+
+A heatmap you cannot name is a picture. "That dark patch in the third row of
+March" is not an answer to "when could this go?"; "Thursday the 19th" is. The
+numeral is not a competing question ("what day is the 14th" — a phone's status
+bar already answers that). It is the **coordinate** of the question the Year
+already owns, the same way a map's grid does not compete with the terrain.
+
+Phil asked for dates on the Schedule's Year, "even if small." Three treatments
+were weighed:
+
+1. **Every day, small tabular numeral** — the year-calendar convention (Apple,
+   Google, Fantastical). Shade stays the read; the number indexes it.
+2. **First-of-week only** (1, 8, 15, 22, 29). Cleaner. Makes you count for the
+   day you actually need, which is the failure mode of "beautiful but I can't
+   see the year."
+3. **Hover / focus reveal.** A hover-only path is forbidden, and as the *only*
+   path it is the same as no dates.
+
+(1) is the one. Both shells wear it — the phone had turned numerals off on the
+theory that a ~22px cell would smudge, which is the size Apple's year view
+already holds a micro number in. Weekday initials travel with the numbers: a
+column of 1–31 with no S M T W T F S is texture, not a date. Ink on clear and
+light days steps up from `--muted` (those are the days you hunt, and they had
+the faintest coordinates) to a mix of `--ink`, still quieter than the busy/full
+step-up. `over` still flips to `--on-danger`.
+
+What this is not: a date browser. The Year is still not "what day is the 14th."
+A day tap on the desk still opens that day; a month tap on the phone still
+opens the month. The shade is still the picture. The numeral just lets you
+point at it.
+
+Closes nothing new in the ledger — it makes the Year's existing question
+(D-106, the day-altitude twin of On Deck) *usable*. Strains P8 only if you
+read the numeral as a second answer; it is not. Adds no pool, no name, and
+works on an empty year (clear cells *are* the empty-data answer, and they
+are now the ones you can index).
+
+Guarded by `tests/year-marks.test.tsx`: both shells draw 1–31; the opt-out
+still exists for a mute sketch. Verify the marks at `?year`.
+
+*Status: standing — amends D-106's "does not draw dates" clause only.*
