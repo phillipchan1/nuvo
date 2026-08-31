@@ -62,9 +62,9 @@ export default function YearHarness() {
         </button>
       </div>
       <p className="mb-3 max-w-[70ch] text-caption text-muted">
-        Same year, three panes. Dates are the map; today is the signal ring. No
-        density. Desktop panes fill their height — equal month rows, weeks
-        stretched to the floor of each box, no dead paper under December.
+        Same year, three panes. Month name → ink numerals → today as a signal
+        disc → weekday whisper. Number grids stay dense (six square weeks);
+        leftover height sits under the grid, not between the dates.
       </p>
       <div className="flex gap-4 overflow-x-auto pb-6">
         <Frame label="desktop · 1100×720" width={1100}>
