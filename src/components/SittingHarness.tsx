@@ -11,7 +11,9 @@
 //     to get (designation, hue, the pieces it will hold), and the drop makes it,
 //     with its loose work inside and an offer for what already had a time;
 //  2. **drag one loose piece** → it lands in a project sitting too, not a bare
-//     block, so project time wears one shape however you place it.
+//     block, so project time wears one shape however you place it;
+//  3. **check off an anytime chip** → the anytime row's checkbox completes the
+//     planned-for-day task the same way a timed block's does.
 //
 // The writes are local state, not Supabase — this proves the gesture and the
 // render, which is exactly the half that a test can't see. Not part of any real
@@ -68,6 +70,9 @@ const PLACED = [
     do_date: toDateISO(DAY),
   }),
 ];
+/** Planned for the day, no clock — the anytime row. Exists so the chip's
+ *  check-off can be driven here the same way a timed block's can. */
+const ANYTIME = [task("Rename Stampede to Drove", { do_date: toDateISO(DAY) })];
 
 const EVENTS: ExternalEvent[] = [
   {
@@ -128,7 +133,7 @@ const qc = new QueryClient({ defaultOptions: { queries: { retry: 0 } } });
 export default function SittingHarness() {
   const railRef = useRef<HTMLDivElement | null>(null);
   const [slots, setSlots] = useState<Slot[]>(SEED_SLOTS);
-  const [tasks, setTasks] = useState<Task[]>([...LOOSE, ...PLACED]);
+  const [tasks, setTasks] = useState<Task[]>([...LOOSE, ...PLACED, ...ANYTIME]);
   const [log, setLog] = useState<string[]>([]);
   const say = (line: string) => setLog((l) => [line, ...l].slice(0, 8));
 
@@ -156,6 +161,14 @@ export default function SittingHarness() {
       patch(t.id, { slot_id: s.id, start_time: null, do_date: s.do_date });
     },
     backToInbox: (t: Task) => say(`backToInbox · ${t.title}`),
+    complete: (t: Task) => {
+      say(`complete · ${t.title}`);
+      patch(t.id, { status: "done", completed_at: new Date().toISOString() });
+    },
+    uncomplete: (t: Task) => {
+      say(`uncomplete · ${t.title}`);
+      patch(t.id, { status: "planned", completed_at: null });
+    },
   } as unknown as ReturnType<typeof useTaskMutations>;
 
   const slotMutations = {
@@ -273,7 +286,7 @@ export default function SittingHarness() {
         <div className="min-w-0 flex-1">
           <CalendarPane
             view="timeGridDay"
-            tasks={tasks.filter((t) => t.start_time || t.slot_id)}
+            tasks={tasks.filter((t) => t.start_time || t.slot_id || t.do_date)}
             events={EVENTS}
             slots={slots}
             slotTasks={slotTasks}

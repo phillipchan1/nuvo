@@ -815,13 +815,18 @@ export default function CalendarPane({
   // Live drop-target feedback while a task is being dragged. Classes are toggled
   // imperatively (no React state) so a drag never re-renders CalendarPane
   // mid-gesture (which could disturb FullCalendar's own drag/drop):
-  //   body.cal-dragging        → the day cells glow as "anytime" drop targets
-  //   body.over-slot           → fade the drag ghost (it's "dropping into" a slot)
-  //   .evt-slot.slot-drop-target → the hovered slot lights up, ready to accept
-  //   .slot-adjacent-preview    → ghost block at the landing spot beside a slot
-  //   .rail-drop-active        → the left rail is highlighted as the Inbox zone
-  // The slot/rail are hit-tested per move via geometry (the ghost is
-  // pointer-events:none). Armed for tasks only — dragging an event/slot stays quiet.
+  //   body.cal-dragging           → drag is live (cells can arm as targets)
+  //   body.over-slot              → fade the drag ghost (it's "dropping into" a slot)
+  //   body.over-anytime           → fade FC's mirror; our anytime pill is the read
+  //   .evt-slot.slot-drop-target  → the hovered slot lights up, ready to accept
+  //   .slot-adjacent-preview      → ghost block at the landing spot beside a slot
+  //   .fc-daygrid-day.anytime-drop-target → the anytime cell under the pointer
+  //   .anytime-drop-preview       → titled pill preview of the anytime chip
+  //   .rail-drop-active           → the left rail is highlighted as the Inbox zone
+  // The slot/anytime/rail are hit-tested per move via geometry (the ghost is
+  // pointer-events:none). CSS :hover alone was too quiet on the anytime row —
+  // the frame covered the day wash, so dropping there felt like nowhere. Armed
+  // for tasks only — dragging an event/slot stays quiet.
   useEffect(() => {
     let armed = false;
     let active = false;
@@ -830,7 +835,9 @@ export default function CalendarPane({
     let startY = 0;
     let overSlot: HTMLElement | null = null;
     let overZone: SlotDropZone | null = null;
+    let overAnytime: HTMLElement | null = null;
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
+    let dragTitle: string | null = null; // frozen at pointerdown — DOM lookup mid-drag can miss
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
@@ -844,6 +851,13 @@ export default function CalendarPane({
     preview.setAttribute("aria-hidden", "true");
     document.body.appendChild(preview);
     const previewTitle = preview.querySelector(".slot-adjacent-preview-title") as HTMLElement;
+    const anytimePreview = document.createElement("div");
+    anytimePreview.className = "anytime-drop-preview";
+    anytimePreview.innerHTML =
+      '<span class="anytime-drop-preview-dot" aria-hidden="true"></span><span class="anytime-drop-preview-title"></span>';
+    anytimePreview.setAttribute("aria-hidden", "true");
+    document.body.appendChild(anytimePreview);
+    const anytimePreviewTitle = anytimePreview.querySelector(".anytime-drop-preview-title") as HTMLElement;
 
     const dragDurationMins = (): number => {
       if (dragId) {
@@ -873,6 +887,7 @@ export default function CalendarPane({
     };
 
     const dragLabel = (): string => {
+      if (dragTitle) return dragTitle;
       if (dragId) {
         const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${CSS.escape(dragId)}"]`);
         const group = dragEl?.getAttribute("data-task-drag-group");
@@ -888,12 +903,23 @@ export default function CalendarPane({
       document.body.classList.remove("slot-adjacent-drop");
     };
 
+    const hideAnytimePreview = () => {
+      anytimePreview.classList.remove("is-visible");
+    };
+    const clearAnytimeTarget = () => {
+      overAnytime?.classList.remove("anytime-drop-target");
+      overAnytime = null;
+      document.body.classList.remove("over-anytime");
+      hideAnytimePreview();
+    };
+
     const reset = () => {
-      document.body.classList.remove("cal-dragging", "over-slot", "slot-adjacent-drop");
+      document.body.classList.remove("cal-dragging", "over-slot", "slot-adjacent-drop", "over-anytime");
       overSlot?.classList.remove("slot-drop-target", "slot-adjacent-anchor");
       overSlot = null;
       overZone = null;
-      chip.classList.remove("is-visible");
+      clearAnytimeTarget();
+      chip.classList.remove("is-visible", "drop-chip-act");
       hideAdjacentPreview();
       railRef.current?.classList.remove("rail-drop-active", "rail-return-armed");
     };
@@ -907,6 +933,19 @@ export default function CalendarPane({
       // would otherwise open the project record the moment you let go.
       const dragEl = el?.closest?.("[data-task-drag], [data-project-drag]") as HTMLElement | null;
       dragId = dragEl?.getAttribute("data-task-drag") ?? null;
+      const group = dragEl?.getAttribute("data-task-drag-group");
+      dragTitle = group
+        ? `${group.split(",").filter(Boolean).length} tasks`
+        : dragEl?.getAttribute("data-task-title")?.trim()
+          || dragEl?.getAttribute("data-project-title")?.trim()
+          || null;
+      if (!dragTitle) {
+        const calEl = el?.closest?.(".evt-task") as HTMLElement | null;
+        dragTitle =
+          calEl?.querySelector?.("[data-evt-title]")?.textContent?.trim()
+          || calEl?.textContent?.trim()
+          || null;
+      }
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
       calTask = Boolean(el?.closest?.(".evt-task"));
       startX = e.clientX;
@@ -951,8 +990,30 @@ export default function CalendarPane({
         else if (slotEl && (zone === "before" || zone === "after")) slotEl.classList.add("slot-adjacent-anchor");
       }
       document.body.classList.toggle("over-slot", zone === "inside");
+      // Anytime row (week/day all-day band, or a month cell): hit-test the day
+      // cells themselves. :hover on `.fc-daygrid-day` painted a wash the frame
+      // covered, so the pointer could be over a real drop and still look idle.
+      let anytimeEl: HTMLElement | null = null;
+      if (!slotEl) {
+        for (const el of document.querySelectorAll<HTMLElement>(".fc-daygrid-body .fc-daygrid-day")) {
+          const r = el.getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            anytimeEl = el;
+            break;
+          }
+        }
+      }
+      if (anytimeEl !== overAnytime) {
+        overAnytime?.classList.remove("anytime-drop-target");
+        overAnytime = anytimeEl;
+        anytimeEl?.classList.add("anytime-drop-target");
+      }
+      document.body.classList.toggle("over-anytime", Boolean(anytimeEl));
+      if (!anytimeEl) hideAnytimePreview();
+
       if (zone === "before" || zone === "after") {
-        chip.classList.remove("is-visible");
+        clearAnytimeTarget();
+        chip.classList.remove("is-visible", "drop-chip-act");
         const slotId = slotEl?.getAttribute("data-slot-id");
         const slot = slotId ? slotsRef.current.find((s) => s.id === slotId) : null;
         if (slotEl && slot) {
@@ -968,24 +1029,55 @@ export default function CalendarPane({
         } else {
           hideAdjacentPreview();
         }
+      } else if (slotEl && zone === "inside") {
+        hideAdjacentPreview();
+        clearAnytimeTarget();
+        const title = slotEl.querySelector(".fc-event-main")?.textContent?.trim();
+        chip.textContent = `↳ Drop into ${title || "this slot"}`;
+        chip.classList.remove("drop-chip-act");
+        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
+        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+        chip.classList.add("is-visible");
+      } else if (anytimeEl) {
+        hideAdjacentPreview();
+        // Pill preview in the cell — FC's all-day mirror is a blank scrap; this
+        // is the chip you're about to get, with the title, before you commit.
+        // Compact chip on the left of the cell — a full-bleed bar read as a
+        // zone wash, not as the anytime pill you're about to get.
+        const frame =
+          anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-events") ??
+          anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-frame") ??
+          anytimeEl;
+        const r = frame.getBoundingClientRect();
+        const padX = 6;
+        const padY = 3;
+        const label = dragLabel();
+        anytimePreview.style.left = `${fixedCssPx(r.left + padX)}px`;
+        anytimePreview.style.top = `${fixedCssPx(r.top + padY)}px`;
+        anytimePreview.style.width = "auto";
+        anytimePreview.style.maxWidth = `${fixedCssPx(Math.max(120, r.width - padX * 2))}px`;
+        anytimePreviewTitle.textContent = label;
+        anytimePreview.classList.add("is-visible");
+        const dateStr = anytimeEl.getAttribute("data-date");
+        const dayBit = dateStr
+          ? ` · ${format(parseDateISO(dateStr), "EEE")}`
+          : "";
+        chip.textContent = `↳ Plan anytime${dayBit}`;
+        chip.classList.add("drop-chip-act");
+        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
+        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+        chip.classList.add("is-visible");
       } else {
         hideAdjacentPreview();
-        if (slotEl && zone === "inside") {
-          const title = slotEl.querySelector(".fc-event-main")?.textContent?.trim();
-          chip.textContent = `↳ Drop into ${title || "this slot"}`;
-          chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
-          chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
-          chip.classList.add("is-visible");
-        } else {
-          chip.classList.remove("is-visible");
-        }
+        clearAnytimeTarget();
+        chip.classList.remove("is-visible", "drop-chip-act");
       }
       const rail = railRef.current;
       if (rail) {
         const rr = rail.getBoundingClientRect();
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
-        overRail = onRail && !slotEl;
+        overRail = onRail && !slotEl && !anytimeEl;
         // Calendar → rail only: the WHOLE rail is the inbox zone, so the whole
         // rail takes the wash. A drag that started *inside* the rail is the
         // rail's own business — tinting it there said "drop anywhere here",
@@ -1020,6 +1112,7 @@ export default function CalendarPane({
         reset();
       }
       dragId = null;
+      dragTitle = null;
       fromRail = false;
       calTask = false;
       moved = false;
@@ -1039,6 +1132,7 @@ export default function CalendarPane({
       active = false;
       moved = false;
       dragId = null;
+      dragTitle = null;
       fromRail = false;
       calTask = false;
       overRail = false;
@@ -1064,6 +1158,7 @@ export default function CalendarPane({
       reset();
       chip.remove();
       preview.remove();
+      anytimePreview.remove();
     };
   }, [railRef, defaultDurationMins]);
 
@@ -2231,15 +2326,31 @@ export default function CalendarPane({
     }
 
     // ── All-day task chip: "planned for the day, time TBD" — a compact pill ─
+    // Same check-off as a timed block: a decorative dot made the row look like
+    // work you couldn't finish from here. `onClick` already routes
+    // `[data-done-toggle]` for every task kind; done anytime tasks drop off the
+    // row on the next rebuild (they're filtered out of plannedTaskEvents).
     if (arg.event.allDay && kind === "task") {
-      const dotColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
+      const checkColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
       return (
         <div className="flex h-full min-w-0 items-center gap-1.5 overflow-hidden px-1.5">
-          <span
-            className="h-[6px] w-[6px] shrink-0 rounded-full"
-            style={{ background: dotColor }}
-          />
-          <span className="truncate text-label font-medium leading-none">{arg.event.title}</span>
+          <button
+            aria-label="toggle done"
+            aria-pressed={doneProp ?? false}
+            data-done-toggle
+            className="relative flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+            style={{ ["--evt-check-border" as string]: checkColor }}
+            onMouseDown={(e) => {
+              // Don't let a press on the checkbox begin an event drag.
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+          >
+            <Icon name="check" size={8} className="evt-check" />
+          </button>
+          <span data-evt-title="" className="truncate text-label font-medium leading-none">
+            {arg.event.title}
+          </span>
           {recurring ? <RecurMark className="shrink-0 opacity-45" /> : null}
         </div>
       );
