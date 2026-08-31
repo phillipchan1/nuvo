@@ -25,8 +25,7 @@ import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftCompose
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
-import CalendarYear, { yearSpan } from "./CalendarYear";
-import type { DayCtx } from "./mobile/dayPlan";
+import CalendarYear from "./CalendarYear";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
@@ -261,7 +260,6 @@ export default function CalendarPane({
   onToggleFocus,
   domains = [],
   onOpenUpkeep,
-  eventsLoading = false,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -278,9 +276,6 @@ export default function CalendarPane({
   weekButtonGlow?: boolean;
   tasks: Task[];
   events: ExternalEvent[];
-  /** First-load-for-this-range, not background refetch — the Year distinguishes
-   *  "no commitments" from "not read yet", which look identical on a grid. */
-  eventsLoading?: boolean;
   slots: Slot[];
   /** Child tasks grouped by slot id — drives the in-block progress read. */
   slotTasks: Record<string, Task[]>;
@@ -640,7 +635,7 @@ export default function CalendarPane({
   // ── Year state ────────────────────────────────────────────────────────────
   // Declared up here, above the hotkey effect, because the paging keys have to
   // reach it: the Year has no FullCalendar api, so ‹ › and ⌘T move a cursor
-  // instead. The DayCtx it reads is built further down, next to `hidden`.
+  // instead. The Year itself draws no calendar data (D-128) — just the map.
   const [yearCursor, setYearCursor] = useState(() => now.getFullYear());
   // Mount the Year on first use and never unmount it again. 365 cells cost
   // ~150ms to build, which is fine once and awful per click — but mounting it
@@ -1133,49 +1128,6 @@ export default function CalendarPane({
     () => new Set(settings?.hidden_calendar_ids ?? []),
     [settings],
   );
-
-  // `now` ticks every 30 seconds in Planner, and this ctx is the cache key that
-  // `buildYearLoads` weighs 365 days against — so a live `now` would throw the
-  // year away twice a minute. Nothing in a day's *load* depends on the time of
-  // day (only `buildDayPlan` reads `ctx.now`, for isToday/isPast; the load path
-  // reads the working window and the busy list), so day granularity is not an
-  // approximation here, it is the honest key. The live `now` still reaches the
-  // view as a prop, which is what draws today's ring.
-  const nowDayISO = toDateISO(now);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayStableNow = useMemo(() => startOfDay(now), [nowDayISO]);
-
-  // NOT gated on `view === "year"`. It used to be, and that quietly defeated
-  // the whole cache: leaving the Year dropped the ctx, coming back built a new
-  // object, and a new identity is a WeakMap miss — so every single visit re-paid
-  // ~180ms of day math. Building it always costs an object and a small Map per
-  // data change, which is nothing, and buys a free return trip.
-  const yearCtx = useMemo<DayCtx>(() => {
-    const slotChildren: Record<string, Task[]> = {};
-    for (const s of slots) slotChildren[s.id] = slotTasks[s.id] ?? [];
-    return {
-      visibleEvents: events.filter((e) => !hidden.has(e.calendar_id) && !isHidden(e)),
-      blocks: tasks.filter((t) => t.start_time && t.status !== "trashed"),
-      slots,
-      slotChildren,
-      slotTitles: new Map(slots.map((s) => [s.id, slotTitle(s)])),
-      hidden,
-      workStart: (settings?.work_start_minutes ?? 480),
-      workEnd: (settings?.work_end_minutes ?? 990),
-      now: dayStableNow,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, tasks, slots, slotTasks, hidden, hiddenKeys, settings, dayStableNow, slotTitle]);
-
-  // The Year has no FullCalendar to fire `datesSet`, so it asks for its own
-  // span — otherwise it shades 365 confidently empty days, which is the one
-  // wrong answer this view can give (an empty grid reads as a free year).
-  useEffect(() => {
-    if (view !== "year") return;
-    const { startISO, endISO } = yearSpan(yearCursor);
-    onRangeChange(startISO, endISO);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, yearCursor]);
 
   const fcEvents = useMemo(() => {
     const taskEvents = tasks
@@ -3269,10 +3221,8 @@ export default function CalendarPane({
           >
             <CalendarYear
               year={yearCursor}
-              ctx={yearCtx}
               now={now}
               weekStartsOn={firstDayOfWeek(settings)}
-              loading={eventsLoading}
               onPickDay={(d) => openYearDate(d, "timeGridDay")}
               onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
             />

@@ -2116,9 +2116,9 @@ Standing this up found a pre-existing collision worth recording: `WeekBoard` had
 its own `dayLoad`, measuring something genuinely different (how much of the
 *work window* is spoken for, **including** unscheduled intentions, **excluding**
 evenings). Two questions, so two names — it is now `dayCapacity`, and the kernel
-test forbids a third. *Status: standing — the load thesis holds. The "does not
-draw dates" clause was amended by D-127: dates are the index, not a second
-question.*
+test forbids a third. *Status: standing for the kernel / chat read — the Year
+wall no longer paints load (D-128). The "does not draw dates" clause was
+amended by D-127: dates are the map.*
 
 ---
 
@@ -4722,4 +4722,35 @@ are now the ones you can index).
 Guarded by `tests/year-marks.test.tsx`: both shells draw 1–31; the opt-out
 still exists for a mute sketch. Verify the marks at `?year`.
 
-*Status: standing — amends D-106's "does not draw dates" clause only.*
+*Status: standing — amends D-106's "does not draw dates" clause only. Density
+on the wall was later cut by D-128; the numeral stays.*
+
+---
+
+**D-128 · 2026-08-31 · The Year draws no density. Dates are enough.**
+
+D-106 paid for the Year as a heatmap of load. D-127 put day numerals on that
+heatmap so you could name a square. Phil then looked at the result and said
+density was not helpful — it added visual disclarity and competed with the
+dates that were the reason to open the Year at all.
+
+So the shade ramp, the legend, the over ring, and the year-wide calendar fetch
+come off. What stays: twelve month grids of day numerals, today marked with
+the signal ring, a tap to drill in. The Year is a **map** of the year — how
+you stand back and pick a place to lean into.
+
+The load question does not disappear. It moves to where prose is the medium:
+the chat's `read_calendar_load`, which still reads `dayLoad` / `spanLoad` /
+`longestClearRun` from the shared kernel. On Deck still answers the same
+question at project altitude. A Year wall that re-asks it in colour was the
+duplicate that earned its cut.
+
+Closes nothing new in the ledger. Relieves the P8 strain D-127 named (numeral
+vs shade as two answers on one surface). Adds no pool, no name. Works on an
+empty year by construction — there is nothing to fetch.
+
+Guarded by `tests/year-marks.test.tsx` (no legend copy) and the planning-kernel
+conformance flip (Year files must not re-grow `LOAD_FILL` / `buildYearLoads`).
+Verify at `?year`.
+
+*Status: standing — cuts the Year-wall half of D-106; kernel + chat untouched.*

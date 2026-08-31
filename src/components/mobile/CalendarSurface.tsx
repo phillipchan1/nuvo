@@ -443,10 +443,8 @@ export default function CalendarSurface({
       return (
         <MobileYearView
           year={yearCursor}
-          ctx={ctx}
           now={now}
           weekStartsOn={weekStartsOn}
-          loading={loading}
           onPrev={() => travel(-1)}
           onNext={() => travel(1)}
           onPickMonth={(m) => {

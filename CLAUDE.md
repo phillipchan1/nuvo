@@ -227,9 +227,10 @@ it needs to work on a phone.
  different widths and *diverged* across the row. One `CAL_EDGE`, one `CAL_GUTTER`, one
  `ColumnBand`; everything with columns starts at `CAL_EDGE + CAL_GUTTER`. Every list inside
  the Calendar sits on `CAL_EDGE` too, so the surface has one left edge, not four. Verify all
- five at `?horizon` (`mobile/CalendarHarness.tsx`). The Year's marks (shade + the
- day numeral that indexes it) are two layouts over `calendar/YearParts.tsx` —
- verify both shells at `?year` (`calendar/YearHarness.tsx`). D-106, D-127.
+ five at `?horizon` (`mobile/CalendarHarness.tsx`). The Year's marks (day
+ numerals + today's signal ring — no density) are two layouts over
+ `calendar/YearParts.tsx` — verify both shells at `?year`
+ (`calendar/YearHarness.tsx`). D-127, D-128.
 - **A time is spelled ONE way, and a surface that draws a fact doesn't also write it**
  (D-122). `at` / `span` in `dayPlan.ts` are the clock vocabulary — `9am`, `9:30am`,
  `9–9:30am`, `11am–1pm` — and `hourLabel` *is* `at`, so the gutter and everything beside it
