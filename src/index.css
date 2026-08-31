@@ -1109,6 +1109,15 @@ body.odp-dragging [data-resize] {
 .row-hover:hover {
   background-color: color-mix(in srgb, var(--surface) 40%, transparent);
 }
+/* A rail row's selection lift snaps in, like the Schedule's block focus
+   (design-language.md: "animate where it's a deliberate select, snap where
+   it's a live click"). The row keeps `.fast` for its hover wash, but that
+   same eased transition was catching the click-to-select transform/shadow/
+   backdrop-filter swap too, so clicking through a task list read as laggy.
+   Wins over `.fast` by cascade order (defined after it). */
+.row-lift-instant {
+  transition: none;
+}
 
 /* Entrances */
 @keyframes rise {

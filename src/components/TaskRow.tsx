@@ -610,7 +610,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
       title={rowHint}
       className={`group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
         completing ? "task-completing" : "fast"
-      } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
+      } ${dragging ? "row-dragging" : bg} ${
+        !dragging && (selected || multiSelected) ? "row-lift-instant" : ""
+      } ${swipeActions ? "relative overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
       {swipeActions && swipeX !== 0 && (
