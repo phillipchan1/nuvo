@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
@@ -31,6 +31,7 @@ import {
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { SectionLabel } from "./ui";
+import { skipWhenAsleep } from "./KeepAlive";
 
 /**
  * The rail's faces. `trash` is the floor under delete (audit rank 8: a trashed
@@ -68,7 +69,7 @@ function writeRailWidth(width: number) {
   }
 }
 
-export default function LeftRail({
+function LeftRail({
   tab,
   setTab,
   inbox,
@@ -91,6 +92,8 @@ export default function LeftRail({
   mutations: Mutations;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
   hotkeysEnabled: boolean;
+  /** False while a floor covers the Schedule — skip reconciling the rail. */
+  live?: boolean;
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   /** Focus mode: slide the rail closed so the calendar takes the whole width. */
@@ -1076,6 +1079,8 @@ export default function LeftRail({
     </div>
   );
 }
+
+export default memo(LeftRail, skipWhenAsleep);
 
 function EmptyState({ text }: { text: string }) {
   return <div className="px-3 py-6 text-center text-caption text-muted">{text}</div>;

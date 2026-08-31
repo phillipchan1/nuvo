@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   initiativesOf,
@@ -37,6 +37,7 @@ const CreateRecord = lazy(() => import("./floors/CreateRecord"));
 const CapacityRun = lazy(() => import("./capacity/CapacityRun"));
 const Orientation = lazy(() => import("./orientation/Orientation"));
 import StatusBar from "./terminal/StatusBar";
+import KeepAlive from "./KeepAlive";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
 export type Rung = "day" | "project" | "initiative" | "domain";
@@ -185,6 +186,22 @@ function AppShellInner() {
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
   const { agent, setNavFocus } = useAgentContext();
   const { visible: orientationVisible } = useOrientation();
+
+  // Latch the last Build rung so hiding the overlay doesn't remount On Deck
+  // (FloorPane keys its body on `rung`). First visit still lazy-mounts; after
+  // that the overlay stays and ⌘1 / ⌘2 is a visibility toggle.
+  const lastBuildRung = useRef<Exclude<Rung, "day">>(
+    rung === "day" ? "project" : rung,
+  );
+  if (rung !== "day") lastBuildRung.current = rung;
+  const floorsSeenRef = useRef(rung !== "day");
+  if (rung !== "day") floorsSeenRef.current = true;
+  const floorsSeen = floorsSeenRef.current;
+
+  // Warm the floor chunk behind the Schedule so the first ⌘2 isn't a blank wait.
+  useEffect(() => {
+    void import("./FloorPane");
+  }, []);
 
   useEffect(() => {
     setNavFocus({
@@ -441,19 +458,26 @@ function AppShellInner() {
             onToggleFocus={toggleFocus}
             squeezed={squeezed}
           />
-          {rung !== "day" && (
+          {floorsSeen && (
             // Sits ABOVE the Schedule beneath it: the LeftRail is z-40, so the
             // floor overlay must clear that (z-30 let the rail paint through).
             // The atmosphere backdrop is also opaque from frame 1 so the Schedule
             // never "peers through" during the floor-enter fade — only the inner
             // content rises/fades over the opaque canvas.
-            <div className="atmosphere absolute inset-0 z-[41]">
-              {/* Suspense inside the opaque atmosphere backdrop: the fallback
-                  frame shows the same warm paper the floor fades in over. */}
-              <div className="floor-enter h-full">
+            //
+            // KeepAlive: the overlay stays after the first visit. Unmounting it
+            // on ⌘1 made coming back to Projects remount On Deck, and the
+            // Schedule's matching unmount rebuilt FullCalendar — the hitch
+            // that made the ladder feel like a page load.
+            <KeepAlive
+              active={rung !== "day"}
+              className="atmosphere absolute inset-0 z-[41]"
+            >
+              <div className="h-full">
                 <Suspense fallback={null}>
                   <FloorPane
-                    rung={rung}
+                    rung={rung === "day" ? lastBuildRung.current : rung}
+                    active={rung !== "day"}
                     focus={focus}
                     focusDomain={focusDomain}
                     goRung={goRung}
@@ -464,7 +488,7 @@ function AppShellInner() {
                   />
                 </Suspense>
               </div>
-            </div>
+            </KeepAlive>
           )}
 
         </div>

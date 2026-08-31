@@ -30,6 +30,7 @@ import { eventHitDateISO, type EventHit } from "../lib/eventSearch";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
+import KeepAlive from "./KeepAlive";
 import type { FlowName } from "./Spine";
 
 import type { Command, SearchHit } from "./NuvoSpotlight";
@@ -597,14 +598,14 @@ export default function Planner({
           Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
 
       <div className="relative flex min-h-0 flex-1">
-        {/* The Schedule surface mounts only while the day rung is on screen.
-            It used to stay live under every floor — a full FullCalendar, the
-            rail and its TaskRows re-rendering beneath Settings — and the rail's
-            hotkeys kept acting on tasks you couldn't see. Planner itself stays
-            mounted for its app-global tenants (realtime, rollover, ⌘K,
-            Settings, the week plan); CalendarPane remembers its date + scroll
-            across the unmount. */}
-        {onSchedule && (
+        {/* The Schedule stays mounted while a floor is open. Unmounting it
+            rebuilt FullCalendar on every ⌘1 (~111ms to construct, plus event
+            reconcile — a lived-in week is a full second). KeepAlive hides it
+            with visibility so the box survives; `live={false}` lets the pane
+            and the rail skip reconciling under the floor that's on screen.
+            Hotkeys follow `onSchedule`, so they cannot act on a rail you
+            cannot see. */}
+        <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
         <LeftRail
           tab={tab}
           setTab={setTab}
@@ -613,7 +614,8 @@ export default function Planner({
           labels={labels}
           mutations={mutations}
           onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor, null)}
-          hotkeysEnabled={!anyModalOpen && !focusMode}
+          hotkeysEnabled={!anyModalOpen && !focusMode && onSchedule}
+          live={onSchedule}
           now={now}
           railRef={railRef}
           collapsed={focusMode}
@@ -626,13 +628,11 @@ export default function Planner({
             onOpen: openWeekDoor,
           }}
         />
-        )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
             all — a seven-day grid at 280px is a ~48px time gutter and 34px
             columns, which is not a smaller calendar so much as an unreadable
             one. 420 keeps columns above ~52px, where an event title still says
             which event it is. The rails yield to pay for it (AppShellInner). */}
-        {onSchedule && (
         <div className="relative flex min-h-0 min-w-[420px] flex-1">
           {/* The week door lives on the rail's Week's Plan header — on top of the
               priorities it opens. The toolbar's right cluster acts on the canvas
@@ -643,7 +643,8 @@ export default function Planner({
           <CalendarPane
             view={view}
             onViewChange={setCalView}
-            hotkeysEnabled={!anyModalOpen}
+            hotkeysEnabled={!anyModalOpen && onSchedule}
+            live={onSchedule}
             tasks={allTasksArray}
             events={events}
             slots={slots}
@@ -756,7 +757,7 @@ export default function Planner({
             </Suspense>
           )}
         </div>
-        )}
+        </KeepAlive>
 
         {/* The Week's Plan / Review covers the whole work area (rail included) —
             a moment to receive, not to triage. */}

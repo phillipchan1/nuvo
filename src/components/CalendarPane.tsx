@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -38,6 +38,7 @@ import { isTypingIn } from "../lib/a11y";
 import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
+import { skipWhenAsleep } from "./KeepAlive";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
   adjacentPreviewRect,
@@ -191,11 +192,9 @@ function RecurrenceDialog({
   );
 }
 
-// The Schedule unmounts while a floor is open — keeping a live FullCalendar
-// under every surface taxed every interaction in the app — so the anchor date
-// and the time-grid scroll offset survive at module scope, and the remount
-// reopens where the user left rather than at today, scrolled to now. One
-// CalendarPane per shell, so a single slot is enough.
+// The time-grid's date + scroll survive CalendarPane remounting (the Year
+// isn't an FC view, so drilling out remounts the grid on `initialDate`). Floors
+// used to unmount the whole pane; they now hide it. One CalendarPane per shell.
 const remountCache: { dateISO: string | null; scrollTop: number | null } = {
   dateISO: null,
   scrollTop: null,
@@ -220,7 +219,7 @@ function paintCalendarTaskDone(el: HTMLElement, done: boolean) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function CalendarPane({
+function CalendarPane({
   view,
   tasks,
   events,
@@ -265,6 +264,8 @@ export default function CalendarPane({
   onViewChange?: (v: CalView) => void;
   /** Schedule hotkeys (view switch + paging) stand down while a modal owns the screen. */
   hotkeysEnabled?: boolean;
+  /** False while a floor covers the Schedule — skip reconciling the grid. */
+  live?: boolean;
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
   weekGlyph?: EmblemSpec | null;
   onOpenWeekPlan?: () => void;
@@ -3559,6 +3560,8 @@ export default function CalendarPane({
     </div>
   );
 }
+
+export default memo(CalendarPane, skipWhenAsleep);
 
 function minutesToDuration(mins: number): string {
   const h = Math.floor(mins / 60);

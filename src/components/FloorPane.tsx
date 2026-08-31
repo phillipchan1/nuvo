@@ -37,6 +37,7 @@ export default function FloorPane({
   setProjectView,
   initiativeView,
   setInitiativeView,
+  active = true,
 }: {
   rung: Rung;
   focus: Focus;
@@ -46,6 +47,8 @@ export default function FloorPane({
   setProjectView: (v: ProjectView) => void;
   initiativeView: DetailView;
   setInitiativeView: (v: DetailView) => void;
+  /** False while Schedule covers this overlay — face-switcher keys stand down. */
+  active?: boolean;
 }) {
   const { openRecord, toggleAgent, nav } = useAppNavigation();
   const { agentOpen } = nav;
@@ -79,6 +82,7 @@ export default function FloorPane({
   // rungs, and never while typing (composer / brief / step edits). ⌘1–5 stays the
   // global rung nav. Both rungs share the same face order, so one map drives both.
   useEffect(() => {
+    if (!active) return;
     if (rung !== "project" && rung !== "initiative") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -93,7 +97,7 @@ export default function FloorPane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rung, setProjectView, setInitiativeView]);
+  }, [active, rung, setProjectView, setInitiativeView]);
 
   return (
     // Transparent: the floor overlay (AppShell) already paints .atmosphere, the
