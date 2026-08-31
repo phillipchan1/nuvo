@@ -237,7 +237,9 @@ export default function SittingHarness() {
   const noop = {} as unknown as ReturnType<typeof useExternalEventMutations>;
   const noopRec = {} as unknown as ReturnType<typeof useRecurrenceMutations>;
 
-  const looseNow = tasks.filter((t) => !t.slot_id && !t.start_time);
+  // Loose = not yet on a day. Anytime (do_date, no clock) already lives on the
+  // calendar's anytime row — listing it here made drag tests grab the wrong row.
+  const looseNow = tasks.filter((t) => !t.slot_id && !t.start_time && !t.do_date);
   const placedNow = tasks.filter((t) => t.start_time || t.slot_id);
 
   return (

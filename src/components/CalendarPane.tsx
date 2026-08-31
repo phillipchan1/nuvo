@@ -1041,8 +1041,8 @@ export default function CalendarPane({
         hideAdjacentPreview();
         // Pill preview in the cell — FC's all-day mirror is a blank scrap; this
         // is the chip you're about to get, with the title, before you commit.
-        // Compact chip on the left of the cell — a full-bleed bar read as a
-        // zone wash, not as the anytime pill you're about to get.
+        // Compact chip under any chips already on the day — stacking on top of
+        // an existing anytime row read as a rename, not as a second landing.
         const frame =
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-events") ??
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-frame") ??
@@ -1050,9 +1050,18 @@ export default function CalendarPane({
         const r = frame.getBoundingClientRect();
         const padX = 6;
         const padY = 3;
+        let top = r.top + padY;
+        for (const existing of anytimeEl.querySelectorAll<HTMLElement>(".fc-daygrid-event")) {
+          // Skip FC's own drag mirror if it's still in the cell tree.
+          if (existing.classList.contains("fc-event-mirror") || existing.classList.contains("fc-event-dragging")) continue;
+          const er = existing.getBoundingClientRect();
+          if (er.bottom > top) top = er.bottom + 2;
+        }
+        // Keep the pill inside the lit cell when the row is still short.
+        if (top + 22 > r.bottom - 2) top = Math.max(r.top + padY, r.bottom - 24);
         const label = dragLabel();
         anytimePreview.style.left = `${fixedCssPx(r.left + padX)}px`;
-        anytimePreview.style.top = `${fixedCssPx(r.top + padY)}px`;
+        anytimePreview.style.top = `${fixedCssPx(top)}px`;
         anytimePreview.style.width = "auto";
         anytimePreview.style.maxWidth = `${fixedCssPx(Math.max(120, r.width - padX * 2))}px`;
         anytimePreviewTitle.textContent = label;
