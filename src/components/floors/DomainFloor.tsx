@@ -43,6 +43,7 @@ import {
   DomainGroom,
   PresencePulse,
   Flourish,
+  IconPicker,
   SigilFormGrid,
   SwatchGrid,
   WeekShape,
@@ -279,6 +280,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
       <button onClick={onBack} className="fast absolute left-4 top-4 z-10 text-caption text-muted hover:text-ink">‹ all domains</button>
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
         <FormPicker domain={domain} form={form} onPick={pickForm} />
+        <IconDot domain={domain} />
         <ColorDot domain={domain} />
         <span className="opacity-0 transition-opacity group-hover:opacity-100">
           <DeleteBtn what="domain" onDelete={() => { deleteDomain(domain.id); onBack(); }} />
@@ -499,6 +501,35 @@ function ColorDot({ domain }: { domain: Domain }) {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2" style={{ width: 148 }}>
             <SwatchGrid value={domain.color} onPick={(c) => { updateDomain(domain.id, { color: c }); setOpen(false); }} />
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+function IconDot({ domain }: { domain: Domain }) {
+  const { updateDomain } = useVertical();
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="fast flex h-5 w-5 items-center justify-center rounded-full ring-1 ring-line text-caption leading-none"
+        title="Change the domain's icon"
+      >
+        {domain.icon || "◇"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2">
+            <IconPicker
+              value={domain.icon}
+              domainName={domain.name}
+              domainContext={domain.intention}
+              onPick={(icon) => { updateDomain(domain.id, { icon }); setOpen(false); }}
+            />
           </div>
         </>
       )}

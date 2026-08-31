@@ -46,6 +46,7 @@ import {
   DomainGroom,
   PresencePulse,
   Flourish,
+  IconPicker,
   SigilFormGrid,
   SwatchGrid,
 } from "../../domain/DomainParts";
@@ -157,6 +158,7 @@ export default function MobileDomainScreen({
         >
           <span>✦ {SIGIL_FORM_LABEL[form]}</span>
           <span className="h-3 w-3 rounded-full ring-1 ring-line" style={{ background: accent }} />
+          <span className="leading-none">{dom.icon || "◇"}</span>
           <span className="mono">{dressing ? "–" : "+"}</span>
         </button>
       </div>
@@ -169,6 +171,16 @@ export default function MobileDomainScreen({
           <div className="section-label mt-4 !p-0">The domain's light</div>
           <div className="mt-2">
             <SwatchGrid value={accent} onPick={(c) => store.updateDomain(dom.id, { color: c })} phone />
+          </div>
+          <div className="section-label mt-4 !p-0">The domain's face</div>
+          <div className="mt-2">
+            <IconPicker
+              value={dom.icon}
+              domainName={dom.name}
+              domainContext={dom.intention}
+              onPick={(icon) => store.updateDomain(dom.id, { icon })}
+              phone
+            />
           </div>
         </div>
       )}

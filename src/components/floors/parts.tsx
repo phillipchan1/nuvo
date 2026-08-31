@@ -482,6 +482,7 @@ export function DomainPicker({
   onChange,
   align = "left",
   size = "sm",
+  allowClear = false,
 }: {
   domains: Domain[];
   value: string;
@@ -494,6 +495,9 @@ export function DomainPicker({
    *  crumb text beside it, so it read as a label rather than a control. The
    *  border goes with the size: one tinted fill carries it. */
   size?: "sm" | "lg";
+  /** Offers a trailing "no domain" row. Project/Initiative always belong to one
+   *  domain, so they never pass this — a task can be genuinely domainless. */
+  allowClear?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -530,6 +534,14 @@ export function DomainPicker({
             {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
           </button>
         ))}
+        {allowClear && value && (
+          <button
+            onClick={() => { onChange(""); setOpen(false); }}
+            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
+          >
+            no domain
+          </button>
+        )}
       </FloatingMenu>
     </span>
   );

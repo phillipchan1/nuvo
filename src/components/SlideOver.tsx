@@ -25,6 +25,7 @@ import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
+import { DomainPicker } from "./floors/parts";
 import { rulesEqual, describeRule, fromGoogleRRULE, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import {
   POP_INPUT_CLS,
@@ -570,13 +571,38 @@ export function TaskPopover({
                   <span className="truncate">{backLabel}</span>
                 </button>
               )}
-              {(domain || initiative || project) && (
-                <div className="mono mb-1 flex items-center gap-1 truncate text-meta">
-                  {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
-                  {initiative && <><span className="text-muted">›</span><span className="truncate text-muted">{initiative.name}</span></>}
-                  {project && <><span className="text-muted">›</span><span className="truncate text-muted">{project.name}</span></>}
-                </div>
-              )}
+              <div className="mb-1 flex flex-wrap items-center gap-1.5 text-meta">
+                {project || initiative ? (
+                  // Parented — the domain is inherited from the project, so it's
+                  // the same quiet read as before, not a control (setting it here
+                  // would silently do nothing; see resolveDomainId).
+                  <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
+                    {domain ? <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span> : <span>◇ Domain</span>}
+                    {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
+                    {project && <><span>›</span><span className="truncate">{project.name}</span></>}
+                  </span>
+                ) : (
+                  // Loose — the same live DomainPicker Project/Initiative use,
+                  // in the same top-left corner of the record.
+                  <DomainPicker domains={vertical.domains} value={domain?.id ?? ""} onChange={setDomain} size="sm" allowClear />
+                )}
+                {suggestedDomain && (
+                  <button
+                    type="button"
+                    onClick={() => setDomain(suggestedDomain.id)}
+                    className="fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
+                    style={{
+                      borderColor: `${suggestedDomain.color}50`,
+                      color: suggestedDomain.color,
+                      background: `${suggestedDomain.color}15`,
+                    }}
+                    title="Nuvo's guess — click to file it here"
+                  >
+                    <span aria-hidden>✦</span>
+                    {suggestedDomain.icon} {suggestedDomain.name}
+                  </button>
+                )}
+              </div>
             </>
           }
           meta={
@@ -736,29 +762,8 @@ export function TaskPopover({
                 </div>
               </PopField>
 
-              <PopField label="Filed under">
+              <PopField label="Project">
                 <div className="flex flex-wrap items-center gap-1">
-                  {/* Domain chip wrapping invisible select */}
-                  <label
-                    className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-                    style={{ color: domain?.color ?? "var(--muted)" }}
-                  >
-                    {domain ? <><span>{domain.icon}</span><span>{domain.name}</span></> : <span>+ domain</span>}
-                    <select
-                      aria-label="Domain"
-                      value={domain?.id ?? ""}
-                      onChange={(e) => setDomain(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
-                    >
-                      <option value="">— none —</option>
-                      {vertical.domains.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <span className="text-meta text-muted">›</span>
-
                   {/* Project chip */}
                   <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
                     <span>{project?.name ?? "+ project"}</span>
@@ -787,25 +792,6 @@ export function TaskPopover({
                     </button>
                   )}
                 </div>
-                {/* Auto-domain suggestion — Nuvo's guess sits with the filing it
-                    would change, not in a panel three fields away. */}
-                {suggestedDomain && (
-                  <div className="mt-1 flex items-center gap-2 text-label text-muted">
-                    <span>✦ looks like</span>
-                    <button
-                      onClick={() => setDomain(suggestedDomain.id)}
-                      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-label font-medium"
-                      style={{
-                        borderColor: suggestedDomain.color + "50",
-                        color: suggestedDomain.color,
-                        background: suggestedDomain.color + "15",
-                      }}
-                    >
-                      {suggestedDomain.icon && <span>{suggestedDomain.icon}</span>}
-                      {suggestedDomain.name}
-                    </button>
-                  </div>
-                )}
               </PopField>
 
               {/* Remind — only offered once the task has a moment to be early

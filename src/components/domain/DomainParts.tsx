@@ -26,6 +26,7 @@ import {
   SIGIL_FORM_LABEL,
   type SigilForm,
 } from "../../lib/domainSigil";
+import { searchDomainEmoji, suggestDomainEmoji } from "../../lib/domainEmoji";
 import type { Domain, DomainContext } from "../../lib/vertical";
 import DomainSigil from "../floors/DomainSigil";
 import { RefinedTick } from "../floors/parts";
@@ -275,6 +276,75 @@ export function SwatchGrid({
           style={{ background: c, ...(c === value ? { boxShadow: `0 0 0 2px var(--bg), 0 0 0 4px ${c}` } : {}) }}
         />
       ))}
+    </div>
+  );
+}
+
+/** The domain's face — a curated, searchable set (never the native emoji
+ *  keyboard), with a fast local guess from the domain's own words. Same
+ *  swatches-style grid on both shells. */
+export function IconPicker({
+  value,
+  domainName,
+  domainContext,
+  onPick,
+  phone = false,
+}: {
+  value: string;
+  domainName: string;
+  domainContext?: string | null;
+  onPick: (icon: string) => void;
+  phone?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const results = useMemo(() => searchDomainEmoji(query), [query]);
+  const suggestion = useMemo(
+    () => suggestDomainEmoji(`${domainName} ${domainContext ?? ""}`),
+    [domainName, domainContext],
+  );
+
+  return (
+    <div className="flex flex-col gap-2" style={{ width: phone ? undefined : 232 }}>
+      <div className="flex items-center gap-1.5">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          aria-label="Search icons"
+          className={`fast flex-1 rounded-md border border-line bg-bg px-2 text-label outline-none focus:border-accent ${phone ? "h-9" : "h-7"}`}
+        />
+        {suggestion && suggestion !== value && (
+          <button
+            type="button"
+            onClick={() => onPick(suggestion)}
+            title={`Suggested from “${domainName}”`}
+            className="fast flex shrink-0 items-center gap-1 rounded-full border border-accent/30 px-2 py-1 text-micro font-medium text-accent hover:bg-accent-soft"
+          >
+            <span aria-hidden>✦</span>
+            <span>{suggestion}</span>
+          </button>
+        )}
+      </div>
+      <div className={`grid gap-1 overflow-y-auto pr-0.5 ${phone ? "max-h-[240px] grid-cols-7" : "max-h-[200px] grid-cols-8"}`}>
+        {results.map(({ emoji }) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => onPick(emoji)}
+            aria-label={`Set the domain's icon to ${emoji}`}
+            aria-pressed={emoji === value}
+            className={`fast flex items-center justify-center rounded-md text-body hover:bg-accent-soft ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-7 w-7"}`}
+            style={
+              emoji === value
+                ? { background: "var(--accent-soft)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" }
+                : undefined
+            }
+          >
+            {emoji}
+          </button>
+        ))}
+        {results.length === 0 && <div className="col-span-full py-3 text-center text-micro text-muted">No matches</div>}
+      </div>
     </div>
   );
 }

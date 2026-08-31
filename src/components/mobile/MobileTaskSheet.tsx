@@ -5,7 +5,8 @@ import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
-import { isProjectComplete, projectById, taskDomainId } from "../../lib/vertical";
+import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../../lib/vertical";
+import { DomainPicker } from "../floors/parts";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
@@ -123,6 +124,9 @@ export default function MobileTaskSheet({
   // the domain the task actually counts toward — its parent's, not its own stale
   // copy (see `resolveDomainId`), so the chips agree with the hours ledger
   const effectiveDomainId = taskDomainId(vertical, task);
+  const domain = domainById(vertical, effectiveDomainId);
+  const project = projectById(vertical, task.project_id);
+  const initiative = initiativeById(vertical, taskInitiativeId(vertical, task));
 
   const setDomain = (domainId: string) => {
     mutations.patchTask(task.id, { domain_id: domainId || null });
@@ -154,6 +158,21 @@ export default function MobileTaskSheet({
     <Sheet onClose={onClose} title="Task">
       <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
         <div className="rounded-xl border border-line bg-surface-2 p-3" style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-meta">
+            {project || initiative ? (
+              // Parented — inherited from the project, so it's a read, not a
+              // control (setting it here would silently do nothing).
+              <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
+                {domain ? <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span> : <span>◇ Domain</span>}
+                {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
+                {project && <><span>›</span><span className="truncate">{project.name}</span></>}
+              </span>
+            ) : (
+              // Loose — the same live DomainPicker Project/Initiative use, in
+              // the same top-of-card spot.
+              <DomainPicker domains={vertical.domains} value={domain?.id ?? ""} onChange={setDomain} size="lg" allowClear />
+            )}
+          </div>
           <textarea
             ref={titleRef}
             value={title}
@@ -244,22 +263,6 @@ export default function MobileTaskSheet({
             onChange={(r) => void onRepeatChange(r)}
             variant="block"
           />
-        </Section>
-
-        <Section label="Domain">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip on={!effectiveDomainId} onClick={() => setDomain("")}>
-              None
-            </Chip>
-            {vertical.domains.map((d) => (
-              <Chip key={d.id} on={effectiveDomainId === d.id} onClick={() => setDomain(d.id)}>
-                <span className="inline-flex items-center gap-1.5">
-                  <span>{d.icon}</span>
-                  {d.name}
-                </span>
-              </Chip>
-            ))}
-          </div>
         </Section>
 
         <Section label="Project">
