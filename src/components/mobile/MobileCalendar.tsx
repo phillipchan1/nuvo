@@ -11,7 +11,9 @@
 // That window follows the lens, because the five horizons want wildly different
 // spans and a query key that changes more than it must is a spinner the user
 // paid for:
-//   year      the whole year (`mobileYearRange`)
+//   year      no density to shade (D-128) — warm the month-shaped window for
+//             the month-of-year you're standing near, so a drill-down is already
+//             in hand
 //   month     the grid, plus a month either side so a swipe peek already has
 //             its dots — an empty peek that fills in after commit is the old
 //             show-and-hide wearing a slide
@@ -44,11 +46,22 @@ import CalendarSurface, {
   type CalWindow,
 } from "./CalendarSurface";
 import { AGENDA_DAYS } from "./MobileAgendaView";
-import { mobileYearRange } from "./MobileYearView";
 
 // How far the Day / Week window reaches around the selected day's week.
 const WEEK_FETCH_BEHIND = 7;
 const WEEK_FETCH_AHEAD = 21;
+
+/** Month-shaped fetch window — the grid, plus a month either side. Shared by
+ *  the Month lens and the Year (which draws no density but warms the month
+ *  you'd most likely open). */
+function monthFetchRange(
+  monthCursor: Date,
+  weekOpts: { weekStartsOn: 0 | 1 },
+): { start: string; end: string } {
+  const gridStart = startOfWeek(startOfMonth(addMonths(monthCursor, -1)), weekOpts);
+  const gridEnd = addDays(endOfWeek(endOfMonth(addMonths(monthCursor, 1)), weekOpts), 1);
+  return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
+}
 
 /** The span a given standing-place needs fetched. Pure, so the same function
  *  can size the live query AND the neighbours we warm behind it. */
@@ -57,11 +70,14 @@ export function calendarRange(
   weekOpts: { weekStartsOn: 0 | 1 },
 ): { start: string; end: string } {
   const { mode, selected, monthCursor, yearCursor, pastDays } = win;
-  if (mode === "year") return mobileYearRange(yearCursor);
+  if (mode === "year") {
+    // Year draws no event density (D-128). Warm the month-shaped window for
+    // the same month-of-year as `selected`, in the year you're standing on,
+    // so a drill into that month is already in hand.
+    return monthFetchRange(startOfMonth(new Date(yearCursor, selected.getMonth(), 1)), weekOpts);
+  }
   if (mode === "month") {
-    const gridStart = startOfWeek(startOfMonth(addMonths(monthCursor, -1)), weekOpts);
-    const gridEnd = addDays(endOfWeek(endOfMonth(addMonths(monthCursor, 1)), weekOpts), 1);
-    return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
+    return monthFetchRange(monthCursor, weekOpts);
   }
   if (mode === "day" || mode === "week") {
     const wk = startOfWeek(startOfDay(selected), weekOpts);

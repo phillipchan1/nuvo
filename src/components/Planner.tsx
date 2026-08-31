@@ -260,10 +260,7 @@ export default function Planner({
   // Every non-trashed task (shares the vertical store's cache) — lets ⌘K open any
   // task as the centered modal, scheduled or buried in a project backlog.
   const { data: allTasks = [] } = useAllTasks();
-  // `isLoading` (not `isFetching`): true only when this range has no cached
-  // answer yet. The Year needs it — a year grid drawn over an in-flight fetch
-  // says "365 clear days", which is the one wrong answer that view can give.
-  const { data: events = [], isLoading: eventsLoading } = useExternalEvents(range.start, range.end);
+  const { data: events = [] } = useExternalEvents(range.start, range.end);
   const { data: slots = [] } = useSlots(range.start, range.end);
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
@@ -523,7 +520,7 @@ export default function Planner({
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
     { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },
-    { id: "view-year", title: "Calendar: year (where it's heavy)", run: () => setCalView("year") },
+    { id: "view-year", title: "Calendar: year", run: () => setCalView("year") },
     { id: "connect", title: "Connect calendar…", run: () => openOverlay("settings") },
     { id: "label", title: "New label…", run: () => openOverlay("settings") },
     { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
@@ -649,7 +646,6 @@ export default function Planner({
             hotkeysEnabled={!anyModalOpen}
             tasks={allTasksArray}
             events={events}
-            eventsLoading={eventsLoading}
             slots={slots}
             slotTasks={slotTasksBySlot}
             accounts={accounts}

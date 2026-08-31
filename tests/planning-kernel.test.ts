@@ -423,10 +423,16 @@ describe("the kernel is the only implementation", () => {
     });
   }
 
-  it("both Year views shade from the kernel, not from their own arithmetic", () => {
+  it("the Year no longer paints load — density was cut (D-128)", () => {
+    // The Year used to shade from the kernel; that was the whole reason these
+    // three files were in this suite. Density is gone, so the assertion flips:
+    // none of them may re-grow a private load arithmetic, and none of them may
+    // re-import the shade ramp. The kernel's `dayLoad` still lives for the
+    // chat's `read_calendar_load`.
     for (const f of ["src/components/calendar/YearParts.tsx", "src/components/CalendarYear.tsx", "src/components/mobile/MobileYearView.tsx"]) {
-      expect(readFileSync(f, "utf8"), `${f} must read the day-shape kernel`).toMatch(
-        /_shared\/dayShape\.ts|calendar\/YearParts/,
+      const src = readFileSync(f, "utf8");
+      expect(src, `${f} re-grew dayLoad / load shading`).not.toMatch(
+        /\b(dayLoad|buildYearLoads|buildDayLoad|LOAD_FILL|YearLegend)\b/,
       );
     }
   });

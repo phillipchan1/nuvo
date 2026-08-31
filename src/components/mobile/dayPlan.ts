@@ -218,10 +218,10 @@ function indexOf(ctx: DayCtx): DayIndex {
 /** Everything a day is made of, before anyone decides what to do with it —
  *  which rows fall on it, what they claim, and where its working window sits.
  *
- *  Extracted so `buildDayPlan` (the full read) and `buildDayLoad` (the year's
- *  cheap one) share it. A second copy here would be the same class of bug as a
- *  second `toBusyBlocks`: the year would shade a Tuesday the Day lens draws
- *  differently, and neither would look wrong on its own. */
+ *  Extracted so `buildDayPlan` (the full read) and `buildDayLoad` (the thin
+ *  load adapter) share it. A second copy here would be the same class of bug
+ *  as a second `toBusyBlocks`: two ideas of a Tuesday that disagree alone look
+ *  fine. */
 function dayFrame(date: Date, ctx: DayCtx) {
   const { hidden, workStart, workEnd } = ctx;
   const idx = indexOf(ctx);
@@ -275,50 +275,17 @@ function loadOf(frame: ReturnType<typeof dayFrame>): DayLoad {
 }
 
 /**
- * A day's load and nothing else — what a year grid reads, 365 times.
- *
- * The full `buildDayPlan` allocates a `TimedItem` (and several `Date`s) per row
- * and walks the gap math; a year of that is work nobody looks at, since a 3mm
- * square shows a shade, not a schedule. This shares the frame, so it is the
- * same answer, just without building the parts the square can't show.
+ * A day's load and nothing else — the thin adapter over `dayLoad` for callers
+ * that already have a `DayCtx`. The Year wall no longer paints this (D-128);
+ * the chat's `read_calendar_load` reads the kernel directly. Kept so a surface
+ * that needs a single day's band without building a full plan has one door.
  */
 export function buildDayLoad(date: Date, ctx: DayCtx): DayLoad {
   return loadOf(dayFrame(date, ctx));
 }
 
-/**
- * A whole year's loads, in date order, grouped by month — memoized per `ctx`.
- *
- * Measured at ~84ms for 365 days on a real calendar, which is a visible stall
- * on a click. A `useMemo` inside the view cannot fix that on its own: the view
- * *unmounts* when you switch away, so the memo dies and every return trip pays
- * again. The cache has to outlive the component, and `ctx` is the right key —
- * it is exactly the identity that decides whether the answer could have changed
- * (same events, blocks, slots, settings and `now` → same year), and a WeakMap
- * means a superseded ctx takes its cache with it when it's collected.
- *
- * Paying the 84ms once per data change instead of once per click is the whole
- * difference between "instant" and "laggy" here.
- */
-const yearLoadCache = new WeakMap<DayCtx, Map<number, DayLoad[][]>>();
-
-export function buildYearLoads(year: number, ctx: DayCtx): DayLoad[][] {
-  let byYear = yearLoadCache.get(ctx);
-  if (!byYear) {
-    byYear = new Map();
-    yearLoadCache.set(ctx, byYear);
-  }
-  const hit = byYear.get(year);
-  if (hit) return hit;
-  const months = Array.from({ length: 12 }, (_, m) =>
-    monthDates(year, m).map((d) => buildDayLoad(d, ctx)),
-  );
-  byYear.set(year, months);
-  return months;
-}
-
-/** The dates of one month, in order. Here rather than in a view so the loads
- *  and the grid that paints them can never disagree about a month's length. */
+/** The dates of one month, in order. Here rather than in a view so every
+ *  surface that counts a month agrees on its length. */
 export function monthDates(year: number, month: number): Date[] {
   const days = new Date(year, month + 1, 0).getDate();
   return Array.from({ length: days }, (_, i) => new Date(year, month, i + 1));

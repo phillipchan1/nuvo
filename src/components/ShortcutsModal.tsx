@@ -14,7 +14,7 @@ const GROUPS: Group[] = [
       { keys: [["W"]], label: "Week" },
       { keys: [["D"]], label: "Day" },
       { keys: [["M"]], label: "Month" },
-      { keys: [["Y"]], label: "Year (where it's heavy)" },
+      { keys: [["Y"]], label: "Year" },
       { keys: [["="], ["⌘", "→"]], sep: "or", label: "Next period" },
       { keys: [["−"], ["⌘", "←"]], sep: "or", label: "Previous period" },
       { keys: [["⌘", "T"]], label: "Today" },
