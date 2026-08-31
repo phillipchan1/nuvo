@@ -2260,11 +2260,12 @@ select.field { appearance: none; -webkit-appearance: none; }
   top: 0;
   z-index: 9998;
   pointer-events: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 22px;
-  padding: 3px 8px;
+  max-width: min(280px, 70vw);
+  padding: 3px 10px;
   border-radius: 5px;
   border: 1.5px dashed color-mix(in srgb, var(--accent) 58%, transparent);
   background: color-mix(in srgb, var(--accent) 18%, var(--surface));

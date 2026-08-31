@@ -836,6 +836,7 @@ export default function CalendarPane({
     let overZone: SlotDropZone | null = null;
     let overAnytime: HTMLElement | null = null;
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
+    let dragTitle: string | null = null; // frozen at pointerdown — DOM lookup mid-drag can miss
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
@@ -885,6 +886,7 @@ export default function CalendarPane({
     };
 
     const dragLabel = (): string => {
+      if (dragTitle) return dragTitle;
       if (dragId) {
         const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${CSS.escape(dragId)}"]`);
         const group = dragEl?.getAttribute("data-task-drag-group");
@@ -930,6 +932,19 @@ export default function CalendarPane({
       // would otherwise open the project record the moment you let go.
       const dragEl = el?.closest?.("[data-task-drag], [data-project-drag]") as HTMLElement | null;
       dragId = dragEl?.getAttribute("data-task-drag") ?? null;
+      const group = dragEl?.getAttribute("data-task-drag-group");
+      dragTitle = group
+        ? `${group.split(",").filter(Boolean).length} tasks`
+        : dragEl?.getAttribute("data-task-title")?.trim()
+          || dragEl?.getAttribute("data-project-title")?.trim()
+          || null;
+      if (!dragTitle) {
+        const calEl = el?.closest?.(".evt-task") as HTMLElement | null;
+        dragTitle =
+          calEl?.querySelector?.("[data-evt-title]")?.textContent?.trim()
+          || calEl?.textContent?.trim()
+          || null;
+      }
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
       calTask = Boolean(el?.closest?.(".evt-task"));
       startX = e.clientX;
@@ -1026,6 +1041,8 @@ export default function CalendarPane({
         hideAdjacentPreview();
         // Pill preview in the cell — FC's all-day mirror is a blank scrap; this
         // is the chip you're about to get, with the title, before you commit.
+        // Compact chip on the left of the cell — a full-bleed bar read as a
+        // zone wash, not as the anytime pill you're about to get.
         const frame =
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-events") ??
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-frame") ??
@@ -1033,10 +1050,12 @@ export default function CalendarPane({
         const r = frame.getBoundingClientRect();
         const padX = 6;
         const padY = 3;
+        const label = dragLabel();
         anytimePreview.style.left = `${fixedCssPx(r.left + padX)}px`;
         anytimePreview.style.top = `${fixedCssPx(r.top + padY)}px`;
-        anytimePreview.style.width = `${fixedCssPx(Math.max(80, r.width - padX * 2))}px`;
-        anytimePreviewTitle.textContent = dragLabel();
+        anytimePreview.style.width = "auto";
+        anytimePreview.style.maxWidth = `${fixedCssPx(Math.max(120, r.width - padX * 2))}px`;
+        anytimePreviewTitle.textContent = label;
         anytimePreview.classList.add("is-visible");
         const dateStr = anytimeEl.getAttribute("data-date");
         const dayBit = dateStr
@@ -1092,6 +1111,7 @@ export default function CalendarPane({
         reset();
       }
       dragId = null;
+      dragTitle = null;
       fromRail = false;
       calTask = false;
       moved = false;
@@ -1111,6 +1131,7 @@ export default function CalendarPane({
       active = false;
       moved = false;
       dragId = null;
+      dragTitle = null;
       fromRail = false;
       calTask = false;
       overRail = false;
