@@ -53,13 +53,13 @@ describe("YearMonth numerals", () => {
     expect(header?.childElementCount).toBe(7);
   });
 
-  it("pads every month to six weeks so a year row shares one baseline", () => {
+  it("does not pad a trailing empty week — fill stretches the weeks it has", () => {
+    // Jan 2026 starts Thursday → 4 lead blanks + 31 days = 35 cells (5 weeks).
+    // A sixth empty week used to sit under the numerals and read as dead paper.
     const c = render(<YearMonth month={JAN} now={NOW} weekStartsOn={0} fill />);
-    // Lead + 31 days + trail = 42 cells inside the day grid (the second
-    // seven-column grid — the first is the weekday header).
     const grids = c.container.querySelectorAll(".grid.grid-cols-7");
     expect(grids.length).toBe(2);
-    expect(grids[1]?.childElementCount).toBe(42);
+    expect(grids[1]?.childElementCount).toBe(35);
   });
 });
 

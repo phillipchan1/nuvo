@@ -20,12 +20,6 @@ const DOW_INITIALS = Array.from({ length: 7 }, (_, i) =>
   new Date(Date.UTC(2024, 0, 7 + i)).toLocaleDateString([], { weekday: "narrow", timeZone: "UTC" }),
 );
 
-/** Every month wears six weeks so a row of months shares one baseline. A short
- *  February that stopped at five left August's sixth week hanging alone and
- *  the year grid's floor looked broken (D-129). */
-const WEEKS = 6;
-const CELLS = WEEKS * 7;
-
 /** A month's days, in date order. Delegates to `monthDates` in dayPlan.ts so
  *  the Year and every other surface that counts a month agree on February. */
 export function monthDays(month: Date): Date[] {
@@ -67,9 +61,12 @@ export const YearMonth = memo(function YearMonth({
   fill = false,
 }: YearMonthProps) {
   const days = useMemo(() => monthDays(month), [month]);
-  // Blank cells before the 1st so the columns are real weekdays.
+  // Blank cells before the 1st so the columns are real weekdays. No trailing
+  // pad to six weeks: an empty sixth week read as dead paper under December
+  // (the whole complaint D-129 answers). Month *boxes* still share a floor via
+  // the Year's equal row fractions; the weeks a month actually has stretch to
+  // fill that box, so the numerals reach the bottom.
   const lead = (getDay(days[0]) - weekStartsOn + 7) % 7;
-  const trail = Math.max(0, CELLS - lead - days.length);
   const dow = useMemo(
     () => Array.from({ length: 7 }, (_, i) => DOW_INITIALS[(i + weekStartsOn) % 7]),
     [weekStartsOn],
@@ -121,8 +118,8 @@ export const YearMonth = memo(function YearMonth({
       >
         {Array.from({ length: lead }, (_, i) => (
           // Compact months size rows off `aspect-square` day cells; an empty
-          // lead/trail without that footprint collapses the sixth week to
-          // nothing and the year row's floor breaks again.
+          // lead without that footprint collapses the first week under the
+          // weekday header.
           <div key={`lead-${i}`} aria-hidden className={fill ? undefined : "aspect-square"} />
         ))}
         {days.map((d, i) => (
@@ -134,9 +131,6 @@ export const YearMonth = memo(function YearMonth({
             fill={fill}
             onPick={onPickDay}
           />
-        ))}
-        {Array.from({ length: trail }, (_, i) => (
-          <div key={`trail-${i}`} aria-hidden className={fill ? undefined : "aspect-square"} />
         ))}
       </div>
     </section>

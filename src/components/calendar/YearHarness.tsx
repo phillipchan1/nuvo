@@ -34,10 +34,10 @@ function Frame({
     <div className="shrink-0">
       <div className="mb-1 text-micro uppercase tracking-wide text-muted">{label}</div>
       <div
-        className="flex flex-col overflow-hidden rounded-lg border border-line"
+        className="relative overflow-hidden rounded-lg border border-line"
         style={{ width, height, background: "transparent" }}
       >
-        {children}
+        <div className="absolute inset-0 flex flex-col">{children}</div>
       </div>
     </div>
   );
@@ -63,8 +63,8 @@ export default function YearHarness() {
       </div>
       <p className="mb-3 max-w-[70ch] text-caption text-muted">
         Same year, three panes. Dates are the map; today is the signal ring. No
-        density. Desktop panes fill their height — equal month rows, six-week
-        grids, no dead paper under December.
+        density. Desktop panes fill their height — equal month rows, weeks
+        stretched to the floor of each box, no dead paper under December.
       </p>
       <div className="flex gap-4 overflow-x-auto pb-6">
         <Frame label="desktop · 1100×720" width={1100}>

@@ -43,21 +43,27 @@ export default function MobileYearView({
           the horizon ladder — this body draws neither. No legend: density is
           gone (D-128). */}
       <TimePager pageKey={String(year)} onPrev={onPrev} onNext={onNext}>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 pt-2 min-[560px]:grid-cols-3">
-          {months.map((m, i) => (
-            <button
-              key={i}
-              onClick={() => onPickMonth(startOfMonth(m))}
-              aria-label={format(m, "MMMM yyyy")}
-              className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
-            >
-              <YearMonth
-                month={m}
-                now={now}
-                weekStartsOn={weekStartsOn}
-              />
-            </button>
-          ))}
+        {/* `@container`, not a viewport breakpoint: the ?year harness mounts
+            this at 375px inside a wide window, and a viewport-keyed
+            `min-[560px]:grid-cols-3` answered for the browser while the phone
+            frame was still two thumbs wide. */}
+        <div className="@container">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 pt-2 @[560px]:grid-cols-3">
+            {months.map((m, i) => (
+              <button
+                key={i}
+                onClick={() => onPickMonth(startOfMonth(m))}
+                aria-label={format(m, "MMMM yyyy")}
+                className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
+              >
+                <YearMonth
+                  month={m}
+                  now={now}
+                  weekStartsOn={weekStartsOn}
+                />
+              </button>
+            ))}
+          </div>
         </div>
       </TimePager>
     </div>

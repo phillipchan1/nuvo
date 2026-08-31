@@ -4774,19 +4774,21 @@ Two layout failures, one chrome failure:
    Schedule toolbar already had a seat for (Month's title). D-123: the chrome
    says a thing once.
 
-What shipped: the desktop Year's grid claims the pane (`minmax(7rem, 1fr)`
-rows so a short window scrolls before it crushes numerals); every month pads
-to six weeks so a row shares one baseline; day cells grow with the row instead
-of locking to a square; the numeral steps up once a month is wide enough; the
-year numeral moves into the toolbar's center seat and leaves the pane. The
-phone stays content-sized and scrollable — fill-the-pane would fight a thumb
-swipe — and still makes the whole month the target.
+What shipped: the desktop Year's grid claims the pane (explicit row templates
+per column count — `4×3` / `3×4` / `2×6` — so `1fr` gets a definite block
+size); month *boxes* share that floor; each month stretches the weeks it
+actually has (no trailing empty sixth week — that pad read as dead paper under
+December); day cells grow with the row instead of locking to a square; the
+numeral steps up once a month is wide enough; the year numeral moves into the
+toolbar's center seat and leaves the pane. The phone stays content-sized and
+scrollable — fill-the-pane would fight a thumb swipe — and still makes the
+whole month the target.
 
 Closes nothing new in the ledger. Relieves the P8 strain of an empty-looking
 altitude that had paid for its place (D-106) and then looked unfinished. Adds
 no pool, no name, no data. Works on an empty year by construction.
 
-Guarded by `tests/year-marks.test.tsx` (six-week pad; no in-pane year
-numeral). Verify fill at `?year` (desktop panes are 720px tall on purpose).
+Guarded by `tests/year-marks.test.tsx` (no trailing empty week; no in-pane
+year numeral). Verify fill at `?year` (desktop panes are 720px tall on purpose).
 
 *Status: standing — layout + chrome of the Year wall; marks unchanged.*
