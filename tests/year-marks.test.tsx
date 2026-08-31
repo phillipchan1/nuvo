@@ -4,8 +4,8 @@
  * the desktop Year fills its pane (D-129).
  *
  * These assertions hold the coordinate layer — every day gets a number, on
- * both shells, with no load legend, and every month pads to six weeks so a
- * row of months shares one baseline. jsdom has no layout, so they cannot
+ * both shells, with no load legend, and months stretch the weeks they have
+ * (no trailing empty sixth week). jsdom has no layout, so they cannot
  * prove a glyph survives a cell; that is ?year.
  */
 import { render } from "@testing-library/react";
