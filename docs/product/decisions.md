@@ -4754,3 +4754,39 @@ conformance flip (Year files must not re-grow `LOAD_FILL` / `buildYearLoads`).
 Verify at `?year`.
 
 *Status: standing — cuts the Year-wall half of D-106; kernel + chat untouched.*
+
+---
+
+**D-129 · 2026-08-31 · The Year fills the pane. The year is said once.**
+
+After D-128 stripped density, the desktop Year was twelve content-sized month
+grids floating at the top of a tall pane — a map with a dead sea of paper under
+December. Phil looked at it and named the waste.
+
+Two layout failures, one chrome failure:
+
+1. **Months sized to content.** Day cells were `aspect-square` off column
+   width, so height was whatever the width happened to imply. On a landscape
+   Schedule pane that left most of the paper unused.
+2. **Months in one row did not share a floor.** A five-week May sat next to a
+   six-week August; the year grid's baseline stuttered.
+3. **The year was said twice.** An in-pane `2026` masthead restated what the
+   Schedule toolbar already had a seat for (Month's title). D-123: the chrome
+   says a thing once.
+
+What shipped: the desktop Year's grid claims the pane (`minmax(7rem, 1fr)`
+rows so a short window scrolls before it crushes numerals); every month pads
+to six weeks so a row shares one baseline; day cells grow with the row instead
+of locking to a square; the numeral steps up once a month is wide enough; the
+year numeral moves into the toolbar's center seat and leaves the pane. The
+phone stays content-sized and scrollable — fill-the-pane would fight a thumb
+swipe — and still makes the whole month the target.
+
+Closes nothing new in the ledger. Relieves the P8 strain of an empty-looking
+altitude that had paid for its place (D-106) and then looked unfinished. Adds
+no pool, no name, no data. Works on an empty year by construction.
+
+Guarded by `tests/year-marks.test.tsx` (six-week pad; no in-pane year
+numeral). Verify fill at `?year` (desktop panes are 720px tall on purpose).
+
+*Status: standing — layout + chrome of the Year wall; marks unchanged.*

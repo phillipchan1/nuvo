@@ -1,10 +1,15 @@
 // The desktop Year — the Schedule's furthest-out lens.
 //
-// Twelve month grids of day numerals. A tap opens the day; a month name opens
-// the month. Today wears the signal ring. That is the whole surface (D-127,
-// D-128). Load shading lived here and was cut: it competed with the dates and
-// answered a question the chat's `read_calendar_load` already owns. The Year
-// is how you stand back and pick a place to lean into — not a heatmap.
+// Twelve month grids of day numerals that **fill the pane**. A tap opens the
+// day; a month name opens the month. Today wears the signal ring. That is the
+// whole surface (D-127, D-128, D-129). Load shading lived here and was cut: it
+// competed with the dates and answered a question the chat's
+// `read_calendar_load` already owns. The Year is how you stand back and pick a
+// place to lean into — not a heatmap.
+//
+// The year numeral itself lives in the Schedule toolbar (same seat Month's
+// title holds). Saying it again as an in-pane masthead was the date being
+// spoken twice (D-123 / D-129).
 
 import { useMemo } from "react";
 import { YearMonth } from "./calendar/YearParts";
@@ -41,17 +46,18 @@ export default function CalendarYear({
     // "2223242526271234567891011". Sizing off the container is the whole fix:
     // fewer columns in a narrower pane means the months stay wide enough to
     // read, so the failure mode cannot recur at any pane width.
-    <div className="@container min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-[1180px] px-4 pb-8 pt-1">
-        <div className="mb-3 border-b border-line pb-2">
-          <span className="masthead text-lead leading-none text-ink">{year}</span>
-        </div>
-
+    //
+    // The grid fills the pane (D-129). `minmax(7rem, 1fr)` keeps a short
+    // window from crushing numerals — the outer scroll takes over before a
+    // two-digit day becomes illegible. Content-sized months left a dead sea
+    // of paper under December; equal row fractions claim the height.
+    <div className="@container flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 flex-col px-4 pb-4 pt-2 @[660px]:px-5 @[980px]:px-6">
         {/* Column count is chosen so the narrowest month a breakpoint can
             produce still holds a two-digit numeral: the tightest case is 2
             columns at a 300px pane, which leaves ~124px per month and ~17px
             per cell against a 9.5px numeral. Every wider case is roomier. */}
-        <div className="grid grid-cols-1 gap-x-5 gap-y-4 @[300px]:grid-cols-2 @[660px]:grid-cols-3 @[980px]:grid-cols-4">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-5 gap-y-4 auto-rows-[minmax(7rem,1fr)] @[300px]:grid-cols-2 @[660px]:grid-cols-3 @[660px]:gap-x-6 @[660px]:gap-y-5 @[980px]:grid-cols-4 @[980px]:gap-x-7 @[980px]:gap-y-5">
           {months.map((m, i) => (
             <YearMonth
               key={i}
@@ -60,6 +66,7 @@ export default function CalendarYear({
               weekStartsOn={weekStartsOn}
               onPickDay={onPickDay}
               onPickMonth={onPickMonth}
+              fill
             />
           ))}
         </div>

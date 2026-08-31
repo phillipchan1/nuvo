@@ -6,7 +6,9 @@
 //
 // The two shells share `YearParts`, so this is where a divergence would show
 // up as a difference you can see: the same Tuesday must wear the same numeral
-// and the same today ring on the desk and in your hand (D-127, D-128).
+// and the same today ring on the desk and in your hand (D-127, D-128, D-129).
+// The desktop panes are tall on purpose — fill-the-pane only proves itself
+// when the box has height to claim.
 
 import { useState, type ReactNode } from "react";
 import { startOfDay } from "date-fns";
@@ -20,18 +22,20 @@ const NOW = new Date(today.getTime() + (10 * 60 + 15) * 60_000);
 function Frame({
   label,
   width,
+  height = 720,
   children,
 }: {
   label: string;
   width: number;
+  height?: number;
   children: ReactNode;
 }) {
   return (
     <div className="shrink-0">
       <div className="mb-1 text-micro uppercase tracking-wide text-muted">{label}</div>
       <div
-        className="overflow-auto rounded-lg border border-line"
-        style={{ width, height: 640, background: "transparent" }}
+        className="flex flex-col overflow-hidden rounded-lg border border-line"
+        style={{ width, height, background: "transparent" }}
       >
         {children}
       </div>
@@ -59,11 +63,11 @@ export default function YearHarness() {
       </div>
       <p className="mb-3 max-w-[70ch] text-caption text-muted">
         Same year, three panes. Dates are the map; today is the signal ring. No
-        density — a heatmap competed with the numerals and answered a question
-        the chat already owns.
+        density. Desktop panes fill their height — equal month rows, six-week
+        grids, no dead paper under December.
       </p>
       <div className="flex gap-4 overflow-x-auto pb-6">
-        <Frame label="desktop · 1100px" width={1100}>
+        <Frame label="desktop · 1100×720" width={1100}>
           <CalendarYear
             year={year}
             now={NOW}
@@ -72,7 +76,7 @@ export default function YearHarness() {
             onPickMonth={noop}
           />
         </Frame>
-        <Frame label="desktop · chat-narrow 400px" width={400}>
+        <Frame label="desktop · chat-narrow 400×720" width={400}>
           <CalendarYear
             year={year}
             now={NOW}
@@ -81,15 +85,17 @@ export default function YearHarness() {
             onPickMonth={noop}
           />
         </Frame>
-        <Frame label="phone · 375px" width={375}>
-          <MobileYearView
-            year={year}
-            now={NOW}
-            weekStartsOn={0}
-            onPickMonth={noop}
-            onPrev={() => setYear((y) => y - 1)}
-            onNext={() => setYear((y) => y + 1)}
-          />
+        <Frame label="phone · 375px" width={375} height={640}>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <MobileYearView
+              year={year}
+              now={NOW}
+              weekStartsOn={0}
+              onPickMonth={noop}
+              onPrev={() => setYear((y) => y - 1)}
+              onNext={() => setYear((y) => y + 1)}
+            />
+          </div>
         </Frame>
       </div>
     </div>

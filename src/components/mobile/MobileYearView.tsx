@@ -2,13 +2,14 @@
 //
 // The desktop half (`CalendarYear.tsx`) explains what this view is *for*:
 // twelve month grids of day numerals, today marked, a tap to open a month
-// (D-127, D-128). Load shading lived here and was cut — same marks as the
-// desk, same reason. This is the same map in a hand.
+// (D-127, D-128, D-129). Load shading lived here and was cut — same marks as
+// the desk, same reason. This is the same map in a hand.
 //
-// The one real difference is the tap target, and it is a difference in the
-// medium, not the model: a 375px screen puts a day cell at ~22px, which is
-// half a thumb, so **the month is the target** and drilling in goes
-// Year → month grid → the lens you were last using.
+// Two medium differences, not model differences: (1) a 375px screen puts a
+// day cell at ~22px, which is half a thumb, so **the month is the target** and
+// drilling in goes Year → month grid → the lens you were last using; (2) the
+// body scrolls, so months stay content-sized — the desktop's fill-the-pane
+// stretch (D-129) would fight a thumb swipe.
 
 import { useMemo } from "react";
 import { format, startOfMonth } from "date-fns";
