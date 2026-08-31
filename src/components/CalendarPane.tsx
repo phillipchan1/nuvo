@@ -815,7 +815,7 @@ export default function CalendarPane({
   // Live drop-target feedback while a task is being dragged. Classes are toggled
   // imperatively (no React state) so a drag never re-renders CalendarPane
   // mid-gesture (which could disturb FullCalendar's own drag/drop):
-  //   body.cal-dragging           → drag is live (cells can arm as targets)
+  //   body.cal-dragging           → drag is live (drop-hover styles may apply)
   //   body.over-slot              → fade the drag ghost (it's "dropping into" a slot)
   //   body.over-anytime           → fade FC's mirror; our anytime pill is the read
   //   .evt-slot.slot-drop-target  → the hovered slot lights up, ready to accept

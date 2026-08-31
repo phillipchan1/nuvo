@@ -2237,18 +2237,13 @@ select.field { appearance: none; -webkit-appearance: none; }
 }
 
 /* ── Drop-target feedback while dragging a task ──────────────────────────
-   `body.cal-dragging` is set for the duration of a task drag. The anytime cell
-   under the pointer is hit-tested in JS (`.anytime-drop-target`) — styling the
-   day itself via :hover painted under `.fc-daygrid-day-frame` and read as
-   nothing. The frame is the surface that has to light up. */
+   Only the cell under the pointer lights up (`.anytime-drop-target` from the
+   drag hit-test). An "armed" wash on every anytime cell at drag *start* is the
+   wrong contract — nowhere else in the Schedule previews drop zones until you
+   hover them. */
 .cal-dragging .fc-daygrid-body .fc-daygrid-day-frame {
   transition: background-color var(--d-fast) var(--ease-out),
     box-shadow var(--d-fast) var(--ease-out);
-}
-/* Armed: any anytime cell is a candidate while a task is in hand. */
-.cal-dragging .fc-daygrid-body .fc-daygrid-day .fc-daygrid-day-frame {
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 22%, transparent);
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 /* About to drop: the cell under the pointer — same weight as a slot receptacle. */
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target .fc-daygrid-day-frame {
