@@ -198,8 +198,9 @@ export function upsertOverride(
 }
 
 /** Shift the master event's start/end by a delta (ms) — used for "edit ALL" on a
- *  recurring series so every instance moves together. Optionally retitles. */
-export function shiftMaster(ics: string, deltaMs: number, title?: string): string {
+ *  recurring series so every instance moves together. Optionally retitles.
+ *  `endDeltaMs` defaults to `deltaMs` (a drag); a resize passes a different end. */
+export function shiftMaster(ics: string, deltaMs: number, title?: string, endDeltaMs = deltaMs): string {
   const { header, events, footer } = splitEvents(ics);
   const out = events.map((ve) => {
     if (!isMaster(ve)) return ve;
@@ -207,7 +208,7 @@ export function shiftMaster(ics: string, deltaMs: number, title?: string): strin
     const ds = v.match(/^DTSTART(;[^:\r\n]*)?:(.*)$/im)?.[2];
     const de = v.match(/^DTEND(;[^:\r\n]*)?:(.*)$/im)?.[2];
     if (ds) v = setProp(v, "DTSTART", toIcalUtc(new Date(icalToDate(ds).getTime() + deltaMs).toISOString()));
-    if (de) v = setProp(v, "DTEND", toIcalUtc(new Date(icalToDate(de).getTime() + deltaMs).toISOString()));
+    if (de) v = setProp(v, "DTEND", toIcalUtc(new Date(icalToDate(de).getTime() + endDeltaMs).toISOString()));
     if (title !== undefined) v = setProp(v, "SUMMARY", escapeText(title));
     return v;
   });

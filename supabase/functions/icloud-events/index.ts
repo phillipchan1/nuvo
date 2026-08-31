@@ -269,8 +269,9 @@ Deno.serve(async (req) => {
     let next: string;
     if (isOccurrence && scope === "ALL") {
       // Shift the whole series by the instance's time delta (+ retitle).
-      const deltaMs = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
-      next = shiftMaster(ics, deltaMs, p.title);
+      const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+      const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
+      next = shiftMaster(ics, startDelta, p.title, endDelta);
     } else if (isOccurrence && occurrenceISO) {
       // Edit just this occurrence via a RECURRENCE-ID override.
       next = upsertOverride(ics, occurrenceISO, {
@@ -294,9 +295,7 @@ Deno.serve(async (req) => {
 
     await putEvent(href, next, account.email, password, etag);
 
-    // Keep the local row consistent (THIS-scope only; ALL is rewritten by the
-    // next sync when every instance's new time comes back). description isn't a
-    // column — it lives in the ICS and comes back via sync.
+    // description isn't a column — it lives in the ICS and comes back via sync.
     if (scope !== "ALL") {
       const rowPatch: Record<string, unknown> = {};
       if (p.title !== undefined) rowPatch.title = p.title;
@@ -306,6 +305,43 @@ Deno.serve(async (req) => {
       if (p.location !== undefined) rowPatch.location = p.location;
       if (Object.keys(rowPatch).length) {
         await admin.from("external_events").update(rowPatch).eq("id", eventId);
+      }
+    } else {
+      // Same hole the Google ALL-path had: without rewriting the mirrored
+      // occurrences, the client's refetch after the dialog is the old times.
+      const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+      const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : 0;
+      const { data: rows } = await admin
+        .from("external_events")
+        .select("id, start_at, end_at")
+        .eq("account_id", evt.account_id)
+        .eq("calendar_id", evt.calendar_id)
+        .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+      await Promise.all(
+        (rows ?? []).map((row: { id: string; start_at: string; end_at: string }) => {
+          const rowPatch: Record<string, unknown> = {};
+          if (p.start_at) {
+            rowPatch.start_at = new Date(new Date(row.start_at).getTime() + startDelta).toISOString();
+          }
+          if (p.end_at) {
+            rowPatch.end_at = new Date(new Date(row.end_at).getTime() + endDelta).toISOString();
+          }
+          if (p.title !== undefined) rowPatch.title = p.title;
+          if (p.location !== undefined) rowPatch.location = p.location;
+          if (!Object.keys(rowPatch).length) return Promise.resolve();
+          return admin.from("external_events").update(rowPatch).eq("id", row.id);
+        }),
+      );
+      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/icloud-sync`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accountId: account.id }),
+      });
+      if (!syncRes.ok) {
+        await logSync("icloud", "event-writeback-all-sync", "error", await syncRes.text(), user.id);
       }
     }
 

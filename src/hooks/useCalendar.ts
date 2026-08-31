@@ -16,7 +16,7 @@ import {
   type ProviderRawEvent,
   type RecurrenceScope,
 } from "../lib/types";
-import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import { applySeriesPatch, eventKey, eventSeriesKey, isEventHidden } from "../lib/eventActuals";
 import { assertCalendarWritable, eventsFunctionFor } from "../lib/calendarWrite";
 import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
@@ -291,8 +291,9 @@ export function useExternalEventMutations() {
     }) => {
       guardOffline();
       // For THIS-only edits, write the instance row immediately so optimistic
-      // update is consistent. For ALL, the master PATCH in Google will push a
-      // sync back that rewrites all instances — skip the local row update.
+      // update is consistent. For ALL, the edge function shifts every mirrored
+      // instance and kicks a sync — a local single-row write here would be the
+      // dragged occurrence only, and a refetch would snap the rest back.
       if (scope === "THIS") {
         const { description: _description, recurrence: _recurrence, ...columns } = patch;
         if (Object.keys(columns).length) {
@@ -302,9 +303,11 @@ export function useExternalEventMutations() {
       }
       const fn = eventsFunctionFor(providerForEvent(id));
       const body = { eventId: id, patch, scope };
-      // Recurrence edits expand into a whole series upstream — await the write
-      // and the sync kick so the next refetch actually sees future instances.
-      if (patch.recurrence !== undefined) {
+      // Recurrence-rule edits and ALL-scope moves expand into a whole series
+      // upstream. Await the write (and the sync kick) so the next refetch
+      // actually sees the new times — invokeQuiet used to fire-and-forget,
+      // leaving the dialog's revert as the last thing on screen.
+      if (patch.recurrence !== undefined || scope === "ALL") {
         const { data, error } = await supabase.functions.invoke(fn, { body });
         await throwIfInvokeFailed(data, error);
       } else {
@@ -312,11 +315,14 @@ export function useExternalEventMutations() {
       }
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
-      if (scope !== "THIS") return;
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       const { description, recurrence: _recurrence, ...columns } = patch;
-      if (Object.keys(columns).length) {
+      if (scope === "ALL") {
+        qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+          old ? applySeriesPatch(old, id, columns) : old,
+        );
+      } else if (Object.keys(columns).length) {
         qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
           old?.map((e) => (e.id === id ? { ...e, ...columns } : e)),
         );
@@ -343,13 +349,14 @@ export function useExternalEventMutations() {
       if (hadDescription) before.description = detailSnapshot?.description ?? "";
       return { snapshot, detailSnapshot, hadDescription, id, before };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
       if (ctx?.hadDescription) {
         qc.setQueryData(["event_details", ctx.id], ctx.detailSnapshot);
       }
+      toast.error(err instanceof Error ? err.message : "Couldn't update event");
     },
     onSuccess: (_d, vars, ctx) => {
       // Geometry (start/end) is deliberately excluded: a drag or a resize records

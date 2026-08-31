@@ -1619,7 +1619,8 @@ export default function CalendarPane({
     revert: () => void,
     action: (scope: RecurrenceScope) => void,
   ) => {
-    if (extProps.kind !== "google" || !extProps.recurringEventId) {
+    const recurring = Boolean(extProps.recurringEventId || extProps.recurring);
+    if ((extProps.kind !== "google" && extProps.kind !== "icloud") || !recurring) {
       action("THIS");
       return;
     }
@@ -1954,17 +1955,21 @@ export default function CalendarPane({
     }
 
     if (kind === "google" || kind === "icloud") {
-      // Capture new times before any revert call.
+      // Snapshot ISO strings before revert() — FullCalendar may recycle the
+      // Date objects on the event, and the confirm callback runs after the
+      // dialog, long after the drag.
       const newStart = info.event.start;
       const newEnd = info.event.end;
       if (!newStart || !newEnd) { info.revert(); return; }
+      const startAt = newStart.toISOString();
+      const endAt = newEnd.toISOString();
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
         const ev = eventsRef.current.find((e) => e.id === refId);
         const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
         eventMutations.updateEvent({
           id: refId,
-          patch: { start_at: newStart.toISOString(), end_at: newEnd.toISOString() },
+          patch: { start_at: startAt, end_at: endAt },
           scope,
         });
         if (before && scope === "THIS") {
@@ -2049,13 +2054,15 @@ export default function CalendarPane({
       const newStart = info.event.start;
       const newEnd = info.event.end;
       if (!newStart || !newEnd) { info.revert(); return; }
+      const startAt = newStart.toISOString();
+      const endAt = newEnd.toISOString();
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
         const ev = eventsRef.current.find((e) => e.id === refId);
         const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
         eventMutations.updateEvent({
           id: refId,
-          patch: { start_at: newStart.toISOString(), end_at: newEnd.toISOString() },
+          patch: { start_at: startAt, end_at: endAt },
           scope,
         });
         if (before && scope === "THIS") {
