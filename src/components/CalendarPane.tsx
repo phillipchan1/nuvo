@@ -2230,15 +2230,31 @@ export default function CalendarPane({
     }
 
     // ── All-day task chip: "planned for the day, time TBD" — a compact pill ─
+    // Same check-off as a timed block: a decorative dot made the row look like
+    // work you couldn't finish from here. `onClick` already routes
+    // `[data-done-toggle]` for every task kind; done anytime tasks drop off the
+    // row on the next rebuild (they're filtered out of plannedTaskEvents).
     if (arg.event.allDay && kind === "task") {
-      const dotColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
+      const checkColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
       return (
         <div className="flex h-full min-w-0 items-center gap-1.5 overflow-hidden px-1.5">
-          <span
-            className="h-[6px] w-[6px] shrink-0 rounded-full"
-            style={{ background: dotColor }}
-          />
-          <span className="truncate text-label font-medium leading-none">{arg.event.title}</span>
+          <button
+            aria-label="toggle done"
+            aria-pressed={doneProp ?? false}
+            data-done-toggle
+            className="relative flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+            style={{ ["--evt-check-border" as string]: checkColor }}
+            onMouseDown={(e) => {
+              // Don't let a press on the checkbox begin an event drag.
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+          >
+            <Icon name="check" size={8} className="evt-check" />
+          </button>
+          <span data-evt-title="" className="truncate text-label font-medium leading-none">
+            {arg.event.title}
+          </span>
           {recurring ? <RecurMark className="shrink-0 opacity-45" /> : null}
         </div>
       );
