@@ -188,7 +188,7 @@ const DayCell = memo(function DayCell({
         // just the numeral so spacing follows the type.
         className={
           fill
-            ? "mono inline-flex items-center justify-center overflow-hidden text-[12px] font-medium leading-none tracking-tight tabular-nums @[13rem]:text-[13px]"
+            ? "mono inline-flex items-center justify-center overflow-hidden text-caption font-medium leading-none tracking-tight tabular-nums @[13rem]:text-body"
             : "mono inline-flex aspect-square w-full items-center justify-center overflow-hidden text-micro font-medium leading-none tracking-tight tabular-nums"
         }
         style={
