@@ -11,6 +11,7 @@ import {
   isGoogleRecurringInstanceId,
   isGoogleSeriesMasterRaw,
   resolveRecurringEventId,
+  applySeriesPatch,
   type ActualsFilter,
 } from "../src/lib/eventActuals";
 import type { ExternalEvent } from "../src/lib/types";
@@ -132,6 +133,12 @@ describe("resolveRecurringEventId", () => {
         { provider: "google" },
       ),
     ).toBe("abc");
+    expect(
+      resolveRecurringEventId(
+        { recurring_event_id: null, provider_event_id: "standup-uid::20260831T160000" },
+        { provider: "icloud" },
+      ),
+    ).toBe("standup-uid");
   });
 });
 
@@ -148,5 +155,59 @@ describe("isGoogleSeriesMasterRaw", () => {
     expect(isGoogleSeriesMasterRaw({ recurrence: ["RRULE:FREQ=WEEKLY"], recurringEventId: undefined })).toBe(true);
     expect(isGoogleSeriesMasterRaw({ recurrence: ["RRULE:FREQ=WEEKLY"], recurringEventId: "m" })).toBe(false);
     expect(isGoogleSeriesMasterRaw(null)).toBe(false);
+  });
+});
+
+describe("applySeriesPatch", () => {
+  const a = ev({
+    id: "a",
+    provider_event_id: "m_20260831T160000Z",
+    recurring_event_id: "m",
+    start_at: "2026-08-31T16:00:00.000Z",
+    end_at: "2026-08-31T16:30:00.000Z",
+    title: "Standup",
+  });
+  const b = ev({
+    id: "b",
+    provider_event_id: "m_20260901T160000Z",
+    recurring_event_id: "m",
+    start_at: "2026-09-01T16:00:00.000Z",
+    end_at: "2026-09-01T16:30:00.000Z",
+    title: "Standup",
+  });
+  const other = ev({
+    id: "c",
+    provider_event_id: "other",
+    recurring_event_id: "other-series",
+    start_at: "2026-08-31T16:00:00.000Z",
+    end_at: "2026-08-31T17:00:00.000Z",
+    title: "Unrelated",
+  });
+
+  it("shifts every instance of the series by the dragged occurrence's delta", () => {
+    const next = applySeriesPatch([a, b, other], "a", {
+      start_at: "2026-08-31T17:00:00.000Z",
+      end_at: "2026-08-31T17:30:00.000Z",
+    });
+    expect(next[0].start_at).toBe("2026-08-31T17:00:00.000Z");
+    expect(next[0].end_at).toBe("2026-08-31T17:30:00.000Z");
+    expect(next[1].start_at).toBe("2026-09-01T17:00:00.000Z");
+    expect(next[1].end_at).toBe("2026-09-01T17:30:00.000Z");
+    expect(next[2].start_at).toBe(other.start_at);
+  });
+
+  it("does not collapse siblings onto the dragged row's absolute time", () => {
+    const next = applySeriesPatch([a, b], "a", { start_at: "2026-08-31T18:00:00.000Z" });
+    expect(next[1].start_at).toBe("2026-09-01T18:00:00.000Z");
+    expect(next[1].end_at).toBe(b.end_at);
+  });
+
+  it("copies a retitle across the series and leaves a lone event as itself", () => {
+    const lone = ev({ id: "lone", recurring_event_id: null, title: "1:1" });
+    expect(applySeriesPatch([lone], "lone", { title: "Weekly 1:1" })[0].title).toBe("Weekly 1:1");
+    expect(applySeriesPatch([a, b], "a", { title: "Team standup" }).map((e) => e.title)).toEqual([
+      "Team standup",
+      "Team standup",
+    ]);
   });
 });

@@ -57,7 +57,66 @@ export function resolveRecurringEventId(
     const m = e.provider_event_id.match(/^(.+)_\d{8}T\d{6}Z?$/);
     return m?.[1];
   }
+  // iCloud occurrences are stored as `uid::RECURRENCE-ID`.
+  if (e.provider_event_id.includes("::")) {
+    return e.provider_event_id.split("::")[0] || undefined;
+  }
   return undefined;
+}
+
+/** Apply an ALL-scope patch to every instance of a series in a cached list.
+ *
+ *  Geometry is a *delta* taken from the edited instance, so siblings move by
+ *  the same amount rather than collapsing onto the dragged row's absolute
+ *  time. Title / location / all-day copy across. Used by the optimistic
+ *  cache write — the edge function does the same arithmetic on the mirror. */
+export function applySeriesPatch<
+  T extends {
+    id: string;
+    recurring_event_id?: string | null;
+    start_at: string;
+    end_at: string;
+    title: string;
+    location: string | null;
+    all_day: boolean;
+  },
+>(
+  events: T[],
+  editedId: string,
+  patch: {
+    start_at?: string;
+    end_at?: string;
+    title?: string;
+    location?: string | null;
+    all_day?: boolean;
+  },
+): T[] {
+  const edited = events.find((e) => e.id === editedId);
+  if (!edited) return events;
+  const seriesId = edited.recurring_event_id;
+  const startDelta =
+    patch.start_at != null ? new Date(patch.start_at).getTime() - new Date(edited.start_at).getTime() : 0;
+  const endDelta =
+    patch.end_at != null ? new Date(patch.end_at).getTime() - new Date(edited.end_at).getTime() : 0;
+  const hasTime = patch.start_at != null || patch.end_at != null;
+  if (hasTime && (Number.isNaN(startDelta) || Number.isNaN(endDelta))) return events;
+
+  return events.map((e) => {
+    const match = e.id === editedId || (seriesId != null && e.recurring_event_id === seriesId);
+    if (!match) return e;
+    return {
+      ...e,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.location !== undefined ? { location: patch.location } : {}),
+      ...(patch.all_day !== undefined ? { all_day: patch.all_day } : {}),
+      ...(hasTime
+        ? {
+            start_at: new Date(new Date(e.start_at).getTime() + startDelta).toISOString(),
+            end_at: new Date(new Date(e.end_at).getTime() + endDelta).toISOString(),
+          }
+        : {}),
+    };
+  });
 }
 
 /** Is this external event part of a recurring series? */

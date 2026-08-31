@@ -7,7 +7,93 @@
 //                 which shifts every instance in the series
 import { admin, handleOptions, json, logSync, requireActor } from "../_shared/admin.ts";
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
+import { shiftGoogleDateResource } from "../_shared/googleDateTime.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
+
+/** Master series id: generated column, then raw, then the Google instance suffix. */
+function seriesMasterId(evt: {
+  recurring_event_id?: string | null;
+  provider_event_id: string;
+  raw?: unknown;
+}): string | undefined {
+  if (evt.recurring_event_id) return evt.recurring_event_id;
+  const raw = (evt.raw ?? {}) as Record<string, unknown>;
+  if (typeof raw.recurringEventId === "string" && raw.recurringEventId) return raw.recurringEventId;
+  const m = String(evt.provider_event_id).match(/^(.+)_\d{8}T\d{6}Z?$/);
+  return m?.[1];
+}
+
+async function kickGoogleSync(
+  account: GoogleAccount,
+  calendarId: string,
+  userId: string,
+  reason: string,
+) {
+  const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/google-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mode: "incremental",
+      accountId: account.id,
+      calendarId,
+    }),
+  });
+  if (!syncRes.ok) {
+    await logSync("google", reason, "error", await syncRes.text(), userId);
+  }
+}
+
+/** Shift every mirrored instance of a series by the same start/end deltas the
+ *  dragged occurrence moved, so the next client refetch isn't the old times. */
+async function shiftLocalSeries(
+  evt: {
+    account_id: string;
+    calendar_id: string;
+    start_at: string;
+    end_at: string;
+  },
+  recurringEventId: string,
+  patch: {
+    start_at?: string;
+    end_at?: string;
+    title?: string;
+    location?: string | null;
+  },
+) {
+  const startDelta = patch.start_at
+    ? new Date(patch.start_at).getTime() - new Date(evt.start_at).getTime()
+    : 0;
+  const endDelta = patch.end_at
+    ? new Date(patch.end_at).getTime() - new Date(evt.end_at).getTime()
+    : 0;
+  if (Number.isNaN(startDelta) || Number.isNaN(endDelta)) return;
+
+  const { data: rows } = await admin
+    .from("external_events")
+    .select("id, start_at, end_at")
+    .eq("account_id", evt.account_id)
+    .eq("calendar_id", evt.calendar_id)
+    .eq("recurring_event_id", recurringEventId);
+
+  await Promise.all(
+    (rows ?? []).map((row: { id: string; start_at: string; end_at: string }) => {
+      const rowPatch: Record<string, unknown> = {};
+      if (patch.start_at) {
+        rowPatch.start_at = new Date(new Date(row.start_at).getTime() + startDelta).toISOString();
+      }
+      if (patch.end_at) {
+        rowPatch.end_at = new Date(new Date(row.end_at).getTime() + endDelta).toISOString();
+      }
+      if (patch.title !== undefined) rowPatch.title = patch.title;
+      if (patch.location !== undefined) rowPatch.location = patch.location;
+      if (!Object.keys(rowPatch).length) return Promise.resolve();
+      return admin.from("external_events").update(rowPatch).eq("id", row.id);
+    }),
+  );
+}
 
 function googleDate(iso: string): string {
   return iso.slice(0, 10);
@@ -461,39 +547,21 @@ Deno.serve(async (req) => {
             .upsert(mapped, { onConflict: "account_id,calendar_id,provider_event_id" });
         }
       }
-      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/google-sync`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mode: "incremental",
-          accountId: account.id,
-          calendarId: evt.calendar_id,
-        }),
-      });
-      if (!syncRes.ok) {
-        await logSync(
-          "google",
-          "event-recurrence-sync",
-          "error",
-          await syncRes.text(),
-          user.id,
-        );
-      }
+      await kickGoogleSync(account, evt.calendar_id, user.id, "event-recurrence-sync");
 
       await logSync("google", "event-recurrence", "ok", undefined, user.id);
       return json({ ok: true });
     }
 
     if (scope === "ALL") {
-      // Patch the master recurring event so every instance shifts together.
-      const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as string | undefined;
+      // Patch the master so every instance shifts together, then rewrite the
+      // local mirror and kick an incremental sync. Returning without either of
+      // those left the dialog's revert as the last thing the calendar showed —
+      // Google had the new times (or a failed PATCH nobody saw) and Nuvo didn't.
+      const recurringEventId = seriesMasterId(evt);
       if (!recurringEventId) {
         // Not actually a recurring instance — fall through to single-event patch.
       } else {
-        // Fetch master to get its current start/end and timezone info.
         const masterRes = await gFetch(
           account,
           `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(recurringEventId)}`,
@@ -501,36 +569,34 @@ Deno.serve(async (req) => {
         if (!masterRes.ok) throw new Error(`fetch master: ${masterRes.status} ${await masterRes.text()}`);
         const master = await masterRes.json();
 
-        // Calculate the time delta from the instance's old time to the new time,
-        // then apply the same offset to the master event's start/end.
-        const deltaMs =
-          new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime();
+        const gPatch: Record<string, unknown> = {};
+        if (patch.start_at) {
+          const delta =
+            new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime();
+          const next = shiftGoogleDateResource(master.start, delta);
+          if (next) gPatch.start = next;
+        }
+        if (patch.end_at) {
+          const delta =
+            new Date(patch.end_at as string).getTime() - new Date(evt.end_at as string).getTime();
+          const next = shiftGoogleDateResource(master.end, delta);
+          if (next) gPatch.end = next;
+        }
+        if (patch.title) gPatch.summary = patch.title;
+        if (patch.location !== undefined) gPatch.location = patch.location ?? "";
+        if (patch.description !== undefined) gPatch.description = patch.description ?? "";
 
-        const masterStart = new Date(
-          (master.start?.dateTime ?? master.start?.date) as string,
-        );
-        const masterEnd = new Date(
-          (master.end?.dateTime ?? master.end?.date) as string,
-        );
+        if (Object.keys(gPatch).length) {
+          const res = await gFetch(
+            account,
+            `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(recurringEventId)}`,
+            { method: "PATCH", body: JSON.stringify(gPatch) },
+          );
+          if (!res.ok) throw new Error(`patch master: ${res.status} ${await res.text()}`);
+        }
 
-        const body: Record<string, unknown> = {
-          start: {
-            dateTime: new Date(masterStart.getTime() + deltaMs).toISOString(),
-            timeZone: master.start?.timeZone,
-          },
-          end: {
-            dateTime: new Date(masterEnd.getTime() + deltaMs).toISOString(),
-            timeZone: master.end?.timeZone,
-          },
-        };
-
-        const res = await gFetch(
-          account,
-          `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(recurringEventId)}`,
-          { method: "PATCH", body: JSON.stringify(body) },
-        );
-        if (!res.ok) throw new Error(`patch master: ${res.status} ${await res.text()}`);
-
+        await shiftLocalSeries(evt, recurringEventId, patch);
+        await kickGoogleSync(account, evt.calendar_id, user.id, "event-writeback-all-sync");
         await logSync("google", "event-writeback-all", "ok", undefined, user.id);
         return json({ ok: true });
       }
