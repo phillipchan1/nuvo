@@ -61,7 +61,11 @@ export default function CalendarYear({
             per cell against a 9.5px numeral. Every wider case is roomier.
             Row count tracks the column count so twelve months always tile
             the height: 1×12 · 2×6 · 3×4 · 4×3. */}
-        <div className="grid h-full min-h-0 flex-1 grid-cols-1 grid-rows-12 gap-x-5 gap-y-2 @[300px]:grid-cols-2 @[300px]:grid-rows-6 @[660px]:grid-cols-3 @[660px]:grid-rows-4 @[660px]:gap-x-6 @[660px]:gap-y-3 @[980px]:grid-cols-4 @[980px]:grid-rows-3 @[980px]:gap-x-7 @[980px]:gap-y-3">
+        {/* Gaps stay modest: Apple's year reads as twelve tight units. Row
+            mins respect the dense six-week grid (`max-content`) so a short
+            pane scrolls before it crushes numerals; extra height still
+            distributes evenly across rows. */}
+        <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-x-5 gap-y-4 [grid-template-rows:repeat(12,minmax(max-content,1fr))] @[300px]:grid-cols-2 @[300px]:[grid-template-rows:repeat(6,minmax(max-content,1fr))] @[660px]:grid-cols-3 @[660px]:gap-x-6 @[660px]:gap-y-5 @[660px]:[grid-template-rows:repeat(4,minmax(max-content,1fr))] @[980px]:grid-cols-4 @[980px]:gap-x-8 @[980px]:gap-y-6 @[980px]:[grid-template-rows:repeat(3,minmax(max-content,1fr))]">
           {months.map((m, i) => (
             <YearMonth
               key={i}

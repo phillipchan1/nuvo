@@ -5,6 +5,18 @@
 // answered a question the chat's `read_calendar_load` already owns. Verify
 // both shells at once at ?year.
 //
+// Hierarchy (read top → bottom, loud → quiet):
+//   1. month name  — Fraunces, ink; current month wears --signal
+//   2. day numerals — ink, tabular; the map itself (not muted texture)
+//   3. today        — filled --signal disc, white numeral (same mark Month uses)
+//   4. weekday row  — a whisper above the grid, never competing with dates
+//
+// Spacing: Apple's year keeps the number grid DENSE — week rows stay near
+// square off the month's width, and leftover pane height sits under the grid,
+// not between the numerals. Stretching weeks with bare `1fr` was how 31 floated
+// in a tall empty cell. Every month pads to six weeks so a row of months shares
+// one footprint; empty trailing cells are the same compact size as a day.
+//
 // This file is to the Year what `domain/DomainParts.tsx` is to the Domain: the
 // two shells are two layouts over one set of marks, so a month can never read
 // differently on the desk than it does in your hand.
@@ -19,6 +31,11 @@ import { monthDates } from "../mobile/dayPlan";
 const DOW_INITIALS = Array.from({ length: 7 }, (_, i) =>
   new Date(Date.UTC(2024, 0, 7 + i)).toLocaleDateString([], { weekday: "narrow", timeZone: "UTC" }),
 );
+
+/** Six weeks × seven days. Lead + days + trail always fill this, so every
+ *  month in a Year row shares one baseline. */
+const WEEKS = 6;
+const CELLS = WEEKS * 7;
 
 /** A month's days, in date order. Delegates to `monthDates` in dayPlan.ts so
  *  the Year and every other surface that counts a month agree on February. */
@@ -44,9 +61,10 @@ export interface YearMonthProps {
   /** Weekday initials above the grid. Travel with the numerals: a column of
    *  1–31 with no S M T W T F S is a texture, not a date. */
   showWeekdays?: boolean;
-  /** Stretch into the parent row height and grow day cells with the pane
-   *  (desktop Year). Off on the phone, where the body scrolls and months are
-   *  content-sized (D-129). */
+  /** Stretch into the parent row height (desktop Year). The *month box*
+   *  claims the row; the number grid stays dense — six square weeks off the
+   *  month's width — so leftover height falls under the grid, not between
+   *  the dates (D-129). */
   fill?: boolean;
 }
 
@@ -61,12 +79,8 @@ export const YearMonth = memo(function YearMonth({
   fill = false,
 }: YearMonthProps) {
   const days = useMemo(() => monthDays(month), [month]);
-  // Blank cells before the 1st so the columns are real weekdays. No trailing
-  // pad to six weeks: an empty sixth week read as dead paper under December
-  // (the whole complaint D-129 answers). Month *boxes* still share a floor via
-  // the Year's equal row fractions; the weeks a month actually has stretch to
-  // fill that box, so the numerals reach the bottom.
   const lead = (getDay(days[0]) - weekStartsOn + 7) % 7;
+  const trail = Math.max(0, CELLS - lead - days.length);
   const dow = useMemo(
     () => Array.from({ length: 7 }, (_, i) => DOW_INITIALS[(i + weekStartsOn) % 7]),
     [weekStartsOn],
@@ -75,15 +89,14 @@ export const YearMonth = memo(function YearMonth({
   const inMonth = isSameDay(startOfMonth(now), startOfMonth(month));
 
   return (
-    // `@container` sizes the numeral off the month, not the window — opening
-    // Nuvo chat narrows the pane without a viewport change, and a month that
-    // was roomy at full width has to quiet its type as it shrinks.
+    // `@container` sizes type off the month, not the window — opening Nuvo
+    // chat narrows the pane without a viewport change.
     <section className={`@container min-w-0 ${fill ? "flex h-full min-h-0 flex-col" : ""}`}>
-      <div className={`flex items-baseline justify-between gap-2 ${fill ? "mb-1.5 shrink-0" : "mb-1"}`}>
+      <div className={`flex items-baseline justify-between gap-2 ${fill ? "mb-1 shrink-0" : "mb-1"}`}>
         {onPickMonth ? (
           <button
             onClick={() => onPickMonth(startOfMonth(month))}
-            className="fast masthead truncate text-body leading-none hover:text-accent"
+            className="fast masthead truncate text-body leading-none hover:text-accent @[11rem]:text-head"
             style={{ color: inMonth ? "var(--signal)" : "var(--ink)" }}
             title={`Open ${label}`}
           >
@@ -91,7 +104,7 @@ export const YearMonth = memo(function YearMonth({
           </button>
         ) : (
           <span
-            className="masthead truncate text-body leading-none"
+            className="masthead truncate text-body leading-none @[11rem]:text-head"
             style={{ color: inMonth ? "var(--signal)" : "var(--ink)" }}
           >
             {label}
@@ -100,26 +113,31 @@ export const YearMonth = memo(function YearMonth({
       </div>
 
       {showWeekdays && (
-        <div aria-hidden className={`grid grid-cols-7 gap-px ${fill ? "shrink-0" : ""}`}>
+        <div aria-hidden className={`grid grid-cols-7 ${fill ? "shrink-0" : ""}`}>
           {dow.map((d, i) => (
-            <div key={i} className="pb-0.5 text-center text-micro leading-none text-muted">
+            <div
+              key={i}
+              className="pb-0.5 text-center text-micro leading-none"
+              style={{ color: "color-mix(in srgb, var(--muted) 50%, transparent)" }}
+            >
               {d}
             </div>
           ))}
         </div>
       )}
 
+      {/* Dense number grid — height from width (`aspect-ratio: 7/6`), not from
+          the pane. Six square weeks. Leftover pane height is the spacer below,
+          so numerals stay packed the way Apple's year packs them. */}
       <div
         className={
           fill
-            ? "grid min-h-0 flex-1 grid-cols-7 gap-px [grid-auto-rows:minmax(0,1fr)]"
-            : "grid grid-cols-7 gap-px"
+            ? "grid w-full shrink-0 grid-cols-7 grid-rows-6"
+            : "grid w-full grid-cols-7"
         }
+        style={fill ? { aspectRatio: `${7} / ${WEEKS}` } : undefined}
       >
         {Array.from({ length: lead }, (_, i) => (
-          // Compact months size rows off `aspect-square` day cells; an empty
-          // lead without that footprint collapses the first week under the
-          // weekday header.
           <div key={`lead-${i}`} aria-hidden className={fill ? undefined : "aspect-square"} />
         ))}
         {days.map((d, i) => (
@@ -132,10 +150,19 @@ export const YearMonth = memo(function YearMonth({
             onPick={onPickDay}
           />
         ))}
+        {Array.from({ length: trail }, (_, i) => (
+          <div key={`trail-${i}`} aria-hidden className={fill ? undefined : "aspect-square"} />
+        ))}
       </div>
+
+      {fill && <div className="min-h-0 flex-1" aria-hidden />}
     </section>
   );
 });
+
+/** Today disc — fixed, centred in the cell. Same chip Month paints. */
+const TODAY_PX = 18;
+const TODAY_PX_COMPACT = 16;
 
 const DayCell = memo(function DayCell({
   date,
@@ -151,39 +178,49 @@ const DayCell = memo(function DayCell({
   onPick?: (d: Date) => void;
 }) {
   const name = date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  const disc = fill ? TODAY_PX : TODAY_PX_COMPACT;
 
   const body = (
-    <span
-      // `overflow-hidden` is belt-and-braces against a future skin bumping the
-      // numeral: a cell can clip its own content but never bleed into the day
-      // beside it. `tabular-nums` keeps the columns of digits from shivering
-      // as the month crosses from single to double digits.
-      //
-      // Fill mode drops `aspect-square` so the cell grows with the pane; the
-      // numeral steps up once the month is wide enough to hold it (D-129).
-      className={
-        fill
-          ? "mono flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-[3px] text-micro leading-none tabular-nums text-muted @[9.5rem]:text-caption"
-          : "mono flex aspect-square w-full items-center justify-center overflow-hidden rounded-[3px] text-micro leading-none tabular-nums text-muted"
-      }
-      style={{
-        // Today lifts with the signal ring the rest of the app uses for "now".
-        // No fill — density was the disclarity (D-128).
-        color: isToday ? "var(--signal)" : undefined,
-        boxShadow: isToday ? "inset 0 0 0 1.5px var(--signal)" : undefined,
-      }}
-    >
-      {showNumber ? date.getDate() : ""}
+    <span className="flex h-full w-full items-center justify-center">
+      <span
+        // Ink + tight tracking: a dense field of dates, not muted beads in
+        // tall cells. Today alone gets the signal disc; ordinary days are
+        // just the numeral so spacing follows the type.
+        className={
+          fill
+            ? "mono inline-flex items-center justify-center overflow-hidden text-[12px] font-medium leading-none tracking-tight tabular-nums @[13rem]:text-[13px]"
+            : "mono inline-flex aspect-square w-full items-center justify-center overflow-hidden text-micro font-medium leading-none tracking-tight tabular-nums"
+        }
+        style={
+          isToday
+            ? {
+                color: "#fff",
+                background: "var(--signal)",
+                borderRadius: 999,
+                width: disc,
+                height: disc,
+              }
+            : { color: "var(--ink)" }
+        }
+      >
+        {showNumber ? date.getDate() : ""}
+      </span>
     </span>
   );
 
-  if (!onPick) return <span title={name} aria-label={name} role="img" className={fill ? "min-h-0" : undefined}>{body}</span>;
+  if (!onPick) {
+    return (
+      <span title={name} aria-label={name} role="img" className={fill ? undefined : "aspect-square"}>
+        {body}
+      </span>
+    );
+  }
   return (
     <button
       onClick={() => onPick(date)}
       title={name}
       aria-label={name}
-      className={`fast w-full rounded-[3px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${fill ? "min-h-0" : ""}`}
+      className={`fast w-full hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${fill ? "h-full rounded-sm" : "aspect-square rounded-sm"}`}
     >
       {body}
     </button>
