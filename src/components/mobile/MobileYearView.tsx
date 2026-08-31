@@ -1,17 +1,18 @@
 // The Year lens — the phone's furthest-out view of the calendar.
 //
-// The desktop half (`CalendarYear.tsx`) explains what this view is *for*: not a
-// year of dates you can browse, a year of **load**, so the question "where is
-// this heavy, and where is there nothing" has an answer at day altitude. This
-// is the same answer in a hand.
+// The desktop half (`CalendarYear.tsx`) explains what this view is *for*: a
+// year of **load**, so the question "where is this heavy, and where is there
+// nothing" has an answer at day altitude. Dates are the index on that picture,
+// not a second question (D-127). This is the same answer in a hand.
 //
 // Two layouts, one set of marks (`calendar/YearParts.tsx`) over one rule
 // (`dayLoad`, in the shared kernel). The one real difference is the tap target,
 // and it is a difference in the medium, not the model: a 375px screen puts a
 // day cell at ~22px, which is half a thumb, so **the month is the target** and
 // drilling in goes Year → month grid → the lens you were last using. Numerals
-// come off for the same reason — at that size a numeral is a smudge sitting on
-// top of the one thing the cell exists to show.
+// stay on: at 22px a `text-micro` coordinate is small, not a smudge, and a
+// year of shades you cannot name is a picture, not a map. The weekday initials
+// travel with them — a column of 1–31 with no S M T W T F S is texture.
 
 import { useMemo } from "react";
 import { addMonths, format, startOfMonth } from "date-fns";
@@ -63,9 +64,9 @@ export default function MobileYearView({
         <YearLegend />
       </div>
 
-      {/* The wall. Two columns at 375px (a ~22px cell still reads as a shade),
-          three once there's room. Each month is one tap target — well past
-          44px — because a day cell here never can be. */}
+      {/* The wall. Two columns at 375px (a ~22px cell still holds a micro
+          numeral and a shade), three once there's room. Each month is one
+          tap target — well past 44px — because a day cell here never can be. */}
       <TimePager pageKey={String(year)} onPrev={onPrev} onNext={onNext}>
         <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 min-[560px]:grid-cols-3">
           {months.map((m, i) => (
@@ -80,8 +81,6 @@ export default function MobileYearView({
                 loads={byMonth[i]}
                 now={now}
                 weekStartsOn={weekStartsOn}
-                showNumbers={false}
-                showWeekdays={false}
               />
             </button>
           ))}

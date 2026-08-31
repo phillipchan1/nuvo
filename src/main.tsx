@@ -53,13 +53,14 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?sitting / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
 // `?daycal` kept as an alias: it opened the Day lens alone, and the Day lens is
 // now one of the five faces this frame shows together.
 const showCalendarHarness = import.meta.env.DEV && (params.has("horizon") || params.has("daycal"));
+const showYearHarness = import.meta.env.DEV && params.has("year");
 const showMeetHarness = import.meta.env.DEV && params.has("meet");
 const showInviteHarness = import.meta.env.DEV && params.has("invite");
 const showDomainHarness = import.meta.env.DEV && params.has("domains");
@@ -121,6 +122,14 @@ if (showPickHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <BuildFacesHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showYearHarness) {
+  void import("./components/calendar/YearHarness").then(({ default: YearHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <YearHarness />
       </React.StrictMode>,
     );
   });

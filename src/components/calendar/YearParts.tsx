@@ -1,5 +1,7 @@
 // The marks a year is drawn with — one shade ramp, one month block, one
-// legend, worn by the desktop Year view and the phone's.
+// legend, worn by the desktop Year view and the phone's. Shade is the read
+// (D-106); the day numeral is the index of that read (D-127). Verify both
+// shells at once at ?year.
 //
 // This file is to the Year what `domain/DomainParts.tsx` is to the Domain: the
 // two shells are two layouts over one set of marks, so a month can never read
@@ -53,13 +55,17 @@ export const LOAD_FILL: Record<LoadBand, string> = {
   over: "color-mix(in srgb, var(--danger) 85%, transparent)",
 };
 
-/** Ink that survives its own fill. The two middle-dark bands carry enough
- *  colour to swallow `--muted`, so the numeral steps up to `--ink` there; on
- *  `over` the fill is dark enough (light enough, in dark theme) that the ink
- *  has to flip, which is what `--on-danger` is for. */
+/** Ink that survives its own fill. Clear and light used to wear `--muted`,
+ *  and that was the whole miss: those are the days you hunt ("where is there
+ *  nothing"), and they had the faintest coordinates. A mix of `--ink` keeps
+ *  the numeral a coordinate — quieter than the busy/full step-up, present
+ *  enough to index. The two middle-dark bands swallow that mix, so they
+ *  step up to solid `--ink`; on `over` the fill is dark enough (light
+ *  enough, in dark theme) that the ink has to flip, which is what
+ *  `--on-danger` is for. */
 export const LOAD_INK: Record<LoadBand, string> = {
-  clear: "var(--muted)",
-  light: "var(--muted)",
+  clear: "color-mix(in srgb, var(--ink) 62%, transparent)",
+  light: "color-mix(in srgb, var(--ink) 78%, transparent)",
   busy: "var(--ink)",
   full: "var(--ink)",
   over: "var(--on-danger)",
@@ -111,10 +117,13 @@ export interface YearMonthProps {
   /** Tapping the month itself (its name on the desk, the whole block on a
    *  phone) — the drill-down every other calendar surface already uses. */
   onPickMonth?: (d: Date) => void;
-  /** Render the day numerals. Off on a phone, where a cell is ~11px and a
-   *  numeral would be a smudge that hides the one thing the cell is for. */
+  /** Render the day-of-month numerals. On by default — they are the *index*,
+   *  not the read. Shade still answers "where is this heavy"; the numeral is
+   *  how you name the square you just saw (D-127). Pass `false` only for a
+   *  deliberately mute sketch; both shipped shells leave this on. */
   showNumbers?: boolean;
-  /** Weekday initials above the grid. Same reason as `showNumbers`. */
+  /** Weekday initials above the grid. Travel with the numerals: a column of
+   *  1–31 with no S M T W T F S is a texture, not a date. */
   showWeekdays?: boolean;
 }
 
@@ -219,7 +228,7 @@ const DayCell = memo(function DayCell({
       // can clip its own content but never bleed into the day beside it.
       // `tabular-nums` keeps the columns of digits from shivering as the month
       // crosses from single to double digits.
-      className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-[3px] text-micro leading-none tabular-nums"
+      className="mono flex aspect-square w-full items-center justify-center overflow-hidden rounded-[3px] text-micro leading-none tabular-nums"
       style={{
         background: LOAD_FILL[band],
         color: LOAD_INK[band],
