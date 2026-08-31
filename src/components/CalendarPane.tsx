@@ -389,9 +389,10 @@ export default function CalendarPane({
   const resolveDroppedTask = (id: string): Task | undefined =>
     tasksRef.current.find((t) => t.id === id) ?? resolveDropTaskRef.current?.(id);
 
-  // Month view has no other orientation cue (Week/Day are covered by the
+  // Month and Year have no other orientation cue (Week/Day are covered by the
   // "THIS WEEK" rail label) — without a title, paging ‹ › leaves no way to
-  // tell which month you're looking at.
+  // tell which span you're looking at. The Year's numeral lives here, not as
+  // an in-pane masthead, so the chrome says the year once (D-123 / D-129).
   const [monthTitle, setMonthTitle] = useState("");
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
@@ -2413,6 +2414,7 @@ export default function CalendarPane({
   }, []);
 
   const isMonth = view === "dayGridMonth";
+  const isYear = view === "year";
 
   // "Take me to that day" — search landing on a calendar event. The grid owns
   // its date, so the intent arrives on the reveal bus rather than as a prop
@@ -3030,14 +3032,18 @@ export default function CalendarPane({
           <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
         </div>
 
-        {/* Center — Month's only orientation cue (Week/Day rely on the "THIS
-              WEEK" rail label instead); otherwise a flexible drag region. */}
-        {isMonth ? (
+        {/* Center — Month and Year's only orientation cue (Week/Day rely on
+              the "THIS WEEK" rail label instead); otherwise a flexible drag
+              region. The Year's numeral sits in this seat so the pane itself
+              does not repeat it (D-129). */}
+        {isMonth || isYear ? (
           <div
             data-tauri-drag-region
             className="pointer-events-none flex max-w-[220px] select-none justify-center truncate leading-none"
           >
-            <span className="masthead truncate text-lead leading-none text-text">{monthTitle}</span>
+            <span className="masthead truncate text-lead leading-none text-text">
+              {isYear ? yearCursor : monthTitle}
+            </span>
           </div>
         ) : (
           <div className="w-0" data-tauri-drag-region />

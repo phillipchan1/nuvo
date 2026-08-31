@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 /**
- * The Year's marks: day numerals are the map (D-127); density is gone (D-128).
+ * The Year's marks: day numerals are the map (D-127); density is gone (D-128);
+ * the desktop Year fills its pane (D-129).
  *
  * These assertions hold the coordinate layer — every day gets a number, on
- * both shells, with no load legend. jsdom has no layout, so they cannot prove
- * a 9.5px glyph survives a 17px cell; that is ?year.
+ * both shells, with no load legend, and every month pads to six weeks so a
+ * row of months shares one baseline. jsdom has no layout, so they cannot
+ * prove a glyph survives a cell; that is ?year.
  */
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -50,6 +52,15 @@ describe("YearMonth numerals", () => {
     const header = c.container.querySelector(".grid.grid-cols-7");
     expect(header?.childElementCount).toBe(7);
   });
+
+  it("does not pad a trailing empty week — fill stretches the weeks it has", () => {
+    // Jan 2026 starts Thursday → 4 lead blanks + 31 days = 35 cells (5 weeks).
+    // A sixth empty week used to sit under the numerals and read as dead paper.
+    const c = render(<YearMonth month={JAN} now={NOW} weekStartsOn={0} fill />);
+    const grids = c.container.querySelectorAll(".grid.grid-cols-7");
+    expect(grids.length).toBe(2);
+    expect(grids[1]?.childElementCount).toBe(35);
+  });
 });
 
 describe("both shells wear the same index — and no density", () => {
@@ -64,7 +75,9 @@ describe("both shells wear the same index — and no density", () => {
       />,
     );
     expect(c.getAllByText("15").length).toBe(12);
-    expect(c.getByText("2026")).toBeTruthy();
+    // The year numeral lives in the Schedule toolbar now (D-129) — the pane
+    // itself must not restate it.
+    expect(c.queryByText("2026")).toBeNull();
     expect(c.queryByText("nothing on")).toBeNull();
     expect(c.queryByText("busy")).toBeNull();
     expect(c.queryByText("overcommitted")).toBeNull();
