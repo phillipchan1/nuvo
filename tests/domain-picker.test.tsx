@@ -61,14 +61,15 @@ describe("DomainPicker", () => {
   it("offers a trailing no-domain row only when allowClear is on", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    const { rerender } = render(
+    const first = render(
       <DomainPicker domains={DOMAINS} value={WORK.id} onChange={onChange} />,
     );
 
     await user.click(screen.getByTitle("Change domain"));
     expect(screen.queryByText("no domain")).toBeNull();
+    first.unmount();
 
-    rerender(
+    render(
       <DomainPicker domains={DOMAINS} value={WORK.id} onChange={onChange} allowClear />,
     );
     await user.click(screen.getByTitle("Change domain"));
