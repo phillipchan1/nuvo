@@ -2228,16 +2228,72 @@ select.field { appearance: none; -webkit-appearance: none; }
 }
 
 /* ── Drop-target feedback while dragging a task ──────────────────────────
-   `body.cal-dragging` is set for the duration of a task drag. FullCalendar drags
-   with pointer (not HTML5) events, so :hover keeps updating — the day cell under
-   the cursor lights up as the "anytime" drop target (all-day row in week/day,
-   the whole cell in month). */
-.cal-dragging .fc-daygrid-day {
-  transition: background-color var(--d-fast) var(--ease-out);
+   `body.cal-dragging` is set for the duration of a task drag. The anytime cell
+   under the pointer is hit-tested in JS (`.anytime-drop-target`) — styling the
+   day itself via :hover painted under `.fc-daygrid-day-frame` and read as
+   nothing. The frame is the surface that has to light up. */
+.cal-dragging .fc-daygrid-body .fc-daygrid-day-frame {
+  transition: background-color var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out);
 }
-.cal-dragging .fc-daygrid-day:hover {
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+/* Armed: any anytime cell is a candidate while a task is in hand. */
+.cal-dragging .fc-daygrid-body .fc-daygrid-day .fc-daygrid-day-frame {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+/* About to drop: the cell under the pointer — same weight as a slot receptacle. */
+.fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Hide FC's blank all-day scrap — the titled pill preview is the affordance. */
+.over-anytime .fc-event-mirror,
+.over-anytime .fc-event-dragging {
+  opacity: 0 !important;
+}
+/* Where the dragged task will land as an anytime chip. */
+.anytime-drop-preview {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9998;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 58%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
+}
+.anytime-drop-preview.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.anytime-drop-preview-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.anytime-drop-preview-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
 }
 /* And a quieter column glow when aiming at a specific time in the grid. */
 .cal-dragging .fc-timegrid-col:hover {
@@ -2448,6 +2504,10 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-active .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* Drag-hover beats the idle hover wash — see `.anytime-drop-target` above. */
+.fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target:hover .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .fc .fc-timegrid-axis-cushion {
   text-transform: lowercase;
