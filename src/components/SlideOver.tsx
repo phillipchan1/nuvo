@@ -50,6 +50,7 @@ import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
+import { notifyPopoverBlurClose } from "../lib/taskPopoverCloseGuard";
 import { anchoredTop } from "../lib/anchoredTop";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
@@ -391,6 +392,7 @@ export function TaskPopover({
       if (popRef.current.contains(document.activeElement)) {
         (document.activeElement as HTMLElement | null)?.blur();
       }
+      notifyPopoverBlurClose(task.id);
       onClose();
     };
     document.addEventListener("mousedown", onDown);
