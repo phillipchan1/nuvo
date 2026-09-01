@@ -170,7 +170,16 @@ export function useSlotMutations() {
    */
   const updateSlot = ({ id, patch }: { id: string; patch: Partial<Slot> }) => {
     const paint = () => {
-      patchSlotCaches(qc, id, patch);
+      let current: Slot | undefined;
+      for (const [, rows] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
+        current = rows?.find((s) => s.id === id);
+        if (current) break;
+      }
+      if (current) {
+        putSlotInCaches(qc, id, { ...current, ...patch, updated_at: new Date().toISOString() });
+      } else {
+        patchSlotCaches(qc, id, patch);
+      }
       if (patch.do_date !== undefined) {
         runWithoutOwingPreserve(() => {
           qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
