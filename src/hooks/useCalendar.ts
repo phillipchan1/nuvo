@@ -315,8 +315,15 @@ export function useExternalEventMutations() {
       }
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
+      // Cancel synchronously without letting TanStack restore the query's
+      // pre-fetch snapshot, then paint before yielding. Awaiting cancellation
+      // left one React turn with the old geometry; cancelling with the default
+      // `revert: true` after painting could restore that same stale geometry.
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      void qc.cancelQueries(
+        { queryKey: ["external_events"] },
+        { revert: false },
+      );
       const { description, recurrence: _recurrence, ...columns } = patch;
       if (scope === "ALL") {
         qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
@@ -385,9 +392,15 @@ export function useExternalEventMutations() {
       });
     },
     onSettled: (_d, _e, vars) => {
-      qc.invalidateQueries({ queryKey: ["external_events"] });
       if (vars?.patch.recurrence !== undefined) {
         qc.invalidateQueries({ queryKey: ["event_series_rule", vars.id] });
+      }
+      // A THIS-scope edit already wrote the row and painted every mounted
+      // range. Refetching all ranges here both rebuilds a lived-in grid and can
+      // race the provider write-back. Series edits still need a refetch because
+      // they change instances that were not part of the gesture.
+      if (vars?.patch.recurrence !== undefined || vars?.scope === "ALL") {
+        qc.invalidateQueries({ queryKey: ["external_events"] });
       }
     },
   });

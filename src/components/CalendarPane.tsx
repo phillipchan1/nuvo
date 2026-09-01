@@ -1,11 +1,11 @@
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
+import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventInput, EventMountArg } from "@fullcalendar/core";
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -39,6 +39,7 @@ import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
+import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
   adjacentPreviewRect,
@@ -1434,6 +1435,24 @@ function CalendarPane({
         extendedProps: { kind: "task" as const, refId: "", barColor: "var(--accent)", recurring: false },
       }
     : null;
+
+  const gridEvents = useMemo(
+    () => (draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents),
+    [fcEvents, draftPreviewEvent],
+  );
+
+  // FullCalendar treats a new `events` array as a new source and re-parses
+  // every block. Keep the option stable, then reconcile only the blocks whose
+  // cache-backed inputs changed. The event FullCalendar already moved stays
+  // exactly under the pointer while its task/event write persists.
+  const eventsOptionRef = useRef<EventInput[] | null>(null);
+  if (eventsOptionRef.current === null) eventsOptionRef.current = gridEvents as EventInput[];
+
+  useLayoutEffect(() => {
+    const api = calRef.current?.getApi();
+    if (!api) return;
+    syncCalendarEvents(api, gridEvents as CalendarBlockInput[]);
+  }, [gridEvents]);
 
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
@@ -3530,7 +3549,7 @@ function CalendarPane({
           eventOrder={(a: unknown, b: unknown) =>
             (a as EventApi).id === "draft:preview" ? -1 : (b as EventApi).id === "draft:preview" ? 1 : 0
           }
-          events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
+          events={eventsOptionRef.current}
           editable
           droppable
           selectable
