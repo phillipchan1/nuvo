@@ -69,6 +69,20 @@ function writeRailWidth(width: number) {
   }
 }
 
+export function taskPopoverSelection(
+  selectedId: string | null,
+  openedFromRailId: string | null,
+  activeTaskId: string | null | undefined,
+) {
+  if (!openedFromRailId || activeTaskId === openedFromRailId) {
+    return { selectedId, openedFromRailId };
+  }
+  return {
+    selectedId: selectedId === openedFromRailId ? null : selectedId,
+    openedFromRailId: null,
+  };
+}
+
 function LeftRail({
   tab,
   setTab,
@@ -163,10 +177,11 @@ function LeftRail({
   }, [nav]);
 
   useEffect(() => {
-    const openedId = openedFromRailRef.current;
-    if (!openedId || activeTaskId === openedId) return;
-    setSelectedId((current) => (current === openedId ? null : current));
-    openedFromRailRef.current = null;
+    setSelectedId((current) => {
+      const next = taskPopoverSelection(current, openedFromRailRef.current, activeTaskId);
+      openedFromRailRef.current = next.openedFromRailId;
+      return next.selectedId;
+    });
   }, [activeTaskId]);
 
   // Filters (audit rank 6). The question is held here, not persisted — a filter
