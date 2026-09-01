@@ -69,6 +69,20 @@ function writeRailWidth(width: number) {
   }
 }
 
+export function taskPopoverSelection(
+  selectedId: string | null,
+  openedFromRailId: string | null,
+  activeTaskId: string | null | undefined,
+) {
+  if (!openedFromRailId || activeTaskId === openedFromRailId) {
+    return { selectedId, openedFromRailId };
+  }
+  return {
+    selectedId: selectedId === openedFromRailId ? null : selectedId,
+    openedFromRailId: null,
+  };
+}
+
 function LeftRail({
   tab,
   setTab,
@@ -77,6 +91,7 @@ function LeftRail({
   labels,
   mutations,
   onOpenTask,
+  activeTaskId,
   hotkeysEnabled,
   now,
   railRef,
@@ -91,6 +106,9 @@ function LeftRail({
   labels: Label[];
   mutations: Mutations;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
+  /** Task currently open in the Schedule popover. A row that opened that
+   *  popover stays lifted only while this id still matches it. */
+  activeTaskId?: string | null;
   hotkeysEnabled: boolean;
   /** False while a floor covers the Schedule — skip reconciling the rail. */
   live?: boolean;
@@ -120,6 +138,10 @@ function LeftRail({
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Only selections created by opening a row belong to the task popover.
+  // Keyboard navigation also uses `selectedId`, so clearing every selection
+  // whenever no popover is open would make j/k navigation lose its cursor.
+  const openedFromRailRef = useRef<string | null>(null);
   // The pivot for shift-click range selection — the last row touched plainly
   // or cmd-toggled. Range runs from here to the shift-clicked row.
   const [anchorId, setAnchorId] = useState<string | null>(null);
@@ -153,6 +175,14 @@ function LeftRail({
     setSchedulePickerFor(null);
     setRemindPickerFor(null);
   }, [nav]);
+
+  useEffect(() => {
+    setSelectedId((current) => {
+      const next = taskPopoverSelection(current, openedFromRailRef.current, activeTaskId);
+      openedFromRailRef.current = next.openedFromRailId;
+      return next.selectedId;
+    });
+  }, [activeTaskId]);
 
   // Filters (audit rank 6). The question is held here, not persisted — a filter
   // left on from last Tuesday, quietly hiding work, is the failure mode every
@@ -300,6 +330,7 @@ function LeftRail({
           if (targets.length === 1) {
             const el = document.querySelector<HTMLElement>(`[data-task-drag="${targets[0].id}"]`);
             const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
+            openedFromRailRef.current = targets[0].id;
             onOpenTask(targets[0], anchor);
           }
           break;
@@ -697,6 +728,7 @@ function LeftRail({
     onSelect: () => plainSelect(t.id),
     onOpen: (anchor: DOMRect) => {
       setSelectedIds(new Set());
+      openedFromRailRef.current = t.id;
       onOpenTask(t, anchor);
     },
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
@@ -1068,6 +1100,7 @@ function LeftRail({
           onOpen={() => {
             const el = document.querySelector<HTMLElement>(`[data-task-drag="${contextMenu.task.id}"]`);
             const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
+            openedFromRailRef.current = contextMenu.task.id;
             onOpenTask(contextMenu.task, anchor);
             setContextMenu(null);
           }}
