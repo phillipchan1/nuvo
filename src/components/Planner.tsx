@@ -614,6 +614,7 @@ export default function Planner({
           labels={labels}
           mutations={mutations}
           onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor, null)}
+          activeTaskId={taskPanel?.id ?? null}
           hotkeysEnabled={!anyModalOpen && !focusMode && onSchedule}
           live={onSchedule}
           now={now}
