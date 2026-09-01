@@ -315,7 +315,9 @@ export function useExternalEventMutations() {
       }
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
+      // Paint first. Awaiting cancelQueries used to yield a React turn with the
+      // pre-drag row still in the cache — FullCalendar reset the block to where
+      // it came from, then the patch landed a frame later.
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       const { description, recurrence: _recurrence, ...columns } = patch;
       if (scope === "ALL") {
@@ -327,6 +329,7 @@ export function useExternalEventMutations() {
           old?.map((e) => (e.id === id ? { ...e, ...columns } : e)),
         );
       }
+      void qc.cancelQueries({ queryKey: ["external_events"] });
       // Reflect a notes edit in the open inspector immediately (raw cache).
       const hadDescription = description !== undefined;
       const detailSnapshot = hadDescription
@@ -385,9 +388,16 @@ export function useExternalEventMutations() {
       });
     },
     onSettled: (_d, _e, vars) => {
-      qc.invalidateQueries({ queryKey: ["external_events"] });
       if (vars?.patch.recurrence !== undefined) {
         qc.invalidateQueries({ queryKey: ["event_series_rule", vars.id] });
+      }
+      // THIS-scope field/geometry edits already wrote the row and painted the
+      // cache. Invalidating here refetches every external_events window — a
+      // lived-in week — and races the provider write-back, which is how a drag
+      // vanished for a second. RSVP already refuses that refetch. ALL-scope
+      // and recurrence still expand many rows off-screen, so they refetch.
+      if (vars?.patch.recurrence !== undefined || vars?.scope === "ALL") {
+        qc.invalidateQueries({ queryKey: ["external_events"] });
       }
     },
   });
@@ -405,8 +415,8 @@ export function useExternalEventMutations() {
       if (error) throw error;
     },
     onMutate: async ({ id, calendarId }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      void qc.cancelQueries({ queryKey: ["external_events"] });
       // Where it came from, captured before the optimistic retag overwrites it.
       let fromCalendarId: string | undefined;
       for (const [, data] of snapshot) {
@@ -439,7 +449,6 @@ export function useExternalEventMutations() {
         redo: () => move.mutate({ id: vars.id, calendarId: vars.calendarId }),
       });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
 
   const rsvp = useMutation({
@@ -464,8 +473,8 @@ export function useExternalEventMutations() {
     // Optimistically flip self_rsvp in the grid cache so the event de-dims
     // immediately without waiting for the edge function round-trip.
     onMutate: async ({ id, responseStatus }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
       const previous = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      void qc.cancelQueries({ queryKey: ["external_events"] });
       let priorStatus: AttendeeStatus | null | undefined;
       for (const [, data] of previous) {
         const found = data?.find((e) => e.id === id);
@@ -536,8 +545,8 @@ export function useExternalEventMutations() {
       await throwIfInvokeFailed(data, error);
     },
     onMutate: async ({ id }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      void qc.cancelQueries({ queryKey: ["external_events"] });
       // The row as it was, so the delete can be put back rather than merely
       // regretted. Captured here because after the write there is nothing left
       // to read it from.
@@ -637,7 +646,6 @@ export function useExternalEventMutations() {
       return data;
     },
     onMutate: async ({ title, start_at, end_at, all_day }) => {
-      await qc.cancelQueries({ queryKey: ["external_events"] });
       const tempId = crypto.randomUUID();
       const optimistic: ExternalEvent = {
         id: tempId,
@@ -655,6 +663,7 @@ export function useExternalEventMutations() {
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old ? [...old, optimistic] : [optimistic],
       );
+      void qc.cancelQueries({ queryKey: ["external_events"] });
       return { tempId };
     },
     onError: (_, __, ctx) => {
