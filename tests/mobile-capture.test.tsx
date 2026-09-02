@@ -13,13 +13,17 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { addDays, format, startOfDay } from "date-fns";
 import { describe, expect, it, vi } from "vitest";
 import MobileCapture from "../src/components/mobile/MobileCapture";
+import { parseDateISO } from "../src/lib/dates";
 import type { NewTaskInput } from "../src/hooks/useTasks";
 
 const WRITABLE = [
   { id: "a1", provider: "google", email: "you@example.com", sync_direction: "two_way" },
 ];
 
-function mount(accounts: unknown[] = WRITABLE) {
+function mount(
+  accounts: unknown[] = WRITABLE,
+  seed?: { start: Date; durationMinutes?: number },
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(["calendar_accounts"], accounts);
   const created: NewTaskInput[] = [];
@@ -32,6 +36,8 @@ function mount(accounts: unknown[] = WRITABLE) {
           created.push(input);
         }}
         onClose={onClose}
+        initialStart={seed?.start ?? null}
+        initialDurationMinutes={seed?.durationMinutes ?? null}
       />
     </QueryClientProvider>,
   );
@@ -45,7 +51,8 @@ describe("one input, two kinds", () => {
     const { created, type } = mount();
     type("call David tomorrow 9am 30m !high");
     await act(async () => {
-      screen.getByRole("button", { name: "Add task" }).click();
+      // Timed capture — the button names the act (a block), not the kind.
+      screen.getByRole("button", { name: "Add block" }).click();
     });
 
     expect(created).toHaveLength(1);
@@ -94,5 +101,85 @@ describe("one input, two kinds", () => {
     const event = screen.getByRole("button", { name: "Event" }) as HTMLButtonElement;
     expect(event.disabled).toBe(true);
     expect(screen.getByText(/Connect a calendar in Settings/)).toBeTruthy();
+  });
+
+  it("keeps a canvas tap's time when the sentence is silent", async () => {
+    const start = startOfDay(new Date());
+    start.setHours(14, 30, 0, 0);
+    const { created, type } = mount(WRITABLE, { start, durationMinutes: 30 });
+
+    expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe("14:30");
+    expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe("15:00");
+    type("review PR");
+    await act(async () => {
+      screen.getByRole("button", { name: "Add block" }).click();
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].title).toBe("review PR");
+    expect(created[0].start_time).toBe(start.toISOString());
+    expect(created[0].duration_minutes).toBe(30);
+    expect(created[0].do_date).toBe(format(start, "yyyy-MM-dd"));
+  });
+
+  it("lets Anytime drop the clock so the thought can stay undated on the day", async () => {
+    const start = startOfDay(new Date());
+    start.setHours(9, 0, 0, 0);
+    const { created, type } = mount(WRITABLE, { start, durationMinutes: 30 });
+
+    act(() => screen.getByRole("button", { name: "Anytime" }).click());
+    type("buy milk");
+    await act(async () => {
+      screen.getByRole("button", { name: "Add task" }).click();
+    });
+
+    expect(created[0].start_time).toBeNull();
+    expect(created[0].do_date).toBe(format(start, "yyyy-MM-dd"));
+  });
+
+  it("seeds the event face from the same tap", () => {
+    const start = startOfDay(new Date());
+    start.setHours(12, 0, 0, 0);
+    mount(WRITABLE, { start, durationMinutes: 60 });
+    act(() => screen.getByRole("button", { name: "Event" }).click());
+
+    expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe("12:00");
+    expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe("13:00");
+  });
+
+  it("lets Add time turn a capture into a time block without typing a clock", async () => {
+    const { created, type } = mount();
+    // Inbox by default — Add time still works, and stamps Today.
+    expect(screen.getByRole("button", { name: "Add time" })).toBeTruthy();
+    act(() => screen.getByRole("button", { name: "Add time" }).click());
+
+    const start = screen.getByLabelText("Start time") as HTMLInputElement;
+    const end = screen.getByLabelText("End time") as HTMLInputElement;
+    expect(start.value).toMatch(/^\d{2}:\d{2}$/);
+    expect(end.value).toMatch(/^\d{2}:\d{2}$/);
+
+    act(() => fireEvent.change(start, { target: { value: "10:00" } }));
+    act(() => fireEvent.change(end, { target: { value: "11:00" } }));
+    type("deep work");
+    await act(async () => {
+      screen.getByRole("button", { name: "Add block" }).click();
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].title).toBe("deep work");
+    expect(created[0].do_date).toBe(format(startOfDay(new Date()), "yyyy-MM-dd"));
+    expect(created[0].duration_minutes).toBe(60);
+    const at = new Date(created[0].start_time!);
+    expect(at.getHours()).toBe(10);
+    expect(at.getMinutes()).toBe(0);
+  });
+
+  it("offers Pick date for a day the chips don't name", () => {
+    mount();
+    act(() => screen.getByRole("button", { name: "Pick date…" }).click());
+    const date = screen.getByLabelText("Date") as HTMLInputElement;
+    const next = format(addDays(startOfDay(new Date()), 3), "yyyy-MM-dd");
+    act(() => fireEvent.change(date, { target: { value: next } }));
+    expect(screen.getByRole("button", { name: format(parseDateISO(next), "EEE MMM d") })).toBeTruthy();
   });
 });

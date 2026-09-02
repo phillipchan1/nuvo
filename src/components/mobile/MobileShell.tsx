@@ -26,7 +26,7 @@ import { isTauri } from "../../lib/platform";
 import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
-import type { Task } from "../../lib/types";
+import { DEFAULT_DURATION_MINUTES, type Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
 import { AltitudeIcon, type AltitudeKind } from "../icons";
 import { TrialBanner } from "../billing/TrialBanner";
@@ -256,8 +256,12 @@ export default function MobileShell() {
 
 
   // Capture — ONE sheet for both kinds (D-125). `null` is shut; a kind is the
-  // face it opens on. The Calendar's header ＋ used to be a second door here.
-  const [capture, setCapture] = useState<CaptureKind | null>(null);
+  // face it opens on. `at` is a tap on empty Day-canvas time (D-130) — the
+  // same door, already told when.
+  const [capture, setCapture] = useState<{
+    kind: CaptureKind;
+    at?: { start: Date; durationMinutes: number };
+  } | null>(null);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
   const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
@@ -304,7 +308,7 @@ export default function MobileShell() {
   const applyShortcut = useCallback((act: Shortcut) => {
     if (act === "capture") {
       setChatOpen(false);
-      setCapture("task");
+      setCapture({ kind: "task" });
     } else if (act === "chat") {
       setCapture(null);
       setChatOpen(true);
@@ -664,6 +668,17 @@ export default function MobileShell() {
             now={now}
             onTapEvent={setCalendarTap}
             onTapTask={(id) => setTaskId(id)}
+            onTapEmpty={(start) =>
+              setCapture({
+                kind: "task",
+                at: {
+                  start,
+                  durationMinutes: settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES,
+                },
+              })
+            }
+            draft={capture?.at ?? null}
+            defaultDurationMins={settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES}
             // The span the top bar prints, and the day a capture files to.
             // The Calendar hands its hero up rather than drawing a row of its
             // own for it (D-125).
@@ -813,7 +828,7 @@ export default function MobileShell() {
             </button>
             {/* Capture — the one primary action. */}
             <button
-              onClick={() => setCapture("task")}
+              onClick={() => setCapture({ kind: "task" })}
               aria-label="Capture"
               data-teach="capture"
               className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-on-accent active:scale-95"
@@ -857,17 +872,22 @@ export default function MobileShell() {
           labels={labels}
           onCreate={mutations.create}
           onClose={() => setCapture(null)}
-          initialKind={capture}
+          initialKind={capture.kind}
+          initialStart={capture.at?.start ?? null}
+          initialDurationMinutes={capture.at?.durationMinutes ?? null}
           // The day the screen is about. On the Calendar that is the day you
           // travelled to, not today: you are looking at the 12th because the
           // 12th is what you're thinking about, and filing the thought to
-          // today would be the app ignoring where you stand.
+          // today would be the app ignoring where you stand. A canvas tap
+          // already stamped its own day onto `initialStart`.
           defaultDoDate={
-            tab === "calendar"
-              ? toDateISO(calHero?.date ?? now)
-              : tab === "tasks" && sub === "today"
-                ? today
-                : null
+            capture.at
+              ? toDateISO(capture.at.start)
+              : tab === "calendar"
+                ? toDateISO(calHero?.date ?? now)
+                : tab === "tasks" && sub === "today"
+                  ? today
+                  : null
           }
         />
       )}

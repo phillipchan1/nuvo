@@ -102,6 +102,9 @@ export default function MobileCalendar({
   now,
   onTapEvent,
   onTapTask,
+  onTapEmpty,
+  draft,
+  defaultDurationMins,
   onHero,
   onOpenProject,
   renderCrownTask,
@@ -112,6 +115,9 @@ export default function MobileCalendar({
   onTapEvent?: (tap: CalendarTap) => void;
   /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
   onTapTask?: (taskId: string) => void;
+  onTapEmpty?: (start: Date) => void;
+  draft?: { start: Date; durationMinutes: number } | null;
+  defaultDurationMins?: number;
   /** The span the top bar shows, handed up from the surface (D-125). */
   onHero?: (h: CalHero | null) => void;
   /** The week crown's doors — omit them and the crown stays off (harnesses,
@@ -231,6 +237,9 @@ export default function MobileCalendar({
       onWindowChange={setWin}
       onTapEvent={onTapEvent}
       onTapTask={onTapTask}
+      onTapEmpty={onTapEmpty}
+      draft={draft}
+      defaultDurationMins={defaultDurationMins}
       onHero={onHero}
       onOpenProject={onOpenProject}
       renderCrownTask={renderCrownTask}

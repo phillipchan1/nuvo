@@ -16,17 +16,31 @@
 // horizontal axis becomes pages): swipe left/right walks a day at a time.
 // Vertical scroll position is deliberately KEPT across swipes so the same hours
 // stay under your thumb while you compare days.
+//
+// An empty-space tap claims that time (D-130) — Apple / Google / Akiflow all
+// do this. The snap lives in `canvasTap.ts`. The ＋ is not a second door:
+// the tap opens the one capture sheet, seeded. A wander past AXIS_SLOP_PX
+// is a scroll or a page-swipe, never a create.
 
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { isSameDay } from "date-fns";
 import { fmtMins } from "../../lib/now";
+import { DEFAULT_DURATION_MINUTES } from "../../lib/types";
 import type { CalendarTap } from "./MobileEventSheet";
-import { buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx } from "./dayPlan";
+import { buildDayPlan, dayKey, layoutDay, scrollParent, span, tapFor, type DayCtx } from "./dayPlan";
 import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
 import { blockDesignation } from "../../lib/slots";
+import {
+  DAY_HOUR_PX,
+  dateAtMinutes,
+  isCanvasTap,
+  minutesFromCanvasY,
+  TAP_SNAP_MINS,
+} from "./canvasTap";
 
-const HOUR_PX = 88; // 30 min = 44px — a half-hour block IS a tap target
+const HOUR_PX = DAY_HOUR_PX;
 const MIN_ITEM_PX = 22; // a 15-min item stays readable without lying much
 
 export default function MobileDayView({
@@ -38,6 +52,9 @@ export default function MobileDayView({
   onNext,
   onTapEvent,
   onTapTask,
+  onTapEmpty,
+  draft = null,
+  defaultDurationMins = DEFAULT_DURATION_MINUTES,
   recenter = 0,
 }: {
   selected: Date;
@@ -49,6 +66,11 @@ export default function MobileDayView({
   onNext: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  /** Empty-space tap — claim this time. Opens the one capture door, seeded. */
+  onTapEmpty?: (start: Date) => void;
+  /** The slot capture is currently claiming, drawn as a ghost on this day. */
+  draft?: { start: Date; durationMinutes: number } | null;
+  defaultDurationMins?: number;
   /** Bumped when the user asks to come back to now (the chrome's Today).
    *  Re-parks the now line even though the automatic park already happened. */
   recenter?: number;
@@ -105,6 +127,56 @@ export default function MobileDayView({
   }, [recenter]);
 
   const itemArea = `calc(100% - ${CAL_GUTTER}px)`;
+
+  // Press preview — the slot under the finger, dismissed the moment the
+  // gesture becomes a scroll or a page-swipe. The parent `draft` is the
+  // same ghost once capture is open (the press itself is already over).
+  const pressRef = useRef<{ x: number; y: number; startMin: number; id: number } | null>(null);
+  const [pressMin, setPressMin] = useState<number | null>(null);
+  const draftMin =
+    draft && isSameDay(draft.start, selected)
+      ? draft.start.getHours() * 60 + draft.start.getMinutes()
+      : null;
+  const ghostMin = pressMin ?? draftMin;
+  const ghostDur = draft?.durationMinutes ?? defaultDurationMins;
+
+  const beginPress = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!onTapEmpty || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("[data-cal-item]")) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX - rect.left < CAL_GUTTER) return;
+    const startMin = minutesFromCanvasY(e.clientY, rect.top, winStart, HOUR_PX, TAP_SNAP_MINS, winEnd);
+    pressRef.current = { x: e.clientX, y: e.clientY, startMin, id: e.pointerId };
+    setPressMin(startMin);
+  };
+  const movePress = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = pressRef.current;
+    if (!p || e.pointerId !== p.id) return;
+    if (!isCanvasTap(e.clientX - p.x, e.clientY - p.y)) {
+      pressRef.current = null;
+      setPressMin(null);
+    }
+  };
+  const endPress = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = pressRef.current;
+    pressRef.current = null;
+    if (!p || e.pointerId !== p.id) {
+      setPressMin(null);
+      return;
+    }
+    if (!isCanvasTap(e.clientX - p.x, e.clientY - p.y)) {
+      setPressMin(null);
+      return;
+    }
+    setPressMin(null);
+    onTapEmpty?.(dateAtMinutes(selected, p.startMin));
+  };
+  const cancelPress = () => {
+    pressRef.current = null;
+    setPressMin(null);
+  };
 
   return (
     <div ref={rootRef}>
@@ -168,10 +240,15 @@ export default function MobileDayView({
                 the structure. A bygone day reads as history, quieter. */}
             <div
               ref={canvasRef}
+              data-day-canvas
               className={`relative mb-8 mt-2 ${plan.isBygone ? "opacity-70" : ""}`}
               // The surface's one edge — see `CAL_EDGE`. The column this canvas
               // draws has to begin where the week row's lit cell does.
               style={{ height: y(winEnd) + 14, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
+              onPointerDown={beginPress}
+              onPointerMove={movePress}
+              onPointerUp={endPress}
+              onPointerCancel={cancelPress}
             >
               {hours.map((h) => (
                 <div key={h} className="absolute inset-x-0" style={{ top: y(h * 60) }}>
@@ -226,6 +303,7 @@ export default function MobileDayView({
                 return (
                   <button
                     key={i}
+                    data-cal-item
                     onClick={() => onTapEvent?.(tap)}
                     className="fast absolute rounded-md border text-left after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[''] active:opacity-80"
                     style={{
@@ -348,6 +426,33 @@ export default function MobileDayView({
                   </button>
                 );
               })}
+
+              {/* Claimed gap — the press preview, then the seed while capture
+                  is open. No title: they haven't named it yet. The span is
+                  the one fact a finger already chose (D-122: a surface that
+                  draws a time does not also write a second spelling). */}
+              {ghostMin != null && (
+                <div
+                  data-day-draft
+                  aria-hidden
+                  className="pointer-events-none absolute rounded-md border border-dashed"
+                  style={{
+                    top: y(ghostMin),
+                    height: Math.max((ghostDur * HOUR_PX) / 60, MIN_ITEM_PX),
+                    left: CAL_GUTTER + 2,
+                    right: 0,
+                    background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                    borderColor: "color-mix(in srgb, var(--accent) 45%, var(--line))",
+                  }}
+                >
+                  <span className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full bg-accent" />
+                  {ghostDur * HOUR_PX >= 34 * 60 && (
+                    <span className="mono block truncate pl-2.5 pr-1.5 pt-1 text-micro font-medium text-accent">
+                      {span(dateAtMinutes(selected, ghostMin), dateAtMinutes(selected, ghostMin + ghostDur))}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Now — the one thing --signal is for. */}
               {plan.isToday && nowMin >= winStart && nowMin <= winEnd && (

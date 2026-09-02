@@ -4795,3 +4795,66 @@ numeral). Verify fill + density at `?year` (desktop panes are 720px tall on
 purpose).
 
 *Status: standing — layout + chrome + hierarchy of the Year wall.*
+
+---
+
+**D-130 · 2026-09-02 · A tap on empty Day-canvas time opens capture, already told when.**
+
+On the phone Day lens, tapping a gap did nothing. Apple Calendar, Google
+Calendar and Akiflow all treat that tap as *claim this time*: snap to the
+15-minute slot the finger is in, default length, create. The desktop Schedule
+already does this (`dateClick` → `DraftComposer`). The phone had only the
+floating ＋, which knows a thought exists and not when.
+
+Closes the last inch of **D6** on the Day canvas — *I just thought of
+something, where does it go* — for the case where the thought is already a
+time. The inverse of **D3** (*I have 40 minutes, what fits*): the gap is
+visible; the tap is how you take it.
+
+**Not a second ＋.** D-125 retired the Calendar-header event ＋ so capture
+stayed one door. The tap opens that same `MobileCapture` sheet, seeded with
+the snapped start and the account's default duration. Task remains the face
+(P1 — a scheduled task is already a time block; Event is "who else needs to
+see it"). The sentence can still override the clock. Anytime drops it.
+
+Strains **P2** the same way desktop click-to-create does: a timed capture
+lands on a day without passing the week gate. That is the documented
+same-day reactive exception, and it is visible (the block appears on the
+canvas). Strains **P5** only if we had opened a form; we didn't.
+
+A wander past `AXIS_SLOP_PX` is a scroll or a page-swipe, never a create.
+Long-press-then-drag to size (Apple) is the increment if a default length
+feels short — duration chips are on the sheet. The Week lens is not this
+decision; its columns are a scan, and a 47px miss is a different problem.
+
+Adds no pool, no name, no data. Works on an empty day by construction (the
+working window still draws). Guarded by `tests/canvas-tap.test.ts`,
+`tests/mobile-day-tap.test.tsx`, and the seeded cases in
+`tests/mobile-capture.test.tsx`. Verify at `?horizon` (day frame) and in the
+running app.
+
+*Status: standing — phone Day canvas tap-to-capture.*
+
+---
+
+**D-131 · 2026-09-02 · Task capture When includes a clock, not only day chips.**
+
+D-130 opened capture from a Day-canvas tap, already told when — but the Task
+face of that same sheet still had no way to *set* a time. Day chips covered
+Inbox / Today / Tomorrow; a clock only appeared when the canvas had seeded
+one, or when you knew to type `2pm 45m`. Opening the ＋ from anywhere else
+could not time-block without the grammar. That is the form half of capture
+(P5): free text is the front door; the fallback still has to exist.
+
+→ The Task When row now has **Pick date…** (native date), **Add time**
+(native start–end, same inputs the Event face and the task sheet use),
+duration chips, and Anytime. A canvas seed lands in those same controls,
+editable. The sentence still wins when it names a clock. The primary button
+says **Add block** when timed, **Add task** when not — Block is already the
+glossary name for a scheduled task.
+
+Strains nothing new. Closes the gap D-130 left between "tap a gap" and
+"＋ from the Tasks tab". Guarded by the Add time / Pick date cases in
+`tests/mobile-capture.test.tsx`. Verify at `?capture`.
+
+*Status: standing — Task capture time-blocking controls.*
