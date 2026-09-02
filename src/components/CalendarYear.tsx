@@ -7,12 +7,13 @@
 // `read_calendar_load` already owns. The Year is how you stand back and pick a
 // place to lean into — not a heatmap.
 //
-// The year numeral itself lives in the Schedule toolbar (same seat Month's
-// title holds). Saying it again as an in-pane masthead was the date being
-// spoken twice (D-123 / D-129).
+// The year numeral lives in two seats on purpose (D-132): the Schedule
+// toolbar is the chrome identification (same seat Month's title holds),
+// and this pane writes it on the map because twelve months of 2026 and
+// twelve months of 2027 are not self-identifying when you page.
 
 import { useMemo } from "react";
-import { YearMonth } from "./calendar/YearParts";
+import { YearMark, YearMonth } from "./calendar/YearParts";
 
 export default function CalendarYear({
   year,
@@ -65,7 +66,8 @@ export default function CalendarYear({
             mins respect the dense six-week grid (`max-content`) so a short
             pane scrolls before it crushes numerals; extra height still
             distributes evenly across rows. */}
-        <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-x-5 gap-y-4 [grid-template-rows:repeat(12,minmax(max-content,1fr))] @[300px]:grid-cols-2 @[300px]:[grid-template-rows:repeat(6,minmax(max-content,1fr))] @[660px]:grid-cols-3 @[660px]:gap-x-6 @[660px]:gap-y-5 @[660px]:[grid-template-rows:repeat(4,minmax(max-content,1fr))] @[980px]:grid-cols-4 @[980px]:gap-x-8 @[980px]:gap-y-6 @[980px]:[grid-template-rows:repeat(3,minmax(max-content,1fr))]">
+        <YearMark year={year} />
+        <div className="mt-3 grid h-full min-h-0 flex-1 grid-cols-1 gap-x-5 gap-y-4 [grid-template-rows:repeat(12,minmax(max-content,1fr))] @[300px]:grid-cols-2 @[300px]:[grid-template-rows:repeat(6,minmax(max-content,1fr))] @[660px]:grid-cols-3 @[660px]:gap-x-6 @[660px]:gap-y-5 @[660px]:[grid-template-rows:repeat(4,minmax(max-content,1fr))] @[980px]:grid-cols-4 @[980px]:gap-x-8 @[980px]:gap-y-6 @[980px]:[grid-template-rows:repeat(3,minmax(max-content,1fr))]">
           {months.map((m, i) => (
             <YearMonth
               key={i}

@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 /**
  * The Year's marks: day numerals are the map (D-127); density is gone (D-128);
- * the desktop Year fills its pane (D-129).
+ * the desktop Year fills its pane (D-129); the year numeral sits on the
+ * map (D-132).
  *
  * These assertions hold the coordinate layer — every day gets a number, on
  * both shells, with no load legend, and months stretch the weeks they have
@@ -76,9 +77,9 @@ describe("both shells wear the same index — and no density", () => {
       />,
     );
     expect(c.getAllByText("15").length).toBe(12);
-    // The year numeral lives in the Schedule toolbar now (D-129) — the pane
-    // itself must not restate it.
-    expect(c.queryByText("2026")).toBeNull();
+    // The year is written on the map (D-132) — once, not on every month —
+    // because year grids are not self-identifying when you page.
+    expect(c.getAllByLabelText("Year 2026")).toHaveLength(1);
     expect(c.queryByText("nothing on")).toBeNull();
     expect(c.queryByText("busy")).toBeNull();
     expect(c.queryByText("overcommitted")).toBeNull();
@@ -96,6 +97,7 @@ describe("both shells wear the same index — and no density", () => {
       />,
     );
     expect(c.getAllByText("15").length).toBe(12);
+    expect(c.getAllByLabelText("Year 2026")).toHaveLength(1);
     expect(c.queryByText("nothing on")).toBeNull();
     expect(c.queryByText("busy")).toBeNull();
   });

@@ -13,7 +13,7 @@
 
 import { useMemo } from "react";
 import { format, startOfMonth } from "date-fns";
-import { YearMonth } from "../calendar/YearParts";
+import { YearMark, YearMonth } from "../calendar/YearParts";
 import TimePager from "./TimePager";
 
 export default function MobileYearView({
@@ -39,30 +39,35 @@ export default function MobileYearView({
 
   return (
     <div>
-      {/* The year's own numeral is the chrome's hero now, and the back door is
-          the horizon ladder — this body draws neither. No legend: density is
-          gone (D-128). */}
+      {/* The year numeral rides THIS page (D-132) so a swipe carries the
+          span with the months — January 2026 and January 2027 are not
+          self-identifying. The chrome hero still names it too (the top bar
+          is the title); the back door is the horizon ladder. No legend:
+          density is gone (D-128). */}
       <TimePager pageKey={String(year)} onPrev={onPrev} onNext={onNext}>
         {/* `@container`, not a viewport breakpoint: the ?year harness mounts
             this at 375px inside a wide window, and a viewport-keyed
             `min-[560px]:grid-cols-3` answered for the browser while the phone
             frame was still two thumbs wide. */}
         <div className="@container">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 pt-2 @[560px]:grid-cols-3">
-            {months.map((m, i) => (
-              <button
-                key={i}
-                onClick={() => onPickMonth(startOfMonth(m))}
-                aria-label={format(m, "MMMM yyyy")}
-                className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
-              >
-                <YearMonth
-                  month={m}
-                  now={now}
-                  weekStartsOn={weekStartsOn}
-                />
-              </button>
-            ))}
+          <div className="px-3 pb-6 pt-2">
+            <YearMark year={year} />
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-4 @[560px]:grid-cols-3">
+              {months.map((m, i) => (
+                <button
+                  key={i}
+                  onClick={() => onPickMonth(startOfMonth(m))}
+                  aria-label={format(m, "MMMM yyyy")}
+                  className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
+                >
+                  <YearMonth
+                    month={m}
+                    now={now}
+                    weekStartsOn={weekStartsOn}
+                  />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </TimePager>
