@@ -127,6 +127,21 @@ describe("the date is stated once", () => {
     }
   });
 
+  it("names the year on the Year lens, and updates it when you travel", () => {
+    // Year grids are not self-identifying — January 2026 looks like January
+    // 2027 — so the numeral has to be written on the map AND handed up as
+    // the hero. Both must move together when you page (D-132).
+    const c = surface("year");
+    const y = NOW.getFullYear();
+    expect(seen.hero?.hero).toBe(String(y));
+    expect(c.getByLabelText(`Year ${y}`)).toBeTruthy();
+
+    act(() => c.getByLabelText("Next year").click());
+    expect(seen.hero?.hero).toBe(String(y + 1));
+    expect(c.getByLabelText(`Year ${y + 1}`)).toBeTruthy();
+    expect(c.queryByLabelText(`Year ${y}`)).toBeNull();
+  });
+
   it("says This week only where the crown is not already saying it", () => {
     surface("week");
     expect(seen.hero?.hero).toBe("This week");

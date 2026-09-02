@@ -62,9 +62,11 @@ export default function YearHarness() {
         </button>
       </div>
       <p className="mb-3 max-w-[70ch] text-caption text-muted">
-        Same year, three panes. Month name → ink numerals → today as a signal
-        disc → weekday whisper. Number grids stay dense (six square weeks);
-        leftover height sits under the grid, not between the dates.
+        Same year, three panes. The year numeral sits on the map (swipe the
+        phone pane — it travels with the months). Then month name → ink
+        numerals → today as a signal disc → weekday whisper. Number grids stay
+        dense (six square weeks); leftover height sits under the grid, not
+        between the dates.
       </p>
       <div className="flex gap-4 overflow-x-auto pb-6">
         <Frame label="desktop · 1100×720" width={1100}>
