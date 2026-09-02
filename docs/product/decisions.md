@@ -4834,3 +4834,27 @@ working window still draws). Guarded by `tests/canvas-tap.test.ts`,
 running app.
 
 *Status: standing — phone Day canvas tap-to-capture.*
+
+---
+
+**D-131 · 2026-09-02 · Task capture When includes a clock, not only day chips.**
+
+D-130 opened capture from a Day-canvas tap, already told when — but the Task
+face of that same sheet still had no way to *set* a time. Day chips covered
+Inbox / Today / Tomorrow; a clock only appeared when the canvas had seeded
+one, or when you knew to type `2pm 45m`. Opening the ＋ from anywhere else
+could not time-block without the grammar. That is the form half of capture
+(P5): free text is the front door; the fallback still has to exist.
+
+→ The Task When row now has **Pick date…** (native date), **Add time**
+(native start–end, same inputs the Event face and the task sheet use),
+duration chips, and Anytime. A canvas seed lands in those same controls,
+editable. The sentence still wins when it names a clock. The primary button
+says **Add block** when timed, **Add task** when not — Block is already the
+glossary name for a scheduled task.
+
+Strains nothing new. Closes the gap D-130 left between "tap a gap" and
+"＋ from the Tasks tab". Guarded by the Add time / Pick date cases in
+`tests/mobile-capture.test.tsx`. Verify at `?capture`.
+
+*Status: standing — Task capture time-blocking controls.*

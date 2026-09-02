@@ -27,7 +27,9 @@
 // sentence.
 //
 // A tap on empty Day-canvas time (D-130) is this same door, already told
-// when. `initialStart` is that seed — not a second composer.
+// when. `initialStart` is that seed — not a second composer. The Task face
+// also carries a clock of its own (D-131): Pick date / Add time / duration,
+// so time-blocking does not depend on knowing the parse grammar.
 
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
@@ -36,6 +38,7 @@ import { fmtDuration, parseDateISO, toDateISO, todayISO, tomorrowISO, nextWeekIS
 import { DEFAULT_DURATION_MINUTES, type Label } from "../../lib/types";
 import type { NewTaskInput } from "../../hooks/useTasks";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
+import { useSettings } from "../../hooks/useSettings";
 import Sheet from "./Sheet";
 import EventComposer, { eventSeed, useWritableAccounts } from "./EventComposer";
 import { dateAtMinutes } from "./canvasTap";
@@ -43,10 +46,20 @@ import { span } from "./dayPlan";
 
 export type CaptureKind = "task" | "event";
 
-/** Lengths offered when a tap already chose the start. The full sitting
- *  preset list is a grooming act; a capture from a gap only needs the
- *  lengths a finger commonly means. */
-const TAP_DURATIONS = [15, 30, 45, 60, 90, 120] as const;
+/** Lengths for a capture time-block. The full sitting preset list is a
+ *  grooming act; capture only needs the lengths a finger commonly means. */
+const CAPTURE_DURATIONS = [15, 30, 45, 60, 90, 120] as const;
+
+function hhmmOf(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Next 15-minute tick from now — the usual "block something in" default. */
+function nextSlotMinutes(now = new Date()): number {
+  const raw = now.getHours() * 60 + now.getMinutes() + 1;
+  const snapped = Math.ceil(raw / 15) * 15;
+  return Math.min(snapped, 23 * 60 + 45);
+}
 
 export default function MobileCapture({
   labels,
@@ -83,6 +96,7 @@ export default function MobileCapture({
   const [mins, setMins] = useState<number | null>(
     initialStart ? (initialDurationMinutes ?? DEFAULT_DURATION_MINUTES) : null,
   );
+  const [pickDateOpen, setPickDateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +105,8 @@ export default function MobileCapture({
   // and the native WKWebView flag (D-115) is what lets the keys come up.
   useRaiseKeyboard(inputRef);
 
+  const { settings } = useSettings();
+  const defaultMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const writable = useWritableAccounts();
   const canEvent = writable.length > 0;
 
@@ -123,7 +139,7 @@ export default function MobileCapture({
         notes: p.notes ?? undefined,
         do_date: doDate,
         start_time: startAt?.toISOString() ?? null,
-        duration_minutes: p.durationMinutes ?? (startAt ? (mins ?? DEFAULT_DURATION_MINUTES) : undefined),
+        duration_minutes: p.durationMinutes ?? (startAt ? (mins ?? defaultMins) : undefined),
         priority: p.priority,
         labelIds,
       });
@@ -136,19 +152,23 @@ export default function MobileCapture({
 
   // A date parsed from the text overrides the chips — reflect that in the UI.
   const dayLocked = Boolean(parsed?.doDate);
+  const timeLocked = Boolean(parsed?.startTime);
+  const effectiveDay = parsed?.doDate ?? day;
   const dayChips: { label: string; value: string | null }[] = [
     { label: "Inbox", value: null },
     { label: "Today", value: todayISO() },
     { label: "Tomorrow", value: tomorrowISO() },
     { label: "Next week", value: nextWeekISO() },
   ];
-  // Captured from a day you had travelled to — the chips must be able to say
-  // that day, or the surface you're standing on silently isn't an option.
-  if (defaultDoDate && !dayChips.some((c) => c.value === defaultDoDate)) {
-    dayChips.splice(1, 0, {
-      label: format(parseDateISO(defaultDoDate), "EEE MMM d"),
-      value: defaultDoDate,
-    });
+  // A day the chips don't already name — the Calendar day you stood on, or
+  // one you picked — has to be selectable, or the surface lies.
+  for (const iso of [defaultDoDate, day]) {
+    if (iso && !dayChips.some((c) => c.value === iso)) {
+      dayChips.splice(1, 0, {
+        label: format(parseDateISO(iso), "EEE MMM d"),
+        value: iso,
+      });
+    }
   }
 
   // ── the event branch ──────────────────────────────────────────────────────
@@ -158,14 +178,17 @@ export default function MobileCapture({
   // real change from a re-render.
   const seedDayISO = parsed?.doDate ?? day ?? defaultDoDate ?? todayISO();
   const seedStartMs = parsed?.startTime?.getTime() ?? start?.getTime() ?? null;
-  const seedMins = parsed?.durationMinutes ?? (start ? (mins ?? DEFAULT_DURATION_MINUTES) : null);
+  const seedMins = parsed?.durationMinutes ?? (start ? (mins ?? defaultMins) : null);
 
   const claimedStart = parsed?.startTime ?? start;
-  const claimedMins = parsed?.durationMinutes ?? mins ?? DEFAULT_DURATION_MINUTES;
-  const timeLocked = Boolean(parsed?.startTime);
+  const claimedMins = parsed?.durationMinutes ?? mins ?? defaultMins;
+  const claimedEnd = claimedStart
+    ? new Date(claimedStart.getTime() + claimedMins * 60_000)
+    : null;
 
   const pickDay = (value: string | null) => {
     setDay(value);
+    setPickDateOpen(false);
     if (value == null) {
       setStart(null);
       return;
@@ -174,6 +197,34 @@ export default function MobileCapture({
       const clock = start.getHours() * 60 + start.getMinutes();
       setStart(dateAtMinutes(parseDateISO(value), clock));
     }
+  };
+
+  /** Stamp a clock onto the day (Today if still Inbox) — the form half of
+   *  time-blocking when the sentence didn't say when (P5 fallback). */
+  const addTime = () => {
+    const iso = effectiveDay ?? todayISO();
+    if (!day && !parsed?.doDate) setDay(iso);
+    const minutes = iso === todayISO() ? nextSlotMinutes() : 9 * 60;
+    setStart(dateAtMinutes(parseDateISO(iso), minutes));
+    setMins((m) => m ?? defaultMins);
+  };
+
+  const setStartClock = (hhmm: string) => {
+    const iso = effectiveDay ?? todayISO();
+    if (!day && !parsed?.doDate) setDay(iso);
+    const [h, m] = hhmm.split(":").map(Number);
+    setStart(dateAtMinutes(parseDateISO(iso), h * 60 + m));
+    setMins((cur) => cur ?? defaultMins);
+  };
+
+  const setEndClock = (hhmm: string) => {
+    if (!claimedStart) return;
+    const [h, m] = hhmm.split(":").map(Number);
+    const end = dateAtMinutes(claimedStart, h * 60 + m);
+    // Same clock day — if they picked an end before the start, keep a 15m block.
+    let delta = Math.round((end.getTime() - claimedStart.getTime()) / 60_000);
+    if (delta < 15) delta = 15;
+    setMins(delta);
   };
   const seed = useMemo(
     () =>
@@ -269,7 +320,7 @@ export default function MobileCapture({
           <>
             <div className="mt-3.5">
               <div className="section-label mb-1.5 !p-0">
-                {dayLocked ? "From your text" : "When"}
+                {dayLocked || timeLocked ? "From your text" : "When"}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {dayLocked ? (
@@ -277,68 +328,120 @@ export default function MobileCapture({
                     {parsed?.doDate}
                   </span>
                 ) : (
-                  dayChips.map((c) => {
-                    const on = day === c.value;
-                    return (
-                      <button
-                        key={c.label}
-                        onClick={() => pickDay(c.value)}
-                        className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
-                          on
-                            ? "border-accent bg-accent text-on-accent"
-                            : "border-line text-muted hover:border-accent hover:text-accent"
-                        }`}
-                      >
-                        {c.label}
-                      </button>
-                    );
-                  })
+                  <>
+                    {dayChips.map((c) => {
+                      const on = day === c.value;
+                      return (
+                        <button
+                          key={c.label}
+                          type="button"
+                          onClick={() => pickDay(c.value)}
+                          className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
+                            on
+                              ? "border-accent bg-accent text-on-accent"
+                              : "border-line text-muted hover:border-accent hover:text-accent"
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setPickDateOpen((v) => !v)}
+                      aria-expanded={pickDateOpen}
+                      className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
+                        pickDateOpen
+                          ? "border-accent bg-accent-soft text-accent"
+                          : "border-line text-muted hover:border-accent hover:text-accent"
+                      }`}
+                    >
+                      Pick date…
+                    </button>
+                  </>
                 )}
               </div>
-              {/* A tap on the day canvas already chose the clock. Say it in
-                  the same spelling the canvas uses (`span`), and let a
-                  duration chip resize the claim. The sentence still wins. */}
-              {claimedStart && day && (
+              {pickDateOpen && !dayLocked && (
+                <input
+                  type="date"
+                  value={day ?? todayISO()}
+                  aria-label="Date"
+                  onChange={(e) => {
+                    if (e.target.value) pickDay(e.target.value);
+                  }}
+                  className="mono tap-h mt-2 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
+                />
+              )}
+
+              {/* Time-block controls. Free text can still say "2pm 45m"; this is
+                  the form fallback so a tap or the ＋ can land a block without
+                  knowing the grammar (P5). Same native date/time inputs the
+                  Event face and the task sheet use — one clock vocabulary. */}
+              {timeLocked && claimedStart && claimedEnd ? (
                 <div className="mt-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="mono rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent"
-                      aria-label={`Scheduled ${span(claimedStart, new Date(claimedStart.getTime() + claimedMins * 60_000))}`}
-                    >
-                      {span(claimedStart, new Date(claimedStart.getTime() + claimedMins * 60_000))}
-                    </span>
-                    {!timeLocked && (
-                      <button
-                        type="button"
-                        onClick={() => setStart(null)}
-                        className="tap fast rounded-full border border-line px-3 py-1.5 text-body text-muted"
-                      >
-                        Anytime
-                      </button>
-                    )}
-                  </div>
-                  {!timeLocked && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {TAP_DURATIONS.map((m) => {
-                        const on = mins === m;
-                        return (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setMins(m)}
-                            className={`tap fast rounded-full border px-3 py-1.5 text-body font-medium ${
-                              on
-                                ? "border-accent bg-accent text-on-accent"
-                                : "border-line text-muted"
-                            }`}
-                          >
-                            {fmtDuration(m)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <span
+                    className="mono inline-flex rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent"
+                    aria-label={`Scheduled ${span(claimedStart, claimedEnd)}`}
+                  >
+                    {span(claimedStart, claimedEnd)}
+                  </span>
                 </div>
+              ) : claimedStart && claimedEnd ? (
+                <div className="mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="time"
+                      step={900}
+                      value={hhmmOf(claimedStart)}
+                      onChange={(e) => setStartClock(e.target.value)}
+                      aria-label="Start time"
+                      className="mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
+                    />
+                    <span className="shrink-0 text-muted">–</span>
+                    <input
+                      type="time"
+                      step={900}
+                      value={hhmmOf(claimedEnd)}
+                      onChange={(e) => setEndClock(e.target.value)}
+                      aria-label="End time"
+                      className="mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setStart(null)}
+                      className="tap fast shrink-0 rounded-full border border-line px-3 py-2 text-body text-muted"
+                    >
+                      Anytime
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {CAPTURE_DURATIONS.map((m) => {
+                      const on = claimedMins === m;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setMins(m)}
+                          className={`tap fast rounded-full border px-3 py-1.5 text-body font-medium ${
+                            on
+                              ? "border-accent bg-accent text-on-accent"
+                              : "border-line text-muted"
+                          }`}
+                        >
+                          {fmtDuration(m)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={addTime}
+                  className="tap fast mt-2 rounded-full border border-line px-3.5 py-2 text-body font-medium text-muted hover:border-accent hover:text-accent"
+                >
+                  Add time
+                </button>
               )}
             </div>
 
@@ -353,7 +456,7 @@ export default function MobileCapture({
               disabled={!text.trim() || saving}
               className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent shadow-sm active:translate-y-px disabled:border disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
             >
-              {saving ? "Saving…" : "Add task"}
+              {saving ? "Saving…" : claimedStart ? "Add block" : "Add task"}
             </button>
 
             <p className="mono mt-2.5 text-center text-label text-muted">
