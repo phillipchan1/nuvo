@@ -20,7 +20,7 @@ import { useState } from "react";
 import { startOfDay } from "date-fns";
 import CalendarSurface from "./CalendarSurface";
 import type { CalHero, CalHorizon } from "./CalendarChrome";
-import type { DayCtx } from "./dayPlan";
+import { at, type DayCtx } from "./dayPlan";
 import { deriveSlotTitle } from "../../lib/slots";
 import type { VerticalData } from "../../lib/vertical";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
@@ -199,6 +199,7 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
   // phone doesn't actually wear, and the one composition question here ("does
   // anything move when the horizon does?") includes the title.
   const [hero, setHero] = useState<CalHero | null>(null);
+  const [claimed, setClaimed] = useState<Date | null>(null);
   return (
     <div style={{ width: 375 }} className="shrink-0">
       <div className="section-label px-3 py-2">{label}</div>
@@ -234,6 +235,11 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
             <span key={i} className="h-9 w-9 shrink-0 rounded-full border border-line" />
           ))}
         </div>
+        {mode === "day" && claimed && (
+          <div className="px-3 py-1 text-label text-accent" data-harness-claim>
+            Capture at {at(claimed)}
+          </div>
+        )}
         <CalendarSurface
           now={NOW}
           ctx={CTX}
@@ -242,6 +248,8 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
           weatherIndex={null}
           initialMode={mode}
           onHero={setHero}
+          onTapEmpty={mode === "day" ? setClaimed : undefined}
+          draft={claimed ? { start: claimed, durationMinutes: 30 } : null}
         />
       </div>
     </div>
@@ -267,7 +275,8 @@ export default function CalendarHarness() {
         Every frame is live — tap the ladder inside one and watch what moves. The hero, the ladder,
         travel and the seven columns should hold still; only the body should scale, through the
         column of the day you're standing on. Swipe (or drag) a body sideways to travel at that
-        horizon.
+        horizon. On the day frame, tap a gap to claim that time (D-130) — a line above the canvas
+        should read the snapped clock, and a ghost should sit in the slot.
       </p>
       <div className="flex gap-4 overflow-x-auto">
         <Frame label="month" mode="month" />

@@ -19,7 +19,10 @@ const WRITABLE = [
   { id: "a1", provider: "google", email: "you@example.com", sync_direction: "two_way" },
 ];
 
-function mount(accounts: unknown[] = WRITABLE) {
+function mount(
+  accounts: unknown[] = WRITABLE,
+  seed?: { start: Date; durationMinutes?: number },
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(["calendar_accounts"], accounts);
   const created: NewTaskInput[] = [];
@@ -32,6 +35,8 @@ function mount(accounts: unknown[] = WRITABLE) {
           created.push(input);
         }}
         onClose={onClose}
+        initialStart={seed?.start ?? null}
+        initialDurationMinutes={seed?.durationMinutes ?? null}
       />
     </QueryClientProvider>,
   );
@@ -94,5 +99,48 @@ describe("one input, two kinds", () => {
     const event = screen.getByRole("button", { name: "Event" }) as HTMLButtonElement;
     expect(event.disabled).toBe(true);
     expect(screen.getByText(/Connect a calendar in Settings/)).toBeTruthy();
+  });
+
+  it("keeps a canvas tap's time when the sentence is silent", async () => {
+    const start = startOfDay(new Date());
+    start.setHours(14, 30, 0, 0);
+    const { created, type } = mount(WRITABLE, { start, durationMinutes: 30 });
+
+    expect(screen.getByLabelText(/Scheduled/)).toBeTruthy();
+    type("review PR");
+    await act(async () => {
+      screen.getByRole("button", { name: "Add task" }).click();
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].title).toBe("review PR");
+    expect(created[0].start_time).toBe(start.toISOString());
+    expect(created[0].duration_minutes).toBe(30);
+    expect(created[0].do_date).toBe(format(start, "yyyy-MM-dd"));
+  });
+
+  it("lets Anytime drop the clock so the thought can stay undated on the day", async () => {
+    const start = startOfDay(new Date());
+    start.setHours(9, 0, 0, 0);
+    const { created, type } = mount(WRITABLE, { start, durationMinutes: 30 });
+
+    act(() => screen.getByRole("button", { name: "Anytime" }).click());
+    type("buy milk");
+    await act(async () => {
+      screen.getByRole("button", { name: "Add task" }).click();
+    });
+
+    expect(created[0].start_time).toBeNull();
+    expect(created[0].do_date).toBe(format(start, "yyyy-MM-dd"));
+  });
+
+  it("seeds the event face from the same tap", () => {
+    const start = startOfDay(new Date());
+    start.setHours(12, 0, 0, 0);
+    mount(WRITABLE, { start, durationMinutes: 60 });
+    act(() => screen.getByRole("button", { name: "Event" }).click());
+
+    expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe("12:00");
+    expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe("13:00");
   });
 });

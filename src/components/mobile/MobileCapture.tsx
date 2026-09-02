@@ -25,18 +25,28 @@
 // Everything above the switch is shared, deliberately: the words you type, the
 // chips that show what was understood. Switching kind never costs you the
 // sentence.
+//
+// A tap on empty Day-canvas time (D-130) is this same door, already told
+// when. `initialStart` is that seed — not a second composer.
 
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { captureTitle, parseCapture } from "../../lib/nlp";
-import { parseDateISO, todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
-import type { Label } from "../../lib/types";
+import { fmtDuration, parseDateISO, toDateISO, todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
+import { DEFAULT_DURATION_MINUTES, type Label } from "../../lib/types";
 import type { NewTaskInput } from "../../hooks/useTasks";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
 import EventComposer, { eventSeed, useWritableAccounts } from "./EventComposer";
+import { dateAtMinutes } from "./canvasTap";
+import { span } from "./dayPlan";
 
 export type CaptureKind = "task" | "event";
+
+/** Lengths offered when a tap already chose the start. The full sitting
+ *  preset list is a grooming act; a capture from a gap only needs the
+ *  lengths a finger commonly means. */
+const TAP_DURATIONS = [15, 30, 45, 60, 90, 120] as const;
 
 export default function MobileCapture({
   labels,
@@ -44,6 +54,8 @@ export default function MobileCapture({
   onClose,
   defaultDoDate = null,
   initialKind = "task",
+  initialStart = null,
+  initialDurationMinutes = null,
 }: {
   labels: Label[];
   onCreate: (input: NewTaskInput) => Promise<unknown>;
@@ -54,13 +66,23 @@ export default function MobileCapture({
   /** Which face to open on. Every door today opens on `task`, deliberately: a
    *  scheduled task is already a time block (P1), so Task is the answer far more
    *  often, and picking the kind FOR you by which screen you were on would be
-   *  the classify-before-you-type problem wearing a guess. The seam exists for a
-   *  door that genuinely knows — a tap on empty space in a day canvas, say. */
+   *  the classify-before-you-type problem wearing a guess. A tap on empty
+   *  space knows WHEN, not whether anyone else needs to see it — still Task. */
   initialKind?: CaptureKind;
+  /** A tap on the day canvas already chose the clock. The sentence can still
+   *  override it; this is the seed when the text is silent. */
+  initialStart?: Date | null;
+  initialDurationMinutes?: number | null;
 }) {
   const [text, setText] = useState("");
   const [kind, setKind] = useState<CaptureKind>(initialKind);
-  const [day, setDay] = useState<string | null>(defaultDoDate);
+  const [day, setDay] = useState<string | null>(
+    initialStart ? toDateISO(initialStart) : defaultDoDate,
+  );
+  const [start, setStart] = useState<Date | null>(initialStart);
+  const [mins, setMins] = useState<number | null>(
+    initialStart ? (initialDurationMinutes ?? DEFAULT_DURATION_MINUTES) : null,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -92,14 +114,16 @@ export default function MobileCapture({
       const labelIds = p.labels
         .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
         .filter((id): id is string => Boolean(id));
-      // An explicit date in the text wins; otherwise use the picked day chip.
+      // An explicit date/time in the text wins; otherwise the day chip and
+      // the canvas tap (when there was one).
       const doDate = p.doDate ?? day ?? undefined;
+      const startAt = p.startTime ?? start;
       await onCreate({
         title: captureTitle(p, body),
         notes: p.notes ?? undefined,
         do_date: doDate,
-        start_time: p.startTime?.toISOString() ?? null,
-        duration_minutes: p.durationMinutes,
+        start_time: startAt?.toISOString() ?? null,
+        duration_minutes: p.durationMinutes ?? (startAt ? (mins ?? DEFAULT_DURATION_MINUTES) : undefined),
         priority: p.priority,
         labelIds,
       });
@@ -133,8 +157,24 @@ export default function MobileCapture({
   // pick. The seed is memoised on its own values so `EventComposer` can tell a
   // real change from a re-render.
   const seedDayISO = parsed?.doDate ?? day ?? defaultDoDate ?? todayISO();
-  const seedStartMs = parsed?.startTime?.getTime() ?? null;
-  const seedMins = parsed?.durationMinutes ?? null;
+  const seedStartMs = parsed?.startTime?.getTime() ?? start?.getTime() ?? null;
+  const seedMins = parsed?.durationMinutes ?? (start ? (mins ?? DEFAULT_DURATION_MINUTES) : null);
+
+  const claimedStart = parsed?.startTime ?? start;
+  const claimedMins = parsed?.durationMinutes ?? mins ?? DEFAULT_DURATION_MINUTES;
+  const timeLocked = Boolean(parsed?.startTime);
+
+  const pickDay = (value: string | null) => {
+    setDay(value);
+    if (value == null) {
+      setStart(null);
+      return;
+    }
+    if (start) {
+      const clock = start.getHours() * 60 + start.getMinutes();
+      setStart(dateAtMinutes(parseDateISO(value), clock));
+    }
+  };
   const seed = useMemo(
     () =>
       eventSeed(
@@ -242,7 +282,7 @@ export default function MobileCapture({
                     return (
                       <button
                         key={c.label}
-                        onClick={() => setDay(c.value)}
+                        onClick={() => pickDay(c.value)}
                         className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
                           on
                             ? "border-accent bg-accent text-on-accent"
@@ -255,6 +295,51 @@ export default function MobileCapture({
                   })
                 )}
               </div>
+              {/* A tap on the day canvas already chose the clock. Say it in
+                  the same spelling the canvas uses (`span`), and let a
+                  duration chip resize the claim. The sentence still wins. */}
+              {claimedStart && day && (
+                <div className="mt-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className="mono rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent"
+                      aria-label={`Scheduled ${span(claimedStart, new Date(claimedStart.getTime() + claimedMins * 60_000))}`}
+                    >
+                      {span(claimedStart, new Date(claimedStart.getTime() + claimedMins * 60_000))}
+                    </span>
+                    {!timeLocked && (
+                      <button
+                        type="button"
+                        onClick={() => setStart(null)}
+                        className="tap fast rounded-full border border-line px-3 py-1.5 text-body text-muted"
+                      >
+                        Anytime
+                      </button>
+                    )}
+                  </div>
+                  {!timeLocked && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {TAP_DURATIONS.map((m) => {
+                        const on = mins === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setMins(m)}
+                            className={`tap fast rounded-full border px-3 py-1.5 text-body font-medium ${
+                              on
+                                ? "border-accent bg-accent text-on-accent"
+                                : "border-line text-muted"
+                            }`}
+                          >
+                            {fmtDuration(m)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {error && (

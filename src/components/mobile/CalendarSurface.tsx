@@ -135,6 +135,9 @@ export default function CalendarSurface({
   onWindowChange,
   onTapEvent,
   onTapTask,
+  onTapEmpty,
+  draft,
+  defaultDurationMins,
   onHero,
   onOpenProject,
   renderCrownTask,
@@ -151,6 +154,10 @@ export default function CalendarSurface({
   onWindowChange?: (w: CalWindow) => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  /** Empty-space tap on the Day canvas — claim that time (D-130). */
+  onTapEmpty?: (start: Date) => void;
+  draft?: { start: Date; durationMinutes: number } | null;
+  defaultDurationMins?: number;
   /** Where the hero goes: the app's top bar owns it, not this chrome (D-125).
    *  Called whenever the span or its one fact changes, and with `null` on the
    *  way out so the host's bar doesn't keep a stale span. */
@@ -507,6 +514,9 @@ export default function CalendarSurface({
           onNext={() => travel(1)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
+          onTapEmpty={onTapEmpty}
+          draft={draft}
+          defaultDurationMins={defaultDurationMins}
           recenter={recenter}
         />
       );
