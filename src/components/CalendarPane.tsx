@@ -2103,17 +2103,25 @@ function CalendarPane({
     if (kind === "task") {
       const task = findTask(refId);
       if (task && info.event.start && info.event.end) {
-        const mins = Math.round((info.event.end.getTime() - info.event.start.getTime()) / 60_000);
+        const ns = info.event.start;
+        const mins = Math.round((info.event.end.getTime() - ns.getTime()) / 60_000);
+        // A drag from the top edge moves `start` and leaves `end` fixed — only
+        // patching duration would snap the block back to its old start and
+        // grow it from the bottom instead. Carry the new start along whenever
+        // it actually moved (bottom-edge drags leave it untouched).
+        const startMoved = ns.toISOString() !== task.start_time;
         mutations.patchTask(
           task.id,
           {
             duration_minutes: Math.max(15, mins),
+            ...(startMoved ? { start_time: ns.toISOString(), do_date: toDateISO(ns) } : {}),
             ...(task.recurrence_id && !task.recurrence_overridden ? { recurrence_overridden: true } : {}),
           },
           {
             undo: "silent",
             before: {
               duration_minutes: task.duration_minutes,
+              ...(startMoved ? { start_time: task.start_time, do_date: task.do_date } : {}),
               recurrence_overridden: task.recurrence_overridden,
             },
             title: task.title,
@@ -2677,6 +2685,11 @@ function CalendarPane({
       slotMaxTime: `${String(viewEnd).padStart(2, "0")}:00:00`,
       slotDuration: "00:15:00",
       snapDuration: "00:15:00",
+      // Cascaded overlap draws a later-starting event's card over the tail of
+      // an earlier one — which also covers its resize handles, making them
+      // ungrabbable. Side-by-side columns keep every overlapping event fully
+      // visible *and* independently resizable.
+      slotEventOverlap: false,
       slotLabelInterval: "01:00",
       slotLabelFormat: { hour: "numeric" as const, hour12: true, meridiem: "short" as const },
       eventTimeFormat: { hour: "numeric" as const, minute: "2-digit" as const, hour12: true, meridiem: "short" as const },
@@ -2895,6 +2908,7 @@ function CalendarPane({
             eventOrder={draftPreviewFirst}
             events={eventsOptionRef.current ?? []}
             editable
+            eventResizableFromStart
             droppable
             selectable
             selectMirror
