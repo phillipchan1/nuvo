@@ -519,8 +519,17 @@ html:not([data-skin]) .app-shell {
   background:
     linear-gradient(155deg, color-mix(in srgb, white 22%, transparent), transparent 62%),
     color-mix(in srgb, var(--shell) 72%, transparent);
-  -webkit-backdrop-filter: blur(26px) saturate(1.35);
-  backdrop-filter: blur(26px) saturate(1.35);
+  /* NO backdrop-filter here, deliberately. This used to be
+     `blur(26px) saturate(1.35)` across the whole window, and it rendered
+     *nothing*: the only thing behind .app-shell is .app-ground, which is a flat
+     colour (and `background: none` over the flat body in Tauri). Blurring a
+     constant field returns the same constant, so the filter was a full-window
+     blur per frame that could not change a pixel — verified by screenshotting
+     with and without at 1440x900: identical. WebKit pays for it far more dearly
+     than Chromium, which is why the desktop app felt it worst. The <1280px
+     branch below already sets both this and .app-canvas to `none`, so the
+     treatment was never load-bearing. Translucency here comes from the
+     `color-mix` alpha above, not from a filter. */
 }
 /* Same dark-theme correction as .app-canvas below — a --line-relative white
    mix tuned for the light theme's near-white line reads as a lit edge once
@@ -555,8 +564,10 @@ html:not([data-skin]) .app-canvas {
     inset 0 1px 0 color-mix(in srgb, white 40%, transparent),
     var(--shadow-2);
   overflow: hidden;
-  -webkit-backdrop-filter: blur(20px) saturate(1.25);
-  backdrop-filter: blur(20px) saturate(1.25);
+  /* Also deliberately filter-free — same reason as .app-shell above. What sits
+     behind this is .app-shell's 155deg linear gradient, and a blur is a
+     symmetric convolution, so blurring a linear ramp returns the same ramp
+     everywhere but the edges. Screenshot-verified as a no-op. */
 }
 /* The 46%/40% white mixes above are tuned for Aurora's LIGHT --line, which is
    already near-white — mixed with white it stays a whisper. In dark mode
