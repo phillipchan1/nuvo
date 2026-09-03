@@ -1097,7 +1097,14 @@ export function Timeline({
     let moved = false;
     let liveStart = origStart;
     let liveEnd = origEnd;
+    let raf = 0;
+    let pending: { start: number; end: number } | null = null;
     setDrag({ id: it.id, start: origStart, end: origEnd });
+
+    const flush = () => {
+      raf = 0;
+      if (pending) setDrag({ id: it.id, start: pending.start, end: pending.end });
+    };
 
     const onMove = (ev: PointerEvent) => {
       const dms = (ev.clientX - startX) * msPerPx;
@@ -1109,11 +1116,14 @@ export function Timeline({
       else { endMs = Math.max(snapDay(origEnd + dms), origStart); }
       liveStart = start;
       liveEnd = endMs;
-      setDrag({ id: it.id, start, end: endMs });
+      if (pending?.start === start && pending.end === endMs) return;
+      pending = { start, end: endMs };
+      if (!raf) raf = requestAnimationFrame(flush);
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      if (raf) cancelAnimationFrame(raf);
       setDrag(null);
       // commit OUTSIDE the state updater — a side-effect in a reducer is
       // double-invoked under StrictMode and writes twice
@@ -1146,17 +1156,26 @@ export function Timeline({
     const startY = e.clientY;
     trayRef.current = { moved: false };
     setTray({ id: it.id, x: startX, y: startY, ms: overMsFromPointer(startX, startY) });
+    let raf = 0;
+    let pending: { x: number; y: number; ms: number | null } | null = null;
+
+    const flush = () => {
+      raf = 0;
+      if (pending) setTray({ id: it.id, x: pending.x, y: pending.y, ms: pending.ms });
+    };
 
     const onMove = (ev: PointerEvent) => {
       const t = trayRef.current;
       if (!t) return;
       if (Math.abs(ev.clientX - startX) > 3 || Math.abs(ev.clientY - startY) > 3) t.moved = true;
       edgeScroll(ev.clientX);
-      setTray({ id: it.id, x: ev.clientX, y: ev.clientY, ms: overMsFromPointer(ev.clientX, ev.clientY) });
+      pending = { x: ev.clientX, y: ev.clientY, ms: overMsFromPointer(ev.clientX, ev.clientY) };
+      if (!raf) raf = requestAnimationFrame(flush);
     };
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      if (raf) cancelAnimationFrame(raf);
       const t = trayRef.current;
       trayRef.current = null;
       const ms = overMsFromPointer(ev.clientX, ev.clientY);

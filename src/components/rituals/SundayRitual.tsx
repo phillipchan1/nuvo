@@ -1779,6 +1779,7 @@ function WeekGrid({
   // Pointer events (Tauri swallows HTML5 DnD). The held block lifts into glass and
   // the destination column highlights — the drag-and-hold contract (design-language).
   const colRefs = useRef(new Map<string, HTMLDivElement>());
+  const colSnapRef = useRef<Array<{ iso: string; left: number; right: number; top: number }>>([]);
   const dragRef = useRef<
     | { id: string; mode: "move" | "resize"; title: string; hue: string; dayISO: string; startMin: number; durationMin: number; grabOffsetMin: number; moved: boolean }
     | null
@@ -1822,37 +1823,50 @@ function WeekGrid({
   };
 
   useEffect(() => {
+    let bumpRaf = 0;
+    const scheduleBump = () => {
+      if (bumpRaf) return;
+      bumpRaf = requestAnimationFrame(() => {
+        bumpRaf = 0;
+        bump();
+      });
+    };
+    const colTopDuringDrag = (iso: string) =>
+      colSnapRef.current.find((c) => c.iso === iso)?.top ?? colTopOf(iso);
+
     const onPointerMove = (e: PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
       if (d.mode === "move") {
         let targetISO = d.dayISO;
-        for (const [iso, el] of colRefs.current) {
-          const r = el.getBoundingClientRect();
-          if (e.clientX >= r.left && e.clientX < r.right) { targetISO = iso; break; }
+        for (const c of colSnapRef.current) {
+          if (e.clientX >= c.left && e.clientX < c.right) {
+            targetISO = c.iso;
+            break;
+          }
         }
-        let start = snap(minAt(e.clientY, colTopOf(targetISO)) - d.grabOffsetMin);
+        let start = snap(minAt(e.clientY, colTopDuringDrag(targetISO)) - d.grabOffsetMin);
         start = Math.max(lo, Math.min(hi - d.durationMin, start));
         if (targetISO !== d.dayISO || start !== d.startMin) d.moved = true;
         d.dayISO = targetISO;
         d.startMin = start;
       } else {
-        let end = snap(minAt(e.clientY, colTopOf(d.dayISO)));
+        let end = snap(minAt(e.clientY, colTopDuringDrag(d.dayISO)));
         end = Math.max(d.startMin + 15, Math.min(hi, end));
         if (end - d.startMin !== d.durationMin) d.moved = true;
         d.durationMin = end - d.startMin;
       }
-      bump();
+      scheduleBump();
     };
     const onPointerUp = () => {
       const d = dragRef.current;
       if (!d) return;
-      // a press that never moved is a click — open the sitting instead of
-      // committing a no-op placement override
+      if (bumpRaf) cancelAnimationFrame(bumpRaf);
       if (!d.moved) setInspect((cur) => (cur === d.id ? null : d.id));
       else if (d.mode === "move") onMove(d.id, d.dayISO, d.startMin);
       else onResize(d.id, d.durationMin);
       dragRef.current = null;
+      colSnapRef.current = [];
       bump();
     };
     window.addEventListener("pointermove", onPointerMove);
@@ -1866,6 +1880,10 @@ function WeekGrid({
   const startDrag = (e: React.PointerEvent, it: GridItem, dayISO: string, mode: "move" | "resize") => {
     e.preventDefault();
     if (mode === "resize") e.stopPropagation();
+    colSnapRef.current = [...colRefs.current.entries()].map(([iso, el]) => {
+      const r = el.getBoundingClientRect();
+      return { iso, left: r.left, right: r.right, top: r.top };
+    });
     const grabOffsetMin = mode === "move" ? minAt(e.clientY, colTopOf(dayISO)) - it.startMin : 0;
     dragRef.current = {
       id: it.id, mode, title: it.title, hue: it.color ?? "var(--accent)",

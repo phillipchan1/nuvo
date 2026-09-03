@@ -478,6 +478,7 @@ function AppShellInner() {
                   <FloorPane
                     rung={rung === "day" ? lastBuildRung.current : rung}
                     active={rung !== "day"}
+                    live={rung !== "day"}
                     focus={focus}
                     focusDomain={focusDomain}
                     goRung={goRung}

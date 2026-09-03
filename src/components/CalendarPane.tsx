@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
+import { gridSyncPlan } from "../lib/calendarGridSync";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
   adjacentPreviewRect,
@@ -57,6 +58,15 @@ export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" 
  *  down for them. Named once so a third one can't half-join the family. */
 const NON_FC_VIEWS: CalView[] = ["board", "year"];
 const isFcView = (v: CalView) => !NON_FC_VIEWS.includes(v);
+
+/** Draft preview sorts ahead of real blocks in month overflow. */
+function draftPreviewFirst(a: unknown, b: unknown): number {
+  const ai = (a as EventApi).id;
+  const bi = (b as EventApi).id;
+  if (ai === "draft:preview") return -1;
+  if (bi === "draft:preview") return 1;
+  return 0;
+}
 
 /** SUN…SAT, indexed by day-of-week, in the viewer's locale. Built off a known
  *  Sunday read in UTC so the label can never slide a day on either side of the
@@ -347,6 +357,30 @@ function CalendarPane({
   eventsRef.current = events;
   const slotsRef = useRef(slots);
   slotsRef.current = slots;
+  // While a drag is live, defer FullCalendar reconciles and freeze the clock
+  // used for overdue tints — both were moving blocks under the pointer.
+  const gridSyncPausedRef = useRef(false);
+  const pendingGridSyncRef = useRef<readonly CalendarBlockInput[] | null>(null);
+  const [fcNow, setFcNow] = useState(now);
+  const pauseGridSync = useCallback(() => {
+    gridSyncPausedRef.current = true;
+  }, []);
+  const resumeGridSync = useCallback(() => {
+    if (!gridSyncPausedRef.current) return;
+    gridSyncPausedRef.current = false;
+    setFcNow(now);
+    const api = calRef.current?.getApi();
+    const pending = pendingGridSyncRef.current;
+    pendingGridSyncRef.current = null;
+    if (api && pending) syncCalendarEvents(api, pending);
+  }, [now]);
+  const pauseGridSyncRef = useRef(pauseGridSync);
+  pauseGridSyncRef.current = pauseGridSync;
+  const resumeGridSyncRef = useRef(resumeGridSync);
+  resumeGridSyncRef.current = resumeGridSync;
+  useEffect(() => {
+    if (!gridSyncPausedRef.current) setFcNow(now);
+  }, [now]);
   // Slot under the pointer during a task drag — id + whether the drop is into the
   // slot or beside it (left/right edge bands). onReceive reads this to prefer the
   // highlighted target over time-range math, which breaks when FC snaps the ghost
@@ -586,25 +620,32 @@ function CalendarPane({
         cells.find((c) => x >= c.rect.left && x < c.rect.right && y >= c.rect.top && y < c.rect.bottom)?.date ?? null;
       const anchor = cellAt(e.clientX, e.clientY);
       if (!anchor) return;
+      pauseGridSyncRef.current();
       let current = anchor;
       let lastKey = "";
+      let dragRaf = 0;
+      let pendingRange: { start: Date; end: Date } | null = null;
+      const flushAllDay = () => {
+        dragRaf = 0;
+        if (pendingRange) setAllDayDragRange(pendingRange);
+      };
       const onMove = (ev: MouseEvent) => {
         const date = cellAt(ev.clientX, ev.clientY);
         if (date) current = date;
         const startISO = anchor <= current ? anchor : current;
-        // A drag with no writable calendar can only land as a single-day task
-        // (selectAllow enforces the same cap on the real selection) — keep the
-        // live ghost from promising a multi-day span it can't deliver.
         const endISO = !canCreateEvents ? startISO : anchor <= current ? current : anchor;
         const key = `${startISO}:${endISO}`;
         if (key === lastKey) return;
         lastKey = key;
-        setAllDayDragRange({ start: parseDateISO(startISO), end: parseDateISO(endISO) });
+        pendingRange = { start: parseDateISO(startISO), end: parseDateISO(endISO) };
+        if (!dragRaf) dragRaf = requestAnimationFrame(flushAllDay);
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        if (dragRaf) cancelAnimationFrame(dragRaf);
         setAllDayDragRange(null);
+        resumeGridSyncRef.current();
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -924,6 +965,12 @@ function CalendarPane({
       chip.classList.remove("is-visible", "drop-chip-act");
       hideAdjacentPreview();
       railRef.current?.classList.remove("rail-drop-active", "rail-return-armed");
+      if (moveRaf) {
+        cancelAnimationFrame(moveRaf);
+        moveRaf = 0;
+      }
+      pendingMove = null;
+      resumeGridSyncRef.current();
     };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
@@ -954,34 +1001,64 @@ function CalendarPane({
       startY = e.clientY;
       moved = false;
     };
-    const onMove = (e: PointerEvent) => {
-      if (!armed) return;
-      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return;
-      if (!moved) {
-        moved = true;
-        active = true;
-        document.body.classList.add("cal-dragging");
+
+    type RectSnap = Pick<DOMRect, "left" | "right" | "top" | "bottom" | "width" | "height">;
+    type SlotTarget = { el: HTMLElement; slotId: string; rect: RectSnap };
+    type DayTarget = { el: HTMLElement; rect: RectSnap };
+
+    let slotTargets: SlotTarget[] = [];
+    let dayTargets: DayTarget[] = [];
+    let moveRaf = 0;
+    let pendingMove: PointerEvent | null = null;
+
+    const toSnap = (r: DOMRect): RectSnap => ({
+      left: r.left,
+      right: r.right,
+      top: r.top,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+    });
+
+    const snapshotDragTargets = () => {
+      slotTargets = [];
+      for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot[data-slot-id]")) {
+        const slotId = el.getAttribute("data-slot-id");
+        if (!slotId) continue;
+        slotTargets.push({ el, slotId, rect: toSnap(el.getBoundingClientRect()) });
       }
-      dropPointRef.current = { x: e.clientX, y: e.clientY };
-      // Hit-test slots by geometry, not elementFromPoint: FullCalendar stacks the
-      // .fc-highlight selection box and the drag mirror *above* the slot event, so
-      // elementFromPoint+closest never sees the slot and the drop lands beside it.
-      // The slot block's left/right edges are "place beside"; the middle joins it.
+      dayTargets = [];
+      for (const el of document.querySelectorAll<HTMLElement>(".fc-daygrid-body .fc-daygrid-day")) {
+        dayTargets.push({ el, rect: toSnap(el.getBoundingClientRect()) });
+      }
+    };
+
+    const hitSlotAt = (x: number, y: number): { el: HTMLElement | null; zone: SlotDropZone | null } => {
+      for (const t of slotTargets) {
+        const hit = slotDropZoneFromPointer(t.rect as DOMRect, x, y);
+        if (hit) return { el: t.el, zone: hit };
+      }
+      return { el: null, zone: null };
+    };
+
+    const hitDayAt = (x: number, y: number): HTMLElement | null => {
+      for (const t of dayTargets) {
+        const r = t.rect;
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return t.el;
+      }
+      return null;
+    };
+
+    const flushMove = () => {
+      moveRaf = 0;
+      const e = pendingMove;
+      if (!e || !armed) return;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+
       let slotEl: HTMLElement | null = null;
       let zone: SlotDropZone | null = null;
-      // `[data-slot-id]` — a REAL slot, not the drag preview. Dragging a project
-      // renders a mirror that wears `.evt-slot` (it's a picture of the sitting
-      // you're about to make), and without this the preview hit-tests itself:
-      // the ghost fades to 10% and a chip offers to drop the project into the
-      // block it hasn't created yet.
-      for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot[data-slot-id]")) {
-        const r = el.getBoundingClientRect();
-        const hit = slotDropZoneFromPointer(r, e.clientX, e.clientY);
-        if (!hit) continue;
-        slotEl = el;
-        zone = hit;
-        break;
-      }
+      ({ el: slotEl, zone } = hitSlotAt(clientX, clientY));
       if (slotEl !== overSlot || zone !== overZone) {
         overSlot?.classList.remove("slot-drop-target", "slot-adjacent-anchor");
         overSlot = slotEl;
@@ -992,19 +1069,9 @@ function CalendarPane({
         else if (slotEl && (zone === "before" || zone === "after")) slotEl.classList.add("slot-adjacent-anchor");
       }
       document.body.classList.toggle("over-slot", zone === "inside");
-      // Anytime row (week/day all-day band, or a month cell): hit-test the day
-      // cells themselves. :hover on `.fc-daygrid-day` painted a wash the frame
-      // covered, so the pointer could be over a real drop and still look idle.
+
       let anytimeEl: HTMLElement | null = null;
-      if (!slotEl) {
-        for (const el of document.querySelectorAll<HTMLElement>(".fc-daygrid-body .fc-daygrid-day")) {
-          const r = el.getBoundingClientRect();
-          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
-            anytimeEl = el;
-            break;
-          }
-        }
-      }
+      if (!slotEl) anytimeEl = hitDayAt(clientX, clientY);
       if (anytimeEl !== overAnytime) {
         overAnytime?.classList.remove("anytime-drop-target");
         overAnytime = anytimeEl;
@@ -1037,15 +1104,11 @@ function CalendarPane({
         const title = slotEl.querySelector(".fc-event-main")?.textContent?.trim();
         chip.textContent = `↳ Drop into ${title || "this slot"}`;
         chip.classList.remove("drop-chip-act");
-        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
-        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+        chip.style.left = `${fixedCssPx(clientX + 14)}px`;
+        chip.style.top = `${fixedCssPx(clientY + 16)}px`;
         chip.classList.add("is-visible");
       } else if (anytimeEl) {
         hideAdjacentPreview();
-        // Pill preview in the cell — FC's all-day mirror is a blank scrap; this
-        // is the chip you're about to get, with the title, before you commit.
-        // Compact chip under any chips already on the day — stacking on top of
-        // an existing anytime row read as a rename, not as a second landing.
         const frame =
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-events") ??
           anytimeEl.querySelector<HTMLElement>(".fc-daygrid-day-frame") ??
@@ -1055,12 +1118,10 @@ function CalendarPane({
         const padY = 3;
         let top = r.top + padY;
         for (const existing of anytimeEl.querySelectorAll<HTMLElement>(".fc-daygrid-event")) {
-          // Skip FC's own drag mirror if it's still in the cell tree.
           if (existing.classList.contains("fc-event-mirror") || existing.classList.contains("fc-event-dragging")) continue;
           const er = existing.getBoundingClientRect();
           if (er.bottom > top) top = er.bottom + 2;
         }
-        // Keep the pill inside the lit cell when the row is still short.
         if (top + 22 > r.bottom - 2) top = Math.max(r.top + padY, r.bottom - 24);
         const label = dragLabel();
         anytimePreview.style.left = `${fixedCssPx(r.left + padX)}px`;
@@ -1070,13 +1131,11 @@ function CalendarPane({
         anytimePreviewTitle.textContent = label;
         anytimePreview.classList.add("is-visible");
         const dateStr = anytimeEl.getAttribute("data-date");
-        const dayBit = dateStr
-          ? ` · ${format(parseDateISO(dateStr), "EEE")}`
-          : "";
+        const dayBit = dateStr ? ` · ${format(parseDateISO(dateStr), "EEE")}` : "";
         chip.textContent = `↳ Plan anytime${dayBit}`;
         chip.classList.add("drop-chip-act");
-        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
-        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+        chip.style.left = `${fixedCssPx(clientX + 14)}px`;
+        chip.style.top = `${fixedCssPx(clientY + 16)}px`;
         chip.classList.add("is-visible");
       } else {
         hideAdjacentPreview();
@@ -1087,17 +1146,28 @@ function CalendarPane({
       if (rail) {
         const rr = rail.getBoundingClientRect();
         const onRail =
-          e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
+          clientX >= rr.left && clientX <= rr.right && clientY >= rr.top && clientY <= rr.bottom;
         overRail = onRail && !slotEl && !anytimeEl;
-        // Calendar → rail only: the WHOLE rail is the inbox zone, so the whole
-        // rail takes the wash. A drag that started *inside* the rail is the
-        // rail's own business — tinting it there said "drop anywhere here",
-        // which was never true.
         rail.classList.toggle(
           "rail-drop-active",
           !fromRail && overRail && (Boolean(dragId) || calTask),
         );
       }
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!armed) return;
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return;
+      if (!moved) {
+        moved = true;
+        active = true;
+        document.body.classList.add("cal-dragging");
+        pauseGridSyncRef.current();
+        snapshotDragTargets();
+      }
+      dropPointRef.current = { x: e.clientX, y: e.clientY };
+      pendingMove = e;
+      if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
     };
     const onUp = () => {
       // Capture drag state before resetting — needed to suppress the phantom
@@ -1240,7 +1310,7 @@ function CalendarPane({
     const taskEvents = tasks
       .filter((t) => t.start_time)
       .map((t) => {
-        const overdue = t.status !== "done" && isOverdue(t, now);
+        const overdue = t.status !== "done" && isOverdue(t, fcNow);
         // Tasks share one identity — the violet accent — so "this is my work"
         // reads at a glance against the calendar's own (arbitrarily coloured)
         // events. The domain thread lives on in the thin bar; overdue goes ember.
@@ -1408,7 +1478,7 @@ function CalendarPane({
 
     return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle, slotProject]);
+  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, fcNow, taskAccent, slotTitle, slotProject]);
 
   // Ghost block shown while dragging an all-day range (allDayDragRange, live)
   // or while the DraftComposer popover is open (draft, on release/click) — for
@@ -1451,6 +1521,12 @@ function CalendarPane({
   useLayoutEffect(() => {
     const api = calRef.current?.getApi();
     if (!api) return;
+    const plan = gridSyncPlan(gridSyncPausedRef.current, gridEvents as CalendarBlockInput[]);
+    if (!plan.run) {
+      pendingGridSyncRef.current = plan.stash;
+      return;
+    }
+    pendingGridSyncRef.current = null;
     syncCalendarEvents(api, gridEvents as CalendarBlockInput[]);
   }, [gridEvents]);
 
@@ -1502,7 +1578,7 @@ function CalendarPane({
   // Right-click a calendar event → the hide/show menu (events only — tasks and
   // slots have their own editing paths). The listener is attached per element as
   // FullCalendar mounts it.
-  const handleEventDidMount = (arg: EventMountArg) => {
+  const handleEventDidMount = useCallback((arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
     if (kind === "task") {
       arg.el.addEventListener("contextmenu", (e) => {
@@ -1530,7 +1606,7 @@ function CalendarPane({
       const evt = findEvent(refId);
       if (evt) setEventMenu({ x: e.clientX, y: e.clientY, event: evt });
     });
-  };
+  }, []);
 
   // Dismiss the menu on any outside interaction or Escape (a press inside the
   // menu is a selection, not a dismissal).
@@ -2105,17 +2181,37 @@ function CalendarPane({
   // Inbox. (To just drop the time but keep the day, drag it to the anytime row.)
   const onDragStop = (info: EventDragStopArg) => {
     const rail = railRef.current;
-    if (!rail) return;
-    const r = rail.getBoundingClientRect();
-    const { clientX, clientY } = info.jsEvent;
-    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
-      const { kind, refId } = info.event.extendedProps as ExtendedProps;
-      if (kind === "task") {
-        const task = findTask(refId);
-        if (task) mutations.backToInbox(task);
+    if (rail) {
+      const r = rail.getBoundingClientRect();
+      const { clientX, clientY } = info.jsEvent;
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        const { kind, refId } = info.event.extendedProps as ExtendedProps;
+        if (kind === "task") {
+          const task = findTask(refId);
+          if (task) mutations.backToInbox(task);
+        }
       }
     }
+    resumeGridSync();
   };
+
+  const onFcDragStart = useCallback(() => {
+    pauseGridSync();
+  }, [pauseGridSync]);
+
+  const onFcResizeStart = useCallback(() => {
+    pauseGridSync();
+  }, [pauseGridSync]);
+
+  const onFcResizeStop = useCallback(() => {
+    resumeGridSync();
+  }, [resumeGridSync]);
+
+  const selectAllow = useCallback(
+    (arg: { allDay: boolean; start: Date; end: Date }) =>
+      !arg.allDay || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start),
+    [canCreateEvents],
+  );
 
   // Any all-day range — the month grid, or the anytime row in week/day view:
   // plain click/drag → all-day event (⌥ task, ⌘/Ctrl slot); a multi-day drag
@@ -2562,6 +2658,133 @@ function CalendarPane({
 
   const isMonth = view === "dayGridMonth";
   const isYear = view === "year";
+
+  const timeGridOptions = useMemo(
+    () => ({
+      slotMinTime: `${String(viewStart).padStart(2, "0")}:00:00`,
+      slotMaxTime: `${String(viewEnd).padStart(2, "0")}:00:00`,
+      slotDuration: "00:15:00",
+      snapDuration: "00:15:00",
+      slotLabelInterval: "01:00",
+      slotLabelFormat: { hour: "numeric" as const, hour12: true, meridiem: "short" as const },
+      eventTimeFormat: { hour: "numeric" as const, minute: "2-digit" as const, hour12: true, meridiem: "short" as const },
+      scrollTime: `${String(Math.max(viewStart, Math.min(fcNow.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
+    }),
+    [viewStart, viewEnd, fcNow],
+  );
+
+  const nowIndicatorContent = useCallback(
+    (arg: { isAxis: boolean }) =>
+      arg.isAxis ? (
+        <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
+          {format(fcNow, "h:mma").toLowerCase()}
+        </span>
+      ) : null,
+    [fcNow],
+  );
+
+  const dayHeaderContent = useCallback(
+    (arg: { view: { type: string }; dow: number; isToday: boolean; date: Date }) => {
+      const headerIsMonth = arg.view.type === "dayGridMonth";
+      if (headerIsMonth) {
+        return (
+          <div className="flex items-center justify-center py-1.5">
+            <span className="text-caption font-semibold tracking-widest text-muted">
+              {DOW_LABELS[arg.dow]}
+            </span>
+          </div>
+        );
+      }
+      const isToday = arg.isToday;
+      const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
+      const dateNum = arg.date.getDate();
+      const dateStr = arg.date.toLocaleDateString("en-CA");
+      const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
+      const todayChip = isToday;
+      return (
+        <div className="flex flex-col items-center gap-0.5 py-1">
+          <span
+            className={`text-micro font-semibold tracking-widest ${
+              todayChip ? "text-signal" : "text-muted"
+            }`}
+          >
+            {weekday}
+          </span>
+          <span
+            className="masthead tabular-nums leading-none"
+            style={
+              todayChip
+                ? {
+                    fontSize: "18px",
+                    color: "#fff",
+                    background: "var(--signal)",
+                    borderRadius: "999px",
+                    width: 28,
+                    height: 28,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }
+                : {
+                    fontSize: "20px",
+                    color: isToday ? "var(--signal)" : "var(--text)",
+                  }
+            }
+          >
+            {dateNum}
+          </span>
+          {wx && (
+            <button
+              className="fast flex items-center gap-0.5 mt-0.5 rounded px-1 hover:bg-surface-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setWxPopover({ day: wx, anchor: { x: rect.left + rect.width / 2, y: rect.bottom } });
+              }}
+            >
+              <WeatherIcon wmo={wx.wmo} size={14} />
+              <span
+                className="mono tabular-nums leading-none"
+                style={{ fontSize: "10px", color: "var(--muted)" }}
+              >
+                {wx.tempHigh}°
+              </span>
+            </button>
+          )}
+        </div>
+      );
+    },
+    [showWeather, weatherIndex],
+  );
+
+  const dayCellContent = useCallback((arg: DayCellContentArg) => {
+    if (arg.view.type !== "dayGridMonth") return true;
+    return (
+      <span
+        className="masthead tabular-nums leading-none"
+        style={
+          arg.isToday
+            ? {
+                fontSize: "13px",
+                color: "#fff",
+                background: "var(--signal)",
+                borderRadius: "999px",
+                width: 22,
+                height: 22,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }
+            : {
+                fontSize: "16px",
+                color: arg.isOther ? "var(--muted)" : "var(--text)",
+              }
+        }
+      >
+        {arg.dayNumberText}
+      </span>
+    );
+  }, []);
 
   // "Take me to that day" — search landing on a calendar event. The grid owns
   // its date, so the intent arrives on the reveal bus rather than as a prop
@@ -3414,141 +3637,16 @@ function CalendarPane({
           firstDay={firstDayOfWeek(settings)}
           nowIndicator={!isMonth}
           fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
-          nowIndicatorContent={(arg) =>
-            arg.isAxis ? (
-              <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
-                {format(now, "h:mma").toLowerCase()}
-              </span>
-            ) : null
-          }
-          {...(!isMonth && {
-            slotMinTime: `${String(viewStart).padStart(2, "0")}:00:00`,
-            slotMaxTime: `${String(viewEnd).padStart(2, "0")}:00:00`,
-            slotDuration: "00:15:00",
-            snapDuration: "00:15:00",
-            slotLabelInterval: "01:00",
-            slotLabelFormat: { hour: "numeric", hour12: true, meridiem: "short" },
-            eventTimeFormat: { hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" },
-            scrollTime: `${String(Math.max(viewStart, Math.min(now.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
-          })}
-          dayHeaderContent={(arg) => {
-            // Month's column headers are *day-of-week* headers, not days: one
-            // header spans five or six rows, so FullCalendar renders them from a
-            // dummy week (Sun 04 Jan 1970 → Sat 10 Jan 1970). Reading a date off
-            // that is how the row came to read "SUN 4 … SAT 10" over every month
-            // and never move when you paged. Month therefore shows the weekday
-            // alone — the day *cell* carries the real number — and takes it from
-            // `dow` rather than the dummy marker, which a local-timezone read
-            // lands a day behind anywhere west of UTC.
-            const headerIsMonth = arg.view.type === "dayGridMonth";
-            if (headerIsMonth) {
-              return (
-                <div className="flex items-center justify-center py-1.5">
-                  <span className="text-caption font-semibold tracking-widest text-muted">
-                    {DOW_LABELS[arg.dow]}
-                  </span>
-                </div>
-              );
-            }
-            const isToday = arg.isToday;
-            const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-            const dateNum = arg.date.getDate();
-            // en-CA locale reliably produces YYYY-MM-DD in local time
-            const dateStr = arg.date.toLocaleDateString("en-CA");
-            const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
-            // Week/Day: today is a signal disc (the "now" colour — theme-aware).
-            const todayChip = isToday;
-            return (
-              <div className="flex flex-col items-center gap-0.5 py-1">
-                <span
-                  className={`text-micro font-semibold tracking-widest ${
-                    todayChip ? "text-signal" : "text-muted"
-                  }`}
-                >
-                  {weekday}
-                </span>
-                <span
-                  className="masthead tabular-nums leading-none"
-                  style={
-                    todayChip
-                      ? {
-                          fontSize: "18px",
-                          color: "#fff",
-                          background: "var(--signal)",
-                          borderRadius: "999px",
-                          width: 28,
-                          height: 28,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }
-                      : {
-                          fontSize: "20px",
-                          color: isToday ? "var(--signal)" : "var(--text)",
-                        }
-                  }
-                >
-                  {dateNum}
-                </span>
-                {wx && (
-                  <button
-                    className="fast flex items-center gap-0.5 mt-0.5 rounded px-1 hover:bg-surface-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setWxPopover({ day: wx, anchor: { x: rect.left + rect.width / 2, y: rect.bottom } });
-                    }}
-                  >
-                    <WeatherIcon wmo={wx.wmo} size={14} />
-                    <span
-                      className="mono tabular-nums leading-none"
-                      style={{ fontSize: "10px", color: "var(--muted)" }}
-                    >
-                      {wx.tempHigh}°
-                    </span>
-                  </button>
-                )}
-              </div>
-            );
-          }}
-          dayCellContent={(arg: DayCellContentArg) => {
-            // Only month cells need custom numerals — Week/Day put the date in
-            // the header, and injecting numbers into the anytime row is noise.
-            if (arg.view.type !== "dayGridMonth") return true;
-            return (
-              <span
-                className="masthead tabular-nums leading-none"
-                style={
-                  arg.isToday
-                    ? {
-                        fontSize: "13px",
-                        color: "#fff",
-                        background: "var(--signal)",
-                        borderRadius: "999px",
-                        width: 22,
-                        height: 22,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }
-                    : {
-                        fontSize: "16px",
-                        color: arg.isOther ? "var(--muted)" : "var(--text)",
-                      }
-                }
-              >
-                {arg.dayNumberText}
-              </span>
-            );
-          }}
+          nowIndicatorContent={nowIndicatorContent}
+          {...(!isMonth && timeGridOptions)}
+          dayHeaderContent={dayHeaderContent}
+          dayCellContent={dayCellContent}
           height="100%"
           expandRows={!isMonth}
           dayMaxEvents={isMonth ? 4 : false}
           // Always keep the draft ghost out of the "+N more" overflow — a
           // packed month day would otherwise bury it behind real events.
-          eventOrder={(a: unknown, b: unknown) =>
-            (a as EventApi).id === "draft:preview" ? -1 : (b as EventApi).id === "draft:preview" ? 1 : 0
-          }
+          eventOrder={draftPreviewFirst}
           events={eventsOptionRef.current}
           editable
           droppable
@@ -3556,15 +3654,16 @@ function CalendarPane({
           selectMirror
           unselectAuto={false}
           selectMinDistance={5}
-          selectAllow={(arg) =>
-            !arg.allDay || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start)
-          }
+          selectAllow={selectAllow}
           select={onSelect}
           dateClick={onDateClick}
           eventReceive={onReceive}
           eventDrop={onDrop}
           eventResize={onResize}
+          eventDragStart={onFcDragStart}
           eventDragStop={onDragStop}
+          eventResizeStart={onFcResizeStart}
+          eventResizeStop={onFcResizeStop}
           eventClick={onClick}
           eventMouseEnter={onEventHover}
           eventMouseLeave={onEventUnhover}

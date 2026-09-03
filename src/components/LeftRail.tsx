@@ -594,7 +594,7 @@ function LeftRail({
     },
   };
 
-  const { draggingId, lineTop, zone, moveBy } = useListReorder({
+  const { draggingId, zone, moveBy } = useListReorder({
     containerRef: listRef,
     itemSelector: "[data-task-drag]",
     idAttr: "data-task-drag",
@@ -739,18 +739,26 @@ function LeftRail({
     const startX = e.clientX;
     const startW = railWidth;
     let latest = startW;
+    const outer = e.currentTarget.parentElement?.parentElement as HTMLElement | null;
+    const inner = e.currentTarget.parentElement as HTMLElement | null;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
+    const paintWidth = (w: number) => {
+      if (outer) outer.style.width = `${w}px`;
+      if (inner) inner.style.width = `${w}px`;
+    };
+
     const onMove = (ev: PointerEvent) => {
       latest = Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, startW + ev.clientX - startX));
-      setRailWidth(latest);
+      paintWidth(latest);
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      setRailWidth(latest);
       writeRailWidth(latest);
     };
     window.addEventListener("pointermove", onMove);
@@ -895,10 +903,8 @@ function LeftRail({
       <div ref={listRef} className="rail-list relative min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false" data-teach="day-list">
         {/* Where a released row will land. The list never reflows to show it —
             rows shifting under the cursor is what made the old drop chrome read
-            as the list jumping away from you. */}
-        {lineTop != null && (
-          <div className="reorder-insert-line" style={{ top: lineTop }} aria-hidden />
-        )}
+            as the list jumping away from you. The line node is owned by
+            useListReorder and repainted imperatively per frame. */}
         {/* The "you're about to..." label itself is plain DOM, owned by
             useListReorder (`zoneLabel` above) — same idiom as the calendar's
             slot chip, and for the same reason: it repaints every pointermove,

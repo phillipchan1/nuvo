@@ -3,9 +3,10 @@
 // demand timeline), with Groom and Table as sibling views, and drill into a
 // single record's detail.
 
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { skipWhenAsleep } from "./KeepAlive";
 import { Keycap } from "./ui";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
@@ -28,7 +29,7 @@ export type ProjectView = "ondeck" | "groom" | "all" | "shipped";
 // single initiative opens in the Record modal (no full page, like projects).
 export type DetailView = "ondeck" | "groom" | "all" | "shipped";
 
-export default function FloorPane({
+function FloorPane({
   rung,
   focus,
   focusDomain,
@@ -49,6 +50,8 @@ export default function FloorPane({
   setInitiativeView: (v: DetailView) => void;
   /** False while Schedule covers this overlay — face-switcher keys stand down. */
   active?: boolean;
+  /** False while Schedule covers this overlay — skip reconciling under KeepAlive. */
+  live?: boolean;
 }) {
   const { openRecord, toggleAgent, nav } = useAppNavigation();
   const { agentOpen } = nav;
@@ -180,6 +183,8 @@ export default function FloorPane({
     </div>
   );
 }
+
+export default memo(FloorPane, skipWhenAsleep);
 
 // The face switcher — "which shape of this altitude am I looking at". It wears the
 // Schedule's view-switcher idiom verbatim (CalendarPane's Spread · Day · Week ·

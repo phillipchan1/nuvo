@@ -76,7 +76,6 @@ export function useListReorder({
   disabled,
 }: ListReorderOptions) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [lineTop, setLineTop] = useState<number | null>(null);
   const [zone, setZone] = useState<string | null>(null);
 
   // Everything the live gesture reads, held in refs so a mid-drag re-render
@@ -120,6 +119,16 @@ export function useListReorder({
     chip.setAttribute("aria-hidden", "true");
     document.body.appendChild(chip);
 
+    const line = document.createElement("div");
+    line.className = "reorder-insert-line";
+    line.setAttribute("aria-hidden", "true");
+    line.style.display = "none";
+
+    const mountLine = () => {
+      const list = container();
+      if (list && !list.contains(line)) list.appendChild(line);
+    };
+
     const stopScroll = () => {
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
       scrollRaf = 0;
@@ -146,9 +155,15 @@ export function useListReorder({
     };
 
     const paint = (clientY: number) => {
+      mountLine();
       const hit = measure(clientY);
       targetIndex = hit?.index ?? null;
-      setLineTop(hit ? hit.top : null);
+      if (hit) {
+        line.style.display = "";
+        line.style.top = `${hit.top}px`;
+      } else {
+        line.style.display = "none";
+      }
     };
 
     const autoScroll = () => {
@@ -193,7 +208,7 @@ export function useListReorder({
       targetIndex = null;
       inZone = null;
       setDraggingId(null);
-      setLineTop(null);
+      line.style.display = "none";
       setZone(null);
       if (wasDragging && draggedId) opts.current.onDragEnd?.(draggedId, reordered);
     };
@@ -251,7 +266,7 @@ export function useListReorder({
       // drop we won't honour.
       if (inZone || !band || !r || e.clientX < r.left || e.clientX > r.right) {
         targetIndex = null;
-        setLineTop(null);
+        line.style.display = "none";
         return;
       }
       paint(e.clientY);
@@ -277,6 +292,7 @@ export function useListReorder({
       stopScroll();
       document.body.classList.remove("wb-noselect");
       chip.remove();
+      line.remove();
     };
   }, [containerRef, itemSelector, idAttr, rowRect, disabled]);
 
@@ -313,5 +329,5 @@ export function useListReorder({
     [disabled, bandOf, bandIds, onCommit],
   );
 
-  return { draggingId, lineTop, zone, moveBy };
+  return { draggingId, zone, moveBy };
 }

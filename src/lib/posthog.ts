@@ -37,6 +37,10 @@ export function initPosthog(): void {
   if (isSpotlightWindow()) return;
   if (import.meta.env.MODE === "test") return;
 
+  // Session replay (rrweb + mask-every-text-node) taxes the WKWebView main thread
+  // on every pointermove during FullCalendar drags — exceptions still ship.
+  const disableSessionRecording = isTauri();
+
   posthog.init(TOKEN, {
     api_host: HOST,
     ui_host: HOST.includes("eu.") ? "https://eu.posthog.com" : "https://us.posthog.com",
@@ -51,14 +55,17 @@ export function initPosthog(): void {
     disable_surveys: true,
     enable_recording_console_log: false,
     rageclick: false,
+    disable_session_recording: disableSessionRecording,
     mask_all_text: true,
     mask_all_element_attributes: true,
-    session_recording: {
-      maskAllInputs: true,
-      maskTextSelector: "*",
-      recordHeaders: false,
-      recordBody: false,
-    },
+    session_recording: disableSessionRecording
+      ? undefined
+      : {
+          maskAllInputs: true,
+          maskTextSelector: "*",
+          recordHeaders: false,
+          recordBody: false,
+        },
     before_send: (event) => {
       if (event?.properties) sanitizeCaptureProperties(event.properties);
       return event;
