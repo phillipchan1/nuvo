@@ -169,3 +169,41 @@ describe("syncCalendarEvents", () => {
     expect(event.setDates).not.toHaveBeenCalled();
   });
 });
+
+describe("the reconcile is batched", () => {
+  /**
+   * Every addEvent/setDates/setProp is its own FullCalendar action, and each one
+   * re-renders and re-measures the whole grid. Paging one week re-adds ~80
+   * events: measured on a real account that was 24,184 forced layouts and a
+   * single 1,467ms frame, versus 284 layouts and 73ms wrapped in
+   * `batchRendering`. If this regresses, the Schedule freezes on every week
+   * change and on every write that lands mid-drag.
+   */
+  it("performs every mutation inside batchRendering when the api offers it", () => {
+    const { api } = makeApi([block({ id: "stays" }), block({ id: "goes" })]);
+    let depth = 0;
+    let maxDepth = 0;
+    const outside: string[] = [];
+    const batched: CalendarGridApi = {
+      getEvents: () => api.getEvents(),
+      getEventById: (id) => api.getEventById(id),
+      addEvent: (e) => { if (depth === 0) outside.push(`addEvent:${e.id}`); return api.addEvent(e); },
+      batchRendering: (fn) => { depth++; maxDepth = Math.max(maxDepth, depth); fn(); depth--; },
+    };
+    const res = syncCalendarEvents(batched, [block({ id: "stays", title: "renamed" }), block({ id: "new" })]);
+
+    expect(maxDepth, "the reconcile must run inside batchRendering").toBe(1);
+    expect(outside, "no event mutation may happen outside the batch").toEqual([]);
+    expect(res.added).toEqual(["new"]);
+    expect(res.removed).toEqual(["goes"]);
+  });
+
+  it("still reconciles identically when the api has no batchRendering", () => {
+    const withBatch = makeApi([block({ id: "a" }), block({ id: "drop" })]);
+    const noBatch = makeApi([block({ id: "a" }), block({ id: "drop" })]);
+    const next = [block({ id: "a", title: "moved", start: "2026-09-02T15:00:00.000Z" }), block({ id: "b" })];
+
+    const wrapped: CalendarGridApi = { ...withBatch.api, batchRendering: (fn) => fn() };
+    expect(syncCalendarEvents(wrapped, next)).toEqual(syncCalendarEvents(noBatch.api, next));
+  });
+});

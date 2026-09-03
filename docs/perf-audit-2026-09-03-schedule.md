@@ -297,3 +297,79 @@ be demonstrated. Recorded here so the next person doesn't spend the afternoon re
 The conclusion stands: the cost is the **existence** of 95 React custom renderings, not the loop
 that re-triggers them. Removing the bridge (`renderEvent` returning DOM or `{ html }`) is still the
 only fix with real headroom.
+
+---
+
+## Round three — the app-wide interaction audit (Phil: "it still feels a little laggy just navigating around")
+
+### Fixing the instrument first
+
+The previous rounds were measured in a browser pane that was **hidden**, which clamps
+`setTimeout` to 1000ms and **never runs `requestAnimationFrame` at all**. That is why earlier
+timing data was noisy, why drag could never be driven end-to-end, and why one fix was assessed on
+numbers that could not support the claim.
+
+Replaced with a **headless Chrome driven over CDP** (`scratchpad/rig/`, zero dependencies — Node 25
+has a global `WebSocket`). Verified visible: timers land at ~110ms for a requested 100ms, rAF runs
+every frame. Because CDP input events are **trusted**, real INP and real frame drops are finally
+measurable. Per interaction it records: long-task blocked ms, React commit ms (root `Profiler`),
+**forced style/layout reads** (every `getBoundingClientRect`, `offsetTop`-family getter, and
+`getComputedStyle` is wrapped and counted), dropped frames and worst frame.
+
+### The finding
+
+A **constant ~1,092 forced layouts and ~74ms** was charged to *every* interaction — including a rail
+tab switch, which has nothing to do with the calendar. That constant is the "everything is a bit
+laggy" signature.
+
+It was **not** what I had assumed. Ruled out by measurement, in this order:
+- FullCalendar's props changing → **no**: `componentDidUpdate` showed `propChangedUpdates: []` on
+  every interaction. The `calendarElement` memo holds perfectly.
+- `updateSize` → **no**: stubbing it out entirely left the layout count unchanged (1,092 → 1,012).
+- The React custom-rendering bridge → **no**: swapping `eventContent` for plain HTML at runtime
+  moved 1,092 → 1,081 and made the popover *worse*. **This retires the "rewrite `renderEvent` to
+  return DOM" plan recorded above** — it was the wrong target and would have been a large, risky
+  refactor for ~4%.
+
+The real cause: **`syncCalendarEvents` mutates the grid one event at a time.** Every `addEvent`,
+`setDates` and `setProp` is a separate FullCalendar action that re-renders and re-measures the whole
+grid. Paging one week re-adds 71-84 events and patches the rest.
+
+Micro-benchmarked on the live calendar:
+
+| 80 events | wall ms | forced layouts | blocked ms | worst frame |
+|---|---|---|---|---|
+| add, one at a time | 548 | 8,184 | 547 | 542ms |
+| add, `batchRendering` | **37** | **284** | **0** | 33ms |
+| add + mutate, one at a time *(what the app does)* | 1,475 | 24,184 | 1,475 | **1,467ms** |
+| add + mutate, `batchRendering` | **73** | **284** | 73 | 67ms |
+
+A single 1,467ms frame is a visibly frozen app.
+
+### The fix
+
+`syncCalendarEvents` now runs its whole reconcile inside `api.batchRendering()` (FullCalendar v6,
+`core/index.js:2148` — it pauses the render runner). One line of structure, guarded by
+`tests/sync-calendar-events.test.ts` which asserts every mutation happens inside the batch and that
+an api *without* `batchRendering` still reconciles identically.
+
+| interaction | forced layouts | blocked ms | worst frame |
+|---|---|---|---|
+| week travel | 19,171 → **1,770** | 310 → **61** | 308 → **58** |
+| rail tab switch | 1,092 → **192** | 74 → **0** | 66 → **17** |
+| lens Week↔Day | 1,092 → **192** | 74 → **0** | 67 → **17** |
+| popover open | 1,192 → **292** | 102 → **68** | 100 → **58** |
+
+Full sweep afterwards: **every interaction except week travel now blocks 0ms** — navigation ⌘1-4,
+all five lenses, rail tabs, popover open/close, Settings, the Nuvo rail.
+
+### What is left
+
+| interaction | blocked | react ms | forced layouts |
+|---|---|---|---|
+| `cal prev/next week` | 54-72ms | 47-96 | 2,154-2,784 |
+| `focus mode ⌘.` | 0ms | 24-44 | 9,833-11,492 |
+
+Week travel is still the most expensive thing in the app, but it is now a tenth of what it was. Focus
+mode does a genuine width change so a re-measure is legitimate, but ~10k forced layouts for one
+toggle is worth a look; it blocks nothing today, so it is not urgent.

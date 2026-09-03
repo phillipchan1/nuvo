@@ -51,6 +51,8 @@ export type CalendarGridApi = {
   getEvents: () => CalendarBlockApi[];
   getEventById: (id: string) => CalendarBlockApi | null;
   addEvent: (event: CalendarBlockInput) => unknown;
+  /** FullCalendar's render-runner pause. Optional so tests can pass a plain stub. */
+  batchRendering?: (fn: () => void) => void;
 };
 
 function sameWhen(input: string | undefined, date: Date | null, allDay: boolean): boolean {
@@ -82,6 +84,25 @@ function extVal(value: unknown): string {
  * remove+add, which is the path that blanks or snaps back the block.
  */
 export function syncCalendarEvents(
+  api: CalendarGridApi,
+  next: readonly CalendarBlockInput[],
+): { added: string[]; removed: string[]; moved: string[]; patched: string[] } {
+  // Every `addEvent` / `setDates` / `setProp` below is a separate FullCalendar
+  // action, and each one re-renders and re-measures the whole grid. Paging one
+  // week re-adds 71-84 events and mutates the rest, and measured on a real
+  // account that cost 24,184 forced layouts and a single 1,467ms frame — a
+  // visibly frozen app. `batchRendering` pauses the render runner for the whole
+  // reconcile: same 80 events cost 284 layouts and 73ms. Optional, so a test
+  // stub without it still gets identical (unbatched) semantics.
+  const run = api.batchRendering ? api.batchRendering.bind(api) : (fn: () => void) => fn();
+  let result!: { added: string[]; removed: string[]; moved: string[]; patched: string[] };
+  run(() => {
+    result = reconcile(api, next);
+  });
+  return result;
+}
+
+function reconcile(
   api: CalendarGridApi,
   next: readonly CalendarBlockInput[],
 ): { added: string[]; removed: string[]; moved: string[]; patched: string[] } {
