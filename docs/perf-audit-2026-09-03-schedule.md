@@ -266,3 +266,34 @@ remaining cost on this surface.
 **Do the cheap thing first:** the two blur commits above removed ~99.7% of the blurred area, and that
 is the change most likely to be felt on WKWebView. Confirm whether the Schedule still feels slow
 before paying for this one.
+
+---
+
+## Tried and rejected: patching FullCalendar's componentDidUpdate
+
+The `flushSync` storm is a **feedback loop**, not a one-way cost. Each custom-rendering request
+calls `setState` on the `FullCalendar` component; its `componentDidUpdate` then calls
+`resetOptions` unconditionally — *even when only state changed* — which re-renders the Preact tree,
+which requests more custom renderings, which call `setState` again.
+
+The obvious lever is to break the loop: subclass `FullCalendar` and skip `resetOptions` when the
+props are shallow-equal (a state-only update has nothing to re-push). Tested by patching the
+prototype at runtime and A/B-ing four popover opens each way:
+
+| | setState calls | `resetOptions` | blocked ms (median) | blocked ms (samples) |
+|---|---|---|---|---|
+| stock | 60 | runs | 327 | 327, 342, 146, 144 |
+| patched | 40 | **0** | 256 | 256, 139, 147, 351 |
+
+It does exactly what it claims — a third fewer `setState` calls, `resetOptions` never runs on a
+state-only update. **But the blocked-time distributions overlap almost completely** (both arms
+produce ~140ms and ~340ms samples), so the median difference is noise, not a win. Forced-layout
+counts were unchanged too (~1,046 vs ~1,019).
+
+**Not shipped.** Overriding a library's lifecycle is a permanent maintenance cost — it silently
+breaks on any `@fullcalendar/react` upgrade — and it must not be paid for an improvement that cannot
+be demonstrated. Recorded here so the next person doesn't spend the afternoon rediscovering it.
+
+The conclusion stands: the cost is the **existence** of 95 React custom renderings, not the loop
+that re-triggers them. Removing the bridge (`renderEvent` returning DOM or `{ html }`) is still the
+only fix with real headroom.
