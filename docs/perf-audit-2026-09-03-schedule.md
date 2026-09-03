@@ -142,11 +142,19 @@ present in time-grid views and absent in Month, paging forward and back reloads 
 6. **The entry chunk regressed.** 479 KB after the August remediation → **827 KB** now. The August
    memory warns exactly how this happens: a tiny shared constant anchors a big module into the entry
    graph. Worth re-running the sourcemap attributor.
-7. **`npm test` is red on `master`** — 55 failures across 11 files, every one a
-   `ReferenceError: React is not defined` from a JSX-runtime config problem in the test setup, not a
-   product bug. **Confirmed pre-existing** by running the suite in a clean worktree at `10bfef2`
-   (identical 55). CI (`checks.yml`) runs typecheck + tests on every push, so this has been failing
-   for a while and is currently hiding any real regression.
+7. ~~`npm test` is red on `master`.~~ **Retracted — this was wrong, and the way it was wrong is
+   worth keeping.** `checks` on this very commit ran the identical `npm test` and reported 101 files
+   / 1,489 tests, zero failures. The 55 `ReferenceError: React is not defined` failures were purely
+   local: installed `vitest` was **2.1.9** while the lockfile pins **4.1.11**, and the two differ in
+   how they transform JSX in `.tsx` test files. `npm ci` fixed it — 101 files / 1,545 tests, all
+   green.
+
+   The bad step was the control. "Confirmed pre-existing" came from running the suite in a clean
+   worktree at `10bfef2` — but that worktree **symlinked the same stale `node_modules`**, so it
+   reproduced the failure for the wrong reason and looked like proof. A worktree only controls for
+   *source*; to control for the environment it needs its own `npm ci`. The contradicting evidence was
+   already on screen and got explained away: the previous commit's `checks` run was green.
+   **When local and CI disagree about the same command, suspect the install before the tree.**
 
 ---
 
