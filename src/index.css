@@ -2092,10 +2092,16 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-event {
   border-radius: 7px;
   box-shadow: none;
-  /* Frosted colour-glass: the translucent fill (blockColors) + this blur let the
-     gridlines read through, so an event is a pane of tinted glass, not a slab. */
-  -webkit-backdrop-filter: blur(5px) saturate(1.2);
-  backdrop-filter: blur(5px) saturate(1.2);
+  /* Tinted colour-glass, WITHOUT a backdrop-filter. The glass comes from the
+     translucent fill (blockColors, set inline) — the blur only softened the
+     gridlines showing through, and a lived-in week put 87 of these on screen:
+     87 separate compositing layers, ~778k px², every one recomputed whenever
+     anything beneath them moves. That is every frame of a drag, which is the
+     one gesture on this surface that must not stutter. Screenshotted with and
+     without at 1440x900 — the difference was not visible, and WKWebView (what
+     Nuvo.app runs) pays far more for backdrop-filter than Chromium does. If you
+     want the softening back, gate it behind something that is not the calendar
+     grid. */
   transition:
     filter var(--d-fast) var(--ease-out),
     box-shadow var(--d-fast) var(--ease-out),

@@ -171,3 +171,57 @@ for an operator run:
 - **WKWebView.** Everything here is Chromium. Nuvo.app is WebKit, where forced layout and
   `backdrop-filter` are markedly more expensive — the win should be *larger* there, but that is an
   inference, not a measurement. Safari Web Inspector → Nuvo.app, Phase 0 of the companion audit.
+
+---
+
+## Round two — the paint cost nobody had measured (2026-09-03, later)
+
+The memo fix above is real but the app still felt slow, and the clue that mattered was "it was
+**not always** this slow." Both prior audits profiled **Chromium** and measured **JS** (TBT, long
+tasks). Nuvo.app runs **WKWebView**, and the cost that was actually there is one neither metric can
+see: **compositing**.
+
+On a normal week the Schedule was painting **92 `backdrop-filter` layers covering 3,185,201 px² —
+2.5x the viewport** — every one recomputed when anything beneath it moves. That is every frame of a
+drag.
+
+| | Layers | Blurred area |
+|---|---|---|
+| before | 92 | 3,185,201 px² |
+| after | **3** | **9,732 px²** |
+
+Three separate things, found by walking the live DOM rather than the stylesheet:
+
+1. **`.app-shell` — `blur(26px)` across the whole window, rendering nothing.** The only thing behind
+   it is `.app-ground`, a flat colour (`background: none` over the flat body in Tauri). Blurring a
+   constant field returns the same constant.
+2. **`.app-canvas` — `blur(20px)`, nested inside it, also rendering nothing.** Its backdrop is
+   `.app-shell`'s 155deg linear gradient, and a blur is a symmetric convolution: blurring a linear
+   ramp returns the same ramp everywhere but the edges.
+3. **`.fc-event` — `blur(5px)` × 87**, one compositing layer per event block. This one *was* visible
+   design intent (cf2cc32, "a pane of tinted glass, not a slab"), so it was Phil's call, and he
+   chose to drop it. The tinted-glass read comes from the translucent fill (`blockColors`, inline);
+   only the softening of the gridlines behind it is gone.
+
+**Verified by screenshot, not by argument** — the Schedule at 1440x900 with each filter on and off,
+pixel-identical every time. (1) and (2) are therefore pure cost removal with no design change at
+all; the `@media (max-width: 1279px)` branch already set both to `none`, so they were never
+load-bearing.
+
+`.fc-event.evt-focused` keeps its `blur(14px)`: one element at a time, and it does real work —
+letting the lifted block read cleanly over whatever it overlaps.
+
+**Provenance.** (1) and (2) landed 2026-08-02 in `c557404` ("Aurora: the app is three planes"). The
+August 11 perf pass came *after* that and did not see it, because it measured TBT — a JS metric that
+is blind to compositing. That is the whole lesson of this round: **when the complaint is "everything
+feels slow" and the JS numbers look fine, measure paint, and measure it on the engine the user
+actually runs.**
+
+### Still unmeasured here
+
+The win is stated in layers and area, not milliseconds, because the verification browser pane in
+this session had no visible viewport — which pauses `requestAnimationFrame` and makes frame timing
+meaningless — and because WKWebView could not be profiled from here at all. The reasoning for *why*
+it was free to remove is airtight (screenshot-identical); the size of the speed-up on Nuvo.app is
+an inference from how WebKit handles backdrop-filter, and only Phil's hands on the DMG can confirm
+it.
