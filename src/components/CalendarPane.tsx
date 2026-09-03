@@ -39,6 +39,7 @@ import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
+import { useStableHandler } from "../hooks/useStableHandler";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 import { gridSyncPlan } from "../lib/calendarGridSync";
 // One spelling for what a block IS — shared with Plan the week's grid.
@@ -50,6 +51,10 @@ import {
   type SlotDropIntent,
   type SlotDropZone,
 } from "../lib/slots";
+
+/** Hoisted. A fresh array literal here re-created the `<FullCalendar>` element on
+ *  every render, and FullCalendar re-measures the entire grid on every render. */
+const FC_PLUGINS = [timeGridPlugin, dayGridPlugin, interactionPlugin];
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
@@ -362,6 +367,13 @@ function CalendarPane({
   const gridSyncPausedRef = useRef(false);
   const pendingGridSyncRef = useRef<readonly CalendarBlockInput[] | null>(null);
   const [fcNow, setFcNow] = useState(now);
+  const fcNowRef = useRef(fcNow);
+  fcNowRef.current = fcNow;
+  // Mount-only for FullCalendar, but the element may be rebuilt later (a month
+  // toggle) — a ref keeps it current without making `view` a memo dependency.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const fcFirstDay = firstDayOfWeek(settings);
   const pauseGridSync = useCallback(() => {
     gridSyncPausedRef.current = true;
   }, []);
@@ -1827,7 +1839,7 @@ function CalendarPane({
       });
   };
 
-  const onReceive = (info: EventReceiveArg) => {
+  const onReceive = useStableHandler((info: EventReceiveArg) => {
     const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
@@ -1972,9 +1984,9 @@ function CalendarPane({
     }
     // A single task is its own block.
     tasks.forEach((t) => mutations.block(t, start));
-  };
+  });
 
-  const onDrop = (info: EventDropArg) => {
+  const onDrop = useStableHandler((info: EventDropArg) => {
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
@@ -2082,9 +2094,9 @@ function CalendarPane({
     }
 
     info.revert(); // m365 / ICS are read-only
-  };
+  });
 
-  const onResize = (info: EventResizeDoneArg) => {
+  const onResize = useStableHandler((info: EventResizeDoneArg) => {
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
@@ -2175,11 +2187,11 @@ function CalendarPane({
     }
 
     info.revert();
-  };
+  });
 
   // Drag a block (or "anytime" chip) back onto the left rail → return it to the
   // Inbox. (To just drop the time but keep the day, drag it to the anytime row.)
-  const onDragStop = (info: EventDragStopArg) => {
+  const onDragStop = useStableHandler((info: EventDragStopArg) => {
     const rail = railRef.current;
     if (rail) {
       const r = rail.getBoundingClientRect();
@@ -2193,7 +2205,7 @@ function CalendarPane({
       }
     }
     resumeGridSync();
-  };
+  });
 
   const onFcDragStart = useCallback(() => {
     pauseGridSync();
@@ -2231,7 +2243,7 @@ function CalendarPane({
   // dismiss guard belongs on dateClick (a tap), not here. Skipping select
   // without unselect() left FullCalendar's select-mirror stuck on the grid
   // (`unselectAuto` is false so the composer can own the ghost).
-  const onSelect = (arg: DateSelectArg) => {
+  const onSelect = useStableHandler((arg: DateSelectArg) => {
     if (isMonth || arg.allDay) {
       const je = arg.jsEvent;
       const start = new Date(arg.start);
@@ -2260,9 +2272,9 @@ function CalendarPane({
     // React's draft preview is the ghost now. Drop FC's own mirror so it
     // can't outlive the composer if the leftover mouseup click dismisses it.
     queueMicrotask(() => calRef.current?.getApi().unselect());
-  };
+  });
 
-  const onDateClick = (arg: DateClickArg) => {
+  const onDateClick = useStableHandler((arg: DateClickArg) => {
     // This same click may have just dismissed an open event/task/slot popover
     // (a separate system reacting to the same physical click) — that click
     // was a dismiss, not a request to also start a new draft.
@@ -2285,7 +2297,7 @@ function CalendarPane({
     else if (je?.metaKey || je?.ctrlKey) kind = "slot";
     if (kind === "event" && !canCreateEvents) kind = "task";
     setDraft({ start, end, kind, point: { x: je.clientX, y: je.clientY } });
-  };
+  });
 
   const domainColor = (id: string | null) => (id ? domains.find((d) => d.id === id)?.color ?? null : null);
 
@@ -2379,7 +2391,7 @@ function CalendarPane({
     }
   };
 
-  const onClick = (info: EventClickArg) => {
+  const onClick = useStableHandler((info: EventClickArg) => {
     const { kind, refId } = info.event.extendedProps as ExtendedProps;
     // Clicking the checkbox toggles done — handle it in FullCalendar's own click
     // (FC's native eventClick fires before React's onClick on the rendered
@@ -2417,23 +2429,23 @@ function CalendarPane({
       const evt = findEvent(refId);
       if (evt) onOpenEvent(evt, info.el.getBoundingClientRect(), info.el);
     }
-  };
+  });
 
   // Hovering a block warms its detail payload, so the popover opens complete
   // rather than filling in a beat later (see usePrefetchEventDetails). Only a
   // *resting* pointer counts: a sweep across a dense week would otherwise fire
   // one row read per block it crossed.
   const hoverWarmRef = useRef<number | null>(null);
-  const onEventHover = (info: { event: { extendedProps: unknown } }) => {
+  const onEventHover = useStableHandler((info: { event: { extendedProps: unknown } }) => {
     const { kind, refId } = info.event.extendedProps as ExtendedProps;
     if (kind === "task" || kind === "slot") return;
     if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current);
     hoverWarmRef.current = window.setTimeout(() => prefetchEventDetails(findEvent(refId)), 120);
-  };
-  const onEventUnhover = () => {
+  });
+  const onEventUnhover = useStableHandler(() => {
     if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current);
     hoverWarmRef.current = null;
-  };
+  });
   useEffect(() => () => { if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current); }, []);
 
   const renderEvent = useCallback((arg: EventContentArg) => {
@@ -2668,19 +2680,26 @@ function CalendarPane({
       slotLabelInterval: "01:00",
       slotLabelFormat: { hour: "numeric" as const, hour12: true, meridiem: "short" as const },
       eventTimeFormat: { hour: "numeric" as const, minute: "2-digit" as const, hour12: true, meridiem: "short" as const },
-      scrollTime: `${String(Math.max(viewStart, Math.min(fcNow.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
+      scrollTime: `${String(Math.max(viewStart, Math.min(fcNowRef.current.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
     }),
-    [viewStart, viewEnd, fcNow],
+    // fcNowRef, not fcNow: `scrollTime` is only read when a view mounts, and a
+    // new options object on the 30s tick re-rendered — and so re-measured — the
+    // whole grid.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewStart, viewEnd],
   );
 
+  // Stable identity, live value: FullCalendar's own NowTimer re-renders the
+  // indicator every minute, so it still reads a fresh clock without this
+  // callback — and therefore the whole calendar element — being re-created.
   const nowIndicatorContent = useCallback(
     (arg: { isAxis: boolean }) =>
       arg.isAxis ? (
         <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
-          {format(fcNow, "h:mma").toLowerCase()}
+          {format(fcNowRef.current, "h:mma").toLowerCase()}
         </span>
       ) : null,
-    [fcNow],
+    [],
   );
 
   const dayHeaderContent = useCallback(
@@ -2822,13 +2841,109 @@ function CalendarPane({
     onViewChange?.(next);
   };
 
-  const handleDatesSet = (arg: DatesSetArg) => {
+  const handleDatesSet = useStableHandler((arg: DatesSetArg) => {
     // currentStart, not start: the month grid's `start` is the previous month's
     // tail, and reopening on it would show the wrong month.
     remountCache.dateISO = arg.view.currentStart.toISOString();
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
     if (arg.view.type === "dayGridMonth") setMonthTitle(arg.view.title);
-  };
+  });
+
+  // ── The most expensive thing on this screen ───────────────────────────────
+  // `@fullcalendar/react` does NO prop diffing: its componentDidUpdate calls
+  // `calendar.resetOptions(this.props)` unconditionally, which dispatches an
+  // internal action and re-runs the whole sizing pass (SimpleScrollGrid
+  // .handleSizing -> computeShrinkWidth, TimeColsSlats.updateSizing,
+  // TableRow.querySegHeights). On a normal week that measured ~11,000
+  // getBoundingClientRect() calls and ~500ms of long tasks — paid on EVERY
+  // React re-render of this pane, including one caused by merely opening a
+  // popover, and on every frame of a drag.
+  //
+  // So the element is memoized and the grid is driven imperatively instead:
+  // events via `syncCalendarEvents`, the view via `changeView`, the date via
+  // the API. These deps may only contain things that genuinely require
+  // FullCalendar to be reconfigured; everything else is a ref or a stable
+  // handler. Adding a live value here silently restores the whole regression —
+  // `tests/calendar-element-stability.test.ts` guards it.
+  const calendarElement = useMemo(
+    () => (
+          <FullCalendar
+            ref={calRef}
+            plugins={FC_PLUGINS}
+            // Only read at mount. The pane can now mount while a non-FC view is
+            // active (a reload straight into the Year), and "year" is not a
+            // FullCalendar view name — it would throw. The changeView effect
+            // above puts it right the moment an FC view is selected.
+            initialView={isFcView(viewRef.current) ? viewRef.current : "timeGridWeek"}
+            initialDate={remountCache.dateISO ?? undefined}
+            headerToolbar={false}
+            allDaySlot={!isMonth}
+            allDayText="anytime"
+            dayMaxEventRows={5}
+            firstDay={fcFirstDay}
+            nowIndicator={!isMonth}
+            fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
+            nowIndicatorContent={nowIndicatorContent}
+            {...(!isMonth && timeGridOptions)}
+            dayHeaderContent={dayHeaderContent}
+            dayCellContent={dayCellContent}
+            height="100%"
+            expandRows={!isMonth}
+            dayMaxEvents={isMonth ? 4 : false}
+            // Always keep the draft ghost out of the "+N more" overflow — a
+            // packed month day would otherwise bury it behind real events.
+            eventOrder={draftPreviewFirst}
+            events={eventsOptionRef.current ?? []}
+            editable
+            droppable
+            selectable
+            selectMirror
+            unselectAuto={false}
+            selectMinDistance={5}
+            selectAllow={selectAllow}
+            select={onSelect}
+            dateClick={onDateClick}
+            eventReceive={onReceive}
+            eventDrop={onDrop}
+            eventResize={onResize}
+            eventDragStart={onFcDragStart}
+            eventDragStop={onDragStop}
+            eventResizeStart={onFcResizeStart}
+            eventResizeStop={onFcResizeStop}
+            eventClick={onClick}
+            eventMouseEnter={onEventHover}
+            eventMouseLeave={onEventUnhover}
+            eventContent={renderEvent}
+              eventDidMount={handleEventDidMount}
+              datesSet={handleDatesSet}
+            />
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      isMonth,
+      fcFirstDay,
+      timeGridOptions,
+      nowIndicatorContent,
+      dayHeaderContent,
+      dayCellContent,
+      renderEvent,
+      handleEventDidMount,
+      selectAllow,
+      onSelect,
+      onDateClick,
+      onReceive,
+      onDrop,
+      onResize,
+      onFcDragStart,
+      onDragStop,
+      onFcResizeStart,
+      onFcResizeStop,
+      onClick,
+      onEventHover,
+      onEventUnhover,
+      handleDatesSet,
+    ],
+  );
 
   return (
     // Transparent so the single .atmosphere canvas (laid down by AppShellInner)
@@ -3621,56 +3736,7 @@ function CalendarPane({
           } as React.CSSProperties
         }
       >
-        <FullCalendar
-          ref={calRef}
-          plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-          // Only read at mount. The pane can now mount while a non-FC view is
-          // active (a reload straight into the Year), and "year" is not a
-          // FullCalendar view name — it would throw. The changeView effect
-          // above puts it right the moment an FC view is selected.
-          initialView={isFcView(view) ? view : "timeGridWeek"}
-          initialDate={remountCache.dateISO ?? undefined}
-          headerToolbar={false}
-          allDaySlot={!isMonth}
-          allDayText="anytime"
-          dayMaxEventRows={5}
-          firstDay={firstDayOfWeek(settings)}
-          nowIndicator={!isMonth}
-          fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
-          nowIndicatorContent={nowIndicatorContent}
-          {...(!isMonth && timeGridOptions)}
-          dayHeaderContent={dayHeaderContent}
-          dayCellContent={dayCellContent}
-          height="100%"
-          expandRows={!isMonth}
-          dayMaxEvents={isMonth ? 4 : false}
-          // Always keep the draft ghost out of the "+N more" overflow — a
-          // packed month day would otherwise bury it behind real events.
-          eventOrder={draftPreviewFirst}
-          events={eventsOptionRef.current}
-          editable
-          droppable
-          selectable
-          selectMirror
-          unselectAuto={false}
-          selectMinDistance={5}
-          selectAllow={selectAllow}
-          select={onSelect}
-          dateClick={onDateClick}
-          eventReceive={onReceive}
-          eventDrop={onDrop}
-          eventResize={onResize}
-          eventDragStart={onFcDragStart}
-          eventDragStop={onDragStop}
-          eventResizeStart={onFcResizeStart}
-          eventResizeStop={onFcResizeStop}
-          eventClick={onClick}
-          eventMouseEnter={onEventHover}
-          eventMouseLeave={onEventUnhover}
-          eventContent={renderEvent}
-            eventDidMount={handleEventDidMount}
-            datesSet={handleDatesSet}
-          />
+        {calendarElement}
         </div>
       </div>
 
