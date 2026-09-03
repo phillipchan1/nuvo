@@ -1,0 +1,76 @@
+{
+  "_comment": "Ceilings, not targets. Raising a number is allowed; doing it silently is not \u2014 say why in the commit.",
+  "_measuredOn": "`npm run dev` (dev build, StrictMode ON, so React work is ~2x production) driven by scripts/perf/run.mjs in headless Chrome at 1440x900. Re-baseline with `npm run perf -- --update` and keep the condition identical, or the numbers are not comparable.",
+  "_baselineEventCount": 88,
+  "budgets": {
+    "nav:projects": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "nav:initiatives": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "nav:domains": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "nav:schedule": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "cal:day": {
+      "forcedLayout": 300,
+      "blockedMs": 100,
+      "dropped": 2
+    },
+    "cal:month": {
+      "forcedLayout": 300,
+      "blockedMs": 90,
+      "dropped": 2
+    },
+    "cal:year": {
+      "forcedLayout": 300,
+      "blockedMs": 110,
+      "dropped": 2
+    },
+    "cal:travel": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 2
+    },
+    "cal:today": {
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "rail:tabs": {
+      "forcedLayout": 300,
+      "blockedMs": 100,
+      "dropped": 2
+    },
+    "popover:open": {
+      "forcedLayout": 400,
+      "blockedMs": 100,
+      "dropped": 2
+    },
+    "focus:toggle": {
+      "forcedLayout": 16050,
+      "blockedMs": 90,
+      "dropped": 2
+    },
+    "settings:open": {
+      "forcedLayout": 300,
+      "blockedMs": 100,
+      "dropped": 2
+    }
+  },
+  "global": {
+    "_comment": "92 live blur layers over 2.5 viewports is what made the desktop app feel broken. 3 is the healthy state.",
+    "maxBlurLayers": 12
+  }
+}

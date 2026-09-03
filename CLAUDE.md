@@ -407,6 +407,41 @@ then report. This is the default loop — reach for it before guessing.
 4. Renders correctly in the desktop layout.
 5. Calendar/availability work reuses `readDay` / `toBusyBlocks`.
 6. `npm run build` green.
+7. If it touched a **shared surface** (the calendar, the rail, the floors, `index.css`, or a data
+   hook the Schedule reads): `npm run perf` within budget — see below.
+
+## Performance is a budget, not a vibe — [`docs/performance.md`](docs/performance.md)
+
+Three perf regressions shipped to `master` in 2026 and **every one passed typecheck, passed the full
+test suite, and looked like a purely visual change**: a `backdrop-filter` per calendar event (87
+compositing layers on a lived-in week), two nested full-window blurs that rendered *nothing*
+(`c557404` "Aurora"), and a reconcile that mutated the grid one event at a time (paging a week =
+24,184 forced layouts and a **1,467ms frame**). Source review cannot see any of that, so it is
+enforced instead:
+
+- **`npm test` holds the line automatically.** `tests/perf-budget.test.ts` bans `backdrop-filter` on
+  full-bleed containers and on `.fc-event`, caps how many blurred surfaces exist, asserts the CSS
+  matches the design law it claims to follow, and requires the reconcile to stay batched. Each guard
+  was verified by replaying the actual regression.
+- **`npm run perf`** drives a real visible Chrome over CDP through every interaction and checks
+  `scripts/perf/budgets.json`. Add new surfaces to `scripts/perf/interactions.mjs` — *an interaction
+  nobody measures is one nobody notices getting slower.*
+
+**The four rules that would have prevented all of it:**
+
+1. **Glass costs a layer and a blur of everything beneath it, re-run whenever that backdrop
+   changes.** Over a flat or linear backdrop a blur is a **no-op at full price** — check what is
+   actually behind it, and prove the difference with a before/after screenshot.
+2. **Anything that repeats per row / event / card is the multiplier.** One blur is free; 87 is the app.
+3. **Mutating a third-party view in a loop? Find its batching API.** 80 `addEvent` calls = 1,475ms;
+   the same 80 inside `batchRendering` = 73ms.
+4. **Never measure in a hidden browser tab.** It clamps timers to 1000ms and never runs `rAF`, so
+   jank reads as perfect. And synthetic events are not trusted events — INP reads 0 and
+   FullCalendar's dragger never arms. `npm run perf` launches its own visible browser for both reasons.
+
+**Measure `forcedLayout`** (every `getBoundingClientRect` / `offset*` / `getComputedStyle`), not
+wall-clock: it is deterministic, it *is* layout thrash, and it is what found every real regression.
+And remember Nuvo.app is **WKWebView** — a Chromium number is a lower bound on what the desktop pays.
 
 ## Stack quick-reference
 
