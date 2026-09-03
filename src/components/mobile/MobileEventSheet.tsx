@@ -105,7 +105,7 @@ export default function MobileEventSheet({
   const inlineRule = fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence);
   const { data: seriesRule } = useEventSeriesRule(tap.kind === "event" ? tap.id : null, recurring);
   const repeatRule = inlineRule ?? seriesRule ?? null;
-  const meetLink = joinUrl(raw);
+  const meetLink = joinUrl(raw, tap.kind === "event" ? tap.location : null);
   const [rsvping, setRsvping] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
 
@@ -386,7 +386,7 @@ export default function MobileEventSheet({
               className="tap fast mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-head font-semibold text-on-accent active:translate-y-px"
             >
               <Icon name="video" size={16} className="shrink-0" />
-              Join {conferenceName(raw)}
+              Join {conferenceName(raw, tap.location)}
             </a>
           )}
 

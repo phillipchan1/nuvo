@@ -1247,7 +1247,7 @@ async function stageInvite(
       ...(existing.location ? { location: existing.location } : {}),
       // Whether the invite carries a link is a fact about the event, not a
       // choice being made now — say only what's true.
-      addMeet: hasConference(existing.raw as Parameters<typeof hasConference>[0]),
+      addMeet: hasConference(existing.raw as Parameters<typeof hasConference>[0], existing.location),
       ...(unresolved.length ? { unresolved } : {}),
     };
 

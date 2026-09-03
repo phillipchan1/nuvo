@@ -67,24 +67,60 @@ export interface ConferenceCarrier {
 }
 
 /**
+ * A `location` field that is nothing but a bare URL is a meeting link some
+ * other client wrote there instead of populating `conferenceData` — Zoom's
+ * own calendar invites (not the Google Workspace add-on) do exactly this,
+ * so an event booked outside Nuvo can have a perfectly good join link that
+ * `conferenceData`/`hangoutLink` never see. Only a location that is *purely*
+ * a URL counts — "Conference Room A" or "123 Main St, see zoom.us for link"
+ * stay untouched.
+ */
+function urlFromLocation(location: string | null | undefined): string | null {
+  const trimmed = location?.trim();
+  return trimmed && /^https?:\/\/\S+$/.test(trimmed) ? trimmed : null;
+}
+
+/** "zoom.us" → "Zoom", "meet.google.com" → "Google Meet"… falls back to "meeting". */
+function nameFromUrl(url: string): string {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "meeting";
+  }
+  if (host.endsWith("zoom.us")) return "Zoom";
+  if (host === "meet.google.com") return "Google Meet";
+  if (host.endsWith("teams.microsoft.com") || host.endsWith("teams.live.com")) return "Microsoft Teams";
+  if (host.endsWith("webex.com")) return "Webex";
+  if (host.endsWith("gotomeeting.com") || host === "gotomeet.me") return "GoToMeeting";
+  if (host.endsWith("bluejeans.com")) return "BlueJeans";
+  if (host.endsWith("whereby.com")) return "Whereby";
+  return "meeting";
+}
+
+/**
  * The URL that joins the meeting, or null. `conferenceData` is the modern field;
  * `hangoutLink` is the legacy one Google still sets on older events (and on some
  * events created by other clients), so reading only the first misses meetings
- * that genuinely have a link.
+ * that genuinely have a link. `location` is a last-resort fallback for the
+ * events above that never touched `conferenceData` at all.
  */
-export function joinUrl(raw: ConferenceCarrier | null | undefined): string | null {
+export function joinUrl(raw: ConferenceCarrier | null | undefined, location?: string | null): string | null {
   const video = raw?.conferenceData?.entryPoints?.find(
     (ep) => ep.entryPointType === "video" && ep.uri,
   );
-  return video?.uri ?? raw?.hangoutLink ?? null;
+  return video?.uri ?? raw?.hangoutLink ?? urlFromLocation(location) ?? null;
 }
 
 /** "Google Meet", "Zoom Meeting"… — what the join button should say. */
-export function conferenceName(raw: ConferenceCarrier | null | undefined): string {
-  return raw?.conferenceData?.conferenceSolution?.name ?? "meeting";
+export function conferenceName(raw: ConferenceCarrier | null | undefined, location?: string | null): string {
+  const named = raw?.conferenceData?.conferenceSolution?.name;
+  if (named) return named;
+  const fallback = urlFromLocation(location);
+  return fallback ? nameFromUrl(fallback) : "meeting";
 }
 
 /** True when the event already has somewhere to meet — don't offer to add one. */
-export function hasConference(raw: ConferenceCarrier | null | undefined): boolean {
-  return joinUrl(raw) !== null;
+export function hasConference(raw: ConferenceCarrier | null | undefined, location?: string | null): boolean {
+  return joinUrl(raw, location) !== null;
 }

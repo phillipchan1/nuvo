@@ -1400,7 +1400,7 @@ export function EventPopover({
 
   // Where to join, read through the shared reader so `hangoutLink`-only events
   // (older ones, and ones other clients made) show a Join button too.
-  const joinLink = joinUrl(raw);
+  const joinLink = joinUrl(raw, event.location);
   // Only Google can mint a Meet link; iCloud write-back can't, and offering the
   // button on an event we'd fail to add one to is worse than not offering it.
   const isGoogleEvent = ownerAccount?.provider === "google";
@@ -1631,7 +1631,7 @@ export function EventPopover({
           <PopStrip>
             {joinLink && (
               <PopPrimary href={joinLink} icon={<Icon name="video" size={12} className="shrink-0" />}>
-                Join {conferenceName(raw)}
+                Join {conferenceName(raw, event.location)}
               </PopPrimary>
             )}
             {canAddMeet && (
