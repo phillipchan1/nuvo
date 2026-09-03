@@ -225,3 +225,44 @@ meaningless — and because WKWebView could not be profiled from here at all. Th
 it was free to remove is airtight (screenshot-identical); the size of the speed-up on Nuvo.app is
 an inference from how WebKit handles backdrop-filter, and only Phil's hands on the DMG can confirm
 it.
+
+---
+
+## The top remaining item, now properly characterised
+
+Opening one popover fires **20-60 `flushSync` renders of the FullCalendar subtree**, and the event
+data does not change while it happens.
+
+Measured by reaching the `FullCalendar` class instance through the React fiber tree and wrapping its
+`setState`:
+
+```
+CustomRenderingStore.set            (@fullcalendar/core)
+  -> handleCustomRendering          (@fullcalendar/react:66)
+    -> flushSync                    (react-dom)
+      -> this.setState({customRenderingMap})
+```
+
+- popover open, **event data byte-identical, 0 of 88 events changed** -> **20-60 flushes**
+- focus-mode toggle (a real width change) -> 20 flushes
+- idle -> **0** (so there is no background storm; it is strictly interaction-driven)
+
+**Why.** `eventContent={renderEvent}` returns React elements, so every event's content crosses
+FullCalendar's Preact tree back into React as a "custom rendering" — 95 of them live on a normal
+week. Whenever FullCalendar re-renders for any reason, each visible event re-requests its rendering,
+and the adapter services each request inside `flushSync` — a blocking, synchronous React render and
+commit, dozens per interaction. This is the same thing React was complaining about in the console
+from the first minute of the audit (`flushSync was called from inside a lifecycle method`), which I
+wrongly waved off early as low-volume.
+
+**The direction, not yet taken.** Have `renderEvent` (and `dayCellContent` / `dayHeaderContent`)
+return DOM nodes or an `{ html }` string instead of React elements. FullCalendar then renders event
+content natively and the custom-rendering bridge — all 95 portals and every `flushSync` — disappears.
+`renderEvent` is ~100 lines of rich JSX, so this is a real piece of work with real regression risk
+(month vs time-grid variants, the done-toggle, the recurrence mark), and it should be done
+deliberately with the harness open, not tacked onto a perf pass. It is, however, the single biggest
+remaining cost on this surface.
+
+**Do the cheap thing first:** the two blur commits above removed ~99.7% of the blurred area, and that
+is the change most likely to be felt on WKWebView. Confirm whether the Schedule still feels slow
+before paying for this one.
