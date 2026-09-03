@@ -4790,12 +4790,13 @@ Closes nothing new in the ledger. Relieves the P8 strain of an empty-looking
 altitude that had paid for its place (D-106) and then looked unfinished. Adds
 no pool, no name, no data. Works on an empty year by construction.
 
-Guarded by `tests/year-marks.test.tsx` (six-week pad). Verify fill + density
-at `?year` (desktop panes are 720px tall on purpose).
+Guarded by `tests/year-marks.test.tsx` (six-week pad; no in-pane year
+numeral). Verify fill + density at `?year` (desktop panes are 720px tall on
+purpose).
 
-*Status: standing — layout + chrome + hierarchy of the Year wall. The
-"year leaves the pane" clause is amended by D-132: the numeral returns to
-the map because year-to-year travel is not self-identifying.*
+*Status: standing — layout + chrome + hierarchy of the Year wall. D-132
+briefly put the numeral back on the map and was reversed the next day —
+two seats said the year at once.*
 
 ---
 
@@ -4865,27 +4866,17 @@ Strains nothing new. Closes the gap D-130 left between "tap a gap" and
 **D-132 · 2026-09-02 · The Year writes the year on the map, because travel
 is not self-identifying.**
 
-D-129 moved the year numeral out of the pane and into the chrome (Schedule
-toolbar on the desk, top-bar hero on the phone) so the date would be said
-once. That holds for Month: August and September *look* different, so the
-body does not need to write the name. It fails for Year. Twelve months of
-2026 and twelve months of 2027 are the same picture. Paging left or right
-leaves you reading January–December with no idea which year you landed on,
-unless you glance back at a title that did not travel with the page.
+D-129 moved the year numeral out of the pane and into the chrome so the
+date would be said once. A follow-up put it *back* on the map as well —
+hero/toolbar *and* an in-pane `YearMark` — on the theory that year grids
+are not self-identifying when you page. That was the date spoken twice
+inside one screenful, which is exactly what D-123 forbids. Phil saw the
+duplicate the next day.
 
-So the numeral returns to the map — one Fraunces `YearMark`, shared by both
-shells, riding the year page so a swipe carries the span with the months.
-The chrome still names it (the title bar's job). Saying it twice is the
-cost of a span that cannot identify itself.
+→ Reversed. The year stays in chrome only (Schedule toolbar on the desk,
+top-bar hero on the phone). The map does not restate it. Travel still
+updates the hero. Guarded by `tests/year-marks.test.tsx` (no in-pane
+numeral) and `tests/calendar-chrome.test.tsx` (hero moves when you page).
 
-Closes nothing new in the ledger — it is D-123's own job (*the chrome
-states where you are*) on the one lens that was leaving it unanswered
-while you travelled. Strains P8 only if you read the numeral as a second
-question; it is the coordinate, the same way D-127's day numbers are.
-Adds no pool, no name, no data. Works on an empty year by construction.
-
-Guarded by `tests/year-marks.test.tsx` (the numeral is present, once, on
-both shells) and `tests/calendar-chrome.test.tsx` (hero and mark move
-together when you page). Verify at `?year` and `?horizon` (year frame).
-
-*Status: standing — amends D-129's "year leaves the pane" clause only.*
+*Status: superseded — reversed 2026-09-03; D-129's "year leaves the pane"
+stands.*

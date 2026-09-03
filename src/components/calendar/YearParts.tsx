@@ -1,20 +1,19 @@
 // The marks a year is drawn with — twelve month grids of day numerals, worn
 // by the desktop Year and the phone's. The Year is a map of the year
-// (D-127 · D-128 · D-129 · D-132): dates you can read, the year written on
-// the map, today marked, a tap to drill
+// (D-127 · D-128 · D-129): dates you can read, today marked, a tap to drill
 // in. Load shading lived here and was cut — it competed with the numerals and
 // answered a question the chat's `read_calendar_load` already owns. Verify
 // both shells at once at ?year.
 //
 // Hierarchy (read top → bottom, loud → quiet):
-//   1. the year     — Fraunces, ink; the span this map is (D-132). Year grids
-//                     are not self-identifying — January of one year looks like
-//                     January of the next — so the numeral is written on the
-//                     map and travels with it (D-132).
-//   2. month name   — Fraunces, ink; current month wears --signal
-//   3. day numerals — ink, tabular; the map itself (not muted texture)
-//   4. today        — filled --signal disc, white numeral (same mark Month uses)
-//   5. weekday row  — a whisper above the grid, never competing with dates
+//   1. month name  — Fraunces, ink; current month wears --signal
+//   2. day numerals — ink, tabular; the map itself (not muted texture)
+//   3. today        — filled --signal disc, white numeral (same mark Month uses)
+//   4. weekday row  — a whisper above the grid, never competing with dates
+//
+// The year numeral itself is chrome, not a map mark — Schedule toolbar on the
+// desk, top-bar hero on the phone (D-129). Writing it on the map too said the
+// date twice (D-132 tried; reversed).
 //
 // Spacing: Apple's year keeps the number grid DENSE — week rows stay near
 // square off the month's width, and leftover pane height sits under the grid,
@@ -46,26 +45,6 @@ const CELLS = WEEKS * 7;
  *  the Year and every other surface that counts a month agree on February. */
 export function monthDays(month: Date): Date[] {
   return monthDates(month.getFullYear(), month.getMonth());
-}
-
-// ── the year ───────────────────────────────────────────────────────────────
-
-/**
- * The year you're standing in. Not a heading: the chrome already owns the
- * title (toolbar on the desk, top-bar hero on the phone), and the calendar
- * chrome tests forbid a second h1/h2 on this surface. A `div` with the same
- * Fraunces voice, so both shells name the span the same way.
- */
-export function YearMark({ year }: { year: number }) {
-  return (
-    <div
-      data-year-mark
-      className="masthead shrink-0 text-lead leading-none text-ink"
-      aria-label={`Year ${year}`}
-    >
-      {year}
-    </div>
-  );
 }
 
 // ── one month ──────────────────────────────────────────────────────────────
