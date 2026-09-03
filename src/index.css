@@ -2102,10 +2102,14 @@ select.field { appearance: none; -webkit-appearance: none; }
      Nuvo.app runs) pays far more for backdrop-filter than Chromium does. If you
      want the softening back, gate it behind something that is not the calendar
      grid. */
-  transition:
-    filter var(--d-fast) var(--ease-out),
-    box-shadow var(--d-fast) var(--ease-out),
-    transform var(--d-fast) var(--ease-out);
+  /* ONLY filter. This is the documented law (design-language.md, "On the
+     Schedule, the lift is instant") and the CSS had drifted from it: it was also
+     transitioning box-shadow and transform, so every click animated
+     --shadow-lift (a 60px-blur shadow) up from nothing over 130ms — a
+     large-area repaint every frame of the transition, on the one surface where
+     a click must feel immediate. Shadow + transform now apply with no delay,
+     as written. */
+  transition: filter var(--d-fast) var(--ease-out);
 }
 /* Mouse focus on an event is silent — clicking one already lifts it inline
    (`evt-focused`), and FullCalendar's own outline was a hard edge on a tinted
@@ -2167,8 +2171,10 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc-event.evt-focused {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lift);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
+  /* No backdrop-filter. It used to be blur(14px) so whatever the lifted block
+     overlapped blurred out instead of bleeding through — but it promoted a
+     compositing layer on the click itself, which is the moment that has to feel
+     instant. Separation comes from the lift shadow alone. */
 }
 .fc-event.evt-done { opacity: 0.5; }
 /* Checkbox + strike are driven by the harness class so a click can paint
@@ -2252,6 +2258,11 @@ select.field { appearance: none; -webkit-appearance: none; }
   opacity: 1;
   box-shadow: var(--shadow-lift);
   transform: scale(1.03);
+  /* The ghost moves with the pointer while carrying --shadow-lift (a 60px blur
+     over a large area). Un-promoted, WebKit repaints that shadow every frame of
+     the drag. Promoting it once means the shadow is rasterised a single time
+     and the layer is only translated afterwards. */
+  will-change: transform;
   /* The ghost trails the cursor; let :hover fall through to the cell beneath so
      the drop-target highlight (below) tracks the day under the pointer. */
   pointer-events: none;
