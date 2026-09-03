@@ -127,19 +127,18 @@ describe("the date is stated once", () => {
     }
   });
 
-  it("names the year on the Year lens, and updates it when you travel", () => {
-    // Year grids are not self-identifying — January 2026 looks like January
-    // 2027 — so the numeral has to be written on the map AND handed up as
-    // the hero. Both must move together when you page (D-132).
+  it("names the year once — in the hero — and updates it when you travel", () => {
+    // The year is chrome, not a map mark (D-129). The hero is the one seat;
+    // the body must not also print it (D-123). Paging still has to move the
+    // hero, or left/right leaves you without a year at all.
     const c = surface("year");
     const y = NOW.getFullYear();
     expect(seen.hero?.hero).toBe(String(y));
-    expect(c.getByLabelText(`Year ${y}`)).toBeTruthy();
+    expect(c.queryByText(String(y))).toBeNull();
 
     act(() => c.getByLabelText("Next year").click());
     expect(seen.hero?.hero).toBe(String(y + 1));
-    expect(c.getByLabelText(`Year ${y + 1}`)).toBeTruthy();
-    expect(c.queryByLabelText(`Year ${y}`)).toBeNull();
+    expect(c.queryByText(String(y + 1))).toBeNull();
   });
 
   it("says This week only where the crown is not already saying it", () => {
