@@ -60,10 +60,10 @@ const GROUPS: Group[] = [
       { keys: [["I"]], label: "Back to inbox" },
       { keys: [["X"]], label: "Move to trash" },
       { keys: [["/"]], label: "Filter the list (Esc clears it)" },
-      { keys: [["U"]], label: "Restore (on the Trash tab)" },
+      { keys: [["U"]], label: "Restore (in the Trash)" },
       { keys: [["#"]], label: "Label" },
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },
-      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab" },
+      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash" },
     ],
   },
   {

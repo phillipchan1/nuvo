@@ -2030,12 +2030,13 @@ the six-second toast expired, a deleted task was unrecoverable from inside the
 app (audit rank 8). One real account was holding **100+ tasks in that state**,
 invisible.
 
-The trash is **not** a sixth destination (P10) — it is a face on the tab strip
-that already exists, on both shells, and it appears only when it holds something.
+The trash is **not** a sixth destination (P10) — it is a quiet icon on the tab
+strip that already exists, on both shells, and it appears only when it holds something.
+Today and Inbox keep the equal-width faces; Trash never takes a third of the strip.
 Restore lands via `restoreFromTrashPatch()` (undated `restingStatus`), never on a date
 that has since passed — and the trash face follows the row (Inbox when that's where it
 landed) instead of dumping you on Today after the last restore. The strip never arms
-Trash as a drop target during a drag: it is a face, not a destination, and lighting it
+Trash as a drop target during a drag: it is recovery, not a destination, and lighting it
 next to Inbox made a Today → Inbox drop look like a delete.
 Permanent deletion is the one act in Nuvo with no undo, so it confirms in place,
 never rides a bare keystroke, and the agent's version is confirm-token gated and
