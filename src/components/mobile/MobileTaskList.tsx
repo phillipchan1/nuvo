@@ -23,8 +23,8 @@ type Vertical = ReturnType<typeof useVertical>["data"];
 const TRIAGE_UNDO = { undo: "toast" as const };
 
 /** The Tasks screen's lenses. `trash` is the phone's half of the floor under
- *  delete — the same act as the desktop rail's Trash face, over the same query,
- *  and it appears only when it holds something. */
+ *  delete — the same act as the desktop rail's Trash icon, over the same query,
+ *  and it appears only when it holds something (D-136). */
 export type MobileTab = "today" | "week" | "inbox" | "trash";
 
 export default function MobileTaskList({

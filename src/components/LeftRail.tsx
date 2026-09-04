@@ -37,8 +37,9 @@ import { skipWhenAsleep } from "./KeepAlive";
 /**
  * The rail's faces. `trash` is the floor under delete (audit rank 8: a trashed
  * task was unrecoverable once its six-second toast expired). It is deliberately
- * NOT a sixth navigation destination — Principle 10 — just a third face on the
- * strip that already exists, and it only appears when it holds something.
+ * NOT a sixth navigation destination — Principle 10 — and not a peer of Today
+ * and Inbox either (D-136): an icon on the strip that already exists, shown
+ * only when it holds something.
  */
 export type RailTab = "inbox" | "today" | "trash";
 type Mutations = ReturnType<typeof useTaskMutations>;
@@ -717,12 +718,8 @@ function LeftRail({
     onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
   });
 
-  const tabCount = (t: RailTab) =>
-    t === "inbox"
-      ? inbox.length
-      : t === "trash"
-        ? trashed.length
-        : today.filter((x) => x.status !== "done").length;
+  const tabCount = (t: "inbox" | "today") =>
+    t === "inbox" ? inbox.length : today.filter((x) => x.status !== "done").length;
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -823,12 +820,13 @@ function LeftRail({
             />
           )}
         />
-        {/* Tabs — Today first (the day is where the rail's lower zone lives);
-            Inbox second. This zone is "work the day," under the week crown. */}
-        {/* The strip carries one continuous baseline so the active underline sits ON
-            a line instead of floating between the crown's divider and nothing. */}
+        {/* Tabs — Today and Inbox are the day's two faces. Trash is recovery,
+            so it sits as an icon on the same strip rather than splitting the
+            row three ways (D-136). The strip carries one continuous baseline
+            so the active underline sits ON a line instead of floating between
+            the crown's divider and nothing. */}
         <div className="flex border-b border-line">
-          {(trashed.length ? (["today", "inbox", "trash"] as const) : (["today", "inbox"] as const)).map((t) => {
+          {(["today", "inbox"] as const).map((t) => {
             // Three states, because "you could drop here" and "you are about to"
             // are different promises: resting · armed (a compatible row is in
             // hand) · ready (the pointer is on it, release commits).
@@ -848,23 +846,34 @@ function LeftRail({
                 }}
                 {...(t === "inbox"
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
-                  : t === "trash"
-                    ? { "data-trash-tab": "" }
-                    : { "data-today-tab": "" })}
+                  : { "data-today-tab": "" })}
                 className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
                   tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
                 } ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
               >
-                {t === "inbox" ? "Inbox" : t === "trash" ? "Trash" : "Today"}
-                {/* The trash query is capped, so its count is a floor, not a
-                    total — say "100+" rather than claiming exactly 100. */}
-                <span className="mono ml-1.5 text-meta text-muted">
-                  {tabCount(t)}
-                  {t === "trash" && trashed.length >= TRASH_LIMIT ? "+" : ""}
-                </span>
+                {t === "inbox" ? "Inbox" : "Today"}
+                <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
               </button>
             );
           })}
+          {trashed.length > 0 && (
+            <button
+              type="button"
+              data-trash-tab=""
+              aria-label={`Trash · ${trashed.length >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashed.length}`}
+              aria-pressed={tab === "trash"}
+              title="Trash"
+              onClick={() => {
+                if (suppressTabClickRef.current) return;
+                setTab("trash");
+              }}
+              className={`fast -mb-px flex shrink-0 items-center justify-center border-b-2 px-2.5 py-2 ${
+                tab === "trash" ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          )}
           {/* The filter lives ON the tab strip, not above it: it modifies which
               face you're looking at, and a control that floats free of the faces
               reads as a sixth destination. Inert on Trash — the trash is a

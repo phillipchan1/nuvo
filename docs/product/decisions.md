@@ -3926,7 +3926,8 @@ week scroller moved 0 → 125px on a click.
 
 - **Trash stays on the tab strip.** Demoting it re-opens an explicit P10 call ("not a sixth
   destination, just a third face"). That is Phil's to re-open, not mine, and he approved a
-  rail concept, not that.
+  rail concept, not that. **Re-opened as D-136:** still on the strip, now an icon — rank
+  changed, place did not.
 - **The day list was not compressed.** The mockup showed 30px rows; `TaskRow`'s `min-h-52px`
   was a deliberate fix for the *same* hierarchy complaint (rail-hierarchy pass). The
   re-weighting comes from the projects gaining mass, not from the day losing it.
@@ -4913,3 +4914,27 @@ once Resend's receiving MX for `inbox.nuvo.day` answers. Guarded by
 
 *Status: standing — receiving domain, webhook, and secret are live. The SPA
 shows the address in Settings → Inbox address and on an empty inbox.*
+
+---
+
+**D-136 · 2026-09-04 · Trash is an icon on the strip, not a third peer of Today and Inbox.**
+
+Origin ⓞ: *"I don't feel trash deserves such a large space. can we put this to
+an icon or something so major features are today and inbox."* D-111 left Trash
+as a labelled third face because demoting it was Phil's to re-open. This is that
+call, without making Trash a sixth destination (P10 still holds): it stays on
+the same strip, appears only when it holds something, and is still not a drop
+target (D-104). What changes is rank. Today and Inbox are the day's two faces;
+Trash is recovery, so it wears the same compact icon grammar as Filter rather
+than splitting the strip three ways. The count ("Trash 52") was D-111 finding 5 —
+a retention log wearing a navigation face — and leaves the chrome; the list is
+the count. `3` still opens it.
+
+Phone: the same demotion. Today · Week · Inbox stay the three segments; Trash is
+a 44px icon at the end of the strip.
+
+Closes no new ledger row — this is rank, not a new answer. No pool, no overlapping
+name (P10, P11). Empty trash still hides the icon, so a stranger's account is
+quiet (P7, P16).
+
+*Status: standing — rail and phone Tasks strip.*

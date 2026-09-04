@@ -91,11 +91,6 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
   { id: "inbox", label: "Inbox" },
 ];
 
-// Trash is the fourth lens, and it only exists when it holds something — a
-// permanently visible fourth segment would tax a three-segment control for a
-// face most days never need (P9, P10).
-const TRASH_SUBTAB: { id: MobileTab; label: string } = { id: "trash", label: "Trash" };
-
 const isTab = (v: string | null): v is Tab => !!v && NAV.some((t) => t.id === v);
 
 // Read the active tab, migrating older single-key state forward once. The v2 nav
@@ -1070,14 +1065,16 @@ function TaskSubtabs({
   sub: MobileTab;
   setSub: (s: MobileTab) => void;
   count: (s: MobileTab) => number;
-  /** The trash holds something, so its lens is reachable. */
+  /** The trash holds something, so its icon is reachable. */
   showTrash?: boolean;
   /** The filter control, rendered at the end of the strip. Null on Trash. */
   filter?: React.ReactNode;
 }) {
+  const trashOn = sub === "trash";
+  const trashCount = count("trash");
   return (
     <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-      {(showTrash ? [...SUBTABS, TRASH_SUBTAB] : SUBTABS).map((t) => {
+      {SUBTABS.map((t) => {
         const on = sub === t.id;
         const c = count(t.id);
         return (
@@ -1103,15 +1100,28 @@ function TaskSubtabs({
                   border: on ? "none" : "1px solid var(--line-strong)",
                 }}
               >
-                {/* The trash query is capped, so its count is a floor, not a
-                    total — "100+", never a false exact 100. */}
                 {c}
-                {t.id === "trash" && c >= TRASH_LIMIT ? "+" : ""}
               </span>
             )}
           </button>
         );
       })}
+      {showTrash && (
+        // Recovery, not a fourth peer of Today · Week · Inbox (D-136). Same
+        // 44px floor as the segments; the count lives in the name, not the
+        // chrome — "Trash 52" was a retention log wearing a navigation face.
+        <button
+          type="button"
+          onClick={() => setSub("trash")}
+          aria-label={`Trash · ${trashCount >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashCount}`}
+          aria-pressed={trashOn}
+          className={`tap fast flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
+            trashOn ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
+          }`}
+        >
+          <Icon name="trash" size={16} />
+        </button>
+      )}
       {filter}
     </div>
   );
