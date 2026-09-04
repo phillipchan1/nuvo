@@ -21,7 +21,6 @@ import { announce } from "../lib/announce";
 import { isTypingIn, pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
-import { onPopoverBlurClose } from "../lib/taskPopoverCloseGuard";
 import { useReminderFor, useReminderMutations } from "../hooks/useReminders";
 import {
   describeLead,
@@ -156,24 +155,14 @@ function LeftRail({
     setRemindPickerFor(null);
   }, [nav]);
 
-  // A row's glass-lift highlight tracks selectedId, not "is the task popover
-  // open" — arrow-key nav and Escape both leave a row selected on purpose, as
-  // your place in the list. But an outside click that closes the popover
-  // means you've left the rail's context entirely, and nothing cleared
-  // selectedId for that case, so the row stayed lit forever. This subscribes
-  // directly (rather than reacting to `nav`) so the deselect lands in the
-  // same synchronous click that closes the popover — waiting on `nav` to
-  // settle through the whole close/re-render cycle first read as a stuck
-  // row that snapped off a beat late. The functional update only clears a
-  // row that's still selected — if the same click already moved selection to
-  // a different row (opening a new popover there), that fresh pick survives.
-  useEffect(
-    () =>
-      onPopoverBlurClose((taskId) => {
-        setSelectedId((prev) => (prev === taskId ? null : prev));
-      }),
-    [],
-  );
+  // Glass-lift is "this row's popover is open", not the keyboard cursor.
+  // selectedId still drives j/k and hotkeys; it used to also paint the
+  // lift, which is how Escape (same closeOverlay as a click-away, just
+  // without a blur) left a row lit after the panel was gone. Overlay is
+  // the bit that mounts the popover, so they appear and vanish in one
+  // paint — blur, Escape, and ✕ don't need their own notify.
+  const openTaskId =
+    nav.overlay === "task" || nav.overlay === "task-record" ? nav.overlayId : null;
 
   // Filters (audit rank 6). The question is held here, not persisted — a filter
   // left on from last Tuesday, quietly hiding work, is the failure mode every
@@ -708,7 +697,7 @@ function LeftRail({
     labels,
     // One clock for the row and the group that sorted it — see TaskRow's `now`.
     now,
-    selected: t.id === selectedId,
+    selected: t.id === openTaskId,
     multiSelected: selectedIds.has(t.id),
     draggable: true,
     dragging: draggingId === t.id,
