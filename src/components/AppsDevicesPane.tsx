@@ -10,12 +10,17 @@
 // and this screen can never show a token again. That is the same reason
 // revoking is a timestamp, not a delete: a revoked row still explains where a
 // task came from.
+//
+// This pane is an inventory, not a tutorial. Wiring steps live behind
+// Next steps so a specific teammate (Grok Bot, Cursor, …) is not the page.
+// The forwarding address is Settings → Inbox address, not here.
 
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
+import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
 import { Btn } from "./ui";
 
@@ -39,14 +44,23 @@ const KIND_SCOPES: Record<TokenKind, string[]> = {
   account: ["account"],
 };
 
+const KINDS: {
+  id: TokenKind;
+  icon: IconName;
+  label: string;
+  hint: string;
+}[] = [
+  { id: "account", icon: "user", label: "Full account", hint: "A teammate that sees and acts" },
+  { id: "inbox", icon: "package", label: "Inbox", hint: "A watch, shortcut, or app" },
+];
+
 function kindOf(scopes: string[]): TokenKind {
   return scopes.includes("account") ? "account" : "inbox";
 }
 
-function kindLabel(scopes: string[]): string {
-  return kindOf(scopes) === "account" ? "Full account" : "Inbox";
+function kindMeta(scopes: string[]) {
+  return KINDS.find((k) => k.id === kindOf(scopes)) ?? KINDS[1];
 }
-
 
 /** "lead_well" from "Lead Well" — the machine key the capture payload reports
  *  as a task's `source` when it doesn't name one itself. */
@@ -54,10 +68,10 @@ const machineKey = (name: string) =>
   name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "app";
 
 const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
-function mcpEndpoint(): string {
-  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/mcp`);
+function edgeEndpoint(fn: "mcp" | "capture"): string {
+  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/${fn}`);
   url.searchParams.set("apikey", supabaseAnonKey);
   return url.toString();
 }
@@ -71,10 +85,67 @@ async function copyText(text: string, ok: string) {
   }
 }
 
+function Mark({
+  icon,
+  tone = "quiet",
+}: {
+  icon: IconName;
+  tone?: "accent" | "quiet";
+}) {
+  return (
+    <span
+      aria-hidden
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+        tone === "accent" ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink"
+      }`}
+    >
+      <Icon name={icon} size={16} />
+    </span>
+  );
+}
+
+function CopyBtn({
+  onClick,
+  children,
+  kind = "ghost",
+}: {
+  onClick: () => void;
+  children: ReactNode;
+  kind?: "primary" | "ghost";
+}) {
+  return (
+    <Btn kind={kind === "primary" ? "primary" : "ghost"} className="tap shrink-0" onClick={onClick}>
+      <span className="inline-flex items-center gap-1.5">
+        <Icon name="copy" size={13} />
+        {children}
+      </span>
+    </Btn>
+  );
+}
+
+function StepList({ steps }: { steps: string[] }) {
+  return (
+    <ol className="space-y-2">
+      {steps.map((step, i) => (
+        <li key={step} className="flex gap-2.5">
+          <span
+            aria-hidden
+            className="mono mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-micro text-accent"
+          >
+            {i + 1}
+          </span>
+          <span className="text-caption leading-snug text-muted">{step}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function AppsDevicesPane() {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<TokenKind>("account");
+  const stepsRef = useRef<HTMLDetailsElement>(null);
   // Held in memory only, and only until the user dismisses it. Never persisted,
   // never re-derivable — this is the one moment the token exists outside a hash.
   const [fresh, setFresh] = useState<{ name: string; token: string; kind: TokenKind } | null>(null);
@@ -111,6 +182,7 @@ export function AppsDevicesPane() {
     onSuccess: (t) => {
       setFresh(t);
       setName("");
+      if (stepsRef.current) stepsRef.current.open = true;
       qc.invalidateQueries({ queryKey: QK });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -133,21 +205,69 @@ export function AppsDevicesPane() {
 
   const live = connections.filter((c) => !c.revoked_at);
   const revoked = connections.filter((c) => c.revoked_at);
-  const placeholder = kind === "account" ? "e.g. Grok Bot" : "e.g. Apple Watch, iPhone shortcut";
+  const placeholder = kind === "account" ? "e.g. Cursor, Grok Bot" : "e.g. Apple Watch, shortcut";
+  const mcpUrl = edgeEndpoint("mcp");
+  const captureUrl = edgeEndpoint("capture");
 
   return (
     <div>
       <PaneHeader
         title="Apps & devices"
-        sub="A key to this signed-in account. A shortcut can drop into your inbox. A teammate like Grok Bot can see your week and act on it — as you, never as Nuvo placing the day."
+        sub="A key for something you own — a teammate, a watch, a shortcut."
       />
 
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-2xl space-y-5">
+        {isLoading ? (
+          <div className="text-caption text-muted">Loading…</div>
+        ) : live.length === 0 ? (
+          <div className="flex items-center gap-3 text-caption text-muted">
+            <Mark icon="package" />
+            <p>No keys yet. Mint one below.</p>
+          </div>
+        ) : (
+          <div>
+            <div className="section-label">Live keys</div>
+            {live.map((c) => {
+              const meta = kindMeta(c.scopes);
+              const account = meta.id === "account";
+              return (
+                <div
+                  key={c.id}
+                  className="flex flex-wrap items-center gap-3 border-b border-line py-3"
+                >
+                  <Mark icon={meta.icon} tone={account ? "accent" : "quiet"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-caption font-medium text-ink">{c.name}</div>
+                    <div className="text-label text-muted">
+                      {meta.label}
+                      {c.last_four && (
+                        <>
+                          {" · "}
+                          <span className="mono">…{c.last_four}</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-label text-muted">
+                      Added {fmtDate(c.created_at)}
+                      {" · "}
+                      {c.last_used_at ? `last used ${fmtDate(c.last_used_at)}` : "never used"}
+                    </div>
+                  </div>
+                  <Btn
+                    className="tap shrink-0"
+                    disabled={revoke.isPending}
+                    onClick={() => revoke.mutate(c.id)}
+                  >
+                    Revoke
+                  </Btn>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2 sm:flex-row" role="radiogroup" aria-label="What this token can do">
-          {([
-            { id: "account" as const, label: "Full account", hint: "A teammate that can see and act on your funnel" },
-            { id: "inbox" as const, label: "Inbox", hint: "Add tasks over HTTP — watch, shortcut, another app" },
-          ]).map((opt) => {
+          {KINDS.map((opt) => {
             const on = kind === opt.id;
             return (
               <button
@@ -156,47 +276,19 @@ export function AppsDevicesPane() {
                 role="radio"
                 aria-checked={on}
                 onClick={() => setKind(opt.id)}
-                className={`tap min-h-[44px] flex-1 rounded-lg border px-3 py-2.5 text-left ${
+                className={`tap flex min-h-[44px] flex-1 items-center gap-3 rounded-lg border px-3 py-2.5 text-left ${
                   on ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong"
                 }`}
               >
-                <div className="text-caption font-medium text-ink">{opt.label}</div>
-                <div className="text-label text-muted">{opt.hint}</div>
+                <Mark icon={opt.icon} tone={opt.id === "account" ? "accent" : "quiet"} />
+                <div>
+                  <div className="text-caption font-medium text-ink">{opt.label}</div>
+                  <div className="text-label text-muted">{opt.hint}</div>
+                </div>
               </button>
             );
           })}
         </div>
-
-        {kind === "account" ? (
-          <div className="space-y-3">
-            <p className="text-caption leading-snug text-ink">
-              Grok Bot (or any MCP teammate) reads your domains, projects, week, and calendar,
-              and writes through the same acts as ⌘J. Destructive calendar acts still ask first.
-              It does not auto-schedule your day.
-            </p>
-            <p className="text-caption leading-snug text-muted">
-              The URL is Nuvo. The token is <span className="text-ink">you</span> — this
-              signed-in account only. Anyone who holds the token acts as you. Never drop it
-              into a team-wide connector; every person mints their own.
-            </p>
-            <div className="section-label">Wire Grok Bot</div>
-            <ol className="space-y-2 text-caption leading-snug text-muted">
-              <li>1. Name it below and create the token — shown once.</li>
-              <li>2. In Grok Bot, add a custom connector (not a team one).</li>
-              <li>
-                3. URL +{" "}
-                <span className="mono text-ink">Authorization: Bearer &lt;token&gt;</span>
-              </li>
-              <li>4. Skip any login card. This is a Bearer token, not OAuth.</li>
-            </ol>
-            <div className="mono break-all text-label text-muted">{mcpEndpoint()}</div>
-          </div>
-        ) : (
-          <p className="text-caption leading-snug text-muted">
-            A key that can add to your inbox over HTTP — a watch, a shortcut, another app
-            you own. It cannot read your week or change a project.
-          </p>
-        )}
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <TextInput
@@ -218,81 +310,95 @@ export function AppsDevicesPane() {
 
         {fresh && (
           <div className="space-y-3 rounded-lg border border-line bg-surface-2 p-4">
-            <div className="text-caption font-medium">
-              Token for {fresh.name} — copy it now
+            <div className="flex items-center gap-3">
+              <Mark
+                icon={fresh.kind === "account" ? "user" : "package"}
+                tone={fresh.kind === "account" ? "accent" : "quiet"}
+              />
+              <div className="text-caption font-medium">
+                Token for {fresh.name} — copy it now
+              </div>
             </div>
             <p className="text-label text-muted">
-              This is the only time it's shown. Nuvo stores a one-way hash, so it can't be
-              displayed again. Treat it like a password; if you lose it, revoke and make another.
+              Shown once. Treat it like a password; if you lose it, revoke and make another.
             </p>
             <div className="mono break-all rounded border border-line bg-bg p-3 text-label">
               {fresh.token}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Btn
-                kind="primary"
-                className="tap"
-                onClick={() => void copyText(fresh.token, "Token copied")}
-              >
+              <CopyBtn kind="primary" onClick={() => void copyText(fresh.token, "Token copied")}>
                 Copy token
-              </Btn>
+              </CopyBtn>
               {fresh.kind === "account" && (
-                <Btn
-                  className="tap"
+                <CopyBtn
                   onClick={() =>
                     void copyText(
-                      `URL: ${mcpEndpoint()}\nAuthorization: Bearer ${fresh.token}`,
+                      `URL: ${mcpUrl}\nAuthorization: Bearer ${fresh.token}`,
                       "URL + token copied",
                     )
                   }
                 >
                   Copy URL + token
-                </Btn>
+                </CopyBtn>
               )}
               <Btn className="tap" onClick={() => setFresh(null)}>
                 Done
               </Btn>
             </div>
-            {fresh.kind === "account" && (
-              <p className="text-label text-muted">
-                Paste that block into Grok Bot as a custom connector. Skip the login card.
-              </p>
-            )}
           </div>
         )}
 
-        {isLoading ? (
-          <div className="text-caption text-muted">Loading…</div>
-        ) : live.length === 0 ? (
-          <p className="text-caption text-muted">
-            No tokens yet. Nothing can talk to this account over HTTP until you make one.
-          </p>
-        ) : (
-          <div>
-            <div className="section-label">Live keys</div>
-            {live.map((c) => (
-              <div
-                key={c.id}
-                className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-3"
-              >
-                <div className="min-w-0">
-                  <div className="text-caption font-medium text-ink">{c.name}</div>
-                  <div className="text-label text-muted">
-                    {kindLabel(c.scopes)} · <span className="mono">…{c.last_four}</span> · added {fmtDate(c.created_at)} ·{" "}
-                    {c.last_used_at ? `last used ${fmtDate(c.last_used_at)}` : "never used"}
-                  </div>
+          <details ref={stepsRef} className="border-t border-line pt-1">
+            <summary className="tap min-h-[44px] cursor-pointer py-2 text-caption font-medium text-ink">
+              Next steps
+            </summary>
+          <div className="space-y-5 pb-2">
+            <div className="flex gap-3">
+              <Mark icon="user" tone="accent" />
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <div className="text-caption font-medium text-ink">Full account</div>
+                  <p className="text-label leading-snug text-muted">
+                    A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools as ⌘J.
+                    Destructive acts still ask first. The token is this account; never drop it into a team-wide connector.
+                  </p>
                 </div>
-                <Btn
-                  className="tap shrink-0"
-                  disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(c.id)}
-                >
-                  Revoke
-                </Btn>
+                <StepList
+                  steps={[
+                    "Create a Full account token — shown once.",
+                    "In that app, add a custom connector. Not a team one.",
+                    "Paste the endpoint URL and Authorization: Bearer <token>.",
+                    "Skip any login card. This is a Bearer token, not OAuth.",
+                  ]}
+                />
+                <CopyBtn onClick={() => void copyText(mcpUrl, "Endpoint copied")}>
+                  Copy URL
+                </CopyBtn>
               </div>
-            ))}
+            </div>
+
+            <div className="flex gap-3">
+              <Mark icon="package" />
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <div className="text-caption font-medium text-ink">Inbox</div>
+                  <p className="text-label leading-snug text-muted">
+                    A watch, shortcut, or app you own. It can add tasks. It cannot read your week.
+                  </p>
+                </div>
+                <StepList
+                  steps={[
+                    "Create an Inbox token — shown once.",
+                    "POST to the capture endpoint with Authorization: Bearer <token>.",
+                  ]}
+                />
+                <CopyBtn onClick={() => void copyText(captureUrl, "Endpoint copied")}>
+                  Copy URL
+                </CopyBtn>
+              </div>
+            </div>
           </div>
-        )}
+        </details>
 
         {revoked.length > 0 && (
           <details className="text-label text-muted">
@@ -300,13 +406,27 @@ export function AppsDevicesPane() {
               {revoked.length} revoked
             </summary>
             <div className="mt-1">
-              {revoked.map((c) => (
-                <div key={c.id} className="border-b border-line py-2">
-                  <span className="text-ink/60">{c.name}</span>{" "}
-                  <span className="mono">…{c.last_four}</span> · revoked{" "}
-                  {fmtDate(c.revoked_at!)}
-                </div>
-              ))}
+              {revoked.map((c) => {
+                const meta = kindMeta(c.scopes);
+                return (
+                  <div key={c.id} className="flex items-center gap-3 border-b border-line py-2">
+                    <span className="opacity-40">
+                      <Mark icon={meta.icon} />
+                    </span>
+                    <div>
+                      <span className="text-ink/60">{c.name}</span>
+                      {c.last_four && (
+                        <>
+                          {" "}
+                          <span className="mono">…{c.last_four}</span>
+                        </>
+                      )}
+                      {" · revoked "}
+                      {fmtDate(c.revoked_at!)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </details>
         )}

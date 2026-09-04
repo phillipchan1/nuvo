@@ -80,12 +80,16 @@ newer.
 - **The week composer stays client-only.** MCP can bring a project onto the week
   (`create_priority`); it cannot run Sunday.
 
-## 4 · Wiring Grok Bot
+## 4 · Wiring a teammate
+
+Grok Bot is one consumer of MCP, not the Settings page. The pane is an
+inventory of keys; the numbered wiring lives under **Next steps**.
 
 1. Deploy: `npx supabase functions deploy mcp --no-verify-jwt`
 2. In the running app: Settings → Apps & devices → **Full account** → name it
-   `Grok Bot` → Create token → **Copy URL + token**
-3. Tell Grok Bot: custom connector, that URL, `Authorization: Bearer <token>`
+   → Create token → **Copy URL + token** (or **Copy URL** under Next steps)
+3. In the teammate (Grok Bot, Cursor, …): custom connector, that URL,
+   `Authorization: Bearer <token>`
 
 If the connector asks for a login card: it wants OAuth, which this endpoint does
 not speak. Bearer is the auth. Paste the header.
