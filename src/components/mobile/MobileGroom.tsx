@@ -29,6 +29,7 @@ import { initiativeReadinessAxes } from "../../lib/lenses";
 import { domainById, tasksOf, type VerticalData } from "../../lib/vertical";
 import { READY } from "../floors/ReadinessBanner";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
+import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { AreaField, Hint, TaskComposer, type Store } from "./detail/verticalDetail";
 import SkeletonRows from "./Skeleton";
 import { useRecordActions } from "./MobileRecordActions";
@@ -121,6 +122,11 @@ export default function MobileGroom({
             : "Shape the bets — define the objective, set the measures. Thinnest first."}
         </p>
         {!empty && <Rollup {...rollup} />}
+        {!empty && (
+          <div className="mt-3">
+            <GroomingSessionAction kind={scope} />
+          </div>
+        )}
       </div>
 
       {empty ? (

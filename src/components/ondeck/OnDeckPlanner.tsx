@@ -29,6 +29,7 @@ import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
 import DeckCard from "./DeckCard";
+import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
@@ -412,6 +413,7 @@ export default function OnDeckPlanner() {
         footTitle="New project"
         footTeach="project-new"
         onFoot={() => openFloorModal("new-project")}
+        groomAction={<GroomingSessionAction kind="project" />}
       >
         {inbox.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">

@@ -62,6 +62,7 @@ export default function PlannerRail({
   onFoot,
   footTitle,
   footTeach,
+  groomAction,
   children,
 }: {
   crown: RailCrown;
@@ -77,6 +78,10 @@ export default function PlannerRail({
   footTitle?: string;
   /** `data-teach` key, so the live walkthrough can light this ＋ (see teachTargets). */
   footTeach?: string;
+  /** the grooming-session action — quiet, self-hiding, lives right under the
+   *  gap row so "N need shaping" has a same-screen answer, not just a jump
+   *  into Groom (see GroomingSessionAction). */
+  groomAction?: ReactNode;
   children: ReactNode;
 }) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
@@ -115,6 +120,7 @@ export default function PlannerRail({
             <span className="ml-auto shrink-0 text-micro text-muted">›</span>
           </button>
         )}
+        {groomAction && <div className="mt-1.5">{groomAction}</div>}
       </div>
 
       {/* ── the pool ─────────────────────────────────────────────────────────────

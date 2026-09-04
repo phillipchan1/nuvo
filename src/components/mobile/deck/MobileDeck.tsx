@@ -32,6 +32,7 @@ import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
 import { EDGE_GUARD_PX } from "../swipe";
+import DomainSymbol from "../../domain/DomainSymbol";
 
 // 260ms/10px picked up cards during ordinary scroll starts — a flick's first
 // frames often sit still longer than 260ms with <10px of travel. 450ms with a
@@ -109,6 +110,7 @@ export default function MobileDeck({
   onCreate,
   onMove,
   coverage,
+  groomAction,
 }: {
   /** persistence scope for the coverage toggle — "project" | "initiative". */
   scope: string;
@@ -128,6 +130,8 @@ export default function MobileDeck({
   /** a card was dropped: `col` = column index, or null to shelve it in the pool. */
   onMove: (id: string, col: number | null) => void;
   coverage?: DeckCoverage | null;
+  /** the grooming-session action — quiet, self-hiding (see GroomingSessionAction). */
+  groomAction?: ReactNode;
 }) {
   const pagerRef = useRef<HTMLDivElement>(null);
   // Page 0 is the pool; column i is page i + 1. Open on the current column (the
@@ -338,7 +342,7 @@ export default function MobileDeck({
       <span className="sr-only" aria-live="polite">
         {page === 0 ? poolLabel : columns[page - 1]?.title}
       </span>
-      <DeckCrownFace crown={crown} />
+      <DeckCrownFace crown={crown} groomAction={groomAction} />
 
       <ColumnStrip
         columns={columns}
@@ -529,7 +533,7 @@ export default function MobileDeck({
 // eyebrow row, its own bar row, a bordered gap row beneath) it stacked three
 // bands above the strip and the page hero read as the fourth-most important
 // thing on a screen that was mostly chrome.
-function DeckCrownFace({ crown }: { crown: DeckCrown }) {
+function DeckCrownFace({ crown, groomAction }: { crown: DeckCrown; groomAction?: ReactNode }) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
   return (
     <div className="shrink-0 border-b border-line px-4 py-2">
@@ -566,6 +570,7 @@ function DeckCrownFace({ crown }: { crown: DeckCrown }) {
           {crown.gap.onJump && <span className="ml-auto shrink-0 text-micro text-muted">›</span>}
         </button>
       )}
+      {groomAction && <div className="mt-0.5">{groomAction}</div>}
     </div>
   );
 }
@@ -848,7 +853,7 @@ function CoverageBand({
                 style={{ color: r.domain.color }}
                 title={r.domain.name}
               >
-                {r.domain.icon}
+                <DomainSymbol value={r.domain.icon} size={14} />
               </span>
             ))}
           </div>

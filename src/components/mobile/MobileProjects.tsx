@@ -39,6 +39,7 @@ import { pressable } from "../../lib/a11y";
 import MobileGroom from "./MobileGroom";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
+import GroomingSessionAction from "../floors/GroomingSessionAction";
 
 // How far out the phone plans. Six weeks is a month and a half — far enough
 // that "not this month" still has somewhere to land, which four weeks didn't
@@ -262,6 +263,7 @@ export default function MobileProjects({
           onCreate={create}
           onMove={move}
           coverage={{ rows: coverageRows }}
+          groomAction={<GroomingSessionAction kind="project" />}
         />
       )}
 

@@ -15,6 +15,7 @@ import { isProjectInFlight } from "../../lib/vertical";
 import { lensGaps } from "../../lib/lenses";
 import { PROJECT_STATUS_COLORS } from "./parts";
 import { READY } from "./ReadinessBanner";
+import GroomingSessionAction from "./GroomingSessionAction";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -50,16 +51,21 @@ export default function ProjectReadinessStrip({ onGroom }: { onGroom?: () => voi
       <div className="flex-1" />
       {allSet ? (
         <span className="text-caption text-muted">Every project is ready to schedule.</span>
-      ) : onGroom ? (
-        <button
-          onClick={onGroom}
-          className="tap fast rounded-lg px-2.5 py-1 text-caption font-medium"
-          style={{ color: "var(--accent)" }}
-        >
-          Groom {needy.length} →
-        </button>
       ) : (
-        <span className="text-caption text-muted">Thinnest first, below.</span>
+        <>
+          {onGroom ? (
+            <button
+              onClick={onGroom}
+              className="tap fast rounded-lg px-2.5 py-1 text-caption font-medium"
+              style={{ color: "var(--accent)" }}
+            >
+              Groom {needy.length} →
+            </button>
+          ) : (
+            <span className="text-caption text-muted">Thinnest first, below.</span>
+          )}
+          <GroomingSessionAction kind="project" />
+        </>
       )}
     </div>
   );
