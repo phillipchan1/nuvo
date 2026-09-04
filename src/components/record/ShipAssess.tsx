@@ -116,7 +116,10 @@ export default function ShipAssess({
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
-    <Modal onClose={onCancel} width="max-w-md">
+    // Above RecordScrim (z-81) and FloatingMenu (z-83). Shipping from the
+    // record used the default Modal z-70 — under the sheet — so "Ship it"
+    // opened a dialog nobody could reach. Settings stays at 70 on purpose.
+    <Modal onClose={onCancel} width="max-w-md" zClass="z-[90]">
       <div className="px-6 pb-5 pt-6">
         <div className="section-label !px-0 !pb-2" style={{ color: accent }}>
           Ship

@@ -68,6 +68,7 @@ export function Modal({
   children,
   width = "max-w-lg",
   align = "top",
+  zClass = "z-[70]",
 }: {
   onClose: () => void;
   children: ReactNode;
@@ -76,6 +77,11 @@ export function Modal({
   // tall modal — vertically centered and bounded to the viewport, so a near-
   // full-height sheet keeps even margins and never spills off the bottom.
   align?: "top" | "center";
+  // Default z-[70] clears Orientation / PlanWeek (60). Do NOT raise the default:
+  // Settings stays at 70 so the calendars walkthrough can cut a hole into it.
+  // Pass a higher token when this dialog opens over RecordScrim (z-81) —
+  // ShipAssess uses z-[90].
+  zClass?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Dialog semantics — focus in, Tab trapped, focus restored to the trigger.
@@ -106,7 +112,7 @@ export function Modal({
       // Mobile-first: centered with a margin and scrollable so it can't overflow
       // a phone. sm+ restores the desktop look (top-anchored, or centered for a
       // tall sheet — children own their scroll).
-      className={`fixed inset-0 z-[70] flex items-center justify-center p-3 ${scrimPos}`}
+      className={`fixed inset-0 ${zClass} flex items-center justify-center p-3 ${scrimPos}`}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       {/* Blur and dim are split so only the (cheap) dim fades — animating opacity

@@ -69,4 +69,19 @@ describe("Record modal overflow menu", () => {
 
     expect(menuZ, `FloatingMenu z-${menuZ} must clear RecordScrim z-${scrimZ}`).toBeGreaterThan(scrimZ);
   });
+
+  it("ShipAssess stacks above RecordScrim so shipping from the record is reachable", () => {
+    const ship = read("components/record/ShipAssess.tsx");
+    const scrim = read("components/record/recordFrame.tsx");
+    const ui = read("components/ui.tsx");
+    const start = ui.indexOf("export function Modal");
+    const modalFn = ui.slice(start, ui.indexOf("export function Btn"));
+
+    const shipZ = maxNamedZ(ship, "ShipAssess");
+    const scrimZ = maxNamedZ(scrim, "RecordScrim");
+    expect(shipZ, `ShipAssess z-${shipZ} must clear RecordScrim z-${scrimZ}`).toBeGreaterThan(scrimZ);
+
+    // Settings / the calendars walkthrough still need the default at 70.
+    expect(modalFn, "Modal's default layer must stay z-[70]").toMatch(/zClass = "z-\[70\]"/);
+  });
 });

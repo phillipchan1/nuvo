@@ -43,12 +43,17 @@ export function useRecordKeys(sheetRef: RefObject<HTMLDivElement>, onClose: () =
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || isTypingIn(e.target)) return;
+      // A nested dialog (ShipAssess) is a later [role=dialog] sibling. This
+      // listener is registered first, so it would otherwise close the sheet
+      // on the same press that is meant to dismiss only the nested one.
+      const dialogs = document.querySelectorAll("[role='dialog'][aria-modal='true']");
+      if (dialogs.length > 0 && dialogs[dialogs.length - 1] !== sheetRef.current) return;
       e.stopPropagation();
       onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [onClose, sheetRef]);
 
   // Tab cycles inside the sheet instead of walking out into the floor behind it.
   useEffect(() => {
