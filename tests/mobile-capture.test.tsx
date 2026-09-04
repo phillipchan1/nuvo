@@ -178,7 +178,13 @@ describe("one input, two kinds", () => {
     mount();
     act(() => screen.getByRole("button", { name: "Pick date…" }).click());
     const date = screen.getByLabelText("Date") as HTMLInputElement;
-    const next = format(addDays(startOfDay(new Date()), 3), "yyyy-MM-dd");
+    // 10 days out is deliberate, not arbitrary: nextWeekISO() (next Monday) can
+    // land anywhere from today+1 to today+7 depending on which weekday the
+    // suite runs on, and dayChips dedupes a pick that lands on an existing
+    // chip's date rather than doubling it up (correct behavior — see
+    // MobileCapture's dayChips loop). +3 collided with "Next week" every time
+    // this ran on a Friday. +10 is past that whole window on any weekday.
+    const next = format(addDays(startOfDay(new Date()), 10), "yyyy-MM-dd");
     act(() => fireEvent.change(date, { target: { value: next } }));
     expect(screen.getByRole("button", { name: format(parseDateISO(next), "EEE MMM d") })).toBeTruthy();
   });
