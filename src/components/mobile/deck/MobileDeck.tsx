@@ -32,7 +32,6 @@ import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
 import { EDGE_GUARD_PX } from "../swipe";
-import DomainSymbol from "../../domain/DomainSymbol";
 
 // 260ms/10px picked up cards during ordinary scroll starts — a flick's first
 // frames often sit still longer than 260ms with <10px of travel. 450ms with a
@@ -853,7 +852,7 @@ function CoverageBand({
                 style={{ color: r.domain.color }}
                 title={r.domain.name}
               >
-                <DomainSymbol value={r.domain.icon} size={14} />
+                {r.domain.icon}
               </span>
             ))}
           </div>

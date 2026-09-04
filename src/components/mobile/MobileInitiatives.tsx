@@ -42,7 +42,6 @@ import { Hint, VerticalList } from "./detail/verticalDetail";
 import MobileGroom from "./MobileGroom";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
-import DomainSymbol from "../domain/DomainSymbol";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 
 const HORIZON_QUARTERS = 4;
@@ -310,7 +309,7 @@ function InitiativeCard({
                 className="tap fast flex items-center gap-1 rounded-full border px-2.5 py-1 text-micro font-medium"
                 style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
               >
-                <DomainSymbol value={suggestion.domain.icon} size={12} />
+                <span>{suggestion.domain.icon}</span>
                 <span>Link → {suggestion.domain.name}</span>
               </button>
             ) : (
