@@ -17,6 +17,7 @@ import {
   Hourglass,
   Info,
   List,
+  Mail,
   MapPin,
   Moon,
   MoreHorizontal,
@@ -85,6 +86,7 @@ export type IconName =
   | "eye-off"
   | "globe"
   | "info"
+  | "mail"
   | "moon"
   | "more"
   | "package"
@@ -312,6 +314,21 @@ const PAPER: Record<IconName, PaperGlyph> = {
       </>
     ),
   },
+  mail: {
+    vb: "0 0 16 16",
+    body: (
+      <>
+        <rect x="2" y="3.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+        <path
+          d="M2.5 4.2L8 8.3l5.5-4.1"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    ),
+  },
   moon: {
     vb: "0 0 16 16",
     body: (
@@ -455,6 +472,7 @@ const FLAT: Record<IconName, LucideIcon> = {
   "eye-off": EyeOff,
   globe: Globe,
   info: Info,
+  mail: Mail,
   moon: Moon,
   more: MoreHorizontal,
   package: Package,

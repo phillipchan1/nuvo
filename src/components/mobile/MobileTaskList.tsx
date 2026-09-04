@@ -13,6 +13,7 @@ import {
   taskInitiativeId,
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
+import { InboxAddressHint } from "../InboxAddress";
 import { SectionLabel } from "../ui";
 import SkeletonRows from "./Skeleton";
 
@@ -130,7 +131,16 @@ export default function MobileTaskList({
     if (pending && inbox.length === 0) return <SkeletonRows />;
     return (
       <div>
-        {inbox.length === 0 && <Empty text={filterNote ? `Nothing in the inbox matches ${filterNote}.` : "Inbox zero. Tap ＋ to capture."} />}
+        {inbox.length === 0 && (
+          filterNote ? (
+            <Empty text={`Nothing in the inbox matches ${filterNote}.`} />
+          ) : (
+            <>
+              <Empty text="Inbox zero. Tap ＋ to capture." />
+              <InboxAddressHint />
+            </>
+          )
+        )}
         {inbox.map((t) => (
           <TaskRow key={t.id} {...rowProps(t)} />
         ))}

@@ -47,6 +47,10 @@
 - **Capture ubiquity** (the honest answer to A3 ○ — "a promise nowhere in the system").
   Our weakest position vs. Akiflow. Shape unknown; start from where promises are *made*
   (Slack, mail, hallway) rather than from an integrations list.
+  **2026-09-04:** mail is the first instance — Settings → Inbox address (and an
+  empty inbox) has the forwarding address; a forward lands as a task
+  ([`inbound-email.md`](../inbound-email.md), D-134).
+  Slack / hallway still open.
 - **Mobile vertical** — floors/records on the phone. Blocked on Q-01.
 - **Refusal as a first-class act** at Summit. Blocked on Q-02.
 - **Series → mirror calendar**, once there's a batched writer (D-010).

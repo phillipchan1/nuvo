@@ -28,6 +28,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   reminder_prefs: DEFAULT_REMINDER_PREFS,
   saved_views: [],
   time_zone: null,
+  inbound_token: null,
 };
 
 /**
@@ -78,6 +79,7 @@ export function useSettings() {
           // Same reason again: a row written before migration 62 reads back
           // null, and every caller maps over this.
           saved_views: Array.isArray(data.saved_views) ? data.saved_views : [],
+          inbound_token: (data as { inbound_token?: string | null }).inbound_token ?? null,
         };
       }
       const { data: u } = await supabase.auth.getUser();

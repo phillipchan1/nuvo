@@ -56,6 +56,7 @@ Statuses are owned by each doc's own header.
 - [`orientation.md`](./orientation.md) — first run forks: be shown, or be walked through.
 - [`APPLE_WATCH.md`](./APPLE_WATCH.md) — wrist capture via Shortcuts → the `agent` endpoint.
 - [`mcp.md`](./mcp.md) — a teammate (Grok Bot) acts through the chat's tools, not a second API.
+- [`inbound-email.md`](./inbound-email.md) — forward a mail to a private address; the subject lands in the inbox.
 - [`account-deletion.md`](./account-deletion.md) — in-app wipe (Settings → Account · locked screen). Type DELETE.
 - [`ios-releases.md`](./ios-releases.md) — iPhone TestFlight auto-upload, widgets + Siri roadmap.
 - [`apple-sign-in.md`](./apple-sign-in.md) — Sign in with Apple: the entitlement, the nonce, the revoke on delete, and the two-accounts-one-person case. **Guideline 4.8 — blocks the App Store submission.**

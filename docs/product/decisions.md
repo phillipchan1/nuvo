@@ -4880,3 +4880,36 @@ numeral) and `tests/calendar-chrome.test.tsx` (hero moves when you page).
 
 *Status: superseded — reversed 2026-09-03; D-129's "year leaves the pane"
 stands.*
+
+---
+
+**D-134 · 2026-09-04 · Forward a mail to a private address; the subject is the task.**
+
+The schema (`inbound_token`, `inbound_emails`) has been live since migration 43.
+A webhook was deployed off-repo and asked a model to rewrite the subject into an
+"imperative action." That is P3, billed on every forward, and it contradicted
+what you actually sent.
+
+**The address is the door, the subject is the title, the body is notes, the
+inbox is the place.** Re:/Fwd: prefixes are stripped because they are not the
+work. A time of day in the subject stays in the title — this is not capture
+grammar, and parsing it would date a row that never passed the week (P2).
+Passive grooming already guesses a home; we do not duplicate that engine.
+
+Settings → **Inbox address** shows the address (Copy) and can mint a new one
+(`rotate_inbound_token`). The empty inbox offers the same copy (not rotate).
+It is not under Apps & devices: that pane is HTTP tokens, and nobody looks
+for a forwarding address under a heading about keys — the same reason Apps
+isn't under Calendars. Direct writes to `inbound_token` are reverted. No
+push that mail arrived (P9 / N-07). No attachments stored. No second ＋.
+D-094 still holds for the marketing walk — the site does not sell this until
+a real forward has been driven.
+
+Closes a slice of **A3** (promises made in mail) and thickens **D6** / **A1**.
+Does not add a pool or a second inbox (P10, P11). Works on day one (P7, P16)
+once Resend's receiving MX for `inbox.nuvo.day` answers. Guarded by
+`tests/inbound-email.test.ts` and `tests/inbox-address.test.tsx`. Spec:
+[`inbound-email.md`](../inbound-email.md).
+
+*Status: standing — receiving domain, webhook, and secret are live. The SPA
+shows the address in Settings → Inbox address and on an empty inbox.*

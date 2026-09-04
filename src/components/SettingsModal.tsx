@@ -24,6 +24,7 @@ import { Btn, Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
 import { Field, PaneHeader, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { AppsDevicesPane } from "./AppsDevicesPane";
+import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
 import SyncPanel from "./SyncPanel";
@@ -50,7 +51,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "apps" | "labels" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -79,6 +80,16 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
     label: "Calendars",
     icon: (
       <Icon name="calendar" size={15} />
+    ),
+  },
+  {
+    // Its own row rather than a block under Apps & devices: nobody looks for
+    // a forwarding address under a heading about HTTP tokens. Same reason
+    // Apps isn't under Calendars.
+    id: "inbound",
+    label: "Inbox address",
+    icon: (
+      <Icon name="mail" size={15} />
     ),
   },
   {
@@ -1786,6 +1797,7 @@ export default function SettingsModal({
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
+      {active === "inbound" && <InboxAddressPane />}
       {/* Calendars are what Nuvo reads; these tokens are what writes into it.
           Named apart so "connection" never means two things (P11). */}
       {active === "apps" && <AppsDevicesPane />}

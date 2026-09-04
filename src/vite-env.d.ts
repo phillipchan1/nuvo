@@ -11,4 +11,7 @@ interface ImportMetaEnv {
   /** "1" offers Sign in with Apple on the web/desktop redirect path. Native
    *  iOS ignores it — the plugin is always there. See src/lib/appleAuth.ts. */
   readonly VITE_APPLE_AUTH?: string;
+  /** Receiving domain for the inbox address shown in Settings → Inbox address.
+   *  Defaults to inbox.nuvo.day — must match the domain Resend receives on. */
+  readonly VITE_INBOUND_MAIL_DOMAIN?: string;
 }

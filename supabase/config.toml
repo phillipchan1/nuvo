@@ -36,3 +36,7 @@ verify_jwt = false
 # hashes it and looks it up in `connections`. See supabase/functions/mcp/.
 [functions.mcp]
 verify_jwt = false
+
+# Resend inbound webhook — Svix signature + the recipient token, no JWT.
+[functions.inbound-email]
+verify_jwt = false

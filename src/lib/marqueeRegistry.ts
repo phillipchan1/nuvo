@@ -200,6 +200,19 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     nav: { kind: "settings", section: "connections" },
     describe: "Settings → Connections (calendar accounts, OAuth). Point here when the user asks to connect a calendar or manage calendar accounts.",
   },
+  {
+    key: "inbox-address",
+    label: "Settings",
+    nav: { kind: "settings", section: "inbound" },
+    spotlight: "inbox-address",
+    describe: "Settings → Inbox address. Point here when the user asks how to email a task in, or to copy the forwarding address.",
+  },
+  {
+    key: "apps",
+    label: "Settings",
+    nav: { kind: "settings", section: "apps" },
+    describe: "Settings → Apps & devices. Tokens for a shortcut, a watch, or a teammate. Point here to mint a key — not for forwarding mail (that's Inbox address).",
+  },
 ];
 
 export function targetDef(key: string): MarqueeTargetDef | undefined {

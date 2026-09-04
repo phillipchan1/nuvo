@@ -193,7 +193,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 |---|---|---|---|
 | A1 | What am I forgetting? | inbox = one place, nothing lost | ✅ |
 | A2 | What's about to blow up? | On Deck collisions · deadline-first compose · **reminders** | ◐ *re-scored 2026-08-13 (D-102). The app can now say it out loud instead of waiting to be opened — a meeting, a block, a deadline, minutes ahead. Deliberately still ◐, and on two counts: it is **off by default**, so a fresh account gets nothing; and it only speaks about things already ON the calendar, which is the narrow half of the question. The wider half — a project quietly going critical — is still something you have to go and look at.*
-| A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture. Still ○ after the iOS lock-screen widgets (D-100): they shorten the distance from thought to inbox to one tap, which raises the odds a remembered promise gets written down — but nothing yet notices the ones you never wrote.* |
+| A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture. Still ○ after the iOS lock-screen widgets (D-100) and the inbox address (D-134): they shorten the distance from a thought (or a mail) to the inbox, which raises the odds a remembered promise gets written down — but nothing yet notices the ones you never wrote.* |
 | A4 | Am I lying to myself about this week? | calibration (planned vs proven) | ✅ **rare and valuable — protect it** |
 
 ### Arrival & trust — *the questions a stranger asks*

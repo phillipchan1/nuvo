@@ -31,6 +31,7 @@ import {
 } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
+import { InboxAddressHint } from "./InboxAddress";
 import { SectionLabel } from "./ui";
 import { skipWhenAsleep } from "./KeepAlive";
 
@@ -919,13 +920,16 @@ function LeftRail({
               // Never claim inbox zero over a filter. A short list reads as
               // "you're on top of it", which is the one lie a planner must not
               // tell — so a filtered empty says what it's hiding behind.
-              <EmptyState
-                text={
-                  filtering
-                    ? `Nothing in the inbox matches ${describeQuery(filter.query, { label: (id) => labels.find((l) => l.id === id)?.name, domain: (id) => vertical?.domains.find((d) => d.id === id)?.name })}.`
-                    : "Inbox zero. Capture with C or ⌘K."
-                }
-              />
+              filtering ? (
+                <EmptyState
+                  text={`Nothing in the inbox matches ${describeQuery(filter.query, { label: (id) => labels.find((l) => l.id === id)?.name, domain: (id) => vertical?.domains.find((d) => d.id === id)?.name })}.`}
+                />
+              ) : (
+                <>
+                  <EmptyState text="Inbox zero. Capture with C or ⌘K." />
+                  <InboxAddressHint />
+                </>
+              )
             )}
           </>
         )}

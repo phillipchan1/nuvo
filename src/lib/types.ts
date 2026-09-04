@@ -335,6 +335,9 @@ export interface UserSettings {
    *  deadline DATE into an instant — a cron has no device to ask. Null = UTC,
    *  never a hardcoded home zone. */
   time_zone: string | null;
+  /** Opaque local-part of this account's inbox address (`token@inbox.nuvo.day`).
+   *  Server-generated; the client may only rotate it via `rotate_inbound_token`. */
+  inbound_token: string | null;
 }
 
 /**
