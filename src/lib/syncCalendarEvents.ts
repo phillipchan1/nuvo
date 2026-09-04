@@ -102,6 +102,30 @@ export function syncCalendarEvents(
   return result;
 }
 
+function groupById(events: CalendarBlockApi[]): Map<string, CalendarBlockApi[]> {
+  const groups = new Map<string, CalendarBlockApi[]>();
+  for (const event of events) {
+    const list = groups.get(event.id);
+    if (list) list.push(event);
+    else groups.set(event.id, [event]);
+  }
+  return groups;
+}
+
+/** Timed beats all-day when the same id appears twice — the drop ghost is timed. */
+function preferBlock(prev: CalendarBlockInput, next: CalendarBlockInput): CalendarBlockInput {
+  if (Boolean(prev.allDay) !== Boolean(next.allDay)) return prev.allDay ? next : prev;
+  return next;
+}
+
+function timesMatch(event: CalendarBlockApi, input: CalendarBlockInput): boolean {
+  const allDay = Boolean(input.allDay);
+  if (allDay !== event.allDay) return false;
+  if (!sameWhen(input.start, event.start, allDay)) return false;
+  if (input.end !== undefined && !sameWhen(input.end, event.end, allDay)) return false;
+  return true;
+}
+
 function reconcile(
   api: CalendarGridApi,
   next: readonly CalendarBlockInput[],
@@ -111,15 +135,36 @@ function reconcile(
   const moved: string[] = [];
   const patched: string[] = [];
 
-  const nextById = new Map(next.map((e) => [e.id, e]));
-  for (const event of api.getEvents()) {
-    if (!nextById.has(event.id)) {
-      event.remove();
-      removed.push(event.id);
+  // Last write would keep an all-day leftover over the timed placement. Prefer
+  // the timed block when both ids land in `next` (inbox drop + planned chip).
+  const nextById = new Map<string, CalendarBlockInput>();
+  for (const input of next) {
+    const prev = nextById.get(input.id);
+    nextById.set(input.id, prev ? preferBlock(prev, input) : input);
+  }
+
+  // FullCalendar allows two defs with the same publicId (the inbox-drop ghost
+  // plus the cache-backed add). getEventById only returns one, so a naive
+  // reconcile left the other standing — a 4pm ghost and a midnight-to-end overlay.
+  for (const [id, group] of groupById(api.getEvents())) {
+    const input = nextById.get(id);
+    if (!input) {
+      for (const event of group) {
+        event.remove();
+        removed.push(id);
+      }
+      continue;
+    }
+    const keep = group.find((event) => timesMatch(event, input)) ?? group[0]!;
+    for (const event of group) {
+      if (event !== keep) {
+        event.remove();
+        removed.push(id);
+      }
     }
   }
 
-  for (const input of next) {
+  for (const input of nextById.values()) {
     const existing = api.getEventById(input.id);
     if (!existing) {
       api.addEvent(input);

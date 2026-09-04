@@ -74,6 +74,30 @@ export function endOf(task: { start_time: string; duration_minutes: number | nul
 }
 
 /**
+ * Instant FullCalendar will not treat as a date-only (midnight) start.
+ *
+ * Postgres/PostgREST sometimes yield `"2026-09-03 23:00:00+00"` (space, no `T`).
+ * FullCalendar's parser then marks the time unspecified, and a timed `end`
+ * makes allDay infer false — a block from local midnight to the real end,
+ * painted as a column-tall overlay next to the drop ghost. Always hand it `Z`.
+ *
+ * Safari/WKWebView (the desktop app) rejects the space form; rewrite it first.
+ */
+export function toFcInstant(iso: string): string {
+  const tryParse = (s: string): string | null => {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+  const direct = tryParse(iso);
+  if (direct) return direct;
+  const withT = iso.trim().replace(" ", "T");
+  const viaT = tryParse(withT);
+  if (viaT) return viaT;
+  const withColonOffset = withT.replace(/([+-]\d{2})$/, "$1:00");
+  return tryParse(withColonOffset) ?? iso;
+}
+
+/**
  * A scheduled task turns overdue 1 hour after its end time — and a task whose
  * `do_date` has already passed is overdue too.
  *

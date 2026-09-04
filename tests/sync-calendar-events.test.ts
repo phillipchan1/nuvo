@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { toFcInstant } from "../src/lib/dates";
 import {
   syncCalendarEvents,
   type CalendarBlockApi,
@@ -17,9 +18,10 @@ function block(over: Partial<CalendarBlockInput> & Pick<CalendarBlockInput, "id"
 
 function makeApi(initial: CalendarBlockInput[] = []): {
   api: CalendarGridApi;
-  events: Map<string, CalendarBlockApi>;
+  events: { get: (id: string) => CalendarBlockApi | undefined };
+  list: CalendarBlockApi[];
 } {
-  const events = new Map<string, CalendarBlockApi>();
+  const list: CalendarBlockApi[] = [];
 
   const add = (input: CalendarBlockInput): CalendarBlockApi => {
     const record: CalendarBlockApi = {
@@ -51,22 +53,30 @@ function makeApi(initial: CalendarBlockInput[] = []): {
         record.extendedProps = { ...record.extendedProps, [name]: value };
       }),
       remove: vi.fn(() => {
-        events.delete(input.id);
+        const i = list.indexOf(record);
+        if (i >= 0) list.splice(i, 1);
       }),
     };
-    events.set(input.id, record);
+    list.push(record);
     return record;
   };
 
   for (const event of initial) add(event);
 
   const api: CalendarGridApi = {
-    getEvents: () => [...events.values()],
-    getEventById: (id) => events.get(id) ?? null,
+    getEvents: () => [...list],
+    getEventById: (id) => list.find((e) => e.id === id) ?? null,
     addEvent: vi.fn((event: CalendarBlockInput) => add(event)),
   };
 
-  return { api, events };
+  return {
+    api,
+    list,
+    // First-match view so existing tests that keyed a Map still read one event.
+    events: {
+      get: (id: string) => list.find((e) => e.id === id),
+    },
+  };
 }
 
 describe("syncCalendarEvents", () => {
@@ -205,5 +215,80 @@ describe("the reconcile is batched", () => {
 
     const wrapped: CalendarGridApi = { ...withBatch.api, batchRendering: (fn) => fn() };
     expect(syncCalendarEvents(wrapped, next)).toEqual(syncCalendarEvents(noBatch.api, next));
+  });
+});
+
+describe("duplicate publicIds from an inbox drop", () => {
+  /**
+   * External drop keeps a ghost with id `task:<id>`. If getEventById misses it
+   * for a frame, addEvent creates a second def with the same publicId — one at
+   * the drop time, one from midnight to the real end. Deleting either removes
+   * both because they share the id. Collapse to the timed block that matches.
+   */
+  it("keeps the timed block and drops the midnight overlay", () => {
+    const { api, list } = makeApi([
+      block({
+        id: "task:1",
+        start: "2026-09-03T07:00:00.000Z", // local midnight PDT
+        end: "2026-09-03T23:30:00.000Z",
+      }),
+    ]);
+    api.addEvent(
+      block({
+        id: "task:1",
+        start: "2026-09-03T23:00:00.000Z",
+        end: "2026-09-03T23:30:00.000Z",
+      }),
+    );
+    expect(list.filter((e) => e.id === "task:1")).toHaveLength(2);
+
+    const report = syncCalendarEvents(api, [
+      block({
+        id: "task:1",
+        start: "2026-09-03T23:00:00.000Z",
+        end: "2026-09-03T23:30:00.000Z",
+        allDay: false,
+      }),
+    ]);
+
+    expect(list.filter((e) => e.id === "task:1")).toHaveLength(1);
+    expect(list[0]!.start!.toISOString()).toBe("2026-09-03T23:00:00.000Z");
+    expect(report.removed).toEqual(["task:1"]);
+    expect(report.added).toEqual([]);
+  });
+
+  it("prefers a timed input when next lists the same id as all-day too", () => {
+    const { api, list } = makeApi();
+    const timed = block({
+      id: "task:1",
+      start: "2026-09-03T23:00:00.000Z",
+      end: "2026-09-03T23:30:00.000Z",
+      allDay: false,
+    });
+    const allDay = block({
+      id: "task:1",
+      start: "2026-09-03",
+      allDay: true,
+    });
+    const report = syncCalendarEvents(api, [allDay, timed]);
+
+    expect(report.added).toEqual(["task:1"]);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.allDay).toBe(false);
+    expect(list[0]!.start!.toISOString()).toBe("2026-09-03T23:00:00.000Z");
+  });
+});
+
+describe("toFcInstant", () => {
+  it("rewrites a Postgres-style timestamptz so FullCalendar sees a time", () => {
+    expect(toFcInstant("2026-09-03 23:00:00+00")).toBe("2026-09-03T23:00:00.000Z");
+  });
+
+  it("rewrites a space form with a colon-less offset", () => {
+    expect(toFcInstant("2026-09-03 23:00:00+00:00")).toBe("2026-09-03T23:00:00.000Z");
+  });
+
+  it("leaves an already-UTC instant unchanged", () => {
+    expect(toFcInstant("2026-09-03T23:00:00.000Z")).toBe("2026-09-03T23:00:00.000Z");
   });
 });

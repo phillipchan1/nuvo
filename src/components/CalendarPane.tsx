@@ -10,7 +10,7 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
+import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO, toFcInstant } from "../lib/dates";
 import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
@@ -861,6 +861,23 @@ function CalendarPane({
               : Number(el.getAttribute("data-task-duration")) || defaultDurationMins,
           ),
           create: true,
+          allDay: false,
+          // Same paint as a real task block. Without this the drop ghost is
+          // FullCalendar's default blue and looks like a second calendar event
+          // if reconcile misses it for a frame.
+          ...(!group ? { classNames: ["evt-task"], ...blockColors("var(--accent)", 22) } : {}),
+          ...(!group && taskId
+            ? {
+                extendedProps: {
+                  kind: "task" as const,
+                  refId: taskId,
+                  barColor: "var(--accent)",
+                  recurring: false,
+                  done: false,
+                  projectBacked: Boolean(el.getAttribute("data-task-project")),
+                },
+              }
+            : {}),
         };
       },
     });
@@ -1328,11 +1345,13 @@ function CalendarPane({
         // events. The domain thread lives on in the thin bar; overdue goes ember.
         const fill = overdue ? "var(--signal)" : "var(--accent)";
         const bar = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
+        const start = toFcInstant(t.start_time!);
         return {
           id: `task:${t.id}`,
           title: t.title,
-          start: t.start_time!,
-          end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
+          start,
+          end: endOf({ start_time: start, duration_minutes: t.duration_minutes }).toISOString(),
+          allDay: false,
           editable: true,
           // evt-overdue carries the ember to CSS: the inline `fill` above is
           // enough on Warm Paper, but a mono skin restyles the block wholesale
