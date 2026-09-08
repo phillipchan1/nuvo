@@ -1883,6 +1883,31 @@ select.field { appearance: none; -webkit-appearance: none; }
   border-color: #fff;
 }
 
+/* Login actions: first tap must fire on iPad. iPadOS synthesizes :hover on
+   tap and would otherwise leave the first button stuck “lit”; JS hover
+   setState eats the click (ASC 2.1(a)). Hover is CSS-only, and only where a
+   mouse really hovers. */
+.login-screen,
+.login-screen button,
+.login-screen input {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+.login-action {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .login-action-surface:hover:not(:disabled) {
+    background: var(--surface);
+  }
+  .login-action-muted:hover:not(:disabled) {
+    color: var(--ink);
+    text-decoration: underline;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

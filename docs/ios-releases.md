@@ -219,6 +219,10 @@ has nothing to ask StoreKit for. See `docs/billing-setup.md` § 11.
 Internal testers get builds without App Review. External testers require Beta
 App Review (skip for personal dogfooding).
 
+**Submit for Review** needs a demo email+password (no OTP) and listing notes —
+[`app-store-review.md`](./app-store-review.md). Do not Submit from a coding
+session. Paid Apps Agreement status is ASC-side; this repo cannot see it.
+
 #### 8 · Verify locally (optional, on your Mac)
 
 ```bash

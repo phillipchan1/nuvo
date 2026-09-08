@@ -103,6 +103,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     "import.meta.env.VITE_IAP_ONLY": JSON.stringify(isIosTauriBuild ? "1" : ""),
+    // Tauri CLI sets TAURI_ENV_PLATFORM=ios for `tauri ios build` / `tauri ios dev`.
+    // The iOS IPA must not guess iPad from a Macintosh UA.
+    __TAURI_IOS__: JSON.stringify(isIosTauriBuild),
   },
   clearScreen: false,
   server: {

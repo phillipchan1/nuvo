@@ -116,8 +116,10 @@ VITE_APPLE_AUTH=1
 ```
 
 Set it in Vercel (and as a GitHub secret if you want it in the desktop build).
-Leave it unset and the web keeps showing exactly Google + email code, while
-iOS shows Apple regardless.
+Leave it unset and the web keeps showing Google (and email code on a
+standalone PWA), while iOS shows Apple regardless. Native iOS / review mode
+also offers **email + password** so App Review can sign in without an OTP —
+[`app-store-review.md`](./app-store-review.md). Do not remove Apple or Google.
 
 ---
 
