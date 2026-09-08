@@ -1,6 +1,6 @@
 // Domain — the anchor of presence, reimagined as a place you ENTER, not a
-// dashboard you scan. The wall is a set of glass cards, each carrying a LIVING
-// SIGIL (src/components/floors/DomainSigil.tsx) generated from the domain's own
+// dashboard you scan. The wall is a set of glass cards, each carrying one domain
+// mark: its chosen symbol and color inside a halo generated from the domain's
 // 13-week pulse — warm when tended, a cold ember when you've gone quiet — plus a
 // balance strip that answers "am I starving a domain to feed another?". Click a
 // card to open that domain: the standing mandate as a Fraunces inscription, the
@@ -43,19 +43,13 @@ import {
   DomainGroom,
   PresencePulse,
   Flourish,
-  IconPicker,
-  SigilFormGrid,
+  DomainSymbolPicker,
   SwatchGrid,
   WeekShape,
 } from "../domain/DomainParts";
-import {
-  domainForm,
-  domainSigilSpec,
-  setDomainForm,
-  SIGIL_FORM_LABEL,
-  type SigilForm,
-} from "../../lib/domainSigil";
-import DomainSigil from "./DomainSigil";
+import DomainSymbol from "../domain/DomainSymbol";
+import DomainMark from "../domain/DomainMark";
+import { domainMarkSpec } from "../../lib/domainMark";
 import type { Focus } from "../AppShell";
 import {
   FloorHeader,
@@ -168,7 +162,7 @@ export default function DomainFloor({
 function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: boolean; onEnter: () => void; teach?: string }) {
   const st = stateOf(domain);
   const lit = st.tone === "lit";
-  const spec = domainSigilSpec(domain, domainForm(domain.id));
+  const mark = domainMarkSpec(domain);
   return (
     <button
       onClick={onEnter}
@@ -184,7 +178,7 @@ function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: b
       }}
     >
       <div className="flex items-start gap-3.5">
-        <DomainSigil spec={spec} size={64} className="shrink-0" />
+        <DomainMark spec={mark} size={64} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="serif text-lead" style={{ fontWeight: 500, color: lit ? "var(--text)" : "color-mix(in srgb, var(--text) 68%, var(--muted))" }}>
             {domain.name}
@@ -233,9 +227,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
   const loose = looseTasksOfDomain(data, domain.id);
   const accent = domain.color;
 
-  const [form, setForm] = useState<SigilForm>(() => domainForm(domain.id));
-  const pickForm = (f: SigilForm) => { setDomainForm(domain.id, f); setForm(f); };
-  const spec = domainSigilSpec(domain, form);
+  const mark = domainMarkSpec(domain);
 
   // rhythm reads
   const streak = domainStreak(domain.weeks);
@@ -279,20 +271,18 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
     >
       <button onClick={onBack} className="fast absolute left-4 top-4 z-10 text-caption text-muted hover:text-ink">‹ all domains</button>
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        <FormPicker domain={domain} form={form} onPick={pickForm} />
-        <IconDot domain={domain} />
-        <ColorDot domain={domain} />
+        <MarkPicker domain={domain} />
         <span className="opacity-0 transition-opacity group-hover:opacity-100">
           <DeleteBtn what="domain" onDelete={() => { deleteDomain(domain.id); onBack(); }} />
         </span>
       </div>
 
-      {/* faint watermark of the sigil behind the mandate */}
-      <DomainSigil spec={spec} size={360} className="pointer-events-none absolute left-1/2 -translate-x-1/2" style={{ top: 44, opacity: 0.06 }} />
+      {/* faint watermark of the same mark behind the mandate */}
+      <DomainMark spec={mark} size={360} className="pointer-events-none absolute left-1/2 -translate-x-1/2" style={{ top: 44, opacity: 0.06 }} />
 
       {/* ── the hero: mark · name · mandate · showing up voice ── */}
       <div className="relative mx-auto flex max-w-[560px] flex-col items-center px-6 pb-8 pt-14 text-center">
-        <DomainSigil spec={spec} size={120} />
+        <DomainMark spec={mark} size={120} />
         <div className="serif mt-3 text-[42px]" style={{ fontWeight: 500 }}>
           <InlineText value={domain.name} onChange={(v) => updateDomain(domain.id, { name: v })} inputClassName="serif text-[42px] text-center" />
         </div>
@@ -459,77 +449,39 @@ function GainNum({ n, unit, label }: { n: string; unit: string; label: string })
   );
 }
 
-// The sigil form chooser — the one configurable knob. A small popover with a live
-// preview of each form drawn from THIS domain's real data (the tiles themselves
-// are shared with the phone's chooser).
-function FormPicker({ domain, form, onPick }: { domain: Domain; form: SigilForm; onPick: (f: SigilForm) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="fast rounded-md border border-line px-2 py-1 text-micro text-muted hover:border-muted hover:text-ink"
-        title="Choose the sigil's form"
-      >
-        ✦ {SIGIL_FORM_LABEL[form]}
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 w-[220px] rounded-lg border border-line bg-surface p-2" style={{ boxShadow: "var(--shadow-3)" }}>
-            <SigilFormGrid domain={domain} form={form} onPick={(f) => { onPick(f); setOpen(false); }} />
-          </div>
-        </>
-      )}
-    </span>
-  );
-}
-
-function ColorDot({ domain }: { domain: Domain }) {
+// One door for one identity. The symbol and its light are edited together; the
+// presence halo is always generated from the domain and never separately styled.
+function MarkPicker({ domain }: { domain: Domain }) {
   const { updateDomain } = useVertical();
   const [open, setOpen] = useState(false);
   return (
     <span className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fast block h-3.5 w-3.5 rounded-full ring-1 ring-line"
-        style={{ background: domain.color }}
-        title="Change the domain's light"
-      />
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2" style={{ width: 148 }}>
-            <SwatchGrid value={domain.color} onPick={(c) => { updateDomain(domain.id, { color: c }); setOpen(false); }} />
-          </div>
-        </>
-      )}
-    </span>
-  );
-}
-
-function IconDot({ domain }: { domain: Domain }) {
-  const { updateDomain } = useVertical();
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="fast flex h-5 w-5 items-center justify-center rounded-full ring-1 ring-line text-caption leading-none"
-        title="Change the domain's icon"
+        className="fast flex h-8 items-center gap-1.5 rounded-full border border-line px-2.5 text-micro text-muted hover:border-muted hover:text-ink"
+        title="Edit domain mark"
       >
-        {domain.icon || "◇"}
+        <DomainSymbol value={domain.icon} size={15} />
+        <span className="h-2.5 w-2.5 rounded-full ring-1 ring-line" style={{ background: domain.color }} />
+        <span>Mark</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2">
-            <IconPicker
-              value={domain.icon}
-              domainName={domain.name}
-              domainContext={domain.intention}
-              onPick={(icon) => { updateDomain(domain.id, { icon }); setOpen(false); }}
-            />
+          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 w-[264px] rounded-lg border border-line bg-surface p-3" style={{ boxShadow: "var(--shadow-3)" }}>
+            <div className="section-label !p-0">Symbol</div>
+            <div className="mt-2">
+              <DomainSymbolPicker
+                value={domain.icon}
+                domainName={domain.name}
+                domainContext={domain.intention}
+                onPick={(icon) => updateDomain(domain.id, { icon })}
+              />
+            </div>
+            <div className="section-label mt-4 !p-0">Color</div>
+            <div className="mt-2">
+              <SwatchGrid value={domain.color} onPick={(color) => updateDomain(domain.id, { color })} />
+            </div>
           </div>
         </>
       )}

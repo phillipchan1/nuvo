@@ -115,7 +115,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
         properties: {
           name: { type: "string" },
           intention: { type: "string", description: "The domain's standing mandate — what it asks of you" },
-          icon: { type: "string" },
+          icon: { type: "string", description: "Stable domain symbol key; omit to use the neutral diamond" },
           color: { type: "string" },
           weekly_target_hours: { type: "number" },
         },
@@ -127,7 +127,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "update_domain",
-      description: "Update a domain's name, intention, icon, color, or weekly target hours.",
+      description: "Update a domain's name, intention, symbol, color, or weekly target hours.",
       parameters: {
         type: "object",
         properties: {
@@ -135,7 +135,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           domain_name: { type: "string" },
           name: { type: "string" },
           intention: { type: "string" },
-          icon: { type: "string" },
+          icon: { type: "string", description: "Stable domain symbol key chosen from the domain page" },
           color: { type: "string" },
           weekly_target_hours: { type: "number" },
         },

@@ -47,6 +47,7 @@ import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { initiativeCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 import SlotCreateButton from "./SlotCreateButton";
+import DomainSymbol from "../domain/DomainSymbol";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 216;
@@ -559,7 +560,7 @@ function InitiativeCard({
                 style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
                 title="Link this initiative to its domain"
               >
-                <span>{suggestion.domain.icon}</span>
+                <DomainSymbol value={suggestion.domain.icon} size={12} />
                 <span>Link → {suggestion.domain.name}</span>
               </button>
             ) : (

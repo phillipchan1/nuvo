@@ -674,7 +674,13 @@ hand-roll a fifth stack of `border-t` sections.
   there: the spine, the phone's bottom bar, the command palette, the mis-filed list. They
   read as span, widening up the ladder: one box and a tick → a day's column → staggered
   bars → the mark being aimed at → the wall it all stands on. Never draw a fifth set
-  inline; a domain's own emoji (`domain.icon`) is identity, a different thing entirely.
+  inline. A domain's own **mark** is identity, a different thing entirely.
+- **A domain has one mark, elaborated by scale.** `domainSymbols.ts` owns the curated
+  Lucide centers; `domains.icon` stores the chosen key, never native emoji artwork.
+  Compact rows draw that center through `DomainSymbol.tsx`. The wall and open domain draw
+  the same center and color through `DomainMark.tsx`, with thirteen weeks of presence as
+  its generated halo. The domain page offers one **Mark** door for symbol + color. There
+  is no second form chooser and no separate sigil identity. D-135.
 - Floor heroes: `section-label` eyebrow → `text-display masthead` title → a muted
   `text-body` line (`FloorHeader` encodes this).
 - Mobile parity is non-negotiable — see the golden rule in [`CLAUDE.md`](../CLAUDE.md).

@@ -1,7 +1,9 @@
 // A shared domain filter chip row — used by the projects and initiatives
 // collections to narrow the set to one fixture.
 
+import { type ReactNode } from "react";
 import { useVertical } from "../../hooks/useVertical";
+import DomainSymbol from "../domain/DomainSymbol";
 
 export function DomainFilter({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const { data } = useVertical();
@@ -9,13 +11,19 @@ export function DomainFilter({ value, onChange }: { value: string | null; onChan
     <div className="mb-5 flex flex-wrap items-center gap-1.5">
       <Chip active={value === null} onClick={() => onChange(null)} color="var(--muted)" label="All" />
       {[...data.domains].sort((a, b) => a.sort - b.sort).map((d) => (
-        <Chip key={d.id} active={value === d.id} onClick={() => onChange(d.id)} color={d.color} label={`${d.icon} ${d.name}`} />
+        <Chip
+          key={d.id}
+          active={value === d.id}
+          onClick={() => onChange(d.id)}
+          color={d.color}
+          label={<><DomainSymbol value={d.icon} size={14} /> {d.name}</>}
+        />
       ))}
     </div>
   );
 }
 
-function Chip({ active, onClick, color, label }: { active: boolean; onClick: () => void; color: string; label: string }) {
+function Chip({ active, onClick, color, label }: { active: boolean; onClick: () => void; color: string; label: ReactNode }) {
   return (
     <button
       onClick={onClick}

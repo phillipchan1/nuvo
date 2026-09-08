@@ -28,6 +28,7 @@ import {
 } from "../floors/parts";
 import FlowShell, { type FlowStage } from "./FlowShell";
 import { Btn } from "../ui";
+import DomainSymbol from "../domain/DomainSymbol";
 
 const QUARTER_KEY = () => {
   const d = new Date();
@@ -184,7 +185,7 @@ function QuarterGainStep() {
               return (
                 <div key={d.id}>
                   <div className="flex items-baseline justify-between text-caption">
-                    <span><span style={{ color: d.color }}>{d.icon}</span> {d.name}</span>
+                    <span className="flex items-center gap-1.5"><span style={{ color: d.color }}><DomainSymbol value={d.icon} size={14} /></span> {d.name}</span>
                     <span className="mono text-meta text-muted">{d.quarterHours}h / ~{Math.round(target)}h</span>
                   </div>
                   <div className="mt-1 h-1.5 rounded-full bg-surface">
@@ -245,7 +246,7 @@ function MandatesStep() {
           <div key={d.id} className="rounded-md border border-line bg-surface p-4">
             <div className="flex items-center gap-2.5">
               <span className="flex h-8 w-8 items-center justify-center rounded-md text-head" style={{ background: `${d.color}1a`, color: d.color }}>
-                {d.icon}
+                <DomainSymbol value={d.icon} size={18} />
               </span>
               <span className="text-head font-semibold">{d.name}</span>
               <span className="mono ml-auto text-meta text-muted">

@@ -4917,6 +4917,43 @@ shows the address in Settings → Inbox address and on an empty inbox.*
 
 ---
 
+**D-135 · 2026-09-04 · A domain has one mark: its chosen center, elaborated by
+presence when space allows.**
+
+Origin ⓞ: native iOS/macOS emoji on the domain picker looked “really tacky” and
+the glossy plus-cross in particular did not match a professional app. The cause
+was structural, not the choice of emoji: `domains.icon` held Unicode text, so the
+operating system supplied a different skeuomorphic picture on each platform.
+
+→ A domain now has one **mark**. Its center is one of a curated, searchable
+Lucide vocabulary, drawn in Nuvo's hairline hand and colored by the domain's
+light. In compact rows, that center is the whole mark. On the wall and open
+domain, thirteen weeks of presence form a generated halo around the same center.
+The picture still answers Q7 without asking the operator to invent a second
+visual identity.
+
+The first pass kept the old Orbit · Bloom · Strata · Thread chooser beside the
+new vector symbol. That was immediately rejected: two customizable graphics for
+one domain is exactly the P11 overlap this change was meant to remove. The four
+forms and their localStorage preference are retired. The domain page has one
+**Mark** door containing symbol + color. Presence chooses the halo; the operator
+does not style the evidence.
+
+Existing curated emoji map to their closest center; free-form values fall back
+to a neutral diamond. `domains.icon` remains for compatibility but stores stable
+symbol keys. No pool is added (P10), the neutral default works without clean
+data (P7), and the catalog covers domain kinds rather than persona-zero names
+(P16). Altitude **glyphs** still say what kind of object something is; the domain
+**mark** says which domain; the week **emblem** remains week-scoped.
+
+*Status: standing — typecheck and desktop/PWA build green; 1,590 tests green;
+all measured interactions within performance budget. Driven at `?domains` on
+desktop and at 375px: both shells show one center + presence halo, one Mark door
+containing Symbol + Color, no old form names, no native emoji identity, and no
+phone overflow. The phone control is 44px high and symbol hits bloom to 62px.*
+
+---
+
 **D-136 · 2026-09-04 · Trash is an icon on the strip, not a third peer of Today and Inbox.**
 
 Origin ⓞ: *"I don't feel trash deserves such a large space. can we put this to

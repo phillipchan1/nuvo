@@ -11,6 +11,7 @@ import { supabase } from "../../lib/supabase";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import { projectById, type VTask } from "../../lib/vertical";
 import { suggestRouteForProject } from "../../lib/initiativeDeck";
+import DomainSymbol from "../domain/DomainSymbol";
 
 interface RefineEdit { id: string; original: string; title: string; reason?: string }
 
@@ -144,8 +145,9 @@ export default function TaskRefine({
               ) : route.domain ? (
                 <Row checked={keepDomain} onToggle={() => setKeepDomain((v) => !v)} accent={accent}>
                   <span className="text-caption">Move to</span>
-                  <span className="text-caption font-medium" style={{ color: route.domain.domain.color }}>
-                    {route.domain.domain.icon} {route.domain.domain.name}
+                  <span className="flex items-center gap-1 text-caption font-medium" style={{ color: route.domain.domain.color }}>
+                    <DomainSymbol value={route.domain.domain.icon} size={14} />
+                    {route.domain.domain.name}
                   </span>
                   <span className="mono text-micro text-muted">domain · confident match</span>
                 </Row>

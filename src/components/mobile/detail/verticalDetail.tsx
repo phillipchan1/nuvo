@@ -43,6 +43,7 @@ import { DomainPicker, InitiativePicker, ProjectAttachPicker, RipenessPip } from
 import { ShipStamp } from "../../ShipStamp";
 import { whenText } from "../../floors/TaskList";
 import DurationSelect from "../../DurationSelect";
+import DomainSymbol from "../../domain/DomainSymbol";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -189,7 +190,7 @@ export function VerticalList({
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-head"
                 style={{ background: `color-mix(in srgb, ${dom.color} 16%, var(--surface))`, color: dom.color }}
               >
-                {dom.icon}
+                <DomainSymbol value={dom.icon} size={18} />
               </span>
             }
             title={dom.name}
@@ -472,11 +473,11 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
 }
 
 // ── Context line for the flat project list (where it lives) ───────────────────
-export function projectContext(d: VerticalData, p: Project): string {
+export function projectContext(d: VerticalData, p: Project): ReactNode {
   const dom = domainById(d, p.domainId);
   const init = p.initiativeId ? initiativeById(d, p.initiativeId) : null;
-  const head = dom ? `${dom.icon} ${dom.name}` : "—";
-  return init ? `${head} · ${init.name}` : head;
+  const head = dom ? <><DomainSymbol value={dom.icon} size={12} /> {dom.name}</> : "—";
+  return <span className="inline-flex items-center gap-1">{head}{init && <> · {init.name}</>}</span>;
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
@@ -764,7 +765,7 @@ export function Row({
   id?: string;
   leading?: ReactNode;
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   meta?: ReactNode;
   onClick?: () => void;
   chevron?: boolean;
@@ -1200,7 +1201,7 @@ export function RecordCrumbs({
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head"
         style={{ background: `color-mix(in srgb, ${dom.color} 16%, var(--surface))`, color: dom.color }}
       >
-        {dom.icon}
+        <DomainSymbol value={dom.icon} size={16} />
       </span>
     );
   }

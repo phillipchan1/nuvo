@@ -12,6 +12,7 @@ import { useEventSearch } from "../../hooks/useEventSearch";
 import { eventHitSubtitle, type EventHit } from "../../lib/eventSearch";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
+import DomainSymbol from "../domain/DomainSymbol";
 
 export type JumpKind = "domain" | "initiative" | "project";
 
@@ -159,7 +160,7 @@ export default function MobileSearch({
                 <ResultRow
                   key={dm.id}
                   accent={dm.color}
-                  glyph={dm.icon}
+                  glyph={<DomainSymbol value={dm.icon} size={16} />}
                   title={dm.name}
                   subtitle={dm.intention || undefined}
                   onClick={() => onOpenItem("domain", dm.id)}
@@ -238,7 +239,7 @@ function ResultRow({
   onClick,
 }: {
   accent?: string;
-  glyph?: string;
+  glyph?: ReactNode;
   title: string;
   subtitle?: string;
   /** Done — struck through. */

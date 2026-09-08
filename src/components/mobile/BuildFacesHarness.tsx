@@ -27,7 +27,7 @@ import MobileShipped from "./MobileShipped";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): Domain => ({
-  icon: "◆",
+  icon: "diamond",
   intention: "",
   charter: "",
   context: null,
@@ -44,9 +44,9 @@ const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): 
 });
 
 const DOMAINS: Domain[] = [
-  dom({ id: "d1", name: "SCE", color: "#2563EB", icon: "🏢", sort: 0 }),
-  dom({ id: "d2", name: "Family", color: "#DB2777", icon: "🏡", sort: 1 }),
-  dom({ id: "d3", name: "Health", color: "#059669", icon: "🌿", sort: 2 }),
+  dom({ id: "d1", name: "SCE", color: "#2563EB", icon: "building", sort: 0 }),
+  dom({ id: "d2", name: "Family", color: "#DB2777", icon: "house", sort: 1 }),
+  dom({ id: "d3", name: "Health", color: "#059669", icon: "heart-pulse", sort: 2 }),
 ];
 
 // Dates are relative to whenever the harness runs, so a fixture never rots into

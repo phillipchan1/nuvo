@@ -23,6 +23,7 @@ import { READY } from "./ReadinessBanner";
 import { FloorHeader } from "./parts";
 import { ShipStamp } from "../ShipStamp";
 import ShippedRail from "./ShippedRail";
+import DomainSymbol from "../domain/DomainSymbol";
 
 export default function ShippedWall({ rung }: { rung: "project" | "initiative" }) {
   const { data, updateProject, updateInitiative } = useVertical();
@@ -147,7 +148,7 @@ function ShippedCard({ item, rung, onOpen }: { item: ShippedItem; rung: "project
         <div className="mono mt-1 flex items-center gap-1.5 text-micro text-muted">
           {item.domain && (
             <>
-              <span>{item.domain.icon}</span>
+              <DomainSymbol value={item.domain.icon} size={12} />
               <span className="truncate">{item.domain.name}</span>
             </>
           )}

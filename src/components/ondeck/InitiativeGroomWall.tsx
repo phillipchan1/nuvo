@@ -32,6 +32,7 @@ import { draftOKRs, type DraftKR } from "../../lib/draftOKRs";
 import { judgeKeyResults, type KRRating, type KRVerdict } from "../../lib/judgeOKRs";
 import { PROJECT_STATUS_COLORS, Bar, InlineNumber, InlineText } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
+import DomainSymbol from "../domain/DomainSymbol";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -229,7 +230,7 @@ function InitiativeGroomCard({
           style={{ borderColor: suggestion.domain.color, background: `${suggestion.domain.color}12` }}
           title="Link this initiative to its area"
         >
-          <span>{suggestion.domain.icon}</span>
+          <DomainSymbol value={suggestion.domain.icon} size={14} />
           <span className="min-w-0 flex-1 text-caption text-ink">
             Looks like <span className="font-semibold" style={{ color: suggestion.domain.color }}>{suggestion.domain.name}</span>
             <span className="text-muted"> · tap to link</span>

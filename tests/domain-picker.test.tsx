@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
 /**
- * Domain filing on a loose task, and the domain's face on both shells.
+ * Domain filing on a loose task, and the domain symbol on both shells.
  *
  * HEAD wired DomainPicker onto loose tasks in SlideOver + MobileTaskSheet.
  * A parented task's domain is inherited (resolveDomainId) — setting it on the
  * sheet would silently do nothing — so those surfaces show a read-only chain,
  * not a second writable picker. P/I RecordModal already had the live picker.
- * Domain screens (desktop floor + phone) wear IconPicker for the face.
+ * Domain screens (desktop floor + phone) wear DomainSymbolPicker.
  *
  * The pickers themselves are driven here (same cheap jsdom pattern as
  * delete-account-ui / year-marks). The surface wiring is read from source
@@ -18,7 +18,7 @@ import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { IconPicker } from "../src/components/domain/DomainParts";
+import { DomainSymbolPicker } from "../src/components/domain/DomainParts";
 import { DomainPicker } from "../src/components/floors/parts";
 import type { Domain } from "../src/lib/vertical";
 
@@ -37,8 +37,8 @@ function sliceBetween(src: string, start: string, end: string, label: string) {
   return src.slice(i, j);
 }
 
-const WORK = { id: "d-work", name: "Work", color: "#7c6f9f", icon: "💼" } as Domain;
-const HOME = { id: "d-home", name: "Home", color: "#8a6d4a", icon: "🏠" } as Domain;
+const WORK = { id: "d-work", name: "Work", color: "#7c6f9f", icon: "briefcase" } as Domain;
+const HOME = { id: "d-home", name: "Home", color: "#8a6d4a", icon: "house" } as Domain;
 const DOMAINS = [WORK, HOME];
 
 describe("DomainPicker", () => {
@@ -48,7 +48,7 @@ describe("DomainPicker", () => {
     render(<DomainPicker domains={DOMAINS} value={WORK.id} onChange={onChange} />);
 
     const trigger = screen.getByTitle("Change domain");
-    expect(trigger.textContent).toContain("💼");
+    expect(trigger.querySelector("svg")).toBeTruthy();
     expect(trigger.textContent).toContain("Work");
 
     await user.click(trigger);
@@ -79,48 +79,48 @@ describe("DomainPicker", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
-  it("reads as Domain + ◇ when nothing is filed", () => {
+  it("reads as Domain with the neutral vector symbol when nothing is filed", () => {
     render(<DomainPicker domains={DOMAINS} value="" onChange={() => {}} />);
     const trigger = screen.getByTitle("Change domain");
-    expect(trigger.textContent).toContain("◇");
+    expect(trigger.querySelector("svg")).toBeTruthy();
     expect(trigger.textContent).toContain("Domain");
   });
 });
 
-describe("IconPicker", () => {
-  it("lets you search and pick a curated face", async () => {
+describe("DomainSymbolPicker", () => {
+  it("lets you search and pick a curated vector symbol", async () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
     render(
-      <IconPicker value="🏠" domainName="Work" domainContext={null} onPick={onPick} />,
+      <DomainSymbolPicker value="house" domainName="Work" domainContext={null} onPick={onPick} />,
     );
 
-    expect(screen.getByLabelText("Search icons")).toBeTruthy();
-    expect(screen.getByLabelText("Set the domain's icon to 💼")).toBeTruthy();
-    expect(screen.getByLabelText("Set the domain's icon to 🏠").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByLabelText("Search domain symbols")).toBeTruthy();
+    expect(screen.getByLabelText("Set the domain symbol to Briefcase")).toBeTruthy();
+    expect(screen.getByLabelText("Set the domain symbol to House").getAttribute("aria-pressed")).toBe("true");
 
-    await user.click(screen.getByLabelText("Set the domain's icon to 💼"));
-    expect(onPick).toHaveBeenCalledWith("💼");
+    await user.click(screen.getByLabelText("Set the domain symbol to Briefcase"));
+    expect(onPick).toHaveBeenCalledWith("briefcase");
 
-    await user.type(screen.getByLabelText("Search icons"), "sleep");
-    expect(screen.getByLabelText("Set the domain's icon to 😴")).toBeTruthy();
-    expect(screen.queryByLabelText("Set the domain's icon to 💼")).toBeNull();
+    await user.type(screen.getByLabelText("Search domain symbols"), "sleep");
+    expect(screen.getByLabelText("Set the domain symbol to Moon")).toBeTruthy();
+    expect(screen.queryByLabelText("Set the domain symbol to Briefcase")).toBeNull();
 
-    await user.clear(screen.getByLabelText("Search icons"));
-    await user.type(screen.getByLabelText("Search icons"), "zzzznotanemoji");
+    await user.clear(screen.getByLabelText("Search domain symbols"));
+    await user.type(screen.getByLabelText("Search domain symbols"), "zzzznotasymbol");
     expect(screen.getByText("No matches")).toBeTruthy();
   });
 
   it("wears a 7-col grid on the phone and 8 on the desktop", () => {
     const desk = render(
-      <IconPicker value="💼" domainName="Work" onPick={() => {}} />,
+      <DomainSymbolPicker value="briefcase" domainName="Work" onPick={() => {}} />,
     );
     expect(desk.container.querySelector(".grid-cols-8")).toBeTruthy();
     expect(desk.container.querySelector(".grid-cols-7")).toBeNull();
     desk.unmount();
 
     const phone = render(
-      <IconPicker value="💼" domainName="Work" onPick={() => {}} phone />,
+      <DomainSymbolPicker value="briefcase" domainName="Work" onPick={() => {}} phone />,
     );
     expect(phone.container.querySelector(".grid-cols-7")).toBeTruthy();
     expect(phone.container.querySelector(".grid-cols-8")).toBeNull();
@@ -152,7 +152,7 @@ describe("loose-task surfaces wire DomainPicker; parented is a read", () => {
       /<span className="mono flex min-w-0 items-center gap-1 truncate text-muted"/,
     );
     expect(parented, "parented branch must not nest a DomainPicker").not.toMatch(/<DomainPicker/);
-    expect(parented).toMatch(/◇ Domain/);
+    expect(parented).toMatch(/<DomainSymbol value=\{domain\?\.icon\}/);
     expect(parented).toMatch(/initiative\.name/);
     expect(parented).toMatch(/project\.name/);
   });
@@ -172,7 +172,7 @@ describe("loose-task surfaces wire DomainPicker; parented is a read", () => {
       /<span className="mono flex min-w-0 items-center gap-1 truncate text-muted"/,
     );
     expect(parented, "parented branch must not nest a DomainPicker").not.toMatch(/<DomainPicker/);
-    expect(parented).toMatch(/◇ Domain/);
+    expect(parented).toMatch(/<DomainSymbol value=\{domain\?\.icon\}/);
     expect(parented).toMatch(/initiative\.name/);
     expect(parented).toMatch(/project\.name/);
   });
@@ -191,24 +191,28 @@ describe("loose-task surfaces wire DomainPicker; parented is a read", () => {
   });
 });
 
-describe("domain screens wear IconPicker on both shells", () => {
-  it("desktop DomainFloor mounts IconPicker", () => {
+describe("domain screens edit one mark on both shells", () => {
+  it("desktop MarkPicker owns symbol and color", () => {
     const floor = read("components/floors/DomainFloor.tsx");
-    expect(floor, `${rel("components/floors/DomainFloor.tsx")} must import IconPicker`).toMatch(
-      /IconPicker/,
+    expect(floor, `${rel("components/floors/DomainFloor.tsx")} must import DomainSymbolPicker`).toMatch(
+      /DomainSymbolPicker/,
     );
-    expect(floor, "desktop IconDot must mount IconPicker").toMatch(
-      /<IconPicker[\s\S]*?onPick=\{/,
+    expect(floor, "desktop MarkPicker must mount DomainSymbolPicker").toMatch(
+      /<DomainSymbolPicker[\s\S]*?onPick=\{/,
     );
+    expect(floor).toMatch(/function MarkPicker/);
+    expect(floor).toMatch(/<SwatchGrid/);
+    expect(floor).not.toMatch(/SigilFormGrid|FormPicker/);
   });
 
-  it("phone domain screen mounts IconPicker with phone sizing", () => {
+  it("phone domain screen mounts DomainSymbolPicker with phone sizing", () => {
     const phone = read("components/mobile/detail/MobileDomainScreen.tsx");
-    expect(phone, `${rel("components/mobile/detail/MobileDomainScreen.tsx")} must import IconPicker`).toMatch(
-      /IconPicker/,
+    expect(phone, `${rel("components/mobile/detail/MobileDomainScreen.tsx")} must import DomainSymbolPicker`).toMatch(
+      /DomainSymbolPicker/,
     );
-    expect(phone, "phone IconPicker must pass phone").toMatch(
-      /<IconPicker[\s\S]*?phone/,
+    expect(phone, "phone DomainSymbolPicker must pass phone").toMatch(
+      /<DomainSymbolPicker[\s\S]*?phone/,
     );
+    expect(phone).not.toMatch(/SigilFormGrid|domainForm|setDomainForm/);
   });
 });

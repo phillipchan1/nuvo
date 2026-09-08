@@ -19,6 +19,7 @@ import {
   type Task,
 } from "./types";
 import { parseDateISO, todayISO } from "./dates";
+import { normalizeDomainSymbol } from "./domainSymbolKeys";
 import { eventCountsAsActual, eventDomainId, eventMins, type ActualsFilter } from "./eventActuals";
 
 export type Momentum = "up" | "flat" | "down";
@@ -39,7 +40,7 @@ export interface Domain {
   id: string;
   name: string;
   color: string;
-  icon: string; // a single glyph/emoji — domains are fixtures, give them a face
+  icon: string; // stable DomainSymbol key — compact identity, distinct from the living sigil
   intention: string; // the standing mandate — what it asks of you
   charter: string; // plain-line "what this domain IS" — the routing source of truth
   context: DomainContext | null; // AI-expanded routing metadata (entities, boundary…)
@@ -657,7 +658,7 @@ export function buildVertical(
         id: d.id,
         name: d.name,
         color: d.color,
-        icon: d.icon || "◇",
+        icon: normalizeDomainSymbol(d.icon),
         intention: d.intention,
         charter: d.charter ?? "",
         context: d.context ?? null,

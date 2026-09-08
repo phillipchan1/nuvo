@@ -10,8 +10,8 @@ import type { CSSProperties } from "react";
 // This is the only place they're drawn. Anywhere the app shows "what kind of
 // thing is this" — the spine, the phone's bottom bar, the command palette, a
 // mis-filed list — imports from here, so the vocabulary can never drift into
-// three different sets of glyphs again. A domain's own emoji (`domain.icon`) is
-// a different thing entirely: that's identity, chosen by the user.
+// three different sets of glyphs again. A domain's own compact symbol
+// (`domain.icon`) is a different thing entirely: identity chosen by the user.
 
 export type AltitudeKind = "task" | "day" | "project" | "initiative" | "domain";
 

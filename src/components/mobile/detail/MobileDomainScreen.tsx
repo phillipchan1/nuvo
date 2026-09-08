@@ -2,7 +2,7 @@
 // (`floors/DomainFloor.tsx`), at full feature parity.
 //
 // The desktop opens a domain as a tall bordered plate with a radial wash of the
-// domain's own light: hero (sigil · name · mandate · presence voice), the last
+// domain's own light: hero (mark · name · mandate · presence voice), the last
 // quarter's pulse, the Gain beside what you've built, the portfolio pointed at
 // outcomes, Nuvo's derived read, and the grooming workbench at the foot. The
 // phone runs the SAME acts down one column inside the detail Sheet, in the same
@@ -11,7 +11,7 @@
 // state — a domain that reads "quiet for 9 days" at a desk says exactly that in
 // your hand.
 //
-// The two things that are the phone's own: the appearance controls (form + light)
+// The two things that are the phone's own: the mark controls (symbol + light)
 // are a disclosure under the hero rather than hover-revealed chrome in a corner,
 // and "Parked here" is an editable list with a composer, because capture on a
 // phone is the point.
@@ -46,18 +46,12 @@ import {
   DomainGroom,
   PresencePulse,
   Flourish,
-  IconPicker,
-  SigilFormGrid,
+  DomainSymbolPicker,
   SwatchGrid,
 } from "../../domain/DomainParts";
-import {
-  domainForm,
-  domainSigilSpec,
-  setDomainForm,
-  SIGIL_FORM_LABEL,
-  type SigilForm,
-} from "../../../lib/domainSigil";
-import DomainSigil from "../../floors/DomainSigil";
+import DomainSymbol from "../../domain/DomainSymbol";
+import DomainMark from "../../domain/DomainMark";
+import { domainMarkSpec } from "../../../lib/domainMark";
 import { Bar, DeleteBtn, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "../../floors/parts";
 import {
   CardList,
@@ -89,15 +83,13 @@ export default function MobileDomainScreen({
 }) {
   const now = useMemo(() => new Date(), []);
   const dom = d.domains.find((x) => x.id === id);
-  const [form, setForm] = useState<SigilForm>(() => domainForm(id));
   const [dressing, setDressing] = useState(false);
 
   if (!dom) return <Empty>This domain is gone.</Empty>;
 
   const accent = dom.color;
   const st = stateOf(dom);
-  const spec = domainSigilSpec(dom, form);
-  const pickForm = (f: SigilForm) => { setDomainForm(dom.id, f); setForm(f); };
+  const mark = domainMarkSpec(dom);
 
   // rhythm reads — the same four the desktop's Gain prints
   const streak = domainStreak(dom.weeks);
@@ -129,7 +121,7 @@ export default function MobileDomainScreen({
     >
       {/* ── the hero: mark · name · mandate · presence voice ── */}
       <div className="flex flex-col items-center pb-1 text-center">
-        <DomainSigil spec={spec} size={96} />
+        <DomainMark spec={mark} size={96} />
         <div className="mt-2 w-full">
           <RecordHead
             accent={accent}
@@ -149,38 +141,34 @@ export default function MobileDomainScreen({
         </div>
       </div>
 
-      {/* ── the sigil's form + the domain's light — chrome, so it hides ── */}
+      {/* ── one door for the domain mark — chrome, so it hides ── */}
       <div className="mt-4 flex items-center justify-center gap-2">
         <button
           onClick={() => setDressing((v) => !v)}
           aria-expanded={dressing}
           className="tap fast flex items-center gap-2 rounded-full border border-line px-3 py-2 text-micro text-muted active:text-ink"
         >
-          <span>✦ {SIGIL_FORM_LABEL[form]}</span>
+          <DomainSymbol value={dom.icon} size={15} />
           <span className="h-3 w-3 rounded-full ring-1 ring-line" style={{ background: accent }} />
-          <span className="leading-none">{dom.icon || "◇"}</span>
+          <span>Edit mark</span>
           <span className="mono">{dressing ? "–" : "+"}</span>
         </button>
       </div>
       {dressing && (
         <div className="mt-3 rounded-xl border border-line bg-surface-2 p-3">
-          <div className="section-label !p-0">The sigil's form</div>
+          <div className="section-label !p-0">Symbol</div>
           <div className="mt-2">
-            <SigilFormGrid domain={dom} form={form} onPick={pickForm} size={40} phone />
-          </div>
-          <div className="section-label mt-4 !p-0">The domain's light</div>
-          <div className="mt-2">
-            <SwatchGrid value={accent} onPick={(c) => store.updateDomain(dom.id, { color: c })} phone />
-          </div>
-          <div className="section-label mt-4 !p-0">The domain's face</div>
-          <div className="mt-2">
-            <IconPicker
+            <DomainSymbolPicker
               value={dom.icon}
               domainName={dom.name}
               domainContext={dom.intention}
               onPick={(icon) => store.updateDomain(dom.id, { icon })}
               phone
             />
+          </div>
+          <div className="section-label mt-4 !p-0">Color</div>
+          <div className="mt-2">
+            <SwatchGrid value={accent} onPick={(c) => store.updateDomain(dom.id, { color: c })} phone />
           </div>
         </div>
       )}

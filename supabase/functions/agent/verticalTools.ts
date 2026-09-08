@@ -324,7 +324,7 @@ export async function executeVerticalTool(
           user_id: userId,
           name: title,
           intention: (args.intention as string) ?? "",
-          icon: (args.icon as string) ?? "◇",
+          icon: (args.icon as string) ?? "diamond",
           color: (args.color as string) ?? "#6B7280",
           weekly_target_hours: args.weekly_target_hours ?? null,
           sort_order: sort,

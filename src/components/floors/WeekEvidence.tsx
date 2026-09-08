@@ -21,6 +21,7 @@ import { useTaskMutations } from "../../hooks/useTasks";
 import { useEventRoutingMutations } from "../../hooks/useEventRouting";
 import { firstDayOfWeek, useSettings } from "../../hooks/useSettings";
 import { Modal } from "../ui";
+import DomainSymbol from "../domain/DomainSymbol";
 
 function CorrectModal({
   receipt,
@@ -45,7 +46,7 @@ function CorrectModal({
               onClick={() => onPick(d.id)}
               className="tap fast flex items-center gap-2 rounded-md px-3 py-2.5 text-left hover:bg-accent-soft"
             >
-              <span style={{ color: d.color }}>{d.icon}</span>
+              <span style={{ color: d.color }}><DomainSymbol value={d.icon} size={16} /></span>
               <span className="text-body text-ink">{d.name}</span>
             </button>
           ))}

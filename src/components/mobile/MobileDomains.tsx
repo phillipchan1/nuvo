@@ -4,7 +4,7 @@
 //
 // Desktop lays the wall out as a three-up grid of glass cards; a phone has one
 // column, so the cards stack — but they are the SAME cards, carrying the same
-// living sigil (drawn from the domain's own 13-week pulse), the same state word,
+// living mark (chosen symbol + color + 13-week presence halo), the same state word,
 // the same Gain numbers and the same "routes clean" mark. Above them sits the
 // week's shape, the one read that answers "am I starving a domain to feed
 // another?" — shared with the desktop verbatim, seven day columns on an absolute
@@ -17,9 +17,9 @@ import { useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { readSpine } from "../../lib/readiness";
 import { fmtH, stateOf } from "../../lib/domainRead";
-import { domainForm, domainSigilSpec } from "../../lib/domainSigil";
+import { domainMarkSpec } from "../../lib/domainMark";
 import type { Domain } from "../../lib/vertical";
-import DomainSigil from "../floors/DomainSigil";
+import DomainMark from "../domain/DomainMark";
 import { ClarityMark, WeekShape } from "../domain/DomainParts";
 import { RefinedSeal, useRefinedCelebration } from "../floors/parts";
 import { FloorGuide } from "../orientation/FloorGuide";
@@ -117,7 +117,7 @@ export default function MobileDomains({
 function Niche({ domain, onEnter, teach }: { domain: Domain; onEnter: () => void; teach?: string }) {
   const st = stateOf(domain);
   const lit = st.tone === "lit";
-  const spec = domainSigilSpec(domain, domainForm(domain.id));
+  const mark = domainMarkSpec(domain);
   return (
     <button
       onClick={onEnter}
@@ -132,7 +132,7 @@ function Niche({ domain, onEnter, teach }: { domain: Domain; onEnter: () => void
       }}
     >
       <div className="flex items-start gap-3">
-        <DomainSigil spec={spec} size={56} className="shrink-0" />
+        <DomainMark spec={mark} size={56} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div
             className="serif truncate text-lead"

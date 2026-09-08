@@ -54,6 +54,7 @@ import { anchoredTop } from "../lib/anchoredTop";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
 import { isTypingIn } from "./floors/TaskList";
+import DomainSymbol from "./domain/DomainSymbol";
 
 /**
  * Priority as tokens, not raw Tailwind — `bg-amber-400` for "medium" was one
@@ -577,7 +578,10 @@ export function TaskPopover({
                   // the same quiet read as before, not a control (setting it here
                   // would silently do nothing; see resolveDomainId).
                   <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
-                    {domain ? <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span> : <span>◇ Domain</span>}
+                    <span className="flex items-center gap-1" style={{ color: domain?.color }}>
+                      <DomainSymbol value={domain?.icon} size={13} />
+                      {domain?.name ?? "Domain"}
+                    </span>
                     {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
                     {project && <><span>›</span><span className="truncate">{project.name}</span></>}
                   </span>
@@ -599,7 +603,8 @@ export function TaskPopover({
                     title="Nuvo's guess — click to file it here"
                   >
                     <span aria-hidden>✦</span>
-                    {suggestedDomain.icon} {suggestedDomain.name}
+                    <DomainSymbol value={suggestedDomain.icon} size={12} />
+                    {suggestedDomain.name}
                   </button>
                 )}
               </div>

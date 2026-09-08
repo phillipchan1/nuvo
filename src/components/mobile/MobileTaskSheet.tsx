@@ -13,6 +13,7 @@ import ReminderSelect from "../ReminderSelect";
 import TaskSteps from "../TaskSteps";
 import Sheet from "./Sheet";
 import { useSettings } from "../../hooks/useSettings";
+import DomainSymbol from "../domain/DomainSymbol";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
@@ -163,7 +164,10 @@ export default function MobileTaskSheet({
               // Parented — inherited from the project, so it's a read, not a
               // control (setting it here would silently do nothing).
               <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
-                {domain ? <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span> : <span>◇ Domain</span>}
+                <span className="flex items-center gap-1" style={{ color: domain?.color }}>
+                  <DomainSymbol value={domain?.icon} size={13} />
+                  {domain?.name ?? "Domain"}
+                </span>
                 {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
                 {project && <><span>›</span><span className="truncate">{project.name}</span></>}
               </span>

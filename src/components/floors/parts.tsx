@@ -24,6 +24,7 @@ import type { Domain, Initiative, KeyResult, Momentum, Project, ProjectStatus } 
 import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
+import DomainSymbol from "../domain/DomainSymbol";
 
 /** Menu portaled to <body> so it isn't clipped or covered by later table rows /
  *  overflow parents / the Record modal's `.moment` transform (which traps
@@ -515,7 +516,7 @@ export function DomainPicker({
         style={{ color, background: lg ? `${color}1f` : `${color}12`, ...(lg ? {} : { borderColor: `${color}66` }) }}
         title="Change domain"
       >
-        <span className={lg ? "text-body leading-none" : undefined}>{cur?.icon ?? "◇"}</span>
+        <span style={{ color }}><DomainSymbol value={cur?.icon} size={lg ? 18 : 14} /></span>
         <span className="font-medium">{cur?.name ?? "Domain"}</span>
         <span className="opacity-40">▾</span>
       </button>
@@ -529,7 +530,7 @@ export function DomainPicker({
             }`}
             style={{ color: d.id === value ? d.color : "var(--text)" }}
           >
-            <span className={lg ? "text-body leading-none" : undefined} style={{ color: d.color }}>{d.icon}</span>
+            <span style={{ color: d.color }}><DomainSymbol value={d.icon} size={lg ? 18 : 14} /></span>
             <span className="truncate">{d.name}</span>
             {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
           </button>

@@ -3,8 +3,8 @@
 // domain detail) BOTH wear.
 //
 // A domain reads the same on a laptop and a phone or it isn't the same domain:
-// the presence pulse, the "routes clean" mark, the week's shape, the sigil's
-// form, the domain's light, and the grooming workbench all live here so neither
+// the presence pulse, the "routes clean" mark, the week's shape, the domain's
+// identity controls, and the grooming workbench all live here so neither
 // shell can quietly grow its own version. Layout is the shell's business; these
 // are the pieces it lays out. `phone` only bumps control sizing to 44px targets —
 // it never changes what a mark means.
@@ -20,15 +20,12 @@ import {
   type WeekShapeRead,
 } from "../../lib/domainRead";
 import {
-  domainSigilSpec,
-  SIGIL_FORMS,
-  SIGIL_FORM_BLURB,
-  SIGIL_FORM_LABEL,
-  type SigilForm,
-} from "../../lib/domainSigil";
-import { searchDomainEmoji, suggestDomainEmoji } from "../../lib/domainEmoji";
+  normalizeDomainSymbol,
+  searchDomainSymbols,
+  suggestDomainSymbol,
+} from "../../lib/domainSymbols";
 import type { Domain, DomainContext } from "../../lib/vertical";
-import DomainSigil from "../floors/DomainSigil";
+import DomainSymbol from "./DomainSymbol";
 import { RefinedTick } from "../floors/parts";
 import { AltitudeIcon } from "../icons";
 
@@ -214,44 +211,6 @@ export function WeekShape({
   );
 }
 
-// ── The sigil's form — the one configurable knob ──────────────────────────────
-/** The four forms, each drawn live from THIS domain's real data. The chooser
- *  itself is the shell's (desktop hangs it in a popover, the phone lays it flat),
- *  but the tiles are one thing. */
-export function SigilFormGrid({
-  domain,
-  form,
-  onPick,
-  size = 48,
-  phone = false,
-}: {
-  domain: Domain;
-  form: SigilForm;
-  onPick: (f: SigilForm) => void;
-  size?: number;
-  phone?: boolean;
-}) {
-  return (
-    <div className={`grid gap-1.5 ${phone ? "grid-cols-4" : "grid-cols-2"}`}>
-      {SIGIL_FORMS.map((f) => (
-        <button
-          key={f}
-          onClick={() => onPick(f)}
-          className={`fast flex flex-col items-center gap-1 rounded-md p-2 text-center ${phone ? "tap active:bg-surface-2" : "hover:bg-surface-2"}`}
-          style={f === form ? { background: "var(--accent-soft)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" } : undefined}
-          title={SIGIL_FORM_BLURB[f]}
-          aria-pressed={f === form}
-        >
-          <DomainSigil spec={domainSigilSpec(domain, f)} size={size} />
-          <span className="text-micro" style={{ color: f === form ? "var(--accent)" : "var(--muted)", fontWeight: f === form ? 600 : 400 }}>
-            {SIGIL_FORM_LABEL[f]}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** The domain's light. Same swatches on both shells. */
 export function SwatchGrid({
   value,
@@ -280,10 +239,9 @@ export function SwatchGrid({
   );
 }
 
-/** The domain's face — a curated, searchable set (never the native emoji
- *  keyboard), with a fast local guess from the domain's own words. Same
- *  swatches-style grid on both shells. */
-export function IconPicker({
+/** The domain's symbol — a curated, searchable vector vocabulary, with a fast
+ * local guess from the domain's own words. Same picker on both shells. */
+export function DomainSymbolPicker({
   value,
   domainName,
   domainContext,
@@ -297,9 +255,10 @@ export function IconPicker({
   phone?: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const results = useMemo(() => searchDomainEmoji(query), [query]);
+  const results = useMemo(() => searchDomainSymbols(query), [query]);
+  const normalizedValue = normalizeDomainSymbol(value);
   const suggestion = useMemo(
-    () => suggestDomainEmoji(`${domainName} ${domainContext ?? ""}`),
+    () => suggestDomainSymbol(`${domainName} ${domainContext ?? ""}`),
     [domainName, domainContext],
   );
 
@@ -310,10 +269,10 @@ export function IconPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search…"
-          aria-label="Search icons"
+          aria-label="Search domain symbols"
           className={`fast flex-1 rounded-md border border-line bg-bg px-2 text-label outline-none focus:border-accent ${phone ? "h-9" : "h-7"}`}
         />
-        {suggestion && suggestion !== value && (
+        {suggestion && suggestion !== normalizedValue && (
           <button
             type="button"
             onClick={() => onPick(suggestion)}
@@ -321,26 +280,27 @@ export function IconPicker({
             className="fast flex shrink-0 items-center gap-1 rounded-full border border-accent/30 px-2 py-1 text-micro font-medium text-accent hover:bg-accent-soft"
           >
             <span aria-hidden>✦</span>
-            <span>{suggestion}</span>
+            <DomainSymbol value={suggestion} size={15} />
           </button>
         )}
       </div>
       <div className={`grid gap-1 overflow-y-auto pr-0.5 ${phone ? "max-h-[240px] grid-cols-7" : "max-h-[200px] grid-cols-8"}`}>
-        {results.map(({ emoji }) => (
+        {results.map((entry) => (
           <button
-            key={emoji}
+            key={entry.key}
             type="button"
-            onClick={() => onPick(emoji)}
-            aria-label={`Set the domain's icon to ${emoji}`}
-            aria-pressed={emoji === value}
-            className={`fast flex items-center justify-center rounded-md text-body hover:bg-accent-soft ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-7 w-7"}`}
+            onClick={() => onPick(entry.key)}
+            aria-label={`Set the domain symbol to ${entry.label}`}
+            aria-pressed={entry.key === normalizedValue}
+            title={entry.label}
+            className={`fast flex items-center justify-center rounded-md text-muted hover:bg-accent-soft hover:text-accent ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-7 w-7"}`}
             style={
-              emoji === value
-                ? { background: "var(--accent-soft)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" }
+              entry.key === normalizedValue
+                ? { background: "var(--accent-soft)", color: "var(--accent)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" }
                 : undefined
             }
           >
-            {emoji}
+            <DomainSymbol value={entry.key} size={phone ? 19 : 17} />
           </button>
         ))}
         {results.length === 0 && <div className="col-span-full py-3 text-center text-micro text-muted">No matches</div>}

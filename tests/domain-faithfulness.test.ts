@@ -34,7 +34,7 @@ function domainRow(over: Partial<DomainRow> = {}): DomainRow {
     id: DOM,
     name: "Stampede",
     color: "#7C3AED",
-    icon: "🐎",
+    icon: "diamond",
     intention: "",
     charter: "",
     context: null,

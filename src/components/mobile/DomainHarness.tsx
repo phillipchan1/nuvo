@@ -1,7 +1,7 @@
 // Standalone verify harness for the Domains tab — the wall (MobileDomains) and
 // the open domain (detail/MobileDomainScreen) over fixture data at phone width,
-// so both can be eyeballed and *driven* (rename, retarget, pick a sigil form,
-// change the domain's light, park a task) without a real account. Reached at
+// so both can be eyeballed and *driven* (rename, retarget, edit the domain mark,
+// park a task) without a real account. Reached at
 // ?domains, mounted in main.tsx. Not part of any real surface. Precedent:
 // CalendarHarness (?horizon), PlanWeekHarness (?planweek).
 //
@@ -32,7 +32,7 @@ const pulse = (...w: number[]) => {
 };
 
 const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): Domain => ({
-  icon: "◆",
+  icon: "diamond",
   intention: "",
   charter: "",
   context: null,
@@ -53,7 +53,7 @@ const DOMAINS: Domain[] = [
     id: "d1",
     name: "SCE",
     color: "#2563EB",
-    icon: "🏢",
+    icon: "building",
     sort: 0,
     intention: "Lead the Enterprise rollout without letting it eat the family.",
     charter: "My day job at SCE — Obi, the Enterprise rollout, Super Leader.",
@@ -70,7 +70,7 @@ const DOMAINS: Domain[] = [
     id: "d2",
     name: "Family",
     color: "#DB2777",
-    icon: "🏡",
+    icon: "house",
     sort: 1,
     intention: "Be present, not merely around.",
     charter: "",
@@ -86,7 +86,7 @@ const DOMAINS: Domain[] = [
     id: "d3",
     name: "Health",
     color: "#0D9488",
-    icon: "🏃",
+    icon: "activity",
     sort: 2,
     intention: "Strong at 50.",
     weeklyTargetHours: 4,
@@ -94,7 +94,7 @@ const DOMAINS: Domain[] = [
     lastTouchedDays: 23,
     weeks: pulse(3, 2, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0),
   }),
-  dom({ id: "d4", name: "Writing", color: "#D97706", icon: "✍️", sort: 3 }),
+  dom({ id: "d4", name: "Writing", color: "#D97706", icon: "pen-line", sort: 3 }),
   // ── the three states the ship-aware ledger added (D-087) ──────────────────
   // d5 reproduces the reported bug exactly: a major project shipped 2 days ago,
   // the last task under it checked off 7 days ago, zero hours this week. Before
@@ -103,7 +103,7 @@ const DOMAINS: Domain[] = [
     id: "d5",
     name: "Stampede",
     color: "#7C3AED",
-    icon: "🐎",
+    icon: "trophy",
     sort: 4,
     intention: "Ship the thing, then let it breathe.",
     quarterHours: 88,
@@ -117,7 +117,7 @@ const DOMAINS: Domain[] = [
     id: "d6",
     name: "Sabbatical",
     color: "#0891B2",
-    icon: "⛵",
+    icon: "waves",
     sort: 5,
     intention: "Rest is part of the work.",
     quarterHours: 40,
@@ -131,7 +131,7 @@ const DOMAINS: Domain[] = [
     id: "d7",
     name: "Woodworking",
     color: "#B45309",
-    icon: "🪵",
+    icon: "tree",
     sort: 6,
     intention: "Make one thing a season with my hands.",
     quarterHours: 0,

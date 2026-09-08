@@ -15,6 +15,7 @@ import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
+import { DEFAULT_DOMAIN_SYMBOL, normalizeDomainSymbol } from "../lib/domainSymbolKeys";
 import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
 import {
@@ -740,7 +741,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const sort = (domainsQ.data?.length ?? 0) + 1;
         const row = {
           name: "New domain",
-          icon: "◇",
+          icon: DEFAULT_DOMAIN_SYMBOL,
           sort_order: sort,
           // Named explicitly rather than left to the column default. The row is
           // now built on the client, so an omitted colour would render one shade
@@ -776,7 +777,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             makeOp("domains", "insert", crypto.randomUUID(), {
               name: titleCase(s.name),
               color: s.color,
-              icon: "◇",
+              icon: DEFAULT_DOMAIN_SYMBOL,
               sort_order: base + i + 1,
             }),
           );
@@ -787,7 +788,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const rowPatch: Record<string, unknown> = {};
         if (patch.name != null) rowPatch.name = titleCase(patch.name);
         if (patch.color != null) rowPatch.color = patch.color;
-        if (patch.icon != null) rowPatch.icon = patch.icon;
+        if (patch.icon != null) rowPatch.icon = normalizeDomainSymbol(patch.icon);
         if (patch.intention != null) rowPatch.intention = patch.intention;
         if (patch.charter != null) rowPatch.charter = patch.charter;
         if (patch.context !== undefined) {

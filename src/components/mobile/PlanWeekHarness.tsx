@@ -17,7 +17,7 @@ const weekISO = toDateISO(startOfWeek(new Date(), { weekStartsOn: 1 }));
 const dayISO = (i: number) => toDateISO(addDays(new Date(weekISO + "T00:00:00"), i));
 
 const domain = (id: string, name: string, color: string): Domain => ({
-  id, name, color, icon: "◆", intention: "", charter: "", context: null,
+  id, name, color, icon: "diamond", intention: "", charter: "", context: null,
   weeklyTargetHours: 6, investedThisWeek: 2, meetingHoursThisWeek: 0, quarterHours: 40,
   lastTouchedDays: 1, lastShip: null, weeks: [], days: [0, 0, 0, 0, 0, 0, 0], sort: 0,
 });

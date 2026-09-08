@@ -37,7 +37,7 @@ const at = (n: number, hour: number, min = 0) => {
 };
 
 const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): Domain => ({
-  icon: "◆",
+  icon: "diamond",
   intention: "",
   charter: "",
   context: null,
@@ -54,9 +54,9 @@ const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): 
 });
 
 const DOMAINS: Domain[] = [
-  dom({ id: "d1", name: "SCE", color: "#2563EB", icon: "🏢" }),
-  dom({ id: "d2", name: "Family", color: "#DB2777", icon: "🏡" }),
-  dom({ id: "d3", name: "Health", color: "#059669", icon: "🌿" }),
+  dom({ id: "d1", name: "SCE", color: "#2563EB", icon: "building" }),
+  dom({ id: "d2", name: "Family", color: "#DB2777", icon: "heart-handshake" }),
+  dom({ id: "d3", name: "Health", color: "#059669", icon: "heart-pulse" }),
 ];
 
 const proj = (o: Partial<Project> & { id: string; domainId: string; name: string }): Project =>
