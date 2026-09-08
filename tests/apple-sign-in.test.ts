@@ -350,9 +350,9 @@ describe("two accounts, one person — Apple and Google on the same email", () =
   it("labels providers in the app's own words — prose vs row title", () => {
     expect(providerLabel("google")).toBe("Google");
     expect(providerLabel("apple")).toBe("Apple");
-    // "you used an email code" reads; "an email code | Linked" does not.
-    expect(providerLabel("email")).toBe("an email code");
-    expect(providerRowLabel("email")).toBe("Email code");
+    // Password and OTP share the email identity — "you used email" reads.
+    expect(providerLabel("email")).toBe("email");
+    expect(providerRowLabel("email")).toBe("Email");
     expect(providerLabel(null)).toBe("another method");
   });
 
@@ -363,7 +363,7 @@ describe("two accounts, one person — Apple and Google on the same email", () =
     const rows = readSignInMethods([google, emailIdentity], "email");
     expect(rows.map((r) => r.provider)).toEqual(["google", "apple", "email"]);
     expect(rows.find((r) => r.provider === "email")).toMatchObject({
-      label: "Email code",
+      label: "Email",
       linked: true,
       current: true,
     });

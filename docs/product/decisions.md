@@ -4938,3 +4938,32 @@ name (P10, P11). Empty trash still hides the icon, so a stranger's account is
 quiet (P7, P16).
 
 *Status: standing — rail and phone Tasks strip.*
+
+---
+
+**D-137 · 2026-09-08 · App Review signs in with email + password, not an OTP.**
+
+Guideline 2.1 needs a demo account a reviewer can type. An email code waits on
+mail (and an untracked `review_account_otp` migration once collided with
+`plan_source`). Native iOS — and `?review` / `VITE_REVIEW_LOGIN` — offer
+**Sign in with email** through `signInWithPassword`. Apple and Google stay
+(Guideline 4.8). The code path stays as a secondary. The password is never
+baked in, never in git; it lives in App Store Connect Review Information.
+
+iPad taps on that screen fire on pointerdown (`useTapAction`) so a hover
+setState cannot eat the first tap (Dayspring ASC 2.1(a)). The iOS Vite build
+stamps `__TAURI_IOS__` so an iPad Macintosh UA still gets the phone login.
+
+Account deletion is unchanged (D-117). StoreKit product IDs are untouched.
+Paid Apps Agreement status is ASC-side — this decision does not claim it.
+
+Ledger: not a planning question. Closest is O4 (who can see my work) — this
+is the door in, not visibility. Principle strained: **P8** (Account now holds
+identity *and* a password door). Mitigation: same screen, Apple first, no
+second pool. Four no's: no pool, "Sign in with email" is the method not a
+place, works on an empty review account, Vera sees the same door on iOS.
+
+Spec: [`app-store-review.md`](../app-store-review.md).
+
+*Status: standing — code in Login; operator still creates the Supabase user
+and pastes credentials into Connect.*

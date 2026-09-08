@@ -59,7 +59,8 @@ Statuses are owned by each doc's own header.
 - [`inbound-email.md`](./inbound-email.md) — forward a mail to a private address; the subject lands in the inbox.
 - [`account-deletion.md`](./account-deletion.md) — in-app wipe (Settings → Account · locked screen). Type DELETE.
 - [`ios-releases.md`](./ios-releases.md) — iPhone TestFlight auto-upload, widgets + Siri roadmap.
-- [`apple-sign-in.md`](./apple-sign-in.md) — Sign in with Apple: the entitlement, the nonce, the revoke on delete, and the two-accounts-one-person case. **Guideline 4.8 — blocks the App Store submission.**
+- [`app-store-review.md`](./app-store-review.md) — App Review sign-in (email + password, no OTP), listing notes, what still blocks Submit. **Never commit the review password.**
+- [`apple-sign-in.md`](./apple-sign-in.md) — Sign in with Apple: the entitlement, the nonce, the revoke on delete, and the two-accounts-one-person case. **Guideline 4.8 — keep Apple beside Google.**
 - [`../KEYBOARD_SHORTCUTS.md`](../KEYBOARD_SHORTCUTS.md) — the keyboard model.
 
 ---

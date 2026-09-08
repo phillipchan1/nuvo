@@ -6,12 +6,25 @@
 // checks. Consolidates the `"__TAURI_INTERNALS__" in window` sniff that was
 // duplicated across main.tsx / useUpdater.ts / App.tsx.
 
+/** Compile-time: Vite sets this true only when Tauri builds the iOS target
+ *  (`TAURI_ENV_PLATFORM=ios`). iPadOS often reports a Macintosh UA; without
+ *  this stamp the iOS IPA would look like a Mac and hide the phone login. */
+function builtForIOS(): boolean {
+  return typeof __TAURI_IOS__ !== "undefined" && __TAURI_IOS__;
+}
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** True inside the Tauri iOS shell (TestFlight / native iPhone app). */
+/** True inside the Tauri iOS shell (TestFlight / native iPhone and iPad app).
+ *
+ *  The iOS Vite build stamps `__TAURI_IOS__` so an iPad that lies about being
+ *  a Macintosh still counts. Do not use `maxTouchPoints` as a fallback — a
+ *  MacBook trackpad reports 1–5 in WKWebView and used to flip the *desktop*
+ *  app onto MobileShell. */
 export function isTauriIOS(): boolean {
+  if (builtForIOS()) return true;
   if (!isTauri()) return false;
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }

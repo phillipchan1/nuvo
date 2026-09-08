@@ -4,6 +4,8 @@ import { signInWithGoogle } from "../lib/googleAuth";
 import { appleSignInAvailable, isAppleSignInCancelled, signInWithApple } from "../lib/appleAuth";
 import { lastAuthProvider, providerLabel } from "../lib/authProviders";
 import { isMobileTauri } from "../lib/platform";
+import { isReviewPasswordLogin } from "../lib/reviewLogin";
+import { isOAuthCanceled, useTapAction } from "../lib/tapAction";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -15,15 +17,25 @@ function isStandalone(): boolean {
   );
 }
 
-export default function Login() {
+type EmailGate = false | "password" | "otp" | "code";
+type Busy = "apple" | "google" | "password" | "otp" | null;
+
+export default function Login({
+  forcePasswordLogin = false,
+}: {
+  /** Tests and the `?login` harness. Production reads `isReviewPasswordLogin`. */
+  forcePasswordLogin?: boolean;
+}) {
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<Busy>(null);
   const nativePhone = isMobileTauri();
-  // The email-code fallback: never leaves this window, so the session always
-  // lands in the standalone app. Offered up-front when installed native or PWA.
-  const [emailMode, setEmailMode] = useState(false);
+  const passwordLogin = forcePasswordLogin || isReviewPasswordLogin();
+  // Email-code fallback: never leaves this window. Offered up-front on PWA /
+  // native when the password form is not the review door; otherwise secondary.
+  const otpOffered = isStandalone() || nativePhone || passwordLogin;
+  const [emailGate, setEmailGate] = useState<EmailGate>(false);
   const [email, setEmail] = useState("");
-  const [codeSent, setCodeSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
 
   // Apple is required wherever we offer Google (App Store guideline 4.8) and
@@ -36,14 +48,19 @@ export default function Login() {
   // account. Saying it out loud here is the only prevention that works.
   const [previous] = useState(lastAuthProvider);
 
+  const oauthBusy = busy === "apple" || busy === "google";
+
   const withApple = async () => {
-    setBusy(true);
+    if (busy !== null) return;
+    setBusy("apple");
     setError(null);
     const { error } = await signInWithApple();
     if (error) {
       // Backing out of Apple's sheet is not a failure to report.
-      if (!isAppleSignInCancelled(error.message)) setError(error.message);
-      setBusy(false);
+      if (!isAppleSignInCancelled(error.message) && !isOAuthCanceled(error)) {
+        setError(error.message);
+      }
+      setBusy(null);
       return;
     }
     // Native returns here already signed in (useAuth's onAuthStateChange takes
@@ -51,44 +68,87 @@ export default function Login() {
   };
 
   const withGoogle = async () => {
-    setBusy(true);
+    if (busy !== null) return;
+    setBusy("google");
     setError(null);
     const { error } = await signInWithGoogle();
     if (error) {
-      setError(error.message);
-      setBusy(false);
+      if (!isOAuthCanceled(error)) setError(error.message);
+      setBusy(null);
     }
     // On success the browser redirects to Google — leave busy true.
   };
 
+  const withPassword = async () => {
+    const addr = email.trim();
+    if (!addr || !password || busy === "password") return;
+    setBusy("password");
+    setError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: addr, password });
+    setBusy(null);
+    if (error) setError(error.message);
+    // On success useAuth's onAuthStateChange takes over.
+  };
+
   const sendCode = async () => {
     const addr = email.trim();
-    if (!addr) return;
-    setBusy(true);
+    if (!addr || busy === "otp") return;
+    setBusy("otp");
     setError(null);
     const { error } = await supabase.auth.signInWithOtp({ email: addr });
-    setBusy(false);
+    setBusy(null);
     if (error) setError(error.message);
-    else setCodeSent(true);
+    else setEmailGate("code");
   };
 
   const verifyCode = async () => {
     const token = code.trim();
-    if (!token) return;
-    setBusy(true);
+    if (!token || busy === "otp") return;
+    setBusy("otp");
     setError(null);
     const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: "email" });
-    setBusy(false);
+    setBusy(null);
     if (error) setError(error.message);
     // On success useAuth's onAuthStateChange takes over.
   };
+
+  const openPassword = () => {
+    setEmailGate("password");
+    setError(null);
+  };
+  const openOtp = () => {
+    setEmailGate("otp");
+    setError(null);
+  };
+  const closeEmail = () => {
+    setEmailGate(false);
+    setCode("");
+    setPassword("");
+    setError(null);
+  };
+
+  // Email stays tappable while OAuth is opening — a hung Apple sheet used to
+  // disable every control (ASC 2.1 on iPad: first tap looks dead).
+  const appleTap = useTapAction(() => void withApple(), busy === null);
+  const googleTap = useTapAction(() => void withGoogle(), busy === null);
+  const passwordDoorTap = useTapAction(openPassword, busy !== "password");
+  const otpDoorTap = useTapAction(openOtp, busy !== "otp");
+  const passwordSubmitTap = useTapAction(() => void withPassword(), busy !== "password");
+  const sendCodeTap = useTapAction(() => void sendCode(), busy !== "otp");
+  const verifyCodeTap = useTapAction(() => void verifyCode(), busy !== "otp");
+  const backTap = useTapAction(closeEmail);
+  const otpInsteadTap = useTapAction(openOtp);
+  const differentEmailTap = useTapAction(() => {
+    setEmailGate(passwordLogin ? "password" : "otp");
+    setCode("");
+  });
 
   return (
     <div
       className={
         nativePhone
-          ? "atmosphere flex min-h-dvh flex-col justify-center px-5 pt-safe pb-safe"
-          : "atmosphere flex h-full items-center justify-center px-4"
+          ? "login-screen atmosphere flex min-h-dvh flex-col justify-center px-5 pt-safe pb-safe"
+          : "login-screen atmosphere flex h-full items-center justify-center px-4"
       }
     >
       <div
@@ -110,7 +170,7 @@ export default function Login() {
           </div>
         )}
 
-        {!emailMode ? (
+        {!emailGate ? (
           <>
             {previous && (
               <div className="mb-3 rounded-md border border-line bg-surface-2 px-3 py-2 text-caption leading-relaxed text-muted">
@@ -122,38 +182,104 @@ export default function Login() {
             {appleAvailable && (
               <button
                 type="button"
-                disabled={busy || !supabaseConfigured}
-                onClick={withApple}
-                className="apple-signin tap fast mb-3 flex w-full items-center justify-center gap-2.5 rounded-md px-3 py-3 text-body font-medium active:translate-y-px disabled:opacity-50"
+                disabled={oauthBusy || !supabaseConfigured}
+                aria-busy={busy === "apple"}
+                {...appleTap}
+                className="apple-signin login-action tap fast mb-3 flex w-full items-center justify-center gap-2.5 rounded-md px-3 py-3 text-body font-medium active:translate-y-px disabled:opacity-50"
               >
                 <AppleMark />
-                Sign in with Apple
+                {busy === "apple" ? "Opening…" : "Sign in with Apple"}
               </button>
             )}
             <button
               type="button"
-              disabled={busy || !supabaseConfigured}
-              onClick={withGoogle}
-              className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
+              disabled={oauthBusy || !supabaseConfigured}
+              aria-busy={busy === "google"}
+              {...googleTap}
+              className="login-action login-action-surface tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink active:translate-y-px disabled:opacity-50"
             >
               <GoogleMark />
-              {busy ? "Redirecting…" : "Continue with Google"}
+              {busy === "google" ? "Opening…" : "Continue with Google"}
             </button>
-            {isStandalone() || nativePhone ? (
+            {passwordLogin ? (
+              <button
+                type="button"
+                disabled={!supabaseConfigured || busy === "password"}
+                {...passwordDoorTap}
+                className="login-action login-action-muted tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2"
+              >
+                Sign in with email
+              </button>
+            ) : otpOffered ? (
               <button
                 type="button"
                 disabled={!supabaseConfigured}
-                onClick={() => {
-                  setEmailMode(true);
-                  setError(null);
-                }}
-                className="tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2 hover:text-ink hover:underline"
+                {...otpDoorTap}
+                className="login-action login-action-muted tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2"
               >
                 Sign in with an email code instead
               </button>
             ) : null}
           </>
-        ) : !codeSent ? (
+        ) : emailGate === "password" ? (
+          <>
+            <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
+              Email
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              enterKeyHint="next"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              disabled={busy === "password"}
+              className="field w-full"
+            />
+            <label className="mb-1.5 mt-3 block text-caption text-muted" htmlFor="login-password">
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              enterKeyHint="done"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void withPassword()}
+              placeholder="Password"
+              disabled={busy === "password"}
+              className="field w-full"
+            />
+            <button
+              type="button"
+              disabled={busy === "password" || !email.trim() || !password}
+              {...passwordSubmitTap}
+              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+            >
+              {busy === "password" ? "Signing in…" : "Sign in"}
+            </button>
+            {otpOffered && (
+              <button
+                type="button"
+                {...otpInsteadTap}
+                className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
+              >
+                Email me a code instead
+              </button>
+            )}
+            <button
+              type="button"
+              {...backTap}
+              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
+            >
+              ‹ Back
+            </button>
+          </>
+        ) : emailGate === "otp" ? (
           <>
             <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
               Your email
@@ -173,16 +299,16 @@ export default function Login() {
             />
             <button
               type="button"
-              disabled={busy || !email.trim()}
-              onClick={() => void sendCode()}
-              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+              disabled={busy === "otp" || !email.trim()}
+              {...sendCodeTap}
+              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
             >
-              {busy ? "Sending…" : "Email me a code"}
+              {busy === "otp" ? "Sending…" : "Email me a code"}
             </button>
             <button
               type="button"
-              onClick={() => setEmailMode(false)}
-              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
+              {...backTap}
+              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
             >
               ‹ Back
             </button>
@@ -207,23 +333,26 @@ export default function Login() {
             />
             <button
               type="button"
-              disabled={busy || code.trim().length < 6}
-              onClick={() => void verifyCode()}
-              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+              disabled={busy === "otp" || code.trim().length < 6}
+              {...verifyCodeTap}
+              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
             >
-              {busy ? "Checking…" : "Sign in"}
+              {busy === "otp" ? "Checking…" : "Sign in"}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setCodeSent(false);
-                setCode("");
-              }}
-              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
+              {...differentEmailTap}
+              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
             >
               ‹ Different email
             </button>
           </>
+        )}
+
+        {oauthBusy && (
+          <div className="mt-3 text-caption text-muted" role="status" aria-live="polite">
+            Opening {busy === "apple" ? "Apple" : "Google"}…
+          </div>
         )}
 
         {error && <div className="mt-3 text-caption text-signal">{error}</div>}

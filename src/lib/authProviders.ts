@@ -26,7 +26,8 @@ export type AuthProviderId = "google" | "apple" | "email";
 const LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
-  email: "an email code",
+  // Password and OTP share the email identity — "email" covers both.
+  email: "email",
 };
 
 /** For prose — "last time you used …". */
@@ -38,10 +39,10 @@ export function providerLabel(provider: string | null | undefined): string {
 const ROW_LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
-  email: "Email code",
+  email: "Email",
 };
 
-/** For a row title, where "an email code" would read as a sentence fragment. */
+/** For a row title, where "email" would read as a sentence fragment. */
 export function providerRowLabel(provider: string): string {
   return ROW_LABELS[provider] ?? provider;
 }
