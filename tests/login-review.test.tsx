@@ -90,7 +90,7 @@ describe("Login (iOS review + iPad tap)", () => {
 
   function mount() {
     act(() => {
-      root.render(createElement(Login, { forcePasswordLogin: true }));
+      root.render(createElement(Login, { forcePasswordLogin: true, forceApple: true }));
     });
   }
 

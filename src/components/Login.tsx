@@ -22,9 +22,12 @@ type Busy = "apple" | "google" | "password" | "otp" | null;
 
 export default function Login({
   forcePasswordLogin = false,
+  forceApple = false,
 }: {
   /** Tests and the `?login` harness. Production reads `isReviewPasswordLogin`. */
   forcePasswordLogin?: boolean;
+  /** Harness only — Apple is otherwise gated by `appleSignInAvailable`. */
+  forceApple?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -40,7 +43,7 @@ export default function Login({
 
   // Apple is required wherever we offer Google (App Store guideline 4.8) and
   // must be at least as prominent, so it sits first — same size, same weight.
-  const appleAvailable = appleSignInAvailable();
+  const appleAvailable = forceApple || appleSignInAvailable();
   // What this device used last. Read once, before signing in overwrites it.
   // Supabase folds two identities onto one account only when they share a
   // verified email — and Apple's "Hide My Email" asserts a relay address that

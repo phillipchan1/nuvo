@@ -5,7 +5,7 @@ import Login from "./Login";
 export default function LoginHarness() {
   return (
     <div className="atmosphere min-h-dvh">
-      <Login forcePasswordLogin />
+      <Login forcePasswordLogin forceApple />
     </div>
   );
 }
