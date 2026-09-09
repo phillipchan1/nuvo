@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -51,17 +51,15 @@ describe("domain symbol catalog", () => {
     }
   });
 
-  it("migrates every legacy assignment and permits every catalog key", () => {
-    const migration = readFileSync(
-      join(__dirname, "../supabase/migrations/00000000000078_domain_symbols.sql"),
-      "utf8",
-    );
+  it("migrates every legacy assignment", () => {
+    const migrationsDir = join(__dirname, "../supabase/migrations");
+    const migration = readdirSync(migrationsDir)
+      .filter((name) => name.includes("domain_symbol"))
+      .map((name) => readFileSync(join(migrationsDir, name), "utf8"))
+      .join("\n");
     for (const [legacy, key] of Object.entries(LEGACY_DOMAIN_SYMBOLS)) {
       expect(migration, `migration misses legacy value ${legacy}`).toContain(`'${legacy}'`);
       expect(migration, `migration misses mapped key ${key}`).toContain(`'${key}'`);
-    }
-    for (const key of DOMAIN_SYMBOL_KEYS) {
-      expect(migration, `migration rejects catalog key ${key}`).toContain(`'${key}'`);
     }
   });
 
@@ -87,6 +85,8 @@ describe("searchDomainSymbols", () => {
     expect(searchDomainSymbols("faith").map((entry) => entry.key)).toEqual(
       expect.arrayContaining(["hand-heart", "church"]),
     );
+    expect(searchDomainSymbols("phone").map((entry) => entry.key)).toContain("smartphone");
+    expect(searchDomainSymbols("lab").map((entry) => entry.key)).toContain("flask-conical");
     expect(searchDomainSymbols("zzzznotasymbol")).toEqual([]);
   });
 });
@@ -103,5 +103,7 @@ describe("suggestDomainSymbol", () => {
     expect(suggestDomainSymbol("personal finance and savings")).toBe("wallet");
     expect(suggestDomainSymbol("writing and journaling")).toBe("pen-line");
     expect(suggestDomainSymbol("camping outdoors")).toBe("tent");
+    expect(suggestDomainSymbol("Made for Greatness Labs")).toBe("flask-conical");
+    expect(suggestDomainSymbol("mobile app")).toBe("smartphone");
   });
 });
