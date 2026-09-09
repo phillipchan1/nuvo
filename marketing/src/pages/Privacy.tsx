@@ -1,7 +1,7 @@
 import { ACCESS_EMAIL, ACCESS_MAILTO } from '../config'
 
 export default function Privacy() {
-  const updated = 'August 26, 2026'
+  const updated = 'September 9, 2026'
 
   return (
     <div className="atmosphere min-h-dvh">
@@ -25,11 +25,79 @@ export default function Privacy() {
             <p className="mt-3">
               Nuvo (“we”, “us”) is a single-user life management application. This policy
               explains what we collect, why, and how Google user data is handled when you
-              connect Google Calendar. Questions:{' '}
+              Sign in with Google or connect Google Calendar. Questions:{' '}
               <a href={ACCESS_MAILTO} className="text-[var(--accent)] underline-offset-2 hover:underline">
                 {ACCESS_EMAIL}
               </a>
               .
+            </p>
+          </section>
+
+          <section>
+            <h2 className="masthead text-[1.35rem] text-[var(--text)]">Data we collect (summary)</h2>
+            <p className="mt-3">Nuvo collects only what it needs to run your private planner:</p>
+            <ul className="mt-3 list-disc space-y-2 pl-5">
+              <li>
+                <strong className="text-[var(--text)]">Account:</strong> email and
+                authentication credentials (Supabase Auth), including when you use Sign in
+                with Google or Sign in with Apple.
+              </li>
+              <li>
+                <strong className="text-[var(--text)]">Planning data you create:</strong>{' '}
+                domains, initiatives, projects, tasks, time blocks, labels, settings, and
+                notes.
+              </li>
+              <li>
+                Optional calendar connections you choose (Google Calendar, Microsoft 365,
+                Apple/iCloud, ICS) — detailed below.
+              </li>
+              <li>
+                When you use Ask Nuvo: prompts and the planning context needed to answer,
+                sent to our language-model provider for that request only.
+              </li>
+            </ul>
+            <p className="mt-3">
+              We do not sell personal data. We do not use Google user data for advertising.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="masthead text-[1.35rem] text-[var(--text)]">Google Sign-In</h2>
+            <p className="mt-3">
+              You can create or open a Nuvo account with Sign in with Google. When you do, we
+              receive your Google account email (and basic profile identifiers needed for
+              sign-in) so we can authenticate you. That is separate from connecting Google
+              Calendar.
+            </p>
+            <p className="mt-3">
+              Sign-in data is used only to create and secure your Nuvo account. Delete
+              anytime: <strong className="text-[var(--text)]">Settings → Account → Delete
+              account</strong> (type DELETE), including from the expired-trial lock screen.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="masthead text-[1.35rem] text-[var(--text)]">
+              Google user data &amp; Limited Use
+            </h2>
+            <p className="mt-3">
+              Nuvo’s use of information received from Google APIs adheres to the{' '}
+              <a
+                href="https://developers.google.com/terms/api-services-user-data-policy"
+                className="text-[var(--accent)] underline-offset-2 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements. We do not sell Google user data. We
+              do not use Google user data for advertising. We do not use Google user data to
+              train generalized AI/ML models. Human access to Google user data is limited to
+              cases with your consent, for security, to comply with law, or to provide
+              support you request.
+            </p>
+            <p className="mt-3">
+              Connecting Google Calendar is optional and separate from Google Sign-In.
             </p>
           </section>
 
@@ -48,7 +116,8 @@ export default function Privacy() {
           <section>
             <h2 className="masthead text-[1.35rem] text-[var(--text)]">Google Calendar</h2>
             <p className="mt-3">
-              If you choose to connect Google Calendar, Nuvo requests these OAuth scopes:
+              Connecting Google Calendar is optional and separate from Google Sign-In. If you
+              choose to connect, Nuvo requests these OAuth scopes:
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-5">
               <li>
@@ -67,21 +136,6 @@ export default function Privacy() {
               tables), plus calendar list metadata and mirrored event data needed to keep
               your schedule in sync. Google Calendar data is used solely to provide Nuvo’s
               calendar sync and scheduling features to you.
-            </p>
-            <p className="mt-3">
-              Nuvo’s use of information received from Google APIs adheres to the{' '}
-              <a
-                href="https://developers.google.com/terms/api-services-user-data-policy"
-                className="text-[var(--accent)] underline-offset-2 hover:underline"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Google API Services User Data Policy
-              </a>
-              , including the Limited Use requirements. We do not sell Google user data. We
-              do not use it for advertising. We do not allow humans to read it except with
-              your consent, for security, to comply with law, or as part of providing the
-              service you requested (e.g. support you initiate).
             </p>
           </section>
 
