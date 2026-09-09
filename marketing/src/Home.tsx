@@ -373,22 +373,19 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-8 sm:px-8 sm:pb-24 sm:pt-8">
           <div className="max-w-3xl">
             <h1 className="masthead reveal text-display text-[var(--text)]">
-              Your life won’t get simpler. Your week can.
+              Nuvo — Your life won’t get simpler. Your week can.
             </h1>
-            {/* Three lines at 1440 and five on a phone. It was seven and eight:
-                the hero's whole job is to be *seen*, and a supporting paragraph
-                long enough to push AltitudeVisual under the fold costs the page
-                the one thing that proves the claim. The dropped clause ("the big
-                thing never goes quiet") isn't lost — it's §5's headline, where it
-                has a screen behind it. */}
+            {/* H1 starts with Nuvo so Google's OAuth branding review can match
+                the app name in prerendered HTML (no JS). Title/SEO stay on
+                HOME_TITLE. The support is purpose + the old "Four lives" line
+                folded in — not a second H1. */}
             <p className="reveal reveal-delay-1 mt-4 max-w-2xl text-pretty hero-support text-[var(--muted)]">
-              Four lives. Four apps that have never met. Nuvo is one line — from what you’re
-              responsible for, down to 2pm today.
+              Nuvo is a personal daily planner for one person — calendars, tasks, and projects
+              in one place. Four lives. Four apps that have never met. One line from what
+              you’re responsible for down to 2pm today. Fourteen days free, no card. Nobody
+              else is ever in your account.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-6" />
-            <p className="reveal reveal-delay-2 mt-4 text-[0.8125rem] text-[var(--muted)]">
-              Fourteen days free, no card. Nothing to import. Nobody else is ever in your account.
-            </p>
           </div>
 
           <div className="reveal reveal-delay-3 mt-8 sm:mt-8">
