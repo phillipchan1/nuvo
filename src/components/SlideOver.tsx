@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
-import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
+import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, RecurrenceScope, Slot, Task } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../lib/types";
 import { CALENDAR_OFFLINE_NOTE, providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
 import { conferenceName, joinUrl } from "../../supabase/functions/_shared/conferencing.ts";
@@ -51,7 +51,7 @@ import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { anchoredTop } from "../lib/anchoredTop";
-import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
+import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDeleteButton, useRecurringScope, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
 import { isTypingIn } from "./floors/TaskList";
 import DomainSymbol from "./domain/DomainSymbol";
@@ -895,9 +895,9 @@ export function TaskPopover({
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       onBlur={commitNotes}
-                      rows={3}
+                      rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
                       aria-label="Notes"
-                      className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                      className="w-full min-h-[9rem] max-h-[min(40vh,22rem)] resize-y overflow-y-auto rounded-md border border-transparent bg-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
                       placeholder="Notes…"
                     />
                   </PopField>
@@ -916,19 +916,19 @@ export function TaskPopover({
                 <TaskSteps task={task} mutations={mutations} />
               </PopSection>
 
-              <PopSection label="Notes" divider>
+              <PopSection label="Notes" divider className="min-h-0 flex-1">
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   onBlur={commitNotes}
-                  rows={notes ? Math.min(8, notes.split("\n").length + 1) : 3}
+                  rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
                   aria-label="Notes"
-                  className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                  className="w-full min-h-[9rem] max-h-[min(40vh,22rem)] resize-y overflow-y-auto rounded-md border border-transparent bg-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
                   placeholder="Notes…"
                 />
               </PopSection>
 
-              <PopSection label={`✦ ${ASSISTANT_NAME}`} divider className="flex-1">
+              <PopSection label={`✦ ${ASSISTANT_NAME}`} divider>
                 {prework}
               </PopSection>
 
@@ -1083,6 +1083,161 @@ function DescriptionHtml({ html }: { html: string }) {
   );
 }
 
+
+// ── TimePicker — searchable dropdown of quarter-hours, keyboard-steppable ──
+// A native <input type="time"> buries "type the hour, tab to the minute"
+// behind a browser-drawn control that renders inconsistently and gives no
+// list to scan. This is the pattern every mature calendar app converges on
+// instead: a button showing the current time opens a filterable list you can
+// click, type into (digits narrow it — "930a" lands on 9:30 AM), or step
+// through with the keyboard. Arrow keys move a quarter-hour at a time;
+// Shift+Arrow/PageUp/PageDown move a full hour, so the hour and the minute
+// can each be dialed in on their own without leaving the keyboard.
+const TIME_PICKER_OPTIONS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4);
+  const m = (i % 4) * 15;
+  const period = h < 12 ? "AM" : "PM";
+  const hh = ((h + 11) % 12) + 1;
+  return {
+    hhmm: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+    label: `${hh}:${String(m).padStart(2, "0")} ${period}`,
+  };
+});
+
+function normalizeTimeQuery(s: string): string {
+  return s.toLowerCase().replace(/[\s:.]/g, "");
+}
+
+function TimePicker({
+  value,
+  onSelect,
+  ariaLabel,
+}: {
+  /** 24h "HH:mm", matching `toTimeInput`/`applyTime` below. */
+  value: string;
+  onSelect: (hhmm: string) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const current = TIME_PICKER_OPTIONS.find((o) => o.hhmm === value);
+
+  const filtered = useMemo(() => {
+    const q = normalizeTimeQuery(query);
+    if (!q) return TIME_PICKER_OPTIONS;
+    return TIME_PICKER_OPTIONS.filter((o) => normalizeTimeQuery(o.label).startsWith(q));
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    const idx = TIME_PICKER_OPTIONS.findIndex((o) => o.hhmm === value);
+    setHighlight(idx >= 0 ? idx : 0);
+    const raf = requestAnimationFrame(() => inputRef.current?.focus());
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("mousedown", onDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (open) setHighlight(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const row = listRef.current?.children[highlight] as HTMLElement | undefined;
+    row?.scrollIntoView({ block: "nearest" });
+  }, [highlight, open]);
+
+  const commit = (hhmm: string) => {
+    onSelect(hhmm);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const pick = filtered[highlight];
+      if (pick) commit(pick.hhmm);
+      return;
+    }
+    const step = e.shiftKey ? 4 : 1;
+    if (e.key === "ArrowDown" || e.key === "PageDown") {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + (e.key === "PageDown" ? 4 : step), filtered.length - 1));
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "PageUp") {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - (e.key === "PageUp" ? 4 : step), 0));
+      return;
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={ariaLabel}
+        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+      >
+        {current?.label ?? value}
+      </button>
+      {open && (
+        <div
+          className="pop-in absolute left-0 top-full z-10 mt-1 w-36 overflow-hidden rounded-[var(--radius)] border border-line bg-surface"
+          style={{ boxShadow: "var(--shadow-3)" }}
+        >
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Type a time"
+            aria-label={`${ariaLabel} search`}
+            className="mono w-full border-b border-line bg-transparent px-2 py-1.5 text-caption text-ink outline-none placeholder:text-muted/60"
+          />
+          <div ref={listRef} className="max-h-[220px] overflow-y-auto py-1">
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-caption text-muted">No match</div>
+            )}
+            {filtered.map((o, i) => (
+              <button
+                key={o.hhmm}
+                type="button"
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => commit(o.hhmm)}
+                className={`fast mono flex w-full items-center justify-between px-3 py-1 text-left text-caption text-ink ${
+                  i === highlight ? "bg-bg" : "hover:bg-bg"
+                }`}
+              >
+                {o.label}
+                {o.hhmm === value && <Icon name="check" size={11} className="shrink-0 text-accent" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── CalendarPicker — the calendar/account field + grouped move menu ──────
 // A real button (big hit target) that opens a menu grouped by account, each
@@ -1289,6 +1444,8 @@ export function EventPopover({
       raw: raw as { recurrence?: string[]; recurringEventId?: string } | null,
       provider: ownerAccount?.provider ?? "google",
     });
+  const { pending: editScope, commit: commitScoped, confirm: confirmScope, cancel: cancelScope, dismiss: dismissScope } =
+    useRecurringScope(recurring);
   const inlineRule = useMemo(
     () => fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence),
     [raw],
@@ -1333,6 +1490,10 @@ export function EventPopover({
     setAllGuests(false);
   }, [event.id, event.title, event.start_at, event.end_at, event.all_day, event.location]);
 
+  useEffect(() => {
+    dismissScope();
+  }, [event.id, dismissScope]);
+
   // Seed the notes field once the raw payload (with the description) arrives.
   // Notes edit as plain text — matching Apple Calendar / Fantastical — so a
   // Google HTML description is flattened to text for editing.
@@ -1345,10 +1506,12 @@ export function EventPopover({
   const canHideSeries = Boolean(eventSeriesKey(event));
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !editScope) onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, editScope]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -1357,6 +1520,9 @@ export function EventPopover({
       // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
       // GuestsInput.tsx), which would make e.target read as already-detached
       // and falsely look like an outside click by the time this listener runs.
+      // A click that lands in the this-vs-series dialog (portaled) must not
+      // dismiss the inspector — that's the confirmation the dialog exists for.
+      if (editScope) return;
       if (!popRef.current || e.composedPath().includes(popRef.current)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
@@ -1375,7 +1541,7 @@ export function EventPopover({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose]);
+  }, [onClose, editScope]);
 
   // Compute fixed position: prefer right of event, fall back to left
   const pos = useAnchoredPosition({
@@ -1390,15 +1556,26 @@ export function EventPopover({
   const myAttendee = raw?.attendees?.find((a) => a.self);
   const myResponse: AttendeeStatus = pendingRsvp ?? (myAttendee?.responseStatus ?? "needsAction");
 
-  const handleRsvp = async (status: AttendeeStatus) => {
+  const handleRsvp = (status: AttendeeStatus) => {
+    const prev = pendingRsvp;
     setPendingRsvp(status);
     setRsvpError(null);
-    try {
-      await eventMutations.rsvpEvent({ id: event.id, responseStatus: status, sendNotifications: notify });
-    } catch (e) {
-      setRsvpError(e instanceof Error ? e.message : "RSVP failed");
-      setPendingRsvp(null);
-    }
+    commitScoped(
+      async (scope) => {
+        try {
+          await eventMutations.rsvpEvent({
+            id: event.id,
+            responseStatus: status,
+            sendNotifications: notify,
+            scope,
+          });
+        } catch (e) {
+          setRsvpError(e instanceof Error ? e.message : "RSVP failed");
+          setPendingRsvp(prev);
+        }
+      },
+      () => setPendingRsvp(prev),
+    );
   };
 
   // Where to join, read through the shared reader so `hangoutLink`-only events
@@ -1472,10 +1649,10 @@ export function EventPopover({
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const commitSchedule = (patch: { all_day?: boolean; start_at: string; end_at: string }) => {
-    setStartAt(patch.start_at);
-    setEndAt(patch.end_at);
-    if (patch.all_day !== undefined) setAllDay(patch.all_day);
+  const writeSchedule = (
+    patch: { all_day?: boolean; start_at: string; end_at: string },
+    scope: RecurrenceScope = "THIS",
+  ) => {
     eventMutations.updateEvent({
       id: event.id,
       patch: {
@@ -1483,7 +1660,22 @@ export function EventPopover({
         start_at: patch.start_at,
         end_at: patch.end_at,
       },
+      scope,
     });
+  };
+  const commitSchedule = (patch: { all_day?: boolean; start_at: string; end_at: string }) => {
+    const revert = { startAt, endAt, allDay };
+    setStartAt(patch.start_at);
+    setEndAt(patch.end_at);
+    if (patch.all_day !== undefined) setAllDay(patch.all_day);
+    commitScoped(
+      (scope) => writeSchedule(patch, scope),
+      () => {
+        setStartAt(revert.startAt);
+        setEndAt(revert.endAt);
+        setAllDay(revert.allDay);
+      },
+    );
   };
   // Move the event to a new day, preserving time-of-day and duration (shift both
   // ends by the same delta). Commits on change — a date input has no natural blur.
@@ -1528,6 +1720,26 @@ export function EventPopover({
     } else if (!rule && recurring) {
       eventMutations.updateEvent({ id: event.id, patch: { recurrence: null }, scope: "ALL" });
     }
+  };
+
+  const sendInvite = (notifyGuests: boolean) => {
+    if (!newGuests.length) return;
+    const guests = [...newGuests];
+    commitScoped(async (scope) => {
+      setInviting(true);
+      try {
+        await eventMutations.inviteToEvent({
+          id: event.id,
+          attendees: guests,
+          notifyGuests,
+          scope,
+        });
+        setNewGuests([]);
+        setAddingGuests(false);
+      } finally {
+        setInviting(false);
+      }
+    });
   };
 
   return createPortal(
@@ -1599,11 +1811,14 @@ export function EventPopover({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onBlur={() =>
-                title.trim() &&
-                title !== event.title &&
-                eventMutations.updateEvent({ id: event.id, patch: { title: title.trim() } })
-              }
+              onBlur={() => {
+                const next = title.trim();
+                if (!next || next === event.title) return;
+                commitScoped(
+                  (scope) => eventMutations.updateEvent({ id: event.id, patch: { title: next }, scope }),
+                  () => setTitle(event.title),
+                );
+              }}
               aria-label="Event title"
               className="w-full border-0 border-b border-transparent bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted transition-colors hover:border-line focus:border-ink"
             />
@@ -1639,20 +1854,19 @@ export function EventPopover({
             )}
             {canAddMeet && (
               <button
-                onClick={async () => {
+                onClick={() => {
                   setMeetError(null);
-                  setAddingMeet(true);
-                  try {
-                    const res = await eventMutations.addMeetToEvent({ id: event.id });
-                    // Google can accept the request and still be minting the
-                    // link. Say that rather than showing a button that looks
-                    // like it did nothing.
-                    if (!res?.meetUrl) setMeetError("Google is still creating the link — give it a moment.");
-                  } catch (e) {
-                    setMeetError(e instanceof Error ? e.message : "Couldn't add a Meet link");
-                  } finally {
-                    setAddingMeet(false);
-                  }
+                  commitScoped(async (scope) => {
+                    setAddingMeet(true);
+                    try {
+                      const res = await eventMutations.addMeetToEvent({ id: event.id, scope });
+                      if (!res?.meetUrl) setMeetError("Google is still creating the link — give it a moment.");
+                    } catch (e) {
+                      setMeetError(e instanceof Error ? e.message : "Couldn't add a Meet link");
+                    } finally {
+                      setAddingMeet(false);
+                    }
+                  });
                 }}
                 disabled={addingMeet}
                 className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
@@ -1720,28 +1934,26 @@ export function EventPopover({
                       </>
                     ) : (
                       <>
-                        <input
-                          type="time"
+                        <TimePicker
                           value={toTimeInput(startAt)}
-                          onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
-                          onBlur={() =>
-                            (startAt !== event.start_at || allDay !== event.all_day) &&
-                            eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt, all_day: false } })
-                          }
-                          aria-label="Start time"
-                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                          ariaLabel="Start time"
+                          onSelect={(hhmm) => {
+                            const next = applyTime(startAt, hhmm);
+                            if (next !== event.start_at || allDay !== event.all_day) {
+                              commitSchedule({ start_at: next, end_at: endAt, all_day: false });
+                            }
+                          }}
                         />
                         <span className="text-muted">–</span>
-                        <input
-                          type="time"
+                        <TimePicker
                           value={toTimeInput(endAt)}
-                          onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
-                          onBlur={() =>
-                            (endAt !== event.end_at || allDay !== event.all_day) &&
-                            eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt, all_day: false } })
-                          }
-                          aria-label="End time"
-                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                          ariaLabel="End time"
+                          onSelect={(hhmm) => {
+                            const next = applyTime(endAt, hhmm);
+                            if (next !== event.end_at || allDay !== event.all_day) {
+                              commitSchedule({ start_at: startAt, end_at: next, all_day: false });
+                            }
+                          }}
                         />
                       </>
                     )}
@@ -1837,7 +2049,15 @@ export function EventPopover({
                       onBlur={() => {
                         const next = location.trim();
                         if (next !== (event.location ?? "")) {
-                          eventMutations.updateEvent({ id: event.id, patch: { location: next || null } });
+                          commitScoped(
+                            (scope) =>
+                              eventMutations.updateEvent({
+                                id: event.id,
+                                patch: { location: next || null },
+                                scope,
+                              }),
+                            () => setLocation(event.location ?? ""),
+                          );
                         }
                       }}
                       placeholder="Add location"
@@ -1915,17 +2135,7 @@ export function EventPopover({
                             <button
                               type="button"
                               disabled={newGuests.length === 0 || inviting}
-                              onClick={async () => {
-                                if (!newGuests.length) return;
-                                setInviting(true);
-                                try {
-                                  await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: true });
-                                  setNewGuests([]);
-                                  setAddingGuests(false);
-                                } finally {
-                                  setInviting(false);
-                                }
-                              }}
+                              onClick={() => sendInvite(true)}
                               className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-label font-medium text-on-accent hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
                             >
                               {inviting
@@ -1937,17 +2147,7 @@ export function EventPopover({
                             <button
                               type="button"
                               disabled={newGuests.length === 0 || inviting}
-                              onClick={async () => {
-                                if (!newGuests.length) return;
-                                setInviting(true);
-                                try {
-                                  await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: false });
-                                  setNewGuests([]);
-                                  setAddingGuests(false);
-                                } finally {
-                                  setInviting(false);
-                                }
-                              }}
+                              onClick={() => sendInvite(false)}
                               title="Add them to the event without sending an email"
                               className="fast tap rounded-[var(--radius-sm)] border border-line px-3 py-1 text-label font-medium text-ink hover:bg-bg disabled:opacity-40"
                             >
@@ -1982,7 +2182,15 @@ export function EventPopover({
                     onBlur={() => {
                       const original = plainTextFromHtml(raw?.description ?? "");
                       if (notes !== original) {
-                        eventMutations.updateEvent({ id: event.id, patch: { description: notes } });
+                        commitScoped(
+                          (scope) =>
+                            eventMutations.updateEvent({
+                              id: event.id,
+                              patch: { description: notes },
+                              scope,
+                            }),
+                          () => setNotes(original),
+                        );
                       }
                     }}
                     placeholder="Add notes"
@@ -2138,6 +2346,13 @@ export function EventPopover({
           </PopFooter>
         )}
       </div>
+      {editScope && (
+        <RecurrenceScopeDialog
+          mode={editScope.mode}
+          onConfirm={confirmScope}
+          onCancel={cancelScope}
+        />
+      )}
     </>,
     document.body,
   );

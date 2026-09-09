@@ -8,6 +8,9 @@ import { describe, expect, it } from "vitest";
 import {
   shiftCivilDateTime,
   shiftGoogleDateResource,
+  googleStartEnd,
+  masterToAllDay,
+  masterToTimed,
 } from "../supabase/functions/_shared/googleDateTime.ts";
 
 describe("shiftCivilDateTime", () => {
@@ -47,5 +50,42 @@ describe("shiftGoogleDateResource", () => {
   it("is a no-op at delta 0", () => {
     const orig = { dateTime: "2026-08-04T09:00:00", timeZone: "America/Los_Angeles" };
     expect(shiftGoogleDateResource(orig, 0)).toEqual(orig);
+  });
+});
+
+describe("googleStartEnd", () => {
+  it("nulls dateTime when converting to all-day so a PATCH cannot merge the old timed fields", () => {
+    const { start, end } = googleStartEnd("2026-09-06T07:00:00.000Z", "2026-09-07T07:00:00.000Z", true);
+    expect(start).toEqual({ date: "2026-09-06", dateTime: null, timeZone: null });
+    expect(end).toEqual({ date: "2026-09-07", dateTime: null, timeZone: null });
+  });
+
+  it("nulls date when converting to timed", () => {
+    const { start } = googleStartEnd("2026-09-06T16:00:00.000Z", "2026-09-06T17:00:00.000Z", false);
+    expect(start.date).toBeNull();
+    expect(start.dateTime).toBe("2026-09-06T16:00:00.000Z");
+  });
+});
+
+describe("masterToAllDay", () => {
+  it("keeps the master's civil date and makes the end exclusive", () => {
+    const next = masterToAllDay(
+      { dateTime: "2026-08-04T09:00:00", timeZone: "America/Los_Angeles" },
+      { dateTime: "2026-08-04T10:00:00", timeZone: "America/Los_Angeles" },
+    );
+    expect(next.start).toEqual({ date: "2026-08-04", dateTime: null, timeZone: null });
+    expect(next.end).toEqual({ date: "2026-08-05", dateTime: null, timeZone: null });
+  });
+});
+
+describe("masterToTimed", () => {
+  it("places 9–10am on the master's civil date", () => {
+    const next = masterToTimed({ date: "2026-08-04", timeZone: "America/Los_Angeles" });
+    expect(next.start).toEqual({
+      date: null,
+      dateTime: "2026-08-04T09:00:00",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(next.end.dateTime).toBe("2026-08-04T10:00:00");
   });
 });

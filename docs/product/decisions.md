@@ -5004,3 +5004,28 @@ Spec: [`app-store-review.md`](../app-store-review.md).
 
 *Status: standing — code in Login; operator still creates the Supabase user
 and pastes credentials into Connect.*
+
+---
+
+**D-139 · 2026-09-06 · A recurring event's edit asks this vs series, wherever it happens.**
+
+Drag and resize already asked. The inspector's All day chip, date, time, title,
+location, notes, RSVP, guests, and Meet did not — they wrote THIS, so flipping a
+repeating event to all-day (or renaming it, or answering the invite) became a
+silent one-off exception. Same hole on the phone sheet, whose delete was THIS
+only.
+
+The prompt is one dialog (`RecurrenceScopeDialog`) for every write on a repeating
+event. ALL-scope timed↔all-day converts the series master rather than shifting
+it to midnight; title / place / notes patch the master without inventing a time
+delta. Repeat-rule edits stay silent ALL (changing the rule *is* the series).
+Reminders stay Nuvo-local. Calendar move already warns that a series may not
+carry. Chat `reschedule_event` is still THIS until the agent asks.
+
+No new name, no new pool.
+
+Closes no new ledger row — this is the existing this-vs-series promise holding
+on every door, not a new question. Strains nothing new.
+
+*Status: standing — inspector, phone event sheet, Google/iCloud write-back.*
+

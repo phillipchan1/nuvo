@@ -10,9 +10,9 @@
  *  civil times as civil times, and absolute instants as instants. */
 
 export type GoogleDateResource = {
-  dateTime?: string;
-  date?: string;
-  timeZone?: string;
+  dateTime?: string | null;
+  date?: string | null;
+  timeZone?: string | null;
 };
 
 function pad(n: number, w = 2): string {
@@ -71,3 +71,74 @@ export function shiftGoogleDateResource(
     ...(orig.timeZone ? { timeZone: orig.timeZone } : {}),
   };
 }
+
+/** Civil YYYY-MM-DD of a Google start/end resource. */
+export function civilDateOf(res: GoogleDateResource | null | undefined): string | null {
+  if (!res) return null;
+  if (res.date) return res.date;
+  if (!res.dateTime) return null;
+  return res.dateTime.slice(0, 10);
+}
+
+function addUtcDays(ymd: string, days: number): string {
+  const [y, mo, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
+/**
+ * Timed ↔ all-day PATCH payload. Google merges partial `start`/`end` objects,
+ * so converting a timed event to all-day without nulling `dateTime` leaves the
+ * event timed — the inspector chip flipped, the grid didn't.
+ */
+export function googleStartEnd(
+  isoStart: string,
+  isoEnd: string,
+  allDay: boolean,
+): { start: GoogleDateResource; end: GoogleDateResource } {
+  if (allDay) {
+    return {
+      start: { date: isoStart.slice(0, 10), dateTime: null, timeZone: null },
+      end: { date: isoEnd.slice(0, 10), dateTime: null, timeZone: null },
+    };
+  }
+  return {
+    start: { date: null, dateTime: new Date(isoStart).toISOString() },
+    end: { date: null, dateTime: new Date(isoEnd).toISOString() },
+  };
+}
+
+/** Convert a series master's start/end to all-day, keeping its civil date.
+ *  A same-day timed span becomes one exclusive-end calendar day. */
+export function masterToAllDay(
+  start: GoogleDateResource,
+  end: GoogleDateResource,
+): { start: GoogleDateResource; end: GoogleDateResource } {
+  const startDate = civilDateOf(start);
+  if (!startDate) return { start, end };
+  let endDate = civilDateOf(end) ?? addUtcDays(startDate, 1);
+  if (endDate <= startDate) endDate = addUtcDays(startDate, 1);
+  return {
+    start: { date: startDate, dateTime: null, timeZone: null },
+    end: { date: endDate, dateTime: null, timeZone: null },
+  };
+}
+
+/** Convert a series master's all-day span to a 9–10am timed block on that date. */
+export function masterToTimed(
+  start: GoogleDateResource,
+): { start: GoogleDateResource; end: GoogleDateResource } {
+  const startDate = civilDateOf(start);
+  if (!startDate) {
+    return { start, end: start };
+  }
+  const tz = start.timeZone ?? undefined;
+  const timed = (hhmm: string): GoogleDateResource => ({
+    date: null,
+    dateTime: tz ? `${startDate}T${hhmm}:00` : `${startDate}T${hhmm}:00.000Z`,
+    ...(tz ? { timeZone: tz } : {}),
+  });
+  return { start: timed("09:00"), end: timed("10:00") };
+}
+

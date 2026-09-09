@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import {
@@ -16,8 +16,152 @@ import {
 const SETPOS_SHORT: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", [-1]: "Last" };
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 import { parseDateISO } from "../lib/dates";
-import { Btn } from "./ui";
+import { Btn, Modal } from "./ui";
 import { useEscape } from "../hooks/useEscape";
+import type { RecurrenceScope } from "../lib/types";
+
+export type RecurrenceScopeMode = "edit" | "move" | "delete";
+
+/**
+ * The this-vs-series prompt. Every write on a repeating event uses this one
+ * dialog — title, place, notes, schedule, RSVP, guests, Meet, drag, delete.
+ * A recurring edit that writes THIS without asking is how an all-day flip
+ * silently became a one-off exception.
+ */
+export function RecurrenceScopeDialog({
+  onConfirm,
+  onCancel,
+  mode = "edit",
+}: {
+  onConfirm: (scope: RecurrenceScope) => void;
+  onCancel: () => void;
+  /** Drag/resize talks about shifting; delete talks about removing. */
+  mode?: RecurrenceScopeMode;
+}) {
+  const [scope, setScope] = useState<RecurrenceScope>("THIS");
+  const options: { value: RecurrenceScope; label: string; sub: string }[] = [
+    {
+      value: "THIS",
+      label: "Just this event",
+      sub: mode === "delete" ? "Only this occurrence is removed" : "Only this occurrence changes",
+    },
+    {
+      value: "ALL",
+      label: "All events in series",
+      sub:
+        mode === "move"
+          ? "Every occurrence shifts by the same amount"
+          : mode === "delete"
+            ? "Every occurrence in the series is removed"
+            : "Every occurrence in the series changes",
+    },
+  ];
+
+  return (
+    <Modal onClose={onCancel} width="max-w-[320px]" align="center">
+      <div className="p-5">
+        <p className="mb-1 text-label font-semibold uppercase tracking-widest text-muted">
+          Recurring event
+        </p>
+        <h2 className="mb-4 text-head font-semibold leading-snug text-text">
+          {mode === "delete"
+            ? "Delete this event or the whole series?"
+            : "Edit this event or the whole series?"}
+        </h2>
+
+        <div className="mb-5 flex flex-col gap-1.5">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setScope(opt.value)}
+              className={`tap fast flex w-full items-start gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-left transition-colors ${
+                scope === opt.value
+                  ? "border-accent bg-accent-soft"
+                  : "border-line hover:border-line-strong hover:bg-surface-2"
+              }`}
+            >
+              <span
+                className={`mt-[3px] h-3.5 w-3.5 shrink-0 rounded-full border-2 transition-colors ${
+                  scope === opt.value ? "border-accent bg-accent" : "border-muted"
+                }`}
+              />
+              <span>
+                <span className="block text-caption font-medium leading-tight text-text">
+                  {opt.label}
+                </span>
+                <span className="mt-0.5 block text-meta leading-snug text-muted">{opt.sub}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="tap fast rounded-[var(--radius-sm)] px-3 py-1.5 text-caption text-muted hover:bg-bg"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(scope)}
+            className={`tap fast rounded-[var(--radius-sm)] px-3 py-1.5 text-caption font-medium hover:opacity-90 ${
+              mode === "delete" ? "bg-signal text-on-accent" : "bg-accent text-on-accent"
+            }`}
+          >
+            {mode === "delete" ? "Delete" : "Done"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Gate a write behind the this-vs-series dialog when the event repeats.
+ * Non-recurring runs immediately as THIS. Cancel runs `revert` so local
+ * inspector state doesn't keep a change that never went to the provider.
+ */
+export function useRecurringScope(recurring: boolean) {
+  const [pending, setPending] = useState<null | {
+    run: (scope: RecurrenceScope) => void | Promise<void>;
+    revert: () => void;
+    mode: RecurrenceScopeMode;
+  }>(null);
+
+  const commit = useCallback(
+    (
+      run: (scope: RecurrenceScope) => void | Promise<void>,
+      revert: () => void = () => {},
+      mode: RecurrenceScopeMode = "edit",
+    ) => {
+      if (!recurring) {
+        void Promise.resolve(run("THIS"));
+        return;
+      }
+      setPending({ run, revert, mode });
+    },
+    [recurring],
+  );
+
+  const confirm = useCallback((scope: RecurrenceScope) => {
+    if (!pending) return;
+    const { run } = pending;
+    setPending(null);
+    void Promise.resolve(run(scope));
+  }, [pending]);
+
+  const cancel = useCallback(() => {
+    pending?.revert();
+    setPending(null);
+  }, [pending]);
+
+  const dismiss = useCallback(() => setPending(null), []);
+
+  return { pending, commit, confirm, cancel, dismiss };
+}
 
 /**
  * A delete control that fans out into series scopes when the item repeats.

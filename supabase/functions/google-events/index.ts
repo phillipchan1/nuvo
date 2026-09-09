@@ -7,7 +7,7 @@
 //                 which shifts every instance in the series
 import { admin, handleOptions, json, logSync, requireActor } from "../_shared/admin.ts";
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
-import { shiftGoogleDateResource } from "../_shared/googleDateTime.ts";
+import { shiftGoogleDateResource, googleStartEnd, masterToAllDay, masterToTimed } from "../_shared/googleDateTime.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 
 /** Master series id: generated column, then raw, then the Google instance suffix. */
@@ -21,6 +21,19 @@ function seriesMasterId(evt: {
   if (typeof raw.recurringEventId === "string" && raw.recurringEventId) return raw.recurringEventId;
   const m = String(evt.provider_event_id).match(/^(.+)_\d{8}T\d{6}Z?$/);
   return m?.[1];
+}
+
+/** THIS patches the instance; ALL patches the series master. */
+function googleTargetId(
+  evt: {
+    recurring_event_id?: string | null;
+    provider_event_id: string;
+    raw?: unknown;
+  },
+  scope: string,
+): string {
+  const master = seriesMasterId(evt);
+  return scope === "ALL" && master ? master : evt.provider_event_id;
 }
 
 async function kickGoogleSync(
@@ -61,6 +74,7 @@ async function shiftLocalSeries(
     end_at?: string;
     title?: string;
     location?: string | null;
+    all_day?: boolean;
   },
 ) {
   const startDelta = patch.start_at
@@ -89,21 +103,11 @@ async function shiftLocalSeries(
       }
       if (patch.title !== undefined) rowPatch.title = patch.title;
       if (patch.location !== undefined) rowPatch.location = patch.location;
+      if (patch.all_day !== undefined) rowPatch.all_day = patch.all_day;
       if (!Object.keys(rowPatch).length) return Promise.resolve();
       return admin.from("external_events").update(rowPatch).eq("id", row.id);
     }),
   );
-}
-
-function googleDate(iso: string): string {
-  return iso.slice(0, 10);
-}
-
-function googleStartEnd(isoStart: string, isoEnd: string, allDay: boolean): { start: Record<string, string>; end: Record<string, string> } {
-  if (allDay) {
-    return { start: { date: googleDate(isoStart) }, end: { date: googleDate(isoEnd) } };
-  }
-  return { start: { dateTime: new Date(isoStart).toISOString() }, end: { dateTime: new Date(isoEnd).toISOString() } };
 }
 
 Deno.serve(async (req) => {
@@ -274,10 +278,11 @@ Deno.serve(async (req) => {
     if (action === "invite") {
       const newEmails = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];
       if (!newEmails.length) return json({ error: "attendees required" }, 400);
+      const targetId = googleTargetId(evt, scope);
 
       const getRes = await gFetch(
         account,
-        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}`,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(targetId)}`,
       );
       if (!getRes.ok) throw new Error(`fetch event: ${getRes.status}`);
       const googleEvent = await getRes.json();
@@ -293,7 +298,7 @@ Deno.serve(async (req) => {
       const patchRes = await gFetch(
         account,
         `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
-          encodeURIComponent(evt.provider_event_id)
+          encodeURIComponent(targetId)
         }?sendUpdates=${notifyGuests ? "all" : "none"}`,
         { method: "PATCH", body: JSON.stringify({ attendees: merged }) },
       );
@@ -307,6 +312,9 @@ Deno.serve(async (req) => {
           .update({ raw: refreshed })
           .eq("id", eventId);
       }
+      if (scope === "ALL") {
+        await kickGoogleSync(account, evt.calendar_id, user.id, "event-invite-all-sync");
+      }
 
       await logSync("google", "event-invite", "ok", undefined, user.id);
       return json({ ok: true });
@@ -317,10 +325,11 @@ Deno.serve(async (req) => {
     // as a solo block and then given guests. Idempotent: an event that already
     // has a conference returns its link rather than minting a second one.
     if (action === "add_meet") {
+      const targetId = googleTargetId(evt, scope);
       const getRes = await gFetch(
         account,
         `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
-          encodeURIComponent(evt.provider_event_id)
+          encodeURIComponent(targetId)
         }?conferenceDataVersion=1`,
       );
       if (!getRes.ok) throw new Error(`fetch event: ${getRes.status}`);
@@ -341,7 +350,7 @@ Deno.serve(async (req) => {
       const patchRes = await gFetch(
         account,
         `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
-          encodeURIComponent(evt.provider_event_id)
+          encodeURIComponent(targetId)
         }?conferenceDataVersion=1&sendUpdates=${notifyGuests ? "all" : "none"}`,
         { method: "PATCH", body: JSON.stringify(meetCreateRequest(crypto.randomUUID())) },
       );
@@ -358,7 +367,7 @@ Deno.serve(async (req) => {
           const again = await gFetch(
             account,
             `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
-              encodeURIComponent(evt.provider_event_id)
+              encodeURIComponent(targetId)
             }?conferenceDataVersion=1`,
           );
           if (!again.ok) break;
@@ -370,6 +379,9 @@ Deno.serve(async (req) => {
       }
 
       await admin.from("external_events").update({ raw: updated }).eq("id", eventId);
+      if (scope === "ALL") {
+        await kickGoogleSync(account, evt.calendar_id, user.id, "event-add-meet-all-sync");
+      }
       await logSync("google", "event-add-meet", "ok", undefined, user.id);
       const meetUrl = joinUrl(updated);
       if (!meetUrl) {
@@ -391,12 +403,13 @@ Deno.serve(async (req) => {
       // Fetch current event from Google to get the full attendees array.
       // Try calendar_id first; fall back to "primary" (invited events sometimes
       // only appear under the user's primary calendar alias).
+      const targetId = googleTargetId(evt, scope);
       let googleEvent: Record<string, unknown> | null = null;
       let rsvpCalId = evt.calendar_id;
       for (const tryId of [evt.calendar_id, "primary"]) {
         const getRes = await gFetch(
           account,
-          `/calendars/${encodeURIComponent(tryId)}/events/${encodeURIComponent(evt.provider_event_id)}`,
+          `/calendars/${encodeURIComponent(tryId)}/events/${encodeURIComponent(targetId)}`,
         );
         if (getRes.ok) { googleEvent = await getRes.json(); rsvpCalId = tryId; break; }
       }
@@ -411,7 +424,7 @@ Deno.serve(async (req) => {
 
       const patchRes = await gFetch(
         account,
-        `/calendars/${encodeURIComponent(rsvpCalId)}/events/${encodeURIComponent(evt.provider_event_id)}?sendUpdates=${sendUpdates}`,
+        `/calendars/${encodeURIComponent(rsvpCalId)}/events/${encodeURIComponent(targetId)}?sendUpdates=${sendUpdates}`,
         { method: "PATCH", body: JSON.stringify({ attendees: updated }) },
       );
       if (!patchRes.ok) throw new Error(`rsvp failed (${patchRes.status}): ${await patchRes.text()}`);
@@ -419,11 +432,25 @@ Deno.serve(async (req) => {
       // Refresh raw + self_rsvp so the slide-over and calendar grid update
       // immediately without waiting for the next background sync.
       const refreshed = await patchRes.json().catch(() => null);
-      await admin
-        .from("external_events")
-        .update({ self_rsvp: responseStatus, ...(refreshed ? { raw: refreshed } : {}) })
-        .eq("id", eventId)
-        .eq("user_id", user.id);
+      const master = seriesMasterId(evt);
+      if (scope === "ALL" && master) {
+        await admin
+          .from("external_events")
+          .update({ self_rsvp: responseStatus })
+          .eq("account_id", evt.account_id)
+          .eq("calendar_id", evt.calendar_id)
+          .or(`id.eq.${eventId},recurring_event_id.eq.${master}`);
+        if (refreshed) {
+          await admin.from("external_events").update({ raw: refreshed }).eq("id", eventId);
+        }
+        await kickGoogleSync(account, evt.calendar_id, user.id, "event-rsvp-all-sync");
+      } else {
+        await admin
+          .from("external_events")
+          .update({ self_rsvp: responseStatus, ...(refreshed ? { raw: refreshed } : {}) })
+          .eq("id", eventId)
+          .eq("user_id", user.id);
+      }
 
       await logSync("google", "event-rsvp", "ok", undefined, user.id);
       return json({ ok: true });
@@ -570,17 +597,28 @@ Deno.serve(async (req) => {
         const master = await masterRes.json();
 
         const gPatch: Record<string, unknown> = {};
-        if (patch.start_at) {
-          const delta =
-            new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime();
-          const next = shiftGoogleDateResource(master.start, delta);
-          if (next) gPatch.start = next;
-        }
-        if (patch.end_at) {
-          const delta =
-            new Date(patch.end_at as string).getTime() - new Date(evt.end_at as string).getTime();
-          const next = shiftGoogleDateResource(master.end, delta);
-          if (next) gPatch.end = next;
+        if (patch.all_day !== undefined) {
+          // Timed ↔ all-day is a type change on the master, not a time delta.
+          // Shifting 9am to midnight and leaving dateTime in place kept the
+          // series timed; converting the master's own civil date is the ALL act.
+          const converted = patch.all_day
+            ? masterToAllDay(master.start, master.end)
+            : masterToTimed(master.start);
+          gPatch.start = converted.start;
+          gPatch.end = converted.end;
+        } else {
+          if (patch.start_at) {
+            const delta =
+              new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime();
+            const next = shiftGoogleDateResource(master.start, delta);
+            if (next) gPatch.start = next;
+          }
+          if (patch.end_at) {
+            const delta =
+              new Date(patch.end_at as string).getTime() - new Date(evt.end_at as string).getTime();
+            const next = shiftGoogleDateResource(master.end, delta);
+            if (next) gPatch.end = next;
+          }
         }
         if (patch.title) gPatch.summary = patch.title;
         if (patch.location !== undefined) gPatch.location = patch.location ?? "";

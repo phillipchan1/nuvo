@@ -202,6 +202,27 @@ describe("applySeriesPatch", () => {
     expect(next[1].end_at).toBe(b.end_at);
   });
 
+  it("copies all-day across the series and shifts siblings onto that day's midnight", () => {
+    const next = applySeriesPatch([a, b, other], "a", {
+      all_day: true,
+      start_at: "2026-08-31T07:00:00.000Z",
+      end_at: "2026-09-01T07:00:00.000Z",
+    });
+    expect(next[0].all_day).toBe(true);
+    expect(next[1].all_day).toBe(true);
+    expect(next[1].start_at).toBe("2026-09-01T07:00:00.000Z");
+    expect(next[1].end_at).toBe("2026-09-02T07:00:00.000Z");
+    expect(next[2].all_day).toBe(false);
+  });
+
+  it("copies a title-only ALL patch without shifting times", () => {
+    const next = applySeriesPatch([a, b, other], "a", { title: "Weekly standup" });
+    expect(next[0].title).toBe("Weekly standup");
+    expect(next[1].title).toBe("Weekly standup");
+    expect(next[1].start_at).toBe(b.start_at);
+    expect(next[2].title).toBe("Unrelated");
+  });
+
   it("copies a retitle across the series and leaves a lone event as itself", () => {
     const lone = ev({ id: "lone", recurring_event_id: null, title: "1:1" });
     expect(applySeriesPatch([lone], "lone", { title: "Weekly 1:1" })[0].title).toBe("Weekly 1:1");

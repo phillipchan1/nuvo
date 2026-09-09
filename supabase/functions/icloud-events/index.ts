@@ -198,18 +198,30 @@ Deno.serve(async (req) => {
       if (!partstat) return json({ error: "invalid responseStatus" }, 400);
 
       const { ics, etag } = await getEvent(href, account.email, password);
-      const next = setPartstat(ics, account.email, partstat);
-      if (next === ics) {
+      if (setPartstat(ics, account.email, partstat) === ics) {
         // No ATTENDEE line for this address: it isn't an invite the user was
         // asked to. Say so rather than silently reporting success.
         return json({ error: "You're not listed as a guest on this event" }, 400);
       }
+      const thisOccurrence = isOccurrence && scope !== "ALL" && occurrenceISO;
+      const next = thisOccurrence
+        ? setPartstat(ics, account.email, partstat, occurrenceISO)
+        : setPartstat(ics, account.email, partstat);
       await putEvent(href, next, account.email, password, etag);
 
       // Mirror the answer locally so the grid de-dims immediately, exactly as
       // the Google path does. `self_rsvp` is the column every surface reads.
       const selfRsvp = body.responseStatus as string;
-      await admin.from("external_events").update({ self_rsvp: selfRsvp }).eq("id", eventId);
+      if (scope === "ALL") {
+        await admin
+          .from("external_events")
+          .update({ self_rsvp: selfRsvp })
+          .eq("account_id", evt.account_id)
+          .eq("calendar_id", evt.calendar_id)
+          .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+      } else {
+        await admin.from("external_events").update({ self_rsvp: selfRsvp }).eq("id", eventId);
+      }
       await logSync("icloud", "event-rsvp", "ok", undefined, user.id);
       return json({ ok: true });
     }
@@ -268,16 +280,37 @@ Deno.serve(async (req) => {
 
     let next: string;
     if (isOccurrence && scope === "ALL") {
-      // Shift the whole series by the instance's time delta (+ retitle).
-      const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
-      const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
-      next = shiftMaster(ics, startDelta, p.title, endDelta);
+      if (p.all_day !== undefined) {
+        // Timed ↔ all-day is a type change on the master, not a millisecond shift.
+        next = patchMaster(ics, {
+          title: p.title,
+          allDay: p.all_day,
+          location: p.location,
+          description: p.description,
+        });
+      } else if (p.start_at || p.end_at) {
+        // Shift the whole series by the instance's time delta (+ retitle).
+        const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+        const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
+        next = shiftMaster(ics, startDelta, p.title, endDelta);
+        if (p.location !== undefined || p.description !== undefined) {
+          next = patchMaster(next, { location: p.location, description: p.description });
+        }
+      } else {
+        // Title / place / notes only — don't invent a time shift.
+        next = patchMaster(ics, {
+          title: p.title,
+          location: p.location,
+          description: p.description,
+        });
+      }
     } else if (isOccurrence && occurrenceISO) {
       // Edit just this occurrence via a RECURRENCE-ID override.
       next = upsertOverride(ics, occurrenceISO, {
         title: p.title,
         startISO: p.start_at,
         endISO: p.end_at,
+        allDay: p.all_day,
         location: p.location,
         description: p.description,
       });
@@ -328,6 +361,7 @@ Deno.serve(async (req) => {
           }
           if (p.title !== undefined) rowPatch.title = p.title;
           if (p.location !== undefined) rowPatch.location = p.location;
+          if (p.all_day !== undefined) rowPatch.all_day = p.all_day;
           if (!Object.keys(rowPatch).length) return Promise.resolve();
           return admin.from("external_events").update(rowPatch).eq("id", row.id);
         }),

@@ -290,11 +290,16 @@ export function useExternalEventMutations() {
       scope?: RecurrenceScope;
     }) => {
       guardOffline();
+      const awaitProvider =
+        patch.recurrence !== undefined || scope === "ALL" || patch.all_day !== undefined;
       // For THIS-only edits, write the instance row immediately so optimistic
       // update is consistent. For ALL, the edge function shifts every mirrored
       // instance and kicks a sync — a local single-row write here would be the
       // dragged occurrence only, and a refetch would snap the rest back.
-      if (scope === "THIS") {
+      // All-day flips await the provider: Google merges PATCHes, and a local
+      // write that then fire-and-forgets left the chip flipped while the
+      // grid stayed timed (or snapped back on the next sync).
+      if (scope === "THIS" && !awaitProvider) {
         const { description: _description, recurrence: _recurrence, ...columns } = patch;
         if (Object.keys(columns).length) {
           const { error } = await supabase.from("external_events").update(columns).eq("id", id);
@@ -307,7 +312,7 @@ export function useExternalEventMutations() {
       // upstream. Await the write (and the sync kick) so the next refetch
       // actually sees the new times — invokeQuiet used to fire-and-forget,
       // leaving the dialog's revert as the last thing on screen.
-      if (patch.recurrence !== undefined || scope === "ALL") {
+      if (awaitProvider) {
         const { data, error } = await supabase.functions.invoke(fn, { body });
         await throwIfInvokeFailed(data, error);
       } else {
@@ -399,7 +404,7 @@ export function useExternalEventMutations() {
       // range. Refetching all ranges here both rebuilds a lived-in grid and can
       // race the provider write-back. Series edits still need a refetch because
       // they change instances that were not part of the gesture.
-      if (vars?.patch.recurrence !== undefined || vars?.scope === "ALL") {
+      if (vars?.patch.recurrence !== undefined || vars?.scope === "ALL" || vars?.patch.all_day !== undefined) {
         qc.invalidateQueries({ queryKey: ["external_events"] });
       }
     },
@@ -460,23 +465,25 @@ export function useExternalEventMutations() {
       id,
       responseStatus,
       sendNotifications = true,
+      scope = "THIS",
     }: {
       id: string;
       responseStatus: AttendeeStatus;
       sendNotifications?: boolean;
+      scope?: RecurrenceScope;
     }) => {
       guardOffline();
       // Was hardcoded to google-events, which made RSVP Google-only even though
       // iCloud is a writable provider — the audit's rank 9. Routed like every
       // other write now.
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(await resolveProviderForEvent(id)), {
-        body: { action: "rsvp", eventId: id, responseStatus, sendNotifications },
+        body: { action: "rsvp", eventId: id, responseStatus, sendNotifications, scope },
       });
       await throwIfInvokeFailed(data, error);
     },
     // Optimistically flip self_rsvp in the grid cache so the event de-dims
     // immediately without waiting for the edge function round-trip.
-    onMutate: async ({ id, responseStatus }) => {
+    onMutate: async ({ id, responseStatus, scope = "THIS" }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const previous = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       let priorStatus: AttendeeStatus | null | undefined;
@@ -487,9 +494,16 @@ export function useExternalEventMutations() {
           break;
         }
       }
-      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-        old?.map((e) => (e.id === id ? { ...e, self_rsvp: responseStatus } : e)),
-      );
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) => {
+        if (!old) return old;
+        const edited = old.find((e) => e.id === id);
+        const seriesId = scope === "ALL" ? edited?.recurring_event_id : null;
+        return old.map((e) =>
+          e.id === id || (seriesId != null && e.recurring_event_id === seriesId)
+            ? { ...e, self_rsvp: responseStatus }
+            : e,
+        );
+      });
       return { previous, priorStatus };
     },
     onError: (_e, _v, ctx) => {
@@ -501,9 +515,15 @@ export function useExternalEventMutations() {
       // Confirm the optimistic value directly — don't invalidate external_events,
       // which would trigger a re-fetch that could race with the DB write and
       // flash the event back to its old opacity.
-      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-        old?.map((e) => (e.id === vars.id ? { ...e, self_rsvp: vars.responseStatus } : e)),
-      );
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) => {
+        if (!old) return old;
+        const seriesId = vars.scope === "ALL" ? old.find((e) => e.id === vars.id)?.recurring_event_id : null;
+        return old.map((e) =>
+          e.id === vars.id || (seriesId != null && e.recurring_event_id === seriesId)
+            ? { ...e, self_rsvp: vars.responseStatus }
+            : e,
+        );
+      });
       // An answer to an invite is a message to another human, so it gets the
       // toast channel rather than a silent stack entry: the user should SEE
       // that it can be taken back, and undoing re-notifies the organiser.
@@ -513,8 +533,18 @@ export function useExternalEventMutations() {
         label: `Replied ${vars.responseStatus}`,
         shortLabel: "RSVP",
         tier: "toast",
-        undo: () => void rsvp.mutateAsync({ id: vars.id, responseStatus: prior ?? "needsAction" }),
-        redo: () => void rsvp.mutateAsync({ id: vars.id, responseStatus: vars.responseStatus }),
+        undo: () =>
+          void rsvp.mutateAsync({
+            id: vars.id,
+            responseStatus: prior ?? "needsAction",
+            scope: vars.scope,
+          }),
+        redo: () =>
+          void rsvp.mutateAsync({
+            id: vars.id,
+            responseStatus: vars.responseStatus,
+            scope: vars.scope,
+          }),
       });
     },
     onSettled: (_d, _e, vars) => {
@@ -700,15 +730,17 @@ export function useExternalEventMutations() {
       id,
       attendees,
       notifyGuests,
+      scope = "THIS",
     }: {
       id: string;
       attendees: string[];
       /** Email the new guests. Defaults to true. */
       notifyGuests?: boolean;
+      scope?: RecurrenceScope;
     }) => {
       guardOffline();
       const { error } = await supabase.functions.invoke("google-events", {
-        body: { action: "invite", eventId: id, attendees, notifyGuests },
+        body: { action: "invite", eventId: id, attendees, notifyGuests, scope },
       });
       if (error) throw error;
     },
@@ -720,10 +752,10 @@ export function useExternalEventMutations() {
   // Add a Google Meet link to an event that doesn't have one — the meeting
   // booked before the preference existed, or one that grew guests later.
   const addMeet = useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
+    mutationFn: async ({ id, scope = "THIS" }: { id: string; scope?: RecurrenceScope }) => {
       guardOffline();
       const { data, error } = await supabase.functions.invoke("google-events", {
-        body: { action: "add_meet", eventId: id },
+        body: { action: "add_meet", eventId: id, scope },
       });
       if (error) throw error;
       return data as { meetUrl: string | null; pending?: boolean };

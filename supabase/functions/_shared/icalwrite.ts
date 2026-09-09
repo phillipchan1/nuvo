@@ -128,9 +128,17 @@ export function patchMaster(
     if (!isMaster(ve)) return ve;
     let v = ve;
     if (patch.title !== undefined) v = setProp(v, "SUMMARY", escapeText(patch.title));
+    const flipping = patch.allDay !== undefined;
     const allDay = patch.allDay ?? /\bDTSTART;VALUE=DATE\b/i.test(v);
-    if (patch.startISO !== undefined) v = setDateTimeProp(v, "DTSTART", patch.startISO, allDay);
-    if (patch.endISO !== undefined) v = setDateTimeProp(v, "DTEND", patch.endISO, allDay);
+    if (patch.startISO !== undefined || patch.endISO !== undefined || flipping) {
+      const startISO = patch.startISO ?? isoFromVevent(v, "DTSTART");
+      let endISO = patch.endISO ?? isoFromVevent(v, "DTEND");
+      if (allDay && startISO && endISO && toIcalDate(endISO) <= toIcalDate(startISO)) {
+        endISO = new Date(new Date(startISO).getTime() + 24 * 60 * 60 * 1000).toISOString();
+      }
+      if (startISO) v = setDateTimeProp(v, "DTSTART", startISO, allDay);
+      if (endISO) v = setDateTimeProp(v, "DTEND", endISO, allDay);
+    }
     if (patch.location !== undefined) v = setProp(v, "LOCATION", patch.location ? escapeText(patch.location) : null);
     if (patch.description !== undefined) v = setProp(v, "DESCRIPTION", patch.description ? escapeText(patch.description) : null);
     if (patch.recurrence !== undefined) v = setRecurrence(v, patch.recurrence);
@@ -158,6 +166,7 @@ export function upsertOverride(
     title?: string;
     startISO?: string;
     endISO?: string;
+    allDay?: boolean;
     location?: string | null;
     description?: string | null;
   },
@@ -177,13 +186,14 @@ export function upsertOverride(
     : 60 * 60_000;
   const endISO = patch.endISO ?? new Date(new Date(startISO).getTime() + durMs).toISOString();
 
+  const allDay = Boolean(patch.allDay);
   const override = [
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `RECURRENCE-ID:${recId}`,
     `DTSTAMP:${toIcalUtc(new Date().toISOString())}`,
-    `DTSTART:${toIcalUtc(startISO)}`,
-    `DTEND:${toIcalUtc(endISO)}`,
+    allDay ? `DTSTART;VALUE=DATE:${toIcalDate(startISO)}` : `DTSTART:${toIcalUtc(startISO)}`,
+    allDay ? `DTEND;VALUE=DATE:${toIcalDate(endISO)}` : `DTEND:${toIcalUtc(endISO)}`,
     ...(patch.title !== undefined ? [`SUMMARY:${escapeText(patch.title)}`] : []),
     ...(patch.location ? [`LOCATION:${escapeText(patch.location)}`] : []),
     ...(patch.description ? [`DESCRIPTION:${escapeText(patch.description)}`] : []),
@@ -224,29 +234,35 @@ function icalToDate(v: string): Date {
   return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +se));
 }
 
+function isoFromVevent(vevent: string, kind: "DTSTART" | "DTEND"): string | undefined {
+  const m = vevent.match(new RegExp(`^${kind}(;[^:\\r\\n]*)?:(.*)$`, "im"));
+  if (!m) return undefined;
+  return icalToDate(m[2].trim()).toISOString();
+}
 
-/**
- * Set the user's own PARTSTAT on every VEVENT in a resource.
- *
- * RSVP over CalDAV is not an API call — it is the attendee rewriting their own
- * ATTENDEE line in the .ics and PUTting it back. Two shapes have to be handled:
- * the parameter may already be there (replace it) or not (append it), and iCal
- * lines fold at 75 octets, so the ATTENDEE property can be spread over several
- * physical lines with a leading space.
- *
- * Only the line whose address matches `email` is touched. Rewriting anyone
- * else's PARTSTAT would be answering on their behalf.
- */
-export function setPartstat(ics: string, email: string, partstat: string): string {
+
+/** Clone the master VEVENT as a RECURRENCE-ID override, keeping attendees. */
+export function cloneAsOverride(ics: string, occurrenceStartISO: string): string {
+  const { header, events, footer } = splitEvents(ics);
+  const master = events.find(isMaster);
+  if (!master) return ics;
+  const recId = toIcalUtc(occurrenceStartISO);
+  if (events.some((ve) => new RegExp(`RECURRENCE-ID(;[^:\\r\\n]*)?:${recId}`, "i").test(ve))) {
+    return ics;
+  }
+  let ve = master
+    .replace(/^RRULE:.*\r?\n/gim, "")
+    .replace(/^EXDATE:.*\r?\n/gim, "")
+    .replace(/^RECURRENCE-ID.*\r?\n/gim, "");
+  ve = ve.replace(/^(UID:.*)$/im, `$1\r\nRECURRENCE-ID:${recId}`);
+  return header + [...events, ve].join("\r\n") + footer;
+}
+
+function rewriteAttendeeLines(text: string, email: string, partstat: string): string {
   const target = email.trim().toLowerCase();
-  if (!target) return ics;
-
-  // Unfold first so a folded ATTENDEE line is one string to work on, then
-  // re-fold nothing — servers accept long lines, and re-folding by hand is how
-  // you corrupt a UTF-8 sequence mid-octet.
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-
-  const out = unfolded
+  if (!target) return text;
+  const unfolded = text.replace(/\r?\n[ \t]/g, "");
+  return unfolded
     .split(/\r?\n/)
     .map((line) => {
       if (!/^ATTENDEE[;:]/i.test(line)) return line;
@@ -257,12 +273,33 @@ export function setPartstat(ics: string, email: string, partstat: string): strin
       const params = /PARTSTAT=[^;:]*/i.test(head)
         ? head.replace(/PARTSTAT=[^;:]*/i, `PARTSTAT=${partstat}`)
         : `${head};PARTSTAT=${partstat}`;
-      // An answered invite is no longer awaiting one.
       return `${params.replace(/;RSVP=[^;:]*/i, "")}:${value}`;
     })
     .join("\r\n");
+}
 
-  return out;
+/**
+ * Set the user's own PARTSTAT. Omit `occurrenceStartISO` to answer the whole
+ * resource (every VEVENT). Pass it to answer just that occurrence — cloning
+ * the master into an override first if one doesn't exist yet, so THIS doesn't
+ * rewrite the series.
+ */
+export function setPartstat(
+  ics: string,
+  email: string,
+  partstat: string,
+  occurrenceStartISO?: string,
+): string {
+  if (!occurrenceStartISO) return rewriteAttendeeLines(ics, email, partstat);
+
+  const recId = toIcalUtc(occurrenceStartISO);
+  const working = cloneAsOverride(ics, occurrenceStartISO);
+  const { header, events, footer } = splitEvents(working);
+  const out = events.map((ve) => {
+    if (!new RegExp(`RECURRENCE-ID(;[^:\\r\\n]*)?:${recId}`, "i").test(ve)) return ve;
+    return rewriteAttendeeLines(ve, email, partstat);
+  });
+  return header + out.join("\r\n") + footer;
 }
 
 /** iCalendar's spelling of an RSVP. */

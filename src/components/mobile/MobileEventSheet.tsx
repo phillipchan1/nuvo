@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../Icon";
-import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
+import type { AttendeeStatus, ExternalEvent, RecurrenceScope, Slot, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { useSlotMutations } from "../../hooks/useSlots";
 import { isExternalEventRecurring } from "../../lib/now";
@@ -21,7 +21,7 @@ import { CALENDAR_OFFLINE_NOTE, isReadOnlyCalendarId, isWritableAccount } from "
 import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
-import { RepeatControl } from "../RecurrencePicker";
+import { RepeatControl, RecurrenceScopeDialog, useRecurringScope } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import { eventKey } from "../../lib/now";
 // The sheet had its own copy of the clock format. The calendar it opens over
@@ -35,6 +35,7 @@ export type CalendarTap =
   | {
       kind: "event";
       id: string;
+      providerEventId?: string;
       title: string;
       start: Date;
       end: Date;
@@ -118,6 +119,12 @@ export default function MobileEventSheet({
   const [endAt, setEndAt] = useState(tap.kind === "event" ? tap.end.toISOString() : "");
   const [allDay, setAllDay] = useState(tap.kind === "event" ? Boolean(tap.allDay) : false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { pending: editScope, commit: commitScoped, confirm: confirmScope, cancel: cancelScope, dismiss: dismissScope } =
+    useRecurringScope(recurring);
+
+  useEffect(() => {
+    dismissScope();
+  }, [tap.kind === "event" ? tap.id : "", dismissScope]);
 
   // Seed notes once the raw payload (with the description) arrives — same
   // plain-text flattening the desktop inspector uses for a Google HTML body.
@@ -173,14 +180,16 @@ export default function MobileEventSheet({
       { status: "declined", label: "Decline", glyph: "✗" },
     ];
 
-    const handleRsvp = async (status: AttendeeStatus) => {
-      setRsvping(true);
-      try {
-        await rsvpEvent({ id: tap.id, responseStatus: status });
-      } finally {
-        setRsvping(false);
-        onClose();
-      }
+    const handleRsvp = (status: AttendeeStatus) => {
+      commitScoped(async (scope) => {
+        setRsvping(true);
+        try {
+          await rsvpEvent({ id: tap.id, responseStatus: status, scope });
+        } finally {
+          setRsvping(false);
+          onClose();
+        }
+      });
     };
 
     const toDateInput = (iso: string) => {
@@ -198,14 +207,31 @@ export default function MobileEventSheet({
       return d.toISOString();
     };
 
-    const commitSchedule = (patch: { all_day?: boolean; start_at: string; end_at: string }) => {
-      setStartAt(patch.start_at);
-      setEndAt(patch.end_at);
-      if (patch.all_day !== undefined) setAllDay(patch.all_day);
+    const writeSchedule = (
+      patch: { all_day?: boolean; start_at: string; end_at: string },
+      scope: RecurrenceScope = "THIS",
+    ) => {
       updateEvent({
         id: tap.id,
         patch: { all_day: patch.all_day ?? allDay, start_at: patch.start_at, end_at: patch.end_at },
+        scope,
       });
+    };
+    const commitSchedule = (
+      patch: { all_day?: boolean; start_at: string; end_at: string },
+      revert: { startAt: string; endAt: string; allDay: boolean } = { startAt, endAt, allDay },
+    ) => {
+      setStartAt(patch.start_at);
+      setEndAt(patch.end_at);
+      if (patch.all_day !== undefined) setAllDay(patch.all_day);
+      commitScoped(
+        (scope) => writeSchedule(patch, scope),
+        () => {
+          setStartAt(revert.startAt);
+          setEndAt(revert.endAt);
+          setAllDay(revert.allDay);
+        },
+      );
     };
     // Move the event to a new day, preserving time-of-day and duration.
     const commitDate = (ymd: string) => {
@@ -246,30 +272,42 @@ export default function MobileEventSheet({
 
     const commitTitle = () => {
       const next = title.trim();
-      if (next && next !== tap.title) updateEvent({ id: tap.id, patch: { title: next } });
+      if (!next || next === tap.title) return;
+      commitScoped(
+        (scope) => updateEvent({ id: tap.id, patch: { title: next }, scope }),
+        () => setTitle(tap.title),
+      );
     };
     const commitLocation = () => {
       const next = location.trim();
-      if (next !== (tap.location ?? "")) updateEvent({ id: tap.id, patch: { location: next || null } });
+      if (next === (tap.location ?? "")) return;
+      commitScoped(
+        (scope) => updateEvent({ id: tap.id, patch: { location: next || null }, scope }),
+        () => setLocation(tap.location ?? ""),
+      );
     };
     const commitNotes = () => {
       const original = plainTextFromHtml(raw?.description ?? "");
-      if (notes !== original) updateEvent({ id: tap.id, patch: { description: notes } });
-    };
-    const commitStart = () => {
-      if (startAt === tap.start.toISOString()) return;
-      updateEvent({ id: tap.id, patch: { start_at: startAt, all_day: false } });
-    };
-    const commitEnd = () => {
-      if (endAt === tap.end.toISOString()) return;
-      updateEvent({ id: tap.id, patch: { end_at: endAt, all_day: false } });
+      if (notes === original) return;
+      commitScoped(
+        (scope) => updateEvent({ id: tap.id, patch: { description: notes }, scope }),
+        () => setNotes(original),
+      );
     };
     const handleDelete = () => {
+      if (recurring) {
+        commitScoped((scope) => {
+          deleteEvent({ id: tap.id, scope });
+          onClose();
+        }, () => {}, "delete");
+        return;
+      }
       deleteEvent({ id: tap.id, scope: "THIS" });
       onClose();
     };
 
     return (
+      <>
       <Sheet onClose={onClose} title="Event">
         <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
           {editable ? (
@@ -295,8 +333,10 @@ export default function MobileEventSheet({
                       type="time"
                       step={900}
                       value={toTimeInput(startAt)}
-                      onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
-                      onBlur={commitStart}
+                      onChange={(e) => {
+                        const next = applyTime(startAt, e.target.value);
+                        if (next !== startAt) commitSchedule({ start_at: next, end_at: endAt, all_day: false });
+                      }}
                       aria-label="Start time"
                       className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
                     />
@@ -305,8 +345,10 @@ export default function MobileEventSheet({
                       type="time"
                       step={900}
                       value={toTimeInput(endAt)}
-                      onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
-                      onBlur={commitEnd}
+                      onChange={(e) => {
+                        const next = applyTime(endAt, e.target.value);
+                        if (next !== endAt) commitSchedule({ start_at: startAt, end_at: next, all_day: false });
+                      }}
                       aria-label="End time"
                       className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
                     />
@@ -370,7 +412,10 @@ export default function MobileEventSheet({
           {cachedEvent && (
             <Section label="Remind">
               <div className="tap-h flex items-center rounded-xl border border-line bg-surface px-3">
-                <ReminderSelect block target={{ targetKind: "event", eventKey: eventKey(cachedEvent) }} />
+                <ReminderSelect
+                  block
+                  target={{ targetKind: "event", eventKey: eventKey(cachedEvent) }}
+                />
               </div>
             </Section>
           )}
@@ -503,7 +548,7 @@ export default function MobileEventSheet({
                 </div>
               ) : (
                 <button
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() => (recurring ? handleDelete() : setConfirmDelete(true))}
                   className="tap fast flex w-full items-center gap-3 rounded-xl border border-signal/30 px-4 py-3 text-body text-signal"
                 >
                   <span className="text-lead">🗑</span>
@@ -514,6 +559,14 @@ export default function MobileEventSheet({
           </div>
         </div>
       </Sheet>
+      {editScope && (
+        <RecurrenceScopeDialog
+          mode={editScope.mode}
+          onConfirm={confirmScope}
+          onCancel={cancelScope}
+        />
+      )}
+      </>
     );
   }
 
