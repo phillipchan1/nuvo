@@ -3,7 +3,7 @@ import { invokeQuiet, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
-import { patchCaches, useTaskMutations } from "./useTasks";
+import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 // One rule for "how big is this block", shared with the chat's `create_slot` —
@@ -57,6 +57,10 @@ export function useSlotTasks(slotIds: string[]) {
       if (error) throw error;
       return data as Task[];
     },
+    // A newly created slot changes `ids` (a new key). Keep the previous
+    // children painted while the seeded list / fetch takes over — without
+    // this the block reads "empty" for the whole round-trip.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -70,6 +74,10 @@ export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot
 
 export function insertSlotCache(qc: QueryClient, slot: Slot) {
   runWithoutOwingPreserve(() => {
+    // Seed first: a slots-cache write notifies the Schedule, which remounts
+    // useSlotTasks under the new id set. The children query has to exist
+    // *before* that, or assignToSlot has nowhere to put them.
+    seedSlotChildrenQuery(qc, slot.id);
     qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
       old ? [...old, slot] : [slot],
     );

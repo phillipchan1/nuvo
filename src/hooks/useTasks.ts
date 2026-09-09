@@ -294,6 +294,39 @@ export function insertTaskCache(qc: QueryClient, task: Task) {
 }
 
 /**
+ * `useSlotTasks` is keyed on the *current* id set (`["tasks","slot", ids]`).
+ * Creating a slot remounts that query under a new key. Seed the new list
+ * *before* observers see the slot (and before assignToSlot tries to join it)
+ * so the children have a cache to land in — otherwise they leave the inbox
+ * and the block reads "empty" until the drain refetch, often many seconds later.
+ */
+export function seedSlotChildrenQuery(qc: QueryClient, slotId: string) {
+  runWithoutOwingPreserve(() => {
+    const slotQueries = qc.getQueriesData<Task[]>({ queryKey: ["tasks", "slot"] });
+    let seeded = false;
+    for (const [key, data] of slotQueries) {
+      const ids = key[2];
+      if (!Array.isArray(ids)) continue;
+      const list = ids as string[];
+      if (list.includes(slotId)) {
+        seeded = true;
+        continue;
+      }
+      const nextIds = [...list, slotId].sort();
+      // An older key (without this slot) must not clobber a list that
+      // assignToSlot has already started filling.
+      if (qc.getQueryData(["tasks", "slot", nextIds])) {
+        seeded = true;
+        continue;
+      }
+      qc.setQueryData(["tasks", "slot", nextIds], Array.isArray(data) ? data : []);
+      seeded = true;
+    }
+    if (!seeded) qc.setQueryData<Task[]>(["tasks", "slot", [slotId]], []);
+  });
+}
+
+/**
  * Place a task's post-image into every mounted `tasks` query, inserting or
  * dropping so membership matches what that queryFn would return. `next === null`
  * removes it everywhere — a Realtime DELETE, not a trash (trash keeps the row
@@ -305,6 +338,7 @@ export function insertTaskCache(qc: QueryClient, task: Task) {
  */
 export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) {
   runWithoutOwingPreserve(() => {
+  if (next?.slot_id) seedSlotChildrenQuery(qc, next.slot_id);
   for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
     if (!Array.isArray(data)) continue;
     const existing = data.find((t) => t.id === id);
