@@ -10,7 +10,8 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO, toFcInstant } from "../lib/dates";
+import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO, todayISO, toFcInstant } from "../lib/dates";
+import { resolveCompleteTarget } from "../lib/completeTarget";
 import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
@@ -1567,9 +1568,17 @@ function CalendarPane({
 
   /** Instant check, then the write. The paint is the click; the mutation is
    *  scheduled as a macrotask so React/FullCalendar cannot take this frame. */
-  const toggleCalendarTaskDone = (task: Task, el?: HTMLElement | null) => {
-    const goingDone = task.status !== "done";
-    if (el) paintCalendarTaskDone(el, goingDone);
+  const toggleCalendarTaskDone = (clicked: Task, el?: HTMLElement | null) => {
+    const goingDone = clicked.status !== "done";
+    // A series can put this Thursday and next Thursday on the grid as two
+    // rows. Checking the chip a week ahead (easy: the rail still says "this
+    // week") used to complete that future row while Today kept today's.
+    const task = goingDone
+      ? resolveCompleteTarget(clicked, tasksRef.current, todayISO(now))
+      : clicked;
+    const redirected = task.id !== clicked.id;
+    if (redirected) pageToday();
+    else if (el) paintCalendarTaskDone(el, goingDone);
     const nextStatus = goingDone ? "done" : restingStatus(task);
     tasksRef.current = tasksRef.current.map((t) =>
       t.id === task.id

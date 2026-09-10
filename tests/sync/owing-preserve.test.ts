@@ -131,6 +131,25 @@ describe("owing preserve vs local trash", () => {
     expect(qc.getQueryData<Task[]>(range)?.[0]?.status).toBe("done");
     expect(qc.getQueryData<Task[]>(["tasks", "all"])?.[0]?.status).toBe("done");
   });
+
+  it("drops a completed anytime chip but keeps the row on Today as done", () => {
+    // Anytime only lists planned rows. Completing is a membership drop there
+    // and a field write on Today — both have to land or the chip vanishes
+    // while the rail stays unchecked.
+    const qc = new QueryClient();
+    installOwingGuards(qc);
+    const row = task({ id: "t1", start_time: null, do_date: "2026-08-21" });
+    qc.setQueryData(["tasks", "day", "2026-08-21"], [row]);
+    qc.setQueryData(["tasks", "anytime", "2026-08-17", "2026-08-24"], [row]);
+    qc.setQueryData(["tasks", "all"], [row]);
+    markOwing("tasks");
+
+    patchCaches(qc, "t1", { status: "done", completed_at: "2026-08-21T21:05:00.000Z" });
+
+    const anytime = qc.getQueryData<Task[]>(["tasks", "anytime", "2026-08-17", "2026-08-24"]) ?? [];
+    expect(anytime.find((t) => t.id === "t1")).toBeUndefined();
+    expect(qc.getQueryData<Task[]>(["tasks", "day", "2026-08-21"])?.[0]?.status).toBe("done");
+  });
 });
 
 describe("catchUpAfterOwingKnown", () => {
