@@ -17,7 +17,7 @@ import {
   todayISO,
   tomorrowISO,
 } from "../../lib/dates";
-import { CALENDAR_OFFLINE_NOTE, isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite";
+import { CALENDAR_OFFLINE_NOTE, isWritableCalendar } from "../../lib/calendarWrite";
 import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
@@ -139,11 +139,7 @@ export default function MobileEventSheet({
   // Nuvo can't keep (see the note in lib/calendarWrite.ts). Going inert and
   // saying why beats accepting the typing and losing it.
   const online = useOnline();
-  const writableEvent =
-    tap.kind === "event" &&
-    isWritableAccount(account) &&
-    Boolean(tap.calendarId) &&
-    !isReadOnlyCalendarId(tap.calendarId!);
+  const writableEvent = tap.kind === "event" && isWritableCalendar(account, tap.calendarId);
   const editable = writableEvent && online;
   const offlineOnly = writableEvent && !online;
 

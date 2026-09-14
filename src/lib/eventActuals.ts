@@ -74,6 +74,7 @@ export function applySeriesPatch<
   T extends {
     id: string;
     recurring_event_id?: string | null;
+    provider_event_id?: string;
     start_at: string;
     end_at: string;
     title: string;
@@ -93,7 +94,14 @@ export function applySeriesPatch<
 ): T[] {
   const edited = events.find((e) => e.id === editedId);
   if (!edited) return events;
-  const seriesId = edited.recurring_event_id;
+  // iCloud occurrences store the master id in `uid::RECURRENCE-ID`, not
+  // `recurring_event_id` (that's a generated Google column). Matching only the
+  // column left siblings unmoved, so ALL looked like it only shifted the
+  // dragged row — and a refetch of the unmoved siblings felt like a snap-back.
+  const seriesId = resolveRecurringEventId({
+    recurring_event_id: edited.recurring_event_id,
+    provider_event_id: edited.provider_event_id ?? "",
+  });
   const startDelta =
     patch.start_at != null ? new Date(patch.start_at).getTime() - new Date(edited.start_at).getTime() : 0;
   const endDelta =
@@ -102,7 +110,13 @@ export function applySeriesPatch<
   if (hasTime && (Number.isNaN(startDelta) || Number.isNaN(endDelta))) return events;
 
   return events.map((e) => {
-    const match = e.id === editedId || (seriesId != null && e.recurring_event_id === seriesId);
+    const match =
+      e.id === editedId ||
+      (seriesId != null &&
+        resolveRecurringEventId({
+          recurring_event_id: e.recurring_event_id,
+          provider_event_id: e.provider_event_id ?? "",
+        }) === seriesId);
     if (!match) return e;
     return {
       ...e,

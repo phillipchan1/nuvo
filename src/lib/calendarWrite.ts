@@ -95,12 +95,54 @@ export function isReadOnlyCalendarId(id: string): boolean {
   );
 }
 
+/** Account is two-way AND this calendar can actually receive a write. The
+ *  Schedule used to check only the account, so a Family iCloud import on a
+ *  writable Google account still dragged — the this/series dialog fired,
+ *  then Google rejected the PATCH and the block snapped back. */
+export function isWritableCalendar(
+  account?: Pick<CalendarAccount, "provider" | "sync_direction"> | null,
+  calendarId?: string | null,
+): boolean {
+  if (!calendarId || !isWritableAccount(account)) return false;
+  return !isReadOnlyCalendarId(calendarId);
+}
+
 /** One connected, writable account and the calendars an event can move onto. */
 export interface MoveTargetGroup {
   accountId: string;
   accountLabel: string;
   provider: CalendarProvider;
   calendars: CalendarInfo[];
+}
+
+/** Where an unnamed create lands. Hidden calendars are never chosen (D-047).
+ *  `accountId` is a named account (the composer picker); without it we use the
+ *  Settings default, then the first visible writable calendar. */
+export function pickCreateTarget(
+  accounts: CalendarAccount[],
+  opts: {
+    hiddenIds?: string[];
+    defaultAccountId?: string | null;
+    accountId?: string | null;
+  } = {},
+): { accountId: string; calendarId: string } | null {
+  const hidden = new Set(opts.hiddenIds ?? []);
+  const groups = writableCalendarTargets(accounts)
+    .map((g) => ({
+      ...g,
+      calendars: g.calendars.filter((c) => !hidden.has(c.id)),
+    }))
+    .filter((g) => g.calendars.length > 0);
+
+  const named = opts.accountId ? groups.find((g) => g.accountId === opts.accountId) : undefined;
+  const def = opts.defaultAccountId ? groups.find((g) => g.accountId === opts.defaultAccountId) : undefined;
+  const google = groups.find((g) => g.provider === "google");
+  const group = named ?? def ?? google ?? groups[0];
+  if (!group) return null;
+  const email = group.accountLabel.trim().toLowerCase();
+  const calendar =
+    group.calendars.find((c) => c.id.toLowerCase() === email) ?? group.calendars[0];
+  return { accountId: group.accountId, calendarId: calendar.id };
 }
 
 /** Every calendar an event can be moved to, grouped by account — the source for

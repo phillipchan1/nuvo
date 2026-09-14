@@ -19,7 +19,7 @@ import { Icon } from "../Icon";
 import { toast } from "sonner";
 import { useCalendarAccounts, useExternalEventMutations } from "../../hooks/useCalendar";
 import { useSettings } from "../../hooks/useSettings";
-import { isWritableAccount, providerMeta } from "../../lib/calendarWrite";
+import { isWritableAccount, pickCreateTarget, providerMeta } from "../../lib/calendarWrite";
 import { allDayRangeFromStart, defaultTimedRange, toDateISO } from "../../lib/dates";
 import { toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
@@ -71,6 +71,7 @@ export default function EventComposer({
 }) {
   const { settings } = useSettings();
   const { createEvent } = useExternalEventMutations();
+  const { data: accounts = [] } = useCalendarAccounts();
   const writableAccounts = useWritableAccounts();
 
   const [startAt, setStartAt] = useState(seed.start_at);
@@ -154,6 +155,16 @@ export default function EventComposer({
     setSaving(true);
     setError(null);
     try {
+      const target = pickCreateTarget(accounts, {
+        hiddenIds: settings?.hidden_calendar_ids,
+        defaultAccountId: settings?.default_calendar_account_id,
+        accountId: account.id,
+      });
+      if (!target) {
+        throw new Error(
+          "No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.",
+        );
+      }
       await createEvent({
         title: title.trim(),
         start_at: startAt,
@@ -161,7 +172,8 @@ export default function EventComposer({
         all_day: allDay,
         recurrence: repeat ? toGoogleRRULE(repeat) : undefined,
         attendees: attendees.length ? attendees : undefined,
-        accountId: account.id,
+        accountId: target.accountId,
+        calendarId: target.calendarId,
         notifyGuests,
         addMeet,
       });

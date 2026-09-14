@@ -66,16 +66,41 @@ function escapeText(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
+/** RFC 5545 line unfolding so DTSTART;TZID=…:\\n 20260914T123000 still matches. */
+function unfold(ics: string): string {
+  return ics.replace(/\r?\n[ \t]/g, "");
+}
+
 /** Isolate the master VEVENT (the one without RECURRENCE-ID) from a VCALENDAR. */
 function splitEvents(ics: string): { header: string; events: string[]; footer: string } {
-  const first = ics.indexOf("BEGIN:VEVENT");
-  const lastEnd = ics.lastIndexOf("END:VEVENT");
-  if (first === -1 || lastEnd === -1) return { header: ics, events: [], footer: "" };
-  const header = ics.slice(0, first);
-  const footer = ics.slice(lastEnd + "END:VEVENT".length);
-  const middle = ics.slice(first, lastEnd + "END:VEVENT".length);
+  const text = unfold(ics);
+  const first = text.indexOf("BEGIN:VEVENT");
+  const lastEnd = text.lastIndexOf("END:VEVENT");
+  if (first === -1 || lastEnd === -1) return { header: text, events: [], footer: "" };
+  const header = text.slice(0, first);
+  const footer = text.slice(lastEnd + "END:VEVENT".length);
+  const middle = text.slice(first, lastEnd + "END:VEVENT".length);
   const events = middle.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) ?? [];
   return { header, events, footer };
+}
+
+/** Shift an iCalendar DATE / date-time stamp by a millisecond delta, keeping form.
+ *  UTC (`…Z`) shifts as an instant; civil / TZID stamps shift as a wall clock
+ *  so we never convert `TZID=America/Los_Angeles:123000` into `120000Z`. */
+export function shiftIcalStamp(value: string, deltaMs: number): string {
+  const s = value.trim();
+  if (/^\d{8}$/.test(s)) {
+    const next = new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) + deltaMs);
+    return `${next.getUTCFullYear()}${pad(next.getUTCMonth() + 1)}${pad(next.getUTCDate())}`;
+  }
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/i);
+  if (!m) return s;
+  const utc = Boolean(m[7]);
+  const shifted = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) + deltaMs);
+  const stamp =
+    `${shifted.getUTCFullYear()}${pad(shifted.getUTCMonth() + 1)}${pad(shifted.getUTCDate())}` +
+    `T${pad(shifted.getUTCHours())}${pad(shifted.getUTCMinutes())}${pad(shifted.getUTCSeconds())}`;
+  return utc ? `${stamp}Z` : stamp;
 }
 
 function isMaster(vevent: string): boolean {
@@ -215,10 +240,12 @@ export function shiftMaster(ics: string, deltaMs: number, title?: string, endDel
   const out = events.map((ve) => {
     if (!isMaster(ve)) return ve;
     let v = ve;
-    const ds = v.match(/^DTSTART(;[^:\r\n]*)?:(.*)$/im)?.[2];
-    const de = v.match(/^DTEND(;[^:\r\n]*)?:(.*)$/im)?.[2];
-    if (ds) v = setProp(v, "DTSTART", toIcalUtc(new Date(icalToDate(ds).getTime() + deltaMs).toISOString()));
-    if (de) v = setProp(v, "DTEND", toIcalUtc(new Date(icalToDate(de).getTime() + endDeltaMs).toISOString()));
+    const ds = v.match(/^DTSTART(;[^:\r\n]*)?:(.*)$/im);
+    const de = v.match(/^DTEND(;[^:\r\n]*)?:(.*)$/im);
+    // Keep TZID / VALUE=DATE params. Rewriting `DTSTART:${utcZ}` is how a
+    // 12:30pm Pacific series became 4:30am after "move all in the series".
+    if (ds) v = v.replace(/^DTSTART(;[^:\r\n]*)?:.*$/im, `DTSTART${ds[1] ?? ""}:${shiftIcalStamp(ds[2], deltaMs)}`);
+    if (de) v = v.replace(/^DTEND(;[^:\r\n]*)?:.*$/im, `DTEND${de[1] ?? ""}:${shiftIcalStamp(de[2], endDeltaMs)}`);
     if (title !== undefined) v = setProp(v, "SUMMARY", escapeText(title));
     return v;
   });

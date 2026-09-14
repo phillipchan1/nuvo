@@ -231,4 +231,29 @@ describe("applySeriesPatch", () => {
       "Team standup",
     ]);
   });
+
+  it("shifts iCloud siblings keyed by uid::RECURRENCE-ID, not recurring_event_id", () => {
+    const family = ev({
+      id: "icloud-a",
+      provider_event_id: "7F3D6105-6AC2-4E92-9A6D-220E3345DD92::20260914T123000",
+      recurring_event_id: null,
+      start_at: "2026-09-14T19:30:00.000Z",
+      end_at: "2026-09-14T22:00:00.000Z",
+      title: "Frontier staff meeting",
+    });
+    const sibling = ev({
+      id: "icloud-b",
+      provider_event_id: "7F3D6105-6AC2-4E92-9A6D-220E3345DD92::20260921T123000",
+      recurring_event_id: null,
+      start_at: "2026-09-21T19:30:00.000Z",
+      end_at: "2026-09-21T22:00:00.000Z",
+      title: "Frontier staff meeting",
+    });
+    const next = applySeriesPatch([family, sibling], "icloud-a", {
+      start_at: "2026-09-14T19:00:00.000Z",
+      end_at: "2026-09-14T21:30:00.000Z",
+    });
+    expect(next[0].start_at).toBe("2026-09-14T19:00:00.000Z");
+    expect(next[1].start_at).toBe("2026-09-21T19:00:00.000Z");
+  });
 });

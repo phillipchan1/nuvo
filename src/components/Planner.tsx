@@ -19,7 +19,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { mergeTaskLists } from "../lib/taskMerge";
-import { isReadOnlyCalendarId, isWritableAccount } from "../lib/calendarWrite";
+import { isWritableCalendar } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
   buildSearchHits,
@@ -427,7 +427,7 @@ export default function Planner({
   // "Could this event be written at all", separate from "can it be written
   // right now" — see the offline note in lib/calendarWrite.ts.
   const eventWritable = Boolean(
-    openEvent && isWritableAccount(openEventAccount) && !isReadOnlyCalendarId(openEvent.calendar_id),
+    openEvent && isWritableCalendar(openEventAccount, openEvent.calendar_id),
   );
   const openEventCalendar = openEvent && openEventAccount
     ? (openEventAccount.calendars.find((c) => c.id === openEvent.calendar_id) ?? null)

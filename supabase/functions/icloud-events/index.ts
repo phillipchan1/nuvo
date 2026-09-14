@@ -18,6 +18,7 @@ import {
   upsertOverride,
 } from "../_shared/icalwrite.ts";
 import { deleteEvent, getEvent, putEvent } from "../_shared/caldav.ts";
+import { icloudSeriesOrFilter } from "../_shared/icloudSeries.ts";
 
 /** The `uid::<recurrence-id>` suffix a recurring occurrence carries → ISO start. */
 function suffixToISO(suffix: string): string | null {
@@ -57,18 +58,52 @@ Deno.serve(async (req) => {
       const password = await readSecret(account.refresh_token_secret_id);
       if (!password) return json({ error: "iCloud credential missing" }, 400);
 
-      // Target calendar: an explicit collection url, else the account's first.
+      const { data: settings } = await admin
+        .from("user_settings")
+        .select("hidden_calendar_ids")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const hidden = new Set<string>(
+        Array.isArray(settings?.hidden_calendar_ids) ? settings.hidden_calendar_ids : [],
+      );
+      const namedCalendar = (body.calendarId as string | undefined)?.trim();
+      // D-047: a hidden calendar is never chosen unnamed. calendars[0] used to
+      // be Work — hidden — so a create "succeeded" onto a calendar the Schedule
+      // does not show, and looked like a total failure.
+      const visible = ((account.calendars ?? []) as { id?: string }[]).filter(
+        (c) => typeof c.id === "string" && c.id && !hidden.has(c.id),
+      );
       const calendarUrl =
-        (body.calendarId as string | undefined) ||
-        (account.calendars?.[0]?.id as string | undefined);
-      if (!calendarUrl) return json({ error: "no iCloud calendar to write to" }, 400);
+        namedCalendar ||
+        visible[0]?.id ||
+        undefined;
+      if (!calendarUrl) {
+        return json(
+          {
+            error:
+              "No visible Apple calendar to create on. Unhide a calendar you own in Settings → Calendars.",
+          },
+          400,
+        );
+      }
 
       const location = (body.location as string | undefined) ?? null;
       const description = (body.description as string | undefined) ?? null;
       const uid = `nuvo-${crypto.randomUUID()}`;
       const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, allDay: all_day, location, description, recurrence });
       const href = `${calendarUrl.replace(/\/$/, "")}/${uid}.ics`;
-      const etag = await putEvent(href, ics, account.email, password);
+      let etag: string | null;
+      try {
+        etag = await putEvent(href, ics, account.email, password);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/\bHTTP 403\b/.test(msg)) {
+          throw new Error(
+            "Apple didn't allow creating on this calendar. Shared calendars (like Family) often block new events from other apps — pick a calendar you own, or unhide one in Settings.",
+          );
+        }
+        throw e;
+      }
 
       const { data: event } = await admin
         .from("external_events")
@@ -145,7 +180,7 @@ Deno.serve(async (req) => {
             .delete()
             .eq("account_id", evt.account_id)
             .eq("calendar_id", evt.calendar_id)
-            .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+            .or(icloudSeriesOrFilter(uidBase));
         } else {
           await admin.from("external_events").delete().eq("id", eventId);
         }
@@ -179,7 +214,7 @@ Deno.serve(async (req) => {
         .from("external_events")
         .update({ calendar_id: dest })
         .eq("account_id", evt.account_id)
-        .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+        .or(icloudSeriesOrFilter(uidBase));
       await admin
         .from("external_events")
         .update({ raw: { ...raw, caldav_href: newHref, caldav_etag: newEtag } })
@@ -218,7 +253,7 @@ Deno.serve(async (req) => {
           .update({ self_rsvp: selfRsvp })
           .eq("account_id", evt.account_id)
           .eq("calendar_id", evt.calendar_id)
-          .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+          .or(icloudSeriesOrFilter(uidBase));
       } else {
         await admin.from("external_events").update({ self_rsvp: selfRsvp }).eq("id", eventId);
       }
@@ -344,12 +379,13 @@ Deno.serve(async (req) => {
       // occurrences, the client's refetch after the dialog is the old times.
       const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
       const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : 0;
-      const { data: rows } = await admin
+      const { data: rows, error: seriesErr } = await admin
         .from("external_events")
         .select("id, start_at, end_at")
         .eq("account_id", evt.account_id)
         .eq("calendar_id", evt.calendar_id)
-        .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+        .or(icloudSeriesOrFilter(uidBase));
+      if (seriesErr) throw new Error(`shift local series: ${seriesErr.message}`);
       await Promise.all(
         (rows ?? []).map((row: { id: string; start_at: string; end_at: string }) => {
           const rowPatch: Record<string, unknown> = {};
@@ -366,17 +402,12 @@ Deno.serve(async (req) => {
           return admin.from("external_events").update(rowPatch).eq("id", row.id);
         }),
       );
-      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/icloud-sync`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ accountId: account.id }),
-      });
-      if (!syncRes.ok) {
-        await logSync("icloud", "event-writeback-all-sync", "error", await syncRes.text(), user.id);
-      }
+      // Do not kick a full CalDAV reconcile here. iCloud sync sweeps the window
+      // and deletes any provider_event_id it didn't just emit — and a TZID
+      // rewrite (or a too-soon GET of the pre-PUT resource) changes those
+      // ids, so the kick deleted the shifted rows and the client snapped back.
+      // The local rewrite above is what the dialog's refetch must see. The
+      // next 15-minute poll catches iCloud once the PUT has settled.
     }
 
     await logSync("icloud", "event-writeback", "ok", undefined, user.id);

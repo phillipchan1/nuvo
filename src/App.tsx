@@ -138,13 +138,22 @@ function AppToaster() {
 // a genuine rejection (409/400/RLS) must fail fast and roll the optimistic update
 // back, and a create must never be replayed after it actually inserted.
 function isTransientWriteError(error: unknown): boolean {
+  const status =
+    (error as { status?: number } | null)?.status ??
+    ((error as { context?: { status?: unknown } } | null)?.context?.status as number | undefined);
+  // 4xx except 401 is a real rejection. Retrying a 403 stacked three toasts
+  // and, when the first attempt had already inserted, looked like a failed
+  // create on top of a hidden success.
+  if (typeof status === "number" && status >= 400 && status < 500 && status !== 401) return false;
   // Network-layer failure — the request never made it out.
   if (error instanceof TypeError) return true;
   const msg = (error as { message?: string } | null)?.message?.toLowerCase() ?? "";
-  if (/failed to fetch|networkerror|load failed|connection|timeout|fetch/.test(msg)) return true;
+  if (/failed to fetch|networkerror|load failed|connection|timeout/.test(msg)) return true;
+  // "Failed to send a request to the edge function" contains "fetch" and used
+  // to match a broader /fetch/ regex — that's a transport failure, still retry.
+  if (/failed to send a request to the edge function/.test(msg) && status !== 403) return true;
   // Token expired while offline; the backoff below gives supabase-js time to
   // refresh it before the next attempt, which then carries the fresh token.
-  const status = (error as { status?: number } | null)?.status;
   const code = (error as { code?: string } | null)?.code;
   if (status === 401 || code === "PGRST301" || /jwt (expired|invalid)|token/.test(msg)) return true;
   return false;

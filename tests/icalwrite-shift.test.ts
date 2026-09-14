@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { patchMaster, setPartstat, shiftMaster } from "../supabase/functions/_shared/icalwrite.ts";
+import { patchMaster, setPartstat, shiftMaster, shiftIcalStamp } from "../supabase/functions/_shared/icalwrite.ts";
 
 const WEEKLY = [
   "BEGIN:VCALENDAR",
@@ -24,6 +24,48 @@ describe("shiftMaster", () => {
     const next = shiftMaster(WEEKLY, 0, undefined, 15 * 60 * 1000);
     expect(next).toContain("DTSTART:20260804T160000Z");
     expect(next).toContain("DTEND:20260804T164500Z");
+  });
+
+  it("keeps TZID and shifts the civil clock instead of converting to UTC", () => {
+    const tzid = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "UID:frontier",
+      "DTSTART;TZID=America/Los_Angeles:20260914T123000",
+      "DTEND;TZID=America/Los_Angeles:20260914T150000",
+      "RRULE:FREQ=WEEKLY",
+      "SUMMARY:Frontier staff meeting",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const next = shiftMaster(tzid, -30 * 60 * 1000);
+    expect(next).toContain("DTSTART;TZID=America/Los_Angeles:20260914T120000");
+    expect(next).toContain("DTEND;TZID=America/Los_Angeles:20260914T143000");
+    expect(next).not.toMatch(/DTSTART:20260914T12\d{4}Z/);
+  });
+
+  it("unfolds a folded TZID DTSTART before shifting", () => {
+    const folded = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "UID:frontier",
+      "DTSTART;TZID=America/Los_Angeles:",
+      " 20260914T123000",
+      "DTEND;TZID=America/Los_Angeles:20260914T150000",
+      "RRULE:FREQ=WEEKLY",
+      "SUMMARY:Frontier staff meeting",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const next = shiftMaster(folded, -30 * 60 * 1000);
+    expect(next).toContain("DTSTART;TZID=America/Los_Angeles:20260914T120000");
+  });
+});
+
+describe("shiftIcalStamp", () => {
+  it("keeps a UTC stamp in UTC and a civil stamp civil", () => {
+    expect(shiftIcalStamp("20260914T193000Z", -30 * 60 * 1000)).toBe("20260914T190000Z");
+    expect(shiftIcalStamp("20260914T123000", -30 * 60 * 1000)).toBe("20260914T120000");
   });
 });
 

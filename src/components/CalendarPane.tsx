@@ -19,7 +19,7 @@ import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExte
 import { eventSeriesKey, isExternalEventRecurring, resolveRecurringEventId } from "../lib/now";
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../lib/calendarReveal";
 import { synClass } from "../lib/syntax";
-import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
+import { isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
@@ -1417,7 +1417,9 @@ function CalendarPane({
         const isIcs = account?.provider === "ics";
         const isIcloud = account?.provider === "icloud";
         // Writable events (Google or iCloud two-way) can be dragged / resized.
-        const writable = isWritableAccount(account);
+        // The calendar itself must be writable too — a Family iCloud import
+        // on a two-way Google account used to drag, then snap back.
+        const writable = isWritableCalendar(account, e.calendar_id);
         const calColor =
           account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "var(--event-default)";
         // Dim events where the user hasn't confirmed yet.
@@ -2387,13 +2389,24 @@ function CalendarPane({
         const range = eventAllDay
           ? allDayRangeFromStart(start, end)
           : { start_at: start.toISOString(), end_at: end.toISOString() };
+        const target = pickCreateTarget(accounts, {
+          hiddenIds: settings?.hidden_calendar_ids,
+          defaultAccountId: settings?.default_calendar_account_id,
+          accountId: calendarAccountId,
+        });
+        if (!target) {
+          throw new Error(
+            "No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.",
+          );
+        }
         await eventMutations.createEvent({
           title,
           ...range,
           all_day: eventAllDay,
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
           ...(attendees.length ? { attendees, notifyGuests } : {}),
-          ...(calendarAccountId ? { accountId: calendarAccountId } : {}),
+          accountId: target.accountId,
+          calendarId: target.calendarId,
           addMeet,
         });
       } else if (recurrence) {
@@ -3022,7 +3035,7 @@ function CalendarPane({
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
-        const writable = isWritableAccount(account) && !isReadOnlyCalendarId(ev.calendar_id);
+        const writable = isWritableCalendar(account, ev.calendar_id);
         const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
         const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
         const requestDelete = (scope: RecurrenceScope) => {

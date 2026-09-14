@@ -676,7 +676,7 @@ export function useExternalEventMutations() {
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "create", title, start_at, end_at, all_day, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
       });
-      if (error) throw error;
+      await throwIfInvokeFailed(data, error);
       return data;
     },
     onMutate: async ({ title, start_at, end_at, all_day }) => {
