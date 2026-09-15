@@ -343,9 +343,14 @@ html[data-skin="flat"] .fc .fc-col-header-cell {
    paints above its own parent's background (painting order puts the element's
    background first, then negative-z children), so backing the fill from inside
    just covers it: the events went white. Only a real ancestor can sit under an
-   inline background. */
-html[data-skin="flat"] .fc .fc-timegrid-event-harness,
-html[data-skin="flat"] .fc .fc-daygrid-event-harness {
+   inline background.
+
+   Daygrid (the anytime row, and every month pill) must NOT get this. Those
+   chips have a 1px/3px margin inside the harness, so a --surface fill showed
+   as a white halo around every all-day bar — the thing that made the week
+   row and the month look like stickers on the page. Daygrid has no hour
+   rules to hide; the tint sits on the ground and is fine. */
+html[data-skin="flat"] .fc .fc-timegrid-event-harness {
   background: var(--surface);
   border-radius: 4px;
 }
