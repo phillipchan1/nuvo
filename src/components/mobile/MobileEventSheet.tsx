@@ -20,6 +20,7 @@ import {
 import { CALENDAR_OFFLINE_NOTE, isWritableCalendar } from "../../lib/calendarWrite";
 import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
+import { DescriptionHtml } from "../../lib/descriptionHtml";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl, RecurrenceScopeDialog, useRecurringScope } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
@@ -502,9 +503,7 @@ export default function MobileEventSheet({
           ) : (
             raw?.description && (
               <Section label="Notes">
-                <div className="whitespace-pre-wrap text-body leading-relaxed text-text">
-                  {plainTextFromHtml(raw.description)}
-                </div>
+                <DescriptionHtml html={raw.description} className="whitespace-pre-wrap text-body" />
               </Section>
             )
           )}

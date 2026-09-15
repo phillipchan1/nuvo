@@ -18,6 +18,7 @@ import { eventKey, eventSeriesKey, isExternalEventRecurring } from "../lib/now";
 import ReminderSelect from "./ReminderSelect";
 import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
+import { DescriptionHtml } from "../lib/descriptionHtml";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateWhenSafe } from "../lib/sync";
 import { useVertical } from "../hooks/useVertical";
@@ -1023,67 +1024,6 @@ function AttendeeRow({ a }: { a: GoogleAttendee }) {
  *  own the column before you've read the notes. */
 const GUESTS_FOLD = 6;
 
-// ── Safe HTML description renderer ───────────────────────────────────────
-function linkifyText(text: string): React.ReactNode {
-  const URL_RE = /https?:\/\/[^\s<>"]+/g;
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = URL_RE.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    parts.push(
-      <a key={m.index} href={m[0]} target="_blank" rel="noopener noreferrer"
-        className="text-accent underline-offset-2 hover:underline">
-        {m[0]}
-      </a>
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts.length === 1 ? parts[0] : <>{parts}</>;
-}
-
-function domToReact(node: Node, key: number): React.ReactNode {
-  if (node.nodeType === Node.TEXT_NODE) {
-    const t = node.textContent ?? "";
-    return t ? <React.Fragment key={key}>{linkifyText(t)}</React.Fragment> : null;
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) return null;
-  const el = node as Element;
-  const tag = el.tagName.toLowerCase();
-  const kids = Array.from(el.childNodes).map((n, i) => domToReact(n, i));
-  switch (tag) {
-    case "a": {
-      const href = el.getAttribute("href") ?? "";
-      if (/^https?:\/\//.test(href))
-        return <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-          className="text-accent underline-offset-2 hover:underline">{kids}</a>;
-      return <React.Fragment key={key}>{kids}</React.Fragment>;
-    }
-    case "br": return <br key={key} />;
-    case "p": return el.textContent?.trim() ? <p key={key}>{kids}</p> : null;
-    case "b": case "strong": return <strong key={key}>{kids}</strong>;
-    case "i": case "em": return <em key={key}>{kids}</em>;
-    case "ul": return <ul key={key} className="list-disc pl-4 space-y-0.5">{kids}</ul>;
-    case "ol": return <ol key={key} className="list-decimal pl-4 space-y-0.5">{kids}</ol>;
-    case "li": return <li key={key}>{kids}</li>;
-    default: return <React.Fragment key={key}>{kids}</React.Fragment>;
-  }
-}
-
-function DescriptionHtml({ html }: { html: string }) {
-  const nodes = useMemo(() => {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return Array.from(doc.body.childNodes).map((n, i) => domToReact(n, i));
-  }, [html]);
-  return (
-    <div className="space-y-1.5 text-caption leading-relaxed text-text [&_p]:mb-1 [&_ul]:my-1 [&_ol]:my-1">
-      {nodes}
-    </div>
-  );
-}
-
-
 // ── TimePicker — searchable dropdown of quarter-hours, keyboard-steppable ──
 // A native <input type="time"> buries "type the hour, tab to the minute"
 // behind a browser-drawn control that renders inconsistently and gives no
@@ -2083,7 +2023,7 @@ export function EventPopover({
               {/* A one-column card has no right side to put prose in. */}
               {!wide && raw?.description && (
                 <PopField label="Description">
-                  <DescriptionHtml html={raw.description} />
+                  <DescriptionHtml html={raw.description} className="text-caption" />
                 </PopField>
               )}
             </PopStack>
@@ -2199,7 +2139,7 @@ export function EventPopover({
                     className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
                   />
                 ) : raw?.description ? (
-                  <DescriptionHtml html={raw.description} />
+                  <DescriptionHtml html={raw.description} className="text-caption" />
                 ) : detailsLoading ? (
                   <PopSkeleton lines={5} />
                 ) : (
