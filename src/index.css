@@ -715,6 +715,19 @@ html.tauri-macos:not([data-skin]) .app-canvas {
   border-top-left-radius: 0;
 }
 
+/* Skinned materials are edge-to-edge (no 7px Aurora sheet inset), but the
+   same law holds: lights live over the spine, so a full-width titlebar band
+   is a stripe of dead chrome. Zero the insets on the shell; the spine alone
+   re-declares them. The -7px in paper's formula is the sheet inset these
+   materials don't have. */
+html.tauri-macos[data-skin] .app-shell {
+  --titlebar-inset-top: 0px;
+  --titlebar-inset-left: 0px;
+}
+html.tauri-macos[data-skin] .spine {
+  --titlebar-inset-top: max(12px, calc(32px / var(--ui-scale, 1)));
+}
+
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
    in Tauri they sit under the overlay titlebar; the spine owns the left inset. */
 html.tauri-macos .app-topbar {

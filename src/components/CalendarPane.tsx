@@ -3020,13 +3020,12 @@ function CalendarPane({
 
   return (
     // Transparent so the single .atmosphere canvas (laid down by AppShellInner)
-    // reads continuously across the spine, the rail, and the calendar grid —
-    // the grid IS the paper. A solid surface here is the "frost" seam that made
-    // the calendar read lighter than the rail.
-    // `cal-sheet` is the FLAT skin's hook: that material has no gradient to run
-    // across the window, so it separates ground from work instead — grey chrome
-    // and pools, a white sheet under the grid. Inert on every other material.
-    <div className="cal-sheet relative flex h-full min-w-0 flex-1 flex-col">
+    // reads continuously across the spine, the rail, and the calendar toolbar —
+    // chrome rides the paper. A solid surface on this root is the frost seam
+    // that made the toolbar a white bar against the grey rail.
+    // `cal-sheet` is the FLAT skin's hook and lives on the GRID stack below,
+    // not here: grey chrome, a white sheet under the work. Inert elsewhere.
+    <div className="relative flex h-full min-w-0 flex-1 flex-col">
       {createError && (
         <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>
@@ -3748,14 +3747,16 @@ function CalendarPane({
 
       {/* ── The Week Board — "which day" altitude, a toggle away from the grid ── */}
       {view === "board" && (
-        <WeekBoard
-          now={now}
-          settings={settings}
-          taskAccent={taskAccent}
-          mutations={mutations}
-          onOpenTask={onOpenTask}
-          resolveDropTask={resolveDropTask}
-        />
+        <div className="cal-sheet min-h-0 flex-1">
+          <WeekBoard
+            now={now}
+            settings={settings}
+            taskAccent={taskAccent}
+            mutations={mutations}
+            onOpenTask={onOpenTask}
+            resolveDropTask={resolveDropTask}
+          />
+        </div>
       )}
 
       {/* ── The grid stack ────────────────────────────────────────────────
@@ -3777,7 +3778,7 @@ function CalendarPane({
 
             The Spread (`board`) is a different animal: it replaces the pane
             rather than sharing it, so the whole stack stands down for it. */}
-      <div className={`relative min-h-0 flex-1 ${view === "board" ? "hidden" : ""}`}>
+      <div className={`cal-sheet relative min-h-0 flex-1 ${view === "board" ? "hidden" : ""}`}>
         {yearEverOpened && (
           <div
             className={`absolute inset-0 flex flex-col ${view === "year" ? "" : "invisible pointer-events-none"}`}

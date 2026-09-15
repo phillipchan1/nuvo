@@ -159,16 +159,17 @@ html[data-skin="flat"] .serif {
    paper — so flat no longer needs its old opaque-sidebar hack, which was the
    "frost seam" the design language forbids, just in grey.
 
-   The calendar is the one surface that is not a pool: it IS the work, so it
-   gets the sheet. `cal-sheet` is set on the CalendarPane root. */
-html[data-skin="flat"] .cal-sheet {
-  background: var(--surface);
-}
+   That includes the floor header (`.app-topbar`) and the calendar toolbar
+   (`.titlebar-pad`). Filling either with --surface painted a 44px white bar
+   across Projects · Initiatives · Domains · Schedule that did not match the
+   ground the spine and rails sit on. Paper's "transparent strip with a
+   hairline" is the right chrome here too; the segmented control already
+   carries its own white sheet.
 
-/* …and the floor's top band becomes a real HEADER BAR. On paper it's a
-   transparent strip with a hairline under it; over a ground, filling it is what
-   turns "some controls up there" into chrome above the work. */
-html[data-skin="flat"] .app-topbar {
+   The calendar GRID is the one surface that is not a pool: it IS the work, so
+   it gets the sheet. `cal-sheet` lives on the grid stack, not the pane root,
+   so the toolbar above it stays chrome. */
+html[data-skin="flat"] .cal-sheet {
   background: var(--surface);
 }
 
@@ -542,7 +543,10 @@ html[data-skin="flat"][data-palette="chalk"][data-theme="dark"] {
   --slot: #4dab9a; --event-default: #7f7f7f;
 }
 
-/* Flat: quick and smooth — the modern-app snap. */
+/* Flat: quick and smooth — the modern-app snap.
+   html background matches the ground so iOS safe-area / any gap past #root
+   is not a stray --surface bar under chrome that now rides --bg. */
 html[data-skin="flat"] {
   --d-fast: 90ms; --d-base: 150ms;
+  background: var(--bg);
 }
