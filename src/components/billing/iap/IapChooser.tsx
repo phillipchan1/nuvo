@@ -28,28 +28,30 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setProducts(null);
     (async () => {
       const catalog = await fetchIapCatalog();
       const ids = catalogProductIds(catalog);
-      if (ids.length === 0) {
-        if (!cancelled) setProducts([]);
-        return;
-      }
-      const loaded = await loadIapProducts(ids);
+      const { products: loaded, reason: why } = await loadIapProducts(ids);
       if (cancelled) return;
+      setReason(why);
       setProducts(loaded);
       const annual = catalog.annual ? loaded.find((p) => p.id === catalog.annual) : undefined;
       setSelected((annual ?? loaded[0])?.id ?? null);
-    })().catch(() => {
-      if (!cancelled) setProducts([]);
+    })().catch((e) => {
+      if (cancelled) return;
+      setReason(e instanceof Error ? e.message : String(e));
+      setProducts([]);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
   const subscribe = async () => {
     if (!selected) return;
@@ -88,11 +90,20 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
           Subscriptions aren’t available from the App Store on this build yet. Your work is
           still here. Try again after the next update, or write us if you need a hand.
         </p>
+        {reason && <p className="mt-2 break-words text-micro text-muted">{reason}</p>}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setAttempt((n) => n + 1)}
+          className="tap fast mt-4 w-full rounded-md border border-line px-4 py-3 text-caption text-ink hover:border-line-strong"
+        >
+          Try again
+        </button>
         <button
           type="button"
           disabled={busy}
           onClick={restore}
-          className="tap fast mt-4 w-full py-3 text-caption text-muted hover:text-ink"
+          className="tap fast mt-2 w-full py-3 text-caption text-muted hover:text-ink"
         >
           Restore purchases
         </button>

@@ -51,7 +51,11 @@ export function catalogProductIds(catalog: IapCatalog): string[] {
   return storeKitProductIds([catalog.monthly, catalog.annual]);
 }
 
-async function invokeIap<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+/** Tauri names a command's arguments after its Rust parameters. Every nuvo-iap
+ *  command that takes input declares it as `payload: …`, so the input must be
+ *  wrapped `{ payload: { … } }` — sent bare, Tauri rejects the call before it
+ *  reaches StoreKit, and the paywall stubs. tests/iap-invoke-args.test.ts. */
+async function invokeIap<T>(cmd: string, args?: { payload: Record<string, unknown> }): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(`plugin:nuvo-iap|${cmd}`, args);
 }
@@ -66,15 +70,19 @@ function noteIapFailure(error: unknown, source: string): void {
     .catch(() => {});
 }
 
-export async function loadIapProducts(productIds: string[]): Promise<IapProduct[]> {
+/** Products plus, when there are none, StoreKit's reason — the paywall shows it,
+ *  because a locked account cannot reach Settings → Recent errors to read it. */
+export type IapLoad = { products: IapProduct[]; reason: string | null };
+
+export async function loadIapProducts(productIds: string[]): Promise<IapLoad> {
   const ids = storeKitProductIds(productIds);
-  if (ids.length === 0) return [];
+  if (ids.length === 0) return { products: [], reason: "No product ids in this build." };
   try {
     const result = await invokeIap<{
       products: IapProduct[];
       supported?: boolean;
       invalidIds?: string[];
-    }>("products", { productIds: ids });
+    }>("products", { payload: { productIds: ids } });
     const products = Array.isArray(result?.products)
       ? result.products.map((p) => ({
           ...p,
@@ -84,12 +92,15 @@ export async function loadIapProducts(productIds: string[]): Promise<IapProduct[
       : [];
     if (products.length === 0) {
       const invalid = result?.invalidIds?.length ? ` invalid: ${result.invalidIds.join(", ")}` : "";
-      noteIapFailure(`StoreKit knows no products for ${ids.join(", ")}.${invalid}`, "iap-products");
+      const reason = `StoreKit knows no products for ${ids.join(", ")}.${invalid}`;
+      noteIapFailure(reason, "iap-products");
+      return { products, reason };
     }
-    return products;
+    return { products, reason: null };
   } catch (e) {
     noteIapFailure(e, "iap-products");
-    return [];
+    const reason = e instanceof Error ? e.message : typeof e === "string" ? e : "StoreKit request failed.";
+    return { products: [], reason };
   }
 }
 
@@ -106,7 +117,7 @@ export function iapErrorMessage(error: unknown, fallback: string): string {
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
   const [id] = storeKitProductIds([productId]);
   if (!id) throw new Error("Unknown App Store product");
-  return invokeIap<IapPurchase>("purchase", { productId: id });
+  return invokeIap<IapPurchase>("purchase", { payload: { productId: id } });
 }
 
 export async function restoreIap(): Promise<IapPurchase[]> {

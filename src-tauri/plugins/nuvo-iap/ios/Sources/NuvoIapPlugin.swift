@@ -47,6 +47,9 @@ struct RestorePayload: Encodable {
 class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObserver {
     private var cached: [String: SKProduct] = [:]
     private var productsInvoke: Invoke?
+    // SKProductsRequest's delegate is weak and StoreKit doesn't promise to keep
+    // the request alive — hold it until it answers.
+    private var pendingProductsRequest: SKProductsRequest?
     private var purchaseInvoke: Invoke?
     private var restoreInvoke: Invoke?
     private var restored: [PurchasePayload] = []
@@ -70,6 +73,7 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         lock.unlock()
         let request = SKProductsRequest(productIdentifiers: ids)
         request.delegate = self
+        pendingProductsRequest = request
         request.start()
     }
 
@@ -131,6 +135,7 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         lock.lock()
         let invoke = productsInvoke
         productsInvoke = nil
+        pendingProductsRequest = nil
         lock.unlock()
         invoke?.resolve(ProductsPayload(
             supported: true,
@@ -143,6 +148,7 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         lock.lock()
         let invoke = productsInvoke
         productsInvoke = nil
+        pendingProductsRequest = nil
         lock.unlock()
         invoke?.reject(error.localizedDescription)
     }
