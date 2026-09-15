@@ -159,18 +159,14 @@ html[data-skin="flat"] .serif {
    paper — so flat no longer needs its old opaque-sidebar hack, which was the
    "frost seam" the design language forbids, just in grey.
 
-   That includes the floor header (`.app-topbar`) and the calendar toolbar
-   (`.titlebar-pad`). Filling either with --surface painted a 44px white bar
-   across Projects · Initiatives · Domains · Schedule that did not match the
-   ground the spine and rails sit on. Paper's "transparent strip with a
-   hairline" is the right chrome here too; the segmented control already
-   carries its own white sheet.
-
-   The calendar GRID is the one surface that is not a pool: it IS the work, so
-   it gets the sheet. `cal-sheet` lives on the grid stack, not the pane root,
-   so the toolbar above it stays chrome. */
-html[data-skin="flat"] .cal-sheet {
-  background: var(--surface);
+   That includes the floor header (`.app-topbar`) and the calendar itself.
+   Filling chrome with --surface painted a 44px white bar; painting the grid
+   as a sheet then boxed the Schedule in an 8px gutter (`.nuvo-cal-host`'s
+   `p-2`) that read as a gap-border around the week. The grid IS the page,
+   same as paper — `--fc-page-bg-color` is already transparent. Cards and
+   chips stay --surface; the canvas does not. */
+html[data-skin="flat"] .nuvo-cal-host {
+  padding: 0;
 }
 
 /* The mark is always branded. Paper dims the wordmark to a grey whisper when
