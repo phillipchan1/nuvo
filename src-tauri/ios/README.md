@@ -56,9 +56,10 @@ here is committed and reviewable; the Xcode project that consumes it
 
 - **StoreKit IAP** lives in `../plugins/nuvo-iap/`, **not here** — same
   placement rule as the watch bridge: Tauri only compiles Swift that sits
-  under a plugin's `ios/` path. The plugin talks StoreKit 1 (delegates, no
-  async/await). Product identifiers come from env; localized prices come from
-  `SKProduct`. Card checkout does not live here.
+  under a plugin's `ios/` path. The plugin loads products through StoreKit 1
+  (`SKProductsRequest`) and purchases/restores through StoreKit 2
+  (`Product.purchase()`). Product identifiers come from env; localized prices
+  come from StoreKit. Card checkout does not live here.
 
 - **The credential bridge** lives in `../plugins/nuvo-watch/`, **not here** —
   and that placement is forced, not stylistic. Tauri's only JS→Swift path is a

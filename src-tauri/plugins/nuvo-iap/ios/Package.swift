@@ -5,9 +5,9 @@ import PackageDescription
 let package = Package(
     name: "tauri-plugin-nuvo-iap",
     platforms: [
-        // Matches the app's deployment target. StoreKit 1 delegates only —
-        // no async/await. See nuvo-watch Package.swift for why concurrency
-        // is unsafe through swift-rs at the current minos.
+        // Matches the app's deployment target. Purchase/restore use StoreKit 2
+        // (async/await) — the same calls Dayspring ships on this identical
+        // toolchain. See nuvo-watch Package.swift for the swift-rs minos caveat.
         .iOS(.v15),
         .macOS(.v12),
     ],

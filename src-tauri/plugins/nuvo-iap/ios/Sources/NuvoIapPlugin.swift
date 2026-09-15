@@ -1,8 +1,17 @@
-// StoreKit 1 bridge. Compiled by cargo (swift-rs) into libapp.a.
+// StoreKit bridge. Compiled by cargo (swift-rs) into libapp.a.
 //
-// Delegate-based on purpose: no async/await, no Task. Product identifiers
-// arrive from JS (env / catalog). Localized prices come from SKProduct —
-// this file never invents a dollar amount.
+// Products load through StoreKit 1 (SKProductsRequest — delegate, proven on
+// TestFlight). Purchase and restore run on StoreKit 2: `Product.purchase()`
+// hands its result straight back to this call. The StoreKit 1 version waited
+// on an SKPaymentTransactionObserver that never answered on the iPad, and the
+// paywall sat on "Working…" with no sheet and no error.
+//
+// Swift concurrency here is safe: Dayspring ships the same StoreKit 2 calls on
+// the identical toolchain (tauri 2.11.2, swift-rs 1.0.7, iOS 15 floor) and its
+// purchase sheet works on device. Re-check that before lowering the floor.
+//
+// Product identifiers arrive from JS (env / catalog). Localized prices come
+// from StoreKit — this file never invents a dollar amount.
 
 import Foundation
 import StoreKit
@@ -37,6 +46,8 @@ struct PurchasePayload: Encodable {
     let productId: String
     let transactionId: String?
     let originalTransactionId: String?
+    /// Expiry in epoch milliseconds, when StoreKit knows it.
+    let expiresDate: Int64?
 }
 
 struct RestorePayload: Encodable {
@@ -44,27 +55,31 @@ struct RestorePayload: Encodable {
     let transactions: [PurchasePayload]
 }
 
-class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObserver {
-    private var cached: [String: SKProduct] = [:]
+private func isStoreKitProductId(_ id: String) -> Bool {
+    // StoreKit Product ID strings only — never empty, never an all-digit Apple internal ID.
+    !id.isEmpty && id.range(of: "^[0-9]+$", options: .regularExpression) == nil
+}
+
+@available(iOS 15.0, *)
+private func payload(for transaction: Transaction) -> PurchasePayload {
+    PurchasePayload(
+        productId: transaction.productID,
+        transactionId: String(transaction.id),
+        originalTransactionId: String(transaction.originalID),
+        expiresDate: transaction.expirationDate.map { Int64($0.timeIntervalSince1970 * 1000) }
+    )
+}
+
+class NuvoIapPlugin: Plugin, SKProductsRequestDelegate {
     private var productsInvoke: Invoke?
     // SKProductsRequest's delegate is weak and StoreKit doesn't promise to keep
     // the request alive — hold it until it answers.
     private var pendingProductsRequest: SKProductsRequest?
-    private var purchaseInvoke: Invoke?
-    private var restoreInvoke: Invoke?
-    private var restored: [PurchasePayload] = []
     private let lock = NSLock()
-
-    public override func load(webview: WKWebView) {
-        SKPaymentQueue.default().add(self)
-    }
 
     @objc public func products(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(ProductIdsArgs.self)
-        // StoreKit Product ID strings only — drop empty and all-digit Apple internal IDs.
-        let ids = Set(args.productIds.filter { id in
-            !id.isEmpty && id.range(of: "^[0-9]+$", options: .regularExpression) == nil
-        })
+        let ids = Set(args.productIds.filter(isStoreKitProductId))
         guard !ids.isEmpty else {
             return invoke.resolve(ProductsPayload(supported: true, products: [], invalidIds: []))
         }
@@ -79,29 +94,53 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
 
     @objc public func purchase(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(ProductIdArgs.self)
-        guard SKPaymentQueue.canMakePayments() else {
-            return invoke.reject("Purchases are not allowed on this Apple ID")
-        }
-        // Never accept Apple internal IDs (all digits) as a product identifier.
-        guard !args.productId.isEmpty,
-              args.productId.range(of: "^[0-9]+$", options: .regularExpression) == nil else {
+        guard isStoreKitProductId(args.productId) else {
             return invoke.reject("Unknown App Store product")
         }
-        guard let product = cached[args.productId] else {
-            return invoke.reject("Unknown App Store product — load products first")
+        guard AppStore.canMakePayments else {
+            return invoke.reject("Purchases are not allowed on this Apple ID")
         }
-        lock.lock()
-        purchaseInvoke = invoke
-        lock.unlock()
-        SKPaymentQueue.default().add(SKPayment(product: product))
+        Task {
+            do {
+                guard let product = try await Product.products(for: [args.productId]).first else {
+                    invoke.reject("Unknown App Store product")
+                    return
+                }
+                switch try await product.purchase() {
+                case .success(let verification):
+                    guard case .verified(let transaction) = verification else {
+                        invoke.reject("The App Store couldn’t verify that purchase")
+                        return
+                    }
+                    let result = payload(for: transaction)
+                    await transaction.finish()
+                    invoke.resolve(result)
+                case .userCancelled:
+                    invoke.reject("Purchase cancelled")
+                case .pending:
+                    invoke.reject("Purchase is waiting for approval")
+                @unknown default:
+                    invoke.reject("Purchase didn’t complete")
+                }
+            } catch {
+                invoke.reject(error.localizedDescription)
+            }
+        }
     }
 
     @objc public func restore(_ invoke: Invoke) {
-        lock.lock()
-        restoreInvoke = invoke
-        restored = []
-        lock.unlock()
-        SKPaymentQueue.default().restoreCompletedTransactions()
+        Task {
+            // User-initiated: sync with the App Store so a fresh install picks up
+            // existing transactions. A dismissed sign-in still falls back to local.
+            try? await AppStore.sync()
+            var transactions: [PurchasePayload] = []
+            for await entitlement in Transaction.currentEntitlements {
+                if case .verified(let transaction) = entitlement {
+                    transactions.append(payload(for: transaction))
+                }
+            }
+            invoke.resolve(RestorePayload(supported: true, transactions: transactions))
+        }
     }
 
     @objc public func manageSubscriptions(_ invoke: Invoke) {
@@ -121,7 +160,6 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         formatter.numberStyle = .currency
         var payloads: [IapProductPayload] = []
         for product in response.products {
-            cached[product.productIdentifier] = product
             formatter.locale = product.priceLocale
             let price = formatter.string(from: product.price) ?? ""
             payloads.append(IapProductPayload(
@@ -153,53 +191,6 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         invoke?.reject(error.localizedDescription)
     }
 
-    func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
-        for tx in transactions {
-            switch tx.transactionState {
-            case .purchased, .restored:
-                let payload = PurchasePayload(
-                    productId: tx.payment.productIdentifier,
-                    transactionId: tx.transactionIdentifier,
-                    originalTransactionId: tx.original?.transactionIdentifier ?? tx.transactionIdentifier
-                )
-                queue.finishTransaction(tx)
-                if tx.transactionState == .restored {
-                    lock.lock()
-                    restored.append(payload)
-                    lock.unlock()
-                } else {
-                    lock.lock()
-                    let invoke = purchaseInvoke
-                    purchaseInvoke = nil
-                    lock.unlock()
-                    invoke?.resolve(payload)
-                }
-            case .failed:
-                queue.finishTransaction(tx)
-                lock.lock()
-                let invoke = purchaseInvoke
-                purchaseInvoke = nil
-                lock.unlock()
-                let msg = tx.error?.localizedDescription ?? "Purchase failed"
-                invoke?.reject(msg)
-            case .purchasing, .deferred:
-                break
-            @unknown default:
-                break
-            }
-        }
-    }
-
-    func paymentQueueRestoreCompletedTransactionsFinished(_ queue: SKPaymentQueue) {
-        lock.lock()
-        let invoke = restoreInvoke
-        restoreInvoke = nil
-        let txs = restored
-        restored = []
-        lock.unlock()
-        invoke?.resolve(RestorePayload(supported: true, transactions: txs))
-    }
-
     /// Title, duration, and price come from StoreKit — never invented here.
     private func durationLabel(for product: SKProduct) -> String {
         guard let period = product.subscriptionPeriod else { return "" }
@@ -217,15 +208,6 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         fmt.maximumUnitCount = 1
         fmt.calendar = product.priceLocale.calendar
         return fmt.string(from: comps) ?? ""
-    }
-
-    func paymentQueue(_ queue: SKPaymentQueue, restoreCompletedTransactionsFailedWithError error: Error) {
-        lock.lock()
-        let invoke = restoreInvoke
-        restoreInvoke = nil
-        restored = []
-        lock.unlock()
-        invoke?.reject(error.localizedDescription)
     }
 }
 

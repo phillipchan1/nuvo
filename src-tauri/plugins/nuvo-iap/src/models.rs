@@ -40,6 +40,9 @@ pub struct IapPurchase {
     pub product_id: String,
     pub transaction_id: Option<String>,
     pub original_transaction_id: Option<String>,
+    /// Expiry in epoch milliseconds, when StoreKit knows it.
+    #[serde(default)]
+    pub expires_date: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

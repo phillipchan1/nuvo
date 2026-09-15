@@ -63,6 +63,9 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
       await refetch();
     } catch (e) {
       setError(iapErrorMessage(e, "Purchase didn’t complete"));
+    } finally {
+      // An entitled refetch unmounts the paywall; anything else must not
+      // leave the button on "Working…" with nothing to press.
       setBusy(false);
     }
   };
@@ -75,6 +78,7 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
       await refetch();
     } catch (e) {
       setError(iapErrorMessage(e, "Restore didn’t complete"));
+    } finally {
       setBusy(false);
     }
   };

@@ -29,6 +29,8 @@ export type IapPurchase = {
   productId: string;
   transactionId: string | null;
   originalTransactionId: string | null;
+  /** Expiry in epoch ms, when StoreKit knows it. */
+  expiresDate?: number | null;
 };
 
 /** `configuredIapProductIds` is the one place that decides the ids: it drops
@@ -147,6 +149,7 @@ export async function confirmApplePurchase(purchase: IapPurchase): Promise<void>
       productId: purchase.productId,
       transactionId: purchase.transactionId,
       originalTransactionId: purchase.originalTransactionId,
+      expiresDate: purchase.expiresDate ?? null,
     },
   });
   if (error) throw new Error(error.message ?? "Could not confirm the App Store purchase");
