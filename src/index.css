@@ -2152,6 +2152,49 @@ select.field { appearance: none; -webkit-appearance: none; }
   color: var(--text);
   overflow: hidden;
 }
+/* FullCalendar's resizer is a fully invisible 8px hit-band by default — it
+   only becomes `display:block` once you're already hovering the event, and
+   even then paints nothing, so there's no way to see where to grab before
+   you find the exact pixel row. A small centered grip mark, drawn via
+   ::after so the resizer's own full-width hit area is untouched, gives the
+   edge a visible handle the moment you hover the block — the way every
+   other calendar app marks a draggable edge. */
+.fc .fc-event .fc-event-resizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong);
+  pointer-events: none;
+}
+/* Anytime / month chips resize on the left and right (Google, Fantastical,
+   Apple Calendar), not the top and bottom. The time-grid grip above is a
+   horizontal bar; these are vertical pills on a wider hit-band so a
+   one-day chip still has something to grab. */
+.fc .fc-daygrid-event .fc-event-resizer {
+  width: 10px;
+  height: auto;
+  top: 0;
+  bottom: 0;
+  transform: none;
+}
+.fc .fc-daygrid-event .fc-event-resizer-start {
+  left: 0;
+  cursor: ew-resize;
+}
+.fc .fc-daygrid-event .fc-event-resizer-end {
+  right: 0;
+  cursor: ew-resize;
+}
+.fc .fc-daygrid-event .fc-event-resizer::after {
+  width: 3px;
+  height: 12px;
+}
 /* The schedule host runs an inverse zoom so FullCalendar's pointer math stays
    correct under ⌘=/⌘− (useUiScale.ts) — which as a side effect freezes
    EVERYTHING inside it, including event text, at 100% no matter the app-wide

@@ -201,3 +201,39 @@ export function defaultTimedRange(day: Date): { start_at: string; end_at: string
   end.setHours(10, 0, 0, 0);
   return { start_at: start.toISOString(), end_at: end.toISOString() };
 }
+
+/**
+ * Persist a FullCalendar drop/resize as start_at / end_at.
+ * All-day ends stay exclusive (the midnight after the last day), matching
+ * `allDayRangeFromStart` and Google/iCloud date-only events.
+ */
+export function spanFromCalendarDrop(
+  start: Date | null,
+  end: Date | null,
+  allDay: boolean,
+): { start_at: string; end_at: string } | null {
+  if (!start) return null;
+  if (allDay) {
+    const first = localMidnight(start);
+    const exclusive = end ? localMidnight(end) : addDays(first, 1);
+    if (exclusive.getTime() <= first.getTime()) return null;
+    return { start_at: first.toISOString(), end_at: exclusive.toISOString() };
+  }
+  if (!end) return null;
+  return { start_at: start.toISOString(), end_at: end.toISOString() };
+}
+
+/**
+ * The anytime row is a task landing strip *and* where all-day events live.
+ * A timed event or slot must not become all-day by slipping onto that row
+ * (Google's easy accident). An all-day event may move along it, or drop
+ * onto the timed grid and become timed — the mature-calendar gestures.
+ */
+export function allowAnytimeLanding(args: {
+  nextAllDay: boolean;
+  wasAllDay: boolean;
+  kind: string;
+}): boolean {
+  if (args.nextAllDay && !args.wasAllDay && args.kind !== "task") return false;
+  return true;
+}

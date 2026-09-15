@@ -10,7 +10,7 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO, todayISO, toFcInstant } from "../lib/dates";
+import { allDayRangeFromStart, allowAnytimeLanding, endOf, isOverdue, parseDateISO, spanFromCalendarDrop, toDateISO, todayISO, toFcInstant } from "../lib/dates";
 import { resolveCompleteTarget } from "../lib/completeTarget";
 import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
@@ -1436,10 +1436,16 @@ function CalendarPane({
           start: e.start_at,
           end: e.end_at,
           allDay: e.all_day,
-          editable: writable && !e.all_day,
-          durationEditable: writable && !e.all_day,
+          // Same gestures as Google / Fantastical / Apple Calendar: drag the
+          // chip to another day, or pull the left/right handles to grow or
+          // shrink the span. Read-only calendars stay locked. Timed → all-day
+          // conversion is refused in `eventAllow` / `onDrop` so a slip onto
+          // the anytime row cannot turn a meeting into a day chip.
+          editable: writable,
+          durationEditable: writable,
           classNames: [
             isGoogle || isIcloud ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
+            ...(e.all_day ? ["evt-allday"] : []),
             // Quantises this calendar onto the terminal skin's syntax ramp, so
             // each calendar keeps a distinct ink drawn from the active editor
             // theme instead of every block collapsing to one accent. Inert on
@@ -2020,8 +2026,9 @@ function CalendarPane({
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
-    // The all-day row holds tasks only — block events/slots from landing there.
-    if (info.event.allDay && kind !== "task") {
+    // Timed events/slots cannot become all-day by landing on the anytime row.
+    // Existing all-day events may move along it (or drop onto a time).
+    if (!allowAnytimeLanding({ nextAllDay: info.event.allDay, wasAllDay: info.oldEvent.allDay, kind })) {
       info.revert();
       return;
     }
@@ -2095,19 +2102,22 @@ function CalendarPane({
     if (kind === "google" || kind === "icloud") {
       // Snapshot ISO strings before revert() — FullCalendar may recycle the
       // Date objects on the event, and the confirm callback runs after the
-      // dialog, long after the drag.
-      const newStart = info.event.start;
-      const newEnd = info.event.end;
-      if (!newStart || !newEnd) { info.revert(); return; }
-      const startAt = newStart.toISOString();
-      const endAt = newEnd.toISOString();
+      // dialog, long after the drag. All-day spans go through exclusive-end
+      // midnight so a Thu–Fri chip does not write as a timed instant.
+      const allDay = info.event.allDay;
+      const span = spanFromCalendarDrop(info.event.start, info.event.end, allDay);
+      if (!span) { info.revert(); return; }
+      const flipped = info.oldEvent.allDay !== allDay;
+      const patch = flipped ? { ...span, all_day: allDay } : span;
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
         const ev = eventsRef.current.find((e) => e.id === refId);
-        const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
+        const before = ev
+          ? { start_at: ev.start_at, end_at: ev.end_at, ...(flipped ? { all_day: ev.all_day } : {}) }
+          : null;
         eventMutations.updateEvent({
           id: refId,
-          patch: { start_at: startAt, end_at: endAt },
+          patch,
           scope,
         });
         if (before && scope === "THIS") {
@@ -2197,18 +2207,16 @@ function CalendarPane({
     }
 
     if (kind === "google" || kind === "icloud") {
-      const newStart = info.event.start;
-      const newEnd = info.event.end;
-      if (!newStart || !newEnd) { info.revert(); return; }
-      const startAt = newStart.toISOString();
-      const endAt = newEnd.toISOString();
+      const allDay = info.event.allDay;
+      const span = spanFromCalendarDrop(info.event.start, info.event.end, allDay);
+      if (!span) { info.revert(); return; }
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
         const ev = eventsRef.current.find((e) => e.id === refId);
         const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
         eventMutations.updateEvent({
           id: refId,
-          patch: { start_at: startAt, end_at: endAt },
+          patch: span,
           scope,
         });
         if (before && scope === "THIS") {
@@ -2262,6 +2270,14 @@ function CalendarPane({
       !arg.allDay || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start),
     [canCreateEvents],
   );
+
+  // Refuse a timed event/slot sliding onto the anytime row *during* the drag
+  // (not only on drop) so the chip never pretends it can land there.
+  const eventAllow = useCallback((dropInfo: { allDay: boolean }, dragged: EventApi | null) => {
+    if (!dragged) return true;
+    const kind = (dragged.extendedProps as ExtendedProps).kind;
+    return allowAnytimeLanding({ nextAllDay: dropInfo.allDay, wasAllDay: dragged.allDay, kind });
+  }, []);
 
   // Any all-day range — the month grid, or the anytime row in week/day view:
   // plain click/drag → all-day event (⌥ task, ⌘/Ctrl slot); a multi-day drag
@@ -2956,6 +2972,7 @@ function CalendarPane({
             unselectAuto={false}
             selectMinDistance={5}
             selectAllow={selectAllow}
+            eventAllow={eventAllow}
             select={onSelect}
             dateClick={onDateClick}
             eventReceive={onReceive}
@@ -2984,6 +3001,7 @@ function CalendarPane({
       renderEvent,
       handleEventDidMount,
       selectAllow,
+      eventAllow,
       onSelect,
       onDateClick,
       onReceive,
