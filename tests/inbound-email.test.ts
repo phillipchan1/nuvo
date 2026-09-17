@@ -5,6 +5,7 @@ import {
   inboundAddress,
   notesFromMail,
   pickInboundToken,
+  receivedBody,
   receivedMeta,
   svixSign,
   titleFromSubject,
@@ -65,6 +66,13 @@ describe("body becomes notes", () => {
 
   it("strips HTML when there is no text part", () => {
     expect(htmlToText("<p>Hello <b>there</b></p><script>x()</script>")).toBe("Hello there");
+  });
+
+  it("reads a wrapped SDK payload the same as a bare REST body", () => {
+    const bare = receivedBody({ text: "Hi", html: null, from: "a@b.co" });
+    const wrapped = receivedBody({ data: { text: "Hi", html: "<p>x</p>", from: "a@b.co" } });
+    expect(bare).toEqual({ text: "Hi", html: null, from: "a@b.co" });
+    expect(wrapped).toEqual({ text: "Hi", html: "<p>x</p>", from: "a@b.co" });
   });
 });
 

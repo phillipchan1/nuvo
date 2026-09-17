@@ -10,12 +10,44 @@ import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
   notesFromMail,
   pickInboundToken,
+  receivedBody,
   receivedMeta,
   titleFromSubject,
   verifySvixSignature,
 } from "../_shared/inboundEmail.ts";
 
 const RATE_LIMIT_PER_MIN = 30;
+
+type ReceivedFetch =
+  | { ok: true; text: string | null; html: string | null; from: string }
+  | { ok: false; status: number; detail: string };
+
+/** Webhook metadata has no body. The receiving GET is the same Resend account
+ *  that owns `inbox.nuvo.day` — a sending key from another workspace 404s,
+ *  which we used to swallow and land a From-only task. */
+async function fetchReceivedMail(apiKey: string, emailId: string): Promise<ReceivedFetch> {
+  let last = { status: 0, detail: "" };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const raw = await res.text();
+    last = { status: res.status, detail: raw.slice(0, 240) };
+    if (res.status === 401 || res.status === 403) return { ok: false, ...last };
+    if (res.status === 404) continue;
+    if (!res.ok) {
+      if (res.status >= 500) continue;
+      return { ok: false, ...last };
+    }
+    try {
+      return { ok: true, ...receivedBody(JSON.parse(raw)) };
+    } catch {
+      last = { status: res.status, detail: "invalid json" };
+    }
+  }
+  return { ok: false, ...last };
+}
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -102,19 +134,23 @@ Deno.serve(async (req) => {
 
     let text: string | null = null;
     let html: string | null = null;
-    const bodyRes = await fetch(`https://api.resend.com/emails/receiving/${meta.emailId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (bodyRes.ok) {
-      const mail = (await bodyRes.json()) as { text?: string | null; html?: string | null; from?: string };
-      text = mail.text ?? null;
-      html = mail.html ?? null;
-      if (!meta.from && typeof mail.from === "string") meta.from = mail.from;
-    } else if (bodyRes.status >= 500) {
-      throw new Error(`Resend fetch ${bodyRes.status}: ${await bodyRes.text()}`);
+    const fetched = await fetchReceivedMail(apiKey, meta.emailId);
+    if (!fetched.ok) {
+      await logSync(
+        "email",
+        "inbound",
+        "error",
+        `resend receiving ${fetched.status}: ${fetched.detail}`,
+        userId,
+      );
+      // Don't insert a subject-only task — a retry (or a corrected API key)
+      // should still be able to land the body. inbound_emails may already be
+      // claimed; a later POST with no task_id continues from here.
+      return json({ error: "could not fetch mail body" }, 500);
     }
-    // 4xx: Resend no longer has the body. Still capture the subject so the
-    // mail is not lost; notes will be From + whatever metadata we have.
+    text = fetched.text;
+    html = fetched.html;
+    if (!meta.from && fetched.from) meta.from = fetched.from;
 
     const title = titleFromSubject(meta.subject, meta.from);
     const notes = notesFromMail({

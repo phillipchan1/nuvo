@@ -12,10 +12,10 @@
  * *breadth* of what gets captured is the argument, and a list of input methods
  * would say it far worse than six things a person recognizes carrying.
  *
- * Deliberately absent: forwarding an email. There is no inbound-email function
- * and no Resend anywhere on master (checked 2026-08-09), and the site does not
- * sell what doesn't ship — the same rule the INVENTORY list in Home.tsx keeps.
- * "From another app" is honest: `supabase/functions/capture` is live.
+ * Deliberately absent from this picture: forwarding an email. The inbox
+ * address ships (D-134) but the site does not sell it yet — D-094, same rule
+ * the INVENTORY list in Home.tsx keeps. "From another app" is honest:
+ * `supabase/functions/capture` is live.
  *
  * The gather is SCRUBBED, not played. A still frame of this is two columns of
  * text; the *travel* is the whole point, because "nothing stays loose" is a

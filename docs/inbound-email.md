@@ -100,9 +100,11 @@ supabase secrets set \
   --project-ref ebibzojtkzkphykznomv
 ```
 
-`RESEND_API_KEY` must already be set (the webhook fetches the body; Resend
-does not put it on the event). The SPA prints `VITE_INBOUND_MAIL_DOMAIN` if
-set, otherwise `inbox.nuvo.day`.
+`RESEND_API_KEY` must be a key from the **same** Resend workspace that owns
+`inbox.nuvo.day` (the webhook fetches the body; Resend does not put it on the
+event). A sending key from another product's account 404s the receiving GET,
+and the task used to land with From + attachments and no body. The SPA prints
+`VITE_INBOUND_MAIL_DOMAIN` if set, otherwise `inbox.nuvo.day`.
 
 Until MX answers, Resend's managed `*.resend.app` subdomain can receive; set
 both domain env vars to that host so Settings copies an address that works.

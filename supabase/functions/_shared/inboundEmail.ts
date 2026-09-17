@@ -131,6 +131,25 @@ export function notesFromMail(input: {
   return `${notes.slice(0, NOTES_MAX).trimEnd()}\n\n…`;
 }
 
+/** Resend's receiving GET is the email object, or `{ data: email }` like the SDK. */
+export function receivedBody(json: unknown): {
+  text: string | null;
+  html: string | null;
+  from: string;
+} {
+  if (!json || typeof json !== "object") return { text: null, html: null, from: "" };
+  const rec = json as Record<string, unknown>;
+  const mail = (
+    rec.data && typeof rec.data === "object" && !Array.isArray(rec.data) ? rec.data : rec
+  ) as Record<string, unknown>;
+  const asBody = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  return {
+    text: asBody(mail.text),
+    html: asBody(mail.html),
+    from: typeof mail.from === "string" ? mail.from : "",
+  };
+}
+
 export interface ReceivedMeta {
   emailId: string;
   from: string;
