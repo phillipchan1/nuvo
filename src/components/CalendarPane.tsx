@@ -10,7 +10,7 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { allDayRangeFromStart, allowAnytimeLanding, endOf, isOverdue, parseDateISO, spanFromCalendarDrop, toDateISO, todayISO, toFcInstant } from "../lib/dates";
+import { allDayDates, allDayRangeFromStart, allowAnytimeLanding, endOf, isOverdue, parseDateISO, spanFromCalendarDrop, toDateISO, todayISO, toFcInstant } from "../lib/dates";
 import { resolveCompleteTarget } from "../lib/completeTarget";
 import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
@@ -1433,8 +1433,8 @@ function CalendarPane({
         return {
           id: `evt:${e.id}`,
           title: e.title,
-          start: e.start_at,
-          end: e.end_at,
+          // An all-day row is a pair of dates, not two instants (see allDayDates).
+          ...(e.all_day ? allDayDates(e.start_at, e.end_at) : { start: e.start_at, end: e.end_at }),
           allDay: e.all_day,
           // Same gestures as Google / Fantastical / Apple Calendar: drag the
           // chip to another day, or pull the left/right handles to grow or

@@ -1,6 +1,7 @@
 import { addDays, format, startOfWeek } from "date-fns";
 import { planningWeekStart } from "../../supabase/functions/_shared/planningRules.ts";
 import { isOverdue as kernelIsOverdue } from "../../supabase/functions/_shared/taskQuery.ts";
+import { civilDateOf } from "../../supabase/functions/_shared/reminderAnchors.ts";
 
 export const APP_TZ = "America/Los_Angeles";
 
@@ -59,6 +60,22 @@ export function fmtHours(minutes: number): string {
 export function parseDateISO(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
+}
+
+/**
+ * An all-day event's days, as civil dates (`end` exclusive).
+ *
+ * Providers store the same all-day event at different instants — Google at
+ * Pacific midnight (`08:00Z`), ICS and M365 at UTC midnight — so reading the
+ * row as an instant put a UTC-midnight event on the previous day west of
+ * Greenwich (and on two days in the phone's day plan). The stored date is the
+ * honest read (`civilDateOf`, the kernel's rule). A span that doesn't end after
+ * it starts still covers its one day.
+ */
+export function allDayDates(startAt: string, endAt: string): { start: string; end: string } {
+  const start = civilDateOf(startAt) ?? toDateISO(new Date(startAt));
+  const end = civilDateOf(endAt) ?? toDateISO(new Date(endAt));
+  return { start, end: end > start ? end : toDateISO(addDays(parseDateISO(start), 1)) };
 }
 
 /** Snap a date's minutes to the nearest `step` (default 15). */

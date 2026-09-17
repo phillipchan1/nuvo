@@ -11,7 +11,7 @@ import {
   dayReadout as sharedDayReadout,
   type DayLoad,
 } from "../../../supabase/functions/_shared/dayShape.ts";
-import { parseDateISO } from "../../lib/dates";
+import { allDayDates, parseDateISO } from "../../lib/dates";
 import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
 
 export type { DayLoad };
@@ -179,8 +179,10 @@ function indexOf(ctx: DayCtx): DayIndex {
   for (const e of ctx.visibleEvents) {
     if (e.all_day) {
       // All-day events span days, so they stay a list — but with the dates
-      // parsed once instead of twice per event per day.
-      allDay.push({ e, start: new Date(e.start_at).getTime(), end: new Date(e.end_at).getTime() });
+      // parsed once instead of twice per event per day. Local midnights of the
+      // stored dates: read as instants, a UTC-midnight row covered two days.
+      const days = allDayDates(e.start_at, e.end_at);
+      allDay.push({ e, start: parseDateISO(days.start).getTime(), end: parseDateISO(days.end).getTime() });
     } else {
       const k = dayKey(new Date(e.start_at));
       const arr = eventsByDay.get(k);
