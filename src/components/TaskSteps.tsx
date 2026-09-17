@@ -17,7 +17,13 @@
 //   ⌘↵ on a row            tick / untick
 //   ⌥↑ / ⌥↓                move the step
 //   ⌫ on an empty row      remove that step and focus the one above
-//   Esc                    abandon the edit
+//   Esc                    abandon the edit — and rest on the list, not the page
+//
+// Resting (the list itself focused, a cursor on one step) is the same list in
+// the letters a field can't spare: j k / ↑ ↓ walk, ↵ edits, e ticks, ⌫
+// removes, ⌥↑↓ moves, a adds. A second Esc falls through to the surface
+// around it. Escaping a field used to drop focus on the page, where no key
+// reached the checklist again without the mouse.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "../lib/types";
@@ -38,10 +44,14 @@ export default function TaskSteps({
   mutations,
   /** Phone: bigger rows and a 44px composer. */
   touch = false,
+  keyboardEntry = false,
 }: {
   task: Task;
   mutations: Mutations;
   touch?: boolean;
+  /** ↓ / j with nothing focused rests on the steps — for the one surface on
+   *  screen that owns the keyboard (the desktop task popover). */
+  keyboardEntry?: boolean;
 }) {
   const { data } = useTaskSteps(task.id);
   // A move patches rows in place; nothing re-sorts the cache but us.
@@ -57,6 +67,27 @@ export default function TaskSteps({
 
   const rowH = touch ? "tap-h" : "min-h-[26px]";
   const composerRef = useRef<TaskComposerHandle>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [cursor, setCursor] = useState(0);
+  const [resting, setResting] = useState(false);
+  const rest = (i: number) => {
+    setCursor(Math.max(0, Math.min(i, steps.length - 1)));
+    listRef.current?.focus();
+  };
+  const restRef = useRef(rest);
+  restRef.current = rest;
+  useEffect(() => {
+    if (!keyboardEntry) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.activeElement !== document.body) return;
+      if (e.key !== "ArrowDown" && e.key !== "j") return;
+      e.preventDefault();
+      restRef.current(0);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keyboardEntry]);
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const focusAt = (i: number) => {
     const s = steps[i];
@@ -78,8 +109,66 @@ export default function TaskSteps({
   };
   const { done, total } = stepProgress(steps);
 
+  const onRestKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    const step = steps[cursor];
+    const handled = () => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    if (e.metaKey || e.ctrlKey) return;
+    if (e.altKey) {
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && step) {
+        const by = e.key === "ArrowUp" ? -1 : 1;
+        move(cursor, by);
+        setCursor(Math.max(0, Math.min(cursor + by, steps.length - 1)));
+        handled();
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+      case "j":
+        if (cursor >= steps.length - 1) composerRef.current?.focus();
+        else setCursor(cursor + 1);
+        return handled();
+      case "ArrowUp":
+      case "k":
+        setCursor(Math.max(0, cursor - 1));
+        return handled();
+      case "Enter":
+        if (step) focusAt(cursor);
+        return handled();
+      case "e":
+      case " ":
+        if (step) mutations.toggleStep(step);
+        return handled();
+      case "Backspace":
+      case "Delete":
+        if (step) {
+          void mutations.removeStep(step);
+          if (steps.length === 1) composerRef.current?.focus();
+          else setCursor(Math.min(cursor, steps.length - 2));
+        }
+        return handled();
+      case "a":
+        composerRef.current?.focus();
+        return handled();
+    }
+  };
+
   return (
-    <div className="flex flex-col">
+    <div
+      ref={listRef}
+      tabIndex={-1}
+      aria-label="Steps"
+      onKeyDown={onRestKey}
+      onFocus={(e) => setResting(e.target === e.currentTarget)}
+      onBlur={(e) => {
+        if (e.target === e.currentTarget) setResting(false);
+      }}
+      className="flex flex-col outline-none"
+    >
       {total > 0 && (
         <div className="mb-1 flex items-center gap-2">
           <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-[var(--line)]">
@@ -99,6 +188,8 @@ export default function TaskSteps({
           key={s.id}
           step={s}
           rowH={rowH}
+          current={resting && i === cursor}
+          onRest={() => rest(i)}
           inputRef={(el) => {
             if (el) inputs.current.set(s.id, el);
             else inputs.current.delete(s.id);
@@ -122,6 +213,7 @@ export default function TaskSteps({
         placeholder={total ? "Add a step" : "Break this into steps"}
         aria-label="Add a step"
         onPlainSubmit={add}
+        onLeave={steps.length ? () => rest(steps.length - 1) : undefined}
         className={touch ? "" : "-my-1"}
       />
     </div>
@@ -131,6 +223,8 @@ export default function TaskSteps({
 function StepRow({
   step,
   rowH,
+  current,
+  onRest,
   inputRef,
   onFocusStep,
   onMove,
@@ -140,6 +234,10 @@ function StepRow({
 }: {
   step: Task;
   rowH: string;
+  /** The resting cursor is on this step. */
+  current: boolean;
+  /** Leave the field for the list (Escape). */
+  onRest: () => void;
   inputRef: (el: HTMLInputElement | null) => void;
   /** Focus the step `by` rows away; past the last is the add box. */
   onFocusStep: (by: -1 | 1) => void;
@@ -152,9 +250,15 @@ function StepRow({
   // A rename from another surface (or the server) lands here too.
   useEffect(() => setTitle(step.title), [step.title]);
   const done = step.status === "done";
+  // Escape abandons the edit; the blur it causes must not commit it (that
+  // render's `title` is still the edited text — emptied, it would delete).
+  const abandoning = useRef(false);
 
   return (
-    <div className={`group flex items-center gap-2 border-b border-line/60 last:border-b-0 ${rowH}`}>
+    <div
+      aria-current={current ? "true" : undefined}
+      className={`group flex items-center gap-2 border-b border-line/60 last:border-b-0 ${rowH} ${current ? "glass-lift-row" : ""}`}
+    >
       <button
         type="button"
         role="checkbox"
@@ -177,6 +281,10 @@ function StepRow({
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={() => {
+          if (abandoning.current) {
+            abandoning.current = false;
+            return;
+          }
           const next = title.trim();
           if (!next) {
             // An emptied step is a removed step — the same gesture every
@@ -209,7 +317,8 @@ function StepRow({
             // The field owns Escape first (D-051): abandon the edit, keep the task open.
             e.stopPropagation();
             setTitle(step.title);
-            (e.currentTarget as HTMLInputElement).blur();
+            abandoning.current = true;
+            onRest();
           }
           if (e.key === "Backspace" && title === "") {
             // Stepping away blurs the emptied row, and blur removes it.

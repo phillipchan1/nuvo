@@ -901,7 +901,7 @@ export function TaskPopover({
               {!twoCol && (
                 <>
                   <PopField label="Steps">
-                    <TaskSteps task={task} mutations={mutations} />
+                    <TaskSteps task={task} mutations={mutations} keyboardEntry />
                   </PopField>
 
                   <PopField label="Notes">
@@ -927,7 +927,7 @@ export function TaskPopover({
               {/* Steps above Notes: the checklist IS the work, notes are
                   commentary on it. A step is not a task — see TaskSteps. */}
               <PopSection label="Steps">
-                <TaskSteps task={task} mutations={mutations} />
+                <TaskSteps task={task} mutations={mutations} keyboardEntry />
               </PopSection>
 
               <PopSection label="Notes" divider className="min-h-0 flex-1">

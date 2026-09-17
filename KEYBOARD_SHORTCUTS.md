@@ -39,7 +39,9 @@ In any add box: ↵ add and stay · ⌘↵ add and leave · Esc clear, then leav
 
 A task's steps (the checklist — every row is a field, so the same grammar in the
 keys a field can spare): ↑↓ walk the steps and the add box · ↵ next step ·
-⌘↵ tick · ⌥↑↓ move · ⌫ on an empty step removes it · Esc abandon the edit.
+⌘↵ tick · ⌥↑↓ move · ⌫ on an empty step removes it · Esc abandon the edit and
+rest on the list, where j k ↑↓ walk · ↵ edit · e tick · ⌫ remove · ⌥↑↓ move · a add;
+a second Esc closes the popover. With nothing focused, ↓ / j enters the steps.
 
 ## Modal Composers (New Project / New Initiative)
 
