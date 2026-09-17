@@ -20,13 +20,21 @@ function RaiseHost() {
   return <input ref={ref} aria-label="field" />;
 }
 
-function DialogHost({ withField = true }: { withField?: boolean }) {
+function DialogHost({
+  withField = true,
+  raiseKeyboard = false,
+}: {
+  withField?: boolean;
+  raiseKeyboard?: boolean;
+}) {
   const panelRef = useRef<HTMLDivElement>(null);
   useDialogFocus(panelRef);
   return (
     <div ref={panelRef} role="dialog" tabIndex={-1}>
       <button type="button">Close</button>
-      {withField && <input aria-label="field" />}
+      {withField && (
+        <input aria-label="field" {...(raiseKeyboard ? { "data-raise-keyboard": "" } : {})} />
+      )}
     </div>
   );
 }
@@ -53,6 +61,11 @@ describe("useRaiseKeyboard", () => {
   it("focuses immediately so a parent dialog cannot steal to ✕ first", () => {
     render(<RaiseHost />);
     expect(screen.getByLabelText("field")).toHaveFocus();
+  });
+
+  it("marks the field so useDialogFocus can find it if the caret is lost", () => {
+    render(<RaiseHost />);
+    expect(screen.getByLabelText("field")).toHaveAttribute("data-raise-keyboard");
   });
 
   it("retries at 120ms after the sheet has started to rise", () => {
@@ -114,14 +127,22 @@ describe("useRaiseKeyboard", () => {
 });
 
 describe("useDialogFocus", () => {
-  it("prefers a text field over the close button on open", () => {
-    render(<DialogHost />);
+  it("lands on a composer field marked to raise the keyboard", () => {
+    render(<DialogHost raiseKeyboard />);
     expect(screen.getByLabelText("field")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
   });
 
-  it("still focuses the first control when there is no field", () => {
+  it("does not raise the keyboard on an inspect title", () => {
+    render(<DialogHost />);
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    expect(screen.getByLabelText("field")).not.toHaveFocus();
+  });
+
+  it("focuses the panel when there is no composer field", () => {
     render(<DialogHost withField={false} />);
-    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
   });
 
   it("MobileCapture lands the caret in the field, not on ✕", () => {

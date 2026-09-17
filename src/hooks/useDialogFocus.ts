@@ -3,12 +3,13 @@ import { useEffect, type RefObject } from "react";
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// A composer, not the ✕. Sheet's title row puts Close first in DOM, so a
-// plain FOCUSABLE query lands there and iOS then refuses a later input.focus()
-// that has no user gesture (lock-screen widget → capture). Tab order is
-// unchanged — this is only the *initial* move.
-const INITIAL_FIELD =
-  'input:not([disabled]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:not([disabled])';
+// A composer, not the ✕ and not an inspect title. Sheet's title row puts
+// Close first in DOM; focusing ✕ eats the gesture and iOS then refuses a
+// later input.focus() (lock-screen widget → capture). Inspect sheets also
+// have a title field, and landing there raises the keyboard over the
+// thing you opened to *read*. Only a field marked by useRaiseKeyboard
+// is the initial landing. Tab order is unchanged.
+const INITIAL_FIELD = "[data-raise-keyboard]";
 
 /**
  * Dialog focus management for Sheet and Modal: move focus into the panel on
@@ -24,8 +25,7 @@ export function useDialogFocus(panelRef: RefObject<HTMLElement | null>) {
 
     if (!panel.contains(document.activeElement)) {
       const field = panel.querySelector<HTMLElement>(INITIAL_FIELD);
-      const first = field ?? panel.querySelector<HTMLElement>(FOCUSABLE);
-      (first ?? panel).focus();
+      (field ?? panel).focus();
     }
 
     const onKey = (e: KeyboardEvent) => {
