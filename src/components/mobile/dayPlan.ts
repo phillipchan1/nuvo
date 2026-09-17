@@ -92,6 +92,7 @@ export interface TimedItem {
   done?: boolean;
   // For tapping:
   eventId?: string;
+  providerEventId?: string;
   self_rsvp?: AttendeeStatus | null;
   accountId?: string;
   calendarId?: string;
@@ -313,6 +314,7 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
       location: e.location,
       done: false,
       eventId: e.id,
+      providerEventId: e.provider_event_id,
       self_rsvp: e.self_rsvp ?? null,
       accountId: e.account_id,
       calendarId: e.calendar_id,
@@ -437,6 +439,7 @@ export function tapFor(b: TimedItem): CalendarTapLike {
     ? {
         kind: "event",
         id: b.eventId!,
+        providerEventId: b.providerEventId,
         title: b.title || "Untitled",
         start: b.start,
         end: b.end,
@@ -465,6 +468,7 @@ type CalendarTapLike =
   | {
       kind: "event";
       id: string;
+      providerEventId?: string;
       title: string;
       start: Date;
       end: Date;

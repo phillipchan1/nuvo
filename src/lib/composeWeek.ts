@@ -19,6 +19,7 @@ import { isCompleteStatus } from "../../supabase/functions/_shared/planningRules
 import { seedFromWeek, satelliteAngles, type EmblemSpec } from "./weekEmblem";
 import { buildWeekEvidence, type WeekEvidence } from "./weekEvidence";
 import { composeWeekFinds, type WeekFind } from "./weekFinds";
+import type { EventDomainRoutingMap } from "./eventActuals";
 import type { ActivityUnit, BigRock, ExternalEvent, Slot, Task } from "./types";
 
 /** One row on the week: the project committed to it, joined to its verdict.
@@ -122,9 +123,9 @@ export interface ComposeWeekInput {
   ambient?: number;
   /** a past, closed week — shifts the prose to past tense (the Review register). */
   sealed?: boolean;
-  /** Calendar → domain map + AI routing cache — for event receipts. */
+  /** Calendar defaults + inferred/manual event routing — for event receipts. */
   calendarDomainMap?: Record<string, string>;
-  eventRouting?: Record<string, string>;
+  eventRouting?: EventDomainRoutingMap;
   /** Merged PRs / activity actuals in the week window. */
   activityUnits?: ActivityUnit[];
   /** How many whole weeks before the current week (0 = current). */

@@ -24,6 +24,7 @@ import { DescriptionHtml } from "../../lib/descriptionHtml";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl, RecurrenceScopeDialog, useRecurringScope } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
+import EventDomainControl from "../domain/EventDomainControl";
 import { eventKey } from "../../lib/now";
 // The sheet had its own copy of the clock format. The calendar it opens over
 // spells a time one way (`span` / `at` in dayPlan), so the sheet says it that
@@ -92,6 +93,14 @@ export default function MobileEventSheet({
     }
     return undefined;
   }, [qc, tap]);
+  const attributionEvent =
+    tap.kind === "event"
+      ? (cachedEvent ?? {
+          account_id: tap.accountId ?? "",
+          provider_event_id: tap.providerEventId ?? "",
+          calendar_id: tap.calendarId ?? "",
+        })
+      : null;
   const recurring =
     tap.kind === "event" &&
     isExternalEventRecurring(
@@ -400,6 +409,12 @@ export default function MobileEventSheet({
             <div className="mb-4 rounded-lg border border-line bg-surface-2 px-3 py-2 text-caption text-muted">
               {CALENDAR_OFFLINE_NOTE}
             </div>
+          )}
+
+          {attributionEvent && !tap.allDay && cachedEvent?.busy &&
+            cachedEvent.self_rsvp !== "declined" &&
+            cachedEvent.self_rsvp !== "needsAction" && (
+            <EventDomainControl event={attributionEvent} mobile />
           )}
 
           {/* Remind. Shown whether or not the event is writable — a reminder is

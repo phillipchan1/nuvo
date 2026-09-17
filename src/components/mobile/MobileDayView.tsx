@@ -201,6 +201,7 @@ export default function MobileDayView({
                       onTapEvent?.({
                         kind: "event",
                         id: e.id,
+                        providerEventId: e.provider_event_id,
                         title: e.title || "Busy",
                         start: new Date(e.start_at),
                         end: new Date(e.end_at),

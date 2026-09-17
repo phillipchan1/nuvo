@@ -5,7 +5,14 @@
 
 import { addDays, startOfWeek } from "date-fns";
 import { APP_TZ, parseDateISO, toDateISO } from "./dates";
-import { eventCountsAsActual, eventDomainId, eventKey, eventMins, type ActualsFilter } from "./eventActuals";
+import {
+  eventCountsAsActual,
+  eventDomainId,
+  eventKey,
+  eventMins,
+  type ActualsFilter,
+  type EventDomainRoutingMap,
+} from "./eventActuals";
 import {
   domainById,
   initiativeById,
@@ -131,7 +138,7 @@ export interface BuildWeekEvidenceInput {
   vertical: VerticalData;
   events: ExternalEvent[];
   calendarDomainMap?: Record<string, string>;
-  eventRouting?: Record<string, string>;
+  eventRouting?: EventDomainRoutingMap;
   /** Hidden calendars / events stay out of the receipts, same as the busy math. */
   actualsFilter?: ActualsFilter;
   activityUnits?: ActivityUnit[];

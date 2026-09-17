@@ -23,6 +23,15 @@ export function calendarKey(e: Pick<ExternalEvent, "account_id" | "calendar_id">
   return `${e.account_id}:${e.calendar_id}`;
 }
 
+export interface EventDomainRoute {
+  /** AI router verdict for an event on an otherwise mixed calendar. */
+  inferredDomainId?: string;
+  /** A person's explicit correction for this one event. */
+  manualDomainId?: string;
+}
+
+export type EventDomainRoutingMap = Record<string, EventDomainRoute>;
+
 
 
 /** Stable key shared by every instance of a recurring series, or null if the
@@ -200,14 +209,28 @@ export function eventCountsAsActual(
 }
 
 /**
- * Where this event's time goes. The calendar→domain map is the deterministic
- * default (SCE calendar → SCE); for events on unmapped calendars we fall back to
- * the AI router's cached verdict. Null = unattributed (skip the ledger).
+ * Where this event's time goes. An explicit correction is strongest, then the
+ * calendar's deterministic default (SCE calendar → SCE), then the AI router's
+ * cached verdict for a mixed calendar. Keeping the manual value in its own
+ * column prevents a later AI cache write from undoing a person's correction.
  */
+export function eventDomainAttribution(
+  e: Pick<ExternalEvent, "account_id" | "provider_event_id" | "calendar_id">,
+  calendarDomainMap: Record<string, string>,
+  routingMap?: EventDomainRoutingMap,
+): { domainId: string | null; source: "manual" | "calendar" | "inferred" | null } {
+  const route = routingMap?.[eventKey(e)];
+  if (route?.manualDomainId) return { domainId: route.manualDomainId, source: "manual" };
+  const calendarDomainId = calendarDomainMap[calendarKey(e)];
+  if (calendarDomainId) return { domainId: calendarDomainId, source: "calendar" };
+  if (route?.inferredDomainId) return { domainId: route.inferredDomainId, source: "inferred" };
+  return { domainId: null, source: null };
+}
+
 export function eventDomainId(
   e: Pick<ExternalEvent, "account_id" | "provider_event_id" | "calendar_id">,
   calendarDomainMap: Record<string, string>,
-  routingMap?: Record<string, string>,
+  routingMap?: EventDomainRoutingMap,
 ): string | null {
-  return calendarDomainMap[calendarKey(e)] ?? routingMap?.[eventKey(e)] ?? null;
+  return eventDomainAttribution(e, calendarDomainMap, routingMap).domainId;
 }

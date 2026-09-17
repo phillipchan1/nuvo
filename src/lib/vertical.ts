@@ -20,7 +20,13 @@ import {
 } from "./types";
 import { parseDateISO, todayISO } from "./dates";
 import { normalizeDomainSymbol } from "./domainSymbolKeys";
-import { eventCountsAsActual, eventDomainId, eventMins, type ActualsFilter } from "./eventActuals";
+import {
+  eventCountsAsActual,
+  eventDomainId,
+  eventMins,
+  type ActualsFilter,
+  type EventDomainRoutingMap,
+} from "./eventActuals";
 
 export type Momentum = "up" | "flat" | "down";
 
@@ -379,7 +385,7 @@ export function buildVertical(
   now: Date = new Date(),
   events: ExternalEvent[] = [],
   calendarDomainMap: Record<string, string> = {},
-  eventRouting: Record<string, string> = {},
+  eventRouting: EventDomainRoutingMap = {},
   lastActivityByProject: Record<string, string> = {},
   actualsFilter: ActualsFilter = {},
 ): VerticalData {
