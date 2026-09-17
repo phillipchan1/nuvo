@@ -11,30 +11,31 @@
 | Cmd+K | Open command bar (task capture) | Planner.tsx | Global task entry |
 | Cmd+, | Open settings | Planner.tsx | Configuration |
 
-## Schedule View — Left Rail
+## Task lists — the rail, a record, a slot, the groom wall (D-146)
 
-### Navigation
-| Shortcut | Action | Notes |
-|----------|--------|-------|
-| 1 | Switch to Inbox tab | |
-| 2 | Switch to Week tab | |
-| 3 | Switch to Today tab | |
-| j | Move down (or Arrow Down) | Vim-style |
-| k | Move up (or Arrow Up) | Vim-style |
-| Enter | Open selected task | |
+One grammar, defined in `src/components/tasks/useTaskListKeys.ts`; the Shortcuts panel
+(`?`) lists the same keys.
 
-### Task Actions (on selected task or multi-selection)
-| Shortcut | Action | Notes |
-|----------|--------|-------|
-| E | Plan for today | Immediate |
-| T | Plan for tomorrow | |
-| W | Plan for next week | Future planning |
-| S | Schedule task (pick time) | Opens date/time picker |
-| D | Mark done / Reopen | Toggle |
-| X | Move to trash | Destructive |
-| # | Open label picker | |
-| C | Focus capture input | Focuses the quick-capture field |
-| Escape | Clear selection / Close context menu | |
+| Shortcut | Action |
+|----------|--------|
+| j / k (↓ / ↑) | Move the cursor |
+| Enter | Open the task |
+| e | Complete / reopen |
+| t | When… (type a day or a time) |
+| v | Move to… (project, initiative, domain, out of a slot) |
+| 1–4 | Priority high … none (1–3 switch rail tabs when no row is selected) |
+| x | Select — then any key acts on all |
+| ⌫ | Trash (with undo) |
+| ⌘E | Rename in place |
+| ⌥↑ / ⌥↓ | Reorder |
+| a / ⇧A | Add below / above the cursor |
+| Esc | Clear the selection, then the cursor |
+
+The rail adds: n (next week) · i (back to inbox) · r (date and time) · # (label) ·
+b (remind) · u (restore, Trash tab) · / (filter) · c (the capture box, same as a).
+
+In any add box: ↵ add and stay · ⌘↵ add and leave · Esc clear, then leave ·
+↑↓ ↵ ⇥ pick a # / @ suggestion.
 
 ## Modal Composers (New Project / New Initiative)
 

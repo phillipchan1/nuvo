@@ -182,6 +182,14 @@ it needs to work on a phone.
   (D-111). Corollary: an act may live on many surfaces, a **move** lives on one — you
   complete anywhere, you re-time a block on the calendar, and other surfaces link to it
   (`revealOnCalendar`) instead of growing a second handle.
+- **A task list is ONE module** (D-146) — `src/components/tasks/`. Every list that shows or
+  takes tasks (the rail, a record, a slot, the groom wall, the phone's detail screens) is
+  `TaskRow` + `useTaskListKeys` + `TaskComposer`, most of them through `TaskListView`. A typed
+  line means one thing everywhere (`lib/captureDraft` — typed tokens > the host's context >
+  defaults) and is created one way (`useTaskCapture`, also behind ⌘K and the phone's capture
+  sheet). **Never build another add box, another row, or another list keymap**; a surface
+  says where it is (`context`) and how a task opens (`onOpen`), nothing more. Reorder writes
+  only the moved rows (`lib/taskOrder`); hand-ordered lists sort with `byManualOrder`.
 - **Capture is ONE door, and it makes both kinds** — `mobile/MobileCapture.tsx` (D-125).
   One free-text line through `parseCapture`, plus a **Task / Event** switch; the sentence
   survives the switch and seeds the event's time. The Calendar's header ＋ is gone: two ＋s

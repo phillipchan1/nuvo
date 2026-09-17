@@ -215,6 +215,9 @@ behind it. **Rejected: `⌥↑/⌥↓` reorder** — `tasks` has no sort column,
 write; adding one is a migration, not a keybinding. *Status: standing — driven in the dev
 app against real records at 1500px and 375px.*
 
+*Correction · 2026-09-17 (D-146): the premise was wrong — `tasks.sort_order` has existed since
+the core migration. ⌥↑/⌥↓ reorder now works on every task list, the record included.*
+
 **D-051 · 2026-07-29 · A surface that owns the screen suppresses the hotkeys behind it.**
 Two global bindings steered the floor *behind* an open record: `⌘↑/⌘↓` travelled a rung you
 couldn't see (`AppShell.tsx`), and `↵` opened the *selected task* from the left rail and
@@ -5212,3 +5215,66 @@ rename, which is the cost of not covering the sheet. D-115's widget path
 is unchanged. No pool, no new name.
 
 *Status: standing — raise-keyboard tests hold the split.*
+
+---
+
+**D-146 · 2026-09-17 · A task list is one module: one row, one set of keys, one add box, one
+save path.**
+
+Origin ⓟ: *"there's an inconsistency in the experience across all of them … the keyboard
+navigation is not great. Drag and drop, and the performance, how fast it responds, are not
+very fast."* Todoist was the named reference; its task popover was the one part to keep as
+Nuvo's own. An audit found ten add boxes, seven row designs and two write paths, and the
+differences were not taste — they were behaviour:
+
+- **Typed words were thrown away.** The record, the create sheet and the phone's detail
+  screens parsed a line and kept only its title and length; the date, `#label`, `!priority`
+  and `//note` were cut from the title and dropped. The slot popover and the checklist parsed
+  nothing (`30m` stayed in the title). ⌘K showed a repeat chip and created a plain task.
+  `@home` only resolved in ⌘K. That is **P5** broken quietly and **D6** answered dishonestly:
+  the box looked like it understood you.
+- **One key meant different things.** Complete was `e` (Today), `f` (Inbox) or Space (record,
+  slot). `⌫` trashed in one list and un-slotted in another. Only the rail had j/k, and it
+  never drew its cursor. Escape did five different things.
+- **Every tick reloaded every list.** A completion refetched nine task queries three times
+  over (27 requests, the whole account among them) and rebuilt the vertical after each. A
+  reorder wrote every row one at a time and snapped back while they landed. A write queued
+  behind another waited for the next focus before it left the device at all.
+
+→ **One module, four parts, mounted everywhere** (`src/components/tasks/`):
+`TaskComposer` (the box — highlights what it understood, chips with keep-as-text, `#`/`@`
+suggestions, ↵ add-and-stay, ⌘↵ add-and-leave, esc clear-then-leave, multi-line paste),
+`useTaskListKeys` (the grammar), `TaskListView` (record · slot · groom wall · the phone's
+detail screens: the real `TaskRow`, the shared drag, the shared menus) and the rail, which
+keeps its sections but uses the same row, keys and box. Behind them, one meaning
+(`lib/captureDraft` — typed tokens > the host's context > defaults) and one create path
+(`useTaskCapture`), shared with ⌘K and the phone's capture sheet.
+
+→ **The grammar:** j/k · ↵ open · e done · t when (type a day or a time) · v move to ·
+1–4 priority · x select · ⌫ trash · ⌘E rename · ⌥↑↓ reorder · a/⇧A add below/above ·
+esc. Bare s/w/d/m stay the Schedule's and ⌘↑/⌘↓ stay the ladder's (D-051), which is why
+reorder is on ⌥. The rail keeps n · i · r · # · b · u · / · c. **`e` now completes in the
+Inbox too**; planning an inbox row for today is `t`. Every key the list spends is marked, so
+the app-wide P/I and 1–3 stand aside — `i` on a selected row used to send it to the inbox
+*and* open the new-initiative sheet.
+
+→ **Writes settle from their own echo.** A table whose Realtime channel is joined skips the
+post-write refetch (the echo carries the server's row); the echo of our own write is a no-op
+when it says what the cache says; a reorder writes only the rows that moved (fractional
+`sort_order`, one undo); a drain re-runs for ops queued while it was sending. Channel down →
+the old refetch, once per list. Measured in the dev app: one tick went from 27 requests to 0.
+
+→ **What deliberately didn't come across from Todoist:** the task view (Nuvo's popover
+stays — on a record it opens *above* the record as a sub-overlay, and Escape closes popover →
+cursor → record); nested sub-tasks (a task keeps its flat checklist of steps — nesting is a
+place work hides, **P10**); the staged multi-line groom composer (lines land on ↵ now, so the
+readiness meter moves as you type).
+
+Ledger: **D6** — the words you type are kept, on every surface. Strains **P15** only in
+that the sync layer learned about Realtime health; no new state library, no router. No new
+pool, no new user-facing noun. Phone: the same row (swipe right done, left tomorrow), hold the
+grip to reorder, tap for the task sheet, the same box in the capture sheet and on every
+detail screen. Corrects **D-050**'s reorder rejection.
+
+*Status: standing — driven in the dev app (writes intercepted) at desktop and 375px;
+`tests/task-list-keys`, `capture-parse`, `capture-draft`, `task-order`, `sync/live-settle`.*
