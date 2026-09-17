@@ -634,7 +634,7 @@ export function TaskPopover({
               {task.roll_count > 0 && (
                 <>
                   <PopMetaDot />
-                  <span>rolled {task.roll_count}×</span>
+                  <span>carried {task.roll_count}d</span>
                 </>
               )}
             </>

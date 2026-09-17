@@ -50,3 +50,10 @@ describe("rollover lands in anytime", () => {
     expect(fn).toMatch(/recurrence_overridden = t\.recurrence_overridden or t\.recurrence_id is not null/);
   });
 });
+
+// D-147: the ↻ badge reads as "how long", so the count is days, not runs.
+describe("roll_count counts days carried", () => {
+  it("adds the gap between the missed date and today", () => {
+    expect(latestRolloverSql()).toMatch(/roll_count = t\.roll_count \+ \(p_today - d\.eff_date\)/);
+  });
+});

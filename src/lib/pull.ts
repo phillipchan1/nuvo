@@ -60,7 +60,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   const slipped = d.tasks
     .filter((t) => t.rollCount > 0 && t.status === "ready" && !t.inbox)
     .sort((a, b) => b.rollCount - a.rollCount);
-  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`, "carried");
+  for (const t of slipped) add(t, `carried ${t.rollCount}d — give it a new time`, "carried");
 
   // 2 · THE WEEK'S PROJECTS — the pushes you named on Set the week (derived from
   //     On Deck). Their open work IS the point of the week, so it comes before

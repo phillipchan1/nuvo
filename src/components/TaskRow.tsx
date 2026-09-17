@@ -4,7 +4,7 @@ import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
-import { RecurMark } from "./ui";
+import { carriedTitle, RecurMark } from "./ui";
 import { pressable } from "../lib/a11y";
 
 /** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
@@ -468,8 +468,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   // the calendar.
   const durText = task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
   const dateText = dateLabel && !task.start_time && !whenShown ? dateLabel : null;
-  const rollText = task.roll_count > 0 ? `↻${task.roll_count}` : null;
-  const rollTitle = task.roll_count > 0 ? `Rolled over ${task.roll_count}×` : "Repeats";
+  // `roll_count` is days carried (D-147), so the mark says how long, not how often.
+  const rollText = task.roll_count > 0 ? `↻${task.roll_count}d` : null;
+  const rollTitle = task.roll_count > 0 ? carriedTitle(task.roll_count) : "Repeats";
   const pastDeadline = Boolean(task.deadline && !done && task.deadline < todayISO());
 
   // AT MOST ONE `--signal` item per row, and it says how far gone the work is

@@ -59,7 +59,8 @@ template; occurrences are stamped as ordinary `tasks`/`slots` rows to a 35-day
 need zero special-casing. *Status: standing.*
 
 **D-009 · A recurring occurrence never rolls over.** A missed one is just missed — tomorrow
-already has its own. → No infinite pile-up of yesterday's habit. *Status: standing.*
+already has its own. → No infinite pile-up of yesterday's habit. *Status: **superseded by D-145** — true of a daily series only;
+a missed weekly one had nothing standing in for it.*
 
 **D-010 · Recurring series are not mirrored to the Google "Nuvo" calendar.** ~25 concurrent
 mirror writes raced on OAuth token refresh and 500'd. → Series live in Nuvo only.
@@ -5278,3 +5279,46 @@ detail screen. Corrects **D-050**'s reorder rejection.
 
 *Status: standing — driven in the dev app (writes intercepted) at desktop and 375px;
 `tests/task-list-keys`, `capture-parse`, `capture-draft`, `task-order`, `sync/live-settle`.*
+
+---
+
+**D-145 · 2026-09-17 · A missed recurring occurrence carries until the next one is due.**
+
+D-009 kept every recurring occurrence out of rollover because "tomorrow already has its
+own." That holds for a daily habit and nothing else. A weekly *Write* missed on Tuesday had
+no stand-in until the following Monday, so it sat unticked on Tuesday's grid and never
+reached Today — the "incomplete work carries until it's done" promise, broken silently for
+every non-daily series.
+
+→ Rollover carries an open occurrence to today **unless the same series already has a later
+occurrence (by `recurrence_date`) that has come due.** A daily series still never piles up;
+a weekly one carries each day until next week's arrives, then the missed one stays where it
+was, superseded. At most one occurrence per series is carried. The carried row is pinned
+(`recurrence_overridden`) so an edit-all regeneration leaves it on today. Identity is
+`(recurrence_id, recurrence_date)`, so the materialiser doesn't re-create it. Migration 84.
+
+Closes more of **D4** for repeating work. Strains **P6** slightly: a missed occurrence reads
+as a normal carry rather than "missed". No pool, no new name, doesn't need clean data, holds
+in a stranger's account. Completion-anchored repeat, when built, must still be excluded.
+
+*Status: standing — `tests/rollover.test.ts` holds the rule against the latest SQL.*
+
+---
+
+**D-147 · 2026-09-17 · The carry mark says how long, in days.**
+
+`roll_count` added 1 per rollover run, but one run can move work several days (a skipped
+night, or D-145 carrying an occurrence for the first time). A weekly task missed Tuesday and
+carried Thursday read **↻1** while two days late, and next to the repeat glyph it read as
+nothing at all.
+
+→ `roll_count` counts **days carried** (rollover adds the gap; migration 85), and every
+surface writes it with its unit: **↻2d**, titled "Carried over 2 days" (`TaskRow`,
+`RollBadge`, the Plan-the-week badge, the task sheet). Counts from before today were
+per-run and are left as they are.
+
+Answers **D4**'s "and for how long". Strains **P11** only in keeping ↻ for both *carried*
+(with a number) and *repeats* (the sheet's "↻ Weekly") — the unit is what tells them apart.
+No pool, no new name.
+
+*Status: standing.*

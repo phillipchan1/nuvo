@@ -218,7 +218,7 @@ export function workBadge(
 ): { text: string; urgent: boolean } | null {
   switch (kind) {
     case "carried":
-      return { text: `↻${task.rollCount ?? 1}`, urgent: (task.rollCount ?? 0) >= 3 };
+      return { text: `↻${task.rollCount ?? 1}d`, urgent: (task.rollCount ?? 0) >= 3 };
     case "due": {
       const d = task.deadlineDaysAway;
       if (d == null) return { text: "due", urgent: true };

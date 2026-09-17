@@ -181,14 +181,18 @@ export function PriorityDot({ priority }: { priority: string }) {
   );
 }
 
-// How many times this rolled over. History, not urgency — so it's a bare number,
+// How many days this has been carried (D-147). History, not urgency — so it's a bare number,
 // never a bordered signal chip. (It used to be the loudest thing in the rail: a
 // square `--signal` border on work whose only crime was being old.)
+export function carriedTitle(days: number): string {
+  return `Carried over ${days} ${days === 1 ? "day" : "days"}`;
+}
+
 export function RollBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="mono shrink-0 text-meta leading-none text-muted" title={`Rolled over ${count}×`}>
-      ↻{count}
+    <span className="mono shrink-0 text-meta leading-none text-muted" title={carriedTitle(count)}>
+      ↻{count}d
     </span>
   );
 }
