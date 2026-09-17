@@ -33,3 +33,8 @@ RELEASE_NOTES.md
 # for whoever commits next. The run history (runs.jsonl) IS tracked on purpose.
 tests/agent/cassettes/
 .scratch/
+
+# Local browser profile for App Store screenshot capture (holds cookies/sessions).
+.appstore-chrome-profile/
+# Rust build output inside local plugins.
+src-tauri/plugins/*/target/
