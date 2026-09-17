@@ -137,7 +137,7 @@ been used to argue against things it doesn't forbid.
 
 | Term | Meaning |
 |---|---|
-| **Rollover** | 00:05 America/Los_Angeles via pg_cron. Rolled tasks: `do_date = today`, `start_time` cleared (lands in **anytime**), duration kept, `roll_count + 1`, mirror event deleted, ↻ badge. Recurring occurrences **never** roll. D-141. |
+| **Rollover** | 00:05 America/Los_Angeles via pg_cron. Rolled tasks: `do_date = today`, `start_time` cleared (lands in **anytime**), duration kept, `roll_count + 1`, mirror event deleted, ↻ badge. A recurring occurrence rolls only until the series' next occurrence comes due (so a daily one never does). D-141, D-145. |
 | **Overdue** | 1 hour past a block's end (start + duration + 60 min grace). Pinned to the top of Today under an **`Overdue`** label — the only group in the rail that earns one. Signal orange appears **once** per row, on the *time* it was for; the title keeps its ink and the word "overdue" is never repeated on the row itself. D-054. |
 | **Mirror calendar** | A Google calendar named **"Nuvo"**, found-or-created on first connect. Every scheduled task is reconciled to it. One-directional — the app always wins. |
 | **Materialized occurrence** | A repeat is a `recurrences` row (rule + template); occurrences are stamped as *ordinary* `tasks`/`slots` rows to a 35-day `HORIZON_DAYS`, so drag/resize need no special-casing. |

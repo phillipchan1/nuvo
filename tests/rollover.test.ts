@@ -34,8 +34,19 @@ describe("rollover lands in anytime", () => {
     expect(fn).not.toMatch(/slot_start/);
   });
 
-  it("still never rolls a recurring occurrence or a step", () => {
-    expect(fn).toMatch(/recurrence_id is null/);
+  it("never rolls a step", () => {
     expect(fn).toMatch(/parent_task_id is null/);
+  });
+
+  // D-145: a missed occurrence carries until the series' next one comes due.
+  it("rolls a recurring occurrence only while no later occurrence is due", () => {
+    expect(fn).toMatch(/t\.recurrence_id is null\s+or not exists/);
+    expect(fn).toMatch(/nx\.recurrence_id = t\.recurrence_id/);
+    expect(fn).toMatch(/nx\.recurrence_date > t\.recurrence_date/);
+    expect(fn).toMatch(/nx\.recurrence_date <= p_today/);
+  });
+
+  it("pins a carried occurrence so an edit-all regeneration leaves it", () => {
+    expect(fn).toMatch(/recurrence_overridden = t\.recurrence_overridden or t\.recurrence_id is not null/);
   });
 });
