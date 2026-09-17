@@ -13,6 +13,7 @@ import {
   taskInitiativeId,
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
+import { acceptPatch, dismissPatch } from "../../lib/grooming";
 import { InboxAddressHint } from "../InboxAddress";
 import { SectionLabel } from "../ui";
 import SkeletonRows from "./Skeleton";
@@ -103,6 +104,10 @@ export default function MobileTaskList({
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
     // Swipe right completes; swipe left snoozes to tomorrow (undo via toast).
     swipeActions: { onDefer: () => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO) },
+    // Nuvo's guess on an inbox row — the desktop rail could take or spend it;
+    // the phone showed it and offered neither.
+    onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
+    onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
     action,
   });
 

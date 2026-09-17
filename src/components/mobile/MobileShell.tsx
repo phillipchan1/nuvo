@@ -56,6 +56,7 @@ import type { DetailTarget, Frame } from "./detail/verticalDetail";
 import MobileCapture, { type CaptureKind } from "./MobileCapture";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
+import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
 // Top-level destinations — the five surfaces you work from on the phone, the
@@ -594,6 +595,7 @@ export default function MobileShell() {
     // shorter *dynamic* viewport, floating the bottom nav above the screen edge
     // with a dead strip of body background beneath it. The layout viewport (what
     // fixed positioning fills) is the true full-screen box, so the nav sits flush.
+    <MobileOpenTaskContext.Provider value={setTaskId}>
     <div className="atmosphere fixed inset-0 flex flex-col">
       {/* Top bar */}
       <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
@@ -937,6 +939,7 @@ export default function MobileShell() {
           Connections). */}
       <Orientation onAction={() => setSettingsOpen(true)} mobile />
     </div>
+    </MobileOpenTaskContext.Provider>
   );
 }
 

@@ -60,8 +60,7 @@ import {
   NumberField,
   RecordHead,
   Section,
-  TaskComposer,
-  TaskRow,
+  DetailTaskList,
   type Store,
 } from "./verticalDetail";
 
@@ -377,25 +376,7 @@ export default function MobileDomainScreen({
 
       {/* ── parked here — the desktop prints the count; a phone can act on it ── */}
       <Section label="Parked here" meter={looseTasks.length ? String(looseTasks.length) : null}>
-        {looseTasks.length > 0 && (
-          <CardList>
-            {looseTasks.map((t) => (
-              <TaskRow
-                key={t.id}
-                t={t}
-                onToggle={() => store.toggleTask(t.id)}
-                onDelete={() => store.deleteTask(t.id)}
-                onPatch={(patch) => store.updateTask(t.id, patch)}
-              />
-            ))}
-          </CardList>
-        )}
-        <TaskComposer
-          parent={{ domainId: dom.id }}
-          store={store}
-          accent={accent}
-          placeholder="A task parked in this area…"
-        />
+        <DetailTaskList tasks={looseTasks} parent={{ domainId: dom.id }} placeholder="A task parked in this area…" reorderable />
       </Section>
 
       {/* ── how Nuvo files things here — the routing workbench, shared ── */}

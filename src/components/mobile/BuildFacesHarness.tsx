@@ -14,6 +14,23 @@
 import { useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
+import { TaskCaptureSinkContext, type TaskCaptureSink } from "../../hooks/useTaskCapture";
+
+// Fixtures only: a capture lands in the harness's own fixture list (its
+// `addTask` stub), and nothing typed or ticked here is written anywhere.
+function harnessSink(store: VerticalStore): TaskCaptureSink {
+  const fixtures = store as unknown as {
+    addTask: (parent: { projectId?: string | null; initiativeId?: string | null; domainId?: string | null }, patch: { title: string; durationMins?: number }) => void;
+  };
+  return {
+    create: async (input) =>
+      fixtures.addTask(
+        { projectId: input.project_id, initiativeId: input.initiative_id, domainId: input.domain_id },
+        { title: input.title, durationMins: input.duration_minutes ?? undefined },
+      ),
+    createSeries: async () => undefined,
+  };
+}
 import type {
   Domain,
   Initiative,
@@ -221,10 +238,12 @@ const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 export default function BuildFacesHarness() {
   const store = useHarnessStore();
+  const sink = useMemo(() => harnessSink(store), [store]);
   const noop = () => {};
 
   return (
     <QueryClientProvider client={qc}>
+      <TaskCaptureSinkContext.Provider value={sink}>
       <VerticalStoreProvider value={store}>
         <div className="atmosphere min-h-screen p-4">
           <div className="mb-3 text-caption text-muted">
@@ -247,6 +266,7 @@ export default function BuildFacesHarness() {
           </div>
         </div>
       </VerticalStoreProvider>
+      </TaskCaptureSinkContext.Provider>
     </QueryClientProvider>
   );
 }

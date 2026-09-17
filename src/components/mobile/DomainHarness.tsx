@@ -11,6 +11,23 @@
 
 import { useMemo, useState } from "react";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
+import { TaskCaptureSinkContext, type TaskCaptureSink } from "../../hooks/useTaskCapture";
+
+// Fixtures only: a capture lands in the harness's own fixture list (its
+// `addTask` stub), and nothing typed or ticked here is written anywhere.
+function harnessSink(store: VerticalStore): TaskCaptureSink {
+  const fixtures = store as unknown as {
+    addTask: (parent: { projectId?: string | null; initiativeId?: string | null; domainId?: string | null }, patch: { title: string; durationMins?: number }) => void;
+  };
+  return {
+    create: async (input) =>
+      fixtures.addTask(
+        { projectId: input.project_id, initiativeId: input.initiative_id, domainId: input.domain_id },
+        { title: input.title, durationMins: input.duration_minutes ?? undefined },
+      ),
+    createSeries: async () => undefined,
+  };
+}
 import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib/vertical";
 import { todayISO } from "../../lib/dates";
 import MobileDomains from "./MobileDomains";
@@ -291,11 +308,13 @@ function Frame({ label, children }: { label: string; children: React.ReactNode }
 
 export default function DomainHarness() {
   const store = useHarnessStore();
+  const sink = useMemo(() => harnessSink(store), [store]);
   const [openId, setOpenId] = useState<string>("d1");
   const [deskId, setDeskId] = useState<string>("");
   const [sheet, setSheet] = useState(false);
 
   return (
+    <TaskCaptureSinkContext.Provider value={sink}>
     <VerticalStoreProvider value={store}>
       <div className="atmosphere min-h-screen p-4">
         <div className="mb-3 flex items-center gap-3">
@@ -360,5 +379,6 @@ export default function DomainHarness() {
         <MobileDetailSheet target={{ kind: "domain", id: openId, n: 1 }} onClose={() => setSheet(false)} />
       )}
     </VerticalStoreProvider>
+    </TaskCaptureSinkContext.Provider>
   );
 }

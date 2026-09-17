@@ -9,7 +9,7 @@
 // mandate + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical, type TaskParent } from "../../../hooks/useVertical";
 import { useLongPressReorder } from "../../../hooks/useLongPressReorder";
@@ -41,8 +41,11 @@ import {
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
 import { DomainPicker, InitiativePicker, ProjectAttachPicker, RipenessPip } from "../../floors/parts";
 import { ShipStamp } from "../../ShipStamp";
-import { whenText } from "../../floors/TaskList";
-import DurationSelect from "../../DurationSelect";
+import { useAllTasks } from "../../../hooks/useTasks";
+import { byManualOrder } from "../../../lib/taskOrder";
+import type { Task } from "../../../lib/types";
+import TaskListView from "../../tasks/TaskListView";
+import { useMobileOpenTask } from "../openTask";
 import DomainSymbol from "../../domain/DomainSymbol";
 
 export type Store = ReturnType<typeof useVertical>;
@@ -330,24 +333,11 @@ export function InitiativeScreen({
       </Section>
 
       <Section label="Loose tasks" meter={looseTasks.length ? String(looseTasks.length) : null}>
-        {looseTasks.length > 0 && (
-          <CardList>
-            {looseTasks.map((t) => (
-              <TaskRow
-                key={t.id}
-                t={t}
-                onToggle={() => store.toggleTask(t.id)}
-                onDelete={() => store.deleteTask(t.id)}
-                onPatch={(patch) => store.updateTask(t.id, patch)}
-              />
-            ))}
-          </CardList>
-        )}
-        <TaskComposer
+        <DetailTaskList
+          tasks={looseTasks}
           parent={{ initiativeId: i.id, domainId: i.domainId }}
-          store={store}
-          accent={accent}
-          placeholder="A task that belongs to the bet itself…"
+          placeholder="A task that belongs to the initiative itself…"
+          reorderable
         />
       </Section>
 
@@ -378,14 +368,6 @@ export function InitiativeScreen({
 // ── A single project ─────────────────────────────────────────────────────────
 export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: string }) {
   const [shipping, setShipping] = useState(false);
-  const taskListRef = useRef<HTMLDivElement>(null);
-  const taskReorder = useLongPressReorder({
-    containerRef: taskListRef,
-    itemSelector: "[data-task-id]",
-    idAttr: "data-task-id",
-    ids: () => tasksOf(d, id).map((t) => t.id),
-    onCommit: (next) => store.reorderTasks(next),
-  });
   const p = d.projects.find((x) => x.id === id);
   if (!p) return <Empty>This project is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
@@ -419,38 +401,11 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
         fill={tasks.length ? projectProgress(d, p) : null}
         accent={accent}
       >
-        {tasks.length > 0 && (
-          <div ref={taskListRef} className="relative">
-            {taskReorder.lineTop != null && (
-              <div className="reorder-insert-line" style={{ top: taskReorder.lineTop }} aria-hidden />
-            )}
-            <CardList>
-              {tasks.map((t) => (
-                <TaskRow
-                  key={t.id}
-                  t={t}
-                  onToggle={() => store.toggleTask(t.id)}
-                  onDelete={() => store.deleteTask(t.id)}
-                  onPatch={(patch) => store.updateTask(t.id, patch)}
-                  reorder={
-                    tasks.length > 1
-                      ? {
-                          press: (e) => taskReorder.press(e, t.id),
-                          arming: taskReorder.armingId === t.id,
-                          dragging: taskReorder.draggingId === t.id,
-                        }
-                      : undefined
-                  }
-                />
-              ))}
-            </CardList>
-          </div>
-        )}
-        <TaskComposer
+        <DetailTaskList
+          tasks={tasks}
           parent={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
-          store={store}
-          accent={accent}
           placeholder={tasks.length ? "Add a task…" : "First step…"}
+          reorderable
         />
       </Section>
 
@@ -525,104 +480,43 @@ export function ProjectRow({
   );
 }
 
-export function TaskRow({
-  t,
-  onToggle,
-  onDelete,
-  onPatch,
-  reorder,
+/** A record's tasks on the phone — the app's one task list (TaskListView):
+ *  the real row (swipe right done, left tomorrow), hold the grip to reorder,
+ *  tap for the task sheet, and the one add box underneath. */
+export function DetailTaskList({
+  tasks,
+  parent,
+  placeholder,
+  reorderable = false,
 }: {
-  t: VTask;
-  onToggle: () => void;
-  onDelete?: () => void;
-  /** Rename + re-time the task in place. Omit to fall back to a read-only row
-   *  (e.g. a domain's read-only reach-through, if one ever needs this row). */
-  onPatch?: (patch: Partial<VTask>) => void;
-  /** Press-and-hold the grip to reorder — opt-in per list (only the ones
-   *  where manual order means something), via `useLongPressReorder`. */
-  reorder?: { press: (e: React.PointerEvent) => void; arming: boolean; dragging: boolean };
+  tasks: VTask[];
+  parent: TaskParent;
+  placeholder: string;
+  reorderable?: boolean;
 }) {
-  const done = t.status === "done";
+  const { data } = useVertical();
+  const { data: allTasks } = useAllTasks();
+  const openTask = useMobileOpenTask();
+  const rows = useMemo(() => {
+    const byId = new Map((allTasks ?? []).map((t) => [t.id, t]));
+    // A VTask the cache hasn't seen (a fixture harness) is drawn from its own
+    // fields rather than dropped.
+    return byManualOrder(tasks.map((v) => byId.get(v.id) ?? taskFromVTask(v)));
+  }, [tasks, allTasks]);
+  const p = parent.projectId ? data.projects.find((x) => x.id === parent.projectId) : null;
+  const i = !p && parent.initiativeId ? data.initiatives.find((x) => x.id === parent.initiativeId) : null;
+  const dom = data.domains.find((x) => x.id === (p?.domainId ?? i?.domainId ?? parent.domainId));
+  const name = p?.name ?? i?.name ?? dom?.name;
   return (
-    <div
-      data-task-id={reorder ? t.id : undefined}
-      className="flex items-center gap-3 px-3 py-2.5"
-      style={reorder?.dragging ? { opacity: 0.6 } : undefined}
-    >
-      <button
-        onClick={onToggle}
-        aria-label={done ? "Reopen" : "Mark done"}
-        className={`tap-icon fast flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-caption ${
-          // border-muted, not border-line-strong: 3.7:1 vs 1.37:1 on the paper,
-          // and a control the finger aims at has to be visible. See D-054a.
-          done ? "border-accent bg-accent text-on-accent" : "border-muted text-transparent active:border-accent"
-        }`}
-      >
-        ✓
-      </button>
-      {/* Tap-to-edit, no separate mode — the same `defaultValue` + commit-on-blur
-          idiom as `TextField` above. This is the fix for the phone having no way
-          to rename or re-time a task once it's on a project: the ✕ was the only
-          thing you could do to it besides check it off. */}
-      {onPatch ? (
-        <input
-          key={t.title}
-          defaultValue={t.title}
-          onBlur={(e) => {
-            const next = e.target.value.trim();
-            if (next && next !== t.title) onPatch({ title: next });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          aria-label="Task title"
-          className={`min-w-0 flex-1 truncate bg-transparent text-body outline-none ${done ? "text-muted line-through" : ""}`}
-        />
-      ) : (
-        <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>{t.title}</span>
-      )}
-      {/* Same read as the desktop record, same helper — a project that can say
-          which work has a time on one shell and not the other is the drift the
-          golden rule exists to stop. The title truncates, so this never pushes
-          the row past 375px. */}
-      {!done && whenText(t) && (
-        <span className="mono shrink-0 whitespace-nowrap text-micro text-muted">{whenText(t)}</span>
-      )}
-      {onPatch ? (
-        <DurationSelect
-          value={t.durationMins}
-          onChange={(m) => onPatch({ durationMins: m })}
-          className="shrink-0 rounded px-1 py-0.5 active:bg-surface-2"
-          title="Sitting length"
-        />
-      ) : t.durationMins ? (
-        <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
-      ) : null}
-      {/* desktop deletes on hover; a phone has no hover, so the ✕ is always
-          there. `deleteTask` files its own Undo, same as the record. */}
-      {onDelete && (
-        <button
-          onClick={onDelete}
-          aria-label={`Delete ${t.title}`}
-          className="tap-icon fast flex shrink-0 items-center justify-center text-caption text-muted active:text-signal"
-        >
-          ✕
-        </button>
-      )}
-      {/* No hover on a phone to reveal a grip behind — it's always here, and
-          the hold (not the tap) is what starts the drag, so it never steals a
-          tap meant for the row's own controls or the list's scroll. */}
-      {reorder && (
-        <span
-          onPointerDown={(e) => reorder.press(e)}
-          aria-label="Press and hold to reorder"
-          className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
-          style={reorder.arming ? { color: "var(--ink)" } : undefined}
-        >
-          ⠿
-        </span>
-      )}
-    </div>
+    <TaskListView
+      tasks={rows}
+      context={parent}
+      contextLabel={name ? { name, color: dom?.color ?? null } : null}
+      keyboard={false}
+      reorderable={reorderable}
+      onOpen={(t) => openTask?.(t.id)}
+      composerPlaceholder={placeholder}
+    />
   );
 }
 
@@ -1262,4 +1156,46 @@ export function Hint({ children }: { children: ReactNode }) {
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="px-4 py-16 text-center text-body text-muted">{children}</div>;
+}
+
+/** The row a VTask describes, for a list whose task isn't in the cache. */
+function taskFromVTask(v: VTask): Task {
+  const at = v.createdAt ?? new Date(0).toISOString();
+  return {
+    id: v.id,
+    user_id: "",
+    created_at: at,
+    updated_at: at,
+    title: v.title,
+    notes: "",
+    status: v.status === "done" ? "done" : v.inbox ? "inbox" : v.doDate ? "planned" : "backlog",
+    do_date: v.doDate,
+    start_time: v.startTime,
+    duration_minutes: v.durationMins,
+    deadline: null,
+    priority: "none",
+    roll_count: v.rollCount,
+    completed_at: v.completedAt,
+    trashed_at: null,
+    project_id: v.projectId,
+    initiative_id: v.initiativeId,
+    domain_id: v.domainId,
+    key_result_id: v.keyResultId,
+    sprint_id: null,
+    big_rock_id: v.bigRockId,
+    energy: v.energy,
+    assignee: v.assignee,
+    prework: "",
+    prework_at: null,
+    suggestion: null,
+    suggested_at: null,
+    google_event_id: null,
+    sort_order: 0,
+    slot_id: v.slotId,
+    parent_task_id: null,
+    recurrence_id: null,
+    recurrence_date: null,
+    recurrence_overridden: false,
+    task_labels: [],
+  };
 }

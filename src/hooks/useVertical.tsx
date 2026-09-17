@@ -11,8 +11,7 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
-import { applyTaskOrder, fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
-import { orderPatches } from "../lib/taskOrder";
+import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
@@ -21,7 +20,6 @@ import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
 import {
   DEFAULT_DURATION_MINUTES,
-  DEFAULT_PROJECT_DURATION_MINUTES,
   restingStatus,
   type BigRock,
   type Slot,
@@ -89,14 +87,6 @@ export interface VerticalStore {
    *  would jump the band to the front of every other unrelated ordering. */
   reorderProjects: (entries: { id: string; sortOrder: number }[]) => void;
 
-  // tasks — created under a project/initiative/domain they land in `backlog`,
-  // quiet by design: never in the inbox, never on Today, never roll.
-  addTask: (parent: TaskParent, patch?: { title?: string; durationMins?: number }) => void;
-  /** Bulk insert (AI scaffold accept): ordered drafts land in `backlog`. */
-  addTasks: (
-    parent: TaskParent,
-    drafts: { title: string; energy: VTask["energy"]; durationMins: number; bigRockId?: string | null }[],
-  ) => Promise<void>;
   /** Like addTasks, but the drafts also land in the current week's sprint (and may carry a deadline / big rock). */
   addTasksToWeek: (
     parent: TaskParent,
@@ -106,10 +96,6 @@ export interface VerticalStore {
   /** Soft-delete (status → trashed). Returns the prior raw status so the caller
    *  can offer an exact Undo via `restoreTask`. */
   deleteTask: (id: string) => Task["status"] | undefined;
-  /** Undo a delete (or any soft status change): put the row back to `status`. */
-  restoreTask: (id: string, status: Task["status"]) => void;
-  /** Persist an explicit task order — sort_order follows the given id sequence. */
-  reorderTasks: (ids: string[]) => void;
   toggleTask: (id: string) => void;
   /** The Sweep: file a capture into the vertical (and optionally the week).
    *  Routing processes it — status becomes `backlog`, it leaves the inbox. */
@@ -122,10 +108,6 @@ export interface VerticalStore {
   /** Drop the date (and block), keep everything else — back to the pool. */
   unplanTask: (id: string) => void;
 
-  /** Send a parented task to the Inbox triage queue (status → inbox, keeping its
-   *  project/initiative home), or pull it back out to its backlog. Raw and
-   *  unscheduled while it sits in the inbox — released from any week commitment. */
-  toggleTaskInbox: (id: string) => void;
 
   // sprint funnel — the Week gate
   /** The current week's sprint id, creating the row if this is its first use.
@@ -1024,95 +1006,6 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         });
       },
 
-      // ── tasks ────────────────────────────────────────────────────────────
-      // Creates land in the cache FIRST (Todoist-fast), then the insert
-      // reconciles the temp id with the real row. Without the optimistic write
-      // the list only updates after insert + a full ["tasks"] refetch — which
-      // can sit blank for tens of seconds on a slow/hung round-trip.
-      addTask: (parent, patch) => {
-        const tempId = crypto.randomUUID();
-        const parented = Boolean(parent.projectId || parent.initiativeId || parent.domainId);
-        const status: TaskStatus = parented ? "backlog" : "inbox";
-        const title = patch?.title ?? "";
-        const durationMins =
-          patch?.durationMins ??
-          (parented
-            ? DEFAULT_PROJECT_DURATION_MINUTES
-            : (settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES));
-        const optimistic = optimisticTask({
-          id: tempId,
-          title,
-          status,
-          projectId: parent.projectId,
-          initiativeId: parent.initiativeId,
-          domainId: parent.domainId,
-          durationMins,
-        });
-        void qc.cancelQueries({ queryKey: ["tasks"] });
-        putTaskInCaches(qc, tempId, optimistic);
-        // Queued, like `useTasks.createTask`. These two paths had diverged:
-        // capturing from the rail survived a dead network and adding a task
-        // inside a project record did not — the same act with two different
-        // answers depending on which surface you happened to be on, which is
-        // worse than being uniformly online-only because there is no rule to
-        // learn. `tempId` is the row's real primary key, so the reconcile-swap
-        // and the unwind-on-failure are both gone.
-        void queueWrite(
-          makeOp("tasks", "insert", tempId, {
-            title,
-            status,
-            project_id: parent.projectId ?? null,
-            initiative_id: parent.initiativeId ?? null,
-            domain_id: parent.domainId ?? null,
-            energy: "quick",
-            duration_minutes: durationMins,
-          }),
-        ).then(() => settleWrite(qc, "tasks", ["tasks"]));
-      },
-      addTasks: async (parent, drafts) => {
-        if (!drafts.length) return;
-        const baseSort = Date.now();
-        const temps = drafts.map((d, i) =>
-          optimisticTask({
-            id: crypto.randomUUID(),
-            title: d.title,
-            status: "backlog",
-            projectId: parent.projectId,
-            initiativeId: parent.initiativeId,
-            domainId: parent.domainId,
-            durationMins: d.durationMins,
-            energy: d.energy,
-            bigRockId: d.bigRockId,
-            sortOrder: baseSort + i,
-          }),
-        );
-
-        void qc.cancelQueries({ queryKey: ["tasks"] });
-        for (const temp of temps) putTaskInCaches(qc, temp.id, temp);
-        // One op per draft rather than one batch insert: a batch that
-        // half-lands has no safe retry, whereas each per-row upsert is
-        // independently idempotent. The optimistic rows already carry the ids
-        // the inserts will use, so nothing is swapped afterwards. Don't await
-        // the queue — CreateRecord opens the record the moment the cache has
-        // the rows; a hung IDB write must not eat the tasks.
-        void Promise.all(
-          drafts.map((d, i) =>
-            queueWrite(
-              makeOp("tasks", "insert", temps[i].id, {
-                title: d.title,
-                status: "backlog",
-                project_id: parent.projectId ?? null,
-                initiative_id: parent.initiativeId ?? null,
-                domain_id: parent.domainId ?? null,
-                big_rock_id: d.bigRockId ?? null,
-                energy: d.energy,
-                duration_minutes: d.durationMins,
-                sort_order: baseSort + i,
-              }),
-            ),
-          ),
-        ).then(() => settleWrite(qc, "tasks", ["tasks"]));
-      },
       addTasksToWeek: async (parent, drafts) => {
         if (!drafts.length) return;
         const sprint = await ensureSprint();
@@ -1185,27 +1078,6 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }
         return prev;
       },
-      restoreTask: (id, status) => {
-        void patchTaskRow(id, { status, trashed_at: null });
-      },
-      reorderTasks: (ids) => {
-        // Same act as the rail's: only the moved rows are written, inside the
-        // list's own range, across every task cache, with one undo.
-        const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
-        const rows = ids.map((id) => byId.get(id)).filter((t): t is Task => Boolean(t));
-        const patches = orderPatches(rows, ids);
-        if (!patches.length) return;
-        const back = patches.map((p) => ({ id: p.id, sort_order: byId.get(p.id)?.sort_order ?? p.sort_order }));
-        applyTaskOrder(qc, patches);
-        recordUndo({
-          label: "Reordered",
-          shortLabel: "Reordered",
-          tier: "silent",
-          coalesceKey: "reorder",
-          undo: () => applyTaskOrder(qc, back),
-          redo: () => applyTaskOrder(qc, patches),
-        });
-      },
       toggleTask: (id) => {
         const row = (tasksQ.data ?? []).find((x) => x.id === id);
         if (!row) return;
@@ -1265,30 +1137,6 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void patchTaskRow(id, { status: "backlog", do_date: null, start_time: null });
       },
 
-      toggleTaskInbox: (id) => {
-        const row = (tasksQ.data ?? []).find((x) => x.id === id);
-        if (!row) return;
-        if (row.status === "inbox") {
-          // pull it back out of triage to its home backlog
-          void patchTaskRow(id, { status: "backlog" });
-        } else {
-          // Release it: unscheduled and off the week. A task inside a PROJECT has
-          // a home and rests there — only a capture with no home belongs in the
-          // inbox. Forcing "inbox" here is what put project work into triage,
-          // nagging about a project slotted to a different week.
-          //
-          // A domain tag is deliberately NOT a home (an SCE-tagged capture is
-          // still unsorted). restingStatus() disagrees — it counts domain/sprint
-          // as parented — so don't swap this for it until that's reconciled.
-          void patchTaskRow(id, {
-            status: row.project_id ? "backlog" : "inbox",
-            do_date: null,
-            start_time: null,
-            slot_id: null,
-            sprint_id: null,
-          });
-        }
-      },
 
       // ── sprint funnel — the Week gate ───────────────────────────────────
       toggleTaskSprint: (id) => {

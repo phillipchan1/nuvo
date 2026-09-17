@@ -11,11 +11,15 @@
  * only says what the list is (`context`) and how a task opens (`onOpen`).
  */
 
-import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Task } from "../../lib/types";
 import { useTaskMutations } from "../../hooks/useTasks";
+import { TaskCaptureSinkContext } from "../../hooks/useTaskCapture";
 import { useLabels } from "../../hooks/useCalendar";
 import { useListReorder } from "../../hooks/useListReorder";
+import { useLongPressReorder } from "../../hooks/useLongPressReorder";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { tomorrowISO } from "../../lib/dates";
 import { announce } from "../../lib/announce";
 import { shiftId } from "../../lib/taskOrder";
 import type { CaptureContext } from "../../lib/captureDraft";
@@ -80,8 +84,16 @@ export default function TaskListView({
   className = "",
   dragData,
 }: TaskListViewProps) {
-  const mutations = useTaskMutations();
+  const liveMutations = useTaskMutations();
+  // A harness that captures into a sink is looking, not editing: its rows'
+  // acts go nowhere either (fixture ids must never reach the outbox).
+  const sink = useContext(TaskCaptureSinkContext);
+  const mutations = useMemo(() => (sink ? inert(liveMutations) : liveMutations), [sink, liveMutations]);
   const { labels } = useLabels();
+  // A phone: no keys and no menus; rows swipe (right done, left tomorrow), a
+  // hold on the grip reorders (a touch drag would fight the scroll), and a tap
+  // opens the task sheet. Same row, same add box.
+  const phone = useIsMobile();
   const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
 
@@ -136,11 +148,19 @@ export default function TaskListView({
     onDragEnd: () => {
       lastDrag.current = Date.now();
     },
-    disabled: !reorderable && !dropZones,
+    disabled: phone || (!reorderable && !dropZones),
+  });
+  const hold = useLongPressReorder({
+    containerRef: listRef,
+    itemSelector: "[data-list-row]",
+    idAttr: "data-list-row",
+    ids: () => ids,
+    onCommit: (next) => reorderTo(next),
+    disabled: !phone || !reorderable,
   });
 
   useTaskListKeys({
-    enabled: keyboard && !menu && !editingId,
+    enabled: keyboard && !phone && !menu && !editingId,
     rows: tasks,
     cursor: { cursorId, setCursorId, selectedIds, setSelectedIds },
     acts: {
@@ -185,6 +205,7 @@ export default function TaskListView({
   return (
     <div className={className}>
       <div ref={listRef} className="relative outline-none" role="list" tabIndex={-1}>
+        {hold.lineTop != null && <div className="reorder-insert-line" style={{ top: hold.lineTop }} aria-hidden />}
         {tasks.map((t) => (
           <div key={t.id} role="listitem" data-list-row={t.id}>
             <TaskRow
@@ -194,14 +215,35 @@ export default function TaskListView({
               }}
               task={t}
               labels={labels}
-              selected={t.id === cursorId}
+              selected={!phone && t.id === cursorId}
               multiSelected={selectedIds.has(t.id)}
               draggable={Boolean(dragData)}
               dragData={dragData?.(t)}
-              dragging={draggingId === t.id}
+              dragging={draggingId === t.id || hold.draggingId === t.id}
               accent={accentFor?.(t) ?? null}
               meta={metaFor?.(t)}
-              action={rowAction?.(t)}
+              action={
+                phone && reorderable && tasks.length > 1 ? (
+                  <>
+                    {rowAction?.(t)}
+                    <span
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        hold.press(e, t.id);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Press and hold to reorder"
+                      className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
+                      style={hold.armingId === t.id ? { color: "var(--ink)" } : undefined}
+                    >
+                      ⠿
+                    </span>
+                  </>
+                ) : (
+                  rowAction?.(t)
+                )
+              }
+              swipeActions={phone ? { onDefer: () => mutations.planFor(t, tomorrowISO(), { undo: "toast" }) } : undefined}
               flush={flush}
               whenShown={whenShown}
               editing={editingId === t.id}
@@ -227,7 +269,7 @@ export default function TaskListView({
               }}
               onRangeSelect={() => rangeTo(t.id)}
               onContextMenu={(e) => {
-                if (e.metaKey || e.ctrlKey) return;
+                if (phone || e.metaKey || e.ctrlKey) return;
                 e.preventDefault();
                 setCursorId(t.id);
                 setMenu({ kind: "actions", task: t, x: e.clientX, y: e.clientY });
@@ -243,7 +285,8 @@ export default function TaskListView({
         context={context}
         contextLabel={contextLabel}
         placeholder={composerPlaceholder}
-        autoFocus={composerAutoFocus}
+        autoFocus={composerAutoFocus && !phone}
+        submitOnBlur={phone}
         onLeave={() => listRef.current?.focus()}
       />
 
@@ -271,4 +314,14 @@ export default function TaskListView({
       )}
     </div>
   );
+}
+
+/** The same shape, every act a no-op. */
+function inert<T extends object>(real: T): T {
+  return new Proxy(real, {
+    get: (target, key) => {
+      const v = (target as Record<string | symbol, unknown>)[key];
+      return typeof v === "function" ? () => undefined : v;
+    },
+  });
 }
