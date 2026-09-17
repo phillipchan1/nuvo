@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
+import { orderPatches, type Ordered, type OrderPatch } from "../lib/taskOrder";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import {
@@ -342,6 +343,11 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
   for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
     if (!Array.isArray(data)) continue;
     const existing = data.find((t) => t.id === id);
+    // The Realtime echo of our own write carries what the optimistic patch
+    // already painted. Membership is a function of the row's content, so an
+    // unchanged row cannot move lists either — leave the array identity alone
+    // and nothing downstream (buildVertical, every list) re-renders.
+    if (existing && next && sameTaskContent(existing, next)) continue;
     const kind = key[1];
 
     let updated: Task[] | undefined;
@@ -447,6 +453,29 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
   });
 }
 
+/** Bookkeeping columns that change on every write without changing what the row says. */
+const TASK_BOOKKEEPING = new Set(["updated_at", "field_ts"]);
+const TASK_INSTANTS = new Set(["created_at", "start_time", "completed_at", "trashed_at", "suggested_at", "prework_at"]);
+
+/** True when two images of a task say the same thing (bookkeeping aside). */
+export function sameTaskContent(a: Task, b: Task): boolean {
+  if (a === b) return true;
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(ra), ...Object.keys(rb)]);
+  for (const k of keys) {
+    if (TASK_BOOKKEEPING.has(k)) continue;
+    const va = ra[k] ?? null;
+    const vb = rb[k] ?? null;
+    if (va === vb) continue;
+    // PostgREST says `…+00:00`, the Realtime path normalises to `….000Z`.
+    if (TASK_INSTANTS.has(k) && typeof va === "string" && typeof vb === "string" && Date.parse(va) === Date.parse(vb)) continue;
+    if (typeof va === "object" && typeof vb === "object" && JSON.stringify(va) === JSON.stringify(vb)) continue;
+    return false;
+  }
+  return true;
+}
+
 export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   // Resolve the post-patch row from any cache that already has it — needed when
   // inserting into a list the task is newly joining (slot children, etc.).
@@ -507,6 +536,18 @@ function cascadeDomainToSeries(qc: QueryClient, id: string, domainId: string | n
 // offline edits vanish from the screen one query at a time. Mutations call
 // `invalidateWhenSafe`, which refetches immediately when the table owes the
 // server nothing and defers until the drain when it does.
+
+/**
+ * Write a manual order. Every cache patch runs before the first write is
+ * queued — no await between rows — so React paints the new order once, and the
+ * list can't settle through half-written intermediate orders.
+ */
+export function applyTaskOrder(qc: QueryClient, patches: OrderPatch[]): void {
+  if (!patches.length) return;
+  for (const p of patches) patchCaches(qc, p.id, { sort_order: p.sort_order });
+  for (const p of patches) void queueWrite(makeOp("tasks", "update", p.id, { sort_order: p.sort_order }));
+  settleWrite(qc, "tasks", ["tasks"]);
+}
 
 /** Fields whose change requires re-syncing the Google mirror event. */
 const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
@@ -636,7 +677,7 @@ export function useTaskMutations() {
     // to queue and nothing to lose by skipping it.
     if (optimistic.start_time && navigator.onLine) mirrorTask(id);
 
-    invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    settleWrite(qc, "tasks", ["tasks"]);
     return optimistic;
   };
 
@@ -680,7 +721,7 @@ export function useTaskMutations() {
     // picked up a start_time missing from the scheduled-tasks query) and the
     // task vanished from the calendar until the real write landed.
     void queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>)).then(() =>
-      invalidateWhenSafe(qc, "tasks", ["tasks"]),
+      settleWrite(qc, "tasks", ["tasks"]),
     );
 
     if (MIRROR_FIELDS.some((f) => f in patch) && navigator.onLine) {
@@ -750,6 +791,31 @@ export function useTaskMutations() {
   return {
     create: createTask,
     patchTask,
+
+    /**
+     * Put a list in the order the user asked for. `rows` is the list as it
+     * stands; `nextIds` the new order. Writes only the rows that moved (see
+     * `orderPatches`) and records one undo for the whole move. Returns false
+     * when nothing needed to change.
+     */
+    reorder: (rows: Ordered[], nextIds: string[], opts?: { undo?: false }): boolean => {
+      const patches = orderPatches(rows, nextIds);
+      if (!patches.length) return false;
+      const before = new Map(rows.map((r) => [r.id, r.sort_order]));
+      applyTaskOrder(qc, patches);
+      if (opts?.undo !== false) {
+        const back = patches.map((p) => ({ id: p.id, sort_order: before.get(p.id) ?? p.sort_order }));
+        recordUndo({
+          label: "Reordered",
+          shortLabel: "Reordered",
+          tier: "silent",
+          coalesceKey: "reorder",
+          undo: () => applyTaskOrder(qc, back),
+          redo: () => applyTaskOrder(qc, patches),
+        });
+      }
+      return true;
+    },
 
     /** Plan a task for a day without a time block (and out of any slot). */
     planFor: (t: Task, dateISO: string, opts?: UndoOpts) =>
@@ -841,7 +907,7 @@ export function useTaskMutations() {
       patchCaches(qc, t.id, { status: "trashed" }); // keep it out of every list…
       qc.setQueryData<Task[]>(["tasks", "trashed"], (old) => old?.filter((x) => x.id !== t.id));
       await queueWrite(makeOp("tasks", "delete", t.id));
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
     },
 
     /** Hard-delete every trashed task currently in the trash face. No undo. */
@@ -850,7 +916,7 @@ export function useTaskMutations() {
       for (const t of tasks) patchCaches(qc, t.id, { status: "trashed" });
       qc.setQueryData<Task[]>(["tasks", "trashed"], []);
       await Promise.all(tasks.map((t) => queueWrite(makeOp("tasks", "delete", t.id))));
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
     },
 
     /** Release a task from its time. A task inside a PROJECT has a home and rests
@@ -916,11 +982,11 @@ export function useTaskMutations() {
      *  didn't need is not a deleted task, and routing them to the trash would
      *  fill it with fragments nobody is ever looking for. */
     removeStep: async (step: Task) => {
-      qc.setQueriesData<Task[]>({ queryKey: ["tasks", "steps"] }, (old) =>
-        old?.filter((t) => t.id !== step.id),
-      );
+      // Every task cache, not just the checklist: a step is a tasks row, and the
+      // unfiltered pool holds it too.
+      putTaskInCaches(qc, step.id, null);
       await queueWrite(makeOp("tasks", "delete", step.id));
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
     },
 
     /**
@@ -957,7 +1023,7 @@ export function useTaskMutations() {
         }
       }
 
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
     },
   };
 }

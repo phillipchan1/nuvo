@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { applyLiveChange } from "../lib/sync/liveApply";
-import { invalidateWhenSafe, pendingOps, pullSyncTables, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, pendingOps, pullSyncTables, setTableLive, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
 
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
@@ -148,6 +148,7 @@ export function useRealtime(enabled: boolean) {
     const connect = (table: string) => {
       if (torn) return;
       clearRetry(table);
+      setTableLive(table, false);
       const existing = channels.get(table);
       if (existing) supabase.removeChannel(existing);
 
@@ -157,14 +158,17 @@ export function useRealtime(enabled: boolean) {
         onChange(payload),
       );
       ch.subscribe((status) => {
-        if (torn) return;
+        // A replaced channel's late CLOSED must not mark its successor down.
+        if (torn || channels.get(table) !== ch) return;
         if (status === "SUBSCRIBED") {
+          setTableLive(table, true);
           attempts.set(table, 0);
           if (joinedOnce.has(table)) scheduleBackfill();
           joinedOnce.add(table);
           return;
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setTableLive(table, false);
           // Backoff, capped: a rejoin storm against a server that is refusing
           // us is how a quiet account generates a loud bill.
           const n = (attempts.get(table) ?? 0) + 1;
@@ -202,6 +206,7 @@ export function useRealtime(enabled: boolean) {
       window.removeEventListener("focus", onWake);
       window.removeEventListener("online", onWake);
       document.removeEventListener("visibilitychange", onWake);
+      for (const table of TABLES) setTableLive(table, false);
       for (const ch of channels.values()) supabase.removeChannel(ch);
     };
   }, [enabled, qc]);

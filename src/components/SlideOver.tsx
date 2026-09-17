@@ -2563,7 +2563,18 @@ export function SlotPopover({
     const railEl = () => document.querySelector<HTMLElement>("[data-rail-drop]");
     setReorder({ id, index });
     setReorderLineTop(insertLineTop(id, e.clientY));
+    // One layout read per frame, not per pointer event: `insertLineTop` measures
+    // every row, and pointermove fires faster than the display refreshes.
+    let frame = 0;
+    let lastEv: PointerEvent | null = null;
     const onMove = (ev: PointerEvent) => {
+      lastEv = ev;
+      if (!frame) frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (lastEv) track(lastEv);
+      });
+    };
+    const track = (ev: PointerEvent) => {
       const pop = slotColRef.current?.getBoundingClientRect();
       const inside =
         !!pop &&
@@ -2598,21 +2609,22 @@ export function SlotPopover({
         }
       }
     };
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      track(ev);
       setReorder(null);
       setReorderLineTop(null);
       railEl()?.classList.remove("rail-drop-active");
       if (out?.kind === "inbox") return void taskMutations.backToInbox(task);
       if (out?.kind === "day") return void taskMutations.planFor(task, out.date);
-      // Otherwise: reorder within the slot, committing fresh sort_order.
+      // Otherwise: reorder within the slot — only the moved row is written.
       const rest = ordered.filter((t) => t.id !== id);
       const idx = Math.max(0, Math.min(index, rest.length));
       rest.splice(idx, 0, task);
-      rest.forEach((t, i) => {
-        if (t.sort_order !== i) taskMutations.patchTask(t.id, { sort_order: i });
-      });
+      taskMutations.reorder(ordered, rest.map((t) => t.id));
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);

@@ -20,7 +20,6 @@ import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
 import { isTypingIn, pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
-import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
@@ -107,7 +106,6 @@ function LeftRail({
   weekDoor?: WeekDoor;
 }) {
   const { data: vertical, toggleTaskSprint } = useVertical();
-  const { recordUndo } = useOptionalUndoStack();
   const recurrenceMutations = useRecurrenceMutations();
   const { nav } = useAppNavigation();
   const { settings } = useSettings();
@@ -622,32 +620,11 @@ function LeftRail({
       setSelectedIds(new Set());
     },
     onCommit: (_band, ids) => {
-      // Re-deal the band's OWN sort_order values instead of renumbering 0..n.
-      // sort_order is a global column — a project's steps and a slot's children
-      // read it too — so a reorder here must not renumber rows it can't see.
+      // Only the moved rows are written, inside the band's own range —
+      // sort_order is a global column, so a reorder here must not renumber
+      // rows it can't see (see `orderPatches`).
       const pool = ids.map((id) => byId.get(id)).filter((t): t is Task => Boolean(t));
-      if (pool.length < 2) return;
-      let vals = pool.map((t) => t.sort_order).sort((a, b) => a - b);
-      // Ties (every fresh capture lands on the same default) can't express an
-      // order — spread them densely from the band's own floor.
-      if (new Set(vals).size !== vals.length) vals = vals.map((_, i) => vals[0] + i);
-      const befores = pool.map((t) => ({ id: t.id, sort_order: t.sort_order }));
-      const changed = pool.filter((t, i) => t.sort_order !== vals[i]);
-      if (!changed.length) return;
-      pool.forEach((t, i) => {
-        if (t.sort_order !== vals[i]) mutations.patchTask(t.id, { sort_order: vals[i] }, { undo: false });
-      });
-      recordUndo({
-        label: "Reordered",
-        shortLabel: "Reordered",
-        tier: "silent",
-        coalesceKey: "reorder",
-        undo: () => {
-          befores.forEach(({ id, sort_order }) =>
-            mutations.patchTask(id, { sort_order }, { undo: false }),
-          );
-        },
-      });
+      mutations.reorder(pool, ids);
     },
   });
 

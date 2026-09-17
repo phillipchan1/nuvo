@@ -24,10 +24,11 @@ export {
   unpark,
   type OutboxStatus,
 } from "./outbox";
-export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, runWithoutOwingPreserve, catchUpAfterOwingKnown, pullSyncTables, installOwingGuards, resetOwingForTests } from "./coordinator";
+export { invalidateWhenSafe, settleWrite, tablesOwing, queryKeyOwesServer, preserveOwingRows, runWithoutOwingPreserve, catchUpAfterOwingKnown, pullSyncTables, installOwingGuards, resetOwingForTests } from "./coordinator";
 export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";
+export { isTableLive, setTableLive, resetLiveHealthForTests } from "./liveHealth";
 
 let client: { qc: QueryClient; transport: Transport } | null = null;
 let stop: (() => void) | null = null;

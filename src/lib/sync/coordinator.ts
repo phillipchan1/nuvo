@@ -31,6 +31,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
 import { outboxSnapshot, refreshOutboxStatus, setOutboxStatus } from "./outbox";
 import { SYNC_TABLES, type SyncTable } from "./ops";
+import { isTableLive } from "./liveHealth";
 
 /** Tables whose queries are waiting for a drain before they may refetch. */
 const deferred = new Map<SyncTable, readonly string[][]>();
@@ -278,14 +279,31 @@ export function invalidateWhenSafe(qc: QueryClient, table: SyncTable, key: reado
   deferred.set(table, [...queued, [...key]]);
 }
 
-/** Flush the invalidations a table was holding, now that it owes nothing. */
-function releaseDeferred(qc: QueryClient, tables: Iterable<SyncTable>) {
+/**
+ * The refetch a mutation asks for after queuing its own write.
+ *
+ * The optimistic patch already put the post-image on screen, and when the
+ * table's Realtime channel is joined the delivered write comes back as an echo
+ * carrying the server's real row — so the refetch would only repeat it, at the
+ * cost of every mounted list for that table. Skip it then; fall back to
+ * `invalidateWhenSafe` when the channel is down. Realtime's own fallback path
+ * (a row it could not apply) must keep calling `invalidateWhenSafe` directly.
+ */
+export function settleWrite(qc: QueryClient, table: SyncTable, key: readonly string[]) {
+  if (isTableLive(table)) return;
+  invalidateWhenSafe(qc, table, key);
+}
+
+/** Take the invalidations a table was holding, now that it owes nothing. */
+function takeDeferred(tables: Iterable<SyncTable>): (readonly string[])[] {
+  const out: (readonly string[])[] = [];
   for (const table of tables) {
     const keys = deferred.get(table);
     if (!keys) continue;
     deferred.delete(table);
-    for (const key of keys) qc.invalidateQueries({ queryKey: key });
+    out.push(...keys);
   }
+  return out;
 }
 
 /**
@@ -385,15 +403,24 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
   // queued, hence the owing filter. (This used to be gated on membership in a
   // pre-drain snapshot too, which stranded keys for a table that only started
   // owing mid-drain.)
-  releaseDeferred(qc, [...deferred.keys()].filter((t) => !owing.has(t)));
+  // Every key this pass wants refreshed is collected first and invalidated
+  // ONCE at the end: `invalidateQueries` cancels an in-flight refetch and
+  // starts another, so the same key fired three times in one tick (deferred,
+  // delivered table, cross-table) was three full round trips per list.
+  const refresh = new Map<string, readonly string[]>();
+  const want = (key: readonly string[]) => refresh.set(key.join("/"), key);
+  for (const key of takeDeferred([...deferred.keys()].filter((t) => !owing.has(t)))) want(key);
 
   // Anything we actually delivered is now stale locally: the server may have
   // applied a field-LWW merge that rejected part of our patch, and the user
   // should see what really landed rather than what we hoped would. Scope is
   // report.sentTables — what this drain really delivered — never "everything".
   if (report.sent > 0) {
-    const sent = [...report.sentTables].filter((t) => !owing.has(t));
-    for (const table of sent) qc.invalidateQueries({ queryKey: [table] });
+    // A table whose Realtime channel is joined settles from its own echo (see
+    // `settleWrite`). Refetching it here too is what turned one checkbox into a
+    // reload of every task list plus three vertical rebuilds.
+    const sent = [...report.sentTables].filter((t) => !owing.has(t) && !isTableLive(t));
+    for (const table of sent) want([table]);
 
     // Cross-table blast radius, scoped to what was delivered: task_labels
     // joins into the ["tasks"] caches, and projects/initiatives/domains/
@@ -408,12 +435,21 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
     // the "fast double-tap reverts" bug this guard exists to prevent.
     const touchesTasks = sent.some((t) => t === "tasks" || t === "task_labels");
     if (touchesTasks && !owing.has("tasks") && !owing.has("task_labels")) {
-      qc.invalidateQueries({ queryKey: ["tasks"] });
+      want(["tasks"]);
     }
     const touchesVertical = sent.some((t) => VERTICAL_SOURCES.has(t));
     if (touchesVertical && ![...VERTICAL_SOURCES].some((t) => owing.has(t))) {
-      qc.invalidateQueries({ queryKey: ["vertical"] });
+      want(["vertical"]);
     }
+  }
+
+  // A broader key covers every narrower one under it.
+  const keys = [...refresh.values()];
+  for (const key of keys) {
+    const covered = keys.some(
+      (k) => k !== key && k.length < key.length && k.every((part, i) => part === key[i]),
+    );
+    if (!covered) qc.invalidateQueries({ queryKey: [...key] });
   }
 }
 

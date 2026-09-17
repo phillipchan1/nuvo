@@ -11,9 +11,10 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
-import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
+import { applyTaskOrder, fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
+import { orderPatches } from "../lib/taskOrder";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
-import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { DEFAULT_DOMAIN_SYMBOL, normalizeDomainSymbol } from "../lib/domainSymbolKeys";
 import { upsertPushVerdict } from "../lib/priorities";
@@ -524,7 +525,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       for (const id of ids) await queueWrite(makeOp("projects", "delete", id));
 
       invalidateWhenSafe(qc, "projects", ["vertical", "projects"]);
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
       invalidateWhenSafe(qc, "slots", ["slots"]);
     };
 
@@ -617,11 +618,12 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
     /** Queue one patch per task and refresh once. */
     const patchTasks = async (ids: Iterable<string>, patch: Partial<Task>) => {
-      for (const id of ids) {
-        patchCaches(qc, id, patch);
-        await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
-      }
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      // Every cache patch first, then the writes: one paint for the whole batch
+      // instead of a render (and a vertical rebuild) per row.
+      const list = [...ids];
+      for (const id of list) patchCaches(qc, id, patch);
+      await Promise.all(list.map((id) => queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>))));
+      settleWrite(qc, "tasks", ["tasks"]);
     };
 
     /**
@@ -699,7 +701,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           patchCaches(qc, t.id, patch);
           await queueWrite(makeOp("tasks", "update", t.id, patch));
         }
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        settleWrite(qc, "tasks", ["tasks"]);
       })();
     };
 
@@ -724,7 +726,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       await writeTable("tasks", id, rowPatch);
       // keep the Google "Nuvo" mirror in sync, same contract as useTasks
       if (MIRROR_FIELDS.some((f) => f in rowPatch)) mirrorTask(id);
-      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      settleWrite(qc, "tasks", ["tasks"]);
     };
 
     return {
@@ -1065,7 +1067,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             energy: "quick",
             duration_minutes: durationMins,
           }),
-        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
+        ).then(() => settleWrite(qc, "tasks", ["tasks"]));
       },
       addTasks: async (parent, drafts) => {
         if (!drafts.length) return;
@@ -1109,7 +1111,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
               }),
             ),
           ),
-        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
+        ).then(() => settleWrite(qc, "tasks", ["tasks"]));
       },
       addTasksToWeek: async (parent, drafts) => {
         if (!drafts.length) return;
@@ -1153,7 +1155,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
               }),
             ),
           ),
-        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
+        ).then(() => settleWrite(qc, "tasks", ["tasks"]));
       },
       updateTask: (id, patch) => {
         const rowPatch: Partial<Task> = {};
@@ -1167,7 +1169,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       deleteTask: (id) => {
         const row = (tasksQ.data ?? []).find((x) => x.id === id);
         const prev = row?.status;
-        void patchTaskRow(id, { status: "trashed" });
+        // `trashed_at` is what the trash face sorts by; without it a task deleted
+        // here sank below everything trashed from the rail.
+        void patchTaskRow(id, { status: "trashed", trashed_at: new Date().toISOString() });
         if (prev) {
           recordUndo({
             label: "Task deleted",
@@ -1176,21 +1180,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             batchShortLabel: (n) => `${n} deleted`,
             tier: "toast",
             coalesceKey: "trash",
-            undo: () => void patchTaskRow(id, { status: prev }),
+            undo: () => void patchTaskRow(id, { status: prev, trashed_at: null }),
           });
         }
         return prev;
       },
       restoreTask: (id, status) => {
-        void patchTaskRow(id, { status });
+        void patchTaskRow(id, { status, trashed_at: null });
       },
       reorderTasks: (ids) => {
-        if (!ids.length) return;
-        void (async () => {
-          ids.forEach((id, i) => patchRows<Task>(["tasks", "all"], id, { sort_order: i }));
-          for (let i = 0; i < ids.length; i++) await writeTable("tasks", ids[i], { sort_order: i });
-          invalidateWhenSafe(qc, "tasks", ["tasks"]);
-        })();
+        // Same act as the rail's: only the moved rows are written, inside the
+        // list's own range, across every task cache, with one undo.
+        const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
+        const rows = ids.map((id) => byId.get(id)).filter((t): t is Task => Boolean(t));
+        const patches = orderPatches(rows, ids);
+        if (!patches.length) return;
+        const back = patches.map((p) => ({ id: p.id, sort_order: byId.get(p.id)?.sort_order ?? p.sort_order }));
+        applyTaskOrder(qc, patches);
+        recordUndo({
+          label: "Reordered",
+          shortLabel: "Reordered",
+          tier: "silent",
+          coalesceKey: "reorder",
+          undo: () => applyTaskOrder(qc, back),
+          redo: () => applyTaskOrder(qc, patches),
+        });
       },
       toggleTask: (id) => {
         const row = (tasksQ.data ?? []).find((x) => x.id === id);
@@ -1312,7 +1326,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             patchCaches(qc, id, patch);
             await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
           }
-          invalidateWhenSafe(qc, "tasks", ["tasks"]);
+          settleWrite(qc, "tasks", ["tasks"]);
         });
       },
       addProjectReadyToSprint: (projectId) => {
@@ -1345,7 +1359,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             patchCaches(qc, t.id, patch);
             await queueWrite(makeOp("tasks", "update", t.id, patch as Record<string, unknown>));
           }
-          invalidateWhenSafe(qc, "tasks", ["tasks"]);
+          settleWrite(qc, "tasks", ["tasks"]);
         })();
       },
       setSprintGoal: (goal) => void patchSprint({ goal }),
@@ -1429,7 +1443,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           await queueWrite(makeOp("tasks", "update", p.id, patch));
           if (navigator.onLine) mirrorTask(p.id);
         }
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        settleWrite(qc, "tasks", ["tasks"]);
       },
 
       applySlots: async (specs, opts) => {
@@ -1499,7 +1513,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           if (navigator.onLine) invokeQuiet("slot-mirror", { slotId });
         }
         invalidateWhenSafe(qc, "slots", ["slots"]);
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        settleWrite(qc, "tasks", ["tasks"]);
       },
 
       assignToStanding: async (specs, opts) => {
@@ -1582,7 +1596,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
         await queueWrite(makeOp("sprints", "update", weekStart, rowPatch));
 
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        settleWrite(qc, "tasks", ["tasks"]);
         invalidateWhenSafe(qc, "sprints", ["sprint"]);
       },
 
