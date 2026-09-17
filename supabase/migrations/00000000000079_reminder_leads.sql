@@ -30,8 +30,10 @@ alter table public.reminders
 alter table public.reminders
   drop constraint if exists reminders_leads_nonneg;
 alter table public.reminders
+  -- No subqueries in a CHECK: `0 <= all(…)` and `array_position(…, null)` say
+  -- "every lead is a non-negative number" without one.
   add constraint reminders_leads_nonneg check (
-    not exists (select 1 from unnest(leads) x where x is null or x < 0)
+    array_position(leads, null) is null and 0 <= all(leads)
   );
 
 comment on column public.reminders.leads is
