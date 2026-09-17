@@ -38,13 +38,14 @@ import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
 import { useNotifyPermission, usePushRegistration } from "../hooks/useReminders";
 import { hasPushSubscription, pushConfigured, pushSupported } from "../lib/push";
-import { DEFAULT_REMINDER_PREFS, describeLead, REMINDER_LEADS } from "../../supabase/functions/_shared/reminderRules.ts";
+import { DEFAULT_REMINDER_PREFS } from "../../supabase/functions/_shared/reminderRules.ts";
+import { ReminderList } from "./ReminderSelect";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
 import { isDesktopTauri, offerMacDownload } from "../lib/platform";
 import { openDevTools, useDeveloperMode } from "../lib/devtools";
 import { clearErrorLog, formatErrorLog, useErrorLog } from "../lib/appError";
-import { loadChangelog, isMinor, type ChangelogEntry } from "../lib/changelog";
+import { loadChangelog, isMinor, notableNotes, type ChangelogEntry } from "../lib/changelog";
 
 /** Stable-named universal DMG on the public releases repo. */
 const DOWNLOAD_MAC_URL =
@@ -1139,6 +1140,7 @@ function ConnectionsPane({
 function UpdateControls() {
   const { state, check, restart } = useUpdater();
   const busy = state.status === "checking" || state.status === "downloading";
+  const readyNotes = state.status === "ready" ? notableNotes(state.notes) : null;
 
   const message = {
     idle: "Checked automatically in the background.",
@@ -1175,12 +1177,12 @@ function UpdateControls() {
           )}
         </div>
       </div>
-      {state.status === "ready" && state.notes && (
+      {readyNotes && (
         <details className="mt-2 text-caption text-muted">
           <summary className="cursor-pointer select-none hover:text-ink fast">
             What's new in v{state.version}
           </summary>
-          <p className="mt-1 whitespace-pre-line leading-snug">{state.notes}</p>
+          <p className="mt-1 whitespace-pre-line leading-snug">{readyNotes}</p>
         </details>
       )}
     </div>
@@ -1233,7 +1235,7 @@ function ReleaseHistory() {
                 <span className="text-meta text-muted">{formatReleaseDate(row.entry.date)}</span>
               </div>
               <p className="mt-0.5 whitespace-pre-line text-caption leading-snug text-muted">
-                {row.entry.notes}
+                {notableNotes(row.entry.notes)}
               </p>
             </li>
           ) : (
@@ -1254,13 +1256,13 @@ function formatReleaseDate(iso: string): string {
 }
 
 /**
- * Reminders — the opt-in, and the three leads that are allowed to exist.
+ * Reminders — the opt-in, and the leads that are allowed to exist.
  *
  * The copy here is load-bearing. N-07 refused notifications and Principle 9
  * refuses notification theater; what shipped is the narrow thing N-07's own
  * escape clause allows, and this pane has to be honest about that rather than
- * selling a feature. Hence: off by default, three anchors, and a line saying
- * plainly what Nuvo will never do with the permission.
+ * selling a feature. Hence: off by default, named commitments only, and a line
+ * saying plainly what Nuvo will never do with the permission.
  */
 function RemindersPane({
   settings,
@@ -1293,34 +1295,30 @@ function RemindersPane({
     if (on && permission === "default") await request();
   };
 
-  const leadSelect = (
-    key: "event_lead" | "block_lead" | "deadline_lead",
+  const leadList = (
+    key: "event_leads" | "block_leads" | "deadline_leads" | "all_day_leads",
   ) => (
-    <Select
-      value={prefs[key] == null ? "off" : String(prefs[key])}
-      disabled={!prefs.enabled}
-      onChange={(e) => patch({ [key]: e.target.value === "off" ? null : Number(e.target.value) } as Partial<typeof prefs>)}
-      className="w-full sm:w-56"
-    >
-      {REMINDER_LEADS.map((m) => (
-        <option key={m} value={m}>
-          {describeLead(m)}
-        </option>
-      ))}
-      <option value="off">Never</option>
-    </Select>
+    <ReminderList
+      leads={prefs[key]}
+      defaultLeads={[]}
+      source="override"
+      enabled={prefs.enabled}
+      block
+      prefsMode
+      onChange={(next) => patch({ [key]: next === "default" ? [] : next } as Partial<typeof prefs>)}
+    />
   );
 
   return (
     <div>
       <PaneHeader
         title="Reminders"
-        sub="The only time Nuvo speaks first — and only about something that is about to happen."
+        sub="The only time Nuvo speaks first — and only about a named commitment."
       />
       <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
         <Row
           title="Remind me"
-          desc="Off until you ask. Nuvo will never nudge you about planning, streaks, or a backlog — only about a commitment that is minutes away."
+          desc="Off until you ask. Nuvo will never nudge you about planning, streaks, or a backlog — only about a commitment that is coming up."
         >
           <Toggle checked={prefs.enabled} onChange={(v) => void setEnabled(v)} label="Reminders" />
         </Row>
@@ -1362,19 +1360,23 @@ function RemindersPane({
           </Row>
         )}
 
-        <Row layout="stack" title="Before a meeting" desc="Events from your connected calendars.">
-          {leadSelect("event_lead")}
+        <Row layout="stack" title="Before a meeting" desc="Timed events from your connected calendars.">
+          {leadList("event_leads")}
+        </Row>
+
+        <Row layout="stack" title="All-day events" desc="Birthdays, offsites, anything without a clock. Speaks at the time of day below.">
+          {leadList("all_day_leads")}
         </Row>
 
         <Row layout="stack" title="Before a block you scheduled" desc="Your own time blocks and slots.">
-          {leadSelect("block_lead")}
+          {leadList("block_leads")}
         </Row>
 
         <Row layout="stack" title="When a deadline lands" desc="Measured from the time of day below.">
-          {leadSelect("deadline_lead")}
+          {leadList("deadline_leads")}
         </Row>
 
-        <Row layout="stack" title="Deadline time of day" desc="When a deadline speaks on its day.">
+        <Row layout="stack" title="On the day, at" desc="When a date-only reminder speaks — deadlines, all-day events, and a reminder you set on an untimed task.">
           <TextInput
             type="time"
             step={900}

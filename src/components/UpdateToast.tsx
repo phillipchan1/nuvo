@@ -1,4 +1,5 @@
 import { useUpdater } from "../hooks/useUpdater";
+import { notableNotes } from "../lib/changelog";
 
 // Quiet bottom-right auto-update prompt. Updates download silently in the
 // background (see src/lib/appUpdate.ts) — this only appears once there's
@@ -6,6 +7,7 @@ import { useUpdater } from "../hooks/useUpdater";
 // waiting for a restart. It shares state with the Settings → Desktop app panel.
 export default function UpdateToast() {
   const { state, restart } = useUpdater();
+  const notes = notableNotes(state.notes);
 
   if (state.status !== "downloading" && state.status !== "ready") return null;
 
@@ -31,12 +33,12 @@ export default function UpdateToast() {
           <span className="text-caption font-semibold">
             Nuvo {state.version ?? ""} is ready
           </span>
-          {state.notes && (
+          {notes && (
             <details className="text-label text-muted">
               <summary className="cursor-pointer select-none hover:text-ink fast">
                 What's new
               </summary>
-              <p className="mt-1 whitespace-pre-line leading-snug">{state.notes}</p>
+              <p className="mt-1 whitespace-pre-line leading-snug">{notes}</p>
             </details>
           )}
           <div className="pt-1">

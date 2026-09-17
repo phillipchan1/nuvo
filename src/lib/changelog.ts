@@ -3,20 +3,17 @@
 // scripts/assemble-changelog.mjs. Fallback: the public GitHub Releases API —
 // works on localhost dev and any build where the bundled file is absent or
 // empty. In-memory cache so the API is hit at most once per page session.
+//
+// What counts as worth showing is owned by releaseNotesVoice.ts — this file
+// only loads history. Re-export the voice so Settings / the update toast
+// share one filter.
+
+export { GENERIC_NOTES, isMinor, notableNotes } from "./releaseNotesVoice";
 
 export interface ChangelogEntry {
   version: string;
   date: string;
   notes: string;
-}
-
-// Entries we render compactly (collapsed into a count) rather than calling out:
-// the generic "nothing user-facing" line and empties.
-const GENERIC = /^(✨\s*)?(minor improvements|a little polish|automated build from)/i;
-
-export function isMinor(notes: string): boolean {
-  const t = notes.trim();
-  return !t || GENERIC.test(t);
 }
 
 const RELEASES_REPO = "phillipchan1/nuvo-releases";

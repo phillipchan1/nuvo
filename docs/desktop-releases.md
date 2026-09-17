@@ -43,8 +43,14 @@ It's deliberately **not** each workflow's own `github.run_number`: `release.yml`
 `ios-release.yml` have independent run counters and either can be skipped by the
 platform-reachability check, so `run_number` alone would drift between them.
 Release notes are AI-generated from the commit range by
-`scripts/release-notes.mjs` (OpenAI, with a deterministic commit-filter fallback if
-`OPENAI_API_KEY` is absent).
+`scripts/release-notes.mjs` (OpenAI). They are written for someone *using* the
+app — what they get if they restart — never for the commit log. If a change
+isn't clearly user-facing, the notes stay quiet (`✨ A few quiet improvements
+behind the scenes.`) rather than translating plumbing into friendlier jargon.
+No API key, a model error, or notes that still read like engineering all fall
+back to that same quiet line, so the update prompt never ships commit-speak.
+The in-app toast and Settings hide that line (and any leftover engineering
+bullets) and fold those versions into "+ N smaller updates".
 
 > The `nuvo` source repo is **public**, so GitHub Actions minutes are free/unlimited.
 > If it's ever made private again, macOS runners bill at 10× included minutes — every
@@ -63,7 +69,7 @@ Create **public** repo `phillipchan1/nuvo-releases` (empty is fine).
 - `RELEASES_TOKEN` — a PAT (fine-grained: `contents:read/write` on `nuvo-releases`)
   used to publish releases + read/write `last-built-sha.txt`.
 - `OPENAI_API_KEY` — for AI release notes (`scripts/release-notes.mjs`). Optional
-  (falls back to cleaned commit subjects).
+  (falls back to a quiet "behind the scenes" line, never raw commit subjects).
 
 **Tauri updater signing**
 - `TAURI_SIGNING_PRIVATE_KEY` — the full contents of `~/.tauri/nuvo-updater.key`.
@@ -113,8 +119,10 @@ Per release, to `nuvo-releases` as GitHub's `--latest`:
   always lands on the latest instead of restarting once for the stale build and again
   right after for the one that shipped in between.
 - Settings → **Desktop app** — running version, a manual **"Check for updates"**, and a
-  **"What's new"** history (`src/lib/changelog.ts`, bundled `public/changelog.json` with a
-  GitHub Releases API fallback). Shares the store with the toast so they never disagree.
+  **"What's new"** history (`src/lib/changelog.ts` + `releaseNotesVoice.ts`, bundled
+  `public/changelog.json` with a GitHub Releases API fallback). Only notes a person
+  using the app would understand are listed; quiet/internal builds fold into a count.
+  Shares the store with the toast so they never disagree.
 
 ## Rotating the updater key (rare)
 

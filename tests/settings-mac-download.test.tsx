@@ -35,6 +35,7 @@ vi.mock("../src/components/SyncPanel", () => ({
 vi.mock("../src/lib/changelog", () => ({
   loadChangelog: async () => [],
   isMinor: () => false,
+  notableNotes: (notes: string | null) => notes,
 }));
 
 vi.mock("../src/lib/devtools", () => ({
