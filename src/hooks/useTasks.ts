@@ -568,6 +568,10 @@ export interface NewTaskInput {
   /** Creates this row as a STEP of another task rather than as a task. */
   parent_task_id?: string | null;
   sort_order?: number;
+  energy?: Task["energy"];
+  /** Resting status for an undated task. Filed work (a project, a bet, a
+   *  domain) rests in "backlog"; a bare capture defaults to the inbox. */
+  status?: Extract<TaskStatus, "inbox" | "backlog">;
   /** Internal: the optimistic temp id, so the wrapper can track this create's
    *  promise and defer any patch fired before the row is persisted. Stripped
    *  before the insert. */
@@ -599,11 +603,11 @@ export function useTaskMutations() {
    */
   const createTask = async (input: NewTaskInput): Promise<Task> => {
     const id = input.clientId ?? crypto.randomUUID();
-    const { labelIds, clientId: _clientId, ...fields } = input;
+    const { labelIds, clientId: _clientId, status: restingAs, ...fields } = input;
     // A step is never an inbox capture: it is already filed, on its parent. Any
     // other status would put a checklist line in triage.
     const isStep = Boolean(input.parent_task_id);
-    const status: TaskStatus = isStep ? "backlog" : input.do_date ? "planned" : "inbox";
+    const status: TaskStatus = isStep ? "backlog" : input.do_date ? "planned" : (restingAs ?? "inbox");
     const duration =
       input.start_time != null
         ? (input.duration_minutes ?? defaultDurationMins)
@@ -631,7 +635,7 @@ export function useTaskMutations() {
       key_result_id: null,
       sprint_id: null,
       big_rock_id: null,
-      energy: null,
+      energy: input.energy ?? null,
       assignee: "me",
       prework: "",
       prework_at: null,
@@ -854,15 +858,6 @@ export function useTaskMutations() {
       opts),
 
     /** Create a fresh task already inside a slot (no block of its own). */
-    createInSlot: (slot: Slot, title: string) =>
-      createTask({
-        title,
-        do_date: slot.do_date,
-        slot_id: slot.id,
-        project_id: slot.project_id,
-        domain_id: slot.domain_id,
-      }),
-
     complete: (t: Task, opts?: UndoOpts) =>
       track("complete", t, completeSnap(t), { status: "done", completed_at: new Date().toISOString() },
       opts),

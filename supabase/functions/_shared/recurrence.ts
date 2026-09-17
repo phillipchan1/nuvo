@@ -539,19 +539,32 @@ export function groupSeriesByCadence<T extends RecurrenceSeriesRow>(
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-/** Parse recurrence phrases from capture text. Strips matched spans from input. */
+/**
+ * Parse recurrence phrases from capture text. Strips matched spans from input.
+ *
+ * Matches are blanked to spaces rather than cut, so `spans` stay valid indices
+ * into `input` (a capture box highlights them in place); `stripped` collapses
+ * the whitespace exactly as before.
+ */
 export function parseRecurrencePhrase(input: string, refDateISO: string): {
   rule: RecurrenceRule | null;
   anchorDate: string | null;
   stripped: string;
+  spans: { start: number; end: number }[];
 } {
   let working = input;
   let anchorDate: string | null = null;
+  const spans: { start: number; end: number }[] = [];
+  const blank = (m: RegExpMatchArray) => {
+    const start = m.index ?? working.indexOf(m[0]);
+    spans.push({ start, end: start + m[0].length });
+    working = working.slice(0, start) + " ".repeat(m[0].length) + working.slice(start + m[0].length);
+  };
 
   const starting = working.match(/\bstarting\s+(today|tomorrow)\b/i);
   if (starting) {
     anchorDate = starting[1].toLowerCase() === "tomorrow" ? addDaysISO(refDateISO, 1) : refDateISO;
-    working = working.replace(starting[0], "");
+    blank(starting);
   }
 
   let rule: RecurrenceRule | null = null;
@@ -570,18 +583,18 @@ export function parseRecurrencePhrase(input: string, refDateISO: string): {
     if (m) {
       const n = m[1] ? Math.max(1, parseInt(m[1], 10)) : 1;
       rule = build(n);
-      working = working.replace(m[0], "");
+      blank(m);
       break;
     }
   }
 
-  if (!rule && /\b(?:recurring|reoccurring)\b/i.test(working)) {
-    working = working.replace(/\b(?:recurring|reoccurring)\b/i, "");
-  }
+  const loose = rule ? null : working.match(/\b(?:recurring|reoccurring)\b/i);
+  if (loose) blank(loose);
 
   return {
     rule,
     anchorDate,
     stripped: working.replace(/\s{2,}/g, " ").trim(),
+    spans,
   };
 }

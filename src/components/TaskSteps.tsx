@@ -14,10 +14,11 @@
 //   ⌫ on an empty row      remove that step and focus the one above
 //   Esc                    abandon the edit
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useTaskSteps } from "../hooks/useTasks";
+import TaskComposer from "./tasks/TaskComposer";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -37,17 +38,12 @@ export default function TaskSteps({
   touch?: boolean;
 }) {
   const { data: steps = [] } = useTaskSteps(task.id);
-  const [draft, setDraft] = useState("");
-  const composerRef = useRef<HTMLInputElement>(null);
-
-  const add = async () => {
-    const title = draft.trim();
-    if (!title) return;
-    setDraft("");
-    await mutations.addStep(task, title, steps.length);
-    // Stay in the composer: a checklist is written in one breath, and making
-    // the user re-click between lines is what makes people give up on them.
-    composerRef.current?.focus();
+  // Positions for lines added in one breath (a pasted list lands before the
+  // steps query has seen any of them).
+  const nextPos = useRef(steps.length);
+  nextPos.current = Math.max(nextPos.current, steps.length);
+  const add = (title: string) => {
+    void mutations.addStep(task, title, nextPos.current++);
   };
 
   const rowH = touch ? "tap-h" : "min-h-[26px]";
@@ -80,26 +76,17 @@ export default function TaskSteps({
         />
       ))}
 
-      <div className={`flex items-center gap-2 ${rowH}`}>
-        <span className="h-3.5 w-3.5 shrink-0 rounded-[4px] border border-dashed border-line-strong" aria-hidden />
-        <input
-          ref={composerRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.stopPropagation();
-              void add();
-            }
-            if (e.key === "Escape") setDraft("");
-          }}
-          onBlur={() => void add()}
-          placeholder={total ? "Add a step" : "Break this into steps"}
-          aria-label="Add a step"
-          className="fast min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-body text-ink outline-none placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
-        />
-      </div>
+      {/* The app's one add box, in plain mode: a step is a line of text, not a
+          capture, so nothing is parsed — but Enter, Escape and paste behave
+          exactly as they do on every other list. */}
+      <TaskComposer
+        plain
+        submitOnBlur
+        placeholder={total ? "Add a step" : "Break this into steps"}
+        aria-label="Add a step"
+        onPlainSubmit={add}
+        className={touch ? "" : "-my-1"}
+      />
     </div>
   );
 }
@@ -118,6 +105,8 @@ function StepRow({
   onRemove: () => void;
 }) {
   const [title, setTitle] = useState(step.title);
+  // A rename from another surface (or the server) lands here too.
+  useEffect(() => setTitle(step.title), [step.title]);
   const done = step.status === "done";
 
   return (
@@ -158,6 +147,8 @@ function StepRow({
             (e.currentTarget as HTMLInputElement).blur();
           }
           if (e.key === "Escape") {
+            // The field owns Escape first (D-051): abandon the edit, keep the task open.
+            e.stopPropagation();
             setTitle(step.title);
             (e.currentTarget as HTMLInputElement).blur();
           }

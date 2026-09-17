@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import MobileCapture from "../src/components/mobile/MobileCapture";
 import { parseDateISO } from "../src/lib/dates";
 import type { NewTaskInput } from "../src/hooks/useTasks";
+import { TaskCaptureSinkContext } from "../src/hooks/useTaskCapture";
 
 const WRITABLE = [
   { id: "a1", provider: "google", email: "you@example.com", sync_direction: "two_way" },
@@ -30,15 +31,20 @@ function mount(
   const onClose = vi.fn();
   const view = render(
     <QueryClientProvider client={qc}>
-      <MobileCapture
-        labels={[]}
-        onCreate={async (input) => {
-          created.push(input);
+      <TaskCaptureSinkContext.Provider
+        value={{
+          create: async (input) => {
+            created.push(input);
+          },
+          createSeries: async () => {},
         }}
-        onClose={onClose}
-        initialStart={seed?.start ?? null}
-        initialDurationMinutes={seed?.durationMinutes ?? null}
-      />
+      >
+        <MobileCapture
+          onClose={onClose}
+          initialStart={seed?.start ?? null}
+          initialDurationMinutes={seed?.durationMinutes ?? null}
+        />
+      </TaskCaptureSinkContext.Provider>
     </QueryClientProvider>,
   );
   const field = screen.getByLabelText("Capture a task or event") as HTMLInputElement;

@@ -13,7 +13,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical, type TaskParent } from "../../../hooks/useVertical";
 import { useLongPressReorder } from "../../../hooks/useLongPressReorder";
-import { parseCapture } from "../../../lib/nlp";
+import SharedComposer from "../../tasks/TaskComposer";
 import { ProjectShipAssess } from "../../record/ShipAssess";
 import { QuarterBand, WeekBand } from "../../record/PlacementBand";
 import { RecordLog } from "../../record/RecordLog";
@@ -630,51 +630,31 @@ export function TaskRow({
 // Free text in, structure out (`parseCapture` strips a trailing "30m"), a plain
 // `<input>` so iOS dictation works, and ⏎ keeps the caret for the next one —
 // the same low-data-entry act as the desktop TaskList composer, at thumb scale.
+/** The phone's add box on a detail screen — the app's one composer
+ *  (`tasks/TaskComposer`), filed into this record. `store` stays in the
+ *  signature for the callers; the composer creates through the shared path. */
 export function TaskComposer({
   parent,
-  store,
-  accent,
   placeholder = "Add a task…",
 }: {
   parent: TaskParent;
-  store: Store;
-  accent: string;
+  store?: Store;
+  accent?: string;
   placeholder?: string;
 }) {
-  const [draft, setDraft] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-
-  const submit = () => {
-    const text = draft.trim();
-    if (!text) return;
-    const parsed = parseCapture(text);
-    store.addTask(parent, { title: parsed.title || text, durationMins: parsed.durationMinutes ?? undefined });
-    setDraft("");
-    ref.current?.focus();
-  };
-
+  const { data } = useVertical();
+  const p = parent.projectId ? data.projects.find((x) => x.id === parent.projectId) : null;
+  const i = !p && parent.initiativeId ? data.initiatives.find((x) => x.id === parent.initiativeId) : null;
+  const d = data.domains.find((x) => x.id === (p?.domainId ?? i?.domainId ?? parent.domainId));
+  const name = p?.name ?? i?.name ?? d?.name;
   return (
-    // A <label>, not a <div>: the input itself computes to ~41px (16px text +
-    // py-2.5), so the row wore `.tap`'s 44px while the actual focus target was
-    // short and the padding around it was dead. Wrapping in a label makes the
-    // whole 44px band — including the ＋ — focus the field.
-    <label className="tap mt-2 flex items-center gap-3 rounded-xl border border-dashed border-line px-3">
-      <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
-      <input
-        ref={ref}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        onBlur={submit}
-        placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent py-2.5 text-body outline-none placeholder:text-muted/60"
-      />
-    </label>
+    <SharedComposer
+      className="mt-2"
+      context={parent}
+      contextLabel={name ? { name, color: d?.color ?? null } : null}
+      placeholder={placeholder}
+      submitOnBlur
+    />
   );
 }
 

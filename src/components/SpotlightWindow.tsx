@@ -4,7 +4,6 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useLabels } from "../hooks/useCalendar";
-import { useTaskMutations } from "../hooks/useTasks";
 import { useVertical, VerticalProvider } from "../hooks/useVertical";
 import { useAgentContext, AgentProvider } from "../hooks/useAgentContext";
 import { ASSISTANT_NAME } from "../lib/assistant";
@@ -134,7 +133,6 @@ function SpotlightFrame({ children, className = "max-w-xl" }: { children: ReactN
 // picks them up — no cross-window plumbing needed.
 export default function SpotlightWindow() {
   const { labels } = useLabels();
-  const mutations = useTaskMutations();
   const { data: vertical } = useVertical();
   const { agent, navFocus } = useAgentContext();
 
@@ -239,7 +237,6 @@ export default function SpotlightWindow() {
         commands={commands}
         searchHits={searchHits}
         onEventHit={openEventHit}
-        onCreate={mutations.create}
         agent={agent}
         onClose={hide}
         onModeChange={setMode}

@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import MobileCapture from "./MobileCapture";
 import type { NewTaskInput } from "../../hooks/useTasks";
+import { TaskCaptureSinkContext } from "../../hooks/useTaskCapture";
 
 const WRITABLE = [
   { id: "a1", provider: "google", email: "you@example.com", sync_direction: "two_way" },
@@ -71,19 +72,24 @@ export default function CaptureHarness() {
       <div style={{ width: 375 }} className="relative mt-2 min-h-[480px] border border-line">
         <QueryClientProvider client={client}>
           {open && (
-            <MobileCapture
-              key={mode}
-              labels={[]}
-              initialStart={seed?.start ?? null}
-              initialDurationMinutes={seed?.durationMinutes ?? null}
-              onCreate={async (input: NewTaskInput) => {
+            <TaskCaptureSinkContext.Provider
+              value={{
+                create: async (input: NewTaskInput) => {
                 const when = input.start_time
                   ? `${input.do_date} ${new Date(input.start_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${input.duration_minutes}m`
                   : `${input.do_date ?? "inbox"} (anytime)`;
                 setLog(`${input.title} · ${when}`);
+                },
+                createSeries: async ({ template }) => setLog(`${template.title} · repeats`),
               }}
-              onClose={() => setOpen(false)}
-            />
+            >
+              <MobileCapture
+                key={mode}
+                initialStart={seed?.start ?? null}
+                initialDurationMinutes={seed?.durationMinutes ?? null}
+                onClose={() => setOpen(false)}
+              />
+            </TaskCaptureSinkContext.Provider>
           )}
         </QueryClientProvider>
       </div>

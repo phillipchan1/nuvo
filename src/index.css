@@ -1808,7 +1808,8 @@ textarea:focus {
    lifted card itself. (Higher specificity than the rule above; both unlayered,
    so this wins.) */
 .nuvo-capture-input:focus,
-.nuvo-inline-input:focus {
+.nuvo-inline-input:focus,
+.task-composer-input:focus {
   box-shadow: none;
 }
 
@@ -3383,3 +3384,191 @@ html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
   0% { filter: invert(1) contrast(1.4); }
   100% { filter: none; }
 }
+
+/* ── Task composer: the one add box (components/tasks/TaskComposer) ─────────
+   A plain input over a mirror that draws what the grammar understood. The two
+   must share every metric that places a glyph — font, size, line-height,
+   letter-spacing, padding — or the highlights drift off their words. At rest a
+   `row` is a hairline line with a glyph in the list's gutter (D-050); open, it
+   floats as a card because it IS the focal thing. The pill is the rail's. */
+.task-composer { position: relative; }
+.task-composer-line { display: flex; align-items: center; gap: 0.625rem; min-height: 2.25rem; }
+.task-composer-glyph { display: inline-flex; width: 15px; flex-shrink: 0; justify-content: center; }
+.task-composer-field { position: relative; min-width: 0; flex: 1 1 auto; }
+.task-composer-input,
+.task-composer-mirror {
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: 20px;
+  letter-spacing: var(--text-body--letter-spacing);
+  font-weight: 500;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  white-space: pre;
+}
+.task-composer-input {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+  outline: none;
+}
+.task-composer-input::placeholder { color: color-mix(in srgb, var(--muted) 85%, transparent); font-weight: 400; }
+.task-composer-input::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); color: transparent; }
+.task-composer-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--ink);
+}
+.task-composer-token {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.task-composer-row { padding: 0.375rem 0; }
+.task-composer-row.is-open {
+  margin: 0.25rem -0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.task-composer-pill .task-composer-line {
+  padding: 0 0.875rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 9999px;
+  background: var(--surface);
+}
+.task-composer-pill.is-open .task-composer-line { border-color: var(--accent); }
+.task-composer-pill .task-composer-foot { padding: 0.5rem 0.25rem 0.125rem; }
+
+.task-composer-kbd {
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.task-composer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-left: 1.5625rem;
+}
+.task-composer-chips { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.task-composer-context,
+.task-composer-chip {
+  display: inline-flex;
+  max-width: 16rem;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.5rem;
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+.task-composer-context { color: var(--muted); }
+.task-composer-context.is-overridden { text-decoration: line-through; opacity: 0.6; }
+.task-composer-chip {
+  padding: 0 0.125rem 0 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.task-composer-unparse {
+  display: inline-flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.task-composer-unparse:hover { background: var(--accent-soft); color: var(--ink); }
+.task-composer-swatch { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
+.task-composer-hints { display: inline-flex; align-items: center; gap: 0.3125rem; font-size: var(--text-meta); color: var(--muted); white-space: nowrap; }
+.task-composer-hints kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 0.25rem; font-size: var(--text-micro); background: var(--surface); }
+.task-composer-hints kbd + kbd { margin-left: 0.375rem; }
+
+.task-composer-menu {
+  position: absolute;
+  left: -0.25rem;
+  top: calc(100% + 0.5rem);
+  z-index: 40;
+  width: min(17rem, 80vw);
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+}
+.task-composer-pill .task-composer-menu { top: auto; bottom: calc(100% + 0.75rem); }
+.task-composer-option {
+  display: flex;
+  width: 100%;
+  min-height: 1.875rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+  font-size: var(--text-caption);
+  text-align: left;
+  color: var(--ink);
+}
+.task-composer-option.is-active { background: var(--accent-soft); }
+.task-composer-btn {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: var(--text-caption);
+  color: var(--ink);
+}
+.task-composer-btn.is-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+
+/* A phone: 16px text so iOS doesn't zoom (the global input rule sets it with
+   !important — the mirror has to match it exactly), 44px lines and chips. */
+@media (max-width: 767px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse)) {
+  .task-composer-input,
+  .task-composer-mirror {
+    font-size: 16px !important;
+    line-height: 1.3 !important;
+  }
+  .task-composer-line { min-height: 2.75rem; }
+  .task-composer-row.is-open { margin-left: 0; margin-right: 0; }
+  .task-composer-foot { padding-left: 0; }
+  .task-composer-context,
+  .task-composer-chip { height: 2rem; font-size: var(--text-caption); }
+  .task-composer-unparse { width: 1.75rem; height: 1.75rem; }
+  .task-composer-hints { display: none; }
+  .task-composer-option { min-height: 2.75rem; font-size: var(--text-body); }
+}
+
+/* The phone capture sheet's box — the same composer in a bordered field. */
+.task-composer-field-box .task-composer-line {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+}
+.task-composer-field-box.is-open .task-composer-line {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.task-composer-field-box .task-composer-glyph { color: var(--accent); }
+.task-composer-field-box .task-composer-foot { padding-left: 0; }

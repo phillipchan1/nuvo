@@ -30,6 +30,8 @@ export interface ParsedCapture {
   recurrenceAnchor: string | null;
   /** Human-readable fragments for the live preview chips. */
   chips: { kind: "date" | "time" | "duration" | "label" | "priority" | "note" | "route" | "repeat"; text: string }[];
+  /** Where each recognised token sits in the input, in order. */
+  spans: CaptureSpan[];
 }
 
 const DURATION_RE = /\b(?:(\d+)\s*h(?:r|our)?s?)?\s*(?:(\d+)\s*m(?:in|ins|inutes)?\b)?/i;
@@ -65,12 +67,6 @@ const DATE_ALIASES: [RegExp, string][] = [
   [/\beow\b/gi, "friday"],
   [/\bend of week\b/gi, "friday"],
 ];
-
-function expandDateAliases(s: string): string {
-  let out = s;
-  for (const [re, full] of DATE_ALIASES) out = out.replace(re, full);
-  return out;
-}
 
 function parsePriority(token: string): TaskPriority {
   const t = token.toLowerCase();
@@ -130,84 +126,204 @@ export function resolveRoute(route: string, targets: RouteTarget[]): RouteTarget
   return prefix[0] ?? null;
 }
 
+export type CaptureTokenKind = ParsedCapture["chips"][number]["kind"];
+
+/** Where a recognised token sits in the text the user typed. */
+export interface CaptureSpan {
+  kind: CaptureTokenKind;
+  start: number;
+  end: number;
+  /** The token exactly as typed — the key a "keep as text" choice is stored under. */
+  text: string;
+}
+
+export interface ParseOptions {
+  /**
+   * Tokens the user asked to keep as plain words (clicked a highlight, or a
+   * chip's ×). Keyed by `literalKey(kind, text)`. A kept token stays in the
+   * title and the next candidate of that kind, if any, is used instead.
+   */
+  literal?: ReadonlySet<string>;
+}
+
+/** The key a kept-as-text token is remembered by. Case-insensitive, like the grammar. */
+export function literalKey(kind: CaptureTokenKind, text: string): string {
+  return `${kind}:${text.trim().toLowerCase()}`;
+}
+
+/**
+ * Casual date aliases expanded in place, with a map from each index of the
+ * expanded string back to the typed one — so a date chrono finds in "tomorrow"
+ * highlights the "tom" that was actually typed.
+ */
+function expandWithMap(s: string): { text: string; map: number[] } {
+  type Hit = { start: number; end: number; full: string };
+  const hits: Hit[] = [];
+  for (const [re, full] of DATE_ALIASES) {
+    const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+    for (const m of s.matchAll(g)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (hits.some((h) => start < h.end && end > h.start)) continue;
+      hits.push({ start, end, full });
+    }
+  }
+  hits.sort((a, b) => a.start - b.start);
+  let text = "";
+  const map: number[] = [];
+  let i = 0;
+  for (const h of hits) {
+    for (; i < h.start; i++) {
+      text += s[i];
+      map.push(i);
+    }
+    for (let k = 0; k < h.full.length; k++) {
+      text += h.full[k];
+      // Every expanded character points into the typed alias it came from.
+      map.push(h.start + Math.min(k, h.end - h.start - 1));
+    }
+    i = h.end;
+  }
+  for (; i < s.length; i++) {
+    text += s[i];
+    map.push(i);
+  }
+  map.push(s.length);
+  return { text, map };
+}
+
 /**
  * Parse a capture string like:
  *   "call David tomorrow 9am 30m #church !high @sermon // bring the outline"
- * into a structured task draft. Tokens are stripped from the title.
+ * into a structured task draft. Tokens are stripped from the title, and each
+ * one's position in `input` is reported in `spans` so a capture box can
+ * highlight what it understood without a second parser.
+ *
+ * Tokens are blanked to spaces rather than cut while parsing, so every index
+ * stays an index into what the user typed; the title collapses the gaps.
  */
-export function parseCapture(input: string, refDate: Date = new Date()): ParsedCapture {
-  let working = input;
+export function parseCapture(input: string, refDate: Date = new Date(), opts: ParseOptions = {}): ParsedCapture {
   const chips: ParsedCapture["chips"] = [];
+  const spans: CaptureSpan[] = [];
+  const kept = opts.literal;
+  const isKept = (kind: CaptureTokenKind, text: string) => Boolean(kept?.has(literalKey(kind, text)));
   const refISO = toDateISO(refDate);
 
+  // `working` becomes the title (claimed tokens blanked). `scan` is what every
+  // matcher reads: claimed tokens blanked too, and kept ones masked so a later
+  // matcher can't re-read them (a kept "5m" is not then a date).
+  let working = input;
+  let scan = input;
+  const fill = (s: string, start: number, end: number, ch: string) =>
+    s.slice(0, start) + ch.repeat(end - start) + s.slice(end);
+  const claim = (kind: CaptureTokenKind, start: number, end: number) => {
+    spans.push({ kind, start, end, text: input.slice(start, end) });
+    working = fill(working, start, end, " ");
+    scan = fill(scan, start, end, " ");
+  };
+  const protect = (start: number, end: number) => {
+    scan = fill(scan, start, end, "\u00a4");
+  };
+
   // Recurrence — strip cadence phrases before title/date mining.
-  const rec = parseRecurrencePhrase(working, refISO);
-  const recurrence: RecurrenceRule | null = rec.rule;
-  const recurrenceAnchor: string | null = rec.anchorDate;
-  if (rec.rule) {
-    working = rec.stripped;
+  let recurrence: RecurrenceRule | null = null;
+  let recurrenceAnchor: string | null = null;
+  const rec = parseRecurrencePhrase(scan, refISO);
+  const recText = rec.spans.map((s) => input.slice(s.start, s.end)).join(" ");
+  if (rec.rule && isKept("repeat", recText)) {
+    for (const s of rec.spans) protect(s.start, s.end);
+  } else if (rec.rule) {
+    recurrence = rec.rule;
+    recurrenceAnchor = rec.anchorDate;
+    for (const s of rec.spans) claim("repeat", s.start, s.end);
     chips.push({ kind: "repeat", text: describeRule(rec.rule, recurrenceAnchor ?? refISO) });
   }
 
   // // note — pull the freeform tail out FIRST so its text isn't mined for tokens
   // (dates, #labels) that belong to the description, not the task structure.
   let notes: string | null = null;
-  const noteMatch = working.match(NOTE_RE);
-  if (noteMatch) {
+  const noteMatch = scan.match(NOTE_RE);
+  if (noteMatch && noteMatch.index != null) {
+    const start = noteMatch.index + noteMatch[1].length;
     const body = noteMatch[2].trim();
-    if (body) {
-      notes = body;
-      chips.push({ kind: "note", text: body.length > 32 ? body.slice(0, 32) + "…" : body });
+    if (!isKept("note", input.slice(start))) {
+      if (body) {
+        notes = body;
+        chips.push({ kind: "note", text: body.length > 32 ? body.slice(0, 32) + "…" : body });
+      }
+      claim("note", start, input.length);
+    } else {
+      protect(start, input.length);
     }
-    working = working.replace(NOTE_RE, "");
   }
 
   // #labels
   const labels: string[] = [];
-  working = working.replace(LABEL_RE, (_, name: string) => {
-    labels.push(name);
-    chips.push({ kind: "label", text: `#${name}` });
-    return "";
-  });
+  for (const m of [...scan.matchAll(LABEL_RE)]) {
+    const start = m.index ?? 0;
+    if (isKept("label", m[0])) {
+      protect(start, start + m[0].length);
+      continue;
+    }
+    labels.push(m[1]);
+    chips.push({ kind: "label", text: `#${m[1]}` });
+    claim("label", start, start + m[0].length);
+  }
 
   // @route — a single slug the consumer resolves to a project/initiative/domain.
   let route: string | null = null;
-  const routeMatch = working.match(ROUTE_RE);
-  if (routeMatch) {
-    route = routeMatch[2];
+  for (const m of [...scan.matchAll(new RegExp(ROUTE_RE.source, "g"))]) {
+    const start = (m.index ?? 0) + m[1].length;
+    if (isKept("route", `@${m[2]}`)) {
+      protect(start, start + m[2].length + 1);
+      continue;
+    }
+    route = m[2];
     chips.push({ kind: "route", text: `@${route}` });
-    working = working.replace(ROUTE_RE, "$1");
+    claim("route", start, start + m[2].length + 1);
+    break;
   }
 
   // !priority
   let priority: TaskPriority = "none";
-  working = working.replace(PRIORITY_RE, (_, p: string) => {
-    priority = parsePriority(p);
+  for (const m of [...scan.matchAll(new RegExp(PRIORITY_RE.source, "gi"))]) {
+    const start = m.index ?? 0;
+    if (isKept("priority", m[0])) {
+      protect(start, start + m[0].length);
+      continue;
+    }
+    priority = parsePriority(m[1]);
     chips.push({ kind: "priority", text: `!${priority}` });
-    return "";
-  });
+    claim("priority", start, start + m[0].length);
+    break;
+  }
 
   // duration token (check before chrono so "30m" isn't eaten as a time)
   let durationMinutes: number | null = null;
-  const dMatch = working.match(DURATION_TOKEN_RE);
-  if (dMatch) {
-    const parsed = parseDurationToken(dMatch[1]);
-    if (parsed && parsed >= 5 && parsed <= 24 * 60) {
-      durationMinutes = parsed;
-      chips.push({ kind: "duration", text: dMatch[1].replace(/\s+/g, "") });
-      working = working.replace(dMatch[0], "");
+  for (const m of [...scan.matchAll(new RegExp(DURATION_TOKEN_RE.source, "gi"))]) {
+    const parsed = parseDurationToken(m[1]);
+    if (!parsed || parsed < 5 || parsed > 24 * 60) continue;
+    const start = (m.index ?? 0) + m[0].indexOf(m[1]);
+    if (isKept("duration", m[1])) {
+      protect(start, start + m[1].length);
+      continue;
     }
+    durationMinutes = parsed;
+    chips.push({ kind: "duration", text: m[1].replace(/\s+/g, "") });
+    claim("duration", start, start + m[1].length);
+    break;
   }
 
-  // natural-language date/time via chrono. Expand casual abbreviations into
-  // `working` itself first so chrono's matched span strips cleanly from the title
-  // (an alias only survives in the title if chrono didn't claim it as a date).
-  working = expandDateAliases(working);
+  // natural-language date/time via chrono, over a copy with casual
+  // abbreviations expanded — mapped back so the typed alias is what's claimed.
   let doDate: string | null = null;
   let startTime: Date | null = null;
-  const results = chrono ? chrono.parse(working, refDate, { forwardDate: true }) : [];
-  if (results.length > 0) {
-    const r = results[0];
+  const expanded = expandWithMap(scan);
+  const results = chrono ? chrono.parse(expanded.text, refDate, { forwardDate: true }) : [];
+  for (const r of results) {
+    const start = expanded.map[r.index];
+    const end = (expanded.map[r.index + r.text.length - 1] ?? start) + 1;
+    if (isKept("date", input.slice(start, end))) continue;
     const d = r.start.date();
     doDate = toDateISO(d);
     chips.push({ kind: "date", text: doDate });
@@ -223,10 +339,12 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
         if (mins > 0) durationMinutes = mins;
       }
     }
-    working = working.replace(r.text, "");
+    claim("date", start, end);
+    break;
   }
 
   const title = working.replace(/\s{2,}/g, " ").trim();
+  spans.sort((a, b) => a.start - b.start);
   return {
     title,
     doDate,
@@ -239,5 +357,6 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
     recurrence,
     recurrenceAnchor,
     chips,
+    spans,
   };
 }

@@ -55,6 +55,7 @@ import { anchoredTop } from "../lib/anchoredTop";
 import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDeleteButton, useRecurringScope, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
 import { isTypingIn } from "./floors/TaskList";
+import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import DomainSymbol from "./domain/DomainSymbol";
 import EventDomainControl from "./domain/EventDomainControl";
 
@@ -2361,11 +2362,10 @@ export function SlotPopover({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(slot.title);
-  const [newTitle, setNewTitle] = useState("");
   const [naming, setNaming] = useState(false);
   const [sel, setSel] = useState(-1);
   const titleRef = useRef<HTMLInputElement>(null);
-  const addRef = useRef<HTMLInputElement>(null);
+  const addRef = useRef<TaskComposerHandle>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const slotColRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -2650,13 +2650,6 @@ export function SlotPopover({
       id: slot.id,
       patch: { start_time: nd.toISOString(), do_date: dateISO },
     });
-  };
-
-  const addTask = () => {
-    if (!newTitle.trim()) return;
-    void taskMutations.createInSlot(slot, newTitle.trim());
-    setNewTitle("");
-    addRef.current?.focus();
   };
 
   // ↑↓/jk select · ↵ open · space toggle · x remove · t focus add
@@ -2977,26 +2970,13 @@ export function SlotPopover({
               aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}
               className="min-h-0 flex-1"
             >
-              <input
-                ref={addRef}
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addTask();
-                  if (e.key === "Escape") { e.stopPropagation(); setNewTitle(""); e.currentTarget.blur(); }
-                }}
-                placeholder="+ Add task to slot…"
-                aria-label="Add task to slot"
-                className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
-              />
-
               {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
               <div ref={listRef} className="relative -mx-1.5 mt-1 min-h-0 flex-1 overflow-y-auto px-1.5">
                 {reorderLineTop != null && (
                   <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
                 )}
                 {ordered.length === 0 && (
-                  <div className="px-1 py-2 text-caption italic text-muted/70">No tasks yet — type above.</div>
+                  <div className="px-1 py-2 text-caption italic text-muted/70">No tasks yet.</div>
                 )}
                 {ordered.map((t, i) => {
                   const done = t.status === "done";
@@ -3067,6 +3047,14 @@ export function SlotPopover({
                   );
                 })}
               </div>
+              <TaskComposer
+                ref={addRef}
+                className="mt-1"
+                placeholder="Add task to slot"
+                aria-label="Add task to slot"
+                context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
+                contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
+              />
             </PopSection>
           </PopCol>
         </PopBody>

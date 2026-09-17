@@ -45,15 +45,43 @@ export interface DrainReport {
 }
 
 let draining: Promise<DrainReport> | null = null;
+/** A drain was asked for while one was already walking the queue. */
+let again = false;
 
 /**
  * Send everything owed. Concurrent calls share one pass — a drain kicked off by
  * the `online` event and one kicked off by a keystroke must not both walk the
  * queue, or the same op goes out twice.
+ *
+ * But a pass only sends what was queued when it *started*. An op queued while
+ * it runs (a task insert right behind the label it references) used to join
+ * that pass, miss it, and then sit in the outbox until the next focus or
+ * reconnect — seconds to minutes of "saved" work that hadn't left the device.
+ * So a call that arrives mid-pass asks for one more pass.
  */
 export function drain(transport: Transport): Promise<DrainReport> {
-  draining ??= runDrain(transport).finally(() => {
+  if (draining) {
+    again = true;
+    return draining;
+  }
+  draining = (async () => {
+    const sentTables = new Set<SyncTable>();
+    const total: DrainReport = { sent: 0, parked: 0, sentTables, interrupted: false };
+    do {
+      again = false;
+      const r = await runDrain(transport);
+      total.sent += r.sent;
+      total.parked += r.parked;
+      for (const t of r.sentTables) sentTables.add(t);
+      if (r.interrupted) {
+        total.interrupted = true;
+        break;
+      }
+    } while (again);
+    return total;
+  })().finally(() => {
     draining = null;
+    again = false;
   });
   return draining;
 }

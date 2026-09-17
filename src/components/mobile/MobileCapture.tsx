@@ -34,9 +34,10 @@
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { captureTitle, parseCapture } from "../../lib/nlp";
-import { fmtDuration, parseDateISO, toDateISO, todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
-import { DEFAULT_DURATION_MINUTES, type Label } from "../../lib/types";
-import type { NewTaskInput } from "../../hooks/useTasks";
+import { fmtDayLabel, fmtDuration, parseDateISO, toDateISO, todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
+import { DEFAULT_DURATION_MINUTES } from "../../lib/types";
+import { useTaskCapture } from "../../hooks/useTaskCapture";
+import TaskComposer, { type TaskComposerHandle } from "../tasks/TaskComposer";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import { useSettings } from "../../hooks/useSettings";
 import Sheet from "./Sheet";
@@ -62,16 +63,12 @@ function nextSlotMinutes(now = new Date()): number {
 }
 
 export default function MobileCapture({
-  labels,
-  onCreate,
   onClose,
   defaultDoDate = null,
   initialKind = "task",
   initialStart = null,
   initialDurationMinutes = null,
 }: {
-  labels: Label[];
-  onCreate: (input: NewTaskInput) => Promise<unknown>;
   onClose: () => void;
   /** The day the screen you captured from is about — Today on the Today list,
    *  and on the Calendar the day you are actually looking at, not today. */
@@ -99,7 +96,7 @@ export default function MobileCapture({
   const [pickDateOpen, setPickDateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   // In-app ＋ is a webview gesture so the 120ms retry raises the keyboard;
   // a lock-screen widget is not — useRaiseKeyboard still lands the caret,
   // and the native WKWebView flag (D-115) is what lets the keys come up.
@@ -112,44 +109,29 @@ export default function MobileCapture({
 
   const parsed = useMemo(() => (text.trim() ? parseCapture(text) : null), [text]);
 
-  const chipColor = (kindOfChip: string) =>
-    kindOfChip === "label"
-      ? "var(--accent)"
-      : kindOfChip === "priority"
-        ? "var(--signal)"
-        : "var(--muted)";
-
   // ── the task branch ───────────────────────────────────────────────────────
+  // The box is the app's one composer and the create is the one create path:
+  // the day chips and a canvas tap are this sheet's context, and anything the
+  // sentence says (a day, a clock, @home, #label, a repeat) wins over them.
+  const context = useMemo(
+    () => ({ doDate: day, startTime: start, durationMinutes: start ? (mins ?? defaultMins) : null }),
+    [day, start, mins, defaultMins],
+  );
+  const { capture } = useTaskCapture(context);
+  const composerRef = useRef<TaskComposerHandle>(null);
   const submitTask = async () => {
-    const body = text.trim();
+    const body = composerRef.current?.value().trim() ?? text.trim();
     if (!body || saving) return;
     setError(null);
     setSaving(true);
     try {
-      const p = parseCapture(body);
-      const labelIds = p.labels
-        .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
-        .filter((id): id is string => Boolean(id));
-      // An explicit date/time in the text wins; otherwise the day chip and
-      // the canvas tap (when there was one).
-      const doDate = p.doDate ?? day ?? undefined;
-      const startAt = p.startTime ?? start;
-      await onCreate({
-        title: captureTitle(p, body),
-        notes: p.notes ?? undefined,
-        do_date: doDate,
-        start_time: startAt?.toISOString() ?? null,
-        duration_minutes: p.durationMinutes ?? (startAt ? (mins ?? defaultMins) : undefined),
-        priority: p.priority,
-        labelIds,
-      });
+      await capture(body, composerRef.current?.literal());
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save task");
       setSaving(false);
     }
   };
-
   // A date parsed from the text overrides the chips — reflect that in the UI.
   const dayLocked = Boolean(parsed?.doDate);
   const timeLocked = Boolean(parsed?.startTime);
@@ -248,44 +230,23 @@ export default function MobileCapture({
       <div className="px-4 pb-4">
         {/* The front door. A plain text <input> so iOS dictation works, and the
             one field either kind is born from. */}
-        <div className="fast flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-2.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
-          <span className="text-head text-accent">＋</span>
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              if (error) setError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && kind === "task") {
-                e.preventDefault();
-                void submitTask();
-              }
-            }}
-            enterKeyHint={kind === "task" ? "done" : "next"}
-            placeholder="What needs doing?"
-            aria-label="Capture a task or event"
-            autoCapitalize="sentences"
-            autoCorrect="on"
-            spellCheck
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted/70"
-          />
-        </div>
-
-        {parsed && parsed.chips.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {parsed.chips.map((c, i) => (
-              <span
-                key={i}
-                className="mono rounded-md border px-1.5 py-0.5 text-label"
-                style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
-              >
-                {c.text}
-              </span>
-            ))}
-          </div>
-        )}
+        <TaskComposer
+          ref={composerRef}
+          fieldRef={inputRef}
+          variant="field"
+          context={context}
+          placeholder="What needs doing?"
+          aria-label="Capture a task or event"
+          enterKeyHint={kind === "task" ? "done" : "next"}
+          enterDisabled={kind !== "task"}
+          closeOnSubmit
+          onTextChange={(v) => {
+            setText(v);
+            if (error) setError(null);
+          }}
+          onCreated={() => onClose()}
+          onError={setError}
+        />
 
         {/* The one question the sentence can't answer. Two faces, equal weight —
             not a "more options" trapdoor, because an event is not an advanced
@@ -325,7 +286,7 @@ export default function MobileCapture({
               <div className="flex flex-wrap gap-1.5">
                 {dayLocked ? (
                   <span className="rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent">
-                    {parsed?.doDate}
+                    {parsed?.doDate ? fmtDayLabel(parsed.doDate) : null}
                   </span>
                 ) : (
                   <>

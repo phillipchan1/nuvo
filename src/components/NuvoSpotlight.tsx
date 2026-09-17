@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { parseCapture, resolveRoute, routeKey, type RouteTarget } from "../lib/nlp";
+import { captureTitle, parseCapture, resolveRoute, type RouteTarget } from "../lib/nlp";
 import type { Label } from "../lib/types";
-import type { NewTaskInput } from "../hooks/useTasks";
+import { useTaskCapture } from "../hooks/useTaskCapture";
+import { useTokenMenu, type TokenMatch } from "./tasks/useTokenMenu";
 import type { AgentHandle } from "../hooks/useAgent";
 import type { AgentSuggestion } from "../lib/agentTypes";
 import { ASSISTANT_NAME } from "../lib/assistant";
@@ -81,7 +82,6 @@ export interface SpotlightProps {
   /** The searchable vertical — tasks/projects/initiatives/domains. Filtered here
    *  by the typed query. Optional so the standalone macOS window can omit it. */
   searchHits?: SearchHit[];
-  onCreate: (input: NewTaskInput) => Promise<unknown>;
   agent: AgentHandle;
   onClose: () => void;
   /**
@@ -138,7 +138,7 @@ export default function NuvoSpotlight(props: SpotlightProps) {
 // runs a command; Ask hands the same text to the Nuvo agent. Space on an empty
 // capture field flips to Ask; Backspace on an empty Ask field flips back.
 // Renders bare (no scrim / no card chrome) so a Modal or a window can wrap it.
-export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand, onModeChange, onLayoutChange, contextLabel, onEventHit }: SpotlightProps) {
+export function NuvoSpotlightPanel({ labels, commands, searchHits, agent, onClose, onRunCommand, onModeChange, onLayoutChange, contextLabel, onEventHit }: SpotlightProps) {
   // Whether there's horizontal room for the column deck. Keys off the surface's
   // own width, not the phone breakpoint — the ⌥Space panel is a legitimately
   // narrow (~680px) *desktop* surface that should still get the deck, while a
@@ -200,66 +200,46 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
     [captureText],
   );
 
-  // The routable vertical, derived from the search index (ids are "kind:uuid").
-  // Lets `@token` file a capture into a project/initiative/domain at create time.
-  const routeTargets = useMemo<RouteTarget[]>(
-    () =>
-      (searchHits ?? [])
-        .filter((h): h is SearchHit & { kind: "project" | "initiative" | "domain" } => h.kind !== "task")
-        .map((h) => ({ id: h.id.split(":")[1] ?? h.id, kind: h.kind, name: h.title })),
-    [searchHits],
-  );
+  // Capture goes through the one create path (`useTaskCapture`) — the same
+  // grammar, homes, labels and repeats as every other add box. The routable
+  // vertical comes from the app's store; the standalone ⌥Space window has no
+  // store, so it falls back to the search index it was handed (ids "kind:uuid").
+  const { capture, env } = useTaskCapture();
+  const routeTargets = useMemo<RouteTarget[]>(() => {
+    if (env.routeTargets.length) return env.routeTargets;
+    return (searchHits ?? [])
+      .filter((h): h is SearchHit & { kind: "project" | "initiative" | "domain" } => h.kind !== "task")
+      .map((h) => ({ id: h.id.split(":")[1] ?? h.id, kind: h.kind, name: h.title }));
+  }, [env.routeTargets, searchHits]);
 
   // ── Token autocomplete (#label / @route) ──────────────────────────────────
   // A plain <textarea> (auto-growing, no rich-text) is preserved for iOS
   // dictation — the menu just rewrites its value on select. `caret` tracks the
-  // cursor so we read the token being typed.
+  // cursor so we read the token being typed. Shared with every add box.
   const [caret, setCaret] = useState(0);
-  const [menuIndex, setMenuIndex] = useState(0);
-  const [menuDismissed, setMenuDismissed] = useState(false);
-  const activeToken = useMemo(() => {
-    if (mode !== "capture") return null;
-    const upto = captureText.slice(0, caret);
-    // The token under the caret: a #/@ trigger with no whitespace since.
-    const m = upto.match(/(^|\s)([#@])([\w-]*)$/);
-    if (!m) return null;
-    return { trigger: m[2] as "#" | "@", query: m[3], start: caret - m[3].length - 1 };
-  }, [captureText, caret, mode]);
+  const menu = useTokenMenu({
+    text: captureText,
+    caret,
+    labels,
+    routeTargets,
+    colorOf: env.colorOf,
+    enabled: mode === "capture",
+  });
 
-  const autoMatches = useMemo<{ insert: string; label: string; hint?: string }[]>(() => {
-    if (!activeToken) return [];
-    const q = routeKey(activeToken.query);
-    if (activeToken.trigger === "#") {
-      return labels
-        .filter((l) => routeKey(l.name).startsWith(q))
-        .slice(0, 6)
-        .map((l) => ({ insert: `#${l.name.replace(/\s+/g, "-")}`, label: `#${l.name}` }));
-    }
-    return routeTargets
-      .filter((t) => routeKey(t.name).startsWith(q))
-      .slice(0, 6)
-      .map((t) => ({ insert: `@${t.name.replace(/\s+/g, "-")}`, label: t.name, hint: t.kind }));
-  }, [activeToken, labels, routeTargets]);
-
-  const acceptToken = (insert: string) => {
-    if (!activeToken) return;
-    const before = captureText.slice(0, activeToken.start);
-    const after = captureText.slice(caret);
-    const next = `${before}${insert} ${after.replace(/^\s+/, "")}`;
-    const pos = before.length + insert.length + 1;
-    setCaptureText(next);
-    setMenuIndex(0);
+  const acceptToken = (match: TokenMatch) => {
+    const next = menu.accept(match);
+    setCaptureText(next.text);
     // Restore the caret just past the inserted token + trailing space.
     requestAnimationFrame(() => {
       const el = inputRef.current;
       if (el) {
-        el.selectionStart = el.selectionEnd = pos;
-        setCaret(pos);
+        el.selectionStart = el.selectionEnd = next.caret;
+        setCaret(next.caret);
       }
     });
   };
 
-  const menuOpen = autoMatches.length > 0 && !menuDismissed;
+  const menuOpen = menu.open;
 
   const query = captureText.trim().toLowerCase();
 
@@ -374,40 +354,19 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   // fires, shared by the flat list, the deck footer, and ⌘⏎.
   const commitCapture = () => {
     if (!parsed) return;
-    {
-      // A matched @route files the capture at create time; an unmatched token is
-      // left literal in the title for inbox grooming to home (the agreed default).
-      const routed = parsed!.route ? resolveRoute(parsed!.route, routeTargets) : null;
-      const title = routed
-        ? parsed!.title || captureText.trim()
-        : (parsed!.route ? `${parsed!.title} @${parsed!.route}`.trim() : parsed!.title) || captureText.trim();
-      const labelIds = parsed!.labels
-        .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
-        .filter((id): id is string => Boolean(id));
-      // Fire-and-forget: the create mutation updates the cache optimistically
-      // (onMutate) and the global mutationCache toasts on failure — so we never
-      // block the UI on the network round-trip. The "Captured" beat / close is
-      // instant, not "instant after the insert resolves."
-      void onCreate({
-        title,
-        notes: parsed!.notes ?? undefined,
-        do_date: parsed!.doDate,
-        start_time: parsed!.startTime?.toISOString() ?? null,
-        duration_minutes: parsed!.durationMinutes,
-        priority: parsed!.priority,
-        project_id: routed?.kind === "project" ? routed.id : undefined,
-        initiative_id: routed?.kind === "initiative" ? routed.id : undefined,
-        domain_id: routed?.kind === "domain" ? routed.id : undefined,
-        labelIds,
-      }).catch(() => {});
-      // Linger on a "Captured" beat, then dismiss — same in ⌘K and ⌥Space.
-      // Just past the .moment entrance (540ms) so the beat isn't cut off
-      // mid-spring; the task itself is already in the Inbox by now (onCreate's
-      // onMutate wrote the cache synchronously above), so this is purely the
-      // acknowledgment's own runway, not a wait for anything to finish.
-      setCaptured(title);
-      window.setTimeout(onClose, 650);
-    }
+    const raw = captureText.trim();
+    // Fire-and-forget: the create writes the cache before its first await, and
+    // a failure toasts from the global handler — so the "Captured" beat / close
+    // is instant, not "instant after the insert resolves." Repeats become a
+    // series here too (this box used to show the chip and drop the rule).
+    void capture(raw).catch(() => {});
+    // Linger on a "Captured" beat, then dismiss — same in ⌘K and ⌥Space.
+    // Just past the .moment entrance (540ms) so the beat isn't cut off
+    // mid-spring; the task is already in the Inbox by now, so this is purely
+    // the acknowledgment's own runway, not a wait for anything to finish.
+    const routed = parsed.route ? resolveRoute(parsed.route, routeTargets) : null;
+    setCaptured((routed ? parsed.title : captureTitle(parsed, raw)) || raw);
+    window.setTimeout(onClose, 650);
   };
 
   // The flat-list Enter path (mobile + the empty-query command palette): run
@@ -453,22 +412,22 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
     if (mode === "capture" && menuOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMenuIndex((i) => Math.min(autoMatches.length - 1, i + 1));
+        menu.move(1);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMenuIndex((i) => Math.max(0, i - 1));
+        menu.move(-1);
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        acceptToken(autoMatches[menuIndex].insert);
+        acceptToken(menu.matches[menu.index]);
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        setMenuDismissed(true);
+        menu.dismiss();
         return;
       }
     }
@@ -609,8 +568,6 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
           onChange={(e) => {
             setText(e.target.value);
             setHighlight(0);
-            setMenuDismissed(false);
-            setMenuIndex(0);
             setCaret(e.target.selectionStart ?? e.target.value.length);
           }}
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
@@ -632,21 +589,21 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
         {!isAsk && menuOpen && (
           <div className="absolute left-3 right-3 top-full z-30 mt-1 overflow-hidden rounded-xl border border-line/60 glass-card [box-shadow:var(--shadow-lift)]">
             <div className="section-label px-3 pb-1 pt-2 text-muted/50">
-              {activeToken?.trigger === "@" ? "File under" : "Label"}
+              {menu.trigger === "@" ? "File under" : "Label"}
             </div>
-            {autoMatches.map((m, i) => (
+            {menu.matches.map((m, i) => (
               <button
                 key={m.insert}
                 onMouseDown={(e) => {
                   e.preventDefault(); // keep focus in the input
-                  acceptToken(m.insert);
+                  acceptToken(m);
                 }}
-                onMouseEnter={() => setMenuIndex(i)}
+                onMouseEnter={() => menu.setIndex(i)}
                 className={`fast flex w-full items-center gap-2 px-3 py-2 text-left text-body ${
-                  i === menuIndex ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
+                  i === menu.index ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                 }`}
               >
-                <span className="shrink-0 text-accent">{activeToken?.trigger}</span>
+                <span className="shrink-0 text-accent">{menu.trigger}</span>
                 <span className="min-w-0 flex-1 truncate">{m.label}</span>
                 {m.hint && <span className="section-label shrink-0 text-muted/45">{m.hint}</span>}
               </button>

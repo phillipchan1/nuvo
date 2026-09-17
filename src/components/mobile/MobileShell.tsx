@@ -864,8 +864,6 @@ export default function MobileShell() {
       )}
       {capture && (
         <MobileCapture
-          labels={labels}
-          onCreate={mutations.create}
           onClose={() => setCapture(null)}
           initialKind={capture.kind}
           initialStart={capture.at?.start ?? null}

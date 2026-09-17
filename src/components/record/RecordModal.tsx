@@ -73,6 +73,7 @@ import { deckWeight } from "../../lib/pace";
 import { ShipStamp } from "../ShipStamp";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
+import type { TaskComposerHandle } from "../tasks/TaskComposer";
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
 import {
   Body,
@@ -181,7 +182,7 @@ function ProjectRecord({
   const [menu, setMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
-  const taskRef = useRef<HTMLInputElement>(null);
+  const taskRef = useRef<TaskComposerHandle>(null);
   const logRef = useRef<HTMLTextAreaElement>(null);
   const bandRef = useRef<HTMLDivElement>(null);
 

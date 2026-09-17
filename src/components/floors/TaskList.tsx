@@ -25,12 +25,11 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import type { KeyResult, VTask } from "../../lib/vertical";
-import { parseCapture } from "../../lib/nlp";
 import { isTypingIn } from "../../lib/a11y";
-import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 import { InlineText, KrPicker } from "./parts";
 import TaskRefine from "./TaskRefine";
 import DurationSelect from "../DurationSelect";
+import TaskComposer, { type TaskComposerHandle } from "../tasks/TaskComposer";
 
 export type { TaskParent };
 
@@ -94,18 +93,22 @@ export default function TaskList({
   /** ↑↓ select · ↵ edit · space toggle · ⌫ delete, while nothing is being typed in. */
   keyboardNav?: boolean;
   /** so the record's `t` can put the caret in the composer from anywhere. */
-  composerRef?: RefObject<HTMLInputElement>;
+  composerRef?: RefObject<TaskComposerHandle>;
   /** Lift the Groom pass into the surface's own action cluster. When these are
    *  passed the list drops its inline button and obeys the parent. */
   refining?: boolean;
   onRefining?: (v: boolean) => void;
 }) {
-  const { addTask, addTasks, updateTask, deleteTask, toggleTask, toggleTaskInbox, reorderTasks } = useVertical();
-  const [draft, setDraft] = useState("");
+  const { data, updateTask, deleteTask, toggleTask, toggleTaskInbox, reorderTasks } = useVertical();
+  const contextLabel = (() => {
+    const p = parent.projectId ? data.projects.find((x) => x.id === parent.projectId) : null;
+    const i = !p && parent.initiativeId ? data.initiatives.find((x) => x.id === parent.initiativeId) : null;
+    const d = data.domains.find((x) => x.id === (p?.domainId ?? i?.domainId ?? parent.domainId));
+    const name = p?.name ?? i?.name ?? d?.name;
+    return name ? { name, color: d?.color ?? null } : null;
+  })();
   const [refiningLocal, setRefiningLocal] = useState(false);
   const [sel, setSel] = useState(-1);
-  const innerRef = useRef<HTMLInputElement>(null);
-  const inputRef = composerRef ?? innerRef;
   const listRef = useRef<HTMLDivElement>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
@@ -162,37 +165,6 @@ export default function TaskList({
   const controlled = refiningProp != null;
   const refining = controlled ? refiningProp : refiningLocal;
   const setRefining = (v: boolean) => (controlled ? onRefining?.(v) : setRefiningLocal(v));
-
-  // Turn one line of free text into a backlog draft — a trailing duration token
-  // ("…draft outline 30m") is parsed off the title.
-  const draftFromLine = (line: string) => {
-    const parsed = parseCapture(line);
-    return {
-      title: parsed.title || line,
-      energy: "quick" as VTask["energy"],
-      durationMins: parsed.durationMinutes ?? DEFAULT_PROJECT_DURATION_MINUTES,
-    };
-  };
-
-  const submit = () => {
-    const text = draft.trim();
-    if (!text) return;
-    const parsed = parseCapture(text);
-    addTask(parent, { title: parsed.title || text, durationMins: parsed.durationMinutes ?? undefined });
-    setDraft("");
-    inputRef.current?.focus();
-  };
-
-  // Paste a whole list → one task per non-empty line, in order.
-  const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const text = e.clipboardData.getData("text");
-    const lines = text.split(/\r?\n/).map((l) => l.replace(/^\s*[-*•\d.)\]]+\s*/, "").trim()).filter(Boolean);
-    if (lines.length < 2) return; // let the browser handle a plain single-line paste
-    e.preventDefault();
-    void addTasks(parent, lines.map(draftFromLine));
-    setDraft("");
-    inputRef.current?.focus();
-  };
 
   const remove = (t: VTask) => {
     deleteTask(t.id);
@@ -422,54 +394,18 @@ export default function TaskList({
     </div>
   );
 
-  // The composer. In the record it's a row on the same spine with a ＋ in the
-  // gutter — one input idiom for the whole sheet. Elsewhere it keeps the raised
-  // card that lifts on focus.
-  const composer = spine ? (
-    <div className="flex items-center" style={{ minHeight: 36 }}>
-      <span className="flex w-[26px] shrink-0 items-center text-body" style={{ color: accent }}>＋</span>
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); submit(); }
-          if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
-        }}
-        onPaste={onPaste}
-        placeholder="Add a task…"
-        // `nuvo-inline-input` drops the global 3px accent ring: this field IS the
-        // focal element of its own row, and focus lifts here — it doesn't outline.
-        className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-body shadow-none outline-none placeholder:text-muted"
-        style={{ caretColor: accent }}
-      />
-    </div>
-  ) : (
-    <div
-      className="fast mt-2.5 flex items-center gap-3 rounded-[var(--radius)] px-3.5 py-3 [box-shadow:var(--shadow-1)] focus-within:-translate-y-px focus-within:[box-shadow:var(--shadow-lift)]"
-      style={{ background: "var(--surface)" }}
-    >
-      <span
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-caption font-semibold text-white"
-        style={{ background: accent }}
-      >
-        +
-      </span>
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); submit(); }
-          if (e.key === "Escape") { e.stopPropagation(); setDraft(""); }
-        }}
-        onPaste={onPaste}
-        placeholder="Add a task… ↵ to add another, or paste a list"
-        // the card around it already lifts on focus — a ring inside that is noise
-        className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-lead shadow-none outline-none placeholder:text-muted/60"
-        style={{ caretColor: accent }}
-      />
-    </div>
+  // The composer — the app's one add box (tasks/TaskComposer). In the record it
+  // sits on the same spine with its ＋ in the gutter, so the whole sheet has one
+  // left edge; it knows it's inside this project, and a typed @home still wins.
+  const composer = (
+    <TaskComposer
+      ref={composerRef}
+      context={parent}
+      contextLabel={contextLabel}
+      placeholder={spine ? "Add a task…" : "Add a task… ↵ to add another, or paste a list"}
+      autoFocus={spine && tasks.length === 0}
+      className={spine ? "" : "mt-2"}
+    />
   );
 
   // The Groom pass. When the surface owns the trigger (the record's ✦), only the

@@ -795,7 +795,6 @@ export default function Planner({
           labels={labels}
           commands={commands}
           searchHits={searchHits}
-          onCreate={mutations.create}
           agent={agent}
           onClose={closeOverlay}
           onRunCommand={runCommand}

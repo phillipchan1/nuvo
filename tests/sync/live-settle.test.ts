@@ -157,3 +157,29 @@ describe("the echo of our own write", () => {
     expect(sameTaskContent(a, { ...a, task_labels: [{ label_id: "l" }] })).toBe(false);
   });
 });
+
+describe("drain — an op queued mid-pass", () => {
+  it("still goes out, instead of waiting for the next focus", async () => {
+    const { drain } = await import("../../src/lib/sync/engine");
+    const { pendingOps } = await import("../../src/lib/sync/outbox");
+    const sent: string[] = [];
+    let queuedBehind = false;
+    const transport = {
+      send: async (op: { rowId: string }) => {
+        sent.push(op.rowId);
+        if (!queuedBehind) {
+          queuedBehind = true;
+          // The task insert lands in the outbox while the label is on the wire,
+          // and its own queueWrite asks for a drain.
+          await enqueue({ table: "tasks", kind: "insert", rowId: "task", payload: { title: "Call Dana" }, ts: new Date().toISOString() });
+          void drain(transport as never);
+        }
+        return { ok: true as const };
+      },
+    };
+    await enqueue({ table: "labels", kind: "insert", rowId: "label", payload: { name: "calls" }, ts: new Date().toISOString() });
+    await drain(transport as never);
+    expect(sent).toEqual(["label", "task"]);
+    expect(await pendingOps()).toEqual([]);
+  });
+});

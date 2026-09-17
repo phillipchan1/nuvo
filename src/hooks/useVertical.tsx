@@ -1714,3 +1714,9 @@ export function useVertical(): VerticalStore {
   if (!v) throw new Error("useVertical must be used within <VerticalProvider>");
   return v;
 }
+
+/** The store when a provider is mounted, else null — for surfaces that also
+ *  render outside the app shell (the standalone ⌥Space window). */
+export function useOptionalVertical(): VerticalStore | null {
+  return useContext(Ctx);
+}

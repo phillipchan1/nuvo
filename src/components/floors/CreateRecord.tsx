@@ -31,11 +31,14 @@ import { useVertical } from "../../hooks/useVertical";
 import { supabase } from "../../lib/supabase";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import { isOpenStatus } from "../../lib/vertical";
-import { parseCapture } from "../../lib/nlp";
 import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 import type { Energy } from "../../lib/energy";
 import { DomainPicker, FloatingMenu } from "./parts";
 import DurationSelect from "../DurationSelect";
+import TaskComposer, { type TaskComposerHandle } from "../tasks/TaskComposer";
+import type { CaptureAction } from "../../lib/captureDraft";
+import { useTaskMutations, type NewTaskInput } from "../../hooks/useTasks";
+import { useTaskCapture } from "../../hooks/useTaskCapture";
 import { deckWeight } from "../../lib/pace";
 import { QuarterBand, WeekBand } from "../record/PlacementBand";
 import {
@@ -58,6 +61,9 @@ interface DraftTask {
   title: string;
   durationMins: number;
   energy: Energy | null;
+  /** Everything else the line said (a day, labels, a note…), applied when the
+   *  record exists. Nuvo's drafted steps have none. */
+  input?: NewTaskInput;
 }
 
 export default function CreateRecord({
@@ -73,7 +79,9 @@ export default function CreateRecord({
   initialDomainId?: string | null;
   initialInitiativeId?: string | null;
 }) {
-  const { data, addProject, addInitiative, addTasks, addDomain } = useVertical();
+  const { data, addProject, addInitiative, addDomain } = useVertical();
+  const taskMutations = useTaskMutations();
+  const { preview } = useTaskCapture();
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
 
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
@@ -91,14 +99,13 @@ export default function CreateRecord({
   // pre-filled quarter above must not.
   const [placed, setPlaced] = useState(false);
   const [tasks, setTasks] = useState<DraftTask[]>([]);
-  const [draft, setDraft] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initMenu, setInitMenu] = useState(false);
 
   const sheetRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<TaskComposerHandle>(null);
   const rowRefs = useRef(new Map<number, HTMLInputElement>());
   const initBtnRef = useRef<HTMLButtonElement>(null);
   const nextId = useRef(1);
@@ -119,36 +126,22 @@ export default function CreateRecord({
   const openMins = tasks.reduce((s, t) => s + (t.durationMins || 0), 0);
 
   // ── draft tasks ────────────────────────────────────────────────────────────
-  const push = (line: string) => {
-    const parsed = parseCapture(line);
+  // A line typed here is parsed the same way as anywhere else; it just waits
+  // for the record to exist before it's created. A repeat has no record-less
+  // draft form, so it lands as a plain task with its words intact.
+  const draftOf = (action: CaptureAction, text: string): DraftTask => {
+    if (action.kind === "series") {
+      return { id: nextId.current++, title: text, durationMins: action.template.duration_minutes, energy: null };
+    }
     return {
       id: nextId.current++,
-      title: parsed.title || line,
-      durationMins: parsed.durationMinutes ?? DEFAULT_PROJECT_DURATION_MINUTES,
-      energy: null as Energy | null,
+      title: action.input.title,
+      durationMins: action.input.duration_minutes ?? DEFAULT_PROJECT_DURATION_MINUTES,
+      energy: null,
+      input: action.input,
     };
   };
-
-  const commitDraft = () => {
-    const text = draft.trim();
-    if (!text) return;
-    setTasks((ts) => [...ts, push(text)]);
-    setDraft("");
-    composerRef.current?.focus();
-  };
-
-  // Paste a whole list → one task per non-empty line, exactly like the record's.
-  const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const lines = e.clipboardData
-      .getData("text")
-      .split(/\r?\n/)
-      .map((l) => l.replace(/^\s*[-*•\d.)\]]+\s*/, "").trim())
-      .filter(Boolean);
-    if (lines.length < 2) return; // let the browser handle a plain single-line paste
-    e.preventDefault();
-    setTasks((ts) => [...ts, ...lines.map(push)]);
-    setDraft("");
-  };
+  const onDraft = (action: CaptureAction, text: string) => setTasks((ts) => [...ts, draftOf(action, text)]);
 
   const removeRow = (id: number) => {
     const i = tasks.findIndex((t) => t.id === id);
@@ -190,11 +183,12 @@ export default function CreateRecord({
     // phone, where Return is "dismiss keyboard") used to throw away whatever
     // was still in the field. Fold it in before the write so the task they
     // typed is the task that lands.
-    const pending = draft.trim();
-    const toCreate = pending ? [...tasks, push(pending)] : tasks;
-    if (pending) {
+    const pendingText = composerRef.current?.value().trim() ?? "";
+    const pendingAction = pendingText ? preview(pendingText, composerRef.current?.literal()) : null;
+    const toCreate = pendingAction ? [...tasks, draftOf(pendingAction, pendingText)] : tasks;
+    if (pendingAction) {
       setTasks(toCreate);
-      setDraft("");
+      composerRef.current?.clear();
     }
     setBusy(true);
     setError(null);
@@ -214,14 +208,25 @@ export default function CreateRecord({
         kind === "project"
           ? await addProject(domainId, initiativeId, shared)
           : await addInitiative(domainId, shared);
-      if (toCreate.length) {
-        await addTasks(
-          kind === "project"
-            ? { projectId: created.id, initiativeId, domainId }
-            : { initiativeId: created.id, domainId },
-          toCreate.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins })),
-        );
-      }
+      // Through the one create path, filed into the record that now exists —
+      // unless the line named a home of its own with @.
+      const home =
+        kind === "project"
+          ? { project_id: created.id, initiative_id: initiativeId, domain_id: domainId }
+          : { project_id: null, initiative_id: created.id, domain_id: domainId };
+      toCreate.forEach((t, i) => {
+        const own = t.input && (t.input.project_id || t.input.initiative_id || t.input.domain_id);
+        const input: NewTaskInput = {
+          ...(t.input ?? {}),
+          ...(own ? {} : home),
+          title: t.title,
+          duration_minutes: t.durationMins,
+          energy: t.energy,
+          sort_order: i,
+        };
+        if (!input.do_date) input.status = "backlog";
+        void taskMutations.create(input);
+      });
       onCreated(created.id);
       setBusy(false);
     } catch (e) {
@@ -398,22 +403,12 @@ export default function CreateRecord({
                   </div>
                 ))}
 
-                <div className="flex items-center" style={{ minHeight: 36 }}>
-                  <span className={`flex shrink-0 items-center text-body ${GUT}`} style={{ color: accent }}>＋</span>
-                  <input
-                    ref={composerRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); commitDraft(); }
-                      if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
-                    }}
-                    onPaste={onPaste}
-                    placeholder="Add a task…"
-                    className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-body shadow-none outline-none placeholder:text-muted"
-                    style={{ caretColor: accent }}
-                  />
-                </div>
+                <TaskComposer
+                  ref={composerRef}
+                  placeholder="Add a task…"
+                  onDraft={onDraft}
+                  contextLabel={name.trim() ? { name: name.trim(), color: domain?.color ?? null } : null}
+                />
 
                 {/* Opt-in, and only once there's a name worth thinking about. */}
                 <div className="mt-2">
