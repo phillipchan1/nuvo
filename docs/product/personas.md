@@ -156,7 +156,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | D1 | What's the one thing today that actually matters? | Sunrise · Today list · Now | ✅ |
 | D2 | What's already decided so I don't have to re-decide it? | Sunday-composed blocks | ✅ |
 | D3 | I have 40 minutes — what fits? | availability gaps (`readDay` / `toBusyBlocks`) · **the month's selected-day list** | ◐ *gap→task matching is manual. **2026-08-27 (D-121):** the phone's month list is finally reachable for a day that isn't today — first tap selects, so "what's on Thursday / am I free" can be read without leaving the month. Stays ◐ for the original reason.* |
-| D4 | What did I say I'd do and haven't? | rollover ↻ badge · overdue pinning | ✅ |
+| D4 | What did I say I'd do and haven't? | rollover ↻ badge · anytime row · overdue pinning | ✅ |
 | D5 | Who is waiting on me? | — | ○ *no waiting-on/blocked-by surface; "In the way" lens is spec* |
 | D6 | I just thought of something — where does it go so I stop holding it? | capture (⌘K / ⌥Space / voice) | ✅ |
 | D7 | Did I actually finish, or just move it? | Sundown · completed blocks | ✅ |
@@ -173,7 +173,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | W5 | Which domain am I starving? | Domain floor · invested/quarter · **the Week's Plan conscience read** | ◐ *re-scored 2026-07-30 (D-061): it is now **surfaced unasked** on a week that can still change, in plain language. Deliberately still ◐, not ✅ — the read names the quiet domain and hands nothing forward, because a "flag it for next week" button has no reader (D-062). It goes ✅ when the act exists with its reader. Corrected 2026-08-07 (D-087): it could name the **wrong** domain — one you'd just shipped in read as the most starved.* |
 | W6 | Did anything move this week, or was I just busy? | **the Review** + evidence + the Find | ✅ |
 | W7 | What's carrying over, and is that a pattern? | Review → back to week · `roll_count` | ◐ *stays ◐. Carrying is at least **honest** now (2026-07-30, D-060): the old "Carry to next week" wrote a rock into a week whose slate is derived from spans, so it did nothing at all; it's a real span write. Pattern detection is still only the Find.* |
-| W8 | Where did my time actually go? | completed blocks · attended calendar · **the week's shape** on the domain wall | ◐ *re-scored 2026-08-06 (D-085). It had been answering **wrongly**, which is worse than ○: a 1000-row query cap meant no meeting from the current week ever reached the ledger, so the wall showed SCE at 4.3h against a real 27.9h. Fixed, and the read now shows the week's **shape** (seven days) rather than its share. Stays ◐ on two counts — non-calendar work is still invisible (Q-03), and a day column sums attributed minutes, so concurrent time double-counts.* |
+| W8 | Where did my time actually go? | completed blocks · attended calendar · **the week's shape** on the domain wall · event **Counts toward** | ◐ *re-scored 2026-08-06 (D-085). It had been answering **wrongly**, which is worse than ○: a 1000-row query cap meant no meeting from the current week ever reached the ledger, so the wall showed SCE at 4.3h against a real 27.9h. Fixed, and the read now shows the week's **shape** (seven days) rather than its share. D-142 makes each countable event show and correct its destination on both shells. Stays ◐ on two counts — non-calendar work is still invisible (Q-03), and a day column sums attributed minutes, so concurrent time double-counts.* |
 
 ### Project / quarterly — *"is the important thing alive?"*
 
@@ -192,7 +192,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
 | A1 | What am I forgetting? | inbox = one place, nothing lost | ✅ |
-| A2 | What's about to blow up? | On Deck collisions · deadline-first compose · **reminders** | ◐ *re-scored 2026-08-13 (D-102). The app can now say it out loud instead of waiting to be opened — a meeting, a block, a deadline, minutes ahead. Deliberately still ◐, and on two counts: it is **off by default**, so a fresh account gets nothing; and it only speaks about things already ON the calendar, which is the narrow half of the question. The wider half — a project quietly going critical — is still something you have to go and look at.*
+| A2 | What's about to blow up? | On Deck collisions · deadline-first compose · **reminders** | ◐ *re-scored 2026-09-04 (D-138). The calendar half now speaks for timed *and* all-day commitments, minutes or a day (or a week) ahead, with several leads on one item. Deliberately still ◐, and on two counts: it is **off by default**, so a fresh account gets nothing; and the wider half — a project quietly going critical — is still something you have to go and look at, because that would be a nudge (N-07).*
 | A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture. Still ○ after the iOS lock-screen widgets (D-100) and the inbox address (D-134): they shorten the distance from a thought (or a mail) to the inbox, which raises the odds a remembered promise gets written down — but nothing yet notices the ones you never wrote.* |
 | A4 | Am I lying to myself about this week? | calibration (planned vs proven) | ✅ **rare and valuable — protect it** |
 

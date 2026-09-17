@@ -1960,6 +1960,7 @@ quietly. Strains **P9**. The kill switch is one setting, and if it reads as
 theater in use, the honest move is to turn it off and re-score A2 back to ◐.
 *Status: standing. Off by default; nobody has lived with it yet.*
 *Amended same day by D-105 — see below.*
+*Amended 2026-09-04 by D-138 — the subject is unchanged; the horizon of a lead may be a day or a week.*
 
 ---
 
@@ -2258,7 +2259,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-04** | Streaks, scores, karma, debt ledgers | Serves *optimizer*; we serve *steward* | Never |
 | **N-05** | Notion-style databases / custom fields | A blank canvas is a product you have to finish | Never |
 | **N-06** | A fifth pool | The funnel's power is its small vocabulary (Principle 10) | Two independent instances prove the need |
-| **N-07** | Push notifications for planning **nudges** | The app reports, you decide (Principle 4) | ⚠️ **Narrowed and partly overturned, 2026-08-13 (D-102, D-105).** Push itself is no longer refused — Phil ruled it acceptable **with explicit user consent**. What this row still refuses is the *nudge*: an unprompted message about your planning rather than about a commitment that is about to happen. That refusal stands regardless of consent |
+| **N-07** | Push notifications for planning **nudges** | The app reports, you decide (Principle 4) | ⚠️ **Narrowed and partly overturned, 2026-08-13 (D-102, D-105); horizon of a lead widened 2026-09-04 (D-138).** Push itself is no longer refused — Phil ruled it acceptable **with explicit user consent**. What this row still refuses is the *nudge*: an unprompted message about your planning rather than about a commitment that is about to happen. That refusal stands regardless of consent |
 | **N-08** | A native watchOS app for capture | Shortcuts → the `agent` endpoint already works on every watch, today, with dictation ([`APPLE_WATCH.md`](../APPLE_WATCH.md)) | We want a complication or an offline queue |
 | **N-09** | Extracting `packages/design` fully now | Stub is enough while there are two consumers | A third consumer appears |
 | **N-10** | Folding marketing into the SPA | D-018 | Never |
@@ -4103,8 +4104,9 @@ ignored. The thought is what's lost, which is the failure D-100 named.
 chat, and search call: focus immediately (so ✕ cannot win), retry at 120ms
 (same-gesture window), retry once more when the page becomes visible (a
 lock-screen resume can fire the timer before the webview is first responder).
-`useDialogFocus` prefers an `input` / `textarea` over Close on open; Tab
-order is unchanged.
+`useDialogFocus` prefers a field marked `data-raise-keyboard` (what
+`useRaiseKeyboard` stamps) over Close on open; Tab order is unchanged.
+An inspect title is not that field — D-144.
 
 → **The keyboard itself is a WKWebView policy.** Stock WebKit will not raise
 keys without a webview gesture. The native shell sets
@@ -4884,6 +4886,29 @@ stands.*
 
 ---
 
+**D-133 · 2026-09-03 · What's new answers "what do I get?" Unclear changes stay quiet.**
+
+The desktop update prompt and Settings → What's new were translating every
+commit into a friendly sentence. Plumbing came out as "prevented empty date
+bounds from being sent during sync" and "streamlined the calendar
+reconciliation." A person about to restart does not get anything from that.
+
+The toast's question is whether to restart. The notes under it answer what
+they get: a new thing they can do, a bug they would have hit, or a change
+they would spot. If that isn't clear from the commits, the notes are the
+quiet line and Settings folds the version into "+ N smaller updates" — we
+do not invent a user-facing story from an internal commit.
+
+Strains **P8** (the notes were answering "what did we ship in git") and
+obeys **P9** (quiet by default). Closes no ledger row. Adds no pool, no
+name, no data. Generator: `scripts/release-notes.mjs`. Display filter:
+`src/lib/releaseNotesVoice.ts`. Guarded by `tests/release-notes.test.ts`
+and `tests/update-toast.test.tsx`.
+
+*Status: standing — in-app changelog voice.*
+
+---
+
 **D-134 · 2026-09-04 · Forward a mail to a private address; the subject is the task.**
 
 The schema (`inbound_token`, `inbound_emails`) has been live since migration 43.
@@ -5007,6 +5032,32 @@ and pastes credentials into Connect.*
 
 ---
 
+**D-138 · 2026-09-04 · A reminder is still a commitment. The lead may be a day or a week.**
+
+D-102 framed the escape clause as "the next few minutes." That was caution, not
+the clause. N-07 refuses a *nudge about your planning*; it does not refuse telling
+you about a named meeting tomorrow morning the way every calendar app does. The
+audit gap that put Apple/Google Reminders back in the loop was never "Nuvo won't
+nudge" — it was "Nuvo won't speak in time."
+
+**So the subject stands and the horizon moves.** A reminder may still only name a
+commitment that is about to happen (a meeting, a block you scheduled, a deadline).
+What changes is how far ahead "about to" may be: several leads per item (cap 5),
+all-day events at the shared wall-clock rather than ten minutes before midnight,
+custom minutes up to 14 days. Untimed `do_date` stays silent by default — twelve
+tasks parked on today are a plan, not twelve 9am banners. Empty override = this
+one is silenced; no row = follow Settings.
+
+Does not reopen nudges, badges, counts, email, or "you have 4 overdue." Strains
+**P9** the same way D-102 did, and for the same reason it is worth it: still
+opt-in, still one named commitment, still the word **Reminder**. Closes more of
+the calendar half of **A2**; the project-going-critical half stays unanswered on
+purpose.
+
+*Status: standing — kernel, schema, both shells, agent `set_reminder`.*
+
+---
+
 **D-139 · 2026-09-06 · A recurring event's edit asks this vs series, wherever it happens.**
 
 Drag and resize already asked. The inspector's All day chip, date, time, title,
@@ -5029,3 +5080,135 @@ on every door, not a new question. Strains nothing new.
 
 *Status: standing — inspector, phone event sheet, Google/iCloud write-back.*
 
+---
+
+**D-140 · 2026-09-08 · A missed block keeps its hour.**
+
+Rollover already moved unfinished day-work to today. It also stripped
+`start_time`, so the calendar told a lie: Sunday's 2pm vanished, Tuesday's
+grid did not grow it, and seventy untimed chips in the anytime row is how
+"it didn't carry over" felt even though the date had moved. A scheduled task
+**is** a time block (P1 / D-001). Clearing the clock on roll broke that.
+
+The hour you chose is kept. The block lands on today at the same clock. Overlap
+with whatever is already there is honest — both things exist — and is not
+auto-scheduling (N-01): we are not finding a gap, we are not inventing a time.
+Untimed work still just changes day. Recurring occurrences still never roll
+(D-009). Projects and initiatives still do not bump to a day (wrong altitude;
+they carry on the week's slate).
+
+The mirror moves with the block instead of being torn down. Slot children leave
+the passed slot and inherit its clock so they stay visible.
+
+Closes more of **D4** ("what did I say I'd do and haven't") by keeping the
+answer on the calendar, not only on the Today list. Strains **P3** only in the
+thin sense that the block appears on today's grid without a re-place; the
+mitigation is that the hour was already chosen. No pool, no new name, does
+not need clean data, holds in a stranger's account.
+
+*Status: **superseded by D-141** — keeping the hour stacked carryovers on top
+of today's real schedule. The hour was for a day that has passed.*
+
+---
+
+**D-141 · 2026-09-08 · A rolled task goes to anytime, not yesterday's hour.**
+
+D-140 kept the clock so a missed 2pm would still be a 2pm block on the next
+day. On a lived-in Tuesday that hour is already someone else's meeting, and
+seven carryovers landed as a stack of chips on the grid. The new day's
+schedule does not fit the old day's clock.
+
+Rollover moves the work to today and **clears `start_time`**. It shows in the
+all-day **anytime** row (desktop) / anytime chips (phone) until you place it.
+Duration and the ↻ count stay. Recurring still never rolls (D-009). Drag it
+onto an hour when you mean it.
+
+The Nuvo mirror is torn down with the hour — a block on the phone at Sunday's
+2pm is a lie. Slot children leave the passed slot and join anytime; they do
+not inherit the slot's clock.
+
+Closes **D4** without pretending the old hour is still the plan. Strains
+nothing D-140 didn't already; the mitigation is the anytime row is a real
+place on both shells, not a junk drawer. No pool, no new name.
+
+*Status: standing — `rollover_tasks`, rollover edge function.*
+
+---
+
+**D-142 · 2026-09-08 · Every countable event says which domain receives its time.**
+
+Origin ⓞ: *“events don't have the dropdown — or at least a symbol of where this
+is being logged… all my SCE meetings are going into my SCE domain.”* Nuvo was
+already attributing attended meetings through a calendar default or the event
+router, but both event inspectors hid the answer. The Domain wall could move
+without the event itself saying why.
+
+→ Timed, busy events that can become actuals now show one **Counts toward**
+control in the desktop inspector and phone sheet. It wears the existing domain
+mark, names the resolved domain, and opens the same domain choices. A correction
+is stored separately from the AI verdict and outranks both that verdict and the
+calendar default; the AI can never overwrite a person's answer.
+
+This closes the hidden/correction part of **W8** (“Where did my time actually
+go?”) but leaves the row ◐ for its existing non-calendar and concurrent-time
+gaps. It strains **P11**: “calendar,” “domain,” and “counts toward” could read as
+three filing systems. The boundary is explicit: Calendar says where the event
+lives; Counts toward says which long-lived area receives the time. One shared
+control and `eventDomainAttribution` are the only vocabulary and resolver.
+
+No pool is added (P10), unattributed events remain honest rather than guessed
+(P7), and the same control works with any account's domains (P16).
+
+*Status: standing — desktop and 375px phone verified; typecheck, tests, build,
+and performance budgets green.*
+
+---
+
+**D-143 · 2026-09-15 · An all-day event moves and resizes on the Schedule like any other block.**
+
+The anytime row was built as a landing strip for untimed tasks, and the
+implementation treated that as "events cannot live here as objects you
+touch." Writable all-day events (Google / iCloud) sat in that row and
+could not be dragged to another day or grown from either edge — you had
+to open the inspector and type dates. That is not how Google Calendar,
+Fantastical, Apple Calendar, or Outlook treat a vacation, a birthday, or
+an offsite.
+
+The chip is now first-class: drag it to another day (duration kept), pull
+the left or right handle to expand or contract the span, or drop it onto
+the timed grid to give it a clock. A timed meeting still cannot become
+all-day by slipping onto the row — that remains the easy accident those
+apps all have, and the one we refuse.
+
+Closes more of **D2** ("what's already decided so I don't have to
+re-decide it") for commitments that are days, not hours. Strains **P8**
+only in the thin sense that anytime now holds two kinds of object (a
+planned task and an all-day event); the mitigation is they already
+shared the strip, and the gestures now match the kind. No pool, no new
+name, works on a messy calendar, holds in a stranger's account.
+
+Phone stays sheet-to-edit: a 375px chip has no honest left/right handle.
+
+*Status: standing — Schedule week/month; Google + iCloud write-back.*
+
+---
+
+**D-144 · 2026-09-16 · Opening a calendar or task sheet is a read. The keyboard
+waits for an edit.**
+
+D-115 taught `useDialogFocus` to land on the first `input` / `textarea` so
+the lock-screen ＋ could type. Every inspect sheet also starts with a title
+field, so tapping a calendar item (or a task) raised the keyboard over the
+thing you opened to see. The keys cover most of a phone.
+
+→ A sheet focuses the panel, unless a field is marked `data-raise-keyboard`.
+That mark is what `useRaiseKeyboard` stamps — capture, chat, and search
+still raise the keys. An inspect title stays tappable; the keyboard comes
+up when you tap it, not when the sheet does.
+
+Keeps **D2** readable on the phone: you opened the item to see what was
+already decided. Strains **P13** only in that an extra tap now starts a
+rename, which is the cost of not covering the sheet. D-115's widget path
+is unchanged. No pool, no new name.
+
+*Status: standing — raise-keyboard tests hold the split.*
