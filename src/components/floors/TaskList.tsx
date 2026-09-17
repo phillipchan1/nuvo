@@ -21,6 +21,7 @@ import { useAllTasks } from "../../hooks/useTasks";
 import type { VTask } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
 import TaskRefine from "./TaskRefine";
+import { byManualOrder } from "../../lib/taskOrder";
 import TaskListView from "../tasks/TaskListView";
 import type { TaskComposerHandle } from "../tasks/TaskComposer";
 
@@ -97,7 +98,7 @@ export default function TaskList({
   // unfiltered pool is the same cache the vertical is built from.
   const rows = useMemo(() => {
     const byId = new Map((allTasks ?? []).map((t) => [t.id, t]));
-    return tasks.map((v) => byId.get(v.id)).filter((t): t is Task => Boolean(t));
+    return byManualOrder(tasks.map((v) => byId.get(v.id)).filter((t): t is Task => Boolean(t)));
   }, [tasks, allTasks]);
 
   const contextLabel = useMemo(() => {

@@ -127,3 +127,18 @@ export function shiftId(ids: string[], id: string, by: number): string[] | null 
   next.splice(to, 0, id);
   return next;
 }
+
+/**
+ * A hand-ordered list in display order: `sort_order`, then creation (every fresh
+ * capture shares the default). The same order the server returns — applied
+ * locally, because a reorder patches rows in place and nothing re-sorts the
+ * cache until a refetch that, with a live channel, never comes.
+ */
+export function byManualOrder<T extends { sort_order: number; created_at?: string; id: string }>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      a.sort_order - b.sort_order ||
+      (a.created_at ?? "").localeCompare(b.created_at ?? "") ||
+      a.id.localeCompare(b.id),
+  );
+}

@@ -5,10 +5,10 @@
 // type. Thinnest-first, so the rawest projects present themselves on the left.
 //
 // Reuse-first: the lanes (axes / readyTier / pace) come straight from readOnDeck;
-// the composer is the same Todoist-fast StepComposer the Path lens uses; adding
-// steps is the same store.addTasks. This file only arranges them into a wall.
+// the steps are the app's one task list (TaskListView — the real row, the shared
+// keys, the one add box). This file only arranges them into a wall.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
@@ -18,10 +18,12 @@ import { type OnDeckLane, type ReadyTier } from "../../lib/onDeck";
 import { hasRoutingSignal, proofreadOutcome, suggestDomain, type DomainSuggestion, type ProofreadResult } from "../../lib/groomAI";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
-import { StepComposer, type StepLine } from "../grooming/StepComposer";
 import { ProjectShipAssess } from "../record/ShipAssess";
-import DurationSelect from "../DurationSelect";
-import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
+import type { Task } from "../../lib/types";
+import TaskListView from "../tasks/TaskListView";
+import { byManualOrder } from "../../lib/taskOrder";
+import { useAllTasks } from "../../hooks/useTasks";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -46,17 +48,19 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
   const p = lane.project;
   const accent = domainById(data, p.domainId)?.color ?? "var(--accent)";
   const color = TIER_COLOR[lane.readyTier];
-  // d.tasks is built pre-sorted by sort_order, so filtering preserves order;
-  // reorderTasks rewrites sort_order and the refetch re-sorts.
+  // d.tasks is built pre-sorted by sort_order, so filtering preserves order.
   const existing = tasksOf(data, p.id).filter((t) => t.status !== "done");
   const axes = [lane.axes.defined, lane.axes.planned, lane.axes.fits];
 
-  const [lines, setLines] = useState<StepLine[]>([{ id: 0, text: "" }]);
-  const [mins, setMins] = useState<Record<number, number>>({});
-  const [busy, setBusy] = useState(false);
-  const composerBox = useRef<HTMLDivElement>(null);
-  const titles = lines.map((l) => l.text.trim()).filter(Boolean);
-  const addN = titles.length;
+  // The steps are real tasks, drawn by the app's one list (TaskListView).
+  const { data: allTasks } = useAllTasks();
+  const { openOverlay } = useAppNavigation();
+  const stepRows = useMemo(() => {
+    const byId = new Map((allTasks ?? []).map((t) => [t.id, t]));
+    return byManualOrder(existing.map((v) => byId.get(v.id)).filter((t): t is Task => Boolean(t)));
+  }, [existing, allTasks]);
+  // A wall has many lists; only the card you're working in hears the keys.
+  const [active, setActive] = useState(false);
 
   // ── defining the project: the outcome line closes the "Defined" axis ─────────
   const [outcome, setOutcome] = useState(p.outcome ?? "");
@@ -117,115 +121,17 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     setProof(null);
   };
 
-  const commit = async () => {
-    if (!addN || busy) return;
-    setBusy(true);
-    try {
-      const picks = lines
-        .filter((l) => l.text.trim())
-        .map((l) => ({
-          title: l.text.trim(),
-          energy: null,
-          durationMins: mins[l.id] ?? DEFAULT_PROJECT_DURATION_MINUTES,
-        }));
-      await store.addTasks({ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }, picks);
-      setLines([{ id: 0, text: "" }]);
-      setMins({});
-    } catch (e) {
-      console.warn("[groom] add steps failed", e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ── existing steps are editable in place: retitle (blur), resize (select), delete
-  const saveStep = (id: string, prev: string, next: string) => {
-    const v = next.trim();
-    if (v && v !== prev) store.updateTask(id, { title: v });
-  };
-  const delStep = (id: string) => {
-    store.deleteTask(id);
-  };
-
-  // ⌘⏎ / Ctrl⏎ anywhere in the card commits the batch (Enter alone = next line).
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      void commit();
-    }
-  };
-
-  // ── steps are drag-reorderable (pointer events — Tauri swallows HTML5 DnD) ────
-  const stepIds = existing.map((t) => t.id);
-  const [order, setOrder] = useState<string[]>(stepIds);
-  const orderRef = useRef(order);
-  orderRef.current = order;
-  const draggingRef = useRef(false);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
-  const targetIndexRef = useRef(0);
-  const listRef = useRef<HTMLDivElement>(null);
-  const idsKey = stepIds.join(",");
-  useEffect(() => {
-    if (!draggingRef.current) setOrder(stepIds);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey]);
-  const byId = new Map(existing.map((t) => [t.id, t]));
-  const displaySteps = order.map((id) => byId.get(id)).filter(Boolean) as typeof existing;
-  const startReorder = (e: React.PointerEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    draggingRef.current = true;
-    setDragId(id);
-    document.body.classList.add("wb-noselect");
-    const insertLineTop = (clientY: number) => {
-      const list = listRef.current;
-      if (!list) return null;
-      const rows = [...list.querySelectorAll<HTMLElement>("[data-step-id]")].filter(
-        (r) => r.getAttribute("data-step-id") !== id,
-      );
-      let k = 0;
-      for (const r of rows) {
-        const b = r.getBoundingClientRect();
-        if (clientY > b.top + b.height / 2) k++;
-      }
-      targetIndexRef.current = k;
-      const contTop = list.getBoundingClientRect().top;
-      if (!rows.length) return 0;
-      if (k < rows.length) return rows[k].getBoundingClientRect().top - contTop;
-      return rows[rows.length - 1].getBoundingClientRect().bottom - contTop;
-    };
-    setReorderLineTop(insertLineTop(e.clientY));
-    const move = (ev: PointerEvent) => {
-      setReorderLineTop(insertLineTop(ev.clientY));
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.classList.remove("wb-noselect");
-      draggingRef.current = false;
-      setDragId(null);
-      setReorderLineTop(null);
-      const from = orderRef.current.indexOf(id);
-      const to = targetIndexRef.current;
-      if (from < 0 || from === to) return;
-      const next = [...orderRef.current];
-      next.splice(from, 1);
-      next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
-      setOrder(next);
-      store.reorderTasks(next);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
   // pace is a separate axis — a red due-pill, never mixed into readiness color.
   const slipping = lane.pace.read === "overdue" || lane.pace.read === "behind" || lane.pace.read === "stalled";
   const due = p.targetDate ? format(new Date(p.targetDate + "T00:00:00"), "MMM d") : null;
 
   return (
     <div
-      onKeyDown={onKeyDown}
+      onFocus={() => setActive(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(false);
+      }}
+      onPointerDown={() => setActive(true)}
       onContextMenu={onContextMenu("project", p.id)}
       className="fast flex w-[404px] shrink-0 flex-col gap-4 rounded-2xl border bg-surface px-6 pb-5 pt-5"
       style={{
@@ -360,85 +266,23 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
         </div>
       </div>
 
-      {/* what already exists — editable in place: drag the grip to reorder,
-          retitle (⏎/blur), resize (tap the duration), delete (✕, with Undo). */}
-      {existing.length > 0 && (
-        <div ref={listRef} className="relative max-h-[38vh] overflow-y-auto">
-          {reorderLineTop != null && (
-            <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
-          )}
-          {displaySteps.map((t) => (
-            <div
-              key={t.id}
-              data-step-id={t.id}
-              className="group/step fast flex items-center gap-1 border-b border-line py-1"
-              style={dragId === t.id ? { boxShadow: "var(--shadow-lift)", background: "var(--surface)", borderRadius: 8, opacity: 0.95 } : undefined}
-            >
-              <span
-                onPointerDown={(e) => startReorder(e, t.id)}
-                className="fast shrink-0 cursor-grab touch-none select-none px-0.5 text-micro leading-none text-muted/40 opacity-0 transition-opacity hover:text-ink group-hover/step:opacity-100 active:cursor-grabbing"
-                title="Drag to reorder"
-                aria-hidden
-              >
-                ⠿
-              </span>
-              <span className="shrink-0 text-micro" style={{ color: accent }}>◦</span>
-              <input
-                defaultValue={t.title}
-                onBlur={(e) => saveStep(t.id, t.title, e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
-                className="fast -mx-1 min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-body text-ink outline-none transition-colors hover:bg-surface-2/60 focus:bg-surface-2"
-              />
-              <DurationSelect
-                value={t.durationMins}
-                onChange={(m) => store.updateTask(t.id, { durationMins: m })}
-                className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
-                title="Sitting length"
-              />
-              <button
-                onClick={() => delStep(t.id)}
-                tabIndex={-1}
-                className="fast shrink-0 px-1 text-micro text-muted/50 opacity-0 transition-opacity hover:text-signal group-hover/step:opacity-100"
-                title="Delete step"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* The steps — the app's one task list: the real row, the shared keys
+          (while this card has focus), drag to reorder, and the one add box.
+          Each line lands as you press ↵, so the meter above moves as you type;
+          "30m" in the line sets its length. */}
+      <TaskListView
+        className="max-h-[46vh] overflow-y-auto"
+        tasks={stepRows}
+        context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
+        keyboard={active}
+        onOpen={(t) => openOverlay("task-record", t.id)}
+        flush
+        composerPlaceholder={existing.length ? "Add a step…" : "What's the first move?"}
+      />
 
-      {/* the composer — rattle off steps; ⏎ next, ⌘⏎ commit */}
-      <div ref={composerBox}>
-        <StepComposer
-          lines={lines}
-          setLines={setLines}
-          accent={color === "var(--line-strong)" ? "var(--accent)" : color}
-          placeholder={existing.length ? "Add a step…  ⏎ for the next" : "What's the first move?  ⏎ for the next"}
-          meta={(line) => (
-            <DurationSelect
-              value={mins[line.id] ?? DEFAULT_PROJECT_DURATION_MINUTES}
-              onChange={(m) => setMins((prev) => ({ ...prev, [line.id]: m }))}
-              className="shrink-0 rounded px-1.5 py-0.5 hover:bg-surface-2"
-              title="Sitting length"
-            />
-          )}
-        />
-      </div>
-
-      {/* footer — commit when there's something to add, else the ready badge */}
+      {/* footer — the ready badge, or what's still missing */}
       <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        {addN > 0 ? (
-          <button
-            onClick={() => void commit()}
-            disabled={busy}
-            className="tap fast rounded-lg px-3 py-1.5 text-caption font-medium text-white active:scale-[.98] disabled:opacity-50"
-            style={{ background: color === "var(--line-strong)" ? "var(--accent)" : color }}
-          >
-            {busy ? "…" : `Add ${addN} step${addN === 1 ? "" : "s"}`}
-            <span className="mono ml-1.5 opacity-70">⌘⏎</span>
-          </button>
-        ) : lane.readyTier === "ready" ? (
+        {lane.readyTier === "ready" ? (
           <span className="flex items-center gap-1.5 text-caption font-medium" style={{ color: READY }}>
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} /> Ready to pull in
           </span>

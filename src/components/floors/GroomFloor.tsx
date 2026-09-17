@@ -59,9 +59,10 @@ export default function GroomFloor() {
       {groomable.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {[
-            { k: "⏎", label: "next step" },
+            { k: "⏎", label: "add a step" },
+            { k: "30m", label: "sets its length" },
+            { k: "j k", label: "move in a card" },
             { k: "⇥", label: "next project" },
-            { k: "⌘⏎", label: "add steps" },
           ].map((h) => (
             <span key={h.label} className="flex items-center gap-1.5 text-micro text-muted">
               <kbd className="mono rounded border border-line bg-surface-2 px-1.5 py-0.5 text-meta text-ink" style={{ borderBottomWidth: 2 }}>{h.k}</kbd>
