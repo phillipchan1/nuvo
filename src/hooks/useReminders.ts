@@ -8,9 +8,9 @@
  *
  *   • No polling. One `setTimeout`, armed for the single next fire instant.
  *   • No new fetch for the common case. Anchors are built from `["tasks","all"]`
- *     (already the vertical store's cache) plus a *day-quantized* 3-day window
- *     of events and slots — quantized so the query key is stable and the clock
- *     ticking cannot invalidate it.
+ *     (already the vertical store's cache) plus a *day-quantized* window of
+ *     events and slots (`REMINDER_QUERY_DAYS`) — quantized so the query key is
+ *     stable and the clock ticking cannot invalidate it.
  *   • Nothing on the render path. The plan is a `useMemo` over data that only
  *     changes when the day actually changes.
  *   • A woken laptop stays quiet: `dueNow` drops anything past its grace
@@ -42,18 +42,18 @@ import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import type { Reminder, Task } from "../lib/types";
 import {
   DEFAULT_REMINDER_PREFS,
-  defaultLeadFor,
+  defaultLeadsFor,
   dueNow,
+  leadsFromRow,
   nextFireAt,
   planReminders,
   reminderKey,
-  type LeadMinutes,
   type PlannedReminder,
   type ReminderAnchor,
   type ReminderAnchorKind,
   type ReminderTargetKind,
 } from "../../supabase/functions/_shared/reminderRules.ts";
-import { buildReminderAnchors, keyOfOverride, REMINDER_WINDOW_MS } from "../lib/reminders";
+import { buildReminderAnchors, keyOfOverride, REMINDER_QUERY_DAYS, REMINDER_WINDOW_MS } from "../lib/reminders";
 import { subscribeToPush, unsubscribeFromPush } from "../lib/push";
 import { detectDeviceTz } from "../lib/timezone";
 import { useSettings } from "./useSettings";
@@ -70,7 +70,7 @@ export function useReminderOverrides() {
     queryFn: async (): Promise<Reminder[]> => {
       const { data, error } = await supabase
         .from("reminders")
-        .select("id, user_id, created_at, updated_at, target_kind, anchor, target_id, event_key, lead_minutes, fire_at");
+        .select("id, user_id, created_at, updated_at, target_kind, anchor, target_id, event_key, leads, fire_at");
       if (error) throw error;
       return (data ?? []) as Reminder[];
     },
@@ -85,6 +85,8 @@ export interface ReminderTargetRef {
   /** `account_id:provider_event_id`. Required for an event. */
   eventKey?: string | null;
   anchor?: ReminderAnchorKind;
+  /** Date-only start (all-day event, or untimed task). Picks `all_day_leads`. */
+  allDay?: boolean;
 }
 
 function stableIdOf(ref: ReminderTargetRef): string {
@@ -104,20 +106,20 @@ export function useReminderMutations() {
   );
 
   /**
-   * Say something specific about one item: a different lead, or `null` to
-   * silence just this one. Upsert by (item, anchor) — setting a reminder twice
-   * must not leave two rows, which is what the unique index enforces server-side
-   * and what this looks up locally.
+   * Say something specific about one item: a different list of leads, or `[]`
+   * to silence just this one. Upsert by (item, anchor) — setting a reminder
+   * twice must not leave two rows, which is what the unique index enforces
+   * server-side and what this looks up locally.
    */
   const setReminder = useCallback(
-    async (ref: ReminderTargetRef, lead: LeadMinutes) => {
+    async (ref: ReminderTargetRef, leads: number[]) => {
       const anchor = ref.anchor ?? "start";
       const existing = findRow(ref);
       if (existing) {
         qc.setQueryData<Reminder[]>(KEY, (old) =>
-          old?.map((r) => (r.id === existing.id ? { ...r, lead_minutes: lead } : r)),
+          old?.map((r) => (r.id === existing.id ? { ...r, leads } : r)),
         );
-        await queueWrite(makeOp("reminders", "update", existing.id, { lead_minutes: lead }));
+        await queueWrite(makeOp("reminders", "update", existing.id, { leads }));
       } else {
         const id = crypto.randomUUID();
         const row = {
@@ -125,7 +127,7 @@ export function useReminderMutations() {
           anchor,
           target_id: ref.targetKind === "event" ? null : (ref.targetId ?? null),
           event_key: ref.targetKind === "event" ? (ref.eventKey ?? null) : null,
-          lead_minutes: lead,
+          leads,
         };
         const now = new Date().toISOString();
         qc.setQueryData<Reminder[]>(KEY, (old) => [
@@ -156,15 +158,15 @@ export function useReminderMutations() {
 }
 
 /**
- * The lead in force for one item, and where it came from — what the detail row
- * renders. `source: "default"` is what lets the row say "10m before (default)"
+ * The leads in force for one item, and where they came from — what the detail
+ * row renders. `source: "default"` is what lets the row say "10m before · default"
  * instead of pretending the user chose it.
  */
 export function useReminderFor(ref: ReminderTargetRef | null): {
-  lead: LeadMinutes;
+  leads: number[];
   /** What the defaults would say — so the picker's "Default" option can name
    *  the value it falls back to, even while an override is in force. */
-  defaultLead: LeadMinutes;
+  defaultLeads: number[];
   source: "override" | "default";
   enabled: boolean;
 } {
@@ -174,16 +176,19 @@ export function useReminderFor(ref: ReminderTargetRef | null): {
 
   return useMemo(() => {
     if (!ref) {
-      return { lead: null, defaultLead: null, source: "default" as const, enabled: prefs.enabled };
+      return { leads: [], defaultLeads: [], source: "default" as const, enabled: prefs.enabled };
     }
     const anchor = ref.anchor ?? "start";
-    const defaultLead = defaultLeadFor({ targetKind: ref.targetKind, anchor }, prefs);
+    const defaultLeads = defaultLeadsFor(
+      { targetKind: ref.targetKind, anchor, allDay: ref.allDay },
+      prefs,
+    );
     const key = reminderKey(ref.targetKind, stableIdOf(ref), anchor);
     const hit = (overrides ?? []).find((r) => keyOfOverride(r) === key);
     if (hit) {
-      return { lead: hit.lead_minutes, defaultLead, source: "override" as const, enabled: prefs.enabled };
+      return { leads: leadsFromRow(hit), defaultLeads, source: "override" as const, enabled: prefs.enabled };
     }
-    return { lead: defaultLead, defaultLead, source: "default" as const, enabled: prefs.enabled };
+    return { leads: defaultLeads, defaultLeads, source: "default" as const, enabled: prefs.enabled };
   }, [ref, overrides, prefs]);
 }
 
@@ -322,10 +327,10 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
   const { data: allTasks } = useAllTasks();
   const { keys: hiddenKeys } = useHiddenEvents();
 
-  // Day-quantized so the clock ticking cannot invalidate these keys. Three days
-  // covers the 48h anchor window from any moment inside today.
+  // Day-quantized so the clock ticking cannot invalidate these keys.
+  // `REMINDER_QUERY_DAYS` covers the anchor window from any moment inside today.
   const nowDay = useMemo(() => (enabled ? dayStartISO(Date.now()) : ""), [enabled]);
-  const endDay = useMemo(() => (enabled ? dayStartISO(Date.now(), 3) : ""), [enabled]);
+  const endDay = useMemo(() => (enabled ? dayStartISO(Date.now(), REMINDER_QUERY_DAYS) : ""), [enabled]);
   const { data: events } = useExternalEvents(nowDay || endDay, endDay);
   const { data: slots } = useSlots(nowDay || endDay, endDay);
 
@@ -360,7 +365,7 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     return planReminders(
       anchors,
       prefs,
-      (overrides ?? []).map((r) => ({ key: keyOfOverride(r), lead_minutes: r.lead_minutes })),
+      (overrides ?? []).map((r) => ({ key: keyOfOverride(r), leads: leadsFromRow(r) })),
     );
   }, [enabled, nowBucket, allTasks, slots, events, hiddenKeys, prefs, overrides]);
 
@@ -416,7 +421,7 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
       const next = nextFireAt(plan, now, new Set(Object.keys(firedRef.current ?? {})));
       if (next == null) return;
       // setTimeout saturates past ~24.8 days and would fire immediately; the
-      // window is 48h so this never bites, but the clamp is free.
+      // clamp re-arms every 6h so a fire days away still wakes on time.
       const delay = Math.min(Math.max(next - Date.now(), 250), 6 * 60 * 60 * 1000);
       timer = window.setTimeout(tick, delay);
     };

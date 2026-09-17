@@ -241,13 +241,21 @@ export default function MobileTaskSheet({
           </div>
         </Section>
 
-        {/* Remind — only when the task has a moment to be early for. */}
-        {(task.start_time || task.deadline) && (
+        {/* Remind — a block, a day, or a deadline. Untimed days have no default. */}
+        {(task.start_time || task.do_date || task.deadline) && (
           <Section label="Remind">
             <div className="flex flex-col gap-1.5">
-              {task.start_time && (
+              {(task.start_time || task.do_date) && (
                 <div className="tap-h flex items-center rounded-xl border border-line bg-surface px-3">
-                  <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "start" }} />
+                  <ReminderSelect
+                    block
+                    target={{
+                      targetKind: "task",
+                      targetId: task.id,
+                      anchor: "start",
+                      allDay: !task.start_time,
+                    }}
+                  />
                 </div>
               )}
               {task.deadline && (
@@ -294,8 +302,8 @@ export default function MobileTaskSheet({
             onChange={(e) => setNotes(e.target.value)}
             onBlur={commitNotes}
             placeholder="Add notes"
-            rows={notes ? Math.min(6, notes.split("\n").length + 1) : 2}
-            className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-body outline-none placeholder:text-muted/60 focus:border-accent"
+            rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
+            className="w-full min-h-[9rem] max-h-[min(50vh,22rem)] resize-y overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2.5 text-body leading-relaxed outline-none placeholder:text-muted/60 focus:border-accent"
           />
         </Section>
 

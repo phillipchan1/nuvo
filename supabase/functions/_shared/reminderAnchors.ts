@@ -14,17 +14,24 @@
  * on the device's own clock while Deno cannot. So the local-time resolver takes
  * an IANA zone explicitly and computes the offset via `Intl` — the same
  * mechanism `src/lib/timezone.ts` already trusts, and DST-correct because the
- * offset is read AT the instant in question rather than assumed.
+ * offset is read AT the instant in question rather than assumed. All-day events
+ * and an untimed task's `do_date` use that same resolver, never `Date.parse` on
+ * a midnight instant (which is how "10 minutes before" becomes 11:50pm).
  *
  * Zero imports beyond the rules themselves. No `Date.now()` — the caller passes
  * the clock, so a test and a cron get the same answers.
  */
 
-import { reminderKey, type ReminderAnchor } from "./reminderRules.ts";
+import { reminderKey, REMINDER_MAX_LEAD_MINUTES, type ReminderAnchor } from "./reminderRules.ts";
 
-/** How far ahead anchors are built. The longest lead is a day, so two days of
- *  runway covers every reminder that could still fire — and bounds the work. */
-export const REMINDER_WINDOW_MS = 48 * 60 * 60 * 1000;
+/** How far ahead anchors are built. Longest custom lead plus a day of runway,
+ *  so a 14-day lead on something two weeks out is still visible today. */
+export const REMINDER_WINDOW_MS = (REMINDER_MAX_LEAD_MINUTES / (24 * 60) + 1) * 24 * 60 * 60 * 1000;
+
+/** Calendar days of events/slots to load. Covers `REMINDER_WINDOW_MS` from any
+ *  moment inside today — the one definition of the query span; the dispatcher
+ *  and the open app both import this rather than each inventing "16". */
+export const REMINDER_QUERY_DAYS = Math.ceil(REMINDER_WINDOW_MS / (24 * 60 * 60 * 1000)) + 1;
 
 /** The shapes the builder needs. Deliberately narrower than the app's row types
  *  so the dispatcher can hand it plain PostgREST rows without a mapping layer. */
@@ -34,6 +41,7 @@ export interface AnchorTask {
   status: string;
   start_time: string | null;
   deadline: string | null;
+  do_date?: string | null;
 }
 
 export interface AnchorSlot {
@@ -61,7 +69,7 @@ export interface AnchorInputs {
   /** `user_settings.hidden_events` keys. A hidden event is out of the busy math,
    *  so it is out of the reminder set too — the same doctrine as the ledger. */
   hiddenKeys: ReadonlySet<string>;
-  /** Minutes after local midnight a deadline speaks on its day. */
+  /** Minutes after local midnight a date-only reminder speaks on its day. */
   deadlineTimeMinutes: number;
   /** IANA zone the deadline is resolved in. Empty/unknown falls back to UTC —
    *  never to a hardcoded home zone. */
@@ -91,6 +99,14 @@ export function instantForLocalTime(
   const zone = timeZone || "UTC";
   if (zone === "UTC") return asUtc;
   return asUtc - zoneOffsetMs(asUtc, zone);
+}
+
+/** Civil date (`YYYY-MM-DD`) from an ISO timestamp. All-day Google events are
+ *  stored as `YYYY-MM-DDT00:00:00-08:00`; slicing the date is the honest read,
+ *  `Date.parse` is not. */
+export function civilDateOf(iso: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(iso);
+  return m ? m[1] : null;
 }
 
 /** A zone's offset from UTC at an instant, in ms. Positive east of Greenwich. */
@@ -161,6 +177,22 @@ export function buildReminderAnchors(input: AnchorInputs): ReminderAnchor[] {
           detail: input.detailForTask?.(t) ?? null,
         });
       }
+    } else if (t.do_date) {
+      // Untimed, but dated — only fires when the user set an override (no
+      // default). Same wall-clock as a deadline / all-day event.
+      const atMs = instantForLocalTime(t.do_date, deadlineTimeMinutes, input.timeZone);
+      if (inWindow(atMs)) {
+        out.push({
+          key: reminderKey("task", t.id, "start"),
+          targetKind: "task",
+          targetId: t.id,
+          anchor: "start",
+          allDay: true,
+          atMs,
+          title: t.title,
+          detail: input.detailForTask?.(t) ?? null,
+        });
+      }
     }
 
     if (t.deadline) {
@@ -194,12 +226,15 @@ export function buildReminderAnchors(input: AnchorInputs): ReminderAnchor[] {
   }
 
   for (const e of events) {
-    // An all-day event has no moment to be early for, a declined one isn't
-    // yours, and a hidden one is already out of the busy math.
-    if (e.all_day) continue;
+    // A declined one isn't yours, and a hidden one is already out of the busy math.
     if (e.self_rsvp === "declined") continue;
     if (eventIsHidden(e, hiddenKeys)) continue;
-    const atMs = Date.parse(e.start_at);
+    const atMs = e.all_day
+      ? (() => {
+          const date = civilDateOf(e.start_at);
+          return date ? instantForLocalTime(date, deadlineTimeMinutes, input.timeZone) : NaN;
+        })()
+      : Date.parse(e.start_at);
     if (!inWindow(atMs)) continue;
     out.push({
       // Keyed by the PROVIDER key, not the mirror row id: a resync renumbers
@@ -209,6 +244,7 @@ export function buildReminderAnchors(input: AnchorInputs): ReminderAnchor[] {
       targetKind: "event",
       targetId: e.id,
       anchor: "start",
+      allDay: e.all_day || undefined,
       atMs,
       title: e.title || "Untitled event",
       detail: e.location || null,

@@ -48,12 +48,12 @@ import { hasConference, shouldAddMeet } from "../_shared/conferencing.ts";
 // One reminder vocabulary for the app and the chat — the leads the picker
 // offers are the leads the chat may set, and both read them from here.
 import {
-  defaultLeadFor,
   describeLead,
+  describeLeadsShort,
+  leadsFromRow,
   normalizeReminderPrefs,
-  parseLead,
-  reminderKey,
-  REMINDER_LEADS,
+  parseLeads,
+  REMINDER_MAX_LEAD_MINUTES,
   type ReminderAnchorKind,
   type ReminderTargetKind,
 } from "../_shared/reminderRules.ts";
@@ -543,8 +543,8 @@ async function resolveReminderTarget(
     if (anchor === "deadline" && !t.deadline) {
       throw new Error(`"${t.title}" has no deadline to remind about. Set one first, or use anchor "start".`);
     }
-    if (anchor === "start" && !t.start_time) {
-      throw new Error(`"${t.title}" isn't scheduled, so there is no start to be early for. Schedule it first.`);
+    if (anchor === "start" && !t.start_time && !t.do_date) {
+      throw new Error(`"${t.title}" isn't scheduled and has no date, so there is nothing to be early for.`);
     }
     return { kind: "task", anchor, id: t.id, eventKey: null, title: t.title };
   }
@@ -583,16 +583,17 @@ async function resolveReminderTarget(
 async function findReminderRow(
   userId: string,
   target: ReminderTarget,
-): Promise<{ id: string; lead_minutes: number | null } | null> {
+): Promise<{ id: string; leads: number[] } | null> {
   let q = admin
     .from("reminders")
-    .select("id, lead_minutes")
+    .select("id, leads")
     .eq("user_id", userId)
     .eq("target_kind", target.kind)
     .eq("anchor", target.anchor);
   q = target.kind === "event" ? q.eq("event_key", target.eventKey!) : q.eq("target_id", target.id!);
   const { data } = await q.maybeSingle();
-  return (data as { id: string; lead_minutes: number | null } | null) ?? null;
+  if (!data) return null;
+  return { id: data.id as string, leads: leadsFromRow(data as { leads?: number[] | null }) };
 }
 
 /** The inverse of a write: the touched fields as they were. Undoing is then one
@@ -2816,10 +2817,10 @@ export async function executeTool(
     }
 
     case "set_reminder": {
-      const lead = parseLead(args.lead_minutes);
-      if (lead === undefined) {
+      const leads = parseLeads(args.leads ?? args.lead_minutes);
+      if (leads === undefined) {
         throw new Error(
-          `lead_minutes must be one of ${REMINDER_LEADS.join(", ")} or "off" — got "${String(args.lead_minutes)}"`,
+          `lead_minutes must be minutes before (0–${REMINDER_MAX_LEAD_MINUTES}), a comma-separated list, or "off" — got "${String(args.lead_minutes ?? args.leads)}"`,
         );
       }
       const target = await resolveReminderTarget(userId, args);
@@ -2828,7 +2829,7 @@ export async function executeTool(
       if (existing) {
         const { error } = await admin
           .from("reminders")
-          .update({ lead_minutes: lead })
+          .update({ leads })
           .eq("id", existing.id)
           .eq("user_id", userId);
         if (error) throw new Error(error.message);
@@ -2840,14 +2841,23 @@ export async function executeTool(
           anchor: target.anchor,
           target_id: target.kind === "event" ? null : target.id,
           event_key: target.kind === "event" ? target.eventKey : null,
-          lead_minutes: lead,
+          leads,
         });
         if (error) throw new Error(error.message);
       }
 
-      const said = lead == null ? `No reminder for "${target.title}"` : `${describeLead(lead)} — "${target.title}"`;
+      const said =
+        leads.length === 0
+          ? `No reminder for "${target.title}"`
+          : `${leads.map(describeLead).join(", ")} — "${target.title}"`;
       return {
-        result: JSON.stringify({ target: target.kind, title: target.title, anchor: target.anchor, lead_minutes: lead }),
+        result: JSON.stringify({
+          target: target.kind,
+          title: target.title,
+          anchor: target.anchor,
+          leads,
+          lead_minutes: leads.length === 1 ? leads[0] : leads.length === 0 ? "off" : leads,
+        }),
         action: {
           tool: name,
           summary: said,
@@ -2891,22 +2901,23 @@ export async function executeTool(
       const prefs = normalizeReminderPrefs(settings?.reminder_prefs);
       const { data: rows } = await admin
         .from("reminders")
-        .select("target_kind, anchor, target_id, event_key, lead_minutes")
+        .select("target_kind, anchor, target_id, event_key, leads")
         .eq("user_id", userId);
       return {
         result: JSON.stringify({
           enabled: prefs.enabled,
           defaults: {
-            before_a_meeting: describeLead(prefs.event_lead),
-            before_a_block: describeLead(prefs.block_lead),
-            on_a_deadline: describeLead(prefs.deadline_lead),
-            deadline_speaks_at_minutes_after_midnight: prefs.deadline_time_minutes,
+            before_a_meeting: describeLeadsShort(prefs.event_leads),
+            before_an_all_day_event: describeLeadsShort(prefs.all_day_leads),
+            before_a_block: describeLeadsShort(prefs.block_leads),
+            on_a_deadline: describeLeadsShort(prefs.deadline_leads),
+            on_the_day_at_minutes_after_midnight: prefs.deadline_time_minutes,
           },
           overrides: (rows ?? []).map((r) => ({
             kind: r.target_kind,
             anchor: r.anchor,
             id: r.target_id ?? r.event_key,
-            lead: describeLead(r.lead_minutes),
+            leads: describeLeadsShort(leadsFromRow(r as { leads?: number[] | null })),
           })),
           note: prefs.enabled
             ? "Everything not listed as an override follows the defaults."

@@ -56,6 +56,7 @@ import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDelet
 import { Btn } from "./ui";
 import { isTypingIn } from "./floors/TaskList";
 import DomainSymbol from "./domain/DomainSymbol";
+import EventDomainControl from "./domain/EventDomainControl";
 
 /**
  * Priority as tokens, not raw Tailwind — `bg-amber-400` for "medium" was one
@@ -800,14 +801,22 @@ export function TaskPopover({
                 </div>
               </PopField>
 
-              {/* Remind — only offered once the task has a moment to be early
-                  for. A task with neither a block nor a deadline has nothing to
-                  remind about, and an empty control there would be a lie. */}
-              {(task.start_time || task.deadline) && (
+              {/* Remind — offered once the task has a day or a clock to hang
+                  on. Untimed `do_date` is opt-in (no default); a block and a
+                  deadline stay independently silenceable. */}
+              {(task.start_time || task.do_date || task.deadline) && (
                 <PopField label="Remind">
                   <div className="flex flex-col gap-1">
-                    {task.start_time && (
-                      <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "start" }} />
+                    {(task.start_time || task.do_date) && (
+                      <ReminderSelect
+                        block
+                        target={{
+                          targetKind: "task",
+                          targetId: task.id,
+                          anchor: "start",
+                          allDay: !task.start_time,
+                        }}
+                      />
                     )}
                     {task.deadline && (
                       <div className="flex items-baseline gap-2">
@@ -1729,6 +1738,14 @@ export function EventPopover({
         <PopMast
           dot={calendarColor ?? undefined}
           onClose={onClose}
+          eyebrow={
+            !event.all_day &&
+            event.busy &&
+            event.self_rsvp !== "declined" &&
+            event.self_rsvp !== "needsAction"
+              ? <EventDomainControl event={event} />
+              : undefined
+          }
           meta={
             <>
               <span className="mono">{whenSummary}</span>
@@ -1976,7 +1993,7 @@ export function EventPopover({
               <PopField label="Remind">
                 <ReminderSelect
                   block
-                  target={{ targetKind: "event", eventKey: eventKey(event) }}
+                  target={{ targetKind: "event", eventKey: eventKey(event), allDay: event.all_day }}
                 />
               </PopField>
 

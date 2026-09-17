@@ -659,6 +659,36 @@ export const SCENARIOS: Scenario[] = [
   }),
 
   pin({
+    id: "reminder-two-leads-is-one-call",
+    group: "calendar",
+    it: "two reminders on one meeting is one set_reminder, not two",
+    because:
+      "calendar apps put several alerts on one item; two tool calls would race " +
+      "and the second would overwrite the first. The lead list is the unit.",
+    world: "loaded",
+    turns: ["remind me a day before and 10 minutes before the AI Powered SDLC session"],
+    expect: [
+      called("set_reminder", {
+        describe: "both 1440 and 10, on that event",
+        ok: (a) => {
+          const fromArr = Array.isArray(a.leads)
+            ? (a.leads as unknown[]).map(Number)
+            : Array.isArray(a.lead_minutes)
+              ? (a.lead_minutes as unknown[]).map(Number)
+              : [];
+          const fromStr = String(a.lead_minutes ?? "")
+            .split(/[,\s]+/)
+            .map(Number)
+            .filter((n) => Number.isFinite(n));
+          const got = new Set([...fromArr, ...fromStr]);
+          return got.has(1440) && got.has(10);
+        },
+      }),
+      calledTimes("set_reminder", 1),
+    ],
+  }),
+
+  pin({
     id: "reminder-silence-is-not-a-clear",
     group: "calendar",
     it: "silencing one item is set_reminder 'off' — clearing it would restore the default",

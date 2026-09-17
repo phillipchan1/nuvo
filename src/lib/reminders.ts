@@ -15,6 +15,7 @@
 import {
   buildReminderAnchors as buildShared,
   instantForLocalTime,
+  REMINDER_QUERY_DAYS,
   REMINDER_WINDOW_MS,
   type AnchorInputs as SharedInputs,
 } from "../../supabase/functions/_shared/reminderAnchors.ts";
@@ -23,7 +24,7 @@ import { detectDeviceTz } from "./timezone";
 import type { ExternalEvent, Reminder, Slot, Task } from "./types";
 import { reminderKey } from "../../supabase/functions/_shared/reminderRules.ts";
 
-export { REMINDER_WINDOW_MS };
+export { REMINDER_QUERY_DAYS, REMINDER_WINDOW_MS };
 
 export interface AnchorInputs {
   tasks: Task[];

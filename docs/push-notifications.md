@@ -3,7 +3,8 @@
 **Status:** live — VAPID secrets set and verified 2026-08-13. Untested against a
 real device; see §4's checklist and §6.
 **Decisions:** [D-102](./product/decisions.md) (what may be said) ·
-[D-105](./product/decisions.md) (push is allowed with consent)
+[D-105](./product/decisions.md) (push is allowed with consent) ·
+[D-138](./product/decisions.md) (several leads; all-day; horizon may be a day or a week)
 **Rules:** [`_shared/reminderRules.ts`](../supabase/functions/_shared/reminderRules.ts)
 
 Reminders used to fire only while Nuvo was open. They can now reach a closed
@@ -38,9 +39,11 @@ Two properties make that work, and both are load-bearing:
 
 - **Both sides compute the same key.** The app and the dispatcher build anchors
   from [`_shared/reminderAnchors.ts`](../supabase/functions/_shared/reminderAnchors.ts)
-  and fire instants from `reminderRules.ts`. Two implementations disagreeing by
-  one second would both "win". This is the same law as the planning kernel, for
-  the same reason. `tests/push-reconciliation.test.ts` pins it.
+  and fire instants from `reminderRules.ts`. The planned-reminder key includes the
+  **lead** (`event:acct:evt:start:10`), so two alerts on one meeting cannot mark
+  each other fired. Two implementations disagreeing by one second would both
+  "win". This is the same law as the planning kernel, for the same reason.
+  `tests/push-reconciliation.test.ts` pins it.
 - **An open app wins.** The dispatcher subtracts `DISPATCH_LAG_MS` (30s) before
   asking what is due, so a foreground client — which fires within a second —
   claims first. Someone sitting in front of Nuvo gets the in-app notification
@@ -74,7 +77,7 @@ it works everywhere.
 | File | What it does |
 |---|---|
 | `supabase/migrations/…61_push_delivery.sql` | `push_subscriptions`, `reminder_deliveries`, `claim_reminder()`, `user_settings.time_zone`, the cron entries |
-| `_shared/reminderAnchors.ts` | the shared anchor builder — one implementation, both runtimes |
+| `_shared/reminderAnchors.ts` | the shared anchor builder — one implementation, both runtimes. Window is longest custom lead (14 days) plus a day of runway. All-day events and an untimed `do_date` resolve through the shared wall-clock, never `Date.parse` on midnight. |
 | `_shared/webpush.ts` | VAPID (RFC 8292) + aes128gcm encryption (RFC 8291) on Deno's WebCrypto |
 | `supabase/functions/push-dispatch/` | the every-minute dispatcher |
 | `src/sw.ts` | the service worker's `push` + `notificationclick` |
@@ -161,8 +164,10 @@ wrong are fine:
 
 Unchanged by any of this, and the reason the kernel has the shape it has:
 
-> Three anchors. A meeting starting, a block you scheduled starting, a deadline
-> arriving. Never a planning nudge, never a count, never a streak.
+> Three facts. A meeting starting (timed or all-day), a block you scheduled
+> starting, a deadline arriving. Several leads on one item, up to a week ahead,
+> still name that one commitment. Never a planning nudge, never a count, never a
+> streak.
 
 Consent does not widen that. A user who says yes to reminders has agreed to hear
 that a meeting starts in ten minutes; they have not agreed to hear that they

@@ -1001,7 +1001,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "set_reminder",
       description:
-        "Set how long before something Nuvo should speak: a meeting, a block the user scheduled, or a deadline. Name ONE target — task_id/task_title, or event_id/event_title, or slot_id. `lead_minutes` is minutes before; 0 means at the time; pass \"off\" to silence just this one item while leaving the user's defaults alone. Reminders are the app's only unprompted voice and they only ever announce something about to happen — never a planning nudge. If the user is asking for reminders in general rather than for one thing, tell them Settings → Reminders holds the defaults; do not set one per item to fake it.",
+        "Set how long before something Nuvo should speak: a meeting, a block the user scheduled, or a deadline. Name ONE target — task_id/task_title, or event_id/event_title, or slot_id. `lead_minutes` is minutes before (0 = at the time); pass a comma-separated list for several alerts on the same item (\"1440,10\"); pass \"off\" to silence just this one item while leaving the user's defaults alone. Reminders are the app's only unprompted voice and they only ever announce something about to happen — never a planning nudge. If the user is asking for reminders in general rather than for one thing, tell them Settings → Reminders holds the defaults; do not set one per item to fake it. Two reminders on one meeting is one call, not two.",
       parameters: {
         type: "object",
         properties: {
@@ -1018,7 +1018,12 @@ const RAW_TOOL_DEFINITIONS = [
           lead_minutes: {
             type: "string",
             description:
-              'Minutes before: "0", "5", "10", "15", "30", "60", "120", "1440" — or "off" to silence this one item.',
+              'Minutes before: a number ("10"), several ("1440,10"), or "off" to silence this one item. Custom values up to 14 days (20160) are allowed.',
+          },
+          leads: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Optional list of minutes-before. If set, wins over lead_minutes. Empty = off. Cap 5.",
           },
         },
         required: ["lead_minutes"],

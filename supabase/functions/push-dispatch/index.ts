@@ -27,9 +27,10 @@
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
   dueNow,
+  leadsFromRow,
   normalizeReminderPrefs,
   planReminders,
-  REMINDER_GRACE_MS,
+  reminderKey,
   type PlannedReminder,
 } from "../_shared/reminderRules.ts";
 import { buildReminderAnchors, REMINDER_WINDOW_MS } from "../_shared/reminderAnchors.ts";
@@ -45,8 +46,8 @@ import { sendWebPush, webPushConfigured, webPushSelfTest, type PushSubscriptionR
  */
 const DISPATCH_LAG_MS = 30_000;
 
-/** Anchors are built from a bounded slice of each account's data. Two days of
- *  runway covers the longest lead; nothing here scans a whole calendar. */
+/** Anchors are built from a bounded slice of each account's data. The window
+ *  covers the longest custom lead; nothing here scans a whole calendar. */
 const WINDOW_MS = REMINDER_WINDOW_MS;
 
 interface SettingsRow {
@@ -100,6 +101,8 @@ Deno.serve(async (req) => {
     const nowMs = Date.now();
     const windowStart = new Date(nowMs - 60 * 60_000).toISOString();
     const windowEnd = new Date(nowMs + WINDOW_MS).toISOString();
+    const dateStart = windowStart.slice(0, 10);
+    const dateEnd = windowEnd.slice(0, 10);
 
     for (const { row, prefs } of accounts) {
       const userId = row.user_id;
@@ -109,11 +112,11 @@ Deno.serve(async (req) => {
       const [tasksRes, slotsRes, eventsRes, subsRes, overridesRes] = await Promise.all([
         admin
           .from("tasks")
-          .select("id, title, status, start_time, deadline")
+          .select("id, title, status, start_time, deadline, do_date")
           .eq("user_id", userId)
           .is("parent_task_id", null)
           .not("status", "in", '("done","trashed")')
-          .or(`and(start_time.gte.${windowStart},start_time.lte.${windowEnd}),deadline.not.is.null`)
+          .or(`and(start_time.gte.${windowStart},start_time.lte.${windowEnd}),deadline.not.is.null,and(do_date.gte.${dateStart},do_date.lte.${dateEnd})`)
           .limit(500),
         admin
           .from("slots")
@@ -126,7 +129,10 @@ Deno.serve(async (req) => {
           .from("external_events")
           .select("id, account_id, provider_event_id, title, start_at, all_day, location, self_rsvp, recurring_event_id")
           .eq("user_id", userId)
-          .gte("start_at", windowStart)
+          // All-day rows are stored at local midnight, which can sit a day
+          // behind the wall-clock they actually speak at. The builder still
+          // drops anything outside the 1-hour lookback.
+          .gte("start_at", new Date(nowMs - 2 * 24 * 60 * 60_000).toISOString())
           .lte("start_at", windowEnd)
           .limit(500),
         admin
@@ -135,7 +141,7 @@ Deno.serve(async (req) => {
           .eq("user_id", userId),
         admin
           .from("reminders")
-          .select("target_kind, anchor, target_id, event_key, lead_minutes")
+          .select("target_kind, anchor, target_id, event_key, leads")
           .eq("user_id", userId),
       ]);
 
@@ -162,16 +168,16 @@ Deno.serve(async (req) => {
         anchor: "start" | "deadline";
         target_id: string | null;
         event_key: string | null;
-        lead_minutes: number | null;
+        leads: number[] | null;
       }[]).map((r) => ({
-        key: `${r.target_kind}:${r.target_kind === "event" ? (r.event_key ?? "") : (r.target_id ?? "")}:${r.anchor}`,
-        lead_minutes: r.lead_minutes,
+        key: reminderKey(r.target_kind, r.target_kind === "event" ? (r.event_key ?? "") : (r.target_id ?? ""), r.anchor),
+        leads: leadsFromRow(r),
       }));
 
       const plan = planReminders(anchors, prefs, overrides);
-      // Give an open app its head start, then apply the same grace window the
-      // client uses: a reminder staler than that is no longer a *now* signal.
-      const due = dueNow(plan, nowMs - DISPATCH_LAG_MS, new Set(), REMINDER_GRACE_MS);
+      // Give an open app its head start, then apply the same grace the client
+      // uses: a reminder staler than that is no longer worth saying.
+      const due = dueNow(plan, nowMs - DISPATCH_LAG_MS, new Set());
       considered += due.length;
 
       for (const reminder of due) {

@@ -333,6 +333,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Reschedule an existing event | `reschedule_event` | ◐ no scenario |
 | A booked meeting carries a real Meet link | `create_calendar_event` | ◐ pinned in `tests/conferencing.test.ts` |
 | Set a lead on one meeting / block / deadline | `set_reminder` | ✅ `reminder-sets-one-lead-not-a-standing-rule` |
+| Two leads on one meeting is one call | `set_reminder` | ✅ `reminder-two-leads-is-one-call` |
 | Silence one item without touching the defaults | `set_reminder` (`"off"`) | ✅ `reminder-silence-is-not-a-clear` |
 | Drop an override so it follows the defaults again | `clear_reminder` | ◐ no scenario — pinned only as the thing `reminder-silence-is-not-a-clear` forbids |
 | "Will you remind me?" is answered from the defaults | `list_reminders` | ◐ no scenario |

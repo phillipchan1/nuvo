@@ -2,7 +2,6 @@ import type { Energy } from "./energy";
 import type { RecurrenceRule } from "./recurrence";
 import type { MeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
 import type {
-  LeadMinutes,
   ReminderAnchorKind,
   ReminderPrefs,
   ReminderTargetKind,
@@ -345,8 +344,8 @@ export interface UserSettings {
  *
  * The common case (every meeting gets a 10-minute heads-up) is derived from
  * `user_settings.reminder_prefs` and never stored, so this table holds only what
- * the user said about one specific item: a different lead, or `lead_minutes:
- * null` meaning "not this one". See `planReminders` in _shared/reminderRules.ts.
+ * the user said about one specific item: a different list of leads, or `leads:
+ * []` meaning "not this one". See `planReminders` in `_shared/reminderRules.ts`.
  */
 export interface Reminder {
   id: string;
@@ -359,8 +358,8 @@ export interface Reminder {
   target_id: string | null;
   /** `account_id:provider_event_id` — the resync-stable key for an event. */
   event_key: string | null;
-  /** Minutes before the anchor; null = silenced for this item. */
-  lead_minutes: LeadMinutes;
+  /** Minutes before the anchor. Empty = silenced for this item. */
+  leads: number[];
   fire_at: string | null;
 }
 

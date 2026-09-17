@@ -21,13 +21,8 @@ import { announce } from "../lib/announce";
 import { isTypingIn, pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
-import { useReminderFor, useReminderMutations } from "../hooks/useReminders";
-import {
-  describeLead,
-  describeLeadShort,
-  REMINDER_LEADS,
-  type ReminderAnchorKind,
-} from "../../supabase/functions/_shared/reminderRules.ts";
+import ReminderSelect from "./ReminderSelect";
+import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { InboxAddressHint } from "./InboxAddress";
@@ -1532,54 +1527,20 @@ function deletedWhen(iso: string): string {
  * no custom roving focus to get wrong.
  */
 function RemindPicker({ task, onClose }: { task: Task; onClose: () => void }) {
-  const { setReminder, clearReminder } = useReminderMutations();
-  const anchor: ReminderAnchorKind = task.start_time ? "start" : "deadline";
-  const target = { targetKind: "task" as const, targetId: task.id, anchor };
-  const { lead, defaultLead, source, enabled } = useReminderFor(target);
-
-  const pick = async (next: "default" | "off" | number) => {
-    if (next === "default") await clearReminder(target);
-    else await setReminder(target, next === "off" ? null : next);
-    onClose();
+  const anchor: ReminderAnchorKind = task.start_time || !task.deadline ? "start" : "deadline";
+  const target = {
+    targetKind: "task" as const,
+    targetId: task.id,
+    anchor,
+    allDay: !task.start_time && anchor === "start",
   };
-
-  const Opt = ({ on, onPick, children }: { on: boolean; onPick: () => void; children: React.ReactNode }) => (
-    <button
-      type="button"
-      onClick={onPick}
-      aria-pressed={on}
-      className={`fast tap flex w-full items-center justify-between rounded-md px-1.5 py-1 text-left text-body hover:bg-bg ${
-        on ? "font-medium text-ink" : "text-muted"
-      }`}
-    >
-      {children}
-      {on && <span aria-hidden>✓</span>}
-    </button>
-  );
 
   return (
     <Popover onClose={onClose} title={`Remind — ${task.title}`}>
-      {!enabled && (
-        <div className="px-1.5 pb-1 text-caption text-muted">
-          Reminders are off. Turn them on in Settings → Reminders; this still saves.
-        </div>
-      )}
       {anchor === "deadline" && (
         <div className="px-1.5 pb-1 text-micro text-muted/80">Before its deadline.</div>
       )}
-      <div className="max-h-64 overflow-y-auto">
-        <Opt on={source === "default"} onPick={() => void pick("default")}>
-          {defaultLead == null ? "Default (off)" : `Default (${describeLeadShort(defaultLead)})`}
-        </Opt>
-        {REMINDER_LEADS.map((m) => (
-          <Opt key={m} on={source === "override" && lead === m} onPick={() => void pick(m)}>
-            {describeLead(m)}
-          </Opt>
-        ))}
-        <Opt on={source === "override" && lead == null} onPick={() => void pick("off")}>
-          No reminder
-        </Opt>
-      </div>
+      <ReminderSelect block target={target} />
     </Popover>
   );
 }

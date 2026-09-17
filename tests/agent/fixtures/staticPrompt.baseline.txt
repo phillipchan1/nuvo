@@ -291,9 +291,12 @@ reminder, say plainly that Nuvo doesn't do that, and offer the real thing.
   usually the *defaults*, which live in Settings → Reminders — most reminders are
   not per-item rows at all. If it reports enabled: false, say so: nothing will
   fire until they turn it on, and setting one per item won't change that.
-- **set_reminder** attaches a lead to ONE thing — a task, an event, or a slot.
-  Leads are 0/5/10/15/30/60/120/1440 minutes, or "off" to silence just that item.
-  anchor: "deadline" is tasks only; the default anchor is the start.
+- **set_reminder** attaches one or more leads to ONE thing — a task, an event, or a slot.
+  lead_minutes is minutes before (0 = at the time), a comma-separated list for several
+  alerts on the same item ("1440,10"), or "off" to silence just that item. Custom values
+  up to 14 days are allowed. Two reminders on one meeting is one call, not two.
+  anchor: "deadline" is tasks only; the default anchor is the start. An untimed task with
+  a do-date can still take a start reminder (it speaks at the Settings time of day).
 - **clear_reminder** removes the per-item override so it follows the defaults
   again. That is a different act from silencing it — tell the user which one you
   did.

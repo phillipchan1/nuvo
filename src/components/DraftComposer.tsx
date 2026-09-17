@@ -29,6 +29,9 @@ import {
 // The consent sentence is shared with the chat's invite card: two doors onto
 // outbound mail, one wording, one rule (D-046).
 import { QUIET_HINT, inviteConsentPrompt } from "../../supabase/functions/_shared/invites.ts";
+import { DEFAULT_REMINDER_PREFS, defaultLeadsFor } from "../../supabase/functions/_shared/reminderRules.ts";
+import { DraftReminderSelect, type ReminderDraft } from "./ReminderSelect";
+import { useSettings } from "../hooks/useSettings";
 
 export type CreateKind = "task" | "event" | "slot";
 
@@ -47,6 +50,8 @@ export interface CreateDraft {
   addMeet: boolean;
   /** Whole-day calendar event (events only). */
   allDay: boolean;
+  /** Per-item reminder override. Omit / default = follow Settings. */
+  reminder?: ReminderDraft;
 }
 
 const KINDS: { value: CreateKind; label: string; hint: string }[] = [
@@ -116,6 +121,17 @@ export default function DraftComposer({
   // button labelled "Create" should do silently, so the last step names who is
   // about to be mailed and offers to skip it.
   const [confirmingGuests, setConfirmingGuests] = useState(false);
+  const [reminder, setReminder] = useState<ReminderDraft>({ mode: "default" });
+  const { settings } = useSettings();
+  const reminderPrefs = settings?.reminder_prefs ?? DEFAULT_REMINDER_PREFS;
+  const reminderDefaults = defaultLeadsFor(
+    {
+      targetKind: kind === "event" ? "event" : kind === "slot" ? "slot" : "task",
+      anchor: "start",
+      allDay: kind === "event" ? eventAllDay : kind === "task" && allDay,
+    },
+    reminderPrefs,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -237,6 +253,7 @@ export default function DraftComposer({
       notifyGuests,
       addMeet,
       allDay: kind === "event" && eventAllDay,
+      reminder,
     });
   };
 
@@ -361,7 +378,16 @@ export default function DraftComposer({
                 )}
               </PopField>
 
-              {/* ── Calendar account — only when multiple writable accounts ── */}
+              <PopField label="Remind">
+                <DraftReminderSelect
+                  defaultLeads={reminderDefaults}
+                  allDay={kind === "event" ? eventAllDay : kind === "task" && allDay}
+                  enabled={reminderPrefs.enabled}
+                  value={reminder}
+                  onChange={setReminder}
+                  block
+                />
+              </PopField>
               {kind === "event" && writableAccounts.length > 1 && (
                 <PopField label="Calendar">
                   <div className="flex flex-wrap gap-1.5">

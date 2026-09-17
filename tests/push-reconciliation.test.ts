@@ -19,6 +19,8 @@ import {
   DEFAULT_REMINDER_PREFS,
   dueNow,
   planReminders,
+  plannedReminderKey,
+  reminderGraceMs,
   reminderKey,
   REMINDER_GRACE_MS,
   type ReminderPrefs,
@@ -95,6 +97,17 @@ describe("the app and the dispatcher agree", () => {
       keyOfOverride({ target_kind: "event", target_id: null, event_key: "acct:evt", anchor: "start" }),
     ).toBe(a.key);
   });
+
+  it("a planned reminder's key includes the lead, so two leads are two claims", () => {
+    const [a] = buildApp(base);
+    const plan = planReminders([a], ON, [{ key: a.key, leads: [1440, 10] }]);
+    expect(plan.map((r) => r.key).sort()).toEqual(
+      [plannedReminderKey(a.key, 10), plannedReminderKey(a.key, 1440)].sort(),
+    );
+    const dayBefore = plan.find((r) => r.leadMinutes === 1440)!;
+    const tenMin = plan.find((r) => r.leadMinutes === 10)!;
+    expect(dueNow(plan, tenMin.fireAtMs, new Set([dayBefore.key]))).toEqual([tenMin]);
+  });
 });
 
 describe("deadlines resolve in a named zone, not the server's", () => {
@@ -144,6 +157,14 @@ describe("an open app wins the race", () => {
     const plan = planReminders(buildApp(base), ON);
     const wayLate = plan[0].fireAtMs + REMINDER_GRACE_MS + 60_000;
     expect(dueNow(plan, wayLate, new Set())).toEqual([]);
+  });
+
+  it("a day-scale reminder is still due a few minutes late", () => {
+    const [a] = buildApp(base);
+    const plan = planReminders([a], ON, [{ key: a.key, leads: [1440] }]);
+    const r = plan[0];
+    expect(dueNow(plan, r.fireAtMs + 6 * 60_000, new Set())).toHaveLength(1);
+    expect(dueNow(plan, r.fireAtMs + reminderGraceMs(1440) + 60_000, new Set())).toEqual([]);
   });
 });
 

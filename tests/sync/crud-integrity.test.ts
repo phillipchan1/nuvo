@@ -151,8 +151,8 @@ const FIXTURES: Fixture[] = [
     table: "reminders",
     queryKey: ["reminders"],
     rowId: "rem-1",
-    insert: { lead_minutes: 15, task_id: "task-1" },
-    update: { lead_minutes: 30 },
+    insert: { target_kind: "task", target_id: "task-1", anchor: "start", leads: [15] },
+    update: { leads: [30] },
     list: true,
   },
 ];
