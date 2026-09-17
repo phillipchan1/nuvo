@@ -2759,6 +2759,16 @@ function CalendarPane({
     [viewStart, viewEnd],
   );
 
+  // What differs between the time grid and the month, said once per view type
+  // so the calendar element doesn't have to change when the view does.
+  const viewOptions = useMemo(
+    () => ({
+      timeGrid: timeGridOptions,
+      dayGridMonth: { allDaySlot: false, nowIndicator: false, expandRows: false, dayMaxEvents: 4 },
+    }),
+    [timeGridOptions],
+  );
+
   // Stable identity, live value: FullCalendar's own NowTimer re-renders the
   // indicator every minute, so it still reads a fresh clock without this
   // callback — and therefore the whole calendar element — being re-created.
@@ -2947,19 +2957,23 @@ function CalendarPane({
             initialView={isFcView(viewRef.current) ? viewRef.current : "timeGridWeek"}
             initialDate={remountCache.dateISO ?? undefined}
             headerToolbar={false}
-            allDaySlot={!isMonth}
+            allDaySlot
             allDayText="anytime"
             dayMaxEventRows={5}
             firstDay={fcFirstDay}
-            nowIndicator={!isMonth}
+            nowIndicator
             fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
             nowIndicatorContent={nowIndicatorContent}
-            {...(!isMonth && timeGridOptions)}
+            // Per-view settings live in `views`, not in props keyed off the current
+            // view: a prop that changes with Week ↔ Month re-created this element,
+            // and FullCalendar answered with a full options reset and re-measure
+            // on top of the changeView (5,492 forced layouts per switch).
+            views={viewOptions}
             dayHeaderContent={dayHeaderContent}
             dayCellContent={dayCellContent}
             height="100%"
-            expandRows={!isMonth}
-            dayMaxEvents={isMonth ? 4 : false}
+            expandRows
+            dayMaxEvents={false}
             // Always keep the draft ghost out of the "+N more" overflow — a
             // packed month day would otherwise bury it behind real events.
             eventOrder={draftPreviewFirst}
@@ -2992,9 +3006,8 @@ function CalendarPane({
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      isMonth,
       fcFirstDay,
-      timeGridOptions,
+      viewOptions,
       nowIndicatorContent,
       dayHeaderContent,
       dayCellContent,

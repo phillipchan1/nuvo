@@ -46,6 +46,11 @@ const SettingsModal = lazy(() => import("./SettingsModal"));
 const TaskPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.TaskPopover })));
 const EventPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.EventPopover })));
 const SlotPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.SlotPopover })));
+
+// Stable empties: a fresh `[]` default on every render is a new calendar input.
+const EMPTY_TASKS: Task[] = [];
+const EMPTY_EVENTS: ExternalEvent[] = [];
+const EMPTY_SLOTS: Slot[] = [];
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
@@ -256,15 +261,20 @@ export default function Planner({
   useGroomInbox(inbox);
   const { data: todayTasks = [] } = useDayTasks(today);
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
-  const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);
-  const { data: anytime = [] } = usePlannedAnytimeTasks(range.start, range.end);
+  const scheduledQ = useScheduledTasks(range.start, range.end);
+  const anytimeQ = usePlannedAnytimeTasks(range.start, range.end);
+  const scheduled = scheduledQ.data ?? EMPTY_TASKS;
+  const anytime = anytimeQ.data ?? EMPTY_TASKS;
   // Every non-trashed task (shares the vertical store's cache) — lets ⌘K open any
   // task as the centered modal, scheduled or buried in a project backlog.
   const { data: allTasks = [] } = useAllTasks();
-  const { data: events = [] } = useExternalEvents(range.start, range.end);
-  const { data: slots = [] } = useSlots(range.start, range.end);
+  const eventsQ = useExternalEvents(range.start, range.end);
+  const slotsQ = useSlots(range.start, range.end);
+  const events = eventsQ.data ?? EMPTY_EVENTS;
+  const slots = slotsQ.data ?? EMPTY_SLOTS;
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
-  const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
+  const slotChildQ = useSlotTasks(slotIds);
+  const slotChildTasks = slotChildQ.data ?? EMPTY_TASKS;
   const { data: accounts = [] } = useCalendarAccounts();
   const { refresh: refreshCalendars, fullRefresh: fullRefreshCalendars, refreshing: refreshingCalendars } = useCalendarRefresh();
   const { data: recurrences = [] } = useRecurrences();

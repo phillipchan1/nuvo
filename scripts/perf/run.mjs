@@ -132,6 +132,11 @@ try {
   for (const { key, label, act } of INTERACTIONS) {
     const runs = [];
     for (let i = 0; i < REPEATS; i++) runs.push(await measure(act, i));
+    // Lens toggles alternate Week ↔ X, so an odd repeat count leaves the grid
+    // on X (Year has no .fc-event at all, and the popover step then threw).
+    // Every interaction starts from the Week the rig set up.
+    await evaluate(c, `window.__btn('Week')?.click(); return 1;`);
+    await sleep(600);
     const got = {
       forcedLayout: median(runs.map((r) => r.forcedLayout)),
       blockedMs: median(runs.map((r) => r.blockedMs)),
