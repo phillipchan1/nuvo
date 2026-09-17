@@ -54,8 +54,8 @@ import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { anchoredTop } from "../lib/anchoredTop";
 import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDeleteButton, useRecurringScope, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
-import { isTypingIn } from "./floors/TaskList";
-import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
+import type { TaskComposerHandle } from "./tasks/TaskComposer";
+import TaskListView from "./tasks/TaskListView";
 import DomainSymbol from "./domain/DomainSymbol";
 import EventDomainControl from "./domain/EventDomainControl";
 
@@ -271,7 +271,10 @@ export function TaskPopover({
   onBack,
   backLabel,
   variant = "anchored",
+  raised,
 }: {
+  /** Opened over a record (z-[81]) — float above it. */
+  raised?: boolean;
   task: Task;
   anchor: DOMRect;
   /** Live trigger element (e.g. the clicked calendar block) — when given, the
@@ -524,7 +527,7 @@ export function TaskPopover({
       <div
         ref={slideout ? undefined : popRef}
         data-block-popover=""
-        className={`${centered ? "moment" : slideout ? "" : "pop-in"} ${slideout ? "h-full" : centered ? "relative" : "fixed"} ${slideout ? "" : onBack ? "z-[55]" : "z-50"} flex flex-col ${slideout ? "" : "rounded-[var(--radius-lg)] border border-line bg-surface"}`}
+        className={`${centered ? "moment" : slideout ? "" : "pop-in"} ${slideout ? "h-full" : centered ? "relative" : "fixed"} ${slideout ? "" : raised ? "z-[90]" : onBack ? "z-[55]" : "z-50"} flex flex-col ${slideout ? "" : "rounded-[var(--radius-lg)] border border-line bg-surface"}`}
         style={{
           ...(centered || slideout ? {} : { top: pos.top, left: pos.left }),
           ...(slideout ? {} : { width: TASK_POP_W, maxHeight: "min(620px, calc(100vh - 24px))", boxShadow: "var(--shadow-3)" }),
@@ -2363,15 +2366,10 @@ export function SlotPopover({
 }) {
   const [title, setTitle] = useState(slot.title);
   const [naming, setNaming] = useState(false);
-  const [sel, setSel] = useState(-1);
   const titleRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<TaskComposerHandle>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const slotColRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  // Live reorder state: { id: dragged, index: target insertion slot }.
-  const [reorder, setReorder] = useState<{ id: string; index: number } | null>(null);
-  const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
   const { data: vertical } = useVertical();
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
@@ -2525,111 +2523,6 @@ export function SlotPopover({
   const doneCount = ordered.filter((t) => t.status === "done").length;
   const totalMins = ordered.reduce((sum, t) => sum + (t.duration_minutes ?? defaultDurationMins), 0);
 
-  const insertLineTop = (dragId: string, clientY: number) => {
-    const list = listRef.current;
-    if (!list) return null;
-    const others = [...list.querySelectorAll<HTMLElement>("[data-slot-row]")].filter(
-      (r) => r.getAttribute("data-slot-row") !== dragId,
-    );
-    let k = 0;
-    for (const r of others) {
-      const b = r.getBoundingClientRect();
-      if (clientY > b.top + b.height / 2) k++;
-    }
-    const contTop = list.getBoundingClientRect().top;
-    if (!others.length) return 0;
-    if (k < others.length) return others[k].getBoundingClientRect().top - contTop;
-    return others[others.length - 1].getBoundingClientRect().bottom - contTop;
-  };
-
-  // The grip is the universal handle: drag within the list to reorder, or out of
-  // the popover onto the rail (→ Inbox) or a calendar day (→ planned, un-slotted).
-  const startReorder = (id: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const task = childTasks.find((t) => t.id === id);
-    if (!task) return;
-    // Capture each row's vertical midpoint ONCE. Computing the insert index from
-    // these fixed positions (not the live, re-ordering DOM) keeps it stable — no
-    // feedback loop where moving the row changes what's under the cursor.
-    const mids = ordered.map((t) => {
-      const r = slotColRef.current
-        ?.querySelector(`[data-slot-row="${t.id}"]`)
-        ?.getBoundingClientRect();
-      return r ? r.top + r.height / 2 : Number.POSITIVE_INFINITY;
-    });
-    let index = ordered.findIndex((t) => t.id === id);
-    let out: null | { kind: "inbox" } | { kind: "day"; date: string } = null;
-    const railEl = () => document.querySelector<HTMLElement>("[data-rail-drop]");
-    setReorder({ id, index });
-    setReorderLineTop(insertLineTop(id, e.clientY));
-    // One layout read per frame, not per pointer event: `insertLineTop` measures
-    // every row, and pointermove fires faster than the display refreshes.
-    let frame = 0;
-    let lastEv: PointerEvent | null = null;
-    const onMove = (ev: PointerEvent) => {
-      lastEv = ev;
-      if (!frame) frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (lastEv) track(lastEv);
-      });
-    };
-    const track = (ev: PointerEvent) => {
-      const pop = slotColRef.current?.getBoundingClientRect();
-      const inside =
-        !!pop &&
-        ev.clientX >= pop.left && ev.clientX <= pop.right &&
-        ev.clientY >= pop.top && ev.clientY <= pop.bottom;
-      if (inside) {
-        // Reorder mode — insert index = how many *other* rows start above the
-        // cursor, measured against the captured (fixed) midpoints.
-        out = null;
-        railEl()?.classList.remove("rail-drop-active");
-        let i = 0;
-        ordered.forEach((t, k) => {
-          if (t.id !== id && mids[k] < ev.clientY) i++;
-        });
-        if (i !== index) {
-          index = i;
-          setReorder({ id, index: i });
-        }
-        setReorderLineTop(insertLineTop(id, ev.clientY));
-      } else {
-        // Drag-out mode — figure out the destination under the pointer.
-        setReorder(null);
-        setReorderLineTop(null);
-        const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
-        if (under?.closest("[data-rail-drop]")) {
-          out = { kind: "inbox" };
-          railEl()?.classList.add("rail-drop-active");
-        } else {
-          railEl()?.classList.remove("rail-drop-active");
-          const date = under?.closest("[data-date]")?.getAttribute("data-date");
-          out = date ? { kind: "day", date } : null;
-        }
-      }
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
-      track(ev);
-      setReorder(null);
-      setReorderLineTop(null);
-      railEl()?.classList.remove("rail-drop-active");
-      if (out?.kind === "inbox") return void taskMutations.backToInbox(task);
-      if (out?.kind === "day") return void taskMutations.planFor(task, out.date);
-      // Otherwise: reorder within the slot — only the moved row is written.
-      const rest = ordered.filter((t) => t.id !== id);
-      const idx = Math.max(0, Math.min(index, rest.length));
-      rest.splice(idx, 0, task);
-      taskMutations.reorder(ordered, rest.map((t) => t.id));
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
   const startDate = new Date(slot.start_time);
   const startHHMM = format(startDate, "HH:mm");
   const setTime = (hhmm: string) => {
@@ -2651,66 +2544,6 @@ export function SlotPopover({
       patch: { start_time: nd.toISOString(), do_date: dateISO },
     });
   };
-
-  // ↑↓/jk select · ↵ open · space toggle · x remove · t focus add
-  useEffect(() => {
-    if (openTask) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "ArrowDown" || e.key === "j") {
-        if (!ordered.length) return;
-        e.preventDefault();
-        setSel((i) => {
-          const next = i + 1;
-          return Math.max(0, Math.min(ordered.length - 1, next < 0 ? 0 : next));
-        });
-        return;
-      }
-      if (e.key === "ArrowUp" || e.key === "k") {
-        if (!ordered.length) return;
-        e.preventDefault();
-        setSel((i) => {
-          const next = i - 1;
-          return Math.max(0, Math.min(ordered.length - 1, next < 0 ? 0 : next));
-        });
-        return;
-      }
-      if (e.key === "t") {
-        e.preventDefault();
-        addRef.current?.focus();
-        return;
-      }
-      if (sel < 0 || sel >= ordered.length) return;
-      const t = ordered[sel];
-      if (e.key === "Enter") {
-        e.preventDefault();
-        onOpenTask(t);
-      } else if (e.key === " ") {
-        e.preventDefault();
-        t.status === "done" ? taskMutations.uncomplete(t) : taskMutations.complete(t);
-      } else if (e.key === "x" || e.key === "Backspace" || e.key === "Delete") {
-        e.preventDefault();
-        taskMutations.removeFromSlot(t);
-        setSel((i) => Math.min(i, ordered.length - 2));
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        setSel(-1);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  useEffect(() => {
-    if (sel >= ordered.length) setSel(ordered.length - 1);
-  }, [ordered.length, sel]);
-
-  // Scroll the keyboard selection into view.
-  useEffect(() => {
-    if (sel < 0 || !listRef.current) return;
-    const row = listRef.current.querySelector<HTMLElement>(`[data-slot-row="${ordered[sel]?.id}"]`);
-    row?.scrollIntoView({ block: "nearest" });
-  }, [sel, ordered]);
 
   const project = projectById(vertical, slot.project_id);
   const domain = domainById(vertical, slot.domain_id ?? project?.domainId ?? null);
@@ -2970,98 +2803,59 @@ export function SlotPopover({
               aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}
               className="min-h-0 flex-1"
             >
-              {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
-              <div ref={listRef} className="relative -mx-1.5 mt-1 min-h-0 flex-1 overflow-y-auto px-1.5">
-                {reorderLineTop != null && (
-                  <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
-                )}
-                {ordered.length === 0 && (
-                  <div className="px-1 py-2 text-caption italic text-muted/70">No tasks yet.</div>
-                )}
-                {ordered.map((t, i) => {
-                  const done = t.status === "done";
-                  const dragging = reorder?.id === t.id;
-                  const selected = i === sel;
-                  return (
-                    <div
-                      key={t.id}
-                      data-slot-row={t.id}
-                      className={`group flex items-center gap-0.5 rounded-md pr-1 hover:bg-bg ${
-                        dragging
-                          ? "pointer-events-none bg-accent-soft text-accent shadow-[inset_0_3px_0_0_var(--accent)]"
-                          : selected
-                            ? "bg-accent-soft/60 ring-1 ring-inset ring-accent/30"
-                            : ""
-                      }`}
+              {/* The app's one task list: TaskRow, the shared keys, the shared
+                  add box. Rows drag to reorder, onto the calendar (FullCalendar's
+                  Draggable on this column reads data-task-drag), or onto the rail
+                  to go back to the inbox. */}
+              <div className="-mx-1.5 mt-1 min-h-0 flex-1 overflow-y-auto px-1.5">
+                <TaskListView
+                  tasks={ordered}
+                  context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
+                  contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
+                  keyboard={!openTask}
+                  onOpen={(t) => onOpenTask(t)}
+                  flush
+                  whenShown
+                  composerRef={addRef}
+                  composerPlaceholder="Add task to slot"
+                  emptyHint="No tasks yet."
+                  dragData={() => ({})}
+                  dropZones={{
+                    at: (x, y) => {
+                      const under = document.elementFromPoint(x, y) as HTMLElement | null;
+                      const onRail = Boolean(under?.closest("[data-rail-drop]"));
+                      document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.toggle("rail-drop-active", onRail);
+                      return onRail ? "inbox" : null;
+                    },
+                    drop: (_zone, t) => {
+                      document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.remove("rail-drop-active");
+                      taskMutations.backToInbox(t, { undo: "toast" });
+                    },
+                    label: () => "↩ Back to inbox",
+                  }}
+                  rowAction={(t) => (
+                    <button
+                      type="button"
+                      aria-label={`Take “${t.title}” out of the slot`}
+                      title="Out of this slot (keeps its day)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        taskMutations.removeFromSlot(t, { undo: "toast" });
+                      }}
+                      className="fast shrink-0 rounded p-0.5 text-muted opacity-0 hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
                     >
-                      <button
-                        aria-label="Drag to reorder, or out to the inbox or a day"
-                        title="Drag to reorder · drag out to the rail (inbox) or a calendar day"
-                        onPointerDown={(e) => startReorder(t.id, e)}
-                        className="fast flex h-8 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-muted/40 opacity-0 group-hover:opacity-100 hover:text-muted"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                          <circle cx="3" cy="2" r="1" /><circle cx="7" cy="2" r="1" />
-                          <circle cx="3" cy="5" r="1" /><circle cx="7" cy="5" r="1" />
-                          <circle cx="3" cy="8" r="1" /><circle cx="7" cy="8" r="1" />
-                        </svg>
-                      </button>
-                      <div
-                        data-task-drag={t.id}
-                        data-task-title={t.title}
-                        data-task-duration={t.duration_minutes ?? ""}
-                        className="flex min-w-0 flex-1 cursor-grab items-center gap-2 py-1.5"
-                        title="Drag onto the calendar, or the rail to send to Inbox"
-                      >
-                        <button
-                          aria-label="toggle done"
-                          onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
-                            done ? "border-accent bg-accent text-on-accent" : "border-line-strong bg-surface"
-                          }`}
-                        >
-                          {done && (
-                            <Icon name="check" size={9} />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => onOpenTask(t)}
-                          onMouseDown={() => setSel(i)}
-                          className={`min-w-0 flex-1 truncate text-left text-caption ${
-                            done ? "text-muted line-through" : "text-text"
-                          }`}
-                        >
-                          {t.title}
-                        </button>
-                      </div>
-                      <button
-                        aria-label="remove from slot"
-                        title="Remove from slot"
-                        onClick={() => taskMutations.removeFromSlot(t)}
-                        className="fast shrink-0 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-ink"
-                      >
-                        <Icon name="close" size={12} />
-                      </button>
-                    </div>
-                  );
-                })}
+                      <Icon name="close" size={12} />
+                    </button>
+                  )}
+                />
               </div>
-              <TaskComposer
-                ref={addRef}
-                className="mt-1"
-                placeholder="Add task to slot"
-                aria-label="Add task to slot"
-                context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
-                contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
-              />
             </PopSection>
           </PopCol>
         </PopBody>
 
         {/* Footer */}
         <PopFooter>
-          <span className="mono text-micro text-muted/70">↑↓ select · ↵ open · space done</span>
+          <span className="mono text-micro text-muted/70">j k · ↵ open · e done · a add · ? keys</span>
           <div className="min-w-0 flex-1" />
           <SlotDeleteButton
             quiet

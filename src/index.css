@@ -3392,7 +3392,7 @@ html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
    `row` is a hairline line with a glyph in the list's gutter (D-050); open, it
    floats as a card because it IS the focal thing. The pill is the rail's. */
 .task-composer { position: relative; }
-.task-composer-line { display: flex; align-items: center; gap: 0.625rem; min-height: 2.25rem; }
+.task-composer-line { display: flex; align-items: center; gap: 0.75rem; min-height: 2.25rem; }
 .task-composer-glyph { display: inline-flex; width: 15px; flex-shrink: 0; justify-content: center; }
 .task-composer-field { position: relative; min-width: 0; flex: 1 1 auto; }
 .task-composer-input,
@@ -3468,7 +3468,7 @@ html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
   justify-content: space-between;
   gap: 0.5rem;
   margin-top: 0.5rem;
-  padding-left: 1.5625rem;
+  padding-left: 1.6875rem;
 }
 .task-composer-chips { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
 .task-composer-context,

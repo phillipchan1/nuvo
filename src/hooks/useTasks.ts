@@ -857,7 +857,6 @@ export function useTaskMutations() {
       track("removeFromSlot", t, placeSnap(t), { slot_id: null },
       opts),
 
-    /** Create a fresh task already inside a slot (no block of its own). */
     complete: (t: Task, opts?: UndoOpts) =>
       track("complete", t, completeSnap(t), { status: "done", completed_at: new Date().toISOString() },
       opts),

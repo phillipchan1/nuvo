@@ -241,6 +241,12 @@ const TaskRow = forwardRef<TaskRowHandle, {
    *  undo toast). Pointer events, never HTML5 DnD (Tauri swallows it). Omitted
    *  on desktop, where the row is byte-identical to before. */
   swipeActions?: { onDefer: () => void };
+  /** ⌘E — the title becomes a field in place. `onRename(null)` means cancel. */
+  editing?: boolean;
+  onRename?: (title: string | null) => void;
+  /** The checkbox sits on the host's left edge (a record's spine) instead of
+   *  inset — the hover wash and the lift still get room either side. */
+  flush?: boolean;
 }>(function TaskRow(
   {
     task,
@@ -266,6 +272,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
     onDismissSuggestion,
     now,
     swipeActions,
+    editing,
+    onRename,
+    flush,
   },
   ref,
 ) {
@@ -608,7 +617,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
       // rail doesn't implement.
       aria-current={selected || multiSelected ? "true" : undefined}
       title={rowHint}
-      className={`group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
+      className={`group cursor-pointer select-none border-b border-line ${flush ? "-mx-2 px-2" : "px-3.5"} py-2.5 last:border-b-0 ${
         completing ? "task-completing" : "row-lift-instant"
       } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
@@ -656,11 +665,25 @@ const TaskRow = forwardRef<TaskRowHandle, {
 
         <div className={`min-w-0 flex-1 ${hasPlace ? "flex flex-col gap-1" : ""}`}>
           <div className="flex min-w-0 items-center gap-2">
-            <span
-              className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
-            >
-              {task.title}
-            </span>
+            {editing ? (
+              <RenameField title={task.title} onDone={(t) => onRename?.(t)} />
+            ) : (
+              <span
+                className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
+              >
+                {task.title}
+              </span>
+            )}
+
+            {!done && (task.priority === "high" || task.priority === "medium") && (
+              <span
+                className={`mono shrink-0 text-meta font-bold ${task.priority === "high" ? "text-signal" : "text-muted"}`}
+                title={task.priority === "high" ? "High priority" : "Medium priority"}
+                aria-label={task.priority === "high" ? "High priority" : "Medium priority"}
+              >
+                !
+              </span>
+            )}
 
             {task.prework_at && task.prework && !done && (
               <span className="mono shrink-0 text-micro text-accent" title="Prework ready">
@@ -690,3 +713,40 @@ const TaskRow = forwardRef<TaskRowHandle, {
 });
 
 export default TaskRow;
+
+/** The title as a field, in place (⌘E). Enter or blur keeps it, Escape (or an
+ *  emptied field) puts the old title back — a row is never renamed to nothing. */
+function RenameField({ title, onDone }: { title: string; onDone: (title: string | null) => void }) {
+  const [value, setValue] = useState(title);
+  const done = useRef(false);
+  const finish = (next: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    const t = next?.trim();
+    onDone(t && t !== title ? t : null);
+  };
+  return (
+    <input
+      autoFocus
+      value={value}
+      aria-label="Rename task"
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setValue(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          finish(value);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          finish(null);
+        }
+      }}
+      onBlur={() => finish(value)}
+      className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-head font-medium leading-snug outline-none md:text-caption"
+      style={{ boxShadow: "0 1px 0 var(--accent)" }}
+    />
+  );
+}

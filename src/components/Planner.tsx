@@ -450,6 +450,9 @@ export default function Planner({
   useEffect(() => {
     if (!onSchedule || anyModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
+      // With a row under the cursor, 1–4 set its priority instead (the rail
+      // list marks the key it spent).
+      if (e.defaultPrevented) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingIn(e.target)) return;
       switch (e.key) {

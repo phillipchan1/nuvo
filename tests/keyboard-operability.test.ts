@@ -197,14 +197,19 @@ describe("keyboard operability", () => {
     );
   });
 
-  it("the Today rail trashes on Delete/Backspace, not only x", () => {
+  it("task lists trash on Delete/Backspace, and the rail uses that grammar", () => {
     // Right-click then Delete is how every other list on the machine works.
     // Binding only `x` made that path a silent no-op — the menu item is Trash,
-    // the Mac key is labelled delete.
-    const src = readFileSync(join(SRC, "components/LeftRail.tsx"), "utf8");
-    expect(src).toMatch(/case "x":\s*case "Backspace":\s*case "Delete":/);
+    // the Mac key is labelled delete. The grammar lives in one hook now, and
+    // `x` is select (then any act hits the whole selection).
+    const keys = readFileSync(join(SRC, "components/tasks/useTaskListKeys.ts"), "utf8");
+    expect(keys).toMatch(/case "Backspace":\s*case "Delete":/);
+    const rail = readFileSync(join(SRC, "components/LeftRail.tsx"), "utf8");
+    expect(rail).toMatch(/useTaskListKeys\(/);
     // And the menu itself has to land on screen: a guessed 260px clamp left
     // Trash below the viewport on a Today row in the lower half of the rail.
-    expect(src).toMatch(/vh - height - 8/);
+    const menu = readFileSync(join(SRC, "components/tasks/TaskActionsMenu.tsx"), "utf8");
+    expect(menu).toMatch(/vh - height - 8/);
+    expect(menu).toMatch(/e.key === "Backspace" \|\| e.key === "Delete"/);
   });
 });

@@ -38,7 +38,9 @@ import { useTokenMenu } from "./useTokenMenu";
 import { Icon } from "../Icon";
 
 export interface TaskComposerHandle {
-  focus: () => void;
+  /** Focus the box. `at` places the next tasks beside a row (a / ⇧A); it holds
+   *  until the box is left. */
+  focus: (at?: { sortOrder: number; label: string }) => void;
   clear: () => void;
   /** What's typed and not yet added — a host that commits a draft on its own
    *  button folds this in rather than dropping it. */
@@ -193,7 +195,11 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
   },
   ref,
 ) {
-  const stableContext = useMemo(() => context ?? {}, [JSON.stringify(context ?? {})]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [placement, setPlacement] = useState<{ sortOrder: number; label: string } | null>(null);
+  const stableContext = useMemo(
+    () => ({ ...(context ?? {}), ...(placement ? { sortOrder: placement.sortOrder } : {}) }),
+    [JSON.stringify(context ?? {}), placement], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const { capture, preview, env } = useTaskCapture(stableContext);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -212,7 +218,15 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
 
   useImperativeHandle(
     ref,
-    () => ({ focus: () => inputRef.current?.focus(), clear, value: () => text, literal: () => literal }),
+    () => ({
+      focus: (at) => {
+        setPlacement(at ?? null);
+        inputRef.current?.focus();
+      },
+      clear,
+      value: () => text,
+      literal: () => literal,
+    }),
     [clear, text, literal],
   );
 
@@ -257,7 +271,10 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     if (!raw) return;
     const kept = literal;
     clear();
+    // The next task typed here lands just after this one, not on top of it.
+    if (placement) setPlacement({ ...placement, sortOrder: placement.sortOrder + 1e-4 });
     if (leave || closeOnSubmit) {
+      setPlacement(null);
       inputRef.current?.blur();
       onLeave?.();
     } else {
@@ -349,6 +366,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
       e.stopPropagation();
       if (text) clear();
       else {
+        setPlacement(null);
         inputRef.current?.blur();
         onLeave?.();
       }
@@ -438,6 +456,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false);
+              if (!text.trim()) setPlacement(null);
               if (submitOnBlur && text.trim()) submitText(text, false);
             }}
           />
@@ -494,9 +513,10 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
         </div>
       )}
 
-      {open && !pasted && !plain && (contextLabel || chips.length > 0) && (
+      {open && !pasted && !plain && (contextLabel || placement || chips.length > 0) && (
         <div className="task-composer-foot">
           <div className="task-composer-chips">
+            {placement && <span className="task-composer-context">↳ {placement.label}</span>}
             {contextLabel && (
               <span className={`task-composer-context ${contextOverridden ? "is-overridden" : ""}`}>
                 {contextLabel.color && <span className="task-composer-swatch" style={{ background: contextLabel.color }} />}

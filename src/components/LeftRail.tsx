@@ -1,12 +1,13 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
-import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
-import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
+import { isOverdue, nextWeekISO, todayISO } from "../lib/dates";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
-import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
+import TaskActionsMenu from "./tasks/TaskActionsMenu";
+import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
+import { orderBeside, useTaskListKeys } from "./tasks/useTaskListKeys";
 import { restoreFromTrashPatch } from "../lib/types";
 import { useVertical } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
@@ -17,7 +18,7 @@ import { describeQuery, queryFacetCount } from "../lib/taskFilter";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
-import { isTypingIn, pressable } from "../lib/a11y";
+import { pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
@@ -104,7 +105,7 @@ function LeftRail({
   /** The week door's lifecycle, worn by the WeekPanel header that crowns us. */
   weekDoor?: WeekDoor;
 }) {
-  const { data: vertical, toggleTaskSprint } = useVertical();
+  const { data: vertical } = useVertical();
   const { nav } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */
@@ -115,6 +116,13 @@ function LeftRail({
   // or cmd-toggled. Range runs from here to the shift-clicked row.
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
+  // `t` / `v` — the shared when / move menus, beside the row they act on.
+  const [rowMenu, setRowMenu] = useState<{ kind: "date" | "move"; targets: Task[]; anchor: DOMRect } | null>(null);
+  // ⌘E — the row whose title is a field right now.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // The cursor is drawn only while the keyboard is driving it. A click selects
+  // without lifting (the lift means "this row's popover is open", below).
+  const [keyCursor, setKeyCursor] = useState(false);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [remindPickerFor, setRemindPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
@@ -206,8 +214,6 @@ function LeftRail({
         ? trashed
         : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
-  const selected = visible.find((t) => t.id === selectedId) ?? null;
-
   // The bulk bar's acts, shared with the phone (useBulkOps) so "move these to a
   // project" means the same thing on both — including carrying the initiative
   // and domain with it (D-088), and taking ONE undo entry for the whole set.
@@ -217,172 +223,6 @@ function LeftRail({
     clear: () => setSelectedIds(new Set()),
   });
 
-  // Keyboard-first quick actions
-  useEffect(() => {
-    if (!hotkeysEnabled) return;
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      // Targets: multi-select if active, else the keyboard cursor
-      const targets = selectedIds.size > 1
-        ? visible.filter((t) => selectedIds.has(t.id))
-        : selected ? [selected] : [];
-
-      const idx = selected ? visible.findIndex((t) => t.id === selected.id) : -1;
-      const move = (delta: number) => {
-        const next = visible[Math.min(visible.length - 1, Math.max(0, idx + delta))];
-        if (next) { setSelectedId(next.id); setSelectedIds(new Set()); }
-      };
-      // Complete/reopen, then — single row, and it was a completion rather than
-      // a reopen — step the cursor to the next row. Without this, a second press
-      // of the same key just reopened the row you'd already finished, because
-      // nothing ever moved the cursor off it (the row it disappeared into "N done
-      // today" read as the keyboard having gone dead).
-      //
-      // Completing goes through the row's own `triggerToggle` rather than
-      // patching the cache here directly — that's what gives it the same
-      // bloom-check-then-collapse animation a mouse click gets, instead of an
-      // instant remove. The cursor still advances immediately (it doesn't wait
-      // out the row's animation), so pressing the key again right away walks
-      // down the list — each row plays out its own collapse behind you.
-      const completeAndAdvance = () => {
-        const advancing = targets.length === 1 && targets[0].status !== "done";
-        targets.forEach((t) => {
-          if (t.status === "done") {
-            mutations.uncomplete(t);
-            return;
-          }
-          const handle = rowHandles.current.get(t.id);
-          if (handle) handle.triggerToggle();
-          else mutations.complete(t);
-        });
-        if (advancing) move(1);
-      };
-
-      switch (e.key) {
-        case "Escape":
-          // Innermost state first. A live selection is the most transient thing
-          // on screen (and the bulk bar is right there saying so), so Escape
-          // drops that before it drops the filter — clearing the filter under a
-          // selection would reflow the list beneath the rows you'd just picked.
-          // With nothing selected, Escape clears the filter, which is the one
-          // state that can silently hide work.
-          if (selectedIds.size > 0 || contextMenu) {
-            setSelectedIds(new Set());
-            setContextMenu(null);
-            break;
-          }
-          if (filtering) filter.setQuery({});
-          break;
-        case "/":
-          // The list-tool convention, and free here — `/` types nothing in the
-          // rail (capture has its own field, and typing targets bail above).
-          e.preventDefault();
-          setFilterOpen((v) => !v);
-          break;
-        case "ArrowDown":
-        case "j":
-          e.preventDefault();
-          idx === -1 ? visible[0] && setSelectedId(visible[0].id) : move(1);
-          break;
-        case "ArrowUp":
-        case "k":
-          e.preventDefault();
-          idx === -1 ? visible[0] && setSelectedId(visible[0].id) : move(-1);
-          break;
-        case "Enter":
-          if (targets.length === 1) {
-            const el = document.querySelector<HTMLElement>(`[data-task-drag="${targets[0].id}"]`);
-            const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
-            onOpenTask(targets[0], anchor);
-          }
-          break;
-        case "e":
-          // A Today row already has today's date, so "plan for today" is a
-          // no-op there — `e` does the row's actual most-used act instead:
-          // complete/reopen, freeing `f` up (still the Inbox binding below).
-          if (tab === "today") completeAndAdvance();
-          else targets.forEach((t) => mutations.planFor(t, todayISO(), TRIAGE_UNDO));
-          break;
-        case "t":
-          targets.forEach((t) => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO));
-          break;
-        // Bare s / w / d / m belong to the Schedule (view switching), so the
-        // rail's three colliding triage actions live on n / f / r instead.
-        case "n":
-          targets.forEach((t) => mutations.planFor(t, nextWeekISO(), TRIAGE_UNDO));
-          break;
-        case "f":
-          // On Today, `e` owns complete/reopen — `f` is spent there.
-          if (tab !== "today") completeAndAdvance();
-          break;
-        case "x":
-        case "Backspace":
-        case "Delete":
-          // On the trash face `x` is already spent — the row IS trashed. Purging
-          // is the one act with no undo, so it never rides a bare keystroke; the
-          // row's own confirm-then-commit button is the only path.
-          // Delete/Backspace are the same act as `x`: a Mac keyboard labels the
-          // key "delete", and a right-click then Delete is how every other list
-          // on the machine works. Binding only `x` made that path a no-op.
-          if (tab === "trash") break;
-          if (targets.length === 0) break;
-          e.preventDefault();
-          targets.forEach((t) => mutations.trash(t));
-          setSelectedId(null);
-          setSelectedIds(new Set());
-          setContextMenu(null);
-          break;
-        // Restore — only means anything on the trash face, so it costs no letter
-        // anywhere else.
-        case "u":
-          if (tab === "trash" && targets.length) {
-            e.preventDefault();
-            // Same destination rule as the Restore button — follow the last
-            // restored row so emptying the trash doesn't dump you on Today
-            // while the row landed in the Inbox.
-            let face: "inbox" | "today" = "today";
-            targets.forEach((t) => {
-              face = restoreFromTrashPatch(t).face;
-              mutations.restore(t);
-            });
-            setTab(face);
-            setSelectedId(null);
-            setSelectedIds(new Set());
-          }
-          break;
-        case "i":
-          targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
-          break;
-        case "r":
-          if (targets.length === 1) setSchedulePickerFor(targets[0]);
-          break;
-        case "#":
-          if (targets.length === 1) {
-            e.preventDefault();
-            setLabelPickerFor(targets[0]);
-          }
-          break;
-        // `m` is the Schedule's Month, so Remind lives on `b` (bell). Only
-        // offered when the row has a moment to be early for — a reminder on a
-        // task with neither a block nor a deadline has no anchor to hang on.
-        case "b":
-          if (targets.length === 1 && (targets[0].start_time || targets[0].deadline)) {
-            e.preventDefault();
-            setRemindPickerFor(targets[0]);
-          }
-          break;
-        case "c":
-          e.preventDefault();
-          captureRef.current?.focus();
-          break;
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeysEnabled, selected, selectedIds, visible, mutations, onOpenTask, setTab, tab]);
 
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
@@ -421,6 +261,7 @@ function LeftRail({
   const plainSelect = (id: string) => {
     setSelectedId(id);
     setAnchorId(id);
+    setKeyCursor(false);
   };
 
   const openContextMenu = (t: Task, e: React.MouseEvent) => {
@@ -556,38 +397,128 @@ function LeftRail({
     },
   });
 
-  // ── ⌥↑ / ⌥↓ — reorder the selected row without a pointer ───────────────────
-  // Its own effect rather than a case in the hotkey switch above, for two
-  // reasons: that handler returns early on any modifier, so ⌥ would be filtered
-  // out before it could match — and it is declared above `useListReorder`, so
-  // it cannot name `moveBy` in its dependency array without reading it first.
-  //
-  // ⌥ and not ⌘: ⌘↑/⌘↓ already travel the ladder from anywhere (AppShell), and
-  // a rail row is exactly where someone would hit that by accident. ⌥ is also
-  // what Linear and Notion use for the same act.
-  useEffect(() => {
-    if (!hotkeysEnabled) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.metaKey || e.ctrlKey) return;
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-      if (isTypingIn(e.target)) return;
-      const id = selectedIdRef.current;
-      if (!id) return;
-      e.preventDefault();
-      const moved = moveBy(id, e.key === "ArrowDown" ? 1 : -1);
-      const task = visible.find((t) => t.id === id);
-      // Nothing moved: either the row sits at the end of its band, or its band
-      // won't take a manual order at all (a time-blocked row is sorted by its
-      // clock). Say so — silence reads as a dropped keystroke.
-      announce(
-        moved
-          ? `${task?.title ?? "Task"}, position ${moved.index} of ${moved.total}`
-          : "Can't move this row any further",
-      );
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeysEnabled, moveBy, visible]);
+  // ── The list's keys — the same grammar as every task list (useTaskListKeys)
+  // plus the rail's own triage letters, its filter and its trash face.
+  const rowRect = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-task-drag="${id}"]`)?.getBoundingClientRect() ??
+    new DOMRect(360, 200, 0, 40);
+  const setPriority = usePriorityAct(mutations);
+  const renameTask = useRenameAct(mutations);
+  useTaskListKeys({
+    enabled: hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor,
+    rows: visible,
+    cursor: {
+      cursorId: selectedId,
+      setCursorId: (id) => {
+        setSelectedId(id);
+        setKeyCursor(Boolean(id));
+      },
+      selectedIds,
+      setSelectedIds,
+    },
+    acts: {
+      open: (t) => onOpenTask(t, rowRect(t.id)),
+      complete: (targets) =>
+        targets.forEach((t) => {
+          if (t.status === "done") return mutations.uncomplete(t);
+          // The row's own bloom-then-collapse, not an instant flip.
+          const handle = rowHandles.current.get(t.id);
+          if (handle) handle.triggerToggle();
+          else mutations.complete(t);
+        }),
+      trash: (targets) => {
+        targets.forEach((t) => mutations.trash(t));
+        setContextMenu(null);
+      },
+      date: (targets) => setRowMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
+      move: (targets) => setRowMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
+      priority: setPriority,
+      rename: (t) => setEditingId(t.id),
+      reorderBy: (t, delta) => {
+        const moved = moveBy(t.id, delta);
+        // Nothing moved: the row is at the end of its band, or its band won't
+        // take a manual order (a time-blocked row is sorted by its clock). Say
+        // so — silence reads as a dropped keystroke.
+        announce(moved ? `${t.title}, position ${moved.index} of ${moved.total}` : "Can't move this row any further");
+      },
+      add: (anchor, where) => {
+        const band = anchor ? bands.of.get(anchor.id) : null;
+        const peers = band ? (bands.ids.get(band) ?? []).map((id) => byId.get(id)).filter((x): x is Task => Boolean(x)) : [];
+        const sortOrder = anchor && peers.length ? orderBeside(peers, anchor, where) : undefined;
+        captureRef.current?.focus(
+          anchor && sortOrder != null ? { sortOrder, label: `${where} “${anchor.title}”` } : undefined,
+        );
+      },
+      extra: (e, targets) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return false;
+        // The trash face: rows are already trashed — only restore and open apply.
+        if (tab === "trash") {
+          if (e.key === "u" && targets.length) {
+            e.preventDefault();
+            // Follow the last restored row, so emptying the trash doesn't dump
+            // you on Today while the row landed in the Inbox.
+            let face: "inbox" | "today" = "today";
+            targets.forEach((t) => {
+              face = restoreFromTrashPatch(t).face;
+              mutations.restore(t);
+            });
+            setTab(face);
+            setSelectedId(null);
+            setSelectedIds(new Set());
+            return true;
+          }
+          return ["e", "t", "v", "x", "1", "2", "3", "4", "Backspace", "Delete", "a", "A"].includes(e.key);
+        }
+        switch (e.key) {
+          case "Escape":
+            // Innermost first: a menu, then a selection (the hook's), then the
+            // filter — the one state that can silently hide work.
+            if (contextMenu) {
+              setContextMenu(null);
+              return true;
+            }
+            if (selectedIds.size === 0 && !selectedId && filtering) {
+              filter.setQuery({});
+              return true;
+            }
+            return false;
+          case "/":
+            e.preventDefault();
+            setFilterOpen((v) => !v);
+            return true;
+          // Triage shortcuts the rail has always had. Bare s / w / d / m belong
+          // to the Schedule, which is why next week is `n`.
+          case "n":
+            targets.forEach((t) => mutations.planFor(t, nextWeekISO(), TRIAGE_UNDO));
+            return targets.length > 0;
+          case "i":
+            targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
+            return targets.length > 0;
+          case "r":
+            if (targets.length !== 1) return false;
+            setSchedulePickerFor(targets[0]);
+            return true;
+          case "#":
+            if (targets.length !== 1) return false;
+            e.preventDefault();
+            setLabelPickerFor(targets[0]);
+            return true;
+          // `m` is the Schedule's Month, so Remind lives on `b` (bell).
+          case "b":
+            if (targets.length !== 1) return false;
+            e.preventDefault();
+            setRemindPickerFor(targets[0]);
+            return true;
+          // `c` was capture before `a` was; kept so the old habit still works.
+          case "c":
+            e.preventDefault();
+            captureRef.current?.focus();
+            return true;
+        }
+        return false;
+      },
+    },
+  });
 
   const rowProps = (t: Task) => ({
     ref: (el: TaskRowHandle | null) => {
@@ -598,7 +529,12 @@ function LeftRail({
     labels,
     // One clock for the row and the group that sorted it — see TaskRow's `now`.
     now,
-    selected: t.id === openTaskId,
+    selected: t.id === openTaskId || (keyCursor && t.id === selectedId),
+    editing: editingId === t.id,
+    onRename: (title: string | null) => {
+      setEditingId(null);
+      if (title) renameTask(t, title);
+    },
     multiSelected: selectedIds.has(t.id),
     draggable: true,
     dragging: draggingId === t.id,
@@ -824,7 +760,7 @@ function LeftRail({
                 />
               ) : (
                 <>
-                  <EmptyState text="Inbox zero. Capture with C or ⌘K." />
+                  <EmptyState text="Inbox zero. Capture with A or ⌘K." />
                   <InboxAddressHint />
                 </>
               )
@@ -925,13 +861,13 @@ function LeftRail({
       {/* Capture — floats at the foot of the rail as a pill, out of the
           hierarchy: it interrupts every mode, so it isn't a titled section (and
           mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
-          (low-data-entry). Press C to focus. */}
+          (low-data-entry). Press A (or C) to focus. */}
       <div className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
         <TaskComposer
           ref={captureRef}
           variant="pill"
           placeholder="Capture anything…"
-          shortcut="C"
+          shortcut="A"
           context={tab === "today" ? { doDate: todayISO(now) } : undefined}
           contextLabel={tab === "today" ? { name: "Today" } : { name: "Inbox" }}
           onCreated={({ action }) => {
@@ -972,15 +908,16 @@ function LeftRail({
       )}
 
       {contextMenu && (
-        <TaskContextMenu
+        <TaskActionsMenu
           task={contextMenu.task}
           x={contextMenu.x}
           y={contextMenu.y}
-          now={now}
-          vertical={vertical}
           mutations={mutations}
           onSchedule={() => { setSchedulePickerFor(contextMenu.task); setContextMenu(null); }}
           onLabel={() => { setLabelPickerFor(contextMenu.task); setContextMenu(null); }}
+          onDate={() => setRowMenu({ kind: "date", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
+          onMove={() => setRowMenu({ kind: "move", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
+          onRename={() => setEditingId(contextMenu.task.id)}
           onOpen={() => {
             const el = document.querySelector<HTMLElement>(`[data-task-drag="${contextMenu.task.id}"]`);
             const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
@@ -988,8 +925,13 @@ function LeftRail({
             setContextMenu(null);
           }}
           onClose={() => setContextMenu(null)}
-          toggleTaskSprint={toggleTaskSprint}
         />
+      )}
+      {rowMenu?.kind === "date" && (
+        <TaskDateMenu anchor={rowMenu.anchor} targets={rowMenu.targets} mutations={mutations} onClose={() => setRowMenu(null)} />
+      )}
+      {rowMenu?.kind === "move" && (
+        <TaskMoveMenu anchor={rowMenu.anchor} targets={rowMenu.targets} mutations={mutations} onClose={() => setRowMenu(null)} />
       )}
       </div>
     </div>
@@ -1003,226 +945,6 @@ function EmptyState({ text }: { text: string }) {
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
-function TaskContextMenu({
-  task,
-  x,
-  y,
-  now,
-  vertical,
-  mutations,
-  onSchedule,
-  onLabel,
-  onOpen,
-  onClose,
-  toggleTaskSprint,
-}: {
-  task: Task;
-  x: number;
-  y: number;
-  now: Date;
-  vertical: ReturnType<typeof useVertical>["data"];
-  mutations: Mutations;
-  onSchedule: () => void;
-  onLabel: () => void;
-  onOpen: (anchor: DOMRect) => void;
-  onClose: () => void;
-  toggleTaskSprint: (id: string) => void;
-}) {
-  const [deleteMode, setDeleteMode] = useState(false);
-  const { data: recurrences = [] } = useRecurrences();
-  const recurrenceMutations = useRecurrenceMutations();
-  const recurrence = task.recurrence_id
-    ? recurrences.find((r) => r.id === task.recurrence_id) ?? null
-    : null;
-  const recurring = Boolean(task.recurrence_id && recurrence);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: y, left: x });
-
-  // The menu is ~14 rows, not the 260px the first clamp budgeted, so Trash
-  // (last item) sat below the viewport on a Today row in the lower half of
-  // the rail. Clicks there hit the scrim and the menu closed; the task stayed.
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    setPos({
-      left: Math.max(8, Math.min(x, vw - width - 8)),
-      top: Math.max(8, Math.min(y, vh - height - 8)),
-    });
-  }, [x, y, deleteMode]);
-
-  const trashTask = () => {
-    mutations.trash(task);
-    onClose();
-  };
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopImmediatePropagation();
-        if (deleteMode) setDeleteMode(false);
-        else onClose();
-        return;
-      }
-      if (e.key === "Backspace" || e.key === "Delete" || e.key.toLowerCase() === "x") {
-        if (isTypingIn(e.target)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        mutations.trash(task);
-        onClose();
-      }
-    };
-    // No full-screen scrim — a same-z overlay sat on top of Trash and ate the
-    // click (and a 250ms guard made the first click a no-op). Dismiss the same
-    // way the calendar menus do: pointerdown outside.
-    const onPointerDown = (e: PointerEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [onClose, deleteMode, task, mutations]);
-
-  const done = task.status === "done";
-  const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
-
-  type Item =
-    | { kind: "action"; label: string; key?: string; danger?: boolean; action: () => void }
-    | { kind: "sep" }
-    | { kind: "label"; label: string };
-
-  const deleteItems: Item[] = [
-    { kind: "label", label: "Delete" },
-    {
-      kind: "action",
-      label: "This occurrence",
-      action: () => {
-        if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
-        mutations.trash(task);
-        onClose();
-      },
-    },
-    {
-      kind: "action",
-      label: "This & following",
-      action: () => {
-        if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
-        onClose();
-      },
-    },
-    {
-      kind: "action",
-      label: "Whole series",
-      action: () => {
-        if (recurrence) recurrenceMutations.deleteSeries(recurrence);
-        onClose();
-      },
-    },
-    { kind: "sep" },
-    { kind: "action", label: "Cancel", action: () => setDeleteMode(false) },
-  ];
-
-  const items: Item[] = deleteMode && recurring
-    ? deleteItems
-    : [
-    {
-      kind: "action", label: "Open", key: "↵",
-      action: () => {
-        const el = document.querySelector<HTMLElement>(`[data-task-drag="${task.id}"]`);
-        onOpen(el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40));
-      },
-    },
-    { kind: "sep" },
-    { kind: "action", label: "Today", key: "E", action: () => { mutations.planFor(task, todayISO(now), TRIAGE_UNDO); onClose(); } },
-    { kind: "action", label: "Tomorrow", key: "T", action: () => { mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO); onClose(); } },
-    { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO); onClose(); } },
-    { kind: "action", label: "Schedule…", key: "S", action: onSchedule },
-    ...(task.status !== "inbox" ? [{ kind: "action" as const, label: "Return to inbox", key: "I", action: () => { mutations.backToInbox(task, TRIAGE_UNDO); onClose(); } }] : []),
-    ...(task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id)
-      ? [{ kind: "action" as const, label: "File to project", key: "P", action: () => { mutations.fileToProject(task); onClose(); } }]
-      : []),
-    { kind: "sep" },
-    {
-      kind: "action",
-      label: inWeek ? "Remove from week" : "Commit to this week",
-      action: () => { toggleTaskSprint(task.id); onClose(); },
-    },
-    { kind: "sep" },
-    {
-      kind: "action",
-      label: done ? "Reopen" : "Mark done",
-      key: "D",
-      action: () => {
-        done ? mutations.uncomplete(task) : mutations.complete(task);
-        onClose();
-      },
-    },
-    { kind: "action", label: "Label…", key: "#", action: onLabel },
-    { kind: "sep" },
-    recurring
-      ? {
-          kind: "action" as const,
-          label: "Trash…",
-          key: "X",
-          danger: true,
-          action: () => setDeleteMode(true),
-        }
-      : {
-          kind: "action" as const,
-          label: "Trash",
-          key: "X",
-          danger: true,
-          action: trashTask,
-        },
-  ];
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="rise elev-3 fixed z-[70] w-[200px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
-      style={{ top: pos.top, left: pos.left, maxHeight: "calc(100vh - 16px)" }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      {items.map((item, i) => {
-        if (item.kind === "sep")
-          return <div key={i} className="my-1 border-t border-line" />;
-        if (item.kind === "label")
-          return (
-            <div key={i} className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              {item.label}
-            </div>
-          );
-        return (
-          <button
-            key={i}
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              item.action();
-            }}
-            className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-bg ${
-              item.danger ? "text-signal" : "text-text"
-            }`}
-          >
-            <span className="flex-1">{item.label}</span>
-            {item.key && (
-              <span className="mono text-meta text-muted">{item.key}</span>
-            )}
-          </button>
-        );
-      })}
-    </div>,
-    document.body,
-  );
-}
-
 function buildTodaySections(today: Task[], now: Date) {
   const active = today.filter((t) => t.status !== "done" && t.status !== "trashed");
   const done = today.filter((t) => t.status === "done");

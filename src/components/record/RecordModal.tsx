@@ -35,7 +35,7 @@
 // sheet where `--accent` is supposed to mean *your intent*. Delete and status
 // live in the ··· overflow, where a destructive act belongs.
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
@@ -74,6 +74,13 @@ import { ShipStamp } from "../ShipStamp";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import type { TaskComposerHandle } from "../tasks/TaskComposer";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { useAllTasks, useTaskMutations } from "../../hooks/useTasks";
+import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
+import { useLabels } from "../../hooks/useCalendar";
+import type { Task } from "../../lib/types";
+
+const TaskPopover = lazy(() => import("../SlideOver").then((m) => ({ default: m.TaskPopover })));
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
 import {
   Body,
@@ -185,10 +192,14 @@ function ProjectRecord({
   const taskRef = useRef<TaskComposerHandle>(null);
   const logRef = useRef<HTMLTextAreaElement>(null);
   const bandRef = useRef<HTMLDivElement>(null);
+  const recordTask = useRecordTask();
 
   // t = tasks · c = comments · s = sprint. Bare letters, gated on "not typing".
+  // With a row under the task list's cursor, `t` is that row's When menu —
+  // the list spends the key first and marks it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       const target = k === "t" ? taskRef.current : k === "c" || k === "l" ? logRef.current : k === "s" ? bandRef.current : null;
@@ -331,11 +342,15 @@ function ProjectRecord({
                   parent={{ projectId: project.id, initiativeId: project.initiativeId, domainId: project.domainId }}
                   accent={accent}
                   spine
-                  keyboardNav
+                  keyboardNav={!recordTask.openId}
                   composerRef={taskRef}
                   refining={grooming}
                   onRefining={setGrooming}
+                  onOpenTask={recordTask.open}
                 />
+                {recordTask.openId && (
+                  <RecordTaskPopover taskId={recordTask.openId} anchor={recordTask.anchor} onClose={recordTask.close} />
+                )}
               </div>
             </Sec>
 
@@ -820,5 +835,58 @@ function InitiativeRecord({
         }
       />
     </Sheet>
+  );
+}
+
+/**
+ * A task opened from a record's list. It rides the record as a sub-overlay
+ * (`overlaySubId`, the same slot the slot popover uses), so the record stays
+ * open underneath, back / Escape close the task first, and a reload lands on
+ * both.
+ */
+function useRecordTask() {
+  const { nav, openSlotTask, closeOverlay } = useAppNavigation();
+  const [anchor, setAnchor] = useState<{ rect: DOMRect; el: HTMLElement | null } | null>(null);
+  const open = (t: Task, rect: DOMRect, el: HTMLElement | null) => {
+    setAnchor({ rect, el });
+    openSlotTask(t.id);
+  };
+  return { openId: nav.overlaySubId, anchor, open, close: closeOverlay };
+}
+
+function RecordTaskPopover({
+  taskId,
+  anchor,
+  onClose,
+}: {
+  taskId: string;
+  anchor: { rect: DOMRect; el: HTMLElement | null } | null;
+  onClose: () => void;
+}) {
+  const { data: all } = useAllTasks();
+  const { labels } = useLabels();
+  const mutations = useTaskMutations();
+  const recurrenceMutations = useRecurrenceMutations();
+  const { data: recurrences = [] } = useRecurrences();
+  const task = all?.find((t) => t.id === taskId) ?? null;
+  if (!task) return null;
+  const rect = anchor?.rect ?? new DOMRect(window.innerWidth / 2 - 20, window.innerHeight / 2 - 20, 40, 40);
+  return (
+    // The marker tells the record's Escape to let this close first.
+    <div data-nested-surface="">
+      <Suspense fallback={null}>
+        <TaskPopover
+          task={task}
+          anchor={rect}
+          anchorEl={anchor?.el ?? null}
+          labels={labels}
+          mutations={mutations}
+          recurrence={task.recurrence_id ? (recurrences.find((r) => r.id === task.recurrence_id) ?? null) : null}
+          recurrenceMutations={recurrenceMutations}
+          onClose={onClose}
+          raised
+        />
+      </Suspense>
+    </div>
   );
 }

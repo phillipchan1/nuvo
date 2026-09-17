@@ -403,6 +403,8 @@ function AppShellInner() {
   // the screen — an overlay, a flow, or a composer already open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A task list already spent this key (its `i` is back-to-inbox).
+      if (e.defaultPrevented) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;

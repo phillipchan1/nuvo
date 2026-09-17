@@ -33,7 +33,7 @@ const GROUPS: Group[] = [
   {
     title: "Create & tools",
     items: [
-      { keys: [["C"]], label: "Capture to inbox" },
+      { keys: [["A"], ["C"]], sep: "or", label: "Add a task (the rail's box)" },
       { keys: [["⌘", "K"]], label: "Command bar" },
       { keys: [["⌘", "J"]], label: "Toggle Nuvo" },
       { keys: [["⌘", ","]], label: "Settings" },
@@ -47,23 +47,35 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "Inbox & tasks",
+    // One grammar for every task list — the rail, a record, a slot
+    // (components/tasks/useTaskListKeys). The panel says only what they bind.
+    title: "Task lists",
     items: [
       { keys: [["J"], ["K"]], sep: "/", label: "Move cursor" },
-      { keys: [["⌥", "↑"], ["⌥", "↓"]], sep: "/", label: "Move task up / down" },
       { keys: [["↵"]], label: "Open task" },
-      { keys: [["E"]], label: "Plan for today (Inbox) · Mark done / reopen (Today)" },
-      { keys: [["T"]], label: "Plan for tomorrow" },
+      { keys: [["E"]], label: "Mark done / reopen" },
+      { keys: [["T"]], label: "When… (type a day or a time)" },
+      { keys: [["V"]], label: "Move to… (project, initiative, domain, out of a slot)" },
+      { keys: [["1"], ["4"]], sep: "–", label: "Priority high … none (on a row)" },
+      { keys: [["X"]], label: "Select — then any key acts on all" },
+      { keys: [["⌫"]], label: "Move to trash" },
+      { keys: [["⌘", "E"]], label: "Rename in place" },
+      { keys: [["⌥", "↑"], ["⌥", "↓"]], sep: "/", label: "Move task up / down" },
+      { keys: [["A"], ["⇧", "A"]], sep: "/", label: "Add below / above" },
+      { keys: [["Esc"]], label: "Clear selection, then cursor" },
+    ],
+  },
+  {
+    title: "Today & Inbox",
+    items: [
       { keys: [["N"]], label: "Plan for next week" },
-      { keys: [["F"]], label: "Mark done / reopen (Inbox)" },
-      { keys: [["R"]], label: "Reschedule (pick date)" },
       { keys: [["I"]], label: "Back to inbox" },
-      { keys: [["X"]], label: "Move to trash" },
-      { keys: [["/"]], label: "Filter the list (Esc clears it)" },
-      { keys: [["U"]], label: "Restore (on the Trash tab)" },
+      { keys: [["R"]], label: "Pick a date and time" },
       { keys: [["#"]], label: "Label" },
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },
-      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab" },
+      { keys: [["/"]], label: "Filter the list (Esc clears it)" },
+      { keys: [["U"]], label: "Restore (on the Trash tab)" },
+      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab (no row selected)" },
     ],
   },
   {

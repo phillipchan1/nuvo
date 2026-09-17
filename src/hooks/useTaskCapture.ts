@@ -17,6 +17,7 @@ import { useTaskMutations, type NewTaskInput } from "./useTasks";
 import type { SeriesTemplate } from "./useRecurrence";
 import type { RecurrenceRule } from "../lib/recurrence";
 import { useOptionalVertical } from "./useVertical";
+import { isOpenStatus } from "../lib/vertical";
 import { useSettings } from "./useSettings";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 
@@ -37,10 +38,14 @@ export function useCaptureEnv(): CaptureEnvWithColor {
   return useMemo<CaptureEnvWithColor>(() => {
     const projects = data?.projects ?? [];
     const initiatives = data?.initiatives ?? [];
+    // Only open homes are offered — filing into something already shipped
+    // is a mistake the suggestion list shouldn't make easy.
+    const openProjects = projects.filter((p) => isOpenStatus(p.status));
+    const openInitiatives = initiatives.filter((i) => isOpenStatus(i.status));
     const domains = data?.domains ?? [];
     const routeTargets: RouteTarget[] = [
-      ...projects.map((p) => ({ id: p.id, kind: "project" as const, name: p.name })),
-      ...initiatives.map((i) => ({ id: i.id, kind: "initiative" as const, name: i.name })),
+      ...openProjects.map((p) => ({ id: p.id, kind: "project" as const, name: p.name })),
+      ...openInitiatives.map((i) => ({ id: i.id, kind: "initiative" as const, name: i.name })),
       ...domains.map((d) => ({ id: d.id, kind: "domain" as const, name: d.name })),
     ];
     const projectById = new Map(projects.map((p) => [p.id, p]));

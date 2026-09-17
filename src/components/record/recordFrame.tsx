@@ -43,6 +43,9 @@ export function useRecordKeys(sheetRef: RefObject<HTMLDivElement>, onClose: () =
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || isTypingIn(e.target)) return;
+      // A task list spent it (clearing its cursor), or something nested in the
+      // sheet — a row menu, a task's popover — closes first, on its own press.
+      if (e.defaultPrevented || document.querySelector("[data-nested-surface]")) return;
       // A nested dialog (ShipAssess) is a later [role=dialog] sibling. This
       // listener is registered first, so it would otherwise close the sheet
       // on the same press that is meant to dismiss only the nested one.
