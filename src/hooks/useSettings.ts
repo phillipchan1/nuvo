@@ -46,6 +46,45 @@ export function firstDayOfWeek(settings: UserSettings | undefined): 0 | 1 {
   return settings?.week_start === 1 ? 1 : 0;
 }
 
+/**
+ * A `user_settings` row as the app reads it. Every way a row reaches the cache
+ * — the query, and the Realtime echo in `liveApply` — goes through here: the
+ * echo used to paint the raw row, and a legacy `reminder_prefs` (scalar keys, or
+ * `{}`) then crashed the task popover's reminder list on `undefined.length`.
+ */
+export function normalizeSettingsRow(data: Record<string, unknown>): UserSettings {
+  const row = data as unknown as UserSettings;
+  let calendar_fit_hours = row.calendar_fit_hours ?? DEFAULTS.calendar_fit_hours;
+  try {
+    const local = Number(localStorage.getItem("nuvo.cal.fitHours"));
+    if (row.calendar_fit_hours == null && local >= 6 && local <= 24) {
+      calendar_fit_hours = local;
+    }
+  } catch { /* ignore */ }
+  return {
+    ...row,
+    calendar_fit_hours,
+    hidden_calendar_ids: row.hidden_calendar_ids ?? [],
+    hidden_events: row.hidden_events ?? [],
+    calendar_domain_map: row.calendar_domain_map ?? {},
+    // A row written before the column existed reads back null — fall to
+    // the same default the edge function uses, so the composer's toggle
+    // and what Google actually gets can't disagree.
+    auto_add_meet: normalizeMeetPreference(row.auto_add_meet),
+    // Same reason as auto_add_meet: a row written before the column
+    // existed reads back `{}`, and a half-filled prefs object would mean
+    // "off" for one anchor and "default" for another.
+    reminder_prefs: normalizeReminderPrefs(row.reminder_prefs),
+    // Same reason again: a row written before migration 62 reads back
+    // null, and every caller maps over this.
+    saved_views: Array.isArray(row.saved_views) ? row.saved_views : [],
+    inbound_token: row.inbound_token ?? null,
+  };
+}
+
+const selectSettings = (data: UserSettings) =>
+  normalizeSettingsRow(data as unknown as Record<string, unknown>);
+
 export function useSettings() {
   const qc = useQueryClient();
 
@@ -54,37 +93,13 @@ export function useSettings() {
     queryFn: async (): Promise<UserSettings> => {
       const { data, error } = await supabase.from("user_settings").select("*").maybeSingle();
       if (error) throw error;
-      if (data) {
-        let calendar_fit_hours = data.calendar_fit_hours ?? DEFAULTS.calendar_fit_hours;
-        try {
-          const local = Number(localStorage.getItem("nuvo.cal.fitHours"));
-          if (data.calendar_fit_hours == null && local >= 6 && local <= 24) {
-            calendar_fit_hours = local;
-          }
-        } catch { /* ignore */ }
-        return {
-          ...data,
-          calendar_fit_hours,
-          hidden_calendar_ids: data.hidden_calendar_ids ?? [],
-          hidden_events: data.hidden_events ?? [],
-          calendar_domain_map: data.calendar_domain_map ?? {},
-          // A row written before the column existed reads back null — fall to
-          // the same default the edge function uses, so the composer's toggle
-          // and what Google actually gets can't disagree.
-          auto_add_meet: normalizeMeetPreference(data.auto_add_meet),
-          // Same reason as auto_add_meet: a row written before the column
-          // existed reads back `{}`, and a half-filled prefs object would mean
-          // "off" for one anchor and "default" for another.
-          reminder_prefs: normalizeReminderPrefs(data.reminder_prefs),
-          // Same reason again: a row written before migration 62 reads back
-          // null, and every caller maps over this.
-          saved_views: Array.isArray(data.saved_views) ? data.saved_views : [],
-          inbound_token: (data as { inbound_token?: string | null }).inbound_token ?? null,
-        };
-      }
+      if (data) return normalizeSettingsRow(data);
       const { data: u } = await supabase.auth.getUser();
       return { user_id: u.user?.id ?? "", ...DEFAULTS };
     },
+    // Also on the way out: a row restored from the persisted cache was stored
+    // by whichever build wrote it, and may predate the normalizer.
+    select: selectSettings,
   });
 
   /**

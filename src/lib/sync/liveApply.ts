@@ -14,6 +14,7 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
+import { normalizeSettingsRow } from "../../hooks/useSettings";
 import { putSlotInCaches } from "../../hooks/useSlots";
 import { putTaskInCaches } from "../../hooks/useTasks";
 import type { Slot, Task } from "../types";
@@ -257,8 +258,10 @@ export function applyLiveChange(qc: QueryClient, change: LiveChange, pending: Op
       const local = pending.filter((o) => o.table === "user_settings");
       const merged = mergePending(change.new, fieldTsOf(change.new), local);
       if (merged === "deleted") return true;
+      // Normalized like the query's own read: the raw row can carry a legacy
+      // `reminder_prefs` the popover can't render.
       qc.setQueryData(["settings"], (old: Record<string, unknown> | undefined) =>
-        old ? { ...old, ...merged } : merged,
+        normalizeSettingsRow(old ? { ...old, ...merged } : merged),
       );
       return true;
     }
