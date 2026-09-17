@@ -178,8 +178,9 @@ password, entered in the app.
 - **Rollover** runs at 00:05 America/Los_Angeles via pg_cron (scheduled at both 07:05
   and 08:05 UTC; the function is idempotent against the current LA date, so the
   off-DST run is a no-op). The client also invokes it defensively on the first open
-  of a new day. Rolled tasks: `do_date = today`, `start_time` cleared, duration kept,
-  `roll_count + 1`, mirror event deleted, ↻ badge in the Today list.
+  of a new day. Rolled tasks: `do_date = today`, `start_time` cleared (they land
+  in the anytime row, not on yesterday's hour), duration kept, `roll_count + 1`,
+  mirror event deleted, ↻ badge in the Today list.
 - **Overdue** = 1 hour after a block's end (start + duration + 60 min grace), styled in
   signal orange and pinned to the top of Today.
 - **Mirror calendar** — first Google connect finds-or-creates a calendar named **"Nuvo"**.

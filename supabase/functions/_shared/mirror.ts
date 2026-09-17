@@ -107,6 +107,7 @@ export interface MirrorableRow {
  * means "make the provider match", false means "make sure nothing is there".
  * A task that was unscheduled, trashed or rolled falls out of it and its mirror
  * is torn down — which is why this is a *reconciler* and not a command handler.
+ * Rolled work has no hour (D-141): it sits in anytime until you place it.
  */
 export function shouldMirror(row: MirrorableRow, kind: MirrorKind): boolean {
   if (!row.start_time) return false;

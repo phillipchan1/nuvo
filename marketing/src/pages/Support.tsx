@@ -211,9 +211,10 @@ const TROUBLE = [
     a: (
       <p>
         That’s rollover, and it’s deliberate. Overnight, anything left undone from yesterday
-        comes forward to today with its duration intact and its time cleared, carrying a ↻ badge
-        so you can see it rolled. Repeating occurrences never roll — a missed Tuesday standup
-        doesn’t become a Wednesday one.
+        comes forward to today with its duration intact and its time cleared — it sits in
+        anytime until you place it — carrying a ↻ badge so you can see it rolled.
+        Repeating occurrences never roll — a missed Tuesday standup doesn’t become a
+        Wednesday one.
       </p>
     ),
   },
@@ -683,8 +684,9 @@ export default function Support() {
                       <p>
                         <strong className="text-[var(--text)]">Rollover</strong> — overnight,
                         unfinished work from yesterday comes forward to today. It keeps its
-                        duration, loses its time, and carries a ↻ badge so a task that’s rolled
-                        four times is visibly a task that’s rolled four times.
+                        duration, loses its time (so it lands in anytime, not on yesterday’s
+                        hour), and carries a ↻ badge so a task that’s rolled four times is
+                        visibly a task that’s rolled four times.
                       </p>
                       <p className="mt-3">
                         <strong className="text-[var(--text)]">Overdue</strong> — a block goes

@@ -80,8 +80,9 @@ describe("steps are not tasks", () => {
 
   it("rollover never touches a step", () => {
     // A step has no date to roll, and rolling one would violate the check
-    // constraint — so the query that rolls has to know.
-    const sql = read("supabase/migrations/00000000000060_task_steps.sql");
+    // constraint — so the query that rolls has to know. The definition moved
+    // off migration 60 when D-141 rewrote the function; pin the latest one.
+    const sql = read("supabase/migrations/00000000000081_rollover_to_anytime.sql");
     const fn = sql.slice(sql.indexOf("rollover_tasks"));
     expect(fn).toMatch(/parent_task_id is null/);
   });
