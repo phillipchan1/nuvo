@@ -37,6 +37,10 @@ b (remind) · u (restore, Trash tab) · / (filter) · c (the capture box, same a
 In any add box: ↵ add and stay · ⌘↵ add and leave · Esc clear, then leave ·
 ↑↓ ↵ ⇥ pick a # / @ suggestion.
 
+A task's steps (the checklist — every row is a field, so the same grammar in the
+keys a field can spare): ↑↓ walk the steps and the add box · ↵ next step ·
+⌘↵ tick · ⌥↑↓ move · ⌫ on an empty step removes it · Esc abandon the edit.
+
 ## Modal Composers (New Project / New Initiative)
 
 ### Field Navigation

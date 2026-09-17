@@ -8,17 +8,23 @@
 // Warm Paper: hairline rows on the paper, never a bordered card. Nothing here
 // floats, so nothing here is framed (P14).
 //
-// Keyboard, which is most of the reason a checklist is worth having:
+// Keyboard, which is most of the reason a checklist is worth having. The rows
+// are always-editable fields, so the list grammar (D-146) is spoken in the
+// keys a field can spare — the add box is still the row after the last:
 //   Enter on the composer  add the step and stay, ready for the next
-//   Enter on a row         commit the rename
+//   ↑ / ↓                  walk the steps and the add box
+//   Enter on a row         commit the rename, step down
+//   ⌘↵ on a row            tick / untick
+//   ⌥↑ / ⌥↓                move the step
 //   ⌫ on an empty row      remove that step and focus the one above
 //   Esc                    abandon the edit
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useTaskSteps } from "../hooks/useTasks";
-import TaskComposer from "./tasks/TaskComposer";
+import { byManualOrder } from "../lib/taskOrder";
+import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -37,16 +43,39 @@ export default function TaskSteps({
   mutations: Mutations;
   touch?: boolean;
 }) {
-  const { data: steps = [] } = useTaskSteps(task.id);
+  const { data } = useTaskSteps(task.id);
+  // A move patches rows in place; nothing re-sorts the cache but us.
+  const steps = useMemo(() => byManualOrder(data ?? []), [data]);
   // Positions for lines added in one breath (a pasted list lands before the
-  // steps query has seen any of them).
-  const nextPos = useRef(steps.length);
-  nextPos.current = Math.max(nextPos.current, steps.length);
+  // steps query has seen any of them). After the last, wherever moves put it.
+  const lastOrder = steps.length ? steps[steps.length - 1]!.sort_order : -1;
+  const nextPos = useRef(lastOrder + 1);
+  nextPos.current = Math.max(nextPos.current, lastOrder + 1);
   const add = (title: string) => {
     void mutations.addStep(task, title, nextPos.current++);
   };
 
   const rowH = touch ? "tap-h" : "min-h-[26px]";
+  const composerRef = useRef<TaskComposerHandle>(null);
+  const inputs = useRef(new Map<string, HTMLInputElement>());
+  const focusAt = (i: number) => {
+    const s = steps[i];
+    const el = s ? inputs.current.get(s.id) : null;
+    if (!el) {
+      if (i >= steps.length) composerRef.current?.focus();
+      return;
+    }
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  };
+  const move = (i: number, by: -1 | 1) => {
+    const j = i + by;
+    if (j < 0 || j >= steps.length) return;
+    const ids = steps.map((s) => s.id);
+    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+    mutations.reorder(steps, ids);
+  };
   const { done, total } = stepProgress(steps);
 
   return (
@@ -65,11 +94,17 @@ export default function TaskSteps({
         </div>
       )}
 
-      {steps.map((s) => (
+      {steps.map((s, i) => (
         <StepRow
           key={s.id}
           step={s}
           rowH={rowH}
+          inputRef={(el) => {
+            if (el) inputs.current.set(s.id, el);
+            else inputs.current.delete(s.id);
+          }}
+          onFocusStep={(by) => focusAt(i + by)}
+          onMove={(by) => move(i, by)}
           onToggle={() => mutations.toggleStep(s)}
           onRename={(title) => mutations.renameStep(s, title)}
           onRemove={() => void mutations.removeStep(s)}
@@ -80,7 +115,9 @@ export default function TaskSteps({
           capture, so nothing is parsed — but Enter, Escape and paste behave
           exactly as they do on every other list. */}
       <TaskComposer
+        ref={composerRef}
         plain
+        onArrowUp={steps.length ? () => focusAt(steps.length - 1) : undefined}
         submitOnBlur
         placeholder={total ? "Add a step" : "Break this into steps"}
         aria-label="Add a step"
@@ -94,12 +131,19 @@ export default function TaskSteps({
 function StepRow({
   step,
   rowH,
+  inputRef,
+  onFocusStep,
+  onMove,
   onToggle,
   onRename,
   onRemove,
 }: {
   step: Task;
   rowH: string;
+  inputRef: (el: HTMLInputElement | null) => void;
+  /** Focus the step `by` rows away; past the last is the add box. */
+  onFocusStep: (by: -1 | 1) => void;
+  onMove: (by: -1 | 1) => void;
   onToggle: () => void;
   onRename: (title: string) => void;
   onRemove: () => void;
@@ -129,6 +173,7 @@ function StepRow({
       </button>
 
       <input
+        ref={inputRef}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={() => {
@@ -142,9 +187,23 @@ function StepRow({
           if (next !== step.title) onRename(next);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            const by = e.key === "ArrowUp" ? -1 : 1;
             e.preventDefault();
-            (e.currentTarget as HTMLInputElement).blur();
+            if (e.altKey) onMove(by);
+            else if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onFocusStep(by);
+            return;
+          }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onToggle();
+            return;
+          }
+          if (e.key === "Enter") {
+            // Leaving the field commits the rename (onBlur).
+            e.preventDefault();
+            onFocusStep(1);
+            return;
           }
           if (e.key === "Escape") {
             // The field owns Escape first (D-051): abandon the edit, keep the task open.
@@ -153,8 +212,10 @@ function StepRow({
             (e.currentTarget as HTMLInputElement).blur();
           }
           if (e.key === "Backspace" && title === "") {
+            // Stepping away blurs the emptied row, and blur removes it.
             e.preventDefault();
-            onRemove();
+            onFocusStep(-1);
+            if (document.activeElement === e.currentTarget) onRemove();
           }
         }}
         aria-label="Step"
