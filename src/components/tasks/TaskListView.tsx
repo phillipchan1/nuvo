@@ -185,6 +185,7 @@ export default function TaskListView({
             announce(next ? `${t.title}, position ${at + 1} of ${ids.length}` : "Can't move this row any further");
           }
         : undefined,
+      toComposer: () => composer.current?.focus(),
       add: (anchor, where) => {
         const sortOrder = anchor ? orderBeside(tasks, anchor, where) : undefined;
         composer.current?.focus(
@@ -288,6 +289,12 @@ export default function TaskListView({
         autoFocus={composerAutoFocus && !phone}
         submitOnBlur={phone}
         onLeave={() => listRef.current?.focus()}
+        onArrowUp={(placedAfter) => {
+          // Back to the row the box sat beside, else the last row.
+          const beside = placedAfter == null ? null : [...tasks].reverse().find((t) => t.sort_order <= placedAfter);
+          setCursorId((beside ?? tasks[tasks.length - 1])?.id ?? null);
+          listRef.current?.focus();
+        }}
       />
 
       {menu?.kind === "date" && (

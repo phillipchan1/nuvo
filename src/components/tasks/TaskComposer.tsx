@@ -72,6 +72,9 @@ export interface TaskComposerProps {
   onCreated?: (result: CaptureResult) => void;
   /** Escape on an empty box, or ⌘↵ — hand focus back to the list. */
   onLeave?: () => void;
+  /** ↑ from an empty box — the list takes the keys back, cursor on its last
+   *  row (or the row this box was placed beside). */
+  onArrowUp?: (placedAfter: number | null) => void;
   /** Called with the error when a create fails; the text is restored either way. */
   onError?: (message: string) => void;
   /** Close after one task (⌘K-style). ⌘↵ always does. */
@@ -192,6 +195,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     fieldRef,
     enterDisabled,
     enterKeyHint = "enter",
+    onArrowUp,
   },
   ref,
 ) {
@@ -350,6 +354,14 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
         menu.dismiss();
         return;
       }
+    }
+    if (e.key === "ArrowUp" && onArrowUp && !text) {
+      e.preventDefault();
+      const at = placement?.sortOrder ?? null;
+      setPlacement(null);
+      inputRef.current?.blur();
+      onArrowUp(at);
+      return;
     }
     if (e.key === "Enter" && enterDisabled) return;
     if (e.key === "Enter") {
@@ -545,6 +557,11 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
           <span className="task-composer-hints" aria-hidden>
             <kbd className="mono">↵</kbd> add
             <kbd className="mono">esc</kbd> {text ? "clear" : "leave"}
+            {onArrowUp && !text && (
+              <>
+                <kbd className="mono">↑</kbd> list
+              </>
+            )}
           </span>
         </div>
       )}

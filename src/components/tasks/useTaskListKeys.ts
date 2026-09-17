@@ -35,6 +35,8 @@ export interface TaskListKeyActs {
   reorderBy?: (t: Task, delta: 1 | -1) => void;
   /** Focus the list's add box, placing the new task beside `anchor`. */
   add?: (anchor: Task | null, where: "below" | "above") => void;
+  /** ↓ past the last row — into the list's add box. */
+  toComposer?: () => void;
   /** Host keys, tried first. Return true when handled. */
   extra?: (e: KeyboardEvent, targets: Task[]) => boolean;
 }
@@ -123,6 +125,12 @@ export function useTaskListKeys({
       switch (e.key) {
         case "j":
         case "ArrowDown":
+          // Off the end of the list is the add box, Todoist-style.
+          if (acts.toComposer && (rows.length === 0 || at === rows.length - 1)) {
+            cursor.setCursorId(null);
+            acts.toComposer();
+            return handled();
+          }
           go(1);
           return handled();
         case "k":

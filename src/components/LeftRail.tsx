@@ -404,9 +404,12 @@ function LeftRail({
     new DOMRect(360, 200, 0, 40);
   const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
+  const doneIds = new Set(todaySections.done.map((t) => t.id));
   useTaskListKeys({
     enabled: hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor,
-    rows: visible,
+    // Only rows that are drawn: j past the last one should reach the capture
+    // box, not walk into a collapsed "done" tail.
+    rows: tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible,
     cursor: {
       cursorId: selectedId,
       setCursorId: (id) => {
@@ -441,6 +444,7 @@ function LeftRail({
         // so — silence reads as a dropped keystroke.
         announce(moved ? `${t.title}, position ${moved.index} of ${moved.total}` : "Can't move this row any further");
       },
+      toComposer: () => captureRef.current?.focus(),
       add: (anchor, where) => {
         const band = anchor ? bands.of.get(anchor.id) : null;
         const peers = band ? (bands.ids.get(band) ?? []).map((id) => byId.get(id)).filter((x): x is Task => Boolean(x)) : [];
@@ -875,6 +879,16 @@ function LeftRail({
             if (action.kind === "series" || action.input.do_date) setTab("today");
           }}
           onError={setCaptureError}
+          onArrowUp={() => {
+            // The last row that's actually drawn — a collapsed "done" tail isn't.
+            const drawn = new Set(
+              [...(listRef.current?.querySelectorAll<HTMLElement>("[data-task-drag]") ?? [])].map((el) => el.dataset.taskDrag),
+            );
+            const last = [...visible].reverse().find((t) => drawn.has(t.id));
+            if (!last) return;
+            setSelectedId(last.id);
+            setKeyCursor(true);
+          }}
         />
         {captureError && (
           <div className="mt-1 px-1 text-label text-signal">{captureError}</div>

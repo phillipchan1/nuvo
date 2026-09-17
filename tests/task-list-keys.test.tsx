@@ -20,6 +20,7 @@ function setup(extra?: TaskListKeyActs["extra"]) {
     rename: vi.fn(),
     reorderBy: vi.fn(),
     add: vi.fn(),
+    toComposer: vi.fn(),
     extra,
   };
   const hook = renderHook(() => {
@@ -39,11 +40,12 @@ function setup(extra?: TaskListKeyActs["extra"]) {
 }
 
 describe("useTaskListKeys — one grammar for every task list", () => {
-  it("j / k walk the cursor, clamped", () => {
+  it("j / k walk the cursor, clamped at the top", () => {
     const { hook, press } = setup();
     press("j");
     expect(hook.result.current.cursorId).toBe("a");
-    press("j");
+    press("k");
+    expect(hook.result.current.cursorId).toBe("a");
     press("j");
     press("j");
     expect(hook.result.current.cursorId).toBe("c");
@@ -142,5 +144,18 @@ describe("orderBeside", () => {
     expect(orderBeside(ROWS, ROWS[1], "above")).toBe(1.5);
     expect(orderBeside(ROWS, ROWS[2], "below")).toBe(4);
     expect(orderBeside(ROWS, null, "below")).toBeUndefined();
+  });
+});
+
+describe("the add box is the row after the last", () => {
+  it("↓ / j off the last row hands the keys to the box", () => {
+    const { acts, hook, press } = setup();
+    press("j");
+    press("j");
+    press("j");
+    expect(hook.result.current.cursorId).toBe("c");
+    press("j");
+    expect(acts.toComposer).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.cursorId).toBeNull();
   });
 });
