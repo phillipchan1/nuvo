@@ -1985,13 +1985,18 @@ select.field { appearance: none; -webkit-appearance: none; }
   .task-completing { animation-duration: 1ms; }
 }
 
-/* Vertical floor transition: a subtle rise as you change altitude. */
+/* Vertical floor transition: a subtle rise as you change altitude — MOTION ONLY,
+   never a fade. It used to start at opacity 0 over --d-base, so every ⌘2/⌘3/⌘4
+   showed blank paper for a frame and wasn't readable for ~150ms (more in
+   WKWebView) even though the switch itself committed in two frames. Keyboard
+   nav read as lag. The new floor is fully opaque on its first painted frame;
+   the rise is just the settle. (The e-ink skin overrides this hook below.) */
 @keyframes floor-enter {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(4px); }
+  to { transform: translateY(0); }
 }
 .floor-enter {
-  animation: floor-enter var(--d-base) var(--ease-out);
+  animation: floor-enter 140ms var(--ease-out);
 }
 
 /* ── FullCalendar restyle to Twilight ────────────────────────────────── */
