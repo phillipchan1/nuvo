@@ -5322,3 +5322,33 @@ Answers **D4**'s "and for how long". Strains **P11** only in keeping ↻ for bot
 No pool, no new name.
 
 *Status: standing.*
+
+**D-148 · 2026-09-25 · Today says which work has a time.**
+
+The Schedule's Today list was one flat run: timed and untimed rows mixed, and because
+`TaskRow` renders no clock (D-054) the two were pixel-identical. The argument for the flat
+list was that the calendar beside it shows the blocks. That only works if the calendar is on
+today, scrolled to the right hour and wide enough to read, and even then you have to match
+titles across the gap to find the rows that *aren't* on it. Raised from the running app: *"I
+can't tell which of these are scheduled, so I don't know if something is at risk."* LeftRail's
+own comment had flagged this as an open question after its original reason turned out to be
+false.
+
+→ The desktop Today list splits into **No time yet** (first, in hand order) and **On the
+clock** (in clock order), under Overdue. These are the same groups the phone already had.
+The phone's untimed group was called *Planned*, which sounds safe and hides the risk, so it
+now says **No time yet** too. One name on both screens. Rows are unchanged: still no clock.
+
+Answers **D4** (*what did I say I'd do and haven't?*) for the day that's still open, and
+sharpens **D2**. Strains **P8** a little: a list header partly restates the calendar. The
+headers say only *has a time or not*, never *when*, so the calendar stays the place that
+says when. No pool: the groups are the `unblocked`/`scheduled` split that `buildTodaySections`
+already made. The name reuses the glossary's own *has a time / no time* wording.
+
+→ **Not taken:** a clock on the row (that reverses D-054, and the header already answers the
+question at a glance); an amber count on the header (Overdue is the only zone that needs a
+decision, and adding a second signal colour would compete with it).
+
+*Status: standing. Checked in the running dev app on real data: Overdue 1, then On the clock 4,
+and those four match the day's calendar blocks. The No time yet group wasn't on screen because
+nothing that day was unplaced.*

@@ -178,7 +178,7 @@ export default function MobileTaskList({
               onToggle={() => toggleToday("planned")}
               count={todaySections.unblocked.length}
             >
-              Planned
+              No time yet
             </SectionLabel>
             {todayOpen.planned &&
               todaySections.unblocked.map((t) => (

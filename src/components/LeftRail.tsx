@@ -811,24 +811,32 @@ function LeftRail({
                 ))}
               </div>
             )}
-            {/* The day's work — planned + calendar-blocked as one flat list. The
-                old split into three titled, counted sections was three headers
-                doing one job, and the calendar sits right beside the rail
-                rendering the blocks in their real positions.
-                ⚠️ This comment used to also claim "a blocked task already shows
-                its time." It does not: `TaskRow` deliberately renders no clock
-                (see its note above `durText`), and in fact SUPPRESSES the date
-                label once `start_time` is set — a scheduled row shows strictly
-                less than an unscheduled one. So the flat list rests on the
-                adjacent calendar alone, which is a real argument; it just isn't
-                the one that was written down. Whether the split should come back
-                is a live product question, deliberately left open (D-084) rather
-                than settled by a comment that wasn't true. Mobile still keeps an
-                "On the clock" header (`MobileTaskList`), where no grid is beside
-                the list to carry it. */}
-            {[...todaySections.unblocked, ...todaySections.scheduled].map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
+            {/* The day's work, split by the one fact that says whether it will
+                happen: does it have a time? The flat list leaned on the calendar
+                beside it to answer that, and the calendar can't — it may be
+                scrolled, on another week, or too narrow to read, and even when
+                it's showing today you have to match titles across the gap to
+                find the ones that AREN'T there. `TaskRow` renders no clock (its
+                note above `durText`), so a timed row and a homeless one were
+                pixel-identical. The work with no time comes first: it's the part
+                of today that's still a wish (D-148). Same two labels as the
+                phone's `MobileTaskList`. */}
+            {todaySections.unblocked.length > 0 && (
+              <div className={todaySections.scheduled.length > 0 ? "border-b border-line-strong" : undefined}>
+                <SectionLabel count={todaySections.unblocked.length}>No time yet</SectionLabel>
+                {todaySections.unblocked.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+              </div>
+            )}
+            {todaySections.scheduled.length > 0 && (
+              <div>
+                <SectionLabel count={todaySections.scheduled.length}>On the clock</SectionLabel>
+                {todaySections.scheduled.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+              </div>
+            )}
             {todaySections.pinned.length +
               todaySections.unblocked.length +
               todaySections.scheduled.length ===
