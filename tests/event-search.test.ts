@@ -6,13 +6,14 @@
 //
 //   · a query can't smuggle PostgREST filter syntax into an `or()` clause
 //   · a hit resolves to the LOCAL day the calendar has to travel to
-//   · the serialized nav intent carries that day, because the grid must move
-//     before the row is even loaded
-//   · the ⌘K / ⌥Space / phone surfaces all speak the same intent
+//   · the reveal bus carries that day, because the grid must move before the
+//     row is even loaded
+//
+// (Search lives on the phone's Search screen; ⌘K and ⌥Space are capture only
+// since D-149.)
 
 import { describe, expect, it } from "vitest";
 import { eventHitDateISO, eventHitSubtitle, sanitizeEventQuery, type EventHit } from "../src/lib/eventSearch";
-import { applySpotlightNav, type SpotlightNav } from "../src/lib/spotlightNav";
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal, revealOnCalendar } from "../src/lib/calendarReveal";
 
 const hit = (over: Partial<EventHit> = {}): EventHit => ({
@@ -52,26 +53,6 @@ describe("a hit's landing", () => {
     expect(eventHitSubtitle(hit())).toMatch(/Aug 12/);
     expect(eventHitSubtitle(hit({ location: "Room 2" }))).toMatch(/Room 2$/);
     expect(eventHitSubtitle(hit({ all_day: true }))).toMatch(/all day/);
-  });
-});
-
-describe("the nav intent", () => {
-  it("carries the date, because the grid has to travel before the row loads", () => {
-    const nav: SpotlightNav = { kind: "event", eventId: "row-1", dateISO: "2026-08-12" };
-    const calls: Record<string, unknown>[] = [];
-    let revealed: { dateISO: string; eventId?: string } | null = null;
-    const off = onCalendarReveal((r) => (revealed = r));
-
-    applySpotlightNav(nav, {
-      openOverlay: () => {},
-      openProject: () => {},
-      openInitiative: () => {},
-      navigate: (patch) => calls.push(patch),
-    });
-    off();
-
-    expect(revealed).toMatchObject({ dateISO: "2026-08-12", eventId: "row-1" });
-    expect(calls[0]).toMatchObject({ rung: "day", overlay: "event", overlayId: "row-1" });
   });
 });
 

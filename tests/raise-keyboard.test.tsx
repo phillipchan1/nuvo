@@ -154,7 +154,7 @@ describe("useDialogFocus", () => {
         <MobileCapture labels={[]} onCreate={async () => {}} onClose={() => {}} />
       </QueryClientProvider>,
     );
-    expect(screen.getByLabelText("Capture a task or event")).toHaveFocus();
+    expect(screen.getByLabelText("Capture a task, event or slot")).toHaveFocus();
     expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
   });
 

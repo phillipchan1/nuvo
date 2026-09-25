@@ -21,7 +21,7 @@ export type OverlayKind =
   // The record id rides in `overlayId`; no anchor (it's centered, not a popover).
   | "project-record"
   | "initiative-record"
-  // A task opened as a centered modal (from ⌘K search) — the same TaskPopover
+  // A task opened as a centered modal (a reminder, the groom wall, Nuvo) — the same TaskPopover
   // UI, rung-agnostic, no anchor. Distinct from the on-Schedule anchored "task".
   | "task-record"
   // The Week's Plan / Review — slides over the Schedule work area. History-

@@ -45,6 +45,24 @@ describe("recurrence kernel", () => {
     expect(stripped.toLowerCase()).not.toContain("every");
   });
 
+  it("reads named days, weekdays and 'every other' — the way people say it", () => {
+    const ref = "2026-09-17";
+    const read = (t: string) => parseRecurrencePhrase(t, ref);
+    // "gym every monday" used to fall through to the date parser: one task,
+    // titled "gym every", next Monday — the repeat silently dropped.
+    expect(read("gym every monday")).toMatchObject({ rule: { freq: "weekly", interval: 1, byweekday: [1] }, stripped: "gym" });
+    expect(read("lift every mon & thu").rule).toEqual({ freq: "weekly", interval: 1, byweekday: [1, 4] });
+    expect(read("sync every tues, thurs and fri").rule).toEqual({ freq: "weekly", interval: 1, byweekday: [2, 4, 5] });
+    expect(read("standup every weekday").rule).toEqual({ freq: "weekly", interval: 1, byweekday: [1, 2, 3, 4, 5] });
+    expect(read("standup weekdays").rule?.byweekday).toEqual([1, 2, 3, 4, 5]);
+    expect(read("hike every weekend").rule?.byweekday).toEqual([0, 6]);
+    expect(read("1:1 every other wednesday").rule).toEqual({ freq: "weekly", interval: 2, byweekday: [3] });
+    expect(read("review every other week").rule).toMatchObject({ freq: "weekly", interval: 2 });
+    // Not cadences: a month is not a Monday, and a single day is a date.
+    expect(read("plan every month").rule).toEqual({ freq: "monthly", interval: 1 });
+    expect(read("meet on monday").rule).toBeNull();
+  });
+
   it("groups series by cadence", () => {
     const groups = groupSeriesByCadence(
       [

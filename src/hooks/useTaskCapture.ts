@@ -7,7 +7,7 @@
  */
 
 import { createContext, useCallback, useContext, useMemo } from "react";
-import { draftFromCapture, type CaptureAction, type CaptureContext, type CaptureEnv } from "../lib/captureDraft";
+import { draftFromCapture, type CaptureAction, type CaptureContext, type CaptureEnv, type SlotDraftInput } from "../lib/captureDraft";
 import { parseCapture, type ParsedCapture, type RouteTarget } from "../lib/nlp";
 import { todayISO } from "../lib/dates";
 import type { Label, Task } from "../lib/types";
@@ -93,6 +93,9 @@ export function missingLabels(p: ParsedCapture, labels: Label[]): string[] {
 export interface TaskCaptureSink {
   create: (input: NewTaskInput) => Promise<unknown>;
   createSeries: (input: { kind: "task"; rule: RecurrenceRule; anchorISO: string; template: SeriesTemplate }) => Promise<unknown>;
+  /** The capture door's Slot face (`useSlotCapture`). Optional: most harnesses only take tasks. */
+  createSlot?: (input: SlotDraftInput) => Promise<unknown> | unknown;
+  createSlotSeries?: (input: { kind: "slot"; rule: RecurrenceRule; anchorISO: string; template: SeriesTemplate }) => Promise<unknown>;
 }
 export const TaskCaptureSinkContext = createContext<TaskCaptureSink | null>(null);
 

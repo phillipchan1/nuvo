@@ -539,6 +539,13 @@ export function groupSeriesByCadence<T extends RecurrenceSeriesRow>(
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+// A day of the week as people type it: "monday", "mon", "tues", "thurs".
+const DAY_WORD = /mon(?:day)?|tue(?:s(?:day)?)?|wed(?:s|nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?/;
+function dayIndexOf(word: string): number {
+  const w = word.toLowerCase().slice(0, 2);
+  return ({ su: 0, mo: 1, tu: 2, we: 3, th: 4, fr: 5, sa: 6 } as Record<string, number>)[w] ?? 1;
+}
+
 /**
  * Parse recurrence phrases from capture text. Strips matched spans from input.
  *
@@ -569,7 +576,38 @@ export function parseRecurrencePhrase(input: string, refDateISO: string): {
 
   let rule: RecurrenceRule | null = null;
 
+  // Named days first: "every monday", "every mon & thu", "every weekday",
+  // "weekdays", "every weekend". Without these the words fell through to the
+  // date parser — "gym every monday" became ONE task titled "gym every" on next
+  // Monday, and the repeat the person asked for was silently gone.
+  const dayRe = DAY_WORD.source;
+  const namedDays = working.match(
+    new RegExp(`\\bevery\\s+(?:other\\s+)?(${dayRe})(?:\\s*(?:,|&|and|\\+)\\s*(?:${dayRe}))*\\b`, "i"),
+  );
+  if (namedDays) {
+    const days = [...namedDays[0].matchAll(new RegExp(`\\b(${dayRe})\\b`, "gi"))].map((d) => dayIndexOf(d[1]));
+    rule = {
+      freq: "weekly",
+      interval: /\bother\b/i.test(namedDays[0]) ? 2 : 1,
+      byweekday: [...new Set(days)].sort((a, b) => a - b),
+    };
+    blank(namedDays);
+  }
+  const weekdays = rule ? null : working.match(/\b(?:every\s+(?:week\s*day|weekday)s?|weekdays)\b/i);
+  if (weekdays) {
+    rule = { freq: "weekly", interval: 1, byweekday: [...WEEKDAYS] };
+    blank(weekdays);
+  }
+  const weekends = rule ? null : working.match(/\b(?:every\s+weekends?|weekends)\b/i);
+  if (weekends) {
+    rule = { freq: "weekly", interval: 1, byweekday: [...WEEKEND] };
+    blank(weekends);
+  }
+
   const patterns: { re: RegExp; build: (n: number) => RecurrenceRule }[] = [
+    { re: /\bevery\s+other\s+week\b/i, build: () => ({ freq: "weekly", interval: 2, byweekday: [dayOfWeek(anchorDate ?? refDateISO)] }) },
+    { re: /\bevery\s+other\s+day\b/i, build: () => ({ freq: "daily", interval: 2 }) },
+    { re: /\bevery\s+other\s+month\b/i, build: () => ({ freq: "monthly", interval: 2 }) },
     { re: /\bevery\s+(\d+)\s+months?\b/i, build: (n) => ({ freq: "monthly", interval: n }) },
     { re: /\bevery\s+(\d+)\s+weeks?\b/i, build: (n) => ({ freq: "weekly", interval: n, byweekday: [dayOfWeek(anchorDate ?? refDateISO)] }) },
     { re: /\bevery\s+(\d+)\s+days?\b/i, build: (n) => ({ freq: "daily", interval: n }) },
@@ -578,7 +616,7 @@ export function parseRecurrencePhrase(input: string, refDateISO: string): {
     { re: /\b(?:every\s+day|daily)\b/i, build: () => ({ freq: "daily", interval: 1 }) },
   ];
 
-  for (const { re, build } of patterns) {
+  for (const { re, build } of rule ? [] : patterns) {
     const m = working.match(re);
     if (m) {
       const n = m[1] ? Math.max(1, parseInt(m[1], 10)) : 1;

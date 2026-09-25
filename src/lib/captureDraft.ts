@@ -18,6 +18,7 @@ import type { SeriesTemplate } from "../hooks/useRecurrence";
 import { captureTitle, resolveRoute, type ParsedCapture, type RouteTarget } from "./nlp";
 import type { RecurrenceRule } from "./recurrence";
 import { DEFAULT_PROJECT_DURATION_MINUTES, type Label } from "./types";
+import { toDateISO } from "./dates";
 
 /** Where the add box is. Everything optional: the rail's Inbox passes nothing. */
 export interface CaptureContext {
@@ -152,6 +153,108 @@ export function draftFromCapture(
       sort_order: ctx.sortOrder,
       // Filed work with no day rests in its home's backlog, not in triage.
       status: !doDate && filed ? "backlog" : undefined,
+    },
+  };
+}
+
+// ── Slots ──────────────────────────────────────────────────────────────────
+// The same sentence can hold a block instead of a to-do. A slot always has a
+// time (it is a container of time on the grid), so the host hands in the clock
+// it is showing; anything the words say still wins over it, exactly as above.
+
+/** The clock the capture surface is showing for a slot. */
+export interface SlotWhen {
+  doDate: string | null;
+  start: Date | null;
+  durationMinutes: number | null;
+  /** A domain picked on the surface (the fallback to typing `@domain`). */
+  domainId?: string | null;
+}
+
+/** The length a slot takes when neither the words nor the surface said one. */
+export const DEFAULT_SLOT_MINUTES = 60;
+
+export interface SlotDraftInput {
+  title: string;
+  do_date: string;
+  start_time: string;
+  duration_minutes: number;
+  project_id: string | null;
+  domain_id: string | null;
+  color: string | null;
+}
+
+export type SlotAction =
+  | { kind: "slot"; input: SlotDraftInput }
+  | { kind: "slot-series"; rule: RecurrenceRule; anchorISO: string; template: SeriesTemplate };
+
+function atClock(dayISO: string, clock: Date): Date {
+  const [y, m, d] = dayISO.split("-").map(Number);
+  const out = new Date(clock);
+  out.setFullYear(y, m - 1, d);
+  return out;
+}
+
+/**
+ * The slot a typed line asks for. Null only when there is no time to hold —
+ * a slot without a clock is not a slot. An empty title is allowed: a slot's
+ * title derives from what it holds when it has none (glossary: Slot).
+ */
+export function slotFromCapture(
+  p: ParsedCapture,
+  raw: string,
+  when: SlotWhen,
+  env: CaptureEnv,
+  colorOfDomain: (domainId: string) => string | null = () => null,
+): SlotAction | null {
+  const routed = p.route ? resolveRoute(p.route, env.routeTargets) : null;
+  let project_id: string | null = null;
+  let domain_id: string | null = when.domainId ?? null;
+  if (routed?.kind === "project") {
+    project_id = routed.id;
+    domain_id = env.homeOfProject(routed.id)?.domainId ?? null;
+  } else if (routed?.kind === "initiative") {
+    domain_id = env.homeOfInitiative(routed.id)?.domainId ?? null;
+  } else if (routed?.kind === "domain") {
+    domain_id = routed.id;
+  }
+  // Only strip what the words actually typed: a bare "9am 2h" is an unnamed
+  // slot, not one titled "9am 2h".
+  const title = (routed ? p.title : p.route ? captureTitle(p, raw) : p.title).trim();
+
+  const day = p.doDate ?? when.doDate ?? env.todayISO;
+  // A typed day keeps the surface's clock; a typed time is the clock.
+  const start = p.startTime ?? (when.start ? atClock(day, when.start) : null);
+  if (!start) return null;
+  const duration = p.durationMinutes ?? when.durationMinutes ?? DEFAULT_SLOT_MINUTES;
+  const color = domain_id ? colorOfDomain(domain_id) : null;
+
+  if (p.recurrence) {
+    return {
+      kind: "slot-series",
+      rule: p.recurrence,
+      anchorISO: p.recurrenceAnchor ?? p.doDate ?? when.doDate ?? env.todayISO,
+      template: {
+        title,
+        duration_minutes: duration,
+        time_of_day_minutes: start.getHours() * 60 + start.getMinutes(),
+        project_id,
+        domain_id,
+        color,
+      },
+    };
+  }
+
+  return {
+    kind: "slot",
+    input: {
+      title,
+      do_date: toDateISO(start),
+      start_time: start.toISOString(),
+      duration_minutes: duration,
+      project_id,
+      domain_id,
+      color,
     },
   };
 }

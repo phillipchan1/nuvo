@@ -69,6 +69,7 @@ export function Modal({
   width = "max-w-lg",
   align = "top",
   zClass = "z-[70]",
+  closeOnEscape = true,
 }: {
   onClose: () => void;
   children: ReactNode;
@@ -82,11 +83,16 @@ export function Modal({
   // Pass a higher token when this dialog opens over RecordScrim (z-81) —
   // ShipAssess uses z-[90].
   zClass?: string;
+  /** false when the content owns Escape itself — a field inside that clears
+   *  first and leaves second (D-051) can't do that if the scrim has already
+   *  closed on the same keypress. */
+  closeOnEscape?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Dialog semantics — focus in, Tab trapped, focus restored to the trigger.
   useDialogFocus(panelRef);
   useEffect(() => {
+    if (!closeOnEscape) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -95,7 +101,7 @@ export function Modal({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [onClose, closeOnEscape]);
 
   const scrimPos =
     align === "center" ? "sm:items-center sm:p-4" : "sm:items-start sm:p-0 sm:pt-[12vh]";

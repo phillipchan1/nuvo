@@ -117,6 +117,47 @@ fn hide_spotlight(app: tauri::AppHandle) {
     }
 }
 
+// Size the ⌥Space panel to the card it is showing, keeping its TOP edge where
+// it is. The window is transparent, so any height beyond the card is invisible
+// glass that still eats clicks meant for the app underneath, and any height
+// short of it clips the card. The webview asks for the height it measured; the
+// JS `setSize` it used to call was never granted by the capability (it has no
+// `core:window:allow-set-size`), so the panel silently stayed 480pt and a long
+// Event face was cut off at the bottom. Frame math is AppKit's (bottom-up), so
+// a plain resize would grow downward from the bottom-left and walk the card.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn fit_spotlight(app: tauri::AppHandle, height: f64) {
+    use tauri_nspanel::objc2_app_kit::NSWindow;
+    use tauri_nspanel::objc2_foundation::{NSPoint, NSRect, NSSize};
+    let Some(win) = app.get_webview_window("spotlight") else { return };
+    let Ok(ptr) = win.ns_window() else { return };
+    // SAFETY: ns_window() hands back this window's live NSWindow*.
+    let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    let f = w.frame();
+    let max_h = w.screen().map(|s| s.visibleFrame().size.height).unwrap_or(900.0);
+    let h = height.max(120.0).min(max_h.max(120.0));
+    if (h - f.size.height).abs() < 0.5 {
+        return;
+    }
+    let top = f.origin.y + f.size.height;
+    w.setFrame_display(
+        NSRect::new(NSPoint::new(f.origin.x, top - h), NSSize::new(f.size.width, h)),
+        true,
+    );
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+#[tauri::command]
+fn fit_spotlight(app: tauri::AppHandle, height: f64) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("spotlight") {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let width = win.inner_size().map(|s| s.width as f64 / scale).unwrap_or(680.0);
+        let _ = win.set_size(tauri::LogicalSize::new(width, height.max(120.0)));
+    }
+}
+
 // Other desktops use a plain window (no NSPanel) — hide it directly.
 // Relaunch after an in-app update. The JS `relaunch()` path races on macOS —
 // the process can exit before the new one spawns, especially right after the
@@ -293,6 +334,7 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         open_devtools,
         hide_spotlight,
+        fit_spotlight,
         surface_main,
         align_traffic_lights,
         restart_for_update,
@@ -574,8 +616,10 @@ fn position_spotlight<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
     let vf = screen.visibleFrame();
     let wf = w.frame();
     let x = vf.origin.x + (vf.size.width - wf.size.width) / 2.0;
-    // macOS y is bottom-up — 0.62 puts the card in the upper third.
-    let y = vf.origin.y + (vf.size.height - wf.size.height) * 0.62;
+    // macOS y is bottom-up. Anchor the TOP edge ~18% down the screen, like
+    // Spotlight: the panel is fitted to its card (fit_spotlight), so centring
+    // on the frame would drop the card lower the taller the last summon was.
+    let y = vf.origin.y + vf.size.height * 0.82 - wf.size.height;
     w.setFrameOrigin(NSPoint { x, y });
 }
 

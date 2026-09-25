@@ -14,7 +14,7 @@
 // guests, Meet, which calendar, and the invite-consent step — none of which a
 // task has, and all of which are the reason "event" is a separate answer at all.
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { toast } from "sonner";
 import { useCalendarAccounts, useExternalEventMutations } from "../../hooks/useCalendar";
@@ -56,19 +56,24 @@ export function useWritableAccounts() {
   return accounts.filter((a) => isWritableAccount(a));
 }
 
-export default function EventComposer({
-  title,
-  seed,
-  onDone,
-}: {
+/** The capture door presses Enter on the event through this. */
+export interface EventComposerHandle {
+  submit: () => void;
+}
+
+const EventComposer = forwardRef<EventComposerHandle, {
   /** The capture line, parsed — this composer never asks for it again. */
   title: string;
   /** Times read out of that line. Re-applied while the user hasn't touched the
    *  time controls, so editing the text keeps moving the event; the moment a
    *  field is touched by hand, the hand wins. */
   seed: EventSeed;
-  onDone: () => void;
-}) {
+  /** A cadence read out of the same line ("standup every weekday 9am") —
+   *  applied the same way until the repeat control is touched. */
+  seedRepeat?: RecurrenceRule | null;
+  /** After the write landed, with where it went ("Fri 12–1pm"). */
+  onDone: (created: { start_at: string; end_at: string; allDay: boolean; repeats: boolean }) => void;
+}>(function EventComposer({ title, seed, seedRepeat = null, onDone }, ref) {
   const { settings } = useSettings();
   const { createEvent } = useExternalEventMutations();
   const { data: accounts = [] } = useCalendarAccounts();
@@ -77,7 +82,17 @@ export default function EventComposer({
   const [startAt, setStartAt] = useState(seed.start_at);
   const [endAt, setEndAt] = useState(seed.end_at);
   const [allDay, setAllDay] = useState(seed.allDay);
-  const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
+  const [repeat, setRepeatState] = useState<RecurrenceRule | null>(seedRepeat);
+  const repeatTouched = useRef(false);
+  const setRepeat = (r: RecurrenceRule | null) => {
+    repeatTouched.current = true;
+    setRepeatState(r);
+  };
+  const seedRepeatKey = seedRepeat ? JSON.stringify(seedRepeat) : "";
+  useEffect(() => {
+    if (!repeatTouched.current) setRepeatState(seedRepeat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedRepeatKey]);
   const [attendees, setAttendees] = useState<string[]>([]);
   const [accountId, setAccountId] = useState(() => writableAccounts[0]?.id ?? "");
   const [meetChoice, setMeetChoice] = useState<boolean | null>(null);
@@ -184,7 +199,7 @@ export default function EventComposer({
             : `Added ${attendees.length === 1 ? "1 guest" : `${attendees.length} guests`} — no email sent`,
         );
       }
-      onDone();
+      onDone({ start_at: startAt, end_at: endAt, allDay, repeats: Boolean(repeat) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create event");
       setSaving(false);
@@ -199,6 +214,12 @@ export default function EventComposer({
     }
     void finish(true);
   };
+
+  useImperativeHandle(ref, () => ({
+    // Enter on the consent step is "Send invites" — the button that has focus
+    // styling and the one the step leads with.
+    submit: () => (confirmingGuests ? void finish(true) : submit()),
+  }));
 
   return (
     <>
@@ -422,4 +443,6 @@ export default function EventComposer({
       )}
     </>
   );
-}
+});
+
+export default EventComposer;

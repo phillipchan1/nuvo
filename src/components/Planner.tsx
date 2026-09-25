@@ -20,27 +20,17 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { mergeTaskLists } from "../lib/taskMerge";
 import { isWritableCalendar } from "../lib/calendarWrite";
-import {
-  applySpotlightNav,
-  buildSearchHits,
-  SPOTLIGHT_NAVIGATE_EVENT,
-  type SpotlightNav,
-} from "../lib/spotlightNav";
-import { eventHitDateISO, type EventHit } from "../lib/eventSearch";
 import { deriveSlotTitle } from "../lib/slots";
-import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
 import type { FlowName } from "./Spine";
-
-import type { Command, SearchHit } from "./NuvoSpotlight";
 
 // Split points: FullCalendar (inside CalendarPane) is a quarter-megabyte the
 // phone never runs, and the popovers/Settings are open-on-demand. Keeping them
 // out of the entry chunk is most of P0-4's desktop win.
 const CalendarPane = lazy(() => import("./CalendarPane"));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
-const NuvoSpotlight = lazy(() => import("./NuvoSpotlight"));
+const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
 const SettingsModal = lazy(() => import("./SettingsModal"));
 const TaskPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.TaskPopover })));
@@ -77,15 +67,12 @@ export default function Planner({
     openOverlay,
     openSlotTask,
     closeOverlay,
-    toggleAgent,
     navigate,
     panelAnchor,
     panelAnchorEl,
-    openProject,
-    openInitiative,
   } = useAppNavigation();
 
-  const { tab, calView: view, overlay, overlayId, overlaySubId, agentOpen, settingsSection, rung } = nav;
+  const { tab, calView: view, overlay, overlayId, overlaySubId, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
 
   const [range, setRangeLocal] = useState<{ start: string; end: string }>(() => {
@@ -95,7 +82,7 @@ export default function Planner({
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
-  const { agent, navFocus, setRange: setAgentRange } = useAgentContext();
+  const { setRange: setAgentRange } = useAgentContext();
   const syncRange = useCallback(
     (start: string, end: string) => {
       // Bail when the view's range didn't actually change — datesSet can re-fire
@@ -118,15 +105,6 @@ export default function Planner({
   const today = todayISO(now);
   const { settings, update: updateSettings } = useSettings();
   const { data: vertical, commitTasksToSprint } = useVertical();
-
-  const contextLabel = useMemo(() => {
-    if (!navFocus) return undefined;
-    const { projectId, initiativeId, domainId } = navFocus;
-    if (projectId) return vertical.projects.find((p) => p.id === projectId)?.name;
-    if (initiativeId) return vertical.initiatives.find((i) => i.id === initiativeId)?.name;
-    if (domainId) return vertical.domains.find((d) => d.id === domainId)?.name;
-    return undefined;
-  }, [navFocus, vertical]);
 
   // The current (lived) week — the toolbar's living emblem gauge. The week that
   // contains today (Monday-anchored). The floor shows a *viewed* week, which you
@@ -352,11 +330,6 @@ export default function Planner({
     [vertical],
   );
 
-  const handleToggleAgent = () => {
-    toggleAgent();
-    writeAgentOpen(!agentOpen);
-  };
-
   useRealtime(true);
 
   const rollover = useRolloverGuard(settings?.last_rollover_date);
@@ -373,7 +346,7 @@ export default function Planner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
-  // ⌘K / Ctrl+K → command bar  |  ⌘, → settings
+  // ⌘K / Ctrl+K → quick add  |  ⌘, → settings
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -485,83 +458,6 @@ export default function Planner({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onSchedule, anyModalOpen, setTab, trashedRows.length]);
-
-  // The searchable vertical for ⌘K — every task / project / initiative / domain
-  // as a SearchHit whose `run` navigates to it. Built from the shared builder
-  // (the same one the ⌥Space panel uses), each serialized intent applied through
-  // the live nav API so in-window search and cross-window pull-up stay identical.
-  // Landing on a calendar hit — the same serialized intent the ⌥Space panel
-  // emits, replayed here, so in-window search and cross-window pull-up agree.
-  const openEventHit = useCallback(
-    (hit: EventHit) =>
-      applySpotlightNav(
-        { kind: "event", eventId: hit.id, dateISO: eventHitDateISO(hit) },
-        { openOverlay, openProject, openInitiative, navigate },
-      ),
-    [openOverlay, openProject, openInitiative, navigate],
-  );
-
-  const searchHits = useMemo<SearchHit[]>(
-    () =>
-      buildSearchHits(vertical).map((h) => ({
-        ...h,
-        run: () => applySpotlightNav(h.nav, { openOverlay, openProject, openInitiative, navigate }),
-      })),
-    [vertical, openOverlay, openProject, openInitiative, navigate],
-  );
-
-  // The global ⌥Space panel lives in its own Tauri window without the nav API, so
-  // a record it pulls up arrives here as an event — replayed against the live nav
-  // exactly like an in-window ⌘K selection. (No-op in the browser / PWA.)
-  useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in globalThis)) return;
-    let unlisten: (() => void) | undefined;
-    void import("@tauri-apps/api/event").then(({ listen }) =>
-      listen<SpotlightNav>(SPOTLIGHT_NAVIGATE_EVENT, (e) =>
-        applySpotlightNav(e.payload, { openOverlay, openProject, openInitiative, navigate }),
-      ).then((u) => (unlisten = u)),
-    );
-    return () => unlisten?.();
-  }, [openOverlay, openProject, openInitiative, navigate]);
-
-  const commands: Command[] = [
-    { id: "today", title: "Go to today", run: () => setTab("today") },
-    { id: "week", title: "Go to the week (Spread)", run: () => setCalView("board") },
-    { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
-    { id: "sunday", title: "Plan the week", run: () => openFlow("sunday") },
-    { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
-    { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
-    { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
-    { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },
-    { id: "view-year", title: "Calendar: year", run: () => setCalView("year") },
-    { id: "connect", title: "Connect calendar…", run: () => openOverlay("settings") },
-    { id: "label", title: "New label…", run: () => openOverlay("settings") },
-    { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
-    { id: "settings", title: "Settings", run: () => openOverlay("settings") },
-    { id: "shortcuts", title: "Keyboard shortcuts", run: () => openOverlay("shortcuts") },
-    {
-      id: "theme",
-      title: "Toggle dark mode",
-      run: () =>
-        updateSettings({
-          theme: document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-        }),
-    },
-  ];
-
-  // Close the ⌘K palette and run the command in one step. We close with a
-  // `replace` (not `closeOverlay`'s `history.back()`) because back() fires an
-  // async popstate that would revert the command's own navigation a tick later
-  // — that race is why "Plan the week" (and every navigating
-  // command) appeared to do nothing.
-  const runCommand = useCallback(
-    (cmd: Command) => {
-      navigate({ overlay: "none", overlayId: null }, "replace");
-      cmd.run();
-    },
-    [navigate],
-  );
 
   const handleConvertEventToTask = useCallback(
     (event: ExternalEvent) => {
@@ -804,16 +700,7 @@ export default function Planner({
 
       {showCmd && (
         <Suspense fallback={null}>
-        <NuvoSpotlight
-          labels={labels}
-          commands={commands}
-          searchHits={searchHits}
-          agent={agent}
-          onClose={closeOverlay}
-          onRunCommand={runCommand}
-          contextLabel={contextLabel}
-          onEventHit={openEventHit}
-        />
+          <QuickAdd onClose={closeOverlay} />
         </Suspense>
       )}
       {recordTask && (

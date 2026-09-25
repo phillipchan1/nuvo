@@ -8,10 +8,9 @@
  * prop that is a *signal*, not state: it has to fire again for the same value
  * (searching the same meeting twice), which props don't do without a nonce.
  *
- * So it is a tiny bus, in the spirit of `announce.ts` and the ⌥Space panel's
- * `SPOTLIGHT_NAVIGATE_EVENT`: one publisher, whichever calendar is mounted
- * subscribes. Both shells use the same one, so a search result lands the same
- * way on a phone as on a desktop.
+ * So it is a tiny bus, in the spirit of `announce.ts`: one publisher,
+ * whichever calendar is mounted subscribes. Both shells use the same one, so
+ * a reveal lands the same way on a phone as on a desktop.
  */
 
 export interface CalendarReveal {

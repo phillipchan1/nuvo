@@ -1,5 +1,5 @@
 // Standalone verify harness for mobile Capture — the Task face's When row
-// (D-131): day chips, Pick date, Add time, start–end, duration. Reached at
+// (D-131) and the Slot face (D-149): day chips, Pick date, Add time, start–end, duration. Reached at
 // ?capture. Toggle between a plain ＋ open and one seeded from a Day-canvas tap.
 
 import { useState } from "react";
@@ -81,6 +81,9 @@ export default function CaptureHarness() {
                 setLog(`${input.title} · ${when}`);
                 },
                 createSeries: async ({ template }) => setLog(`${template.title} · repeats`),
+                createSlot: (input) =>
+                  setLog(`slot: ${input.title || "(unnamed)"} · ${input.do_date} ${new Date(input.start_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${input.duration_minutes}m${input.domain_id ? " · has a domain" : ""}`),
+                createSlotSeries: async ({ template }) => setLog(`slot: ${template.title} · repeats`),
               }}
             >
               <MobileCapture

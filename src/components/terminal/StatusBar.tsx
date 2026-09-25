@@ -63,7 +63,7 @@ export default function StatusBar() {
       <span className="term-status-seg" title="Committed this week with no day yet">
         to place {toPlace}
       </span>
-      <span className="term-status-seg term-status-key" title="Command palette">
+      <span className="term-status-seg term-status-key" title="Quick add">
         ⌘K
       </span>
     </div>

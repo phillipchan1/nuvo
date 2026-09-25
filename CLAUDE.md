@@ -190,13 +190,18 @@ it needs to work on a phone.
   sheet). **Never build another add box, another row, or another list keymap**; a surface
   says where it is (`context`) and how a task opens (`onOpen`), nothing more. Reorder writes
   only the moved rows (`lib/taskOrder`); hand-ordered lists sort with `byManualOrder`.
-- **Capture is ONE door, and it makes both kinds** — `mobile/MobileCapture.tsx` (D-125).
-  One free-text line through `parseCapture`, plus a **Task / Event** switch; the sentence
-  survives the switch and seeds the event's time. The Calendar's header ＋ is gone: two ＋s
-  forty pixels apart, each making a different *kind* of object, made you classify a thought
-  before typing it. The switch is not "where does this go" (a scheduled task IS a time
-  block, P1) — it is **who else needs to see it**, which is why only the Event branch has
-  guests, Meet and a calendar picker (`EventComposer`). **Never add a second ＋**, and never
+- **Capture is ONE door, on every shell, and it makes three kinds** —
+  `capture/CaptureDoor.tsx` (D-125, D-149), framed by the phone's Sheet (`MobileCapture`),
+  ⌘K (`capture/QuickAdd`) and the ⌥Space panel (`SpotlightWindow`). One free-text line
+  through `parseCapture`, plus a **Task · Event · Slot** switch (⌘1–3); the sentence survives
+  the switch and seeds each face's time. ↵ adds the face showing, and "added" is said only
+  after the write is queued. **⌘K is capture only** — no search, commands or chat in the
+  door (N-19). Slots map through `slotFromCapture` / `useSlotCapture`, beside the task pair.
+  The Calendar's header ＋ is gone: two ＋s forty pixels apart, each making a different
+  *kind* of object, made you classify a thought before typing it. The switch is not "where
+  does this go" (a scheduled task IS a time block, P1) — Event is **who else needs to see
+  it** (only it has guests, Meet and a calendar picker, `EventComposer`) and Slot is **time
+  that will hold several things**. **Never add a second ＋**, and never
   let a kind of object be creatable only through a form (P5).
 - **A record's lifecycle acts live in one vocabulary** — `src/lib/recordActions.ts`
   (Open · Ship/Reopen · Park/Resume · Delete). The desktop reaches it by right-click

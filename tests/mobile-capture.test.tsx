@@ -47,7 +47,7 @@ function mount(
       </TaskCaptureSinkContext.Provider>
     </QueryClientProvider>,
   );
-  const field = screen.getByLabelText("Capture a task or event") as HTMLInputElement;
+  const field = screen.getByLabelText("Capture a task, event or slot") as HTMLInputElement;
   const type = (s: string) => act(() => fireEvent.change(field, { target: { value: s } }));
   return { view, created, onClose, field, type };
 }

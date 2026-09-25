@@ -3577,3 +3577,26 @@ html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
 }
 .task-composer-field-box .task-composer-glyph { color: var(--accent); }
 .task-composer-field-box .task-composer-foot { padding-left: 0; }
+
+/* ── The capture door (⌘K · ⌥Space · the phone's ＋) ─────────────────────
+   One body in three frames (components/capture/CaptureDoor.tsx). The door
+   draws its own key hints, so the composer's are hidden inside it. On the
+   desktop panel the line is the hero: lead-size text, with the highlight
+   mirror matched exactly (they must share every metric or the marks drift). */
+.capture-door .task-composer-hints { display: none; }
+.capture-door-panel .task-composer-line { min-height: 2.75rem; }
+.capture-door-panel .task-composer-input,
+.capture-door-panel .task-composer-mirror {
+  font-size: var(--text-lead) !important;
+  line-height: 26px !important;
+}
+
+/* The ⌥Space window is ~680px wide, so the phone block's media query matches
+   inside it — but it only ever runs on a Mac, under a mouse. Give it the
+   desktop's density back: no 44px thumb floors on its chips and pills. */
+html.spotlight-window .tap,
+html.spotlight-window .tap-h {
+  min-height: 0;
+  min-width: 0;
+}
+html.spotlight-window .tap-bloom::before { content: none; }

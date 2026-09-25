@@ -1,19 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
-import { useLabels } from "../hooks/useCalendar";
-import { useVertical, VerticalProvider } from "../hooks/useVertical";
-import { useAgentContext, AgentProvider } from "../hooks/useAgentContext";
+import { VerticalProvider } from "../hooks/useVertical";
 import { ASSISTANT_NAME } from "../lib/assistant";
-import {
-  buildSearchHits,
-  SPOTLIGHT_NAVIGATE_EVENT,
-  type SpotlightNav,
-} from "../lib/spotlightNav";
-import { eventHitDateISO, type EventHit } from "../lib/eventSearch";
-import { NuvoSpotlightPanel, type Command, type Mode, type SearchHit } from "./NuvoSpotlight";
+import CaptureDoor, { type CaptureAdded } from "./capture/CaptureDoor";
 
 // Tauri-only wiring (NSPanel hide, window events) is skipped in the browser, so
 // the DEV `?spotlight` preview harness can render the panel against live data.
@@ -47,6 +37,9 @@ function useSpotlightChrome() {
   // still dismisses from the keyboard even when there's no session to capture into.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The capture door handles its own Escape (clear the line first, D-051)
+      // and marks it; only an unclaimed one dismisses from out here.
+      if (e.defaultPrevented) return;
       if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w")) {
         e.preventDefault();
         hidePanel();
@@ -67,11 +60,9 @@ export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loadin
 
   if (signedIn) {
     return (
-      <AgentProvider>
-        <VerticalProvider>
-          <SpotlightWindow />
-        </VerticalProvider>
-      </AgentProvider>
+      <VerticalProvider>
+        <SpotlightWindow />
+      </VerticalProvider>
     );
   }
 
@@ -104,13 +95,26 @@ export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loadin
 }
 
 /** The floating card the panel sits in — shared by the live panel and the
- *  signed-out card so both dismiss on backdrop click and wear the same glass. */
-function SpotlightFrame({ children, className = "max-w-xl" }: { children: ReactNode; className?: string }) {
+ *  signed-out card so both dismiss on backdrop click and wear the same glass.
+ *  The native window is fitted to the card (`fit_spotlight`): transparent
+ *  height beyond it would swallow clicks meant for the app underneath, and
+ *  height short of it clips the card. */
+function SpotlightFrame({ children }: { children: ReactNode }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card || !IS_TAURI) return;
+    const fit = () => void invoke("fit_spotlight", { height: Math.ceil(card.getBoundingClientRect().height) + 24 });
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(card);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div
       // h-screen + overflow-hidden, not min-h-screen: a card taller than the
       // window clips instead of spawning a stray document scrollbar while the
-      // native window catches up to the deck's height.
+      // native window catches up to the card's height.
       className="flex h-screen items-start justify-center overflow-hidden bg-transparent p-3"
       onMouseDown={(e) => {
         // Click the transparent backdrop (not the card) to dismiss.
@@ -118,7 +122,8 @@ function SpotlightFrame({ children, className = "max-w-xl" }: { children: ReactN
       }}
     >
       <div
-        className={`moment w-full overflow-hidden rounded-2xl border border-line/50 glass-card transition-[max-width] duration-200 [box-shadow:var(--shadow-lift)] ${className}`}
+        ref={cardRef}
+        className="moment w-full max-w-xl overflow-hidden rounded-2xl border border-line/50 glass-card [box-shadow:var(--shadow-lift)]"
       >
         {children}
       </div>
@@ -126,123 +131,74 @@ function SpotlightFrame({ children, className = "max-w-xl" }: { children: ReactN
   );
 }
 
+// How long the "added" beat holds before the panel goes: long enough to read
+// that it landed and where, short enough that the next ⌥Space isn't waiting.
+const ADDED_BEAT_MS = 900;
+
 // The standalone floating panel rendered in the dedicated "spotlight" Tauri
-// window — summoned by the global ⌥Space hotkey. Same NuvoSpotlightPanel the
-// in-app ⌘K uses, just hosted in a frameless, always-on-top window instead of
-// a Modal. Capture writes land in Supabase; the main window's realtime sub
-// picks them up — no cross-window plumbing needed.
+// window — summoned by the global ⌥Space hotkey. The same capture door as ⌘K
+// and the phone's ＋ (D-149). Writes land in the shared outbox and reach the
+// main window through Realtime — no cross-window plumbing.
 export default function SpotlightWindow() {
-  const { labels } = useLabels();
-  const { data: vertical } = useVertical();
-  const { agent, navFocus } = useAgentContext();
-
-  const contextLabel = useMemo(() => {
-    if (!navFocus) return undefined;
-    const { projectId, initiativeId, domainId } = navFocus;
-    if (projectId) return vertical.projects.find((p) => p.id === projectId)?.name;
-    if (initiativeId) return vertical.initiatives.find((i) => i.id === initiativeId)?.name;
-    if (domainId) return vertical.domains.find((d) => d.id === domainId)?.name;
-    return undefined;
-  }, [navFocus, vertical]);
-  // Bumped on every ⌥Space so the panel remounts fresh (capture mode, empty, focused).
+  // Bumped on every ⌥Space so the door remounts fresh (Task, empty, focused).
   const [showKey, setShowKey] = useState(0);
-  // Tracked so the floating card can widen for chat (a roomier modality).
-  const [mode, setMode] = useState<Mode>("capture");
-  // The result deck wants the same room as the in-app ⌘K. Grow once it appears and
-  // hold it for the rest of the summon (no jitter as you refine the query); each
-  // fresh ⌥Space starts narrow again (reset in the spotlight-show listener).
-  const [wide, setWide] = useState(false);
-  const onLayoutChange = useCallback((deck: boolean) => setWide((w) => w || deck), []);
+  // The farewell: what was added, held for a beat so the summon ends on a
+  // "got it" instead of vanishing mid-keystroke.
+  const [added, setAdded] = useState<CaptureAdded | null>(null);
+  const beat = useRef<number | null>(null);
 
-  // The native panel is a fixed-size window, so the deck can't just overflow the
-  // card — grow the *window* to fit it (and back to the lean capture size when a
-  // new summon starts narrow). No-op outside Tauri (the DEV preview harness).
-  useEffect(() => {
-    if (!IS_TAURI) return;
-    void getCurrentWebviewWindow().setSize(
-      wide ? new LogicalSize(960, 680) : new LogicalSize(680, 480),
-    );
-  }, [wide]);
-
-  // Dismissal is owned by SpotlightHost (which also holds it while signed out).
-  const hide = useCallback(hidePanel, []);
-
-  // Each summon → remount the panel fresh (empty capture field); React's mount
-  // effect focuses the input. Click-away dismiss is owned by the native NSPanel
-  // delegate (window_did_resign_key in lib.rs), not a JS blur listener — a
-  // panel's window delegate is replaced, so Tauri's "blur" event no longer fires.
+  // Each summon → remount the door fresh; its mount effect focuses the line.
+  // Click-away dismiss is owned by the native NSPanel delegate
+  // (window_did_resign_key in lib.rs), not a JS blur listener.
   //
   // Deliberately NO win.setFocus() here: Tauri's setFocus calls NSApp.activate,
   // which pulls all of Nuvo to the foreground and defeats the non-activating
-  // panel (the "⌥Space makes the whole app active" bug). The panel is already
-  // the key window from Rust's show_and_make_key(), so keystrokes land without it.
+  // panel. The panel is already the key window from Rust's show_and_make_key().
   useEffect(() => {
     if (!IS_TAURI) return;
     let unlistenShow: (() => void) | undefined;
-    const win = getCurrentWebviewWindow();
-    win.listen("spotlight-show", () => {
-      setShowKey((k) => k + 1);
-      setMode("capture"); // each summon starts in capture, narrow
-      setWide(false); // …and lean; the deck re-grows it only if you search
-      agent.clear(); // the overlay is ephemeral — fresh chat every summon
-    }).then((u) => (unlistenShow = u));
+    getCurrentWebviewWindow()
+      .listen("spotlight-show", () => {
+        // A summon during the last one's beat must not be hidden by its timer.
+        if (beat.current != null) window.clearTimeout(beat.current);
+        beat.current = null;
+        setAdded(null);
+        setShowKey((k) => k + 1);
+      })
+      .then((u) => (unlistenShow = u));
     return () => unlistenShow?.();
   }, []);
 
-  // Hand off to the main window — shared by "Open Nuvo" and pulling up a record.
-  // Routes through the Rust `surface_main` command (AppKit activate), NOT a JS
-  // show()/setFocus(): the panel is non-activating, so only a native activate
-  // pulls a background app to the foreground. It also dismisses the panel.
-  const focusMain = useCallback(() => {
-    if (IS_TAURI) void invoke("surface_main");
+  useEffect(() => () => {
+    if (beat.current != null) window.clearTimeout(beat.current);
   }, []);
 
-  const commands: Command[] = [
-    { id: "open-nuvo", title: `Open ${ASSISTANT_NAME}`, run: focusMain },
-  ];
-
-  // Quick pull-up: the same searchable vertical as the in-app ⌘K. Selecting a hit
-  // hands the (serializable) nav intent to the main window — which replays it on
-  // its live navigation — then brings it forward and dismisses the panel.
-  const searchHits = useMemo<SearchHit[]>(
-    () =>
-      buildSearchHits(vertical).map((h) => ({
-        ...h,
-        run: () => {
-          if (IS_TAURI) void emit(SPOTLIGHT_NAVIGATE_EVENT, h.nav satisfies SpotlightNav);
-          focusMain();
-          hide();
-        },
-      })),
-    [vertical, focusMain, hide],
-  );
-
-  // A calendar hit crosses the window boundary as the same serialized intent as
-  // every other kind — the main window replays it on its live nav.
-  const openEventHit = useCallback(
-    (hit: EventHit) => {
-      const nav: SpotlightNav = { kind: "event", eventId: hit.id, dateISO: eventHitDateISO(hit) };
-      if (IS_TAURI) void emit(SPOTLIGHT_NAVIGATE_EVENT, nav);
-      focusMain();
-      hide();
-    },
-    [focusMain, hide],
-  );
+  const onAdded = useCallback((a: CaptureAdded) => {
+    setAdded(a);
+    beat.current = window.setTimeout(() => {
+      beat.current = null;
+      hidePanel();
+    }, ADDED_BEAT_MS);
+  }, []);
 
   return (
-    <SpotlightFrame className={mode === "ask" ? "max-w-2xl" : wide ? "max-w-4xl" : "max-w-xl"}>
-      <NuvoSpotlightPanel
-        key={showKey}
-        labels={labels}
-        commands={commands}
-        searchHits={searchHits}
-        onEventHit={openEventHit}
-        agent={agent}
-        onClose={hide}
-        onModeChange={setMode}
-        onLayoutChange={onLayoutChange}
-        contextLabel={contextLabel}
-      />
+    <SpotlightFrame>
+      {added ? (
+        <div className="moment flex flex-col items-center gap-1 px-6 py-8 text-center" role="status">
+          <span className="text-lead leading-none text-accent" aria-hidden>
+            ✓
+          </span>
+          <h2 className="masthead text-lead text-ink">
+            {added.kind === "task" ? "Task" : added.kind === "event" ? "Event" : "Slot"} added
+          </h2>
+          {added.title && <p className="line-clamp-2 max-w-sm text-body text-ink/80">{added.title}</p>}
+          <p className="mono text-meta text-muted">{added.where}</p>
+        </div>
+      ) : (
+        <div className="px-4 pb-3 pt-4">
+          <CaptureDoor key={showKey} variant="panel" autoFocus onClose={hidePanel} onAdded={onAdded} />
+        </div>
+      )}
     </SpotlightFrame>
   );
 }
