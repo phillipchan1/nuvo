@@ -448,6 +448,12 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
             autoFocus={autoFocus}
             enterKeyHint={enterKeyHint}
             autoComplete="off"
+            // macOS/iOS inline predictions draw their grey guess as COMPOSITION
+            // text. While one is showing, every key reports isComposing (so the
+            // guard below swallowed Enter and Escape), and React re-setting the
+            // value under WebKit's marked text could wipe the line mid-sentence.
+            // Real IME input and dictation are unaffected by this attribute.
+            {...{ writingsuggestions: "false" }}
             spellCheck
             aria-label={ariaLabel ?? placeholder}
             aria-expanded={menu.open}

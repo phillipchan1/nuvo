@@ -91,6 +91,14 @@ describe("the capture door, by keyboard", () => {
     expect(added[0].where).toBe("Inbox");
   });
 
+  it("turns off inline predictions, which WebKit draws as composition text", () => {
+    // With macOS/iOS inline predictive text on, a showing prediction made every
+    // key report isComposing — Enter and Escape went dead in the ⌥Space panel,
+    // and the controlled value fighting WebKit's marked text wiped the line.
+    const { field } = mount();
+    expect(field.getAttribute("writingsuggestions")).toBe("false");
+  });
+
   it("does nothing on an empty line", async () => {
     const { key, tasks, added } = mount();
     await key("Enter");
