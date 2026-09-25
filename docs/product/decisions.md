@@ -2275,6 +2275,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-16** | A desktop **Agenda** (list) view on the Schedule | **Built, shipped, and removed within three days — 2026-08-14 to 2026-08-15.** It existed because the 2026-08-12 audit's rank 10 asked for it ("no agenda/list on desktop"), and that line was a *symmetry* observation, not a user need: the phone has a list because a 375px screen cannot draw a week grid, and the desktop, which can, gets nothing from a list it doesn't already get from Week. Phil used it and didn't want it. **This row exists so the same audit line doesn't rebuild it next quarter** — the audit's rank-10 row has been amended to say so too. Note carefully what this is NOT: the phone's `schedule` (List) lens predates all of this, is the phone's native idiom, and is untouched (D-044) | A *desktop* reason appears that Week genuinely can't serve — e.g. reading a range longer than a week in one scroll. Symmetry with the phone is not that reason, and "the audit says so" is not either |
 | **N-17** | A public **affiliate marketplace** / partner portal, commission payouts, or in-app referral leaderboard | Wrong identity (P9 — quiet steward, not optimizer theater) and wrong scale (a handful of operators who love Nuvo need a personal **code**, not PartnerStack). Commissions imply Stripe Connect / tax forms / a second program for content partners who aren't customers. D-113 is the yes to personal codes; this row is the no to the marketplace wearing the same coat | A real non-customer partner is driving paid signups — then a *separate* affiliate program (Rewardful or equivalent), never folded into Settings or gamified |
 | **N-18** | A **Download for Mac** CTA in the phone Settings | A DMG is not a phone act. Settings → About on the phone was offering a Mac installer because the About pane treated "not the Tauri Mac app" as "web", and the iOS PWA / TestFlight shell is web. The marketing site already is the download door (D-018, D-124). Same smell as D-123's upkeep-in-the-chrome: a desktop-rank act living on a phone surface because it was easy to put there | Someone on a phone is regularly the person who installs the Mac app for themselves — evidence, not a guess. Even then the door stays on nuvo.day, not in Settings |
+| **N-19** | **Search, commands or a chat inside the capture door** (⌘K / ⌥Space) | Every one of them cost the one job. Search moved Enter onto any record your words *resembled*, so "call mom" opened an old task called "call mom about…" instead of adding yours; a leading space flipped the line into a chat; the command list made the empty state a menu. The door now does one thing — Task · Event · Slot — and reports "added" only once the write is queued (D-149). Navigation keeps its own keys and the spine; Nuvo keeps ⌘J; the phone keeps its Search screen | Desktop search comes back as **its own** door with its own key — never by re-sharing the capture line. A single line cannot both *add what I typed* and *find what I typed* without guessing which one you meant |
 
 ---
 
@@ -5352,3 +5353,70 @@ decision, and adding a second signal colour would compete with it).
 *Status: standing. Checked in the running dev app on real data: Overdue 1, then On the clock 4,
 and those four match the day's calendar blocks. The No time yet group wasn't on screen because
 nothing that day was unplaced.*
+
+---
+
+**D-149 · 2026-09-25 · Capture is one door on every shell, and it makes three kinds: Task ·
+Event · Slot.**
+
+Origin ⓟ: *"completely redo our quick add — it's super buggy and unreliable. Searching might be
+removed just so that adding tasks, events, slots is super reliable. Should be themed."*
+
+What was actually wrong with ⌘K / ⌥Space, found by reading and driving it:
+
+- **Enter didn't always add.** The palette searched every record as you typed and put the
+  cursor on one whose title *started with* your words, so Enter opened that record instead of
+  adding yours (**D6** answered with a different object). ⌘↵ was the escape hatch nobody knew.
+- **A failed write vanished.** The add was fire-and-forget with `.catch(() => {})`, and the
+  panel closed 650ms later regardless.
+- **It closed twice.** That 650ms timer called `history.back()` even when Escape had already
+  closed it — the second back walked the app off whatever you were on.
+- **A space bar was a mode switch.** Space on an empty line flipped into the chat.
+- **The ⌥Space window never grew.** It called JS `setSize`, which its capability never
+  granted, so it stayed 480pt and anything taller was clipped.
+- **It greeted every account as "Phil."** A hardcoded name, in a multi-tenant app (**P16**).
+- **It only made tasks.** Events existed only on the phone's sheet and the grid's draw card;
+  slots only on the grid.
+- **"gym every monday" made one task called "gym every"** — the kernel's cadence parser
+  knew *every week* but not a day's name or *weekday*, on every surface and in the agent.
+
+→ **One body, three frames.** `components/capture/CaptureDoor` is the door: the one add box
+(`TaskComposer`, D-146), a **Task · Event · Slot** switch under it, and each face's *when*.
+The phone's sheet (`MobileCapture`), ⌘K (`QuickAdd`, in the responsive `Modal`) and ⌥Space
+(`SpotlightWindow`) are frames around it and nothing else — the same sentence means the same
+thing in all three, and none of them builds a write. ⌘K is **only** the door now (N-19).
+
+→ **Slot joins the switch** (D-125's Task / Event, extended). The switch still answers a
+question the words can't: Task = a to-do (timed or not — P1), Event = it must exist on your
+*external* calendar, **Slot = a block of time that will hold several things**. A slot always
+shows a clock; `@domain` / `@project` in the sentence is its affinity (typed > picked, the same
+precedence as `captureDraft`), and a cadence makes it a standing slot series. The mapping is
+`slotFromCapture` beside `draftFromCapture`; the write is `useSlotCapture` beside
+`useTaskCapture`.
+
+→ **The keyboard contract.** ↵ adds whichever face is showing; ⌘1 · 2 · 3 switch face without
+losing the sentence; Escape clears the line, then leaves (D-051 — the Modal learned
+`closeOnEscape={false}` so content can own it). "Added" is announced only after the write is
+queued (a toast in the app; a held beat in the ⌥Space panel, cancelled by the next summon);
+a failure stays in the door with your words.
+
+→ **The kernel reads cadences the way people say them** — *every monday*, *every mon & thu*,
+*every weekday* / *weekdays*, *every weekend*, *every other week / day / month / wednesday* —
+for the app and the agent at once (`parseRecurrencePhrase`).
+
+→ **The ⌥Space panel is fitted to its card** by a native command (`fit_spotlight`, top edge
+anchored, 18% down the screen), and inside that 680pt window the phone's 44px thumb floors
+are switched off — it only ever runs under a mouse.
+
+Ledger: **D6** — a thought typed at ⌘K lands as what you typed, every time; events and slots
+no longer need a second door. Strains **P5** a little: the Slot face shows a time form as well
+as the sentence (a slot without a clock isn't a slot) — the words still win over it. No new
+pool; **Slot** is an existing noun (glossary), not a new one. Doesn't need clean data; holds in
+a stranger's account (the name greeting is gone). **Cost:** the desktop has no search surface
+now — the phone keeps Search; a desktop one would be its own door (N-19).
+
+*Status: standing — driven in the dev app at desktop, at the ⌥Space window's 680px, in dark
+mode and the Terminal skin, and at 375px through the capture harness (writes intercepted);
+`tests/capture-door`, `capture-slot`, `mobile-capture`, `recurrence`. `fit_spotlight`
+cargo-checked on macOS; the native panel itself still wants a run in `tauri:dev`.*
+
