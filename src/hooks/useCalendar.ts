@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { formatAppError } from "../lib/appError";
@@ -22,7 +22,13 @@ import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useOnline } from "./useOnline";
-import { fetchScheduledTasksRange, scheduledTasksKey } from "./useTasks";
+import {
+  fetchPlannedAnytimeRange,
+  fetchScheduledTasksRange,
+  plannedAnytimeKey,
+  scheduledTasksKey,
+} from "./useTasks";
+import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSlots";
 
 /**
  * How long a fetched calendar window counts as fresh.
@@ -154,17 +160,7 @@ export function useCalendarRangePrefetch(ranges: { start: string; end: string }[
     const t = setTimeout(() => {
       if (cancelled) return;
       for (const r of ranges) {
-        if (!r.start || !r.end) continue;
-        void qc.prefetchQuery({
-          queryKey: externalEventsKey(r.start, r.end),
-          staleTime: CALENDAR_RANGE_STALE_MS,
-          queryFn: () => fetchExternalEventsRange(r.start, r.end),
-        });
-        void qc.prefetchQuery({
-          queryKey: scheduledTasksKey(r.start, r.end),
-          staleTime: CALENDAR_RANGE_STALE_MS,
-          queryFn: () => fetchScheduledTasksRange(r.start, r.end),
-        });
+        if (r.start && r.end) void prefetchCalendarRange(qc, r.start, r.end);
       }
     }, PREFETCH_IDLE_MS);
     return () => {
@@ -173,6 +169,45 @@ export function useCalendarRangePrefetch(ranges: { start: string; end: string }[
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, qc]);
+}
+
+/**
+ * Everything a calendar draws for one range — ALL of it, or the travel is only
+ * half instant. This warmed events and timed tasks and nothing else, so on a
+ * warm week the events landed at once and the slots, the anytime row and every
+ * slot's contents still waited a round trip (the children a second one, since
+ * their key is the slots' ids). A block popping in after its neighbours reads
+ * as lag just as surely as a blank grid.
+ */
+export async function prefetchCalendarRange(qc: QueryClient, start: string, end: string) {
+  const staleTime = CALENDAR_RANGE_STALE_MS;
+  void qc.prefetchQuery({
+    queryKey: externalEventsKey(start, end),
+    staleTime,
+    queryFn: () => fetchExternalEventsRange(start, end),
+  });
+  void qc.prefetchQuery({
+    queryKey: scheduledTasksKey(start, end),
+    staleTime,
+    queryFn: () => fetchScheduledTasksRange(start, end),
+  });
+  void qc.prefetchQuery({
+    queryKey: plannedAnytimeKey(start, end),
+    staleTime,
+    queryFn: () => fetchPlannedAnytimeRange(start, end),
+  });
+  await qc.prefetchQuery({
+    queryKey: slotsKey(start, end),
+    staleTime,
+    queryFn: () => fetchSlotsRange(start, end),
+  });
+  const ids = qc.getQueryData<{ id: string }[]>(slotsKey(start, end))?.map((s) => s.id) ?? [];
+  if (ids.length === 0) return;
+  await qc.prefetchQuery({
+    queryKey: slotTasksKey(ids),
+    staleTime,
+    queryFn: () => fetchSlotTasks(ids),
+  });
 }
 
 /** The event most callers can hide. A single occurrence carries an instance key;

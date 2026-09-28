@@ -121,27 +121,36 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
 /** Planned anytime tasks (do_date set, no start_time) within a date range.
  *  These appear as chips in the calendar's anytime row but are invisible to
  *  useScheduledTasks which requires start_time IS NOT NULL. */
+// do_date is a date column — the key and the query both take the date-only
+// part of the ISO range, so a warmed range and the live hook agree on it.
+export const plannedAnytimeKey = (rangeStartISO: string, rangeEndISO: string) =>
+  ["tasks", "anytime", rangeStartISO.substring(0, 10), rangeEndISO.substring(0, 10)] as const;
+
+/** Outside the hook so a range can be warmed before it is displayed — see
+ *  `useCalendarRangePrefetch`. */
+export async function fetchPlannedAnytimeRange(
+  rangeStartISO: string,
+  rangeEndISO: string,
+): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_COLS)
+    .is("start_time", null)
+    .is("parent_task_id", null)
+    .is("slot_id", null) // slot children ride their slot, not the anytime row
+    .not("do_date", "is", null)
+    .in("status", ["planned"])
+    .gte("do_date", rangeStartISO.substring(0, 10))
+    .lt("do_date", rangeEndISO.substring(0, 10));
+  if (error) throw error;
+  return data as Task[];
+}
+
 export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: string) {
-  // do_date is a date column — extract date-only strings from the ISO range.
-  const startDate = rangeStartISO.substring(0, 10);
-  const endDate = rangeEndISO.substring(0, 10);
   return useQuery({
-    queryKey: ["tasks", "anytime", startDate, endDate],
+    queryKey: plannedAnytimeKey(rangeStartISO, rangeEndISO),
     placeholderData: (prev) => prev,
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select(TASK_COLS)
-        .is("start_time", null)
-        .is("parent_task_id", null)
-        .is("slot_id", null) // slot children ride their slot, not the anytime row
-        .not("do_date", "is", null)
-        .in("status", ["planned"])
-        .gte("do_date", startDate)
-        .lt("do_date", endDate);
-      if (error) throw error;
-      return data as Task[];
-    },
+    queryFn: () => fetchPlannedAnytimeRange(rangeStartISO, rangeEndISO),
   });
 }
 

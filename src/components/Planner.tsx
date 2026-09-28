@@ -9,11 +9,11 @@ import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { isTypingIn } from "../lib/a11y";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
-import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
+import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
-import { useSettings } from "../hooks/useSettings";
+import { firstDayOfWeek, useSettings } from "../hooks/useSettings";
 import { useOnline } from "../hooks/useOnline";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -21,6 +21,7 @@ import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/v
 import { mergeTaskLists } from "../lib/taskMerge";
 import { isWritableCalendar } from "../lib/calendarWrite";
 import { deriveSlotTitle } from "../lib/slots";
+import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
 import type { FlowName } from "./Spine";
@@ -75,13 +76,16 @@ export default function Planner({
   const { tab, calView: view, overlay, overlayId, overlaySubId, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
 
-  const [range, setRangeLocal] = useState<{ start: string; end: string }>(() => {
-    const now = new Date();
-    return {
-      start: new Date(now.getTime() - 7 * 86400_000).toISOString(),
-      end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
-    };
-  });
+  const { settings, update: updateSettings } = useSettings();
+  const weekStartsOn = firstDayOfWeek(settings);
+
+  // Seeded with the span FullCalendar is about to report, not "now ± a week":
+  // that was millisecond-precise, so it was a key no cache could ever hold —
+  // every launch fetched it cold and threw it away a render later, when
+  // `datesSet` named the real (and usually already cached) span.
+  const [range, setRangeLocal] = useState<ScheduleRange>(() =>
+    scheduleRangeFor(view, new Date(), weekStartsOn),
+  );
   const { setRange: setAgentRange } = useAgentContext();
   const syncRange = useCallback(
     (start: string, end: string) => {
@@ -103,7 +107,6 @@ export default function Planner({
   }, []);
 
   const today = todayISO(now);
-  const { settings, update: updateSettings } = useSettings();
   const { data: vertical, commitTasksToSprint } = useVertical();
 
   // The current (lived) week — the toolbar's living emblem gauge. The week that
@@ -253,6 +256,22 @@ export default function Planner({
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const slotChildQ = useSlotTasks(slotIds);
   const slotChildTasks = slotChildQ.data ?? EMPTY_TASKS;
+
+  // Warm the spans ‹ › can reach, so travel is a cache read instead of a round
+  // trip — the phone has done this since D-123; the desktop never did, so every
+  // week you paged to sat blank until the network answered. Two steps each way,
+  // not one: the warm-up waits a beat after you land, so a quick double press
+  // would otherwise outrun it. One each way on the month: a month neighbour is
+  // a six-week grid, so two each way would hold half a year of events for a
+  // press that rarely comes twice. Only while the Schedule is on screen.
+  const neighbours = useMemo(
+    () =>
+      onSchedule
+        ? scheduleNeighbours(range, weekStartsOn, view === "dayGridMonth" ? [1, -1] : [1, -1, 2, -2])
+        : [],
+    [onSchedule, range, weekStartsOn, view],
+  );
+  useCalendarRangePrefetch(neighbours);
   const { data: accounts = [] } = useCalendarAccounts();
   const { refresh: refreshCalendars, fullRefresh: fullRefreshCalendars, refreshing: refreshingCalendars } = useCalendarRefresh();
   const { data: recurrences = [] } = useRecurrences();

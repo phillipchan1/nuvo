@@ -14,49 +14,61 @@ const SLOT_COLS =
   "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden";
 
 /** Slots intersecting a calendar range (keyed on start, like scheduled tasks). */
+export const slotsKey = (rangeStartISO: string, rangeEndISO: string) =>
+  ["slots", rangeStartISO, rangeEndISO] as const;
+
+/** Outside the hook so a range can be warmed before it is displayed — see
+ *  `useCalendarRangePrefetch`. */
+export async function fetchSlotsRange(rangeStartISO: string, rangeEndISO: string): Promise<Slot[]> {
+  const { data, error } = await supabase
+    .from("slots")
+    .select(SLOT_COLS)
+    .gte("start_time", rangeStartISO)
+    .lt("start_time", rangeEndISO);
+  if (error) throw error;
+  return data as Slot[];
+}
+
 export function useSlots(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
-    queryKey: ["slots", rangeStartISO, rangeEndISO],
+    queryKey: slotsKey(rangeStartISO, rangeEndISO),
     // An empty bound is a caller saying "not yet" (a range that depends on
     // something still loading, or a feature that is switched off). Without this
     // it still went to the network as `start_time=gte.` — no value after the
     // dot — which PostgREST rejects with a 400 rather than an empty result.
     enabled: Boolean(rangeStartISO && rangeEndISO),
-    queryFn: async (): Promise<Slot[]> => {
-      const { data, error } = await supabase
-        .from("slots")
-        .select(SLOT_COLS)
-        .gte("start_time", rangeStartISO)
-        .lt("start_time", rangeEndISO);
-      if (error) throw error;
-      return data as Slot[];
-    },
+    queryFn: () => fetchSlotsRange(rangeStartISO, rangeEndISO),
     // Keep the previous range's slots on screen while a new range fetches —
     // without this the calendar goes empty for the whole round-trip.
     placeholderData: (prev) => prev,
   });
 }
 
-/** The tasks living inside a set of slots, ordered for in-slot display.
- *  Keyed under ["tasks", …] so the realtime `tasks` invalidation refreshes it. */
+/** Keyed on the SORTED ids, so the same slots in a different order are one
+ *  query — and so a warmed range lands on exactly the key the view asks for.
+ *  Under ["tasks", …] so the realtime `tasks` invalidation refreshes it. */
+export const slotTasksKey = (slotIds: string[]) => ["tasks", "slot", [...slotIds].sort()] as const;
+
+export async function fetchSlotTasks(slotIds: string[]): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*, task_labels(label_id)")
+    .in("slot_id", slotIds)
+    .neq("status", "trashed")
+    // Steps are not tasks — see NOT_A_STEP in useTasks.ts.
+    .is("parent_task_id", null)
+    .order("sort_order")
+    .order("created_at");
+  if (error) throw error;
+  return data as Task[];
+}
+
+/** The tasks living inside a set of slots, ordered for in-slot display. */
 export function useSlotTasks(slotIds: string[]) {
-  const ids = [...slotIds].sort();
   return useQuery({
-    queryKey: ["tasks", "slot", ids],
-    enabled: ids.length > 0,
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*, task_labels(label_id)")
-        .in("slot_id", ids)
-        .neq("status", "trashed")
-        // Steps are not tasks — see NOT_A_STEP in useTasks.ts.
-        .is("parent_task_id", null)
-        .order("sort_order")
-        .order("created_at");
-      if (error) throw error;
-      return data as Task[];
-    },
+    queryKey: slotTasksKey(slotIds),
+    enabled: slotIds.length > 0,
+    queryFn: () => fetchSlotTasks(slotIds),
     // A newly created slot changes `ids` (a new key). Keep the previous
     // children painted while the seeded list / fetch takes over — without
     // this the block reads "empty" for the whole round-trip.
