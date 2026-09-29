@@ -222,7 +222,7 @@ describe("tool schemas", () => {
 
   it("never lets a write be declared argument-free", () => {
     const writeish = [...ARGUMENTLESS_BY_DESIGN].filter((n) =>
-      /^(create|update|delete|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule|propose)_/.test(n),
+      /^(create|update|delete|end|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule|propose)_/.test(n),
     );
     expect(writeish, "a tool that writes must name what it acts on").toEqual([]);
   });

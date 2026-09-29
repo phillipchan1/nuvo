@@ -305,6 +305,9 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Removing a checklist line, never a task | `remove_step` | ◐ handler tested, no scenario |
 | A question about the LIST is a filtered read, not the snapshot | `list_tasks` | ✅ `filter-asks-the-list-not-the-snapshot` |
 | Acting on several tasks as ONE act | `bulk_update_tasks` | ✅ `bulk-moves-the-set-in-one-act` |
+| A cadence on your own work creates a series | `create_recurring_task` | ✅ `upkeep-creates-a-series` |
+| Changing a series edits the series, not one occurrence | `update_recurring_task` | ✅ `upkeep-edit-is-the-series` |
+| Ending, pausing, or skipping a series | `end_recurring_task` | ✅ `upkeep-end-is-the-series` |
 
 ### B · Slots — one block of time that holds several tasks — `slots`
 

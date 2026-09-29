@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   cadenceGroupKey,
   describeRule,
   expandRule,
   fromGoogleRRULE,
   groupSeriesByCadence,
+  mergeRecurrenceRule,
   nextOccurrenceDate,
   parseRecurrencePhrase,
   setposOf,
+  shouldClearOccurrence,
   toGoogleRRULE,
   type RecurrenceRule,
 } from "../supabase/functions/_shared/recurrence.ts";
@@ -231,6 +234,63 @@ describe("describing the new shapes in words", () => {
 
   it("names the month for a yearly rule", () => {
     expect(describeRule({ freq: "yearly", interval: 1 }, "2026-03-14")).toBe("Every year on March 14");
+  });
+});
+
+describe("series edits clear the same occurrences the panel does", () => {
+  const row = {
+    recurrence_id: "s1",
+    recurrence_overridden: false,
+    status: "planned",
+    do_date: "2026-08-01",
+  };
+
+  it("leaves done occurrences and per-occurrence edits", () => {
+    expect(shouldClearOccurrence(row, "s1", "2026-08-01")).toBe(true);
+    expect(shouldClearOccurrence({ ...row, status: "done" }, "s1", "2026-08-01")).toBe(false);
+    expect(shouldClearOccurrence({ ...row, recurrence_overridden: true }, "s1", "2026-08-01")).toBe(false);
+    expect(shouldClearOccurrence({ ...row, do_date: "2026-07-01" }, "s1", "2026-08-01")).toBe(false);
+  });
+
+  it("this-and-following also takes a pinned occurrence", () => {
+    expect(
+      shouldClearOccurrence({ ...row, recurrence_overridden: true }, "s1", "2026-08-01", { includeOverridden: true }),
+    ).toBe(true);
+  });
+
+  it("a slot has no done state", () => {
+    expect(
+      shouldClearOccurrence({ ...row, status: "done" }, "s1", "2026-08-01", { kind: "slot" }),
+    ).toBe(true);
+  });
+
+  it("changing the interval of a last-Friday series keeps the Friday", () => {
+    const next = mergeRecurrenceRule(
+      { freq: "monthly", interval: 1, bysetpos: -1, byweekday: [5], bymonthday: null },
+      { interval: 3 },
+      "2026-07-31",
+    );
+    expect(next.bysetpos).toBe(-1);
+    expect(next.byweekday).toEqual([5]);
+    expect(next.bymonthday).toBeNull();
+    expect(next.interval).toBe(3);
+  });
+
+  it("a weekly edit drops a positional rule, so the row stays valid", () => {
+    const next = mergeRecurrenceRule(
+      { freq: "monthly", interval: 1, bysetpos: -1, byweekday: [5], bymonthday: null },
+      { freq: "weekly" },
+      "2026-07-31",
+    );
+    expect(next.freq).toBe("weekly");
+    expect(next.bysetpos).toBeNull();
+    expect(next.bymonthday).toBeNull();
+    expect(next.byweekday).toEqual([5]);
+  });
+
+  it("the panel and the chat both call the shared predicate", () => {
+    expect(readFileSync("src/hooks/useRecurrence.ts", "utf8")).toContain("shouldClearOccurrence");
+    expect(readFileSync("supabase/functions/agent/tools.ts", "utf8")).toContain("shouldClearOccurrence");
   });
 });
 

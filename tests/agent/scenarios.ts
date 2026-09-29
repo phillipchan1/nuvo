@@ -342,6 +342,56 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
+  pin({
+    id: "upkeep-creates-a-series",
+    group: "capture",
+    it: "a cadence on the user's own work creates a series, not a one-off task",
+    because: "\"every 6 months\" used to fall through to create_task, which is one occurrence and then nothing",
+    world: "cold",
+    turns: ["change the HVAC filter every 6 months"],
+    expect: [
+      called("create_recurring_task", {
+        describe: "monthly, every 6",
+        ok: (a) =>
+          (a.freq === "monthly" && a.interval === 6) ||
+          (typeof a.capture === "string" && /6 months/i.test(a.capture)),
+      }),
+      notCalled("create_task", "update_task"),
+    ],
+  }),
+
+  pin({
+    id: "upkeep-edit-is-the-series",
+    group: "capture",
+    it: "changing a series that already exists edits the series, not a new one",
+    because: "the HVAC filter is already every 6 months; \"make it every 3\" must not create a second series or edit one occurrence",
+    world: "loaded",
+    turns: ["make the HVAC filter every 3 months instead"],
+    expect: [
+      called("update_recurring_task", {
+        describe: "interval 3 on the existing series",
+        ok: (a) => a.interval === 3 && (a.series_id === ID.seriesHvac || /hvac/i.test(String(a.series_title ?? a.task_title ?? ""))),
+      }),
+      notCalled("create_recurring_task", "create_task", "update_task", "trash_task"),
+    ],
+  }),
+
+  pin({
+    id: "upkeep-end-is-the-series",
+    group: "capture",
+    it: "deleting a series ends the series, rather than trashing one occurrence",
+    because: "trash_task on one occurrence leaves the rule, and the next one comes back",
+    world: "loaded",
+    turns: ["delete the HVAC filter series"],
+    expect: [
+      called("end_recurring_task", {
+        describe: "action delete",
+        ok: (a) => a.action === "delete",
+      }),
+      notCalled("trash_task", "create_task", "update_task"),
+    ],
+  }),
+
   // ── B · Slots: one block of time that holds several tasks ──────────────────
 
   pin({

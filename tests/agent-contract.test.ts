@@ -63,7 +63,7 @@ describe("tool vocabulary", () => {
   it("every tool the prompt names by hand still exists", () => {
     // Only verb-shaped identifiers — the prompt is full of field names
     // (project_id, do_date, roll_count) that are not tools.
-    const VERBS = /\b((?:create|update|delete|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule|list|point)_[a-z_]+)\b/g;
+    const VERBS = /\b((?:create|update|delete|end|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule|list|point)_[a-z_]+)\b/g;
     const claimed = new Set([...STATIC_SYSTEM_PROMPT.matchAll(VERBS)].map((m) => m[1]));
     // Some verb-shaped names are arguments, not tools (delete_all_matching).
     const paramNames = new Set(
@@ -95,7 +95,7 @@ describe("tool vocabulary", () => {
   it("keeps the write list honest — every mutating tool is one the battery knows is a write", () => {
     // A new write tool that isn't listed would silently pass every "propose,
     // don't act" scenario in the battery.
-    const writeish = toolNames.filter((n) => /^(create|update|delete|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule)_/.test(n));
+    const writeish = toolNames.filter((n) => /^(create|update|delete|end|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule)_/.test(n));
     const missing = writeish.filter((n) => !WRITE_TOOLS.includes(n));
     expect(missing, "add these to WRITE_TOOLS in tests/agent/expect.ts").toEqual([]);
   });
@@ -121,7 +121,7 @@ describe("the snapshot the model reads", () => {
     // The rename that motivated this: the prompt said todayFreeSlots long after
     // the context had stopped emitting it, and nothing failed.
     for (const field of [
-      "todaySchedule", "todayOpenWindows", "todaySlots", "weekSlate",
+      "todaySchedule", "todayOpenWindows", "todaySlots", "recurringUpkeep", "weekSlate",
       "needsASprint", "nextWeekSlate", "unattachedPriorities", "weekPool",
       "writableCalendars", "vertical", "inbox",
     ]) {

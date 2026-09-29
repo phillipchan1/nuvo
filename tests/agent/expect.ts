@@ -17,7 +17,7 @@ const list = (o: RunOutcome) =>
  *  none of these — the list is here rather than inline so adding a write tool
  *  can't quietly widen what a read-only scenario tolerates. */
 export const WRITE_TOOLS = [
-  "create_task", "create_recurring_task", "plan_task", "schedule_task", "unschedule_task", "reschedule_task",
+  "create_task", "create_recurring_task", "update_recurring_task", "end_recurring_task", "plan_task", "schedule_task", "unschedule_task", "reschedule_task",
   "complete_task", "trash_task", "move_to_inbox", "update_task",
   "create_slot", "add_to_slot", "reschedule_slot", "delete_slot",
   "create_calendar_event", "move_event", "reschedule_event", "cancel_event", "decline_event",

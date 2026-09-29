@@ -65,6 +65,22 @@ export interface AgentContext {
   inbox: unknown[];
   /** Tasks with do_date=today but no start_time — not on the calendar. */
   todayTasks: unknown[];
+  /** Active recurring upkeep series — the Schedule → Recurring upkeep catalog.
+   *  Edit one with update_recurring_task; pause, stop, skip, or delete it with
+   *  end_recurring_task. A series that isn't here doesn't exist yet. */
+  recurringUpkeep: {
+    id: string;
+    title: string;
+    cadence: string;
+    freq: string;
+    interval: number;
+    nextDue: string | null;
+    until: string | null;
+    durationMinutes: number;
+    priority: string;
+    projectId: string | null;
+    domainId: string | null;
+  }[];
   scheduled: unknown[];
   /** Monday of the planning week (Sundays plan the week ahead). */
   weekStart: string;

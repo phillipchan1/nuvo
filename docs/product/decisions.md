@@ -1900,7 +1900,10 @@ Upkeep chores (key rotation, HVAC filter) need a place between due dates and a p
 Nuvo chat. A fifth Tasks tab would violate P10; Settings buries something operational.
 → **Schedule ⋯ → Recurring upkeep**: series grouped by cadence (Weekly · Every N months · …),
 next-due read computed beyond `HORIZON_DAYS`. Agent + capture use `create_recurring_task` /
-`parseRecurrencePhrase`; engine lives in `_shared/recurrence.ts`. *Status: standing.*
+`parseRecurrencePhrase` to create one, and `update_recurring_task` / `end_recurring_task`
+to change, pause, stop, skip, or delete it — the same acts as the panel and the task
+menu, clearing occurrences through `shouldClearOccurrence`. Engine lives in
+`_shared/recurrence.ts`. *Status: standing.*
 
 ---
 

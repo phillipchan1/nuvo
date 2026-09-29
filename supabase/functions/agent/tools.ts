@@ -39,7 +39,9 @@ import {
   describeRule,
   expandRule,
   HORIZON_DAYS,
+  mergeRecurrenceRule,
   nextOccurrenceDate,
+  shouldClearOccurrence,
   toGoogleRRULE,
   type RecurrenceFreq,
   type RecurrenceRule,
@@ -70,6 +72,103 @@ function addDaysISO(iso: string, days: number): string {
   return isoOf(dayMs(iso) + days * DAY_MS);
 }
 
+const SERIES_COLS =
+  "id, kind, freq, interval, byweekday, bymonthday, bysetpos, bymonth, anchor_date, until_date, max_count, exdates, title, duration_minutes, time_of_day_minutes, project_id, domain_id, priority, active";
+
+interface SeriesRow {
+  id: string;
+  kind: string;
+  freq: RecurrenceFreq;
+  interval: number;
+  byweekday: number[] | null;
+  bymonthday: number | null;
+  bysetpos: number | null;
+  bymonth: number | null;
+  anchor_date: string;
+  until_date: string | null;
+  max_count: number | null;
+  exdates: string[] | null;
+  title: string;
+  duration_minutes: number;
+  time_of_day_minutes: number | null;
+  project_id: string | null;
+  domain_id: string | null;
+  priority: string;
+  active: boolean;
+}
+
+function ruleOfSeries(row: SeriesRow): RecurrenceRule {
+  return {
+    freq: row.freq,
+    interval: row.interval,
+    byweekday: row.byweekday ?? [],
+    bymonthday: row.bymonthday,
+    bysetpos: row.bysetpos,
+    bymonth: row.bymonth,
+    until: row.until_date,
+    count: row.max_count,
+  };
+}
+
+function occurrenceStart(dateISO: string, minutes: number | null, tz: string): string | null {
+  if (minutes == null) return null;
+  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+  const mm = String(minutes % 60).padStart(2, "0");
+  return localToUtc(`${dateISO}T${hh}:${mm}`, tz);
+}
+
+/** Lay down the occurrences a series is missing between `fromISO` and the horizon. */
+async function materializeTaskOccurrences(
+  userId: string,
+  recId: string,
+  opts: {
+    title: string;
+    rule: RecurrenceRule;
+    anchorISO: string;
+    fromISO: string;
+    exdates: string[];
+    projectId: string | null;
+    initiativeId: string | null;
+    domainId: string | null;
+    duration: number;
+    priority: string;
+    timeOfDayMinutes: number | null;
+    tz: string;
+  },
+): Promise<{ firstDue: string | null }> {
+  const toISO = addDaysISO(opts.fromISO, HORIZON_DAYS);
+  const dates = expandRule(opts.rule, opts.anchorISO, opts.fromISO, toISO, opts.exdates);
+  const { data: existing, error: existErr } = await admin
+    .from("tasks")
+    .select("recurrence_date")
+    .eq("user_id", userId)
+    .eq("recurrence_id", recId)
+    .neq("status", "trashed");
+  if (existErr) throw new Error(existErr.message);
+  const have = new Set((existing ?? []).map((r) => r.recurrence_date as string));
+  const missing = dates.filter((d) => !have.has(d));
+  if (missing.length) {
+    const rows = missing.map((d) => ({
+      user_id: userId,
+      title: opts.title.trim(),
+      status: "planned" as const,
+      do_date: d,
+      start_time: occurrenceStart(d, opts.timeOfDayMinutes, opts.tz),
+      duration_minutes: opts.duration,
+      priority: opts.priority,
+      project_id: opts.projectId,
+      initiative_id: opts.initiativeId,
+      domain_id: opts.domainId,
+      recurrence_id: recId,
+      recurrence_date: d,
+    }));
+    const { error: taskErr } = await admin.from("tasks").insert(rows);
+    if (taskErr && taskErr.code !== "23505") throw new Error(taskErr.message);
+  }
+  await admin.from("recurrences").update({ last_materialized: toISO }).eq("id", recId).eq("user_id", userId);
+  return { firstDue: dates[0] ?? null };
+}
+
 async function createRecurringTaskSeries(
   userId: string,
   opts: {
@@ -81,6 +180,12 @@ async function createRecurringTaskSeries(
     domainId?: string | null;
     duration?: number;
     priority?: string;
+    /** Adopt this task as occurrence #1 instead of inserting a second copy. */
+    adoptTaskId?: string | null;
+    /** The adopted task already has a date — don't move it. */
+    adoptHasDate?: boolean;
+    timeOfDayMinutes?: number | null;
+    tz: string;
   },
 ) {
   const {
@@ -92,6 +197,10 @@ async function createRecurringTaskSeries(
     domainId,
     duration = DEFAULT_DURATION,
     priority = "none",
+    adoptTaskId,
+    adoptHasDate,
+    timeOfDayMinutes = null,
+    tz,
   } = opts;
 
   const { data: rec, error: recErr } = await admin
@@ -110,7 +219,7 @@ async function createRecurringTaskSeries(
       max_count: rule.count ?? null,
       title: title.trim(),
       duration_minutes: duration,
-      time_of_day_minutes: null,
+      time_of_day_minutes: timeOfDayMinutes,
       project_id: projectId ?? null,
       domain_id: domainId ?? null,
       priority,
@@ -119,31 +228,197 @@ async function createRecurringTaskSeries(
     .single();
   if (recErr) throw new Error(recErr.message);
 
-  const toISO = addDaysISO(anchorISO, HORIZON_DAYS);
-  const dates = expandRule(rule, anchorISO, anchorISO, toISO, []);
-  if (dates.length) {
-    const rows = dates.map((d) => ({
-      user_id: userId,
-      title: title.trim(),
-      status: "planned" as const,
-      do_date: d,
-      start_time: null,
-      duration_minutes: duration,
-      priority,
-      project_id: projectId ?? null,
-      initiative_id: initiativeId ?? null,
-      domain_id: domainId ?? null,
+  // Link before materialising. Otherwise the anchor date looks missing and a
+  // second task lands beside the one the user already had.
+  if (adoptTaskId) {
+    const link: Record<string, unknown> = {
       recurrence_id: rec.id,
-      recurrence_date: d,
-    }));
-    const { error: taskErr } = await admin.from("tasks").insert(rows);
-    if (taskErr && taskErr.code !== "23505") throw new Error(taskErr.message);
-    await admin.from("recurrences").update({ last_materialized: toISO }).eq("id", rec.id);
+      recurrence_date: anchorISO,
+    };
+    if (!adoptHasDate) {
+      link.do_date = anchorISO;
+      link.status = "planned";
+    }
+    const { error: linkErr } = await admin
+      .from("tasks")
+      .update(link)
+      .eq("id", adoptTaskId)
+      .eq("user_id", userId);
+    if (linkErr) throw new Error(linkErr.message);
   }
+
+  const { firstDue } = await materializeTaskOccurrences(userId, rec.id, {
+    title,
+    rule,
+    anchorISO,
+    fromISO: anchorISO,
+    exdates: [],
+    projectId: projectId ?? null,
+    initiativeId: initiativeId ?? null,
+    domainId: domainId ?? null,
+    duration,
+    priority,
+    timeOfDayMinutes,
+    tz,
+  });
 
   const cadence = describeRule(rule, anchorISO);
   const nextDue = nextOccurrenceDate(rule, anchorISO, addDaysISO(anchorISO, 1), []);
-  return { id: rec.id, cadence, nextDue, firstDue: dates[0] ?? anchorISO };
+  return { id: rec.id, cadence, nextDue, firstDue: firstDue ?? anchorISO };
+}
+
+async function loadSeries(userId: string, id: string): Promise<SeriesRow> {
+  const { data, error } = await admin
+    .from("recurrences")
+    .select(SERIES_COLS)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`No recurring series with that id.`);
+  return data as SeriesRow;
+}
+
+/**
+ * The series the user named. An occurrence's id resolves to its series — "the
+ * HVAC one on Thursday" is the series, not that Thursday. Several matches is
+ * an error the model can turn into a question, never a guess.
+ */
+async function resolveSeries(
+  userId: string,
+  args: { series_id?: string; series_title?: string; task_id?: string; task_title?: string },
+): Promise<SeriesRow> {
+  if (args.series_id) return loadSeries(userId, args.series_id);
+  if (args.task_id) {
+    const task = await getTask(userId, args.task_id);
+    const recId = task.recurrence_id as string | null;
+    if (!recId) {
+      throw new Error(
+        `"${task.title}" isn't part of a series. Use create_recurring_task with its task_id to make it repeat.`,
+      );
+    }
+    return loadSeries(userId, recId);
+  }
+
+  const title = (args.series_title || args.task_title || "").trim();
+  if (!title) throw new Error("Name the series — series_id, or its title from recurringUpkeep.");
+
+  const { data, error } = await admin
+    .from("recurrences")
+    .select(SERIES_COLS)
+    .eq("user_id", userId)
+    .eq("kind", "task")
+    .ilike("title", `%${title}%`);
+  if (error) throw new Error(error.message);
+  let rows = (data ?? []) as SeriesRow[];
+
+  if (rows.length === 0 && args.task_title) {
+    const { data: tasks, error: taskErr } = await admin
+      .from("tasks")
+      .select("recurrence_id")
+      .eq("user_id", userId)
+      .neq("status", "trashed")
+      .not("recurrence_id", "is", null)
+      .ilike("title", `%${title}%`)
+      .limit(20);
+    if (taskErr) throw new Error(taskErr.message);
+    const ids = [...new Set((tasks ?? []).map((t) => t.recurrence_id as string).filter(Boolean))];
+    if (ids.length === 1) return loadSeries(userId, ids[0]);
+    if (ids.length > 1) {
+      throw new Error(
+        `Several series match "${title}". Look them up in recurringUpkeep and pass series_id.`,
+      );
+    }
+  }
+
+  const active = rows.filter((r) => r.active);
+  if (active.length === 1) rows = active;
+  if (rows.length === 0) throw new Error(`No recurring series matching "${title}".`);
+  if (rows.length > 1) {
+    throw new Error(
+      `Several series match "${title}": ${rows.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Use series_id.`,
+    );
+  }
+  return rows[0];
+}
+
+function assertTaskSeries(row: SeriesRow): void {
+  if (row.kind !== "task") {
+    throw new Error(`"${row.title}" is a repeating block of time, not an upkeep task. Edit it on the calendar.`);
+  }
+}
+
+/** Trash the occurrences a series edit gives up, and drop their calendar mirrors. */
+async function clearSeriesOccurrences(
+  userId: string,
+  recurrenceId: string,
+  fromISO: string,
+  tz: string,
+  opts?: { includeOverridden?: boolean },
+): Promise<number> {
+  const { data, error } = await admin
+    .from("tasks")
+    .select("id, recurrence_id, recurrence_overridden, status, do_date")
+    .eq("user_id", userId)
+    .eq("recurrence_id", recurrenceId);
+  if (error) throw new Error(error.message);
+  const doomed = (data ?? []).filter((t) =>
+    shouldClearOccurrence(t, recurrenceId, fromISO, {
+      includeOverridden: opts?.includeOverridden,
+      kind: "task",
+    }),
+  );
+  if (!doomed.length) return 0;
+  const ids = doomed.map((t) => t.id as string);
+  const { error: upErr } = await admin
+    .from("tasks")
+    .update({ status: "trashed", recurrence_id: null, recurrence_date: null })
+    .in("id", ids)
+    .eq("user_id", userId);
+  if (upErr) throw new Error(upErr.message);
+  await Promise.all(ids.map((id) => mirrorTask(id, tz)));
+  return ids.length;
+}
+
+async function detachSeriesTasks(userId: string, recurrenceId: string): Promise<void> {
+  const { error } = await admin
+    .from("tasks")
+    .update({ recurrence_id: null, recurrence_date: null })
+    .eq("user_id", userId)
+    .eq("recurrence_id", recurrenceId);
+  if (error) throw new Error(error.message);
+}
+
+const SETPOS_OK = new Set([1, 2, 3, 4, -1]);
+
+function editedRule(row: SeriesRow, args: Record<string, unknown>): RecurrenceRule {
+  const byweekday = Array.isArray(args.byweekday)
+    ? (args.byweekday as number[])
+    : typeof args.byweekday === "number"
+      ? [args.byweekday]
+      : undefined;
+  const setpos = args.bysetpos === undefined ? undefined : (args.bysetpos as number | null);
+  if (setpos != null && !SETPOS_OK.has(setpos)) {
+    throw new Error("bysetpos must be 1, 2, 3, 4, or -1 for last.");
+  }
+  const until = args.until === undefined ? undefined : (String(args.until) || null);
+  const count = args.count === undefined
+    ? undefined
+    : args.count === 0 || args.count === "" || args.count == null
+      ? null
+      : Number(args.count);
+  return mergeRecurrenceRule(
+    ruleOfSeries(row),
+    {
+      freq: args.freq as RecurrenceFreq | undefined,
+      interval: typeof args.interval === "number" ? args.interval : undefined,
+      byweekday,
+      bysetpos: setpos,
+      until,
+      count,
+    },
+    row.anchor_date,
+  );
 }
 
 /** The zone to fall back on when the client didn't say where it is. The app's
@@ -303,6 +578,7 @@ export type AgentVerb =
   | "updated"
   | "done"
   | "trashed"
+  | "deleted"
   | "unslotted";
 
 /** A pointer to the row an action touched. The edge never serializes the record
@@ -1486,6 +1762,21 @@ export async function executeTool(
         if (parsed.priority !== "none") priority = parsed.priority;
       }
 
+      // "Make this task recurring" adopts the row the user already has. Creating
+      // a fresh series beside it would leave two copies of the same chore.
+      let adopt: TaskRow | null = null;
+      if (args.task_id || args.task_title) {
+        adopt = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+        if (adopt.recurrence_id) {
+          throw new Error(
+            `"${adopt.title}" already repeats. Use update_recurring_task to change the series.`,
+          );
+        }
+        title = title?.trim() ? title : adopt.title;
+        anchorISO = anchorISO ?? (adopt.do_date as string | null) ?? undefined;
+        duration = duration ?? (adopt.duration_minutes as number | null);
+      }
+
       if (!title?.trim()) throw new Error("Task title is required");
       if (!freq) throw new Error("Recurrence freq is required (daily, weekly, monthly or yearly)");
 
@@ -1518,9 +1809,9 @@ export async function executeTool(
       }
       if (freq === "yearly") rule.bymonth = new Date(dayMs(anchorISO)).getUTCMonth() + 1;
 
-      let projectId = args.project_id as string | undefined;
+      let projectId = (args.project_id as string | undefined) ?? (adopt?.project_id as string | undefined);
       let initiativeId: string | undefined;
-      let domainId = args.domain_id as string | undefined;
+      let domainId = (args.domain_id as string | undefined) ?? (adopt?.domain_id as string | undefined);
 
       if (projectId) {
         const { data: proj } = await admin
@@ -1534,6 +1825,20 @@ export async function executeTool(
         domainId = domainId ?? proj.domain_id ?? undefined;
       }
 
+      let timeOfDayMinutes: number | null = null;
+      const adoptStart = adopt?.start_time as string | null | undefined;
+      if (adoptStart) {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        }).formatToParts(new Date(adoptStart));
+        const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+        const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+        timeOfDayMinutes = hour * 60 + minute;
+      }
+
       const created = await createRecurringTaskSeries(userId, {
         title,
         rule,
@@ -1543,6 +1848,10 @@ export async function executeTool(
         domainId: domainId ?? null,
         duration: duration ?? DEFAULT_DURATION,
         priority,
+        adoptTaskId: adopt?.id ?? null,
+        adoptHasDate: Boolean(adopt?.do_date),
+        timeOfDayMinutes,
+        tz,
       });
 
       const when = created.firstDue === today ? "today" : created.firstDue;
@@ -1556,6 +1865,246 @@ export async function executeTool(
           ref: { kind: "task", id: created.id },
         },
       };
+    }
+
+    case "update_recurring_task": {
+      const row = await resolveSeries(userId, args as { series_id?: string; series_title?: string; task_id?: string; task_title?: string });
+      assertTaskSeries(row);
+      const editKeys = ["title", "freq", "interval", "byweekday", "bysetpos", "until", "count", "duration_minutes", "priority", "project_id", "domain_id"];
+      if (!editKeys.some((k) => args[k] !== undefined)) {
+        throw new Error("Nothing to change — pass the new cadence, title, duration, or where it lives.");
+      }
+
+      const rule = editedRule(row, args);
+      let title = typeof args.title === "string" && args.title.trim() ? args.title.trim() : row.title;
+      let duration = row.duration_minutes;
+      if (args.duration_minutes !== undefined) {
+        const mins = Number(args.duration_minutes);
+        if (!Number.isFinite(mins) || mins <= 0) throw new Error("duration_minutes must be a positive number");
+        duration = Math.round(mins);
+      }
+      let priority = typeof args.priority === "string" ? args.priority : row.priority;
+      let projectId = row.project_id;
+      let domainId = row.domain_id;
+      let initiativeId: string | null = null;
+      if (args.project_id !== undefined) {
+        const pid = String(args.project_id || "");
+        if (pid) {
+          const { data: proj } = await admin
+            .from("projects")
+            .select("initiative_id, domain_id")
+            .eq("id", pid)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!proj) throw new Error(`Project not found: ${pid}`);
+          projectId = pid;
+          initiativeId = proj.initiative_id ?? null;
+          if (args.domain_id === undefined) domainId = proj.domain_id ?? null;
+        } else {
+          projectId = null;
+          initiativeId = null;
+        }
+      }
+      if (args.domain_id !== undefined) domainId = String(args.domain_id || "") || null;
+      if (projectId && initiativeId == null && args.project_id === undefined) {
+        const { data: proj } = await admin
+          .from("projects")
+          .select("initiative_id")
+          .eq("id", projectId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        initiativeId = proj?.initiative_id ?? null;
+      }
+
+      const today = todayIn(tz);
+      // Same regeneration the panel does: future unpinned occurrences go, done
+      // ones and per-occurrence edits stay, then the horizon is filled again.
+      const cleared = await clearSeriesOccurrences(userId, row.id, today, tz);
+      const { error } = await admin
+        .from("recurrences")
+        .update({
+          freq: rule.freq,
+          interval: rule.interval,
+          byweekday: rule.byweekday ?? [],
+          bymonthday: rule.bymonthday ?? null,
+          bysetpos: rule.bysetpos ?? null,
+          bymonth: rule.bymonth ?? null,
+          until_date: rule.until ?? null,
+          max_count: rule.count ?? null,
+          title,
+          duration_minutes: duration,
+          priority,
+          project_id: projectId,
+          domain_id: domainId,
+        })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+
+      await materializeTaskOccurrences(userId, row.id, {
+        title,
+        rule,
+        anchorISO: row.anchor_date,
+        fromISO: today,
+        exdates: row.exdates ?? [],
+        projectId,
+        initiativeId,
+        domainId,
+        duration,
+        priority,
+        timeOfDayMinutes: row.time_of_day_minutes,
+        tz,
+      });
+      const cadence = describeRule(rule, row.anchor_date);
+      const nextDue = nextOccurrenceDate(rule, row.anchor_date, today, row.exdates ?? []);
+      return {
+        result: JSON.stringify({ id: row.id, title, cadence, nextDue, cleared }),
+        action: {
+          tool: name,
+          summary: `Updated "${title}" — ${cadence}.${nextDue ? ` Next due ${nextDue}.` : ""} Future occurrences regenerated.`,
+          verb: "updated",
+          ref: { kind: "task", id: row.id },
+        },
+      };
+    }
+
+    case "end_recurring_task": {
+      const action = String(args.action ?? "");
+      const row = await resolveSeries(userId, args as { series_id?: string; series_title?: string; task_id?: string; task_title?: string });
+      assertTaskSeries(row);
+      const today = todayIn(tz);
+      const dateOr = (fallback: string | null): string => {
+        if (args.from_date == null || args.from_date === "") {
+          if (fallback) return fallback;
+          throw new Error("from_date is required (YYYY-MM-DD) — which occurrence?");
+        }
+        const s = String(args.from_date).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("from_date must be YYYY-MM-DD.");
+        return s;
+      };
+
+      if (action === "pause") {
+        const { error } = await admin
+          .from("recurrences")
+          .update({ active: false })
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return {
+          result: JSON.stringify({ id: row.id, action, active: false }),
+          action: {
+            tool: name,
+            summary: `Paused "${row.title}". What's already on the calendar stays; it won't generate new ones.`,
+            verb: "updated",
+            ref: { kind: "task", id: row.id },
+          },
+        };
+      }
+
+      if (action === "stop") {
+        const from = dateOr(today);
+        const cleared = await clearSeriesOccurrences(userId, row.id, addDaysISO(from, 1), tz);
+        await detachSeriesTasks(userId, row.id);
+        const { error } = await admin
+          .from("recurrences")
+          .update({ active: false })
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return {
+          result: JSON.stringify({ id: row.id, action, from, cleared }),
+          action: {
+            tool: name,
+            summary: `Stopped "${row.title}" repeating after ${from}. Earlier ones are ordinary tasks now.`,
+            verb: "updated",
+            ref: { kind: "task", id: row.id },
+          },
+        };
+      }
+
+      if (action === "delete") {
+        const cleared = await clearSeriesOccurrences(userId, row.id, "1900-01-01", tz, { includeOverridden: true });
+        await detachSeriesTasks(userId, row.id);
+        const { error } = await admin.from("recurrences").delete().eq("id", row.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return {
+          result: JSON.stringify({ id: row.id, action, cleared }),
+          action: {
+            tool: name,
+            summary: `Deleted the "${row.title}" series. Done occurrences stay as ordinary tasks.`,
+            verb: "deleted",
+            ref: { kind: "task", id: row.id },
+          },
+        };
+      }
+
+      if (action === "skip") {
+        const from = dateOr(null);
+        const ex = new Set(row.exdates ?? []);
+        ex.add(from);
+        const { error } = await admin
+          .from("recurrences")
+          .update({ exdates: [...ex] })
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        const { data: occ, error: occErr } = await admin
+          .from("tasks")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("recurrence_id", row.id)
+          .eq("recurrence_date", from)
+          .neq("status", "trashed");
+        if (occErr) throw new Error(occErr.message);
+        const ids = (occ ?? []).map((t) => t.id as string);
+        if (ids.length) {
+          const { error: upErr } = await admin
+            .from("tasks")
+            .update({ status: "trashed", recurrence_id: null, recurrence_date: null })
+            .in("id", ids)
+            .eq("user_id", userId);
+          if (upErr) throw new Error(upErr.message);
+          await Promise.all(ids.map((id) => mirrorTask(id, tz)));
+        }
+        return {
+          result: JSON.stringify({ id: row.id, action, from }),
+          action: {
+            tool: name,
+            summary: `Skipped ${from} of "${row.title}". The series continues.`,
+            verb: "deleted",
+            ref: { kind: "task", id: row.id },
+          },
+        };
+      }
+
+      if (action === "following") {
+        const from = dateOr(null);
+        const cleared = await clearSeriesOccurrences(userId, row.id, from, tz, { includeOverridden: true });
+        const until = addDaysISO(from, -1);
+        if (until < row.anchor_date) {
+          await detachSeriesTasks(userId, row.id);
+          const { error } = await admin.from("recurrences").delete().eq("id", row.id).eq("user_id", userId);
+          if (error) throw new Error(error.message);
+        } else {
+          const { error } = await admin
+            .from("recurrences")
+            .update({ until_date: until, active: true })
+            .eq("id", row.id)
+            .eq("user_id", userId);
+          if (error) throw new Error(error.message);
+        }
+        return {
+          result: JSON.stringify({ id: row.id, action, from, cleared }),
+          action: {
+            tool: name,
+            summary: `Deleted "${row.title}" from ${from} on. Earlier ones stay.`,
+            verb: "deleted",
+            ref: { kind: "task", id: row.id },
+          },
+        };
+      }
+
+      throw new Error(`Unknown action "${action}". Use pause, stop, delete, skip, or following.`);
     }
 
     case "plan_task": {

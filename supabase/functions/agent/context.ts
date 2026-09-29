@@ -37,6 +37,7 @@ import {
   todayIn,
   visibleEventRows,
 } from "../_shared/dayShape.ts";
+import { describeRule, nextOccurrenceDate, type RecurrenceRule } from "../_shared/recurrence.ts";
 
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
@@ -69,7 +70,7 @@ export async function buildContext(
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
-  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes, accountsRes, slotsRes] = await Promise.all([
+  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes, accountsRes, slotsRes, upkeepRes] = await Promise.all([
     admin
       .from("tasks")
       .select(TASK_COLS)
@@ -123,6 +124,13 @@ export async function buildContext(
       .gte("start_time", start)
       .lt("start_time", end)
       .order("start_time"),
+    admin
+      .from("recurrences")
+      .select("id, title, freq, interval, byweekday, bymonthday, bysetpos, bymonth, anchor_date, until_date, max_count, exdates, duration_minutes, priority, project_id, domain_id")
+      .eq("user_id", userId)
+      .eq("kind", "task")
+      .eq("active", true)
+      .order("title"),
   ]);
 
   const weekStart = planningWeekStart(today);
@@ -153,6 +161,7 @@ export async function buildContext(
   if (initiativesRes.error) throw new Error(initiativesRes.error.message);
   if (projectsRes.error) throw new Error(projectsRes.error.message);
   if (accountsRes.error) throw new Error(accountsRes.error.message);
+  if (upkeepRes.error) throw new Error(upkeepRes.error.message);
 
   // ── the week's slate — derived from the On Deck spans, exactly like the app ──
   // A "week priority" in Nuvo IS a project committed to the week; the sprint's
@@ -333,6 +342,48 @@ export async function buildContext(
     todaySlots,
     inbox,
     todayTasks,
+    recurringUpkeep: ((upkeepRes.data ?? []) as {
+      id: string;
+      title: string;
+      freq: RecurrenceRule["freq"];
+      interval: number;
+      byweekday: number[] | null;
+      bymonthday: number | null;
+      bysetpos: number | null;
+      bymonth: number | null;
+      anchor_date: string;
+      until_date: string | null;
+      max_count: number | null;
+      exdates: string[] | null;
+      duration_minutes: number;
+      priority: string;
+      project_id: string | null;
+      domain_id: string | null;
+    }[]).map((row) => {
+      const rule: RecurrenceRule = {
+        freq: row.freq,
+        interval: row.interval,
+        byweekday: row.byweekday ?? [],
+        bymonthday: row.bymonthday,
+        bysetpos: row.bysetpos,
+        bymonth: row.bymonth,
+        until: row.until_date,
+        count: row.max_count,
+      };
+      return {
+        id: row.id,
+        title: row.title,
+        cadence: describeRule(rule, row.anchor_date),
+        freq: row.freq,
+        interval: row.interval,
+        nextDue: nextOccurrenceDate(rule, row.anchor_date, today, row.exdates ?? []),
+        until: row.until_date,
+        durationMinutes: row.duration_minutes,
+        priority: row.priority,
+        projectId: row.project_id,
+        domainId: row.domain_id,
+      };
+    }),
     scheduled,
     weekStart,
     weekSlate,

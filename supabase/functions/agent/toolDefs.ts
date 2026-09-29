@@ -438,12 +438,14 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_recurring_task",
       description:
-        "Create a repeating upkeep task series (e.g. every 5 months, weekly, every year, the last Friday of the month). Use when the user names a cadence — NOT create_task.",
+        "Create a repeating upkeep task series (e.g. every 5 months, weekly, every year, the last Friday of the month). Use when the user names a cadence and no such series exists yet — NOT create_task, and NOT when recurringUpkeep already has it (use update_recurring_task). Pass task_id to make an EXISTING task the first occurrence instead of creating a second copy.",
       parameters: {
         type: "object",
         properties: {
           capture: { type: "string", description: "Natural language with repeat phrase" },
           title: { type: "string" },
+          task_id: { type: "string", description: "Adopt this existing task as the first occurrence." },
+          task_title: { type: "string", description: "Find the task to adopt, if you don't have its id." },
           freq: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
           interval: { type: "integer", description: "Every N units (default 1)" },
           bysetpos: {
@@ -461,6 +463,66 @@ const RAW_TOOL_DEFINITIONS = [
           project_id: { type: "string" },
           domain_id: { type: "string" },
         },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_recurring_task",
+      description:
+        "Change an existing recurring upkeep series — its cadence, end date, title, duration, priority, or where it's filed. Regenerates future occurrences from today; done ones and individually edited ones stay. Use this when the series is already in recurringUpkeep. update_task changes one occurrence only and leaves the series rule alone.",
+      parameters: {
+        type: "object",
+        properties: {
+          series_id: { type: "string", description: "The series id from recurringUpkeep." },
+          series_title: { type: "string", description: "The series title, if you don't have its id." },
+          task_id: { type: "string", description: "An occurrence's id. The series it belongs to is what changes." },
+          task_title: { type: "string" },
+          title: { type: "string", description: "Rename the series." },
+          freq: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
+          interval: { type: "integer", description: "Every N units (default: leave it)." },
+          bysetpos: {
+            type: "integer",
+            description: "Monthly/yearly: 1, 2, 3, 4, or -1 for LAST. 'The last Friday of the month'.",
+          },
+          byweekday: {
+            type: "array",
+            items: { type: "integer" },
+            description: "0=Sun … 6=Sat. Weekly: the days it repeats. With bysetpos: one day.",
+          },
+          until: { type: "string", description: "Stop after this date, YYYY-MM-DD. Empty string clears an end date." },
+          count: { type: "integer", description: "Stop after this many occurrences. 0 clears a previous count." },
+          duration_minutes: { type: "integer" },
+          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
+          project_id: { type: "string", description: "File the series under a project. Empty string unfiles it." },
+          domain_id: { type: "string", description: "Only when it has no project. Empty string clears it." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "end_recurring_task",
+      description:
+        "Pause, stop, or delete a recurring upkeep series, or remove one occurrence. NOT trash_task — trashing one occurrence does not stop the series, and the next one still appears. Look the series up in recurringUpkeep.",
+      parameters: {
+        type: "object",
+        properties: {
+          series_id: { type: "string" },
+          series_title: { type: "string" },
+          task_id: { type: "string", description: "An occurrence's id, when that's what you have." },
+          task_title: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["pause", "stop", "delete", "skip", "following"],
+            description:
+              "pause: stop generating new ones; what's already there stays. There is no resume — it leaves the catalog, same as Schedule → Recurring upkeep. stop: stop repeating from from_date (default today); earlier occurrences become ordinary tasks. delete: delete the whole series; done occurrences stay, detached. skip: this one date only — from_date required; the series continues. following: this date and every later one — from_date required; earlier ones stay.",
+          },
+          from_date: { type: "string", description: "YYYY-MM-DD. Required for skip and following." },
+        },
+        required: ["action"],
       },
     },
   },

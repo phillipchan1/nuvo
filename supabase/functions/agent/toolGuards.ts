@@ -40,7 +40,9 @@ export const REQUIRES_TARGET: Record<string, string[]> = {
   // Not a lookup, but the same failure: a task with neither a capture string nor
   // a title is an empty row the user never asked for.
   create_task: ["capture", "title"],
-  create_recurring_task: ["capture", "title"],
+  create_recurring_task: ["capture", "title", "task_id", "task_title"],
+  update_recurring_task: ["series_id", "series_title", "task_id", "task_title"],
+  end_recurring_task: ["series_id", "series_title", "task_id", "task_title"],
   // schedule_task's schema requires only start_time — so "schedule something at
   // 2pm" with no subject passed validation and reached the handler.
   schedule_task: ["task_id", "task_title"],

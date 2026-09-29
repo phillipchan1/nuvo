@@ -43,6 +43,7 @@ const ids = {
   evtStandup: "55555555-5555-4555-8555-555555555551",
   evtLunch: "55555555-5555-4555-8555-555555555552",
   slotMorning: "66666666-6666-4666-8666-666666666661",
+  seriesHvac: "88888888-8888-4888-8888-888888888881",
 } as const;
 
 export const ID = ids;
@@ -75,6 +76,21 @@ function loadedWorld(): AgentContext {
       { id: ids.taskAmbiguous, title: "Review the deck", status: "inbox", doDate: null, startTime: null, durationMinutes: 30, rollCount: 0, priority: "none" },
     ],
     todayTasks: [],
+    recurringUpkeep: [
+      {
+        id: ids.seriesHvac,
+        title: "Change the HVAC filter",
+        cadence: "Every 6 months on the 30th",
+        freq: "monthly",
+        interval: 6,
+        nextDue: "2026-09-30",
+        until: null,
+        durationMinutes: 30,
+        priority: "none",
+        projectId: null,
+        domainId: ids.domHealth,
+      },
+    ],
     scheduled: [
       { id: ids.taskGym, title: "Gym", status: "planned", doDate: TODAY, startTime: "2026-07-31T15:00:00.000Z", durationMinutes: 75, rollCount: 0 },
     ],
@@ -166,6 +182,7 @@ function coldWorld(): AgentContext {
     todaySlots: [],
     inbox: [],
     todayTasks: [],
+    recurringUpkeep: [],
     scheduled: [],
     weekSlate: [],
     needsASprint: [],

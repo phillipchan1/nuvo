@@ -11,7 +11,7 @@ import {
   type Slot,
   type Task,
 } from "../lib/types";
-import { HORIZON_DAYS, expandRule, type RecurrenceRule } from "../lib/recurrence";
+import { HORIZON_DAYS, expandRule, shouldClearOccurrence, type RecurrenceRule } from "../lib/recurrence";
 import { addDays } from "date-fns";
 import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { useSettings } from "./useSettings";
@@ -388,12 +388,11 @@ export function useRecurrenceMutations() {
     };
 
     // tasks → trash (the status patch makes task-mirror delete the Google event)
-    const doomedTasks = rows<Task>("tasks").filter(
-      (t) =>
-        t.recurrence_id === recurrenceId &&
-        (opts?.includeOverridden || !t.recurrence_overridden) &&
-        t.status !== "done" &&
-        (t.do_date ?? "") >= fromISO,
+    const doomedTasks = rows<Task>("tasks").filter((t) =>
+      shouldClearOccurrence(t, recurrenceId, fromISO, {
+        includeOverridden: opts?.includeOverridden,
+        kind: "task",
+      }),
     );
     for (const t of doomedTasks) {
       patchCaches(qc, t.id, { status: "trashed", recurrence_id: null, recurrence_date: null });
@@ -414,11 +413,11 @@ export function useRecurrenceMutations() {
     }
 
     // slots → delete (children orphan back to normal tasks via FK)
-    const doomedSlots = rows<Slot>("slots").filter(
-      (sl) =>
-        sl.recurrence_id === recurrenceId &&
-        (opts?.includeOverridden || !sl.recurrence_overridden) &&
-        (sl.do_date ?? "") >= fromISO,
+    const doomedSlots = rows<Slot>("slots").filter((sl) =>
+      shouldClearOccurrence(sl, recurrenceId, fromISO, {
+        includeOverridden: opts?.includeOverridden,
+        kind: "slot",
+      }),
     );
     for (const sl of doomedSlots) {
       // Same reason as the tasks above — an iCloud mirror carries no stored id,

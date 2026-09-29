@@ -314,6 +314,98 @@ export function setposOf(anchorISO: string): number {
   return dom + 7 > daysInMonth ? -1 : nth;
 }
 
+/**
+ * Whether a materialized row should be torn down when a series changes.
+ *
+ * The panel (`useRecurrence.clearFuture`) and the chat (`update_recurring_task`,
+ * `end_recurring_task`) both decide with this. A second copy is how a chat
+ * delete would trash a completed occurrence the panel had left alone, or leave
+ * one the panel had removed.
+ *
+ * Done task occurrences stay — they are history. A per-occurrence edit
+ * (`recurrence_overridden`) stays too, unless the caller said this and
+ * everything after, which outranks a pin. Slots have no done state.
+ */
+export function shouldClearOccurrence(
+  row: {
+    recurrence_id?: string | null;
+    recurrence_overridden?: boolean | null;
+    status?: string | null;
+    do_date?: string | null;
+  },
+  recurrenceId: string,
+  fromISO: string,
+  opts?: { includeOverridden?: boolean; kind?: "task" | "slot" },
+): boolean {
+  if (row.recurrence_id !== recurrenceId) return false;
+  if (!opts?.includeOverridden && row.recurrence_overridden) return false;
+  if ((opts?.kind ?? "task") === "task" && row.status === "done") return false;
+  return (row.do_date ?? "") >= fromISO;
+}
+
+/**
+ * Fold an edit onto a series rule. Positional ("the last Friday") and by-date
+ * stay exclusive — the database rejects a row that carries both, and the
+ * engine would otherwise have two answers for one month.
+ */
+export function mergeRecurrenceRule(
+  existing: RecurrenceRule,
+  patch: {
+    freq?: RecurrenceFreq;
+    interval?: number;
+    byweekday?: number[] | null;
+    bysetpos?: number | null;
+    until?: string | null;
+    count?: number | null;
+  },
+  anchorISO: string,
+): RecurrenceRule {
+  const freq = patch.freq ?? existing.freq;
+  const interval = Math.max(1, patch.interval ?? existing.interval ?? 1);
+  const until = patch.until !== undefined ? patch.until : (existing.until ?? null);
+  const count = patch.count !== undefined ? patch.count : (existing.count ?? null);
+  const weekday = dayOfWeek(anchorISO);
+
+  if (freq === "daily") {
+    return { freq, interval, byweekday: [], bymonthday: null, bysetpos: null, bymonth: null, until, count };
+  }
+  if (freq === "weekly") {
+    const days = patch.byweekday?.length
+      ? patch.byweekday
+      : existing.freq === "weekly" && existing.byweekday?.length
+        ? existing.byweekday
+        : [weekday];
+    return { freq, interval, byweekday: days, bymonthday: null, bysetpos: null, bymonth: null, until, count };
+  }
+
+  const setpos = patch.bysetpos !== undefined ? patch.bysetpos : (existing.bysetpos ?? null);
+  if (setpos) {
+    const day = patch.byweekday?.length
+      ? patch.byweekday[0]
+      : existing.byweekday?.[0] ?? weekday;
+    return {
+      freq,
+      interval,
+      byweekday: [day],
+      bymonthday: null,
+      bysetpos: setpos,
+      bymonth: freq === "yearly" ? (existing.bymonth ?? monthFromISO(anchorISO)) : null,
+      until,
+      count,
+    };
+  }
+  return {
+    freq,
+    interval,
+    byweekday: [],
+    bymonthday: existing.bymonthday ?? null,
+    bysetpos: null,
+    bymonth: freq === "yearly" ? (existing.bymonth ?? monthFromISO(anchorISO)) : null,
+    until,
+    count,
+  };
+}
+
 export function rulesEqual(a: RecurrenceRule | null, b: RecurrenceRule | null): boolean {
   if (!a || !b) return a === b;
   return (
