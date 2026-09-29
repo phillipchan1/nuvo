@@ -371,8 +371,11 @@ export default function App() {
         maxAge: MAX_CACHE_AGE_MS,
         dehydrateOptions: { shouldDehydrateQuery },
         // Bump when a query's shape changes incompatibly — a restored cache
-        // from an older build is worse than no cache.
-        buster: "sync-v1",
+        // from an older build is worse than no cache. v2: drops disabled task
+        // lists (`["tasks","sprint",null]`, `["tasks","steps",null]`) that the
+        // old `insertTaskCache` seeded and the reconciler then filled — they
+        // never refetch, so only a reset clears what's already on disk.
+        buster: "sync-v2",
       }}
     >
       <SyncHost>

@@ -294,13 +294,12 @@ function findCachedTask(qc: QueryClient, id: string): Task | undefined {
   return undefined;
 }
 
-/** Insert a newly minted task row into every `tasks`-keyed cache fragment. */
+/** Insert a newly minted task row into the `tasks` lists it belongs to. This
+ *  used to append to *every* fragment and turn an unfetched one into `[task]`,
+ *  which is how a disabled list (`["tasks","sprint",null]`) came to hold data
+ *  at all — membership lives in `putTaskInCaches`, so go through it. */
 export function insertTaskCache(qc: QueryClient, task: Task) {
-  runWithoutOwingPreserve(() => {
-    qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-      old ? [...old, task] : [task],
-    );
-  });
+  putTaskInCaches(qc, task.id, task);
 }
 
 /**
@@ -358,6 +357,15 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
     // and nothing downstream (buildVertical, every list) re-renders.
     if (existing && next && sameTaskContent(existing, next)) continue;
     const kind = key[1];
+
+    // A step lives in its parent's `steps` list and nowhere else — every other
+    // queryFn filters `parent_task_id is null`. Without this, a checklist added
+    // to two recurring occurrences landed in the Week board's "Needs a day" tray
+    // as eleven loose tasks the inbox had never heard of.
+    if (next?.parent_task_id != null && kind !== "steps" && kind !== "record") {
+      if (existing) qc.setQueryData(key, data.filter((t) => t.id !== id));
+      continue;
+    }
 
     let updated: Task[] | undefined;
     if (kind === "inbox") {
@@ -423,7 +431,10 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
       }
     } else if (kind === "steps") {
       const parentId = key[2] as string | null;
-      const belongs = next != null && next.parent_task_id === parentId && next.status !== "trashed";
+      // A null-keyed list is a disabled query (no parent open), not "the tasks
+      // with no parent" — it never fetches, so nothing may accumulate in it.
+      const belongs =
+        parentId != null && next != null && next.parent_task_id === parentId && next.status !== "trashed";
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
       else if (next) updated = [...data, next];
@@ -438,8 +449,12 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
       else if (next) updated = [next, ...data];
     } else if (kind === "sprint") {
       const sprintId = key[2] as string | null;
+      // `["tasks","sprint",null]` is the disabled query of a week with no sprint
+      // row — not "every task with no sprint". Matching null to null there made
+      // it collect every sprintless echo, and since it never refetches (and the
+      // cache is persisted) they stayed on the Week board for good.
       const belongs =
-        next != null && next.sprint_id === sprintId && next.status !== "trashed";
+        sprintId != null && next != null && next.sprint_id === sprintId && next.status !== "trashed";
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next : t));
       else updated = [...data, next];
