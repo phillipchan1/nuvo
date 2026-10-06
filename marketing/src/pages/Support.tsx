@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { APP_URL, PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
-import { appUrlWithCode } from '../referral'
+import { PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
+import { NavOpenAppCtas } from '../components/CtaButtons'
 
 /*
   Support — the page that has to be true.
@@ -325,17 +325,15 @@ function Disclose({ q, id, children }: { q: string; id?: string; children: React
 export default function Support() {
   return (
     <div className="atmosphere min-h-dvh">
-      <header className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
+      <header className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
+        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
           Nuvo
         </a>
         <nav className="flex items-center gap-2 sm:gap-3">
           <a href={SUPPORT_MAILTO} className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Email us
           </a>
-          <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap text-[13px]" rel="noopener noreferrer">
-            Open app
-          </a>
+          <NavOpenAppCtas />
         </nav>
       </header>
 

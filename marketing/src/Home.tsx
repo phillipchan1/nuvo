@@ -8,10 +8,11 @@ import OnDeckVisual from './components/OnDeckVisual'
 import PlanWeekVisual from './components/PlanWeekVisual'
 import ProjectRoomVisual from './components/ProjectRoomVisual'
 import ScatterVisual from './components/ScatterVisual'
-import { useCallback, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useReveal } from './useReveal'
-import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
+import { ACCESS_MAILTO, APP_URL } from './config'
 import { appUrlWithCode } from './referral'
+import { CtaGroup, NavOpenAppCtas } from './components/CtaButtons'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE PAGE IS ONE SENTENCE, IN ORDER.
@@ -249,61 +250,6 @@ function CheckMark({ quiet = false }: { quiet?: boolean }) {
   )
 }
 
-// "Download for Mac" resolves to the exact latest DMG on hover/focus (the GitHub
-// Releases API is CORS-enabled), rewriting href to the asset's direct URL for an
-// instant download. The static releases/latest/download/Nuvo.dmg link is the
-// safety net when JS is off or the API is unreachable.
-function DownloadMacButton({ className = '' }: { className?: string }) {
-  const [href, setHref] = useState(DOWNLOAD_MAC_URL)
-  const [resolved, setResolved] = useState(false)
-
-  const resolve = useCallback(() => {
-    if (resolved) return
-    setResolved(true)
-    fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
-      headers: { accept: 'application/vnd.github+json' },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const assets: { name?: string; browser_download_url?: string }[] = data?.assets ?? []
-        const dmg = assets.find((a) => /\.dmg$/i.test(a.name ?? ''))
-        if (dmg?.browser_download_url) setHref(dmg.browser_download_url)
-      })
-      .catch(() => {
-        /* keep the static href */
-      })
-  }, [resolved])
-
-  return (
-    <a
-      href={href}
-      onPointerEnter={resolve}
-      onFocus={resolve}
-      className={`btn-ghost tap inline-flex items-center gap-2 ${className}`}
-    >
-      <svg width="15" height="15" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true">
-        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
-      </svg>
-      Download for Mac
-    </a>
-  )
-}
-
-/** Start free is primary everywhere now. Asking a stranger for a 40MB install
- *  before the argument has landed is a commitment they have no reason to make
- *  yet — and the trial, not the binary, is what we actually want them to take.
- *  The DMG keeps its clever latest-asset resolver; it just stopped leading. */
-function CtaGroup({ className = '' }: { className?: string }) {
-  return (
-    <div className={`flex flex-wrap items-center gap-3 ${className}`}>
-      <a href={appUrlWithCode(APP_URL)} className="btn-primary tap" rel="noopener noreferrer">
-        Start free
-      </a>
-      <DownloadMacButton />
-    </div>
-  )
-}
-
 /** A section that rises as it arrives. See useReveal — the un-observed default
  *  is visible, so the prerendered HTML is never blank. */
 function Section({
@@ -328,8 +274,8 @@ const SECTION = 'mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:p
 export default function Home() {
   return (
     <div className="atmosphere min-h-dvh">
-      <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center shrink-0">
+      <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
+        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
           Nuvo
         </a>
         <nav className="flex items-center gap-2 sm:gap-3">
@@ -345,9 +291,7 @@ export default function Home() {
           <a href="/support" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Support
           </a>
-          <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
-            Open app
-          </a>
+          <NavOpenAppCtas />
         </nav>
       </header>
 

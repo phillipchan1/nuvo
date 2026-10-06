@@ -27,3 +27,6 @@ export const RELEASES_REPO = 'phillipchan1/nuvo-releases'
  *  the newest release, so this static link never goes stale (no JS required). The
  *  hero button upgrades it to the exact asset URL on hover for an instant download. */
 export const DOWNLOAD_MAC_URL = `https://github.com/${RELEASES_REPO}/releases/latest/download/Nuvo.dmg`
+
+/** US App Store listing — same tab as the Mac DMG link (no target override). */
+export const APP_STORE_URL = 'https://apps.apple.com/app/id6800908733'
