@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { APP_URL, PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
-import { appUrlWithCode } from '../referral'
+import { PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
+import { NavOpenAppCtas } from '../components/CtaButtons'
 
 /*
   Support — the page that has to be true.
@@ -333,9 +333,7 @@ export default function Support() {
           <a href={SUPPORT_MAILTO} className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Email us
           </a>
-          <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap text-[13px]" rel="noopener noreferrer">
-            Open app
-          </a>
+          <NavOpenAppCtas />
         </nav>
       </header>
 

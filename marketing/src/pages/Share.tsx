@@ -1,5 +1,6 @@
 import { APP_URL, SUPPORT_EMAIL, SUPPORT_MAILTO } from '../config'
 import { appUrlWithCode } from '../referral'
+import { AppStoreBadge } from '../components/AppStoreBadge'
 
 /**
  * /share — the public friend-code explainer.
@@ -13,9 +14,16 @@ export default function Share() {
         <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
           Nuvo
         </a>
-        <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap text-[13px]" rel="noopener noreferrer">
-          Open app
-        </a>
+        <div className="nav-cta-row flex items-center gap-2 sm:gap-3">
+          <AppStoreBadge className="!min-h-0 !min-w-0" />
+          <a
+            href={appUrlWithCode(APP_URL)}
+            className="btn-ghost tap cta-open-app text-[13px]"
+            rel="noopener noreferrer"
+          >
+            Open app
+          </a>
+        </div>
       </header>
 
       <main className="mx-auto max-w-3xl px-5 py-12 sm:px-8 sm:py-16">

@@ -29,6 +29,15 @@
       content="Work, the side thing, the family calendar, the thing you volunteer for. One line from everything you’re responsible for down to what you’re doing at 2pm today."
     />
     <meta name="twitter:image" content="https://nuvo.day/og.jpg" />
+    <script>
+      (function () {
+        var ua = navigator.userAgent
+        var ios =
+          /iPad|iPhone|iPod/.test(ua) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+        if (ios) document.documentElement.dataset.ios = 'true'
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
