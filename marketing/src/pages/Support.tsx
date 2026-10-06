@@ -325,8 +325,8 @@ function Disclose({ q, id, children }: { q: string; id?: string; children: React
 export default function Support() {
   return (
     <div className="atmosphere min-h-dvh">
-      <header className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
+      <header className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
+        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
           Nuvo
         </a>
         <nav className="flex items-center gap-2 sm:gap-3">

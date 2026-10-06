@@ -62,11 +62,11 @@ export function CtaGroup({ className = '' }: { className?: string }) {
 
 export function NavOpenAppCtas() {
   return (
-    <div className="nav-cta-row flex items-center gap-2 sm:gap-3">
-      <AppStoreBadge className="!min-h-0 !min-w-0" />
+    <div className="nav-cta-row flex shrink-0 items-center gap-3">
+      <AppStoreBadge />
       <a
         href={appUrlWithCode(APP_URL)}
-        className="btn-ghost tap cta-open-app hidden text-[13px] sm:inline-flex"
+        className="btn-ghost tap cta-open-app max-sm:hidden text-[13px] sm:inline-flex"
         rel="noopener noreferrer"
       >
         Open app

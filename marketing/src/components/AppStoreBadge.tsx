@@ -9,7 +9,7 @@ export function AppStoreBadge({ className = '' }: AppStoreBadgeProps) {
   return (
     <a
       href={APP_STORE_URL}
-      className={`app-store-badge tap cta-app-store inline-flex shrink-0 items-center ${className}`}
+      className={`app-store-badge tap cta-app-store shrink-0 ${className}`}
     >
       <img
         src="/download-on-the-app-store.svg"
