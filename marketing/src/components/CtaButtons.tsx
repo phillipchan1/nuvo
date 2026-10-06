@@ -66,7 +66,7 @@ export function NavOpenAppCtas() {
       <AppStoreBadge />
       <a
         href={appUrlWithCode(APP_URL)}
-        className="btn-ghost tap cta-open-app max-sm:hidden text-[13px] sm:inline-flex"
+        className="btn-ghost tap cta-open-app max-sm:hidden sm:inline-flex"
         rel="noopener noreferrer"
       >
         Open app

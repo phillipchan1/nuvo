@@ -177,7 +177,7 @@ html[data-ios='true'] .nav-cta-row .cta-app-store {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px;
+    padding: 2px 10px;
     line-height: 0;
   }
 
