@@ -8,7 +8,7 @@ import { invalidateWhenSafe, pendingOps, pullSyncTables, setTableLive, SYNC_TABL
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
 
-const TABLE_TO_KEYS: Record<string, string[][]> = {
+export const TABLE_TO_KEYS: Record<string, string[][]> = {
   tasks: [["tasks"]],
   task_labels: [["tasks"]],
   slots: [["slots"]],

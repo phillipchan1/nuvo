@@ -463,7 +463,7 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
  * visibility are the events that actually correlate with "the user is here and
  * expects their work to have gone through".
  */
-export function startSync(opts: SyncRunOptions): () => void {
+export function startSync(opts: SyncRunOptions): { stop: () => void; kick: () => Promise<void> } {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let backoff = 0;
@@ -499,17 +499,18 @@ export function startSync(opts: SyncRunOptions): () => void {
    */
   const kick = () => {
     backoff = 0;
-    void run().then(() => {
+    return run().then(() => {
       if (!stopped) catchUpAfterOwingKnown(opts.qc);
     });
   };
 
   const onVisible = () => {
-    if (document.visibilityState === "visible") kick();
+    if (document.visibilityState === "visible") void kick();
   };
 
-  window.addEventListener("online", kick);
-  window.addEventListener("focus", kick);
+  const onEvent = () => void kick();
+  window.addEventListener("online", onEvent);
+  window.addEventListener("focus", onEvent);
   document.addEventListener("visibilitychange", onVisible);
 
   // The slow pull. `focus` covers switching back to the app; this covers
@@ -526,15 +527,16 @@ export function startSync(opts: SyncRunOptions): () => void {
   // skip the launch refresh this exists to restore.
   void refreshOwing().then(() => {
     catchUpAfterOwingKnown(opts.qc);
-    kick();
+    void kick();
   });
 
-  return () => {
+  const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
     clearInterval(pullTimer);
-    window.removeEventListener("online", kick);
-    window.removeEventListener("focus", kick);
+    window.removeEventListener("online", onEvent);
+    window.removeEventListener("focus", onEvent);
     document.removeEventListener("visibilitychange", onVisible);
   };
+  return { stop, kick };
 }

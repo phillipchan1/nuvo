@@ -9,7 +9,8 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { enqueue } from "./outbox";
-import { installOwingGuards, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
+import { installOwingGuards, invalidateWhenSafe, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
+import { announceQueuedWrite } from "./handoff";
 import type { NewOp, Op, SyncTable } from "./ops";
 import type { Transport } from "./engine";
 
@@ -29,21 +30,22 @@ export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";
 export { isTableLive, setTableLive, resetLiveHealthForTests } from "./liveHealth";
+export { listenForQueuedWrites } from "./handoff";
 
 let client: { qc: QueryClient; transport: Transport } | null = null;
-let stop: (() => void) | null = null;
+let running: ReturnType<typeof startSync> | null = null;
 
 /** Install the sync client for the session. Idempotent. */
 export function configureSync(qc: QueryClient, transport: Transport) {
-  if (client) stop?.();
+  if (client) running?.stop();
   client = { qc, transport };
   installOwingGuards(qc);
-  stop = startSync({ qc, transport });
+  running = startSync({ qc, transport });
 }
 
 export function teardownSync() {
-  stop?.();
-  stop = null;
+  running?.stop();
+  running = null;
   client = null;
 }
 
@@ -63,7 +65,27 @@ export async function queueWrite(op: NewOp): Promise<Op> {
   await refreshOwing();
   // Fire and forget: a drain failure is the engine's business, not the caller's.
   if (client) void syncNow(client);
+  // The ⌥Space panel is hidden moments after this; main must not depend on it.
+  void announceQueuedWrite(op.table);
   return stored;
+}
+
+/**
+ * Deliver and show writes another window queued (see `handoff.ts`).
+ *
+ * Push first: the refetch below must not overtake the write it is for. If the
+ * panel already delivered, the drain finds nothing and the refetch simply reads
+ * the row; if the network is down, `invalidateWhenSafe` defers behind the drain.
+ */
+export async function adoptForeignWrites(
+  writes: readonly { table: SyncTable; keys: readonly (readonly string[])[] }[],
+): Promise<void> {
+  if (!client || !running) return;
+  const { qc } = client;
+  await running.kick();
+  for (const { table, keys } of writes) {
+    for (const key of keys) invalidateWhenSafe(qc, table, key);
+  }
 }
 
 /** Force a sync pass — the pull-to-refresh / "retry now" path. */

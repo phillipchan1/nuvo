@@ -6,7 +6,8 @@ import { supabase } from "./lib/supabase";
 import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
 import { reportAppError } from "./lib/appError";
-import { configureSync, createSupabaseTransport, installOwingGuards, queryKeyOwesServer, teardownSync } from "./lib/sync";
+import { adoptForeignWrites, configureSync, createSupabaseTransport, installOwingGuards, listenForQueuedWrites, queryKeyOwesServer, teardownSync } from "./lib/sync";
+import { TABLE_TO_KEYS } from "./hooks/useRealtime";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
 import { useWatchSession } from "./hooks/useWatchSession";
@@ -354,7 +355,15 @@ function SyncHost({ children }: { children: React.ReactNode }) {
       return data.session?.user?.id ?? null;
     });
     configureSync(queryClient, transport);
-    return () => teardownSync();
+    // A capture from the ⌥Space panel: deliver it from here and show it,
+    // rather than waiting on a window that is about to be hidden.
+    const stopHandoff = listenForQueuedWrites((tables) => {
+      void adoptForeignWrites(tables.map((table) => ({ table, keys: TABLE_TO_KEYS[table] ?? [] })));
+    });
+    return () => {
+      stopHandoff();
+      teardownSync();
+    };
   }, []);
 
   return <>{children}</>;

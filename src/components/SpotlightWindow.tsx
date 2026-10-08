@@ -147,6 +147,23 @@ export default function SpotlightWindow() {
   const [added, setAdded] = useState<CaptureAdded | null>(null);
   const beat = useRef<number | null>(null);
 
+  // The door now showing. A capture that resolves after its door was replaced
+  // (a slow save, then a fresh summon) must not paint its farewell over the
+  // new one — that was a summon that opened on "Task added" with no line to
+  // type into.
+  const liveKey = useRef(showKey);
+  liveKey.current = showKey;
+  const addedRef = useRef(false);
+  addedRef.current = added != null;
+
+  /** Back to a fresh door: Task, empty, focused. */
+  const reset = useCallback(() => {
+    if (beat.current != null) window.clearTimeout(beat.current);
+    beat.current = null;
+    setAdded(null);
+    setShowKey((k) => k + 1);
+  }, []);
+
   // Each summon → remount the door fresh; its mount effect focuses the line.
   // Click-away dismiss is owned by the native NSPanel delegate
   // (window_did_resign_key in lib.rs), not a JS blur listener.
@@ -157,29 +174,40 @@ export default function SpotlightWindow() {
   useEffect(() => {
     if (!IS_TAURI) return;
     let unlistenShow: (() => void) | undefined;
+    // A summon during the last one's beat must not be hidden by its timer.
     getCurrentWebviewWindow()
-      .listen("spotlight-show", () => {
-        // A summon during the last one's beat must not be hidden by its timer.
-        if (beat.current != null) window.clearTimeout(beat.current);
-        beat.current = null;
-        setAdded(null);
-        setShowKey((k) => k + 1);
-      })
+      .listen("spotlight-show", reset)
       .then((u) => (unlistenShow = u));
-    return () => unlistenShow?.();
-  }, []);
+    // The summon event is the cue, but the door must not depend on it alone:
+    // becoming key with a farewell still up is a summon whose event was missed.
+    const onFocus = () => {
+      if (addedRef.current) reset();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unlistenShow?.();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [reset]);
 
   useEffect(() => () => {
     if (beat.current != null) window.clearTimeout(beat.current);
   }, []);
 
-  const onAdded = useCallback((a: CaptureAdded) => {
-    setAdded(a);
-    beat.current = window.setTimeout(() => {
-      beat.current = null;
-      hidePanel();
-    }, ADDED_BEAT_MS);
-  }, []);
+  const onAdded = useCallback(
+    (key: number, a: CaptureAdded) => {
+      if (key !== liveKey.current) return;
+      setAdded(a);
+      beat.current = window.setTimeout(() => {
+        beat.current = null;
+        hidePanel();
+        // Leave a fresh door behind, so the hidden panel is never holding the
+        // farewell for the next summon to find.
+        reset();
+      }, ADDED_BEAT_MS);
+    },
+    [reset],
+  );
 
   return (
     <SpotlightFrame>
@@ -196,7 +224,7 @@ export default function SpotlightWindow() {
         </div>
       ) : (
         <div className="px-4 pb-3 pt-4">
-          <CaptureDoor key={showKey} variant="panel" autoFocus onClose={hidePanel} onAdded={onAdded} />
+          <CaptureDoor key={showKey} variant="panel" autoFocus onClose={hidePanel} onAdded={(a) => onAdded(showKey, a)} />
         </div>
       )}
     </SpotlightFrame>
