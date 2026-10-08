@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
@@ -68,6 +69,7 @@ type Preview = { id: string; start: number; end: number } | null;
 
 export default function OnDeckPlanner() {
   const { data, updateProject, addProject } = useVertical();
+  const defer = useDeferProject();
   const { onContextMenu, menu } = useRecordContextMenu();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFloorModal, setProjectView } = useAppNavigation();
@@ -255,8 +257,8 @@ export default function OnDeckPlanner() {
     );
 
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
-  const live = useRef({ projectById, board, updateProject, openRecord, data });
-  live.current = { projectById, board, updateProject, openRecord, data };
+  const live = useRef({ projectById, board, updateProject, openRecord, data, defer });
+  live.current = { projectById, board, updateProject, openRecord, data, defer };
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -356,7 +358,8 @@ export default function OnDeckPlanner() {
           // Dropped either way — but say what an unshaped project costs the week.
           noticeIfUnready(s.data, p, () => s.openRecord("project", p.id));
         } else if (mode === "move" && tInbox && p.targetDate) {
-          s.updateProject(p.id, { startDate: null, targetDate: null, status: "backlog" });
+          // Off the deck — and off the calendar it was still holding.
+          void s.defer.takeOff(p, undefined, { status: "backlog" });
         } else if (mode === "end" && tWeek != null && w[tWeek]) {
           const wi = Math.max(tWeek, weekIndex(w, p.startDate));
           s.updateProject(p.id, { targetDate: toISO(addDays(w[wi].weekStart, 4)), status: "in_progress" });

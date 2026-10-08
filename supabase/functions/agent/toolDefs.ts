@@ -1250,7 +1250,7 @@ const RAW_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "delete_priority",
-      description: "Take a priority off this week. Because a priority IS a project committed to the week, this clears that project's week span — the project goes back to \"needs a sprint\" with its work intact. Nothing is deleted.",
+      description: "Take a priority off this week. Because a priority IS a project committed to the week, this clears that project's week span — the project goes back to \"needs a sprint\" with its work intact — AND takes what it still had on the calendar from today off it (its blocks, and its tasks' days and times). The result's clearedFromCalendar says how much; tell the user. No work is deleted.",
       parameters: {
         type: "object",
         properties: {

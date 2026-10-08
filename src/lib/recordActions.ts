@@ -31,9 +31,24 @@ export type RecordAction =
       danger?: boolean;
       /** When set, the act swaps its surface to a confirm step with this prompt. */
       confirm?: string;
+      /** the confirm step's button — defaults to "Delete", the only act that
+       *  asked before the week acts did */
+      confirmLabel?: string;
+      /** the act has an undo, so the confirm step must not claim otherwise */
+      undoable?: boolean;
       action: () => void;
     }
   | { kind: "sep" };
+
+/** The week acts for a project that is on the planning week — the same two
+ *  deferrals the Week's Plan row and the Schedule's block offer. Built by
+ *  `useRecordWeekActs`; absent for anything not on the week. */
+export interface RecordWeekActs {
+  /** what leaving the week takes off the calendar, in words — null when nothing */
+  cleared: string | null;
+  pushOut: () => void;
+  takeOff: () => void;
+}
 
 export interface RecordActionDeps {
   openRecord: (kind: RecordKind, id: string) => void;
@@ -44,6 +59,7 @@ export interface RecordActionDeps {
   /** projects only — hand off to the ship assessment instead of writing */
   onShip: (id: string) => void;
   onClose: () => void;
+  week?: RecordWeekActs | null;
 }
 
 /** The acts available on one record, in the order both shells present them.
@@ -87,6 +103,32 @@ export function buildRecordActions(
       label: parked ? "Resume" : "Park (waiting)",
       action: act(() => setStatus(parked ? "in_progress" : "waiting")),
     },
+    // Leaving the week also clears the project's time off the calendar, so each
+    // act says what goes before it runs — and only asks when something does.
+    ...(kind === "project" && a.week && !done
+      ? ([
+          {
+            kind: "action",
+            label: "Move to next week",
+            confirm: a.week.cleared
+              ? `Move “${record.name}” to next week? This takes ${a.week.cleared} off the calendar.`
+              : undefined,
+            confirmLabel: "Move it",
+            undoable: true,
+            action: act(a.week.pushOut),
+          },
+          {
+            kind: "action",
+            label: "Take off this week",
+            confirm: a.week.cleared
+              ? `Take “${record.name}” off this week? This takes ${a.week.cleared} off the calendar.`
+              : undefined,
+            confirmLabel: "Take it off",
+            undoable: true,
+            action: act(a.week.takeOff),
+          },
+        ] satisfies RecordAction[])
+      : []),
     { kind: "sep" },
     {
       kind: "action",

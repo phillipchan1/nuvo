@@ -35,7 +35,8 @@
 // The header IS the week door: identity left, the state's verb right. The
 // toolbar keeps a door only in focus mode, where this rail is slid shut.
 
-import { useState } from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRecordContextMenu } from "./RecordContextMenu";
 import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -89,6 +90,10 @@ export default function WeekPanel({
   // rail can never drift from the board (or from Set-the-week). The stored rock,
   // when one exists, carries only the verdict.
   const crown = useWeekCrown();
+  // Right-click a project for its lifecycle acts — the same menu every other
+  // surface wears, which is where "move to next week" and "take off this week"
+  // live for a project that has no block on the grid to open them from.
+  const recordMenu = useRecordContextMenu();
   if (!data || !crown) return null;
 
   const { rows, landed, looseCount } = crown;
@@ -175,6 +180,7 @@ export default function WeekPanel({
               onToggle={() => onTick(row)}
               // Open a priority where its work lives: its Record.
               onOpen={() => openRecord("project", row.projectId)}
+              onContextMenu={recordMenu.onContextMenu("project", row.projectId)}
               canPlace={canPlaceProjects}
               expanded={openIds.has(row.rock.id)}
               onExpand={() =>
@@ -198,6 +204,7 @@ export default function WeekPanel({
       )}
 
       {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}
+      {recordMenu.menu}
     </div>
   );
 }
@@ -327,6 +334,7 @@ function ProjectStackRow({
   renderTask,
   onToggle,
   onOpen,
+  onContextMenu,
   canPlace,
   expanded,
   onExpand,
@@ -336,6 +344,7 @@ function ProjectStackRow({
   renderTask: RenderCrownTask;
   onToggle: () => void;
   onOpen: () => void;
+  onContextMenu: (e: ReactMouseEvent) => void;
   /** the Schedule is showing a time grid, so a sitting has somewhere to land */
   canPlace: boolean;
   expanded: boolean;
@@ -390,6 +399,7 @@ function ProjectStackRow({
 
       <div
         {...dragProps}
+        onContextMenu={onContextMenu}
         title={
           canDrag
             ? loose.length > 0

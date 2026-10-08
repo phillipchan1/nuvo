@@ -21,10 +21,11 @@ import { Icon } from "../Icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { weekSpan } from "../../lib/week";
 import { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useHomeTimezone } from "../../hooks/useHomeTimezone";
 import { projectById } from "../../lib/vertical";
-import { pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
+import { spanAnotherWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekVerdicts } from "../../hooks/useWeekVerdicts";
 import { useWeekReviewActions, useWeekReviewRow } from "../../hooks/useWeekReview";
@@ -120,6 +121,7 @@ export function WeekPlanBody({
   const hoursLabel = tense === "ahead" ? "Where the hours will go" : tense === "current" ? "Where the hours are going" : "Where the hours went";
   const total = report.priorityTotal;
   const { data: vertical, updateProject } = useVertical();
+  const defer = useDeferProject();
   const verdicts = useWeekVerdicts(viewedWeekISO);
   const reviewActions = useWeekReviewActions(viewedWeekISO);
   const sealedRow = useWeekReviewRow(viewedWeekISO);
@@ -159,12 +161,15 @@ export function WeekPlanBody({
     const project = proj(p);
     if (project) updateProject(project.id, spanAnotherWeekPatch(project, viewedWeekISO));
   };
+  // The two deferrals also clear what the project still holds on the calendar
+  // — a span write alone left its sitting on Thursday (`useDeferProject`).
   const pushOut = (p: WeekPriority) => {
     const project = proj(p);
-    if (project) updateProject(project.id, pushToNextWeekPatch(project, viewedWeekISO));
+    if (project) void defer.pushOut(project, viewedWeekISO);
   };
   const takeOff = (p: WeekPriority) => {
-    if (p.projectId) updateProject(p.projectId, takeOffWeekPatch());
+    const project = proj(p);
+    if (project) void defer.takeOff(project, viewedWeekISO);
   };
   // Ticking a row SHIPS its project — one completion act, not two. Writing
   // `done_at` directly reads as "complete" while finalizing nothing, which let a
@@ -269,6 +274,7 @@ export function WeekPlanBody({
                   onSpan={() => span(p)}
                   onPushOut={() => pushOut(p)}
                   onTakeOff={() => takeOff(p)}
+                  project={proj(p)}
                   weekStartISO={viewedWeekISO}
                   onOpenProject={onOpenProject && p.projectId ? () => onOpenProject(p.projectId!) : undefined}
                 />

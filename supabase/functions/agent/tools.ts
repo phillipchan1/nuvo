@@ -29,6 +29,9 @@ import {
   planningWeekStart,
   spansWeek,
   takeOffWeekPatch,
+  clearProjectTime,
+  deferralClearRange,
+  releasedTaskPatch,
   toRowPatch,
   worksThisWeek,
   dayMs,
@@ -550,9 +553,91 @@ async function bringProjectIntoWeek(userId: string, weekStart: string, p: Projec
   return p.name;
 }
 
+/** What a deferral took off the calendar — counts, so the reply can say so. */
+interface ClearedTime {
+  blocks: number;
+  tasks: number;
+}
+
+/** "1 block and 3 tasks" — empty when nothing was on the calendar. */
+function clearedPhrase(c: ClearedTime): string {
+  const parts = [
+    c.blocks ? `${c.blocks} block${c.blocks === 1 ? "" : "s"}` : "",
+    c.tasks ? `${c.tasks} task${c.tasks === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return parts.join(" and ");
+}
+
+/** Clear what a project still holds on the calendar, from today forward. WHICH
+ *  blocks and which work is the kernel's call (`clearProjectTime`) — the same
+ *  plan the browser's `useDeferProject` applies, so a project taken off the week
+ *  in chat leaves exactly the calendar a tap would. */
+async function clearProjectTimeAhead(userId: string, projectId: string, weekStart: string, tz: string): Promise<ClearedTime> {
+  const range = deferralClearRange("take_off", weekStart, todayIn(tz));
+  const [taskRes, slotRes] = await Promise.all([
+    admin
+      .from("tasks")
+      .select("id, project_id, status, do_date, slot_id")
+      .eq("user_id", userId)
+      .eq("project_id", projectId)
+      .is("parent_task_id", null),
+    admin
+      .from("slots")
+      .select("id, project_id, do_date, recurrence_id, google_event_id")
+      .eq("user_id", userId)
+      .eq("project_id", projectId)
+      .gte("do_date", range.fromISO),
+  ]);
+  if (taskRes.error) throw new Error(taskRes.error.message);
+  if (slotRes.error) throw new Error(slotRes.error.message);
+  const slots = slotRes.data ?? [];
+
+  const clearing = clearProjectTime(
+    projectId,
+    range,
+    (taskRes.data ?? []).map((t) => ({
+      id: t.id as string,
+      projectId: (t.project_id as string | null) ?? null,
+      status: t.status as string,
+      doDate: (t.do_date as string | null) ?? null,
+      slotId: (t.slot_id as string | null) ?? null,
+    })),
+    slots.map((s) => ({
+      id: s.id as string,
+      projectId: (s.project_id as string | null) ?? null,
+      doDate: s.do_date as string,
+      recurring: Boolean(s.recurrence_id),
+    })),
+  );
+
+  if (clearing.taskIds.length) {
+    const { error } = await admin
+      .from("tasks")
+      .update(releasedTaskPatch(true))
+      .eq("user_id", userId)
+      .in("id", clearing.taskIds);
+    if (error) throw new Error(error.message);
+    // The mirror is a reconciler: a task with no time gets its block removed.
+    for (const id of clearing.taskIds) await mirrorTask(id, tz);
+  }
+  for (const id of clearing.removeSlotIds) {
+    const { error } = await admin.from("slots").delete().eq("user_id", userId).eq("id", id);
+    if (error) throw new Error(error.message);
+    const slot = slots.find((s) => s.id === id);
+    await invokeFn("slot-mirror", { slotId: id, deleted: true, googleEventId: slot?.google_event_id ?? null });
+  }
+  return { blocks: clearing.removeSlotIds.length, tasks: clearing.taskIds.length };
+}
+
 /** Take a project off this week — back to "needs a sprint", same as dragging its
- *  card off the board. Only touches a project actually committed to this week. */
-async function pushProjectOutOfWeek(userId: string, weekStart: string, p: ProjectSpanRow): Promise<string | null> {
+ *  card off the board — and clear what it still held on the calendar. Only
+ *  touches a project actually committed to this week. */
+async function pushProjectOutOfWeek(
+  userId: string,
+  weekStart: string,
+  p: ProjectSpanRow,
+  tz: string,
+): Promise<{ name: string; cleared: ClearedTime } | null> {
   if (!spansWeek(fromProjectRow(p), weekStart)) return null;
   const { error } = await admin
     .from("projects")
@@ -560,7 +645,7 @@ async function pushProjectOutOfWeek(userId: string, weekStart: string, p: Projec
     .eq("user_id", userId)
     .eq("id", p.id);
   if (error) throw new Error(error.message);
-  return p.name;
+  return { name: p.name, cleared: await clearProjectTimeAhead(userId, p.id, weekStart, tz) };
 }
 
 async function saveSprintRocks(userId: string, weekStart: string, rocks: BigRock[]): Promise<void> {
@@ -3620,20 +3705,27 @@ export async function executeTool(
         weekStart,
         { project_id: (args.project_id as string) ?? known?.project_id ?? undefined, priority_title: args.priority_title as string | undefined },
       );
-      const pushedOut = project ? await pushProjectOutOfWeek(userId, weekStart, project) : null;
-      if (!known && pushedOut) {
+      const off = project ? await pushProjectOutOfWeek(userId, weekStart, project, tz) : null;
+      const pushedOut = off?.name ?? null;
+      // What came off the calendar with it — said in the receipt, and handed to
+      // the model so the reply can say it too rather than imply nothing moved.
+      const cleared = off ? clearedPhrase(off.cleared) : "";
+      const offSummary = cleared
+        ? `Took "${pushedOut}" off this week — ${cleared} off the calendar`
+        : `Took "${pushedOut}" off this week`;
+      if (!known && off) {
         return {
-          result: JSON.stringify({ pushedOutOfWeek: pushedOut, weekStart }),
-          action: { tool: name, summary: `Took "${pushedOut}" off this week`, verb: "unslotted" },
+          result: JSON.stringify({ pushedOutOfWeek: pushedOut, weekStart, clearedFromCalendar: off.cleared }),
+          action: { tool: name, summary: offSummary, verb: "unslotted" },
         };
       }
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       await saveSprintRocks(userId, weekStart, rocks.filter((r) => r.id !== rock.id));
       return {
-        result: JSON.stringify({ id: rock.id, deleted: true, pushedOutOfWeek: pushedOut }),
+        result: JSON.stringify({ id: rock.id, deleted: true, pushedOutOfWeek: pushedOut, clearedFromCalendar: off?.cleared ?? null }),
         action: {
           tool: name,
-          summary: pushedOut ? `Took "${pushedOut}" off this week` : `Removed priority "${rock.title}"`,
+          summary: pushedOut ? offSummary : `Removed priority "${rock.title}"`,
           verb: "trashed",
           // The rock is gone from the sprint — the card carries the only copy
           // left, which is exactly why it renders from `restore` and not a ref.

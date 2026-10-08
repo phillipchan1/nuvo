@@ -5423,3 +5423,80 @@ mode and the Terminal skin, and at 375px through the capture harness (writes int
 `tests/capture-door`, `capture-slot`, `mobile-capture`, `recurrence`. `fit_spotlight`
 cargo-checked on macOS; the native panel itself still wants a run in `tauri:dev`.*
 
+
+---
+
+**D-150 · 2026-10-08 · Deferring a project clears the calendar it leaves behind — and the
+block itself is a door to it.**
+
+Origin ⓟ: *"I have a project in a slot, and I'm realizing on Thursday I don't have time to
+work on this project… I'm guessing on the calendar it doesn't actually get the stuff off the
+calendar. I need you to think through how to make this all connected tissue."*
+
+The guess was right, and it was worse than a gap. Three things were true at once:
+
+- **Taking a project off the week wrote its span and stopped.** `takeOffWeekPatch` clears
+  two dates. The sitting stayed on the grid with every task inside, so the slate forgot the
+  project while Thursday still promised it. And because the tasks kept their `do_date`, the
+  nightly rollover carried them into Today each morning — for a project on no week at all.
+- **The exact case had no door.** D-060 put the deferrals on each Week's Plan row, but as
+  the *remedy to loose work*. A project whose work was all placed had no problem to name, so
+  it had no panel. The better you had planned it, the less you could do about it.
+- **Five surfaces took a project off a week with their own bare span write** — the Week's
+  Plan, Plan the week on both shells, the deck's drag, the phone's Projects tab and the
+  record's shelve — and none touched the calendar. Three of them also set `backlog`; the
+  kernel's own patch does not.
+
+So leaving a week is now **two writes, decided once**:
+
+- **The kernel decides what comes off** (`clearProjectTime` / `clearSlotTime` /
+  `deferralClearRange` / `releasedTaskPatch`, `planningRules.ts`). Always **from today
+  forward**: what already happened this week is the record of the week. *Take off* clears
+  everything ahead; *next week* clears the rest of the week it leaves. Released work loses
+  its **day** as well as its time and rests in the project (`backlog`), never the inbox.
+  Done work never moves (P6). A **recurring** slot is emptied, never deleted — one week's
+  deferral is no reason to cut a hole in a standing dedication.
+- **One hook applies it** (`useDeferProject`) with **one undo** that restores the span, the
+  block and each piece. All five surfaces above go through it; `tests/project-time.test.ts`
+  fails on a sixth bare write. The chat's `delete_priority` applies the same kernel plan with
+  the service role and reports what it cleared.
+- **The cost is said before the press**, in one spelling (`costPhrase`): *"Still on the
+  calendar this week: Thu 2–4pm and 3 tasks."* Stated, not warned — inline on the panel with
+  undo behind it, not a blocking dialog on an act you should feel free to take.
+- **"Can't get to this…" is on the thing you're looking at.** The Schedule's project block
+  (right-click, and the slot panel's footer), the phone's slot sheet, and — for a project with
+  no block — the record menu on the week crown's row and the phone's ⋯. From a block it adds
+  the one act that only makes sense there: **Free just this block** (the project stays on
+  the week, the work goes loose) — the honest answer to "not Thursday, maybe Friday". The
+  Week's Plan row shows the same door on a fully placed project.
+
+Ledger: **W3** — *what should I drop, and what breaks if I do?* It was scored ✅ while only
+answering the first half. Strains **P4/P3** (the app moving your work as a side effect),
+which is why the clearing is stated, pressed and undoable rather than silent. No new pool,
+no new noun (*Slot*, *sitting* and *loose* are existing words). Works on a project with
+nothing placed — the panel says so and the acts are plain span writes (P7); nothing in it is
+specific to one account (P16).
+
+**Deliberately not done, so it doesn't read as an oversight:**
+
+- **Park and Delete are untouched.** Parking doesn't take a project off its week, so
+  clearing its calendar would be a second meaning for one act. Deleting a project already
+  detaches its tasks; releasing them to `backlog` first would leave them parentless *and*
+  undated, which nothing renders.
+- **No trace in the week's Review.** A project taken off mid-week still vanishes from that
+  week's slate, because the slate is derived from spans. Keeping a "taken off" mark is a new
+  stored fact and its own decision.
+- **Raw date edits stay silent** (Portfolio cells, the record's date fields, the deck's
+  resize). They change a span without saying "this week, no".
+- **The `backlog` disagreement is preserved, not settled**: each surface still writes the
+  status it always wrote alongside the span.
+- **`sprint_id` is not cleared** on released work.
+
+*Status: standing — typecheck, the full suite and both builds green. New:
+`tests/project-time.test.ts` (the kernel plan, the cost's wording, the drift guard) and
+`tests/defer-project.test.tsx` (the real hook: span, block, work, one undo, restore).
+**Driven in the dev app only through the `?sitting` harness** — the block's menu item and
+the card, with fixture data. This checkout has no `.env.local`, so nothing was pressed
+against a real account, and the phone's slot sheet and both record menus are unverified by
+eye. The chat half is **not deployed** and `npm run eval` was not run; the tool's
+description changed, the system prompt did not.*

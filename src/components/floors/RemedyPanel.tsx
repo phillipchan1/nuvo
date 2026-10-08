@@ -24,16 +24,25 @@ export function RemedyPanel({
   problem,
   why,
   acts,
+  tone = "problem",
 }: {
   /** the problem in one sentence — stated, never scolded (P4) */
   problem: ReactNode;
   /** …and why, in the composer's own words, when there is one */
   why?: ReactNode;
   acts: RemedyAct[];
+  /** `problem` is the app naming something wrong with the row. `asked` is the
+   *  same acts opened by YOU ("can't get to this") — nothing is wrong, so it
+   *  doesn't wear the signal. */
+  tone?: "problem" | "asked";
 }) {
+  const asked = tone === "asked";
   return (
-    <div className="mb-2 rounded-md px-2.5 py-2" style={{ background: "var(--signal-soft)" }}>
-      <div className="text-caption" style={{ color: "var(--signal)" }}>
+    <div
+      className={`mb-2 rounded-md px-2.5 py-2 ${asked ? "border border-line" : ""}`}
+      style={asked ? undefined : { background: "var(--signal-soft)" }}
+    >
+      <div className="text-caption" style={{ color: asked ? "var(--ink)" : "var(--signal)" }}>
         {problem}
       </div>
       {why && <div className="mt-0.5 text-meta text-muted">{why}</div>}

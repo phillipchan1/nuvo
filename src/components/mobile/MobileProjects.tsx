@@ -23,6 +23,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
 import { readOnDeck, sprintSpanFor, weekIndexIn, type OnDeckLane } from "../../lib/onDeck";
@@ -58,6 +59,7 @@ export default function MobileProjects({
   onOpenItem: (kind: "project" | "initiative" | "domain", id: string) => void;
 }) {
   const { data: d, ready, updateProject, addProject } = useVertical();
+  const defer = useDeferProject();
   // The All list is a document surface, so a hold there means "what can I do to
   // this" — the phone's right-click. (On the deck below, a hold means "pick it
   // up"; that surface is a drag surface, and its records reach the same acts
@@ -171,7 +173,8 @@ export default function MobileProjects({
     const p = d.projects.find((x) => x.id === id);
     if (!p) return;
     if (col == null) {
-      updateProject(id, { startDate: null, targetDate: null, status: "backlog" });
+      // Off the deck — and off the calendar it was still holding.
+      void defer.takeOff(p, undefined, { status: "backlog" });
       return;
     }
     const ws = board.weeks[col]?.weekStart;

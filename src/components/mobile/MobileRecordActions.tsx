@@ -16,6 +16,7 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { ProjectShipAssess } from "../record/ShipAssess";
+import { useRecordWeekActs } from "../../hooks/useProjectTime";
 import { buildRecordActions, type RecordAction, type RecordKind } from "../../lib/recordActions";
 import Sheet from "./Sheet";
 
@@ -109,6 +110,7 @@ function RecordActionSheet({
 }) {
   const { data, updateProject, deleteProject, updateInitiative, deleteInitiative } = useVertical();
   const [confirm, setConfirm] = useState<Extract<RecordAction, { kind: "action" }> | null>(null);
+  const week = useRecordWeekActs(state.kind, state.id);
 
   const record =
     state.kind === "project"
@@ -123,6 +125,7 @@ function RecordActionSheet({
     deleteInitiative,
     onShip,
     onClose,
+    week,
   });
 
   const run = (item: Extract<RecordAction, { kind: "action" }>) => {
@@ -140,14 +143,16 @@ function RecordActionSheet({
       {confirm ? (
         <div className="px-5 pb-6 pt-1">
           <p className="text-head text-ink">{confirm.confirm}</p>
-          <p className="mt-1 text-caption text-muted">This can't be undone.</p>
+          <p className="mt-1 text-caption text-muted">
+            {confirm.undoable ? "The work stays in the project. You can undo this." : "This can't be undone."}
+          </p>
           <div className="mt-4 flex flex-col gap-2">
             <button
               onClick={confirm.action}
               className="tap fast w-full rounded-xl px-4 py-3 text-center text-body font-semibold text-white"
-              style={{ background: "var(--signal)" }}
+              style={{ background: confirm.danger ? "var(--signal)" : "var(--accent)" }}
             >
-              Delete
+              {confirm.confirmLabel ?? "Delete"}
             </button>
             <button
               onClick={() => setConfirm(null)}

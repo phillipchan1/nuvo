@@ -338,6 +338,134 @@ export function pushToNextWeekPatch(
   return weekSpanFor(nextMonday, spanWidthWeeks(p));
 }
 
+// ── a project's time on the calendar ─────────────────────────────────────────
+// Deferring a project used to write its span and stop. The sitting stayed on the
+// grid and its tasks kept their dates, so the calendar went on promising a
+// Thursday the week no longer owed — and the nightly rollover then carried those
+// tasks into Today every morning, for a project that was on no week at all.
+//
+// So leaving a week is two writes, decided once: the span patch above, and this
+// — WHICH blocks and WHICH work come off the calendar. A plan, not a write: the
+// browser applies it through the outbox with one undo, the agent through the
+// service role, and a tap and a chat message clear exactly the same things.
+
+/** A task, as far as "is it on the calendar" cares. */
+export interface TimedTask {
+  id: string;
+  projectId: string | null;
+  status: string;
+  /** YYYY-MM-DD — the day it's planned for, timed or not */
+  doDate: string | null;
+  slotId: string | null;
+}
+
+/** A slot, as far as the same question cares. */
+export interface TimedSlot {
+  id: string;
+  projectId: string | null;
+  doDate: string;
+  /** one occurrence of a series — a standing dedication, never this act's to delete */
+  recurring: boolean;
+}
+
+/** What comes off the calendar. `removeSlotIds` are deleted; `emptySlotIds` are
+ *  recurring occurrences that stay standing and lose only their contents;
+ *  `taskIds` go back to the project with no day and no time. */
+export interface TimeClearing {
+  removeSlotIds: string[];
+  emptySlotIds: string[];
+  taskIds: string[];
+}
+
+/** The days an act clears. `toISO: null` is open-ended — everything ahead. */
+export interface ClearRange {
+  fromISO: string;
+  toISO: string | null;
+}
+
+const isLiveTask = (t: TimedTask): boolean => t.status !== "done" && t.status !== "trashed";
+
+/**
+ * The range each deferral clears — always **from today forward**. What already
+ * happened this week is the record of the week and stays where it is.
+ *
+ *  - `take_off`  → everything ahead: the project has no week, so no day of it
+ *                  is still owed.
+ *  - `next_week` → the rest of the week it is leaving. Time already placed in
+ *                  the week it's moving to is exactly where it should be.
+ */
+export function deferralClearRange(
+  act: "take_off" | "next_week",
+  weekStartISO: string,
+  todayISO: string,
+): ClearRange {
+  if (act === "take_off") return { fromISO: todayISO, toISO: null };
+  const monday = mondayOf(weekStartISO);
+  const fromISO = dayMs(todayISO) > dayMs(monday) ? todayISO : monday;
+  return { fromISO, toISO: isoOf(dayMs(monday) + 6 * DAY_MS) };
+}
+
+/**
+ * Which of a project's blocks and work come off the calendar in a range.
+ *
+ * Done work never moves — a completed block is evidence (P6). A recurring slot
+ * is emptied, not deleted: it is time you protect every week, and one week's
+ * deferral is no reason to cut a hole in the series.
+ */
+export function clearProjectTime(
+  projectId: string,
+  range: ClearRange,
+  tasks: TimedTask[],
+  slots: TimedSlot[],
+): TimeClearing {
+  const from = dayMs(range.fromISO);
+  const to = range.toISO == null ? Infinity : dayMs(range.toISO);
+  const inRange = (iso: string | null): boolean => {
+    if (!iso) return false;
+    const ms = dayMs(iso);
+    return ms >= from && ms <= to;
+  };
+
+  const mine = slots.filter((s) => s.projectId === projectId && inRange(s.doDate));
+  const cleared = new Set(mine.map((s) => s.id));
+
+  return {
+    removeSlotIds: mine.filter((s) => !s.recurring).map((s) => s.id),
+    emptySlotIds: mine.filter((s) => s.recurring).map((s) => s.id),
+    taskIds: tasks
+      .filter(
+        (t) =>
+          t.projectId === projectId &&
+          isLiveTask(t) &&
+          ((t.slotId != null && cleared.has(t.slotId)) || inRange(t.doDate)),
+      )
+      .map((t) => t.id),
+  };
+}
+
+/** Free ONE block: the project stays on its week and the work inside goes loose.
+ *  Everything live in the slot is released, whoever it belongs to — a task left
+ *  on the day with its block gone is the calendar half-telling the truth. */
+export function clearSlotTime(slot: Pick<TimedSlot, "id" | "recurring">, tasks: TimedTask[]): TimeClearing {
+  return {
+    removeSlotIds: slot.recurring ? [] : [slot.id],
+    emptySlotIds: slot.recurring ? [slot.id] : [],
+    taskIds: tasks.filter((t) => t.slotId === slot.id && isLiveTask(t)).map((t) => t.id),
+  };
+}
+
+/** Where released work rests, in row shape (both runtimes write `tasks` rows).
+ *  Work with a project goes back to that project; a capture that was only
+ *  riding the block goes back to the inbox — the same rule as `backToInbox`. */
+export function releasedTaskPatch(hasProject: boolean): {
+  do_date: null;
+  start_time: null;
+  slot_id: null;
+  status: "backlog" | "inbox";
+} {
+  return { do_date: null, start_time: null, slot_id: null, status: hasProject ? "backlog" : "inbox" };
+}
+
 /** The same two patches in row shape, for the runtime that speaks snake_case. */
 export function toRowPatch(patch: { startDate: string | null; targetDate: string | null; status?: string }): Record<string, unknown> {
   const out: Record<string, unknown> = { start_date: patch.startDate, target_date: patch.targetDate };

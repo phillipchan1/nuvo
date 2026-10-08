@@ -19,7 +19,7 @@
 // render, which is exactly the half that a test can't see. Not part of any real
 // surface. Precedent: CalendarHarness (?horizon), PlanWeekHarness (?planweek).
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import CalendarPane from "./CalendarPane";
@@ -27,6 +27,8 @@ import { deriveSlotTitle } from "../lib/slots";
 import { toDateISO } from "../lib/dates";
 import { DEFAULT_DURATION_MINUTES, type ExternalEvent, type Slot, type Task } from "../lib/types";
 import type { VerticalData } from "../lib/vertical";
+import { VerticalStoreProvider, type VerticalStore } from "../hooks/useVertical";
+import { aheadSlotsKey } from "../hooks/useProjectTime";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useSlotMutations } from "../hooks/useSlots";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
@@ -137,6 +139,23 @@ export default function SittingHarness() {
   const [log, setLog] = useState<string[]>([]);
   const say = (line: string) => setLog((l) => [line, ...l].slice(0, 8));
 
+  // "Can't get to this…" reads its cost from the query cache, not from props —
+  // so the fixtures are mirrored there, and a fixture store stands in for the
+  // vertical. Right-click the seeded sitting to read the card.
+  useEffect(() => {
+    qc.setQueryData(["tasks", "all"], tasks);
+    qc.setQueryData(aheadSlotsKey(), slots);
+  }, [tasks, slots]);
+  const store = useMemo(
+    () =>
+      ({
+        data: VERTICAL,
+        updateProject: (id: string, p: unknown) => say(`span write: ${id} ${JSON.stringify(p)}`),
+      }) as unknown as VerticalStore,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const slotTasks = useMemo(() => {
     const m: Record<string, Task[]> = {};
     for (const s of slots) m[s.id] = tasks.filter((t) => t.slot_id === s.id);
@@ -244,6 +263,7 @@ export default function SittingHarness() {
 
   return (
     <QueryClientProvider client={qc}>
+      <VerticalStoreProvider value={store}>
       <div className="atmosphere flex h-screen w-screen">
         {/* the fake crown — the same payload WeekPanel stamps on a project row */}
         <div ref={railRef} className="flex w-[300px] shrink-0 flex-col gap-2 border-r border-line p-3">
@@ -313,6 +333,7 @@ export default function SittingHarness() {
           />
         </div>
       </div>
+      </VerticalStoreProvider>
     </QueryClientProvider>
   );
 }

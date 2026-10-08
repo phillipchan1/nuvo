@@ -26,12 +26,13 @@ import { useMemo, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
 import { domainById, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
-import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
+import { bringIntoWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { weekName, weekSpan } from "../../lib/week";
 import { LANE_QUESTION, REVEALED_BY_LANE, STEP_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
@@ -91,12 +92,13 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
 
   // The week's projects — derived from the On Deck spans, never stored. Bringing a
   // project in / taking it off IS the placement write, same as the deck's drop.
+  const defer = useDeferProject();
   const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
   const bringIn = (p: Project) => {
     const patch = bringIntoWeekPatch(p, weekStartISO);
     if (patch) updateProject(p.id, patch);
   };
-  const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
+  const takeOff = (p: Project) => void defer.takeOff(p, weekStartISO);
   const setDuration = (taskId: string, mins: number) => updateTask(taskId, { durationMins: mins });
 
   // the one "what counts as busy" rule (lib/now.ts) — the day strips draw what the

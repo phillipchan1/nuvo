@@ -23,6 +23,7 @@ import { isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel,
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
+import { DeferCard } from "./DeferCard";
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
@@ -1718,6 +1719,8 @@ function CalendarPane({
     };
   }, [taskMenu, mutations]);
 
+  const [deferOffer, setDeferOffer] = useState<{ x: number; y: number; slot: Slot } | null>(null);
+  const closeDeferOffer = useCallback(() => setDeferOffer(null), []);
   const slotMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!slotMenu) return;
@@ -3404,7 +3407,7 @@ function CalendarPane({
         const childCount = slotTasks[slot.id]?.length ?? 0;
         const recurring = Boolean(slot.recurrence_id);
         const left = fixedCssPx(Math.min(slotMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(Math.min(slotMenu.y, window.innerHeight - 160));
+        const top = fixedCssPx(Math.min(slotMenu.y, window.innerHeight - 200));
         return (
           <div
             ref={slotMenuRef}
@@ -3436,6 +3439,17 @@ function CalendarPane({
             }}>
               Duplicate
             </EventMenuItem>
+            {/* Project time has a fourth act, and it isn't Delete: deleting the
+                block left the project on the week and its work stranded on the
+                day. The card says what each way out clears before you press. */}
+            {slot.project_id && (
+              <EventMenuItem onClick={() => {
+                setDeferOffer({ x: slotMenu.x, y: slotMenu.y, slot });
+                setSlotMenu(null);
+              }}>
+                Can’t get to this…
+              </EventMenuItem>
+            )}
             <div className="my-1 border-t border-line" />
             <EventMenuItem onClick={() => {
               const el = slotMenu.el;
@@ -3454,6 +3468,10 @@ function CalendarPane({
           </div>
         );
       })()}
+
+      {deferOffer && (
+        <DeferCard slot={deferOffer.slot} point={deferOffer} onClose={closeDeferOffer} />
+      )}
 
       {/* ── the reconcile card ───────────────────────────────────────────────
           A project's sitting is placed, and some of its work already had a time

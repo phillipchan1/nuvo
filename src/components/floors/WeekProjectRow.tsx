@@ -21,6 +21,10 @@ import { carryMark, pushState, type PushState } from "../../lib/priorities";
 import { fmtHours } from "../../lib/dates";
 import { RemedyPanel } from "./RemedyPanel";
 import { FindTimeProposal } from "./FindTimeProposal";
+import { DeferPanel } from "./DeferPanel";
+import { useProjectTimeCost } from "../../hooks/useProjectTime";
+import { costPhrase } from "../../lib/projectTime";
+import type { Project } from "../../lib/vertical";
 import type { WeekPriority } from "../../lib/composeWeek";
 
 /** "2h has a time · 4h loose" — the row's whole reason for existing. Silent when
@@ -86,6 +90,7 @@ export function WeekProjectRow({
   onTakeOff,
   onOpenProject,
   weekStartISO,
+  project,
 }: {
   p: WeekPriority;
   /** a sealed week is history — no acts */
@@ -97,6 +102,8 @@ export function WeekProjectRow({
   onTakeOff: () => void;
   /** the week the row belongs to — the placement act needs a week to search */
   weekStartISO: string;
+  /** the live project behind the row — what "can't get to it" defers */
+  project?: Project | null;
   /** desktop only — the phone's shell doesn't mount the record overlay, so the
    *  gap sentence stands alone there rather than offering a dead button. */
   onOpenProject?: () => void;
@@ -113,6 +120,12 @@ export function WeekProjectRow({
   // sensibly given another week — fix what it means before you move it in time.
   const showGap = editable && !p.ready;
   const showLoose = editable && p.ready && p.looseMins > 0 && state !== "landed" && state !== "shipped";
+  // A project whose work all has a time has no problem to name — and so, until
+  // now, no panel and no way off the week. The door is yours to open instead.
+  const canDefer = editable && !showGap && !showLoose && !!project && state !== "landed" && state !== "shipped";
+  const [deferring, setDeferring] = useState(false);
+  // What leaving the week would take off the calendar — said before the press.
+  const cleared = costPhrase(useProjectTimeCost(p.projectId, "next_week", weekStartISO));
 
   return (
     <div className="border-b border-line py-2">
@@ -195,6 +208,7 @@ export function WeekProjectRow({
         <div className="mt-2">
           <RemedyPanel
             problem={`${fmtHours(p.looseMins)}h of what's left has no time this week.`}
+            why={cleared ? `Moving it or taking it off the week clears ${cleared} off the calendar.` : undefined}
             acts={[
               // Placement first. The three acts below are all ways to give up on
               // the work; until now they were the only answers offered to "it has
@@ -228,6 +242,22 @@ export function WeekProjectRow({
               { label: "Take it off this week", title: "Off the week entirely — it goes back to needing a week.", onPress: onTakeOff, quiet: true },
             ]}
           />
+        </div>
+      )}
+
+      {canDefer && project && (
+        <div className="mt-1 pl-[18px]">
+          {deferring ? (
+            <DeferPanel project={project} weekStartISO={weekStartISO} onDone={() => setDeferring(false)} />
+          ) : (
+            <button
+              onClick={() => setDeferring(true)}
+              className="tap fast text-meta text-muted hover:text-ink"
+              title="Move it to next week, or take it off the week"
+            >
+              Can’t get to it…
+            </button>
+          )}
         </div>
       )}
     </div>

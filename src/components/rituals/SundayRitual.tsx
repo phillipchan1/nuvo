@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import { useSettings } from "../../hooks/useSettings";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { placementKey, useWeekDraft } from "../../hooks/useWeekDraft";
@@ -46,7 +47,7 @@ import DurationSelect from "../DurationSelect";
 import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
-import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
+import { bringIntoWeekPatch, spanAnotherWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { PLAN_STEPS, STEP_ASK, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import { RemedyPanel } from "../floors/RemedyPanel";
@@ -797,6 +798,7 @@ function ProjectsLane({
   const { openRecord } = useAppNavigation();
   const [open, setOpen] = useState<string | null>(null);
 
+  const defer = useDeferProject();
   const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
   // Bringing a project in IS placing it on this week — the same kernel patch the
   // On Deck drop and the agent's create_priority apply, so they can't diverge.
@@ -807,12 +809,14 @@ function ProjectsLane({
     // week is where that costs you. Name it, offer the fix, don't refuse.
     noticeIfUnready(data, p, () => openRecord("project", p.id));
   };
-  const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
+  // Leaving the week also clears what the project holds on the calendar — a
+  // re-plan mid-week is exactly when it already has a sitting (`useDeferProject`).
+  const takeOff = (p: Project) => void defer.takeOff(p, weekStartISO);
   // Both remediations are span writes through the kernel — the same act as
   // dragging the project's card on On Deck, so the deck and the plan can't
   // disagree about where a project lives.
   const spanIt = (p: Project) => updateProject(p.id, spanAnotherWeekPatch(p, weekStartISO));
-  const pushOut = (p: Project) => updateProject(p.id, pushToNextWeekPatch(p, weekStartISO));
+  const pushOut = (p: Project) => void defer.pushOut(p, weekStartISO);
 
   const byProject = new Map<string, PullSuggestion[]>();
   const unassigned: PullSuggestion[] = [];

@@ -348,6 +348,10 @@ const OWNED_RULES = [
   "carriedWeeks",
   "worksThisWeek",
   "slateOrder",
+  "clearProjectTime",
+  "clearSlotTime",
+  "deferralClearRange",
+  "releasedTaskPatch",
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

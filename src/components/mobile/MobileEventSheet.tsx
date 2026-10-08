@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SlotDeferPanel } from "../floors/DeferPanel";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../Icon";
 import type { AttendeeStatus, ExternalEvent, RecurrenceScope, Slot, Task } from "../../lib/types";
@@ -774,6 +775,7 @@ function MobileSlotSheet({
   const [titleInput, setTitleInput] = useState(slot.title ?? "");
   const [showReschedule, setShowReschedule] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deferring, setDeferring] = useState(false);
 
   const children = childTasks
     .filter((t) => t.status !== "trashed")
@@ -882,6 +884,20 @@ function MobileSlotSheet({
               <span className="font-medium">Ask Nuvo</span>
             </button>
           )}
+          {/* Project time's own way out — the same panel the Schedule's block
+              and the Week's Plan row open. Delete only removes the block. */}
+          {slot.project_id &&
+            (deferring ? (
+              <SlotDeferPanel slot={slot} onDone={onClose} />
+            ) : (
+              <button
+                onClick={() => setDeferring(true)}
+                className="tap fast flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-body"
+              >
+                <span className="text-lead text-muted">↷</span>
+                <span className="font-medium">Can’t get to this…</span>
+              </button>
+            ))}
           {confirmDelete ? (
             <div className="flex gap-2">
               <button

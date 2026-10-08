@@ -52,6 +52,7 @@ import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { anchoredTop } from "../lib/anchoredTop";
+import { SlotDeferPanel } from "./floors/DeferPanel";
 import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDeleteButton, useRecurringScope, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn } from "./ui";
 import type { TaskComposerHandle } from "./tasks/TaskComposer";
@@ -2547,6 +2548,7 @@ export function SlotPopover({
 
   const project = projectById(vertical, slot.project_id);
   const domain = domainById(vertical, slot.domain_id ?? project?.domainId ?? null);
+  const [deferring, setDeferring] = useState(false);
 
   const setProject = (projectId: string) => {
     const p = projectById(vertical, projectId || null);
@@ -2853,10 +2855,27 @@ export function SlotPopover({
           </PopCol>
         </PopBody>
 
+        {deferring && (
+          <div className="border-t border-line px-3 pt-2">
+            <SlotDeferPanel slot={slot} onDone={onClose} />
+          </div>
+        )}
+
         {/* Footer */}
         <PopFooter>
           <span className="mono text-micro text-muted/70">j k · ↵ open · e done · a add · ? keys</span>
           <div className="min-w-0 flex-1" />
+          {/* Project time's own way out — Delete only removes the block. */}
+          {slot.project_id && (
+            <button
+              type="button"
+              onClick={() => setDeferring((v) => !v)}
+              aria-expanded={deferring}
+              className={`fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${deferring ? "text-ink" : "text-muted hover:text-ink"}`}
+            >
+              Can’t get to this…
+            </button>
+          )}
           <SlotDeleteButton
             quiet
             recurring={Boolean(slot.recurrence_id && recurrence)}

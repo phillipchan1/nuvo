@@ -28,6 +28,7 @@ import { weekName, weekSpan, weekTick, weeksBetween } from "../../lib/week";
 import { sprintSpanFor, sprintSpanWeeks } from "../../lib/onDeck";
 import { quarterEndISO, quarterName, quarterRangeLabel } from "../../lib/initiativeDeck";
 import type { useVertical } from "../../hooks/useVertical";
+import { useDeferProject } from "../../hooks/useProjectTime";
 import type { Initiative, Project } from "../../lib/vertical";
 
 type Store = ReturnType<typeof useVertical>;
@@ -188,6 +189,7 @@ export function WeekBand({
   /** so the record can focus the band with `s` and drive it with arrow keys. */
   bandRef?: React.RefObject<HTMLDivElement>;
 }) {
+  const defer = useDeferProject();
   const { byWeek } = useCapacity();
   const [showDates, setShowDates] = useState(false);
   const weeks = byWeek.slice(0, horizon);
@@ -214,7 +216,13 @@ export function WeekBand({
     if (!ws) return;
     write(sprintSpanFor(p, ws, width), "in_progress");
   };
-  const shelve = () => write({ startDate: null, targetDate: null }, "backlog");
+  // Shelving a real project also clears what it still holds on the calendar;
+  // a draft (`onPlace`) has nothing placed yet and just loses its span.
+  const shelve = () => {
+    const full = onPlace ? null : store?.data.projects.find((x) => x.id === p.id);
+    if (full) void defer.takeOff(full, undefined, { status: "backlog" });
+    else write({ startDate: null, targetDate: null }, "backlog");
+  };
 
   // ← → walk the placement, ⇧ resizes the span — the deck's drag and resize
   // without the pointer.

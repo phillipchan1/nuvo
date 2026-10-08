@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useRecordWeekActs } from "../hooks/useProjectTime";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import {
   buildRecordActions,
@@ -74,6 +75,7 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
   const { data, updateProject, deleteProject, updateInitiative, deleteInitiative } = useVertical();
   const { openRecord } = useAppNavigation();
   const [confirm, setConfirm] = useState<Item | null>(null);
+  const week = useRecordWeekActs(state.kind, state.id);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -89,6 +91,7 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     deleteInitiative,
     onShip,
     onClose,
+    week,
   });
 
   // Clamp to the viewport — mirrors TaskContextMenu.
@@ -117,14 +120,16 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
         {confirm && confirm.kind === "action" ? (
           <div className="px-3 py-2">
             <p className="text-caption text-ink">{confirm.confirm}</p>
-            <p className="mt-0.5 text-meta text-muted">This can't be undone.</p>
+            <p className="mt-0.5 text-meta text-muted">
+              {confirm.undoable ? "The work stays in the project. You can undo this." : "This can't be undone."}
+            </p>
             <div className="mt-2.5 flex items-center gap-1.5">
               <button
                 onClick={confirm.action}
                 className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
-                style={{ background: "var(--signal)" }}
+                style={{ background: confirm.danger ? "var(--signal)" : "var(--accent)" }}
               >
-                Delete
+                {confirm.confirmLabel ?? "Delete"}
               </button>
               <button
                 onClick={() => setConfirm(null)}

@@ -354,7 +354,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Reads the slate before saying anything about the week | context | ✅ `week-slate-is-not-empty` |
 | Guided weekly plan: propose, then commit | — | ✅ `week-plan-proposes-first` |
 | Bringing a bet onto the week carries its project | `create_priority` | ✅ `week-priority-carries-project` |
-| Taking one off clears the span, keeps the work | `delete_priority` | ◐ no scenario |
+| Taking one off clears the span and its calendar time, keeps the work (D-150) | `delete_priority` | ◐ no scenario |
 | Recording a verdict | `complete_priority` | ◐ no scenario |
 | Naming the cost on a full week | — | ✅ `week-overload-names-the-cost` |
 | Composing the week's actual shape | — | — the composer is client-only (`useWeekDraft`); the chat proposes, the ritual places |
