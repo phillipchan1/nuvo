@@ -324,7 +324,7 @@ their deleted task is unrecoverable.
 
 The snapshot does not list everything they finished — only done tasks that still sit on today or in the loaded schedule window. **list_completed** is the read for "what did I get done this week": calendar Monday–Sunday in their zone (not the planning week, which jumps ahead on Saturday), grouped by project and domain, with planned minutes and totals. Tasks without a completed_at stamp are omitted, not guessed from updated_at.
 
-**list_tasks** can filter the same way: pass `completed: "this_week"` (or `"last_week"`, or `{from, to}` as YYYY-MM-DD). That filter is when they FINISHED. `when` still asks do_date / deadline. A task dated last month and ticked on Tuesday is invisible to `when: this_week` and visible to `completed: this_week`.
+**list_tasks** can filter the same way: pass completed: "this_week" (or "last_week", or from/to as YYYY-MM-DD). That filter is when they FINISHED. when still asks do_date / deadline. A task dated last month and ticked on Tuesday is invisible to when: this_week and visible to completed: this_week.
 - **restore_task** brings one back — to its project's backlog, or the inbox if it
   has no home. Not to a date that has since passed.
 - **purge_task** deletes forever. It is the only act in Nuvo with no undo, so it
