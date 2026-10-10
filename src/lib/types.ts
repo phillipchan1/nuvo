@@ -181,7 +181,7 @@ export function restingStatus(
  * The agent’s `restore_task` applies the same patch.
  */
 export function restoreFromTrashPatch(
-  t: Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id" | "start_time" | "slot_id" | "status" | "trashed_at">,
+  t: Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id" | "start_time" | "slot_id" | "status" | "trashed_at" | "completed_at">,
 ): {
   before: Partial<Task>;
   patch: Partial<Task>;
@@ -196,6 +196,7 @@ export function restoreFromTrashPatch(
       do_date: t.do_date,
       start_time: t.start_time,
       slot_id: t.slot_id,
+      completed_at: t.completed_at,
     },
     patch: {
       status,
@@ -203,6 +204,7 @@ export function restoreFromTrashPatch(
       do_date: null,
       start_time: null,
       slot_id: null,
+      completed_at: null,
     },
     // Inbox is a rail face; backlog isn't. Today is the least-wrong place to
     // land after restoring a parented row — the toast names the real home.

@@ -198,6 +198,8 @@ describe("tool schemas", () => {
     // filter panel's own query (audit rank 6). A bare call is the honest
     // "everything open". Read-only.
     "list_tasks",
+    // "what did I get done this week?" defaults to this calendar week. Read-only.
+    "list_completed",
     // "how does the rest of the year look?" names no dates, and forcing the
     // model to invent a pair would make it guess the very window it is asking
     // about. A bare call means the next 90 days. Read-only.

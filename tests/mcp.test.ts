@@ -74,6 +74,7 @@ describe("MCP JSON-RPC", () => {
     });
     const result = (reply as { result: { instructions: string } }).result;
     expect(result.instructions).toMatch(/get_snapshot/);
+    expect(result.instructions).toMatch(/list_completed/);
     expect(result.instructions).toMatch(/cannot switch users/);
   });
 
@@ -98,7 +99,7 @@ describe("MCP JSON-RPC", () => {
     expect(reply).toBeNull();
   });
 
-  it("tools/list exposes get_snapshot and create_project", async () => {
+  it("tools/list exposes get_snapshot, list_completed, and create_project", async () => {
     const reply = await handleMcpMethod(
       { jsonrpc: "2.0", id: 2, method: "tools/list" },
       tools,
@@ -106,6 +107,7 @@ describe("MCP JSON-RPC", () => {
     );
     const listed = (reply as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name);
     expect(listed).toContain("get_snapshot");
+    expect(listed).toContain("list_completed");
     expect(listed).toContain("create_project");
     expect(listed).toContain("create_initiative");
     expect(listed).not.toContain("point_at");

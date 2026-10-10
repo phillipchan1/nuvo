@@ -22,7 +22,7 @@ export interface McpTool {
 export const GET_SNAPSHOT_TOOL: McpTool = {
   name: GET_SNAPSHOT_NAME,
   description:
-    "Read the operator's Nuvo as it stands right now: domains, initiatives, projects, this week's slate, inbox, today, open windows, writable calendars. Call this before answering questions about the week, the day, or the vertical. Ids in the snapshot are for other tools — never invent them.",
+    "Read the operator's Nuvo as it stands right now: domains, initiatives, projects, this week's slate, inbox, today, open windows, writable calendars. Call this before answering questions about the week, the day, or the vertical. Finished work is NOT in this snapshot — call list_completed for 'done this week' (grouped by project/domain, with planned minutes). Ids in the snapshot are for other tools — never invent them.",
   inputSchema: {
     type: "object",
     properties: {
@@ -105,6 +105,7 @@ const INSTRUCTIONS =
   "You are acting as ONE operator inside Nuvo, their personal planner. " +
   "The bearer token selected that account; you cannot switch users, pass a user id, or see anyone else's funnel. " +
   "Call get_snapshot before answering about the week, the day, or the vertical. " +
+  "Finished work is not in the snapshot — call list_completed for 'done this week' (grouped by project/domain). " +
   "Writes go through the named tools — never invent ids. " +
   "Cancel, decline, and permanent delete require a confirm_token from a previous call; " +
   "propose first, then spend the token on a later call. " +

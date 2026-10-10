@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { restoreFromTrashPatch, restingStatus, type Task } from "../src/lib/types";
 
 function row(
-  patch: Partial<Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id" | "start_time" | "slot_id" | "status" | "trashed_at">>,
+  patch: Partial<Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id" | "start_time" | "slot_id" | "status" | "trashed_at" | "completed_at">>,
 ): Parameters<typeof restoreFromTrashPatch>[0] {
   return {
     do_date: null,
@@ -14,6 +14,7 @@ function row(
     slot_id: null,
     status: "trashed",
     trashed_at: "2026-08-28T12:00:00.000Z",
+    completed_at: null,
     ...patch,
   };
 }
@@ -33,6 +34,7 @@ describe("restoreFromTrashPatch", () => {
       do_date: null,
       start_time: null,
       slot_id: null,
+      completed_at: null,
     });
     expect(face).toBe("inbox");
   });
@@ -51,5 +53,13 @@ describe("restoreFromTrashPatch", () => {
     const { patch, face } = restoreFromTrashPatch(row({ domain_id: "dom-1" }));
     expect(patch.status).toBe("backlog");
     expect(face).toBe("today");
+  });
+
+  it("clears a leftover completion stamp so a restored row is not still finished", () => {
+    const { patch } = restoreFromTrashPatch(
+      row({ completed_at: "2026-08-01T18:00:00.000Z", status: "trashed" }),
+    );
+    expect(patch.completed_at).toBeNull();
+    expect(patch.status).toBe("inbox");
   });
 });

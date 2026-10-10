@@ -37,7 +37,14 @@ import {
   dayMs,
   isoOf,
 } from "../_shared/planningRules.ts";
-import { matchesQuery, type TaskQuery } from "../_shared/taskQuery.ts";
+import {
+  completedRange,
+  matchesQuery,
+  parseCompletedArg,
+  type CompletedFilter,
+  type TaskQuery,
+} from "../_shared/taskQuery.ts";
+import { completionStamp, groupCompletedWork } from "../_shared/completedWork.ts";
 import {
   describeRule,
   expandRule,
@@ -449,7 +456,7 @@ import {
   longestClearRun,
   makeEventVisibility,
   spanLoad,
-  todayIn,
+  localDateISO,
   visibleEventRows,
   zonedInstant,
 } from "../_shared/dayShape.ts";
@@ -474,6 +481,14 @@ function todayIn(tz: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+/** Inclusive local dates → UTC instants for a completion-window scan. */
+function completionBounds(filter: CompletedFilter, today: string, zone: string) {
+  const range = completedRange(filter, today);
+  const fromISO = new Date(zonedInstant(range.from, 0, zone)).toISOString();
+  const toExclusive = new Date(zonedInstant(addDaysISO(range.to, 1), 0, zone)).toISOString();
+  return { range, fromISO, toExclusive };
 }
 
 interface BigRock {
@@ -1080,7 +1095,7 @@ async function fillSlot(
   if (taskIds.length) {
     const { data, error } = await admin
       .from("tasks")
-      .update({ slot_id: slotId, do_date: doDate, start_time: null, status: "planned" })
+      .update({ slot_id: slotId, do_date: doDate, start_time: null, status: "planned", ...completionStamp("planned", new Date().toISOString()) })
       .in("id", taskIds)
       .eq("user_id", userId)
       .select("id, title");
@@ -2198,7 +2213,7 @@ export async function executeTool(
       const doDate = args.do_date as string;
       const { error } = await admin
         .from("tasks")
-        .update({ status: "planned", do_date: doDate, start_time: null })
+        .update({ status: "planned", do_date: doDate, start_time: null, ...completionStamp("planned", new Date().toISOString()) })
         .eq("id", id);
       if (error) throw new Error(error.message);
       await mirrorTask(id, tz);
@@ -2209,7 +2224,7 @@ export async function executeTool(
           summary: `Planned "${title}" for ${doDate}`,
           verb: "slotted",
           ref: { kind: "task", id },
-          undo: undoTask(before, "status", "do_date", "start_time"),
+          undo: undoTask(before, "status", "do_date", "start_time", "completed_at"),
         },
       };
     }
@@ -2231,6 +2246,7 @@ export async function executeTool(
           do_date: doDate,
           start_time: startTime,
           duration_minutes: duration,
+          ...completionStamp("planned", new Date().toISOString()),
         })
         .eq("id", id);
       if (error) throw new Error(error.message);
@@ -2242,7 +2258,7 @@ export async function executeTool(
           summary: `Scheduled "${title}" for ${fmtZonedTime(startTime, tz)} (${duration}m)`,
           verb: "slotted",
           ref: { kind: "task", id },
-          undo: undoTask(before, "status", "do_date", "start_time", "duration_minutes"),
+          undo: undoTask(before, "status", "do_date", "start_time", "duration_minutes", "completed_at"),
         },
       };
     }
@@ -2444,7 +2460,7 @@ export async function executeTool(
       const { id, title } = before;
       const { error } = await admin
         .from("tasks")
-        .update({ status: "done", completed_at: new Date().toISOString() })
+        .update({ status: "done", ...completionStamp("done", new Date().toISOString()) })
         .eq("id", id);
       if (error) throw new Error(error.message);
       await mirrorTask(id, tz);
@@ -2483,7 +2499,7 @@ export async function executeTool(
       const { id, title } = before;
       const { error } = await admin
         .from("tasks")
-        .update({ status: "inbox", do_date: null, start_time: null })
+        .update({ status: "inbox", do_date: null, start_time: null, ...completionStamp("inbox", new Date().toISOString()) })
         .eq("id", id);
       if (error) throw new Error(error.message);
       await mirrorTask(id, tz);
@@ -2494,7 +2510,7 @@ export async function executeTool(
           summary: `Moved "${title}" to inbox`,
           verb: "moved",
           ref: { kind: "task", id },
-          undo: undoTask(before, "status", "do_date", "start_time"),
+          undo: undoTask(before, "status", "do_date", "start_time", "completed_at"),
         },
       };
     }
@@ -2905,13 +2921,15 @@ export async function executeTool(
         return { result: JSON.stringify({ tasks: [], note: `No label named ${labelNames.join(" or ")}.` }) };
       }
 
+      const completed = parseCompletedArg(args.completed);
       const query: TaskQuery = {
         text: q || undefined,
         labelIds: labelIds.length ? labelIds : undefined,
         priorities: (args.priority as string[] | undefined)?.length ? (args.priority as string[]) : undefined,
-        status: (args.status as TaskQuery["status"]) ?? undefined,
+        status: (args.status as TaskQuery["status"]) ?? (completed ? "done" : undefined),
         when: (args.when as TaskQuery["when"]) ?? undefined,
         dateField: (args.date_field as TaskQuery["dateField"]) ?? undefined,
+        completed,
       };
 
       const today = todayIn(tz);
@@ -2922,11 +2940,19 @@ export async function executeTool(
       // load-bearing line of the subtasks fix. A checklist row is not a task.
       let rows = admin
         .from("tasks")
-        .select("id, title, notes, status, priority, energy, do_date, deadline, start_time, duration_minutes, project_id, domain_id, initiative_id, task_labels(label_id)")
+        .select("id, title, notes, status, priority, energy, do_date, deadline, start_time, duration_minutes, completed_at, project_id, domain_id, initiative_id, task_labels(label_id)")
         .eq("user_id", userId)
         .is("parent_task_id", null)
         .neq("status", "trashed")
         .limit(400);
+      // Push status / completion into the query so a lived-in inbox of open
+      // work cannot crowd finished tasks out of the 400-row window — that is
+      // how "done this week but dated last month" used to vanish.
+      if (query.status === "done") rows = rows.eq("status", "done");
+      if (completed) {
+        const { fromISO, toExclusive } = completionBounds(completed, today, tz);
+        rows = rows.gte("completed_at", fromISO).lt("completed_at", toExclusive).order("completed_at", { ascending: false });
+      }
       if (q) rows = rows.ilike("title", `%${q}%`);
       const { data } = await rows;
 
@@ -2934,7 +2960,11 @@ export async function executeTool(
       const matched = (data ?? [])
         .filter((t) => {
           const row = t as Record<string, unknown>;
-          return matchesQuery(row as never, query, {
+          const completedAt = typeof row.completed_at === "string" ? row.completed_at : null;
+          return matchesQuery({
+            ...row,
+            completed_on: completedAt ? localDateISO(completedAt, tz) : null,
+          } as never, query, {
             labelIds: ((row.task_labels as { label_id: string }[] | null) ?? []).map((l) => l.label_id),
             // The domain a task's hours COUNT toward. The agent's snapshot
             // doesn't carry the project graph here, so an unparented task uses
@@ -2950,6 +2980,49 @@ export async function executeTool(
         });
 
       return { result: JSON.stringify({ tasks: matched, count: matched.length }) };
+    }
+
+    case "list_completed": {
+      // "What did I finish this week" — by completion time, grouped. list_tasks
+      // with when=this_week asks do_date and hides work dated earlier; the
+      // snapshot only carries done tasks that still sit on today / the loaded
+      // schedule. This is the read that closes that gap.
+      const today = todayIn(tz);
+      const filter = parseCompletedArg(args.completed) ?? "this_week";
+      const { range, fromISO, toExclusive } = completionBounds(filter, today, tz);
+      const [tasksRes, projectsRes, domainsRes] = await Promise.all([
+        admin
+          .from("tasks")
+          .select("id, title, completed_at, duration_minutes, project_id, domain_id")
+          .eq("user_id", userId)
+          .eq("status", "done")
+          .is("parent_task_id", null)
+          .gte("completed_at", fromISO)
+          .lt("completed_at", toExclusive)
+          .order("completed_at", { ascending: false })
+          .limit(400),
+        admin.from("projects").select("id, name, domain_id").eq("user_id", userId),
+        admin.from("domains").select("id, name").eq("user_id", userId),
+      ]);
+      if (tasksRes.error) throw new Error(tasksRes.error.message);
+      if (projectsRes.error) throw new Error(projectsRes.error.message);
+      if (domainsRes.error) throw new Error(domainsRes.error.message);
+
+      const grouped = groupCompletedWork(
+        (tasksRes.data ?? []) as { id: string; title: string; completed_at: string; duration_minutes: number | null; project_id: string | null; domain_id: string | null }[],
+        (projectsRes.data ?? []) as { id: string; name: string; domain_id: string | null }[],
+        (domainsRes.data ?? []) as { id: string; name: string }[],
+      );
+      return {
+        result: JSON.stringify({
+          window: { ...range, label: typeof filter === "string" ? filter : "range" },
+          timezone: tz,
+          ...grouped,
+          note: grouped.count
+            ? "Grouped by project, then the domain those hours count toward. Tasks without a completed_at stamp are omitted — updated_at is not a finish time."
+            : "Nothing with a completion stamp in this window. Older done rows may have a null completed_at; they are omitted, not guessed.",
+        }),
+      };
     }
 
     case "add_step": {
@@ -3042,7 +3115,7 @@ export async function executeTool(
       const done = args.done !== false;
       const { error } = await admin
         .from("tasks")
-        .update({ status: done ? "done" : "backlog", completed_at: done ? new Date().toISOString() : null })
+        .update({ status: done ? "done" : "backlog", ...completionStamp(done ? "done" : "backlog", new Date().toISOString()) })
         .eq("id", step.id)
         .eq("user_id", userId);
       if (error) throw new Error(error.message);
@@ -3081,6 +3154,7 @@ export async function executeTool(
           if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("do_date must be YYYY-MM-DD");
           patch.do_date = d;
           patch.status = "planned";
+          Object.assign(patch, completionStamp("planned", new Date().toISOString()));
           // A new day means the old block is wrong; clear it rather than
           // silently leaving 9am on a day the user never chose.
           patch.start_time = null;
@@ -3094,9 +3168,10 @@ export async function executeTool(
       if (args.priority !== undefined) patch.priority = String(args.priority);
       if (args.status === "done") {
         patch.status = "done";
-        patch.completed_at = new Date().toISOString();
+        Object.assign(patch, completionStamp("done", new Date().toISOString()));
       } else if (args.status === "inbox") {
         patch.status = "inbox";
+        Object.assign(patch, completionStamp("inbox", new Date().toISOString()));
         patch.do_date = null;
         patch.start_time = null;
         patch.slot_id = null;
@@ -3220,6 +3295,7 @@ export async function executeTool(
           do_date: null,
           start_time: null,
           slot_id: null,
+          ...completionStamp(resting, new Date().toISOString()),
         })
         .eq("id", before.id)
         .eq("user_id", userId);

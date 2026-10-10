@@ -68,6 +68,7 @@ function defaultResponse(call: { name: string; args: Record<string, unknown> }):
   }
   if (name === "point_at") return { ok: true, pointed: args.target };
   if (name === "list_tasks") return [];
+  if (name === "list_completed") return { groups: [], count: 0, total_minutes: 0 };
   if (name === "list_vertical") return [];
   return { id, ok: true, ...args };
 }
