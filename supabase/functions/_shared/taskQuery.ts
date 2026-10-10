@@ -206,6 +206,29 @@ export function matchesCompleted(
   return completedOn >= from && completedOn <= to;
 }
 
+/** True when `iso` is YYYY-MM-DD and names a real civil day.
+ *  `Date.UTC(y, m-1, d)` silently rolls impossible dates (Feb 30 → Mar 2,
+ *  month 13 → next January), so we require a round-trip. */
+export function isCalendarDate(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [ys, ms, ds] = iso.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  const d = Number(ds);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+function requireCalendarDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    throw new Error("completed.from and completed.to must be YYYY-MM-DD.");
+  }
+  if (!isCalendarDate(iso)) {
+    throw new Error(`"${iso}" is not a real calendar date.`);
+  }
+  return iso;
+}
+
 /** MCP / chat argument → a filter, or undefined when omitted. Throws on junk. */
 export function parseCompletedArg(raw: unknown): CompletedFilter | undefined {
   if (raw == null || raw === "") return undefined;
@@ -214,11 +237,10 @@ export function parseCompletedArg(raw: unknown): CompletedFilter | undefined {
     const rec = raw as Record<string, unknown>;
     const from = typeof rec.from === "string" ? rec.from.trim() : "";
     const to = typeof rec.to === "string" ? rec.to.trim() : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-      throw new Error("completed.from and completed.to must be YYYY-MM-DD.");
-    }
-    if (from > to) throw new Error("completed.from must be on or before completed.to.");
-    return { from, to };
+    const fromISO = requireCalendarDate(from);
+    const toISO = requireCalendarDate(to);
+    if (fromISO > toISO) throw new Error("completed.from must be on or before completed.to.");
+    return { from: fromISO, to: toISO };
   }
   throw new Error("completed must be 'this_week', 'last_week', or {from, to} as YYYY-MM-DD.");
 }

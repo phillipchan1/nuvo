@@ -5523,9 +5523,13 @@ decision locks three things that were not true of the MCP surface:
 2. **`list_tasks.completed`** is when they finished, in the user's zone.
    `this_week` / `last_week` are calendar Monday–Sunday, not the planning week
    (which jumps to next Monday on Sat/Sun — a Saturday finish is still this
-   week). `{from, to}` is a one-shot absolute range, not a saved-view field.
+   week). `{from, to}` is a one-shot absolute range, not a saved-view field,
+   and each bound must round-trip as a real calendar date (Feb 30 / month 13
+   are rejected, not rolled by `Date.UTC`).
 3. **`list_completed`** is the grouped read: project, then the domain hours
-   count toward (D-088), with planned minutes and totals. The snapshot does not
+   count toward (D-088), with planned minutes and totals. A missing or zero
+   duration defaults to 30 and is marked `planned_minutes_defaulted` (counted
+   in the totals) so a group sum is not silently padded. The snapshot does not
    grow a second "the week" list.
 
 Strains **P7** (only as honest as the stamp; older rows may be null) and **P11**

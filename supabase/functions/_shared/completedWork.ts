@@ -28,6 +28,11 @@ export function plannedMinutes(duration: number | null | undefined): number {
   return duration && duration > 0 ? duration : FALLBACK_PLANNED_MINUTES;
 }
 
+/** True when the 30-minute default is standing in for a missing/zero duration. */
+export function plannedMinutesDefaulted(duration: number | null | undefined): boolean {
+  return !(duration && duration > 0);
+}
+
 export interface CompletedWorkTask {
   id: string;
   title: string;
@@ -53,6 +58,8 @@ export interface CompletedWorkItem {
   title: string;
   completed_at: string;
   duration_minutes: number;
+  /** True when `duration_minutes` is the 30-minute default, not a stored length. */
+  planned_minutes_defaulted: boolean;
 }
 
 export interface CompletedWorkGroup {
@@ -60,12 +67,14 @@ export interface CompletedWorkGroup {
   domain: { id: string; name: string } | null;
   tasks: CompletedWorkItem[];
   total_minutes: number;
+  planned_minutes_defaulted_count: number;
 }
 
 export interface CompletedWork {
   groups: CompletedWorkGroup[];
   total_minutes: number;
   count: number;
+  planned_minutes_defaulted_count: number;
 }
 
 /**
@@ -95,10 +104,11 @@ export function groupCompletedWork(
     const project = proj ? { id: proj.id, name: proj.name } : null;
     const domainRef = domain ? { id: domain.id, name: domain.name } : null;
     const key = `${project?.id ?? ""}|${domainRef?.id ?? ""}`;
+    const defaulted = plannedMinutesDefaulted(t.duration_minutes);
     const mins = plannedMinutes(t.duration_minutes);
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { key, project, domain: domainRef, tasks: [], total_minutes: 0 };
+      bucket = { key, project, domain: domainRef, tasks: [], total_minutes: 0, planned_minutes_defaulted_count: 0 };
       buckets.set(key, bucket);
     }
     bucket.tasks.push({
@@ -106,8 +116,10 @@ export function groupCompletedWork(
       title: t.title,
       completed_at: t.completed_at,
       duration_minutes: mins,
+      planned_minutes_defaulted: defaulted,
     });
     bucket.total_minutes += mins;
+    if (defaulted) bucket.planned_minutes_defaulted_count += 1;
   }
 
   for (const b of buckets.values()) {
@@ -130,5 +142,6 @@ export function groupCompletedWork(
     groups,
     total_minutes: groups.reduce((s, g) => s + g.total_minutes, 0),
     count: groups.reduce((s, g) => s + g.tasks.length, 0),
+    planned_minutes_defaulted_count: groups.reduce((s, g) => s + g.planned_minutes_defaulted_count, 0),
   };
 }

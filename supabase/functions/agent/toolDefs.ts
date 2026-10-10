@@ -1183,15 +1183,15 @@ const RAW_TOOL_DEFINITIONS = [
           },
           completed: {
             description:
-              "When they finished, in the user's timezone. 'this_week' / 'last_week' are calendar Monday–Sunday (Saturday is still this week). Or {from, to} as YYYY-MM-DD inclusive. Implies status=done unless status is set. Tasks with a null completed_at are omitted, not guessed from updated_at.",
+              "When they finished, in the user's timezone. 'this_week' / 'last_week' are calendar Monday–Sunday (Saturday is still this week). Or {from, to} as real YYYY-MM-DD inclusive (Feb 30 is rejected, not rolled over). Implies status=done unless status is set. Tasks with a null completed_at are omitted, not guessed from updated_at.",
             anyOf: [
               { type: "string", enum: ["this_week", "last_week"] },
               {
                 type: "object",
                 additionalProperties: false,
                 properties: {
-                  from: { type: "string", description: "YYYY-MM-DD inclusive, user's timezone." },
-                  to: { type: "string", description: "YYYY-MM-DD inclusive, user's timezone." },
+                  from: { type: "string", description: "Real YYYY-MM-DD inclusive, user's timezone. Impossible dates are rejected." },
+                  to: { type: "string", description: "Real YYYY-MM-DD inclusive, user's timezone. Impossible dates are rejected." },
                 },
                 required: ["from", "to"],
               },
@@ -1217,21 +1217,21 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "list_completed",
       description:
-        "What they actually finished in a window — grouped by project and domain, with each task's planned duration and group totals. This is the read for 'what did I get done this week', not list_tasks(when=this_week) and not the snapshot: those ask when work was dated or what's still on today. Weeks are calendar Monday–Sunday in the user's timezone (America/Los_Angeles unless the client said otherwise); Saturday and Sunday are still this week. Tasks without a completed_at stamp are omitted — updated_at is not a finish time. Default window is this_week.",
+        "What they actually finished in a window — grouped by project and domain, with each task's planned duration and group totals. A missing or zero duration defaults to 30 minutes and is marked planned_minutes_defaulted (counted in totals). This is the read for 'what did I get done this week', not list_tasks(when=this_week) and not the snapshot: those ask when work was dated or what's still on today. Weeks are calendar Monday–Sunday in the user's timezone (America/Los_Angeles unless the client said otherwise); Saturday and Sunday are still this week. Tasks without a completed_at stamp are omitted — updated_at is not a finish time. Default window is this_week.",
       parameters: {
         type: "object",
         properties: {
           completed: {
             description:
-              "Window. Default this_week. 'this_week' / 'last_week' are calendar Mon–Sun, or {from, to} as YYYY-MM-DD inclusive in the user's timezone.",
+              "Window. Default this_week. 'this_week' / 'last_week' are calendar Mon–Sun, or {from, to} as real YYYY-MM-DD inclusive in the user's timezone (impossible dates are rejected, not rolled over).",
             anyOf: [
               { type: "string", enum: ["this_week", "last_week"] },
               {
                 type: "object",
                 additionalProperties: false,
                 properties: {
-                  from: { type: "string", description: "YYYY-MM-DD inclusive." },
-                  to: { type: "string", description: "YYYY-MM-DD inclusive." },
+                  from: { type: "string", description: "Real YYYY-MM-DD inclusive. Impossible dates are rejected." },
+                  to: { type: "string", description: "Real YYYY-MM-DD inclusive. Impossible dates are rejected." },
                 },
                 required: ["from", "to"],
               },

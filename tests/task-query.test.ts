@@ -14,6 +14,7 @@ import {
   matchesWindow,
   isEmptyQuery,
   matchesQuery,
+  isCalendarDate,
   parseCompletedArg,
   queryFacetCount,
   type QueryClock,
@@ -265,6 +266,33 @@ describe("completed is when they finished, not when they were dated", () => {
     expect(() => parseCompletedArg("yesterday")).toThrow(/this_week/);
     expect(() => parseCompletedArg({ from: "Oct 1", to: "Oct 7" })).toThrow(/YYYY-MM-DD/);
     expect(() => parseCompletedArg({ from: "2026-10-08", to: "2026-10-01" })).toThrow(/before/);
+  });
+
+  it("parseCompletedArg rejects dates that do not round-trip as a real calendar day", () => {
+    // Date.UTC rolls these (13 → Jan, Feb 30 → Mar 2, 00-00 → prior month).
+    // The filter must refuse them, not silently shift the window.
+    expect(isCalendarDate("2026-10-01")).toBe(true);
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    expect(isCalendarDate("2026-02-29")).toBe(false);
+    expect(isCalendarDate("2026-13-01")).toBe(false);
+    expect(isCalendarDate("2026-02-30")).toBe(false);
+    expect(isCalendarDate("2026-00-00")).toBe(false);
+    expect(() => parseCompletedArg({ from: "2026-13-01", to: "2026-10-07" })).toThrow(
+      /"2026-13-01" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-10-01", to: "2026-02-30" })).toThrow(
+      /"2026-02-30" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-00-00", to: "2026-10-07" })).toThrow(
+      /"2026-00-00" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-02-29", to: "2026-03-01" })).toThrow(
+      /"2026-02-29" is not a real calendar date/,
+    );
+    expect(parseCompletedArg({ from: "2024-02-29", to: "2024-03-01" })).toEqual({
+      from: "2024-02-29",
+      to: "2024-03-01",
+    });
   });
 
   it("reads a completion filter back without calling it a do_date window", () => {

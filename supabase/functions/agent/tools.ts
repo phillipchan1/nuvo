@@ -248,6 +248,8 @@ async function createRecurringTaskSeries(
     if (!adoptHasDate) {
       link.do_date = anchorISO;
       link.status = "planned";
+      // Reopening onto the series — a done undated row must not keep its stamp.
+      Object.assign(link, completionStamp("planned", new Date().toISOString()));
     }
     const { error: linkErr } = await admin
       .from("tasks")

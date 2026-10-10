@@ -86,11 +86,13 @@ newer.
 still sit on today or in the loaded schedule window. **`list_completed`** is the
 read for "what did I get done this week": calendar Monday–Sunday in the operator's
 timezone (default `America/Los_Angeles`), grouped by project and domain, with each
-task's planned duration and group totals. **`list_tasks`** accepts the same
-`completed` filter (`this_week` | `last_week` | `{from, to}`) and returns
-`completed_at` on each row. `when` is still do_date / deadline — a task dated last
-month and ticked on Tuesday is invisible to `when=this_week` and visible to
-`completed=this_week`.
+task's planned duration and group totals. A missing or zero duration defaults
+to 30 minutes and is marked `planned_minutes_defaulted` (counted in the totals).
+**`list_tasks`** accepts the same `completed` filter (`this_week` | `last_week` |
+`{from, to}`) and returns `completed_at` on each row. `{from, to}` must be real
+calendar dates — Feb 30 is rejected, not rolled over. `when` is still do_date /
+deadline — a task dated last month and ticked on Tuesday is invisible to
+`when=this_week` and visible to `completed=this_week`.
 
 Tasks without a `completed_at` stamp are omitted. `updated_at` is not a finish
 time (it moves on later edits of done rows). Migration `86` adds an index for

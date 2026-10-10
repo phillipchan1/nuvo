@@ -10,6 +10,7 @@ import {
   FALLBACK_PLANNED_MINUTES,
   groupCompletedWork,
   plannedMinutes,
+  plannedMinutesDefaulted,
 } from "../supabase/functions/_shared/completedWork.ts";
 
 const task = (over: Partial<Parameters<typeof groupCompletedWork>[0][number]> & { id: string; title: string }) => ({
@@ -83,6 +84,10 @@ describe("groupCompletedWork", () => {
 
   it("uses the planned default when duration is missing, and omits unstamped rows", () => {
     expect(plannedMinutes(null)).toBe(FALLBACK_PLANNED_MINUTES);
+    expect(plannedMinutes(0)).toBe(FALLBACK_PLANNED_MINUTES);
+    expect(plannedMinutesDefaulted(null)).toBe(true);
+    expect(plannedMinutesDefaulted(0)).toBe(true);
+    expect(plannedMinutesDefaulted(15)).toBe(false);
     const grouped = groupCompletedWork(
       [
         task({ id: "t1", title: "No duration", duration_minutes: null }),
@@ -93,7 +98,30 @@ describe("groupCompletedWork", () => {
     );
     expect(grouped.count).toBe(1);
     expect(grouped.total_minutes).toBe(30);
+    expect(grouped.planned_minutes_defaulted_count).toBe(1);
     expect(grouped.groups[0].tasks[0].duration_minutes).toBe(30);
+    expect(grouped.groups[0].tasks[0].planned_minutes_defaulted).toBe(true);
+    expect(grouped.groups[0].planned_minutes_defaulted_count).toBe(1);
+  });
+
+  it("marks only the tasks whose planned minutes were defaulted, and counts them", () => {
+    const grouped = groupCompletedWork(
+      [
+        task({ id: "t1", title: "Stored 45", duration_minutes: 45 }),
+        task({ id: "t2", title: "Null duration", duration_minutes: null }),
+        task({ id: "t3", title: "Zero duration", duration_minutes: 0 }),
+      ],
+      [],
+      [],
+    );
+    expect(grouped.count).toBe(3);
+    expect(grouped.total_minutes).toBe(45 + 30 + 30);
+    expect(grouped.planned_minutes_defaulted_count).toBe(2);
+    expect(grouped.groups[0].planned_minutes_defaulted_count).toBe(2);
+    const byId = Object.fromEntries(grouped.groups[0].tasks.map((t) => [t.id, t]));
+    expect(byId.t1.planned_minutes_defaulted).toBe(false);
+    expect(byId.t2.planned_minutes_defaulted).toBe(true);
+    expect(byId.t3.planned_minutes_defaulted).toBe(true);
   });
 
   it("does not invent an Unfiled noun for loose untitled work", () => {
@@ -107,16 +135,19 @@ describe("groupCompletedWork", () => {
         project: null,
         domain: null,
         total_minutes: 20,
+        planned_minutes_defaulted_count: 0,
         tasks: [
           {
             id: "t1",
             title: "Loose thought",
             completed_at: "2026-10-09T18:00:00.000Z",
             duration_minutes: 20,
+            planned_minutes_defaulted: false,
           },
         ],
       },
     ]);
+    expect(grouped.planned_minutes_defaulted_count).toBe(0);
   });
 });
 
@@ -133,5 +164,10 @@ describe("agent writes go through the stamp", () => {
     expect(src).toContain('completionStamp("inbox"');
     expect(src).toContain('completionStamp("planned"');
     expect(src).toContain('completionStamp(done ? "done" : "backlog"');
+  });
+
+  it("adopting an undated task into a series clears completed_at", () => {
+    const adopt = src.match(/if \(!adoptHasDate\) \{[\s\S]*?\n    \}/);
+    expect(adopt?.[0]).toMatch(/completionStamp\("planned"/);
   });
 });
