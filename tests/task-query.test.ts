@@ -6,11 +6,16 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  calendarMondayOf,
+  completedRange,
   describeQuery,
   isOverdue,
+  matchesCompleted,
   matchesWindow,
   isEmptyQuery,
   matchesQuery,
+  isCalendarDate,
+  parseCompletedArg,
   queryFacetCount,
   type QueryClock,
   type QueryableTask,
@@ -188,5 +193,111 @@ describe("overdue is the app's overdue, not a date comparison", () => {
     expect(match(lateToday, { when: "overdue" })).toBe(true);
     expect(match(task({ do_date: "2026-08-11" }), { when: "overdue" })).toBe(true);
     expect(match(task({ do_date: "2026-08-13" }), { when: "overdue" })).toBe(false);
+  });
+});
+
+describe("completed is when they finished, not when they were dated", () => {
+  // Sat 2026-10-10. The planning week has already jumped to next Monday;
+  // the calendar week is still Mon Oct 5 – Sun Oct 11.
+  const SAT: QueryClock = {
+    today: "2026-10-10",
+    weekStart: "2026-10-12",
+    weekEnd: "2026-10-18",
+    nowMs: Date.UTC(2026, 9, 10, 20, 0),
+  };
+  const sat = (t: QueryableTask, q: Parameters<typeof matchesQuery>[1]) =>
+    matchesQuery(t, q, facets(), SAT);
+
+  it("calendar Monday is the week containing today, not the planning week", () => {
+    expect(calendarMondayOf("2026-10-10")).toBe("2026-10-05");
+    expect(calendarMondayOf("2026-10-05")).toBe("2026-10-05");
+    expect(calendarMondayOf("2026-10-11")).toBe("2026-10-05");
+    expect(calendarMondayOf("2026-10-12")).toBe("2026-10-12");
+    expect(completedRange("this_week", "2026-10-10")).toEqual({ from: "2026-10-05", to: "2026-10-11" });
+    expect(completedRange("last_week", "2026-10-10")).toEqual({ from: "2026-09-28", to: "2026-10-04" });
+  });
+
+  it("finds a task dated last month (or undated) that was finished this calendar week", () => {
+    const datedEarlier = task({
+      status: "done",
+      do_date: "2026-09-01",
+      completed_on: "2026-10-09",
+    });
+    const undated = task({ status: "done", do_date: null, completed_on: "2026-10-09" });
+    expect(sat(datedEarlier, { status: "done", when: "this_week" })).toBe(false);
+    expect(sat(datedEarlier, { completed: "this_week" })).toBe(true);
+    expect(sat(undated, { completed: "this_week" })).toBe(true);
+  });
+
+  it("does not treat next Monday as this week just because the planning week jumped", () => {
+    const nextMonday = task({ status: "done", completed_on: "2026-10-12" });
+    expect(sat(nextMonday, { completed: "this_week" })).toBe(false);
+    expect(matchesQuery(nextMonday, { when: "this_week", status: "done" }, facets(), SAT)).toBe(false);
+  });
+
+  it("omits unstamped done rows rather than guessing from another column", () => {
+    expect(sat(task({ status: "done", completed_on: null }), { completed: "this_week" })).toBe(false);
+    expect(matchesCompleted(null, "this_week", "2026-10-10")).toBe(false);
+  });
+
+  it("last_week is the calendar week before this one", () => {
+    expect(sat(task({ status: "done", completed_on: "2026-10-02" }), { completed: "last_week" })).toBe(true);
+    expect(sat(task({ status: "done", completed_on: "2026-10-09" }), { completed: "last_week" })).toBe(false);
+  });
+
+  it("accepts an inclusive {from, to} range", () => {
+    const mid = task({ status: "done", completed_on: "2026-10-02" });
+    expect(sat(mid, { completed: { from: "2026-10-01", to: "2026-10-03" } })).toBe(true);
+    expect(sat(mid, { completed: { from: "2026-10-03", to: "2026-10-04" } })).toBe(false);
+  });
+
+  it("defaults status to done when a completion window is asked", () => {
+    expect(sat(task({ status: "planned", completed_on: "2026-10-09" }), { completed: "this_week" })).toBe(false);
+    expect(sat(task({ status: "done", completed_on: "2026-10-09" }), { completed: "this_week" })).toBe(true);
+  });
+
+  it("parseCompletedArg accepts the three shapes and rejects junk", () => {
+    expect(parseCompletedArg(undefined)).toBeUndefined();
+    expect(parseCompletedArg("this_week")).toBe("this_week");
+    expect(parseCompletedArg({ from: "2026-10-01", to: "2026-10-07" })).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-07",
+    });
+    expect(() => parseCompletedArg("yesterday")).toThrow(/this_week/);
+    expect(() => parseCompletedArg({ from: "Oct 1", to: "Oct 7" })).toThrow(/YYYY-MM-DD/);
+    expect(() => parseCompletedArg({ from: "2026-10-08", to: "2026-10-01" })).toThrow(/before/);
+  });
+
+  it("parseCompletedArg rejects dates that do not round-trip as a real calendar day", () => {
+    // Date.UTC rolls these (13 → Jan, Feb 30 → Mar 2, 00-00 → prior month).
+    // The filter must refuse them, not silently shift the window.
+    expect(isCalendarDate("2026-10-01")).toBe(true);
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    expect(isCalendarDate("2026-02-29")).toBe(false);
+    expect(isCalendarDate("2026-13-01")).toBe(false);
+    expect(isCalendarDate("2026-02-30")).toBe(false);
+    expect(isCalendarDate("2026-00-00")).toBe(false);
+    expect(() => parseCompletedArg({ from: "2026-13-01", to: "2026-10-07" })).toThrow(
+      /"2026-13-01" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-10-01", to: "2026-02-30" })).toThrow(
+      /"2026-02-30" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-00-00", to: "2026-10-07" })).toThrow(
+      /"2026-00-00" is not a real calendar date/,
+    );
+    expect(() => parseCompletedArg({ from: "2026-02-29", to: "2026-03-01" })).toThrow(
+      /"2026-02-29" is not a real calendar date/,
+    );
+    expect(parseCompletedArg({ from: "2024-02-29", to: "2024-03-01" })).toEqual({
+      from: "2024-02-29",
+      to: "2024-03-01",
+    });
+  });
+
+  it("reads a completion filter back without calling it a do_date window", () => {
+    expect(describeQuery({ completed: "this_week" })).toBe("finished this week");
+    expect(isEmptyQuery({ completed: "this_week" })).toBe(false);
+    expect(queryFacetCount({ completed: "last_week" })).toBe(1);
   });
 });

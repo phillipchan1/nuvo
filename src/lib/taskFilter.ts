@@ -8,7 +8,8 @@
 // It deliberately defines NO rule of its own. `tests/planning-kernel.test.ts`
 // fails if it grows one.
 
-import { planningWeekStartISO, toDateISO } from "./dates";
+import { APP_TZ, planningWeekStartISO, toDateISO } from "./dates";
+import { localDateISO } from "../../supabase/functions/_shared/dayShape.ts";
 import { taskDomainId, type VerticalData } from "./vertical";
 import type { Task } from "./types";
 import {
@@ -66,7 +67,17 @@ export function filterTasks(
 ): Task[] {
   if (!query) return tasks;
   const clock = queryClock(now);
-  return tasks.filter((t) => matchesQuery(t, query, facetsFor(t, vertical), clock));
+  return tasks.filter((t) =>
+    matchesQuery(
+      {
+        ...t,
+        completed_on: t.completed_at ? localDateISO(t.completed_at, APP_TZ) : null,
+      },
+      query,
+      facetsFor(t, vertical),
+      clock,
+    ),
+  );
 }
 
 /** A stable key for a query — lets a memo depend on the question rather than on

@@ -391,7 +391,7 @@ describe("the kernel is the only implementation", () => {
   // rail, the collection table and the chat all answer "does this task match
   // this filter", and three copies is three ideas of what "this week" means.
   const QUERY_KERNEL = "supabase/functions/_shared/taskQuery.ts";
-  const QUERY_RULES = ["matchesQuery", "matchesWindow", "isEmptyQuery", "describeQuery"];
+  const QUERY_RULES = ["matchesQuery", "matchesWindow", "isEmptyQuery", "describeQuery", "matchesCompleted", "completedRange"];
   const queryFiles = files.filter((f) => !f.endsWith("taskQuery.ts"));
 
   for (const rule of QUERY_RULES) {

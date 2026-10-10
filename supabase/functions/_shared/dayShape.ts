@@ -214,6 +214,7 @@ export function fmtTask(t: Record<string, unknown>, today: string, nowMs: number
     priority: t.priority,
     notes: t.notes || undefined,
     rollCount: t.roll_count || 0,
+    completedAt: (t.completed_at as string | null) ?? null,
     localDate,
     timeRange,
     isToday: localDate === today,

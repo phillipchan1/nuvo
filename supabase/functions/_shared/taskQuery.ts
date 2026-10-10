@@ -31,6 +31,12 @@
 
 export type QueryStatus = "open" | "done" | "any";
 
+/** When a task was finished, in the user's calendar (Mon–Sun). Distinct from
+ *  `when`, which asks `do_date` / `deadline`. Absolute `{from, to}` is for a
+ *  one-shot MCP read — a saved view must not store one (it goes stale). */
+export type CompletedWindow = "this_week" | "last_week";
+export type CompletedFilter = CompletedWindow | { from: string; to: string };
+
 /** Relative date windows. Relative on purpose — see the header. */
 export type WhenWindow =
   | "any"
@@ -83,6 +89,10 @@ export interface TaskQuery {
   when?: WhenWindow;
   /** Which date `when` applies to. Defaults to `do_date`. */
   dateField?: DateField;
+  /** When it was finished (`completed_on`), not when it was dated. Calendar
+   *  Mon–Sun of `clock.today` — not the planning week, which jumps to next
+   *  Monday on Sat/Sun. A Saturday finish is still this week. */
+  completed?: CompletedFilter;
 }
 
 /** As much of a task as a query needs to see. The client's `Task` matches
@@ -95,6 +105,9 @@ export interface QueryableTask {
   energy?: string | null;
   do_date?: string | null;
   deadline?: string | null;
+  /** Calendar date of `completed_at` in the caller's zone, already converted.
+   *  The kernel never sees a timestamptz — zone math lives with the clock. */
+  completed_on?: string | null;
   project_id?: string | null;
   /** Needed by "overdue", which is not a date comparison — see `isOverdue`. */
   start_time?: string | null;
@@ -163,6 +176,75 @@ const addDaysISO = (iso: string, n: number): string => {
   return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
 };
 
+/** Monday of the calendar week containing `iso`. Same arithmetic as
+ *  `planningRules.mondayOf`, duplicated because this file has zero imports.
+ *  Not `planningWeekStart` — that one jumps to next Monday on Sat/Sun, which
+ *  would hide Saturday's finishes from "this week". */
+export function calendarMondayOf(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sun
+  const back = dow === 0 ? 6 : dow - 1;
+  return addDaysISO(iso, -back);
+}
+
+/** Inclusive YYYY-MM-DD range for a completion filter, in the caller's dates. */
+export function completedRange(filter: CompletedFilter, todayISO: string): { from: string; to: string } {
+  if (typeof filter === "object") return { from: filter.from, to: filter.to };
+  const monday = calendarMondayOf(todayISO);
+  if (filter === "this_week") return { from: monday, to: addDaysISO(monday, 6) };
+  return { from: addDaysISO(monday, -7), to: addDaysISO(monday, -1) };
+}
+
+export function matchesCompleted(
+  completedOn: string | null | undefined,
+  filter: CompletedFilter,
+  todayISO: string,
+): boolean {
+  if (!completedOn) return false;
+  const { from, to } = completedRange(filter, todayISO);
+  return completedOn >= from && completedOn <= to;
+}
+
+/** True when `iso` is YYYY-MM-DD and names a real civil day.
+ *  `Date.UTC(y, m-1, d)` silently rolls impossible dates (Feb 30 → Mar 2,
+ *  month 13 → next January), so we require a round-trip. */
+export function isCalendarDate(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [ys, ms, ds] = iso.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  const d = Number(ds);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+function requireCalendarDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    throw new Error("completed.from and completed.to must be YYYY-MM-DD.");
+  }
+  if (!isCalendarDate(iso)) {
+    throw new Error(`"${iso}" is not a real calendar date.`);
+  }
+  return iso;
+}
+
+/** MCP / chat argument → a filter, or undefined when omitted. Throws on junk. */
+export function parseCompletedArg(raw: unknown): CompletedFilter | undefined {
+  if (raw == null || raw === "") return undefined;
+  if (raw === "this_week" || raw === "last_week") return raw;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const rec = raw as Record<string, unknown>;
+    const from = typeof rec.from === "string" ? rec.from.trim() : "";
+    const to = typeof rec.to === "string" ? rec.to.trim() : "";
+    const fromISO = requireCalendarDate(from);
+    const toISO = requireCalendarDate(to);
+    if (fromISO > toISO) throw new Error("completed.from must be on or before completed.to.");
+    return { from: fromISO, to: toISO };
+  }
+  throw new Error("completed must be 'this_week', 'last_week', or {from, to} as YYYY-MM-DD.");
+}
+
 /** Does `date` fall in `window`, relative to `clock`? A null date is only ever
  *  matched by "undated" and "any" — an undated task is not overdue, and it is
  *  not "this week" either. Calling it overdue is how a backlog turns into a
@@ -202,9 +284,11 @@ export function matchesQuery(
   // a data-recovery tool by accident.
   if (task.status === "trashed") return false;
 
-  const status = query.status ?? "open";
+  const status = query.status ?? (query.completed ? "done" : "open");
   if (status === "open" && task.status === "done") return false;
   if (status === "done" && task.status !== "done") return false;
+
+  if (query.completed && !matchesCompleted(task.completed_on, query.completed, clock.today)) return false;
 
   if (!anyOf(query.priorities, task.priority)) return false;
   if (!anyOf(query.energies, task.energy)) return false;
@@ -247,7 +331,8 @@ export function isEmptyQuery(q: TaskQuery | null | undefined): boolean {
     !q.domainIds?.length &&
     !q.energies?.length &&
     (!q.when || q.when === "any") &&
-    (!q.status || q.status === "open")
+    (!q.status || q.status === "open") &&
+    !q.completed
   );
 }
 
@@ -264,6 +349,7 @@ export function queryFacetCount(q: TaskQuery | null | undefined): number {
   if (q.energies?.length) n++;
   if (q.when && q.when !== "any") n++;
   if (q.status && q.status !== "open") n++;
+  if (q.completed) n++;
   return n;
 }
 
@@ -310,7 +396,10 @@ export function describeQuery(
     const w = q.when.replace(/_/g, " ");
     parts.push(q.when === "overdue" || q.when === "undated" ? w : `${field} ${w}`.trim());
   }
-  if (q.status === "done") parts.push("completed");
+  if (q.completed) {
+    if (typeof q.completed === "string") parts.push(`finished ${q.completed.replace(/_/g, " ")}`);
+    else parts.push(`finished ${q.completed.from}–${q.completed.to}`);
+  } else if (q.status === "done") parts.push("completed");
   else if (q.status === "any") parts.push("open or completed");
   return parts.length ? parts.join(" · ") : "Everything open";
 }

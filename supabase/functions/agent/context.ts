@@ -40,7 +40,7 @@ import {
 import { describeRule, nextOccurrenceDate, type RecurrenceRule } from "../_shared/recurrence.ts";
 
 const TASK_COLS =
-  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
+  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count, completed_at";
 
 
 export async function buildContext(

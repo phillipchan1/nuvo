@@ -1165,7 +1165,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "list_tasks",
       description:
-        "Find tasks — by title, or by asking a question of the list: \"what's overdue\", \"my high-priority errands this week\", \"anything undated in Work\". Every filter here is the SAME one the app's filter panel uses, so your answer and their screen can't disagree. Windows are relative (this_week means this week whenever you ask). Omit `query` to filter without searching a title. Trashed tasks are never returned — use list_trashed_tasks for those.",
+        "Find tasks — by title, or by asking a question of the list: \"what's overdue\", \"my high-priority errands this week\", \"anything undated in Work\". Every filter here is the SAME one the app's filter panel uses, so your answer and their screen can't disagree. Windows are relative (this_week means this week whenever you ask). `when` is when they'll DO it (do_date). `completed` is when they FINISHED — a task dated last month and ticked on Tuesday is invisible to when=this_week and visible to completed=this_week. Completion weeks are calendar Mon–Sun in the user's zone, not the planning week. Each task includes completed_at. Omit `query` to filter without searching a title. Trashed tasks are never returned — use list_trashed_tasks for those. For a grouped 'what did I finish this week' read, use list_completed.",
       parameters: {
         type: "object",
         properties: {
@@ -1174,12 +1174,28 @@ const RAW_TOOL_DEFINITIONS = [
             type: "string",
             enum: ["overdue", "today", "tomorrow", "this_week", "next_week", "undated"],
             description:
-              "Relative window. 'overdue' is the app's overdue: a date that has passed OR a block that ran more than an hour past its end.",
+              "Relative window on do_date (or deadline). 'overdue' is the app's overdue: a date that has passed OR a block that ran more than an hour past its end. This is NOT when they finished — use `completed` for that.",
           },
           date_field: {
             type: "string",
             enum: ["do_date", "deadline"],
             description: "Which date `when` asks about. Default do_date — when they'll DO it, not when it's due.",
+          },
+          completed: {
+            description:
+              "When they finished, in the user's timezone. 'this_week' / 'last_week' are calendar Monday–Sunday (Saturday is still this week). Or {from, to} as real YYYY-MM-DD inclusive (Feb 30 is rejected, not rolled over). Implies status=done unless status is set. Tasks with a null completed_at are omitted, not guessed from updated_at.",
+            anyOf: [
+              { type: "string", enum: ["this_week", "last_week"] },
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  from: { type: "string", description: "Real YYYY-MM-DD inclusive, user's timezone. Impossible dates are rejected." },
+                  to: { type: "string", description: "Real YYYY-MM-DD inclusive, user's timezone. Impossible dates are rejected." },
+                },
+                required: ["from", "to"],
+              },
+            ],
           },
           priority: {
             type: "array",
@@ -1189,9 +1205,38 @@ const RAW_TOOL_DEFINITIONS = [
           status: {
             type: "string",
             enum: ["open", "done", "any"],
-            description: "Default 'open'.",
+            description: "Default 'open', or 'done' when `completed` is set.",
           },
           limit: { type: "number", description: "Default 20, cap 50." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_completed",
+      description:
+        "What they actually finished in a window — grouped by project and domain, with each task's planned duration and group totals. A missing or zero duration defaults to 30 minutes and is marked planned_minutes_defaulted (counted in totals). This is the read for 'what did I get done this week', not list_tasks(when=this_week) and not the snapshot: those ask when work was dated or what's still on today. Weeks are calendar Monday–Sunday in the user's timezone (America/Los_Angeles unless the client said otherwise); Saturday and Sunday are still this week. Tasks without a completed_at stamp are omitted — updated_at is not a finish time. Default window is this_week.",
+      parameters: {
+        type: "object",
+        properties: {
+          completed: {
+            description:
+              "Window. Default this_week. 'this_week' / 'last_week' are calendar Mon–Sun, or {from, to} as real YYYY-MM-DD inclusive in the user's timezone (impossible dates are rejected, not rolled over).",
+            anyOf: [
+              { type: "string", enum: ["this_week", "last_week"] },
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  from: { type: "string", description: "Real YYYY-MM-DD inclusive. Impossible dates are rejected." },
+                  to: { type: "string", description: "Real YYYY-MM-DD inclusive. Impossible dates are rejected." },
+                },
+                required: ["from", "to"],
+              },
+            ],
+          },
         },
       },
     },

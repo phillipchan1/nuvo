@@ -20,7 +20,7 @@ import { sanitizeUserFacingText } from "./sanitizeReply.ts";
 
 /** Tools whose repeat within one turn is legitimate: reads must see the writes
  *  that happened after them, and point_at is a screen move, not a record. */
-export const REPEATABLE_TOOLS = new Set(["list_tasks", "list_vertical", "point_at"]);
+export const REPEATABLE_TOOLS = new Set(["list_tasks", "list_completed", "list_vertical", "point_at"]);
 
 /** Argument fingerprint with key order normalized, so {a,b} and {b,a} are the
  *  same call. Values are compared as JSON — exact, which is the right bar: two

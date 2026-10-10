@@ -343,6 +343,40 @@ export const SCENARIOS: Scenario[] = [
   }),
 
   pin({
+    id: "completed-this-week-is-not-dated-this-week",
+    group: "capture",
+    it: "what I finished this week is a completion read, not a do_date filter",
+    because:
+      "list_tasks(status=done, when=this_week) only sees tasks dated this week, so work " +
+      "finished this week but dated earlier (or undated) disappeared. Completion time is " +
+      "completed_at; the planning week (which jumps ahead on Saturday) is the wrong week.",
+    world: "loaded",
+    turns: ["what did I get done this week?"],
+    respond: (c) =>
+      c.name === "list_completed"
+        ? { groups: [], count: 0, total_minutes: 0 }
+        : c.name === "list_tasks"
+          ? { tasks: [], count: 0 }
+          : undefined,
+    expect: [
+      check("reads completion, not do_date", (o) => {
+        const listed = o.calls.filter((c) => c.name === "list_completed" || c.name === "list_tasks");
+        if (!listed.length) return `expected list_completed or list_tasks({completed}); got ${o.calls.map((c) => c.name).join(", ") || "no tool calls"}`;
+        if (listed.some((c) => c.name === "list_completed")) return null;
+        if (listed.some((c) => {
+          const done = c.args.completed;
+          return done === "this_week" || (typeof done === "object" && done != null);
+        })) return null;
+        if (listed.some((c) => c.args.when === "this_week")) {
+          return "asked list_tasks by do_date (when=this_week), which hides finished-but-dated-earlier work";
+        }
+        return `expected list_completed or list_tasks({completed}); got ${listed.map((c) => `${c.name} ${JSON.stringify(c.args)}`).join(" | ")}`;
+      }),
+      readOnly(),
+    ],
+  }),
+
+  pin({
     id: "upkeep-creates-a-series",
     group: "capture",
     it: "a cadence on the user's own work creates a series, not a one-off task",

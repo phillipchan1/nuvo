@@ -5500,3 +5500,50 @@ the card, with fixture data. This checkout has no `.env.local`, so nothing was p
 against a real account, and the phone's slot sheet and both record menus are unverified by
 eye. The chat half is **not deployed** and `npm run eval` was not run; the tool's
 description changed, the system prompt did not.*
+
+---
+
+**D-151 · 2026-10-10 · Completion time is `completed_at`, never `updated_at`. MCP
+asks when they finished, not when they were dated.**
+
+Ledger: **D7** (*did I actually finish*) and **W8** (*where did my time actually go*).
+The MCP `list_tasks(status=done)` read filtered by `do_date` (or not at all, then
+lost finished work behind a 400-row window of open tasks) and returned no finish
+time, so a task dated last month and ticked on Tuesday was invisible as "done this
+week".
+
+The column has existed since migration 1. Every complete path already stamped it
+(UI `complete` / `toggleTask` / `toggleStep`, `complete_task`, capture sync). This
+decision locks three things that were not true of the MCP surface:
+
+1. **The stamp is the finish time.** `updated_at` moves on any later edit of a
+   done row (`tasks_set_updated_at`). We do not backfill null stamps from it.
+   Unstamped older rows stay null and are omitted from a completion window
+   (P7 — don't invent a day they finished). Same gap D-090 already named.
+2. **`list_tasks.completed`** is when they finished, in the user's zone.
+   `this_week` / `last_week` are calendar Monday–Sunday, not the planning week
+   (which jumps to next Monday on Sat/Sun — a Saturday finish is still this
+   week). `{from, to}` is a one-shot absolute range, not a saved-view field,
+   and each bound must round-trip as a real calendar date (Feb 30 / month 13
+   are rejected, not rolled by `Date.UTC`).
+3. **`list_completed`** is the grouped read: project, then the domain hours
+   count toward (D-088), with planned minutes and totals. A missing or zero
+   duration defaults to 30 and is marked `planned_minutes_defaulted` (counted
+   in the totals) so a group sum is not silently padded. The snapshot does not
+   grow a second "the week" list.
+
+Strains **P7** (only as honest as the stamp; older rows may be null) and **P11**
+if `when` and `completed` are allowed to mean the same word — they are named
+apart on purpose. No new pool. No new user-facing noun. Not account-specific.
+
+Reopen paths (UI uncomplete, `move_to_inbox`, `plan_task` / `schedule_task` of a
+done row, `bulk_update_tasks` to inbox or a new day, unticking a step) clear the
+stamp. `completionStamp` is the one write helper.
+
+Migration `86` restates the column, documents the no-backfill, and adds the
+index. **Do not apply it from CI.** MCP deploy does not depend on it — the
+column and the writes already exist; 86 is the index plus the paper trail.
+
+*Status: standing — kernel tests in `tests/task-query.test.ts` and
+`tests/completed-work.test.ts`. Battery scenario
+`completed-this-week-is-not-dated-this-week`. `npm run eval` not run.*
