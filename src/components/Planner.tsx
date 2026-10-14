@@ -19,7 +19,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { mergeTaskLists } from "../lib/taskMerge";
-import { isWritableCalendar } from "../lib/calendarWrite";
+import { createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
 import { deriveSlotTitle } from "../lib/slots";
 import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
@@ -496,19 +496,40 @@ export default function Planner({
   );
 
   const handleConvertTaskToEvent = useCallback(
-    async (task: Task) => {
+    async (task: Task, picked?: CreateTarget) => {
       if (!task.start_time) return;
       const durationMs = (task.duration_minutes ?? 30) * 60000;
       const end = new Date(new Date(task.start_time).getTime() + durationMs).toISOString();
+      // The calendar the menu or the card picked (D-152) — or, with only one
+      // calendar to offer, where every unpicked create lands: the Settings
+      // default, never a hidden calendar (D-047). The toast names it either way.
+      const target = pickCreateTarget(accounts, {
+        ...createDefaults(settings),
+        accountId: picked?.accountId,
+        calendarId: picked?.calendarId,
+      });
+      if (!target) {
+        toast.error("No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.");
+        return;
+      }
+      const calendarName = accounts
+        .find((a) => a.id === target.accountId)
+        ?.calendars.find((c) => c.id === target.calendarId)?.summary;
       try {
-        await eventMutations.createEvent({ title: task.title, start_at: task.start_time, end_at: end });
+        await eventMutations.createEvent({
+          title: task.title,
+          start_at: task.start_time,
+          end_at: end,
+          accountId: target.accountId,
+          calendarId: target.calendarId,
+        });
         mutations.trash(task);
-        toast.success("Event created");
+        toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
       } catch {
-        toast.error("Couldn't create event — is Google Calendar connected?");
+        toast.error("Couldn't create the event — is your calendar connected?");
       }
     },
-    [eventMutations, mutations],
+    [eventMutations, mutations, accounts, settings],
   );
 
   return (
@@ -626,7 +647,7 @@ export default function Planner({
               recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
               onClose={closeOverlay}
-              onConvertToEvent={() => handleConvertTaskToEvent(openTask)}
+              onConvertToEvent={(target) => handleConvertTaskToEvent(openTask, target)}
             />
             </Suspense>
           )}

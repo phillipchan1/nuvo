@@ -19,10 +19,11 @@ import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExte
 import { eventSeriesKey, isExternalEventRecurring, resolveRecurringEventId } from "../lib/now";
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../lib/calendarReveal";
 import { synClass } from "../lib/syntax";
-import { isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
+import { createDefaults, isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets, type CreateTarget } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
+import { CalendarTargetList, useCreateTargets } from "./calendar/EventCalendarPicker";
 import { DeferCard } from "./DeferCard";
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
@@ -344,7 +345,9 @@ function CalendarPane({
    *  rather than folded into it, because that set also drives `fcEvents` — widening
    *  it to fix a lookup would start rendering work that has no time yet. */
   resolveDropTask?: (id: string) => Task | undefined;
-  onConvertTaskToEvent?: (task: Task) => void;
+  /** Task → Event. `target` is the calendar picked in the menu; omitted when
+   *  there is only one calendar to offer. */
+  onConvertTaskToEvent?: (task: Task, target?: CreateTarget) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
   /** Focus mode is on — toolbar shows a slim "Show panels" exit (⌘. still toggles). */
   focusMode?: boolean;
@@ -480,6 +483,9 @@ function CalendarPane({
   // Recurring-task trash expands in place (this / following / series) — same
   // scopes as RecurrenceDeleteButton in the task popover.
   const [taskDeleteMode, setTaskDeleteMode] = useState(false);
+  // Task → Event asking which calendar (D-152) — the menu turns into the list,
+  // the same way it turns into the occurrence choice for a recurring trash.
+  const [taskEventMode, setTaskEventMode] = useState(false);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
   const { data: recurrences = [] } = useRecurrences();
   const recurrenceById = useMemo(
@@ -493,14 +499,8 @@ function CalendarPane({
     () => accounts.some((a) => isWritableAccount(a)),
     [accounts],
   );
-
-  const writableAccounts = useMemo(
-    () =>
-      accounts
-        .filter((a) => isWritableAccount(a))
-        .map((a) => ({ id: a.id, email: a.email, provider: a.provider })),
-    [accounts],
-  );
+  // Where Task → Event may put the event, and where it goes unasked.
+  const createTargets = useCreateTargets();
 
   // What a plain (no-modifier) click-drag creates. ⌥-drag forces event,
   // ⌘/Ctrl-drag forces slot regardless of this.
@@ -1686,6 +1686,7 @@ function CalendarPane({
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setTaskDeleteMode(false);
+    setTaskEventMode(false);
   }, [taskMenu]);
   useEffect(() => {
     if (!taskMenu) return;
@@ -2363,7 +2364,7 @@ function CalendarPane({
     title,
     recurrence,
     attendees,
-    calendarAccountId,
+    calendar,
     domainId,
     notifyGuests,
     addMeet,
@@ -2409,9 +2410,9 @@ function CalendarPane({
           ? allDayRangeFromStart(start, end)
           : { start_at: start.toISOString(), end_at: end.toISOString() };
         const target = pickCreateTarget(accounts, {
-          hiddenIds: settings?.hidden_calendar_ids,
-          defaultAccountId: settings?.default_calendar_account_id,
-          accountId: calendarAccountId,
+          ...createDefaults(settings),
+          accountId: calendar?.accountId,
+          calendarId: calendar?.calendarId,
         });
         if (!target) {
           throw new Error(
@@ -3305,7 +3306,9 @@ function CalendarPane({
         const recurrence = task.recurrence_id ? recurrenceById.get(task.recurrence_id) ?? null : null;
         const recurring = Boolean(task.recurrence_id && recurrence);
         const left = fixedCssPx(Math.min(taskMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(Math.min(taskMenu.y, window.innerHeight - (taskDeleteMode ? 260 : 200)));
+        const top = fixedCssPx(
+          Math.min(taskMenu.y, window.innerHeight - (taskEventMode ? 300 : taskDeleteMode ? 260 : 200)),
+        );
         const trashThis = () => {
           if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
           mutations.trash(task);
@@ -3338,6 +3341,25 @@ function CalendarPane({
                 <EventMenuItem onClick={trashSeries}>Whole series</EventMenuItem>
                 <div className="my-1 border-t border-line" />
                 <EventMenuItem onClick={() => setTaskDeleteMode(false)}>Cancel</EventMenuItem>
+              </>
+            ) : taskEventMode && onConvertTaskToEvent ? (
+              <>
+                <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+                  Event on
+                </div>
+                <CalendarTargetList
+                  variant="menu"
+                  label="Convert to an event on"
+                  groups={createTargets.groups}
+                  value={null}
+                  defaultTarget={createTargets.defaultTarget}
+                  onPick={(target) => {
+                    setTaskMenu(null);
+                    onConvertTaskToEvent(task, target);
+                  }}
+                />
+                <div className="my-1 border-t border-line" />
+                <EventMenuItem onClick={() => setTaskEventMode(false)}>Cancel</EventMenuItem>
               </>
             ) : (
               <>
@@ -3376,10 +3398,14 @@ function CalendarPane({
                   <>
                     <div className="my-1 border-t border-line" />
                     <EventMenuItem onClick={() => {
+                      if (createTargets.choosable) {
+                        setTaskEventMode(true);
+                        return;
+                      }
                       setTaskMenu(null);
                       onConvertTaskToEvent(task);
                     }}>
-                      → Event
+                      {createTargets.choosable ? "→ Event…" : "→ Event"}
                     </EventMenuItem>
                   </>
                 )}
@@ -3551,7 +3577,6 @@ function CalendarPane({
           initialKind={draft.kind}
           allDay={draft.allDay}
           googleAvailable={canCreateEvents}
-          writableAccounts={writableAccounts}
           domains={domains}
           meetPreference={settings?.auto_add_meet}
           onCreate={handleCreate}

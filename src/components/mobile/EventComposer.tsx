@@ -11,7 +11,8 @@
 // So it owns no title input: the title is the capture line, parsed, and it is
 // handed down. What it owns is the time (seeded from that same parse, so
 // "lunch friday 12pm 1h" arrives already filled in), the repeat rule, the
-// guests, Meet, which calendar, and the invite-consent step — none of which a
+// guests, Meet, which calendar (`EventCalendarPicker` — the calendar itself,
+// not just the account it lives under), and the invite-consent step — none of which a
 // task has, and all of which are the reason "event" is a separate answer at all.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -19,7 +20,8 @@ import { Icon } from "../Icon";
 import { toast } from "sonner";
 import { useCalendarAccounts, useExternalEventMutations } from "../../hooks/useCalendar";
 import { useSettings } from "../../hooks/useSettings";
-import { isWritableAccount, pickCreateTarget, providerMeta } from "../../lib/calendarWrite";
+import { isWritableAccount } from "../../lib/calendarWrite";
+import { EventCalendarPicker, useEventCalendar } from "../calendar/EventCalendarPicker";
 import { allDayRangeFromStart, defaultTimedRange, toDateISO } from "../../lib/dates";
 import { toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
@@ -76,8 +78,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
 }>(function EventComposer({ title, seed, seedRepeat = null, onDone }, ref) {
   const { settings } = useSettings();
   const { createEvent } = useExternalEventMutations();
-  const { data: accounts = [] } = useCalendarAccounts();
-  const writableAccounts = useWritableAccounts();
+  const calendar = useEventCalendar();
 
   const [startAt, setStartAt] = useState(seed.start_at);
   const [endAt, setEndAt] = useState(seed.end_at);
@@ -94,7 +95,6 @@ const EventComposer = forwardRef<EventComposerHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedRepeatKey]);
   const [attendees, setAttendees] = useState<string[]>([]);
-  const [accountId, setAccountId] = useState(() => writableAccounts[0]?.id ?? "");
   const [meetChoice, setMeetChoice] = useState<boolean | null>(null);
   const [confirmingGuests, setConfirmingGuests] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,12 +110,15 @@ const EventComposer = forwardRef<EventComposerHandle, {
     setAllDay(seed.allDay);
   }, [seed.start_at, seed.end_at, seed.allDay]);
 
-  const account = writableAccounts.find((a) => a.id === accountId) ?? writableAccounts[0];
-  const isGoogle = account?.provider === "google";
+  const target = calendar.target;
+  const isGoogle = calendar.provider === "google";
+  // Guests are a Google-only field; ones typed before switching to an Apple
+  // calendar must not be "sent" to a provider that drops them.
+  const guests = isGoogle ? attendees : [];
   const addMeet =
     isGoogle &&
     !allDay &&
-    (meetChoice ?? shouldAddMeet(settings?.auto_add_meet ?? DEFAULT_MEET_PREFERENCE, attendees.length));
+    (meetChoice ?? shouldAddMeet(settings?.auto_add_meet ?? DEFAULT_MEET_PREFERENCE, guests.length));
 
   const toDateInput = (iso: string) => {
     const d = new Date(iso);
@@ -162,19 +165,14 @@ const EventComposer = forwardRef<EventComposerHandle, {
     setEndAt(range.end_at);
   };
 
-  const canCreate = Boolean(title.trim()) && Boolean(account);
-  const sendsInvites = attendees.length > 0;
+  const canCreate = Boolean(title.trim()) && Boolean(target);
+  const sendsInvites = guests.length > 0;
 
   const finish = async (notifyGuests: boolean) => {
-    if (!canCreate || !account || saving) return;
+    if (!canCreate || saving) return;
     setSaving(true);
     setError(null);
     try {
-      const target = pickCreateTarget(accounts, {
-        hiddenIds: settings?.hidden_calendar_ids,
-        defaultAccountId: settings?.default_calendar_account_id,
-        accountId: account.id,
-      });
       if (!target) {
         throw new Error(
           "No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.",
@@ -186,17 +184,17 @@ const EventComposer = forwardRef<EventComposerHandle, {
         end_at: endAt,
         all_day: allDay,
         recurrence: repeat ? toGoogleRRULE(repeat) : undefined,
-        attendees: attendees.length ? attendees : undefined,
+        attendees: guests.length ? guests : undefined,
         accountId: target.accountId,
         calendarId: target.calendarId,
         notifyGuests,
         addMeet,
       });
-      if (attendees.length) {
+      if (guests.length) {
         toast.success(
           notifyGuests
-            ? `Invite sent to ${attendees.length === 1 ? attendees[0] : `${attendees.length} guests`}`
-            : `Added ${attendees.length === 1 ? "1 guest" : `${attendees.length} guests`} — no email sent`,
+            ? `Invite sent to ${guests.length === 1 ? guests[0] : `${guests.length} guests`}`
+            : `Added ${guests.length === 1 ? "1 guest" : `${guests.length} guests`} — no email sent`,
         );
       }
       onDone({ start_at: startAt, end_at: endAt, allDay, repeats: Boolean(repeat) });
@@ -290,7 +288,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
           className={`fast ${more ? "" : "-rotate-90"}`}
         />
         {more ? "Fewer options" : "Repeat, guests, calendar…"}
-        {!more && (repeat || attendees.length > 0) && (
+        {!more && (repeat || guests.length > 0) && (
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
         )}
       </button>
@@ -306,37 +304,18 @@ const EventComposer = forwardRef<EventComposerHandle, {
             />
           </div>
 
-          {writableAccounts.length > 1 && (
+          {calendar.choosable && (
             <div className="mt-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
                 <Icon name="calendar" size={11} />
                 Calendar
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {writableAccounts.map((a) => {
-                  const meta = providerMeta(a.provider);
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => setAccountId(a.id)}
-                      className={`fast tap flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-caption font-medium ${
-                        accountId === a.id
-                          ? "border-accent bg-accent/10 text-accent"
-                          : "border-line bg-surface-2 text-muted"
-                      }`}
-                    >
-                      <span
-                        className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-micro font-semibold leading-none text-white"
-                        style={{ background: meta.color }}
-                      >
-                        {meta.letter}
-                      </span>
-                      {meta.name} · {a.email}
-                    </button>
-                  );
-                })}
-              </div>
+              <EventCalendarPicker
+                groups={calendar.groups}
+                value={target}
+                defaultTarget={calendar.defaultTarget}
+                onChange={calendar.pick}
+              />
             </div>
           )}
 
@@ -392,12 +371,12 @@ const EventComposer = forwardRef<EventComposerHandle, {
             <div className="text-body font-medium text-ink">
               {inviteConsentPrompt({
                 mode: "create",
-                count: attendees.length,
+                count: guests.length,
                 addMeet: Boolean(addMeet),
               })}
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {attendees.map((email) => (
+              {guests.map((email) => (
                 <span
                   key={email}
                   className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-meta text-muted"

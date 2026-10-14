@@ -5547,3 +5547,77 @@ column and the writes already exist; 86 is the index plus the paper trail.
 *Status: standing — kernel tests in `tests/task-query.test.ts` and
 `tests/completed-work.test.ts`. Battery scenario
 `completed-this-week-is-not-dated-this-week`. `npm run eval` not run.*
+
+**D-152 · 2026-10-14 · A new event is put on a calendar, not an account — and the default
+is a calendar too.**
+
+Origin ⓟ: *"When I'm creating an event… I can select Apple Calendar or Google, but within
+those, I have multiple calendars. It doesn't allow me to actually select which calendar it
+belongs to."*
+
+Both event composers — the grid's drag-to-create card and the capture door's Event face
+(⌘K, ⌥Space, the phone's ＋) — offered one chip **per account**, then quietly wrote to that
+account's own calendar. Work, Family and a church calendar under one Google login were
+unreachable from either; with a single account there was no choice at all. And the chip
+started on the *first* account in DB order, so the Settings default (D-047) was ignored by
+every composer — honoured only by the chat and the server's no-account fallback.
+
+- **One picker, one list** — `calendar/EventCalendarPicker` over `createTargetGroups`
+  (`lib/calendarWrite.ts`): every writable, non-hidden calendar, headed by its account only
+  when there's more than one. It opens in place rather than as a popover, so it reads the
+  same inside the desktop card and the phone's Sheet (no nested scroller there; it would
+  fight the Sheet's drag-to-dismiss). Shown only when there are two or more calendars.
+- **Untouched, it lands where any unnamed create does** — `pickCreateTarget`, which now also
+  takes a picked `calendarId`: the Settings default account's own calendar, never a hidden
+  one. A pick of a calendar that's since been hidden falls back within its account.
+- **Guests and Meet follow the calendar.** Apple's CalDAV create carries neither, so on an
+  Apple calendar Meet isn't offered and guests aren't sent — the grid card used to show a
+  guest field that iCloud silently dropped.
+- **Task → Event asks too** — follow-up ⓟ: *"create picker for task event."* Both doors
+  (the Schedule's right-click menu and the task card's footer) read **→ Event…** when there
+  is more than one calendar and open the same list in place — the menu turns into it the
+  way it turns into the occurrence choice for a recurring trash; the card opens it above
+  its footer. With one calendar it stays one tap. It used to call the Google function with
+  no account at all, so an Apple-default user couldn't convert; it now goes through
+  `pickCreateTarget` like everything else, and the toast names the calendar.
+  Duplicate keeps the original's calendar; the chat already resolves `calendar_name`.
+- **The default is a calendar** — follow-up ⓟ: *"allow default calendar as well."*
+  `user_settings.default_calendar_id` (migration 87) names which of the default account's
+  calendars; null keeps meaning the account's own, so every existing row reads as before.
+  **One control** — Settings → Calendars → *Default calendar for new events* — replaces
+  the per-Google-account **Set as default** button, which could only ever mean that
+  account's own calendar and couldn't name an Apple one at all. The chosen calendar wears
+  **default** on its Settings row and in every picker.
+- **One rule, both runtimes.** Which calendar is the default lives once,
+  `_shared/defaultCalendar.ts` (`accountDefaultCalendarId`): the chosen calendar if it's
+  still there and not hidden, else the account's own, else its first. The app's
+  `pickCreateTarget` and the agent's `buildWritableCalendars` both call it, and
+  `tests/default-calendar.test.tsx` asserts they land an unnamed event in the same place
+  across five settings shapes. A calendar id only counts inside the account it was chosen
+  under — the same shared calendar can sit under two.
+- **Safe before the migration runs.** A settings write naming a missing column would park
+  the whole settings op, so Settings only offers per-calendar defaults once the row carries
+  the `default_calendar_id` key — until then it offers one choice per account (its own
+  calendar), which is exactly what the old button wrote. The agent's two settings reads
+  moved to `select("*")`: naming a column that isn't there fails the read, and that read
+  also carries `hidden_calendar_ids` — losing it would reopen D-047.
+
+Ledger: **D6** (where does it go) — the "where" now reaches the calendar. Strains **P5**
+lightly — Task → Event grew a second step when there's a choice to make — which is why the
+step only appears with two or more calendars and the default is marked in it. The composer
+picker is folded behind "Repeat, guests, calendar…" on the capture door and starts on the
+default, so most creates never open it. No new pool. One new name, **Default calendar**
+(glossary), which retires *Set as default* rather than sitting beside it (P11). Works with
+one account or many, Google or Apple (P16).
+
+*Status: standing — typecheck, the full suite (1,767; 22 new across
+`tests/default-calendar.test.tsx` and `tests/icloud-series.test.ts`), the edge-function
+parse and the desktop build green. Driven with fixture accounts in the `?meet` (grid card:
+opens on a non-primary default, marked) and `?capture` (phone Sheet, 375px: 44px rows, no
+horizontal overflow) harnesses, which seed a hidden calendar, a holiday feed and a
+read-only subscription — none offered. **Not driven:** the Settings control and both Task →
+Event doors (wiring is pinned by source tests; the list itself is rendered in jsdom) —
+this checkout has no `.env.local`, so nothing ran against a real account. **Migration 87
+and the agent function are not deployed** by a push: until `supabase db push` runs,
+Settings stays at account grain; until `supabase functions deploy agent` runs, the chat
+ignores the calendar half of the default.*

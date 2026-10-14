@@ -14,7 +14,11 @@
 // unprompted may land there. It stays resolvable by explicit name ("put it on
 // Women's"), because naming it is the user deciding, which is the whole point.
 // Everything unnamed goes to one default, and the default is the account the
-// user marked in Settings, not whatever Postgres hands back first.
+// user marked in Settings, not whatever Postgres hands back first — and, since
+// D-152, the calendar within it they marked, through the same rule the app's
+// composers use (`_shared/defaultCalendar.ts`).
+
+import { accountDefaultCalendarId } from "../_shared/defaultCalendar.ts";
 
 /** One writable calendar, plus the two facts that decide whether the agent may
  *  choose it on its own. */
@@ -26,7 +30,8 @@ export interface WritableCal {
   name: string;
   /** Hidden from the board in Settings → Calendars. Nameable, never offered. */
   hidden: boolean;
-  /** Primary calendar of the account the user set as default. At most one. */
+  /** The calendar the user set as default (D-152), else the default account's
+   *  own calendar. At most one. */
   isDefault: boolean;
 }
 
@@ -66,6 +71,7 @@ export function buildWritableCalendars(
   accounts: RawCalendarAccount[],
   hiddenCalendarIds: string[],
   defaultAccountId: string | null,
+  defaultCalendarId: string | null = null,
 ): WritableCal[] {
   const hidden = new Set(hiddenCalendarIds);
   const out: WritableCal[] = [];
@@ -91,8 +97,19 @@ export function buildWritableCalendars(
   // on. Marked on the row rather than returned separately so every consumer —
   // the model reading context, the tool picking a fallback — sees the same fact.
   if (defaultAccountId) {
-    const primary = accountPrimary(out, defaultAccountId);
-    if (primary) primary.isDefault = true;
+    const mine = out.filter((c) => c.accountId === defaultAccountId);
+    const chosenId = mine.length
+      ? accountDefaultCalendarId(
+          mine.map((c) => c.calendarId),
+          { accountEmail: mine[0].accountEmail, hiddenIds: hidden, defaultCalendarId },
+        )
+      : undefined;
+    // Nothing visible left in the default account → mark its primary anyway;
+    // `pickDefaultCalendar` skips a hidden default and falls back.
+    const marked =
+      (chosenId ? mine.find((c) => c.calendarId === chosenId) : undefined) ??
+      accountPrimary(out, defaultAccountId);
+    if (marked) marked.isDefault = true;
   }
 
   return out;

@@ -8,15 +8,13 @@ import { startOfDay } from "date-fns";
 import MobileCapture from "./MobileCapture";
 import type { NewTaskInput } from "../../hooks/useTasks";
 import { TaskCaptureSinkContext } from "../../hooks/useTaskCapture";
-
-const WRITABLE = [
-  { id: "a1", provider: "google", email: "you@example.com", sync_direction: "two_way" },
-];
+import { HARNESS_CALENDAR_ACCOUNTS, HARNESS_SETTINGS } from "../calendar/calendarFixtures";
 
 export default function CaptureHarness() {
   const [client] = useState(() => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(["calendar_accounts"], WRITABLE);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    qc.setQueryData(["calendar_accounts"], HARNESS_CALENDAR_ACCOUNTS);
+    qc.setQueryData(["settings"], HARNESS_SETTINGS);
     return qc;
   });
   const today = startOfDay(new Date());

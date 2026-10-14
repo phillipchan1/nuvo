@@ -318,6 +318,11 @@ export interface UserSettings {
   show_weather: boolean;
   /** calendar_accounts.id to use when Nuvo creates new Google Calendar events. Null = first connected account. */
   default_calendar_account_id: string | null;
+  /** Which of the default account's calendars a new event lands on (D-152).
+   *  ABSENT — not null — until migration 87 has run: the key's presence on the
+   *  row is how Settings knows it may write it (a write to a missing column
+   *  would park the whole settings op). Null = the account's own calendar. */
+  default_calendar_id?: string | null;
   /** When Nuvo attaches a Google Meet link to events it creates — "guests"
    *  (default), "always" or "never". Google never applies its own auto-
    *  conferencing setting to API-created events, so this is the only thing that

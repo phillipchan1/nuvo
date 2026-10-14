@@ -1,4 +1,5 @@
-import type { CalendarAccount, CalendarInfo, CalendarProvider } from "./types";
+import type { CalendarAccount, CalendarInfo, CalendarProvider, UserSettings } from "./types";
+import { accountDefaultCalendarId } from "../../supabase/functions/_shared/defaultCalendar.ts";
 
 // ── Offline: the one write in Nuvo that genuinely cannot be queued ──────────
 //
@@ -115,34 +116,82 @@ export interface MoveTargetGroup {
   calendars: CalendarInfo[];
 }
 
-/** Where an unnamed create lands. Hidden calendars are never chosen (D-047).
- *  `accountId` is a named account (the composer picker); without it we use the
- *  Settings default, then the first visible writable calendar. */
-export function pickCreateTarget(
+/** One calendar a new event can be written to. A calendar id alone is not an
+ *  address — the same shared calendar can sit under two connected accounts. */
+export interface CreateTarget {
+  accountId: string;
+  calendarId: string;
+}
+
+/** Every calendar a NEW event may be put on, grouped by account: writable
+ *  accounts, writable calendars, minus anything hidden from the board (D-047 —
+ *  a hidden calendar is never offered). The composers' picker and the
+ *  unnamed-create fallback both read this one list, so what you can choose and
+ *  where an unchosen event lands can't disagree. */
+export function createTargetGroups(
   accounts: CalendarAccount[],
-  opts: {
-    hiddenIds?: string[];
-    defaultAccountId?: string | null;
-    accountId?: string | null;
-  } = {},
-): { accountId: string; calendarId: string } | null {
-  const hidden = new Set(opts.hiddenIds ?? []);
-  const groups = writableCalendarTargets(accounts)
+  hiddenIds: string[] = [],
+): MoveTargetGroup[] {
+  const hidden = new Set(hiddenIds);
+  return writableCalendarTargets(accounts)
     .map((g) => ({
       ...g,
       calendars: g.calendars.filter((c) => !hidden.has(c.id)),
     }))
     .filter((g) => g.calendars.length > 0);
+}
+
+/** The Settings half of `pickCreateTarget`'s options — what's hidden and what
+ *  the default is — read in one place so no caller forgets the calendar half. */
+export function createDefaults(
+  settings?: Pick<
+    UserSettings,
+    "hidden_calendar_ids" | "default_calendar_account_id" | "default_calendar_id"
+  > | null,
+): { hiddenIds?: string[]; defaultAccountId?: string | null; defaultCalendarId?: string | null } {
+  return {
+    hiddenIds: settings?.hidden_calendar_ids,
+    defaultAccountId: settings?.default_calendar_account_id,
+    defaultCalendarId: settings?.default_calendar_id,
+  };
+}
+
+/** Where a create lands. Hidden calendars are never chosen (D-047).
+ *  `accountId` + `calendarId` is the composer's pick; a named account without a
+ *  calendar gets that account's own calendar. Without either we use the
+ *  Settings default (its chosen calendar, D-152, else its own), then the first
+ *  visible writable calendar. */
+export function pickCreateTarget(
+  accounts: CalendarAccount[],
+  opts: {
+    hiddenIds?: string[];
+    defaultAccountId?: string | null;
+    defaultCalendarId?: string | null;
+    accountId?: string | null;
+    calendarId?: string | null;
+  } = {},
+): CreateTarget | null {
+  const groups = createTargetGroups(accounts, opts.hiddenIds);
 
   const named = opts.accountId ? groups.find((g) => g.accountId === opts.accountId) : undefined;
+  const namedCalendar = opts.calendarId
+    ? named?.calendars.find((c) => c.id === opts.calendarId)
+    : undefined;
+  if (named && namedCalendar) return { accountId: named.accountId, calendarId: namedCalendar.id };
   const def = opts.defaultAccountId ? groups.find((g) => g.accountId === opts.defaultAccountId) : undefined;
   const google = groups.find((g) => g.provider === "google");
   const group = named ?? def ?? google ?? groups[0];
   if (!group) return null;
-  const email = group.accountLabel.trim().toLowerCase();
-  const calendar =
-    group.calendars.find((c) => c.id.toLowerCase() === email) ?? group.calendars[0];
-  return { accountId: group.accountId, calendarId: calendar.id };
+  // Hidden calendars are already out of `groups`; the shared rule picks among
+  // the rest, honouring the chosen default only inside the default account.
+  const calendarId = accountDefaultCalendarId(
+    group.calendars.map((c) => c.id),
+    {
+      accountEmail: group.accountLabel,
+      defaultCalendarId: group === def ? opts.defaultCalendarId : null,
+    },
+  );
+  return calendarId ? { accountId: group.accountId, calendarId } : null;
 }
 
 /** Every calendar an event can be moved to, grouped by account — the source for

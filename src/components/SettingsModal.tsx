@@ -16,7 +16,14 @@ import {
 import { formatHourLabel, fmtDuration } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import { DURATION_PRESETS, type CalendarAccount, type UserSettings } from "../lib/types";
-import { providerMeta } from "../lib/calendarWrite";
+import {
+  createDefaults,
+  createTargetGroups,
+  pickCreateTarget,
+  providerLabel,
+  providerMeta,
+  type CreateTarget,
+} from "../lib/calendarWrite";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
@@ -827,6 +834,46 @@ function ConnectionsPane({
       return next;
     });
 
+  // ── Default calendar for new events (D-152) ──
+  // One control for the default — it used to be a "Set as default" button per
+  // Google account, which could only ever mean that account's own calendar.
+  // Offered: every calendar a new event may go on (writable, on the board).
+  //
+  // `default_calendar_id` arrives with migration 87. Until the row carries the
+  // key, writing it would park the whole settings op, so the choice stays at
+  // account grain — one option per account, its own calendar — and widens to
+  // every calendar the moment the column exists.
+  const calendarDefaultReady = Boolean(settings && "default_calendar_id" in settings);
+  const defaultTarget = pickCreateTarget(accounts, createDefaults(settings));
+  const defaultChoices = createTargetGroups(accounts, settings?.hidden_calendar_ids)
+    .map((g) =>
+      calendarDefaultReady
+        ? g
+        : {
+            ...g,
+            calendars: g.calendars.filter(
+              (c) =>
+                c.id ===
+                pickCreateTarget(accounts, { hiddenIds: settings?.hidden_calendar_ids, accountId: g.accountId })
+                  ?.calendarId,
+            ),
+          },
+    )
+    .filter((g) => g.calendars.length > 0);
+  const defaultFlat: CreateTarget[] = defaultChoices.flatMap((g) =>
+    g.calendars.map((c) => ({ accountId: g.accountId, calendarId: c.id })),
+  );
+  const isDefaultCal = (accountId: string, calendarId: string) =>
+    defaultTarget?.accountId === accountId && defaultTarget?.calendarId === calendarId;
+  const defaultIndex = defaultFlat.findIndex((t) => isDefaultCal(t.accountId, t.calendarId));
+  const setDefaultCalendar = (t: CreateTarget | undefined) => {
+    if (!t) return;
+    updateSettings({
+      default_calendar_account_id: t.accountId,
+      ...(calendarDefaultReady ? { default_calendar_id: t.calendarId } : {}),
+    });
+  };
+
   // One calendar's row — color dot + name, its domain attribution, and the on/off
   // switch. Hidden calendars render the same row, just dimmed and without the
   // domain picker (nothing to attribute while it's off the board).
@@ -843,7 +890,16 @@ function ConnectionsPane({
             boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)",
           }}
         />
-        <span className={`min-w-0 flex-1 truncate text-body ${on ? "text-ink" : "text-muted"}`}>{c.summary}</span>
+        <span className={`min-w-0 truncate text-body ${on ? "text-ink" : "text-muted"}`}>{c.summary}</span>
+        {on && isDefaultCal(a.id, c.id) && (
+          <span
+            className="mono shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent"
+            title="New events go here unless you pick another calendar"
+          >
+            default
+          </span>
+        )}
+        <span className="flex-1" />
       </button>
       {on && (
         <Select
@@ -872,6 +928,38 @@ function ConnectionsPane({
         <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
       </div>
       <div className="space-y-5">
+        {defaultFlat.length > 1 && (
+          <Row
+            layout="stack"
+            title="Default calendar for new events"
+            desc="Where an event goes when you don't choose one. Every event composer starts here, and Task → Event and Nuvo use it too."
+          >
+            <Select
+              value={defaultIndex >= 0 ? String(defaultIndex) : ""}
+              onChange={(e) => setDefaultCalendar(defaultFlat[Number(e.target.value)])}
+              aria-label="Default calendar for new events"
+              className="w-full sm:w-80"
+            >
+              {defaultIndex < 0 && <option value="">Choose a calendar…</option>}
+              {(() => {
+                let i = 0;
+                return defaultChoices.map((g) => (
+                  <optgroup key={g.accountId} label={`${g.accountLabel} · ${providerLabel(g.provider)}`}>
+                    {g.calendars.map((c) => {
+                      const idx = i++;
+                      return (
+                        <option key={c.id} value={String(idx)}>
+                          {c.summary}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                ));
+              })()}
+            </Select>
+          </Row>
+        )}
+
         {/* Google's own "add video conferencing automatically" preference only
             applies to events created in *their* web UI — it never reaches an
             event booked through the API, so this is the only thing deciding
@@ -923,13 +1011,6 @@ function ConnectionsPane({
                     {a.sync_direction === "two_way" ? "two-way" : "read-only"}
                   </span>
                   <div className="flex-1" />
-                  {a.provider === "google" && a.sync_direction === "two_way" && (
-                    settings?.default_calendar_account_id === a.id ? (
-                      <span className="mono rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent">default</span>
-                    ) : (
-                      <Btn onClick={() => updateSettings({ default_calendar_account_id: a.id })}>Set as default</Btn>
-                    )
-                  )}
                   {a.needs_reconnect && a.provider !== "ics" && a.provider !== "icloud" && (
                     <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
                       Reconnect

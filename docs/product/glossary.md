@@ -146,6 +146,7 @@ been used to argue against things it doesn't forbid.
 | **`needs_reconnect`** | Flag on a calendar account after token/credential failure → surfaces the orange reconnect banner. Sync never fails silently; everything writes to `sync_log`. |
 | **Day contexts** | Per-day markers on the week (`day_contexts`): normal · ◐ light · ✈ travel · — off. They bound the composer. |
 | **Working hours** | `user_settings.work_start_minutes` / `work_end_minutes` (default 480/990). |
+| **Default calendar** | Where a new event goes when nobody picks a calendar — Settings → Calendars → *Default calendar for new events*, and the calendar wearing a **default** mark there and in every event picker. A pair: `default_calendar_account_id` + `default_calendar_id` (migration 87); null calendar = that account's own. Never a hidden calendar. Read by every event composer, Task → Event and the chat through one rule (`_shared/defaultCalendar.ts`). Replaced the per-account **Set as default** button. D-047, D-152. |
 
 ## Design language
 

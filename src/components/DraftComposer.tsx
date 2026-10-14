@@ -19,8 +19,8 @@ import {
 import { fixedCssPx, getUiScale } from "../hooks/useUiScale";
 import { RepeatControl } from "./RecurrencePicker";
 import { GuestsInput } from "./GuestsInput";
-import { providerMeta } from "../lib/calendarWrite";
-import type { CalendarProvider } from "../lib/types";
+import type { CreateTarget } from "../lib/calendarWrite";
+import { EventCalendarPicker, useEventCalendar } from "./calendar/EventCalendarPicker";
 import {
   DEFAULT_MEET_PREFERENCE,
   type MeetPreference,
@@ -43,7 +43,8 @@ export interface CreateDraft {
   title: string;
   recurrence: RecurrenceRule | null;
   attendees: string[];
-  calendarAccountId?: string;
+  /** The calendar the event goes on (events only). */
+  calendar?: CreateTarget;
   domainId: string | null;
   notifyGuests: boolean;
   /** Attach a Google Meet link (events only). */
@@ -68,7 +69,6 @@ export default function DraftComposer({
   initialKind,
   allDay = false,
   googleAvailable,
-  writableAccounts = [],
   domains = [],
   meetPreference = DEFAULT_MEET_PREFERENCE,
   onCreate,
@@ -80,7 +80,6 @@ export default function DraftComposer({
   initialKind: CreateKind;
   allDay?: boolean;
   googleAvailable: boolean;
-  writableAccounts?: Array<{ id: string; email: string; provider: CalendarProvider }>;
   /** Domains offered on the Slot tab — pick one to make a "domain slot" the
    *  weekly plan routes matching work into (docs/standing-slots.md). */
   domains?: Array<{ id: string; name: string; color: string }>;
@@ -111,7 +110,8 @@ export default function DraftComposer({
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
   const [attendees, setAttendees] = useState<string[]>([]);
-  const [calendarAccountId, setCalendarAccountId] = useState(() => writableAccounts[0]?.id ?? "");
+  const calendar = useEventCalendar();
+  const isGoogle = calendar.provider === "google";
   const [domainId, setDomainId] = useState<string | null>(null);
   // null = "nobody has said" → follow the account preference, which for the
   // default ("guests") means the toggle turns itself on the moment a guest is
@@ -237,18 +237,23 @@ export default function DraftComposer({
 
   const canCreate = kind === "slot" || Boolean(title.trim());
 
-  /** An event with guests is an outbound email, so it gets a confirm step. */
-  const sendsInvites = kind === "event" && attendees.length > 0;
+  // Guests and Meet are Google's: Apple's CalDAV create carries neither, so on
+  // an Apple calendar they are not offered and never sent.
+  const guests = isGoogle ? attendees : [];
 
-  const addMeet = kind === "event" && !eventAllDay && (meetChoice ?? shouldAddMeet(meetPreference, attendees.length));
+  /** An event with guests is an outbound email, so it gets a confirm step. */
+  const sendsInvites = kind === "event" && guests.length > 0;
+
+  const addMeet =
+    kind === "event" && isGoogle && !eventAllDay && (meetChoice ?? shouldAddMeet(meetPreference, guests.length));
 
   const finish = (notifyGuests: boolean) => {
     onCreate({
       kind,
       title: title.trim(),
       recurrence: repeat,
-      attendees,
-      calendarAccountId: calendarAccountId || undefined,
+      attendees: guests,
+      calendar: kind === "event" ? (calendar.target ?? undefined) : undefined,
       domainId: kind === "slot" ? domainId : null,
       notifyGuests,
       addMeet,
@@ -388,37 +393,14 @@ export default function DraftComposer({
                   block
                 />
               </PopField>
-              {kind === "event" && writableAccounts.length > 1 && (
+              {kind === "event" && calendar.choosable && (
                 <PopField label="Calendar">
-                  <div className="flex flex-wrap gap-1.5">
-                    {writableAccounts.map((a) => {
-                      const meta = providerMeta(a.provider);
-                      const on = calendarAccountId === a.id;
-                      // Two accounts can share an email (e.g. Google + iCloud both
-                      // added under the same address) — the provider badge is the
-                      // only thing that still tells them apart, so always show it.
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => setCalendarAccountId(a.id)}
-                          className={`fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label font-medium transition-colors ${
-                            on
-                              ? "border-accent/45 bg-accent-soft text-accent"
-                              : "border-line text-muted hover:border-line-strong hover:text-ink"
-                          }`}
-                        >
-                          <span
-                            className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-micro font-semibold leading-none"
-                            style={{ background: meta.color, color: "var(--on-accent)" }}
-                          >
-                            {meta.letter}
-                          </span>
-                          {meta.name} · {a.email}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <EventCalendarPicker
+                    groups={calendar.groups}
+                    value={calendar.target}
+                    defaultTarget={calendar.defaultTarget}
+                    onChange={calendar.pick}
+                  />
                 </PopField>
               )}
 
@@ -427,7 +409,7 @@ export default function DraftComposer({
                     Google never adds one to an event created through the API, so
                     this toggle is the only thing that puts a way to meet
                     digitally on the invite. ── */}
-              {kind === "event" && !eventAllDay && (
+              {kind === "event" && isGoogle && !eventAllDay && (
                 <PopField label="Meeting">
                   <button
                     type="button"
@@ -501,7 +483,13 @@ export default function DraftComposer({
             <PopCol side="right">
               {/* ── Guests — only for calendar events ── */}
               <PopSection label="Guests" className="flex-1">
-                <GuestsInput value={attendees} onChange={setAttendees} />
+                {isGoogle ? (
+                  <GuestsInput value={attendees} onChange={setAttendees} />
+                ) : (
+                  <span className="text-meta text-muted">
+                    Guests can only be invited on a Google calendar.
+                  </span>
+                )}
               </PopSection>
             </PopCol>
           )}
@@ -514,10 +502,10 @@ export default function DraftComposer({
           <div className="flex shrink-0 flex-col gap-3 border-t border-line p-3.5">
             <div>
               <div className="text-body font-medium text-ink">
-                {inviteConsentPrompt({ mode: "create", count: attendees.length, addMeet })}
+                {inviteConsentPrompt({ mode: "create", count: guests.length, addMeet })}
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
-                {attendees.map((email) => (
+                {guests.map((email) => (
                   <span key={email} className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-meta text-muted">
                     {email}
                   </span>

@@ -1211,7 +1211,9 @@ async function loadWritableCalendars(userId: string): Promise<WritableCal[]> {
       .eq("user_id", userId),
     admin
       .from("user_settings")
-      .select("hidden_calendar_ids, default_calendar_account_id")
+      // `*` so a missing `default_calendar_id` (pre-migration 87) can't fail the
+      // read and take the hidden list down with it — see context.ts.
+      .select("*")
       .eq("user_id", userId)
       .maybeSingle(),
   ]);
@@ -1219,6 +1221,7 @@ async function loadWritableCalendars(userId: string): Promise<WritableCal[]> {
     (accountsRes.data ?? []) as RawCalendarAccount[],
     (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
     (settingsRes.data?.default_calendar_account_id as string | null) ?? null,
+    (settingsRes.data?.default_calendar_id as string | null | undefined) ?? null,
   );
 }
 

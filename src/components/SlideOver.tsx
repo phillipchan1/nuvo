@@ -7,7 +7,8 @@ import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
 import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, RecurrenceScope, Slot, Task } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../lib/types";
-import { CALENDAR_OFFLINE_NOTE, providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
+import { CALENDAR_OFFLINE_NOTE, providerLabel, writableCalendarTargets, type CreateTarget, type MoveTargetGroup } from "../lib/calendarWrite";
+import { CalendarTargetList, useCreateTargets } from "./calendar/EventCalendarPicker";
 import { conferenceName, joinUrl } from "../../supabase/functions/_shared/conferencing.ts";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
@@ -287,7 +288,9 @@ export function TaskPopover({
   recurrence: Recurrence | null;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onClose: () => void;
-  onConvertToEvent?: () => void;
+  /** Task → Event, onto the calendar picked in the footer (omitted when there
+   *  is only one calendar to offer). */
+  onConvertToEvent?: (target?: CreateTarget) => void;
   /** When opened from a slot popover — back returns to the slot (history.back). */
   onBack?: () => void;
   backLabel?: string;
@@ -472,6 +475,10 @@ export function TaskPopover({
   })();
 
   const dismiss = onBack ?? onClose;
+
+  // Task → Event asks which calendar when there's more than one (D-152).
+  const createTargets = useCreateTargets();
+  const [convertOpen, setConvertOpen] = useState(false);
 
   // The masthead's one line — the same read the chips below let you change.
   const whenSummary = task.do_date
@@ -952,6 +959,22 @@ export function TaskPopover({
           )}
         </PopBody>
 
+        {/* Task → Event, asking which calendar: the list opens above the
+            footer that asked, the way Trash opens its occurrence choice in
+            place rather than in a second popover. */}
+        {convertOpen && onConvertToEvent && (
+          <div className="shrink-0 border-t border-line px-2 pb-1.5 pt-2.5">
+            <PopLabel className="px-2.5 pb-1">Convert to an event on</PopLabel>
+            <CalendarTargetList
+              label="Convert to an event on"
+              groups={createTargets.groups}
+              value={null}
+              defaultTarget={createTargets.defaultTarget}
+              onPick={(target) => { onConvertToEvent(target); dismiss(); }}
+            />
+          </div>
+        )}
+
         {/* Footer — the rare transforms read as text; Trash is quiet until it
             asks which occurrences you meant. */}
         <PopFooter>
@@ -966,9 +989,13 @@ export function TaskPopover({
           {onConvertToEvent && task.start_time && (
             <PopFootAct
               title="Convert to a calendar event and remove the task"
-              onClick={() => { onConvertToEvent(); dismiss(); }}
+              onClick={() => {
+                if (createTargets.choosable) { setConvertOpen((o) => !o); return; }
+                onConvertToEvent();
+                dismiss();
+              }}
             >
-              → Event
+              {convertOpen ? "Cancel" : createTargets.choosable ? "→ Event…" : "→ Event"}
             </PopFootAct>
           )}
           <div className="min-w-0 flex-1" />
@@ -2362,7 +2389,7 @@ export function SlotPopover({
   taskRecurrence?: Recurrence | null;
   onOpenTask: (t: Task) => void;
   onCloseTask: () => void;
-  onConvertTaskToEvent?: (t: Task) => void;
+  onConvertTaskToEvent?: (t: Task, target?: CreateTarget) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(slot.title);
@@ -2924,7 +2951,7 @@ export function SlotPopover({
               onBack={onCloseTask}
               backLabel={slot.title.trim() || derivedTitle}
               onConvertToEvent={
-                onConvertTaskToEvent ? () => onConvertTaskToEvent(openTask) : undefined
+                onConvertTaskToEvent ? (target) => onConvertTaskToEvent(openTask, target) : undefined
               }
             />
           )}

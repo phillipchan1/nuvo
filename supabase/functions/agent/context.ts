@@ -103,9 +103,10 @@ export async function buildContext(
     admin.from("labels").select("id, name").eq("user_id", userId).order("name"),
     admin
       .from("user_settings")
-      .select(
-        "day_start_hour, day_end_hour, hidden_calendar_ids, hidden_events, default_calendar_account_id",
-      )
+      // `*`, not a column list: `default_calendar_id` arrives with migration 87,
+      // and naming a column that isn't there yet fails the whole read — which
+      // would drop hidden_calendar_ids with it and reopen D-047.
+      .select("*")
       .eq("user_id", userId)
       .maybeSingle(),
     admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
@@ -239,6 +240,7 @@ export async function buildContext(
       accounts,
       [...hiddenCalendars],
       (settingsRes.data?.default_calendar_account_id as string | null) ?? null,
+      (settingsRes.data?.default_calendar_id as string | null | undefined) ?? null,
     ),
   );
 
