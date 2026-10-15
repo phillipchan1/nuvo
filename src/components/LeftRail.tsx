@@ -149,6 +149,24 @@ function LeftRail({
     setRemindPickerFor(null);
   }, [nav]);
 
+  // The keyboard belongs to the last pane you touched. A press on the calendar
+  // (a block, its menu's trigger, empty grid, the toolbar) puts the rail's
+  // cursor down — both window listeners hear ⌫ in the capture phase, so a lit
+  // rail row and a block's open menu used to be trashed by the same keystroke.
+  // The multi-selection stays: it's an explicit pick, and the bulk bar shows it.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest?.("[data-calendar-pane]")) return;
+      // Only when there's a cursor to put down: an unconditional set re-rendered
+      // the whole rail inside the very pointerdown that may start a drag.
+      if (selectedIdRef.current === null) return;
+      setKeyCursor(false);
+      setSelectedId(null);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, []);
+
   // Glass-lift is "this row's popover is open", not the keyboard cursor.
   // selectedId still drives j/k and hotkeys; it used to also paint the
   // lift, which is how Escape (same closeOverlay as a click-away, just
@@ -411,7 +429,14 @@ function LeftRail({
     // box, not walk into a collapsed "done" tail.
     rows: tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible,
     cursor: {
-      cursorId: selectedId,
+      // Keys act on a row you can SEE. A click selects without drawing the
+      // cursor (the lift means "its popover is open"), and that invisible
+      // selection used to stay armed: click a row, close its popover, click the
+      // calendar, press ⌫ — and the rail trashed the row nobody was looking at,
+      // then lit its neighbour for the next ⌫. An unlit click is only where j / k
+      // start from.
+      cursorId: keyCursor ? selectedId : null,
+      homeId: keyCursor ? null : selectedId,
       setCursorId: (id) => {
         setSelectedId(id);
         setKeyCursor(Boolean(id));
@@ -481,7 +506,7 @@ function LeftRail({
               setContextMenu(null);
               return true;
             }
-            if (selectedIds.size === 0 && !selectedId && filtering) {
+            if (selectedIds.size === 0 && !(keyCursor && selectedId) && filtering) {
               filter.setQuery({});
               return true;
             }

@@ -22,10 +22,13 @@ import { synClass } from "../lib/syntax";
 import { createDefaults, isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets, type CreateTarget } from "../lib/calendarWrite";
 import { isPendingEventCreate } from "../lib/eventWriteback";
 import type { useSlotMutations } from "../hooks/useSlots";
-import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
+import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
 import { CalendarTargetList, useCreateTargets } from "./calendar/EventCalendarPicker";
 import { DeferCard } from "./DeferCard";
+import { at, span } from "./mobile/dayPlan";
+import TaskActionsMenu from "./tasks/TaskActionsMenu";
+import { TaskDateMenu, TaskMoveMenu } from "./tasks/TaskMenus";
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
@@ -158,7 +161,7 @@ function RecurrenceDialog({
         onClick={onCancel}
       />
       <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-        <div className="moment pointer-events-auto bg-surface border border-line rounded-[var(--radius-lg)] w-[300px] p-5 elev-3">
+        <div className="pop-in pointer-events-auto bg-surface border border-line rounded-[var(--radius-lg)] w-[300px] p-5 elev-3">
           <p className="text-label font-semibold uppercase tracking-widest text-muted mb-1">
             Recurring event
           </p>
@@ -238,6 +241,23 @@ function paintCalendarTaskDone(el: HTMLElement, done: boolean) {
   }
 }
 
+/** Keep a floating menu on screen by MEASURING it. The menus here used to clamp
+ *  against a guessed height, so a writable recurring event's menu (~300px)
+ *  near the bottom edge lost "Delete all events in series" off-screen. Client
+ *  px in; CSS px out (UI zoom corrected, like every fixed layer here). `key`
+ *  re-measures when the menu's body changes shape (a step expanding in place). */
+function useOnScreen(ref: React.RefObject<HTMLElement | null>, x: number, y: number, key: string) {
+  const [pos, setPos] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const { width, height } = el ? el.getBoundingClientRect() : { width: 0, height: 0 };
+    const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
+    const top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
+    setPos((p) => (p.left === left && p.top === top ? p : { left, top }));
+  }, [ref, x, y, key]);
+  return { left: fixedCssPx(pos.left), top: fixedCssPx(pos.top) };
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 function CalendarPane({
   view,
@@ -252,6 +272,7 @@ function CalendarPane({
   taskDomain,
   slotTitle,
   slotProject,
+  taskProject,
   mutations,
   eventMutations,
   slotMutations,
@@ -310,6 +331,8 @@ function CalendarPane({
   /** The project a slot is reserved for, and the hue it inherits — so a project
    *  sitting can name its kind on the grid instead of wearing a bare `▸`. */
   slotProject?: (s: Slot) => { name: string; color: string | null } | null;
+  /** The project a task belongs to, by name — worn on its block's second line. */
+  taskProject?: (t: Task) => string | null;
   mutations: ReturnType<typeof useTaskMutations>;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
@@ -383,15 +406,29 @@ function CalendarPane({
   const pauseGridSync = useCallback(() => {
     gridSyncPausedRef.current = true;
   }, []);
+  // `now` through a ref, so this — and the FullCalendar handlers built on it —
+  // keep one identity for the pane's life. It used to depend on `now`, which
+  // ticks every 30s, and `onFcResizeStop` sat in `calendarElement`'s deps: the
+  // whole <FullCalendar> was re-created and re-measured twice a minute, drags
+  // included (the 09-03 memo fix, quietly undone one callback away).
+  const nowRef = useRef(now);
+  nowRef.current = now;
   const resumeGridSync = useCallback(() => {
     if (!gridSyncPausedRef.current) return;
     gridSyncPausedRef.current = false;
-    setFcNow(now);
+    // The overdue clock catches up AFTER the drop's cache patch has rendered.
+    // Setting it here scheduled a render that ran first, with the pre-drop
+    // tasks, and the sync put the block back at its old time for a frame.
+    if (fcNowRef.current !== nowRef.current) {
+      window.setTimeout(() => {
+        if (!gridSyncPausedRef.current) setFcNow(nowRef.current);
+      }, 300);
+    }
     const api = calRef.current?.getApi();
     const pending = pendingGridSyncRef.current;
     pendingGridSyncRef.current = null;
     if (api && pending) syncCalendarEvents(api, pending);
-  }, [now]);
+  }, []);
   const pauseGridSyncRef = useRef(pauseGridSync);
   pauseGridSyncRef.current = pauseGridSync;
   const resumeGridSyncRef = useRef(resumeGridSync);
@@ -455,7 +492,7 @@ function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const prefetchEventDetails = usePrefetchEventDetails();
   const [showHidden, setShowHidden] = useState(false);
-  const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
+  const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent; el: HTMLElement } | null>(null);
   const eventMenuAccountEmail = accounts.find((a) => a.id === eventMenu?.event.account_id)?.email;
   const { data: eventMenuDetails } = useEventDetails(eventMenu?.event.id ?? null, eventMenuAccountEmail);
   const eventMenuOtherGuests = useMemo(
@@ -480,19 +517,16 @@ function CalendarPane({
     name: string;
     tasks: Task[];
   } | null>(null);
+  // A block's right-click is the SAME menu every task list offers
+  // (TaskActionsMenu) — the calendar used to carry a five-item copy.
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
-  // Recurring-task trash expands in place (this / following / series) — same
-  // scopes as RecurrenceDeleteButton in the task popover.
-  const [taskDeleteMode, setTaskDeleteMode] = useState(false);
-  // Task → Event asking which calendar (D-152) — the menu turns into the list,
-  // the same way it turns into the occurrence choice for a recurring trash.
-  const [taskEventMode, setTaskEventMode] = useState(false);
+  const closeTaskMenu = useCallback(() => setTaskMenu(null), []);
+  // Its `t` / `v` menus, anchored on the block.
+  const [taskRowMenu, setTaskRowMenu] = useState<{ kind: "date" | "move"; task: Task; anchor: DOMRect } | null>(null);
+  const closeTaskRowMenu = useCallback(() => setTaskRowMenu(null), []);
+  // Task → Event asking which calendar (D-152), opened from the menu's item.
+  const [taskEventPick, setTaskEventPick] = useState<{ x: number; y: number; task: Task } | null>(null);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
-  const { data: recurrences = [] } = useRecurrences();
-  const recurrenceById = useMemo(
-    () => new Map(recurrences.map((r) => [r.id, r])),
-    [recurrences],
-  );
 
   // Can the user create real calendar events? True when any writable account
   // (Google or iCloud two-way) is connected.
@@ -561,8 +595,37 @@ function CalendarPane({
       if (t?.closest("[data-block-popover]")) return;
       clearFocus();
     };
+    // Esc is a way of moving on too. The popover takes the press first; once it
+    // has gone, the block it was anchored to has no reason to stay lifted —
+    // it used to sit raised at full column width until the next click.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      requestAnimationFrame(() => {
+        if (!document.querySelector("[data-block-popover]")) clearFocus();
+      });
+    };
     document.addEventListener("pointerdown", onDown, true);
-    return () => document.removeEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // FullCalendar preventDefaults mousedown (so a drag can't select text), which
+  // also means a press on the grid never takes focus away from a text field —
+  // capture a task in the rail, click the calendar, press `w`, and the `w` went
+  // into the capture box. A press in the grid is a move to the grid: let go of
+  // a field that isn't part of it.
+  useEffect(() => {
+    const root = wrapRef.current;
+    if (!root) return;
+    const onDown = () => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && !root.contains(active) && isTypingIn(active)) active.blur();
+    };
+    root.addEventListener("pointerdown", onDown, true);
+    return () => root.removeEventListener("pointerdown", onDown, true);
   }, []);
 
   // Pending recurrence scope choice — set when a recurring event is
@@ -725,8 +788,11 @@ function CalendarPane({
   useEffect(() => {
     if (!hotkeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      // One guard for "typing" app-wide (it includes <select>, which this used
+      // to miss), and nothing under a floating surface: `w` behind a block's
+      // menu used to swap the view out from under it.
+      if (isTypingIn(e.target) || e.defaultPrevented) return;
+      if (document.querySelector("[data-nested-surface]")) return;
 
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "ArrowLeft") { e.preventDefault(); pageBy(-1); }
@@ -916,6 +982,7 @@ function CalendarPane({
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
+    let returnLabel = "↩ Back to Inbox"; // what letting go over the rail does
     const chip = document.createElement("div");
     chip.className = "slot-drop-chip";
     chip.setAttribute("aria-hidden", "true");
@@ -1007,7 +1074,12 @@ function CalendarPane({
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
       committedSlotDropIntentRef.current = null;
-      armed = Boolean(el?.closest?.("[data-task-drag], [data-project-drag], .evt-task"));
+      // A resize handle or the checkbox is a press inside a block that isn't a
+      // move — arming on it faded the resize ghost over slots and offered
+      // "↳ Drop into…" for a gesture that can't drop anything.
+      armed =
+        Boolean(el?.closest?.("[data-task-drag], [data-project-drag], .evt-task")) &&
+        !el?.closest?.(".fc-event-resizer, [data-done-toggle]");
       // A project row is a rail-origin drag like any other — it just has no task
       // id to return to the Inbox. Resolving `dragEl` off both attributes is what
       // makes `fromRail` true for it, which is what eats the phantom click that
@@ -1029,6 +1101,10 @@ function CalendarPane({
       }
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
       calTask = Boolean(el?.closest?.(".evt-task"));
+      const homeId =
+        dragId ?? (el?.closest?.(".evt-task") as HTMLElement | null)?.getAttribute("data-task-id") ?? null;
+      const home = homeId ? tasksRef.current.find((t) => t.id === homeId) : undefined;
+      returnLabel = home?.project_id ? "↩ Back to its project" : "↩ Back to Inbox";
       startX = e.clientX;
       startY = e.clientY;
       moved = false;
@@ -1180,16 +1256,26 @@ function CalendarPane({
         const onRail =
           clientX >= rr.left && clientX <= rr.right && clientY >= rr.top && clientY <= rr.bottom;
         overRail = onRail && !slotEl && !anytimeEl;
-        rail.classList.toggle(
-          "rail-drop-active",
-          !fromRail && overRail && (Boolean(dragId) || calTask),
-        );
+        const railArmed = !fromRail && overRail && (Boolean(dragId) || calTask);
+        rail.classList.toggle("rail-drop-active", railArmed);
+        // The rail lighting up said "something happens here", not what. The
+        // chip says it — and for project work, that it isn't the Inbox.
+        if (railArmed) {
+          chip.textContent = returnLabel;
+          chip.classList.add("drop-chip-act");
+          chip.style.left = `${fixedCssPx(clientX + 14)}px`;
+          chip.style.top = `${fixedCssPx(clientY + 16)}px`;
+          chip.classList.add("is-visible");
+        }
       }
     };
 
     const onMove = (e: PointerEvent) => {
       if (!armed) return;
-      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return;
+      // The same slop as whatever owns the drag: the rail's Draggable starts at
+      // 6px, FullCalendar's block drag at 5. A 5px wobble used to arm this for a
+      // rail click that never became a drag, and the click was then swallowed.
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < (fromRail ? 6 : 5)) return;
       if (!moved) {
         moved = true;
         active = true;
@@ -1217,7 +1303,7 @@ function CalendarPane({
           const ids = group ? group.split(",") : [dragId];
           ids.forEach((id) => {
             const task = tasksRef.current.find((t) => t.id === id);
-            if (task) mutationsRef.current.backToInbox(task);
+            if (task) mutationsRef.current.backToInbox(task, backHomeUndo(task));
           });
         }
         reset();
@@ -1233,8 +1319,13 @@ function CalendarPane({
       // After dragging from the rail (whether dropped, cancelled, or returned),
       // the browser fires a click on the original TaskRow. Eat it once so the
       // task popover doesn't open when the user changes their mind mid-drag.
+      // Expires on the next task (as calendarDismissGuard does): if no click
+      // follows — the dragged row left the DOM first — it used to wait and eat
+      // the NEXT click anywhere, usually on the block you'd just placed.
       if (swallowClick) {
-        document.addEventListener("click", (e) => { e.stopPropagation(); }, { capture: true, once: true });
+        const swallow = (e: MouseEvent) => e.stopPropagation();
+        document.addEventListener("click", swallow, { capture: true, once: true });
+        window.setTimeout(() => document.removeEventListener("click", swallow, { capture: true }), 0);
       }
     };
     // Abandoning a drag must clear the glow too. Without these, Escape (which
@@ -1257,16 +1348,28 @@ function CalendarPane({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onAbort();
     };
+    // The targets were measured once, at the drag's first move. FullCalendar
+    // autoscrolls the grid when you drag near its edge (and the wheel scrolls
+    // it too), which left those rects pointing at where the slots USED to be:
+    // "↳ Drop into Morning block" over empty 4pm, and the drop joined a slot
+    // hours away. Re-measure whenever anything scrolls mid-drag.
+    const onScroll = () => {
+      if (!active || !moved) return;
+      snapshotDragTargets();
+      if (pendingMove && !moveRaf) moveRaf = requestAnimationFrame(flushMove);
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("pointermove", onMove, true);
     document.addEventListener("pointerup", onUp, true);
     document.addEventListener("pointercancel", onAbort, true);
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", onUp, true);
       document.removeEventListener("pointercancel", onAbort, true);
+      document.removeEventListener("scroll", onScroll, { capture: true });
       window.removeEventListener("keydown", onKey);
       reset();
       chip.remove();
@@ -1372,6 +1475,7 @@ function CalendarPane({
             recurring: Boolean(t.recurrence_id),
             done: t.status === "done",
             projectBacked: !!t.project_id,
+            projectName: t.project_id ? taskProject?.(t) ?? null : null,
           },
         };
       });
@@ -1522,7 +1626,7 @@ function CalendarPane({
 
     return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, fcNow, taskAccent, slotTitle, slotProject]);
+  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, fcNow, taskAccent, slotTitle, slotProject, taskProject]);
 
   // Ghost block shown while dragging an all-day range (allDayDragRange, live)
   // or while the DraftComposer popover is open (draft, on release/click) — for
@@ -1633,6 +1737,9 @@ function CalendarPane({
   const handleEventDidMount = useCallback((arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
     if (kind === "task") {
+      // The id, for the pointer-level drag watch (where the block would go
+      // back to if it's let go over the rail). Ids never change under a block.
+      if (refId) arg.el.setAttribute("data-task-id", refId);
       arg.el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         const task = findTask(refId);
@@ -1656,13 +1763,19 @@ function CalendarPane({
     arg.el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const evt = findEvent(refId);
-      if (evt) setEventMenu({ x: e.clientX, y: e.clientY, event: evt });
+      if (evt) setEventMenu({ x: e.clientX, y: e.clientY, event: evt, el: arg.el });
     });
   }, []);
 
   // Dismiss the menu on any outside interaction or Escape (a press inside the
   // menu is a selection, not a dismissal).
   const eventMenuRef = useRef<HTMLDivElement | null>(null);
+  const eventMenuPos = useOnScreen(
+    eventMenuRef,
+    eventMenu?.x ?? 0,
+    eventMenu?.y ?? 0,
+    `${eventMenu?.event.id}:${eventDeleteConfirm}:${eventMoveMode}:${Boolean(eventMoveConfirm)}:${eventMenuOtherGuests.length}`,
+  );
   useEffect(() => {
     setEventDeleteConfirm(null);
     setEventMoveMode(false);
@@ -1686,46 +1799,27 @@ function CalendarPane({
     };
   }, [eventMenu]);
 
-  const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  // The calendar picker for Task → Event closes like every floating thing here.
+  const taskEventPickRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    setTaskDeleteMode(false);
-    setTaskEventMode(false);
-  }, [taskMenu]);
-  useEffect(() => {
-    if (!taskMenu) return;
+    if (!taskEventPick) return;
     const onDown = (e: PointerEvent) => {
-      if (taskMenuRef.current?.contains(e.target as Node)) return;
-      setTaskMenu(null);
+      if (taskEventPickRef.current?.contains(e.target as Node)) return;
+      setTaskEventPick(null);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setTaskMenu(null);
-        return;
-      }
-      // Same act as the rail: Delete/Backspace trash. The menu used to ignore
-      // them, so right-click → Delete on a calendar block was a silent no-op.
-      if (e.key === "Backspace" || e.key === "Delete") {
-        if (isTypingIn(e.target)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        mutations.trash(taskMenu.task);
-        setTaskMenu(null);
-      }
-    };
-    const onBlur = () => setTaskMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTaskEventPick(null);
     window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKey);
     };
-  }, [taskMenu, mutations]);
+  }, [taskEventPick]);
 
   const [deferOffer, setDeferOffer] = useState<{ x: number; y: number; slot: Slot } | null>(null);
   const closeDeferOffer = useCallback(() => setDeferOffer(null), []);
   const slotMenuRef = useRef<HTMLDivElement | null>(null);
+  const slotMenuPos = useOnScreen(slotMenuRef, slotMenu?.x ?? 0, slotMenu?.y ?? 0, slotMenu?.slot.id ?? "");
   useEffect(() => {
     if (!slotMenu) return;
     const onDown = (e: PointerEvent) => {
@@ -2244,6 +2338,13 @@ function CalendarPane({
 
   // Drag a block (or "anytime" chip) back onto the left rail → return it to the
   // Inbox. (To just drop the time but keep the day, drag it to the anytime row.)
+  //
+  // FullCalendar fires this only AFTER its revert animation — a drop outside the
+  // grid is a "failed" drop to it — so with the default `dragRevertDuration`
+  // (500ms) the block flew back to its old time for half a second before the
+  // Inbox took it. The calendar sets that to 0, and the block is removed from
+  // the grid here in the same tick as the write: the optimistic cache patch
+  // agrees, and a failed write's rollback re-adds it through the grid sync.
   const onDragStop = useStableHandler((info: EventDragStopArg) => {
     const rail = railRef.current;
     if (rail) {
@@ -2253,7 +2354,21 @@ function CalendarPane({
         const { kind, refId } = info.event.extendedProps as ExtendedProps;
         if (kind === "task") {
           const task = findTask(refId);
-          if (task) mutations.backToInbox(task);
+          if (task) {
+            // Resume first (its stash still holds this block), then remove —
+            // one batched render, so the block can't be re-added in between.
+            const api = calRef.current?.getApi();
+            const drop = () => {
+              resumeGridSync();
+              api?.getEventById(info.event.id)?.remove();
+            };
+            // On the implementation, not the exported type (see syncCalendarEvents).
+            const batch = (api as unknown as { batchRendering?: (fn: () => void) => void } | undefined)?.batchRendering;
+            if (api && batch) batch.call(api, drop);
+            else drop();
+            mutations.backToInbox(task, backHomeUndo(task));
+            return;
+          }
         }
       }
     }
@@ -2402,11 +2517,14 @@ function CalendarPane({
           });
           revealFirstOccurrence();
         } else {
-          await mutations.create({
-            title,
-            do_date: doDate,
-            ...(draftAllDay ? {} : { start_time: start.toISOString(), duration_minutes: duration }),
-          });
+          await mutations.create(
+            {
+              title,
+              do_date: doDate,
+              ...(draftAllDay ? {} : { start_time: start.toISOString(), duration_minutes: duration }),
+            },
+            { undo: "silent" },
+          );
         }
       } else if (kind === "event") {
         const range = eventAllDay
@@ -2477,9 +2595,10 @@ function CalendarPane({
         const x = info.jsEvent?.clientX;
         const y = info.jsEvent?.clientY;
         if (x == null || y == null) return false;
+        // The same 5px the button's hit area reaches past its drawn box.
         return Array.from(info.el.querySelectorAll("[data-done-toggle]")).some(btn => {
           const r = btn.getBoundingClientRect();
-          return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+          return x >= r.left - 5 && x <= r.right + 5 && y >= r.top - 5 && y <= r.bottom + 5;
         });
       })();
       if (onCheckbox) {
@@ -2554,7 +2673,7 @@ function CalendarPane({
             aria-label="toggle done"
             aria-pressed={doneProp ?? false}
             data-done-toggle
-            className="relative flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+            className="relative flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border before:absolute before:-inset-[5px] before:content-['']"
             style={{ ["--evt-check-border" as string]: checkColor }}
             onMouseDown={(e) => {
               // Don't let a press on the checkbox begin an event drag.
@@ -2607,11 +2726,49 @@ function CalendarPane({
         }}
       />
     );
-    const TimeLine = !compact ? (
-      <div className="mono mt-px truncate text-micro leading-none text-muted">{arg.timeText}</div>
-    ) : null;
+    // One spelling for a time (D-122): `9–9:30am`, the same `span` the phone and
+    // the gutter use — FullCalendar's own `9:00am - 9:30am` was a second format
+    // on the same screen. A project's piece also says whose it is.
+    const projectName = kind === "task" ? (arg.event.extendedProps as ExtendedProps).projectName : null;
+    // An all-day span has dates, not a clock — `12–12am` is a midnight artefact.
+    const when = arg.event.allDay
+      ? null
+      : arg.event.start && arg.event.end
+        ? span(arg.event.start, arg.event.end)
+        : arg.timeText;
     const Recur = recurring ? <RecurMark className="shrink-0 opacity-45" /> : null;
-    const titleCls = "truncate text-label font-semibold leading-[1.2]";
+    // How many lines this block can really show. A 90-minute block used to
+    // print one truncated title over ~50px of empty tint. The title takes the
+    // lines; the time line — which the block's position already says — is the
+    // first thing shed, and appears only once the title still gets two lines.
+    // The repeat mark rides on that line, so it never costs the title room
+    // (in a narrow week column it was eating what was left of it).
+    const lines = Math.max(1, Math.floor((heightPx - 6) / 13.2)); // text-label · leading 1.2
+    // A block that's MOVING is the exception: its position is exactly what's in
+    // question, so a drag or resize ghost always says the time it would land on.
+    const moving = arg.isMirror;
+    const showTime = !compact && (moving || lines >= 3);
+    // A short ghost has one row: the time goes in front of the title.
+    const InlineWhen =
+      moving && compact && when ? <span className="mono shrink-0 text-micro text-muted">{when}</span> : null;
+    const titleLines = compact || moving ? 1 : showTime ? lines - 1 : lines;
+    const titleCls =
+      titleLines > 1
+        ? "text-label font-semibold leading-[1.2] [overflow-wrap:anywhere]"
+        : "truncate text-label font-semibold leading-[1.2]";
+    const titleStyle: React.CSSProperties | undefined =
+      titleLines > 1
+        ? { display: "-webkit-box", WebkitLineClamp: titleLines, WebkitBoxOrient: "vertical", overflow: "hidden" }
+        : undefined;
+    const TimeLine = showTime && (when || projectName || recurring) ? (
+      <div className="mt-px flex min-w-0 items-center gap-1 text-micro leading-none text-muted">
+        <span className="min-w-0 truncate">
+          {when ? <span className="mono">{when}</span> : null}
+          {projectName ? <span>{when ? " · " : ""}{projectName}</span> : null}
+        </span>
+        {Recur}
+      </div>
+    ) : null;
 
     // ── Slot: container with a progress badge + child task peek ────────────
     if (kind === "slot") {
@@ -2644,7 +2801,7 @@ function CalendarPane({
               </div>
             )}
             <div className={`flex min-w-0 items-center gap-1 ${showEyebrow ? "mt-[3px]" : ""}`}>
-              <span className={titleCls}>
+              <span className="truncate text-label font-semibold leading-[1.2]">
                 {designation && !showEyebrow && (
                   <span className="uppercase" style={{ color: bar, letterSpacing: "0.06em" }}>
                     {/* No room for the project's name on a block this short —
@@ -2662,6 +2819,7 @@ function CalendarPane({
                 </span>
               )}
             </div>
+            {moving && when && !compact ? <div className="mono mt-px truncate text-micro leading-none text-muted">{when}</div> : null}
             {showChildren && slotChildren.length > 0 && (
               <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
                 {slotChildren.slice(0, 4).map((c, i) => (
@@ -2695,8 +2853,10 @@ function CalendarPane({
           {Bar}
           <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
             <div className="flex min-w-0 items-center gap-1">
-              <span className={`${titleCls} ${kind === "m365" ? "text-muted" : ""}`}>{arg.event.title}</span>
-              {Recur}
+              {InlineWhen}
+              <span className={`${titleCls} ${kind === "m365" ? "text-muted" : ""}`} style={titleStyle}>
+                {arg.event.title || <span className="font-normal italic text-muted">(No title)</span>}
+              </span>
             </div>
             {TimeLine}
           </div>
@@ -2716,7 +2876,9 @@ function CalendarPane({
             aria-label="toggle done"
             aria-pressed={doneProp ?? false}
             data-done-toggle
-            className="relative mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+            // 14px drawn, 24px to hit: a 13×13 target on the act you do most was the
+            // smallest thing on the screen (the rail's check is 15 / 24).
+            className="relative mt-[1px] flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border before:absolute before:-inset-[5px] before:content-['']"
             style={{ ["--evt-check-border" as string]: bar }}
             onMouseDown={(e) => {
               // Don't let a press on the checkbox begin an event drag.
@@ -2728,10 +2890,10 @@ function CalendarPane({
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1">
-              <span data-evt-title="" className={titleCls}>
-                {isProject ? `▸ ${arg.event.title}` : arg.event.title}
+              {InlineWhen}
+              <span data-evt-title="" className={titleCls} style={titleStyle}>
+                {arg.event.title}
               </span>
-              {Recur}
             </div>
             {TimeLine}
           </div>
@@ -2783,7 +2945,7 @@ function CalendarPane({
     (arg: { isAxis: boolean }) =>
       arg.isAxis ? (
         <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
-          {format(fcNowRef.current, "h:mma").toLowerCase()}
+          {at(fcNowRef.current)}
         </span>
       ) : null,
     [],
@@ -2822,7 +2984,7 @@ function CalendarPane({
               todayChip
                 ? {
                     fontSize: "18px",
-                    color: "#fff",
+                    color: "var(--on-signal)",
                     background: "var(--signal)",
                     borderRadius: "999px",
                     width: 28,
@@ -2872,7 +3034,7 @@ function CalendarPane({
           arg.isToday
             ? {
                 fontSize: "13px",
-                color: "#fff",
+                color: "var(--on-signal)",
                 background: "var(--signal)",
                 borderRadius: "999px",
                 width: 22,
@@ -2933,7 +3095,7 @@ function CalendarPane({
     // tail, and reopening on it would show the wrong month.
     remountCache.dateISO = arg.view.currentStart.toISOString();
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
-    if (arg.view.type === "dayGridMonth") setMonthTitle(arg.view.title);
+    setMonthTitle(rangeTitleFor(arg.view.type, arg.view.currentStart, arg.view.currentEnd, arg.view.title));
   });
 
   // ── The most expensive thing on this screen ───────────────────────────────
@@ -2970,6 +3132,14 @@ function CalendarPane({
             firstDay={fcFirstDay}
             nowIndicator
             fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
+            // A block released off the grid used to glide back for 500ms before
+            // anything happened — including a drop on the rail, which *is* a
+            // decision (back to the Inbox) and waited behind the animation.
+            dragRevertDuration={0}
+            // An anytime chip pulled onto an hour: FullCalendar sizes its ghost
+            // by this (default 1h), then the task lands at its own length — a
+            // visible jump on drop. The default task length is the honest guess.
+            defaultTimedEventDuration={minutesToDuration(defaultDurationMins)}
             nowIndicatorContent={nowIndicatorContent}
             // Per-view settings live in `views`, not in props keyed off the current
             // view: a prop that changes with Week ↔ Month re-created this element,
@@ -3014,6 +3184,7 @@ function CalendarPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       fcFirstDay,
+      defaultDurationMins,
       viewOptions,
       nowIndicatorContent,
       dayHeaderContent,
@@ -3043,7 +3214,10 @@ function CalendarPane({
     // reads continuously across the spine, the rail, and the calendar grid —
     // the grid IS the paper. A solid surface here is the frost seam that made
     // the calendar a boxed widget with a gap around it.
-    <div className="relative flex h-full min-w-0 flex-1 flex-col">
+    // `data-calendar-pane`: a press in here hands the keyboard to the grid — the
+    // rail drops its cursor (LeftRail) so ⌫ in a block's menu can't also trash
+    // the row the rail was pointing at.
+    <div data-calendar-pane="" className="relative flex h-full min-w-0 flex-1 flex-col">
       {createError && (
         <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>
@@ -3077,15 +3251,7 @@ function CalendarPane({
           if (eventMenuHasInvitees) setEventDeleteConfirm(scope);
           else deleteEventNow(ev, scope);
         };
-        const left = fixedCssPx(Math.min(eventMenu.x, window.innerWidth - 210));
-        const menuReserve = eventDeleteConfirm
-          ? (eventMenuCancelNotifies && !series ? 190 : 130)
-          : eventMoveMode
-            ? 240
-            : writable
-              ? (onConvertEventToTask && !ev.all_day ? 250 : 210)
-              : 160;
-        const top = fixedCssPx(Math.min(eventMenu.y, window.innerHeight - menuReserve));
+        const { top, left } = eventMenuPos;
         return (
           <div
             ref={eventMenuRef}
@@ -3095,6 +3261,15 @@ function CalendarPane({
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
               {ev.title || "Event"}
             </div>
+            {/* Open leads, as it does on a task's and a slot's menu. */}
+            <EventMenuItem onClick={() => {
+              const el = eventMenu.el;
+              setEventMenu(null);
+              onOpenEvent(ev, el.getBoundingClientRect(), el);
+            }}>
+              Open
+            </EventMenuItem>
+            <div className="my-1 border-t border-line" />
             {hiddenNow ? (
               <EventMenuItem onClick={() => showEvent(ev)}>Show event</EventMenuItem>
             ) : series ? (
@@ -3247,8 +3422,7 @@ function CalendarPane({
                         <>
                           <button
                             onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
-                            className="fast rounded-[var(--radius-sm)] px-2 py-1.5 text-center text-caption font-medium text-white"
-                            style={{ background: "var(--signal)" }}
+                            className="fast rounded-[var(--radius-sm)] bg-danger px-2 py-1.5 text-center text-caption font-medium text-on-danger"
                           >
                             Cancel & notify
                           </button>
@@ -3269,8 +3443,7 @@ function CalendarPane({
                         <>
                           <button
                             onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
-                            className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
-                            style={{ background: "var(--signal)" }}
+                            className="fast flex-1 rounded-[var(--radius-sm)] bg-danger px-2 py-1 text-center text-caption font-medium text-on-danger"
                           >
                             {eventMenuCancelNotifies ? "Cancel & notify" : "Delete"}
                           </button>
@@ -3304,139 +3477,97 @@ function CalendarPane({
         );
       })()}
 
-      {taskMenu && (() => {
-        const task = taskMenu.task;
-        const recurrence = task.recurrence_id ? recurrenceById.get(task.recurrence_id) ?? null : null;
-        const recurring = Boolean(task.recurrence_id && recurrence);
-        const left = fixedCssPx(Math.min(taskMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(
-          Math.min(taskMenu.y, window.innerHeight - (taskEventMode ? 300 : taskDeleteMode ? 260 : 200)),
-        );
-        const trashThis = () => {
-          if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
-          mutations.trash(task);
-          setTaskMenu(null);
-        };
-        const trashFollowing = () => {
-          if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
-          setTaskMenu(null);
-        };
-        const trashSeries = () => {
-          if (recurrence) recurrenceMutations.deleteSeries(recurrence);
-          setTaskMenu(null);
-        };
-        return (
-          <div
-            ref={taskMenuRef}
-            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-            style={{ top, left, boxShadow: "var(--shadow-3)" }}
-          >
-            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
-              {task.title}
-            </div>
-            {taskDeleteMode && recurring ? (
-              <>
-                <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-                  Delete
-                </div>
-                <EventMenuItem onClick={trashThis}>This occurrence</EventMenuItem>
-                <EventMenuItem onClick={trashFollowing}>This & following</EventMenuItem>
-                <EventMenuItem onClick={trashSeries}>Whole series</EventMenuItem>
-                <div className="my-1 border-t border-line" />
-                <EventMenuItem onClick={() => setTaskDeleteMode(false)}>Cancel</EventMenuItem>
-              </>
-            ) : taskEventMode && onConvertTaskToEvent ? (
-              <>
-                <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-                  Event on
-                </div>
-                <CalendarTargetList
-                  variant="menu"
-                  label="Convert to an event on"
-                  groups={createTargets.groups}
-                  value={null}
-                  defaultTarget={createTargets.defaultTarget}
-                  onPick={(target) => {
+      {taskMenu && (
+        <TaskActionsMenu
+          task={taskMenu.task}
+          x={taskMenu.x}
+          y={taskMenu.y}
+          mutations={mutations}
+          onClose={closeTaskMenu}
+          onOpen={() => {
+            const { el, task } = taskMenu;
+            setTaskMenu(null);
+            onOpenTask(task, el.getBoundingClientRect(), el);
+          }}
+          // The block's own check: painted this frame, and a future occurrence
+          // of a series redirects to today's (resolveCompleteTarget).
+          onToggleDone={() => toggleCalendarTaskDone(taskMenu.task, taskMenu.el)}
+          onDate={() => setTaskRowMenu({ kind: "date", task: taskMenu.task, anchor: taskMenu.el.getBoundingClientRect() })}
+          onMove={() => setTaskRowMenu({ kind: "move", task: taskMenu.task, anchor: taskMenu.el.getBoundingClientRect() })}
+          onDuplicate={() => {
+            const task = taskMenu.task;
+            mutations.create({
+              title: task.title,
+              notes: task.notes || undefined,
+              do_date: task.do_date,
+              start_time: task.start_time,
+              duration_minutes: task.duration_minutes,
+              priority: task.priority !== "none" ? task.priority : undefined,
+              domain_id: task.domain_id,
+              project_id: task.project_id,
+              labelIds: task.task_labels?.map((l) => l.label_id),
+            }, {
+              // The copy lands exactly on the original, so without a word it
+              // looks like nothing happened. Say it, and make it one ⌘Z away.
+              undo: "toast",
+              label: `Duplicated — ${task.title}`,
+            });
+          }}
+          onToEvent={
+            onConvertTaskToEvent && taskMenu.task.start_time
+              ? {
+                  label: createTargets.choosable ? "→ Event…" : "→ Event",
+                  action: () => {
+                    const { task, x, y } = taskMenu;
                     setTaskMenu(null);
-                    onConvertTaskToEvent(task, target);
-                  }}
-                />
-                <div className="my-1 border-t border-line" />
-                <EventMenuItem onClick={() => setTaskEventMode(false)}>Cancel</EventMenuItem>
-              </>
-            ) : (
-              <>
-                <EventMenuItem onClick={() => {
-                  const el = taskMenu.el;
-                  const rect = el.getBoundingClientRect();
-                  setTaskMenu(null);
-                  onOpenTask(task, rect, el);
-                }}>
-                  Open
-                </EventMenuItem>
-                <EventMenuItem onClick={() => {
-                  const el = taskMenu.el;
-                  setTaskMenu(null);
-                  toggleCalendarTaskDone(task, el);
-                }}>
-                  {task.status === "done" ? "Reopen" : "Mark done"}
-                </EventMenuItem>
-                <EventMenuItem onClick={() => {
-                  setTaskMenu(null);
-                  mutations.create({
-                    title: task.title,
-                    notes: task.notes || undefined,
-                    do_date: task.do_date,
-                    start_time: task.start_time,
-                    duration_minutes: task.duration_minutes,
-                    priority: task.priority !== "none" ? task.priority : undefined,
-                    domain_id: task.domain_id,
-                    project_id: task.project_id,
-                    labelIds: task.task_labels?.map((l) => l.label_id),
-                  });
-                }}>
-                  Duplicate
-                </EventMenuItem>
-                {onConvertTaskToEvent && task.start_time && (
-                  <>
-                    <div className="my-1 border-t border-line" />
-                    <EventMenuItem onClick={() => {
-                      if (createTargets.choosable) {
-                        setTaskEventMode(true);
-                        return;
-                      }
-                      setTaskMenu(null);
-                      onConvertTaskToEvent(task);
-                    }}>
-                      {createTargets.choosable ? "→ Event…" : "→ Event"}
-                    </EventMenuItem>
-                  </>
-                )}
-                <div className="my-1 border-t border-line" />
-                {recurring ? (
-                  <EventMenuItem onClick={() => setTaskDeleteMode(true)}>
-                    <span style={{ color: "var(--signal)" }}>Trash…</span>
-                  </EventMenuItem>
-                ) : (
-                  <EventMenuItem onClick={() => {
-                    setTaskMenu(null);
-                    mutations.trash(task);
-                  }}>
-                    <span style={{ color: "var(--signal)" }}>Trash</span>
-                  </EventMenuItem>
-                )}
-              </>
-            )}
+                    if (createTargets.choosable) setTaskEventPick({ x, y, task });
+                    else onConvertTaskToEvent(task);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
+      {taskRowMenu?.kind === "date" && (
+        <TaskDateMenu anchor={taskRowMenu.anchor} targets={[taskRowMenu.task]} mutations={mutations} onClose={closeTaskRowMenu} />
+      )}
+      {taskRowMenu?.kind === "move" && (
+        <TaskMoveMenu anchor={taskRowMenu.anchor} targets={[taskRowMenu.task]} mutations={mutations} onClose={closeTaskRowMenu} />
+      )}
+      {taskEventPick && onConvertTaskToEvent && (
+        <div
+          ref={taskEventPickRef}
+          data-nested-surface=""
+          className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+          style={{
+            top: fixedCssPx(Math.min(taskEventPick.y, window.innerHeight - 300)),
+            left: fixedCssPx(Math.min(taskEventPick.x, window.innerWidth - 210)),
+            boxShadow: "var(--shadow-3)",
+          }}
+        >
+          <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+            Event on
           </div>
-        );
-      })()}
+          <CalendarTargetList
+            variant="menu"
+            label="Convert to an event on"
+            groups={createTargets.groups}
+            value={null}
+            defaultTarget={createTargets.defaultTarget}
+            onPick={(target) => {
+              const { task } = taskEventPick;
+              setTaskEventPick(null);
+              onConvertTaskToEvent(task, target);
+            }}
+          />
+        </div>
+      )}
 
       {slotMenu && (() => {
         const slot = slotMenu.slot;
         const childCount = slotTasks[slot.id]?.length ?? 0;
         const recurring = Boolean(slot.recurrence_id);
-        const left = fixedCssPx(Math.min(slotMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(Math.min(slotMenu.y, window.innerHeight - 200));
+        const { top, left } = slotMenuPos;
         return (
           <div
             ref={slotMenuRef}
@@ -3623,21 +3754,21 @@ function CalendarPane({
               <button
                 onClick={() => pageBy(-1)}
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-                title="Previous (Alt+←)"
+                title="Previous (⌘← or −)"
               >
                 <Icon name="chevron-left" size={14} />
               </button>
               <button
                 onClick={() => pageBy(1)}
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-                title="Next (Alt+→)"
+                title="Next (⌘→ or =)"
               >
                 <Icon name="chevron-right" size={14} />
               </button>
               <button
                 onClick={pageToday}
                 className="fast shrink-0 rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-                title="Go to today (Alt+T)"
+                title="Go to today (⌘T)"
               >
                 Today
               </button>
@@ -3646,11 +3777,13 @@ function CalendarPane({
           <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
         </div>
 
-        {/* Center — Month and Year's only orientation cue (Week/Day rely on
-              the "THIS WEEK" rail label instead); otherwise a flexible drag
-              region. The Year's numeral sits in this seat so the pane itself
-              does not repeat it (D-129). */}
-        {isMonth || isYear ? (
+        {/* Center — what span you're looking at, for every view. Week and Day
+              used to lean on the rail's "THIS WEEK" label, but that names the
+              week you PLANNED (the sprint), not the one on screen: page forward
+              and nothing said which week this was, and in focus mode there was
+              no label at all. The Year's numeral sits in this seat so the pane
+              itself does not repeat it (D-129). */}
+        {view !== "board" ? (
           <div
             data-tauri-drag-region
             className="pointer-events-none flex max-w-[220px] select-none justify-center truncate leading-none"
@@ -3667,7 +3800,9 @@ function CalendarPane({
             here — the ··· menu drops below and must be allowed to paint. */}
         <div className="flex min-w-0 items-center justify-end gap-1">
           <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
-          <TimeZoneChip now={now} />
+          {/* Only while you're away from home — at home it said "you are where
+              you live" in the busiest strip on screen (the phone hides it too). */}
+          <TimeZoneChip now={now} hideAtHome />
 
           {onOpenWeekPlan && weekGlyph && (
             <button
@@ -3882,6 +4017,26 @@ function CalendarPane({
 }
 
 export default memo(CalendarPane, skipWhenAsleep);
+
+/** A block let go over the rail leaves the calendar for its resting place.
+ *  Say which, with an undo — the same courtesy a drop on a rail tab gets
+ *  (D-063a). Project work rests in its project, never the Inbox. */
+function backHomeUndo(task: Task) {
+  const where = task.project_id ? "Back to its project" : "Back to Inbox";
+  return { undo: "toast" as const, label: `${where} — ${task.title}` };
+}
+
+/** The toolbar's one line about the span on screen — the phone's hero in the
+ *  same words: `Oct 12 – 18` (`Sep 28 – Oct 4` across months), `Thu, Oct 15`,
+ *  `October 2026`. */
+function rangeTitleFor(type: string, start: Date, endExclusive: Date, fcTitle: string): string {
+  if (type === "timeGridDay") return format(start, "EEE, MMM d");
+  if (type === "timeGridWeek") {
+    const end = addDays(endExclusive, -1);
+    return `${format(start, "MMM d")} – ${format(end, format(start, "MMM") === format(end, "MMM") ? "d" : "MMM d")}`;
+  }
+  return fcTitle;
+}
 
 function minutesToDuration(mins: number): string {
   const h = Math.floor(mins / 60);

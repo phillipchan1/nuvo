@@ -1,3 +1,4 @@
+import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
@@ -113,6 +114,7 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
     queryKey: scheduledTasksKey(rangeStartISO, rangeEndISO),
     // A scheduled task IS a time block, so this blanking on a range change was
     // half of the calendar emptying itself mid-swipe. See useExternalEvents.
+    staleTime: CALENDAR_RANGE_STALE_MS,
     placeholderData: (prev) => prev,
     queryFn: () => fetchScheduledTasksRange(rangeStartISO, rangeEndISO),
   });
@@ -149,6 +151,7 @@ export async function fetchPlannedAnytimeRange(
 export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
     queryKey: plannedAnytimeKey(rangeStartISO, rangeEndISO),
+    staleTime: CALENDAR_RANGE_STALE_MS,
     placeholderData: (prev) => prev,
     queryFn: () => fetchPlannedAnytimeRange(rangeStartISO, rangeEndISO),
   });
@@ -628,7 +631,11 @@ export function useTaskMutations() {
    * force-quit. That is the entire point of the layer, and the reason a capture
    * typed in a tunnel is no longer a capture the user loses.
    */
-  const createTask = async (input: NewTaskInput): Promise<Task> => {
+  /** `opts` is opt-in: a task drawn on the calendar or duplicated passes it, so
+   *  ⌘Z right after making one takes it away. Without it, that ⌘Z undid some
+   *  older act instead — the newest thing on screen was the one thing the undo
+   *  stack had never heard of. Undo trashes (recoverable); redo brings it back. */
+  const createTask = async (input: NewTaskInput, opts?: UndoOpts): Promise<Task> => {
     const id = input.clientId ?? crypto.randomUUID();
     const { labelIds, clientId: _clientId, status: restingAs, ...fields } = input;
     // A step is never an inbox capture: it is already filed, on its parent. Any
@@ -690,6 +697,17 @@ export function useTaskMutations() {
       });
     } else {
       putTaskInCaches(qc, id, optimistic);
+    }
+
+    const tier = opts ? resolveUndoTier("silent", opts) : false;
+    if (tier) {
+      recordUndo({
+        label: opts?.label ?? `Added — ${input.title}`,
+        shortLabel: "Added",
+        tier,
+        undo: () => patchTask(id, { status: "trashed", trashed_at: new Date().toISOString() }, { undo: false }),
+        redo: () => patchTask(id, { status, trashed_at: null }, { undo: false }),
+      });
     }
 
     await queueWrite(

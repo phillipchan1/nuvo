@@ -42,7 +42,13 @@ export interface TaskListKeyActs {
 }
 
 export interface TaskListCursor {
+  /** The row keys act on. Must be a row the user can SEE is lit — a host that
+   *  remembers an unlit row (a click that only opened its popover) passes it as
+   *  `homeId` instead, or ⌫ trashes something nobody pointed at. */
   cursorId: string | null;
+  /** Where j / k start when no cursor is lit: the first press lights this row
+   *  rather than jumping to the top. Never an act target. */
+  homeId?: string | null;
   setCursorId: (id: string | null) => void;
   selectedIds: ReadonlySet<string>;
   setSelectedIds: (ids: Set<string>) => void;
@@ -85,6 +91,11 @@ export function useTaskListKeys({
     const onKey = (e: KeyboardEvent) => {
       if (!live.current.enabled) return;
       if (e.defaultPrevented || isTypingIn(e.target)) return;
+      // A floating surface owns the keys while it's up — a block's menu on the
+      // calendar, a row menu, a task popover inside a record. `enabled` only
+      // knows about the host's own overlays, so ↑↓ in a calendar menu used to
+      // walk the rail's cursor behind it, and ⌫ hit both.
+      if (document.querySelector("[data-nested-surface]")) return;
       const { rows, cursor, acts } = live.current;
       const at = cursor.cursorId ? rows.findIndex((t) => t.id === cursor.cursorId) : -1;
       const current = at >= 0 ? rows[at] : null;
@@ -100,7 +111,13 @@ export function useTaskListKeys({
 
       const go = (by: number) => {
         if (!rows.length) return;
-        const next = at < 0 ? rows[0] : rows[Math.max(0, Math.min(rows.length - 1, at + by))];
+        const home = at < 0 && cursor.homeId ? rows.findIndex((t) => t.id === cursor.homeId) : -1;
+        const next =
+          at >= 0
+            ? rows[Math.max(0, Math.min(rows.length - 1, at + by))]
+            : home >= 0
+              ? rows[home]
+              : rows[0];
         cursor.setCursorId(next.id);
       };
       const handled = () => {

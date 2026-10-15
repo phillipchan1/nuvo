@@ -8,11 +8,12 @@ import { useMemo, useState } from "react";
 import { addDays, format, nextSaturday } from "date-fns";
 import type { Task } from "../../lib/types";
 import { parseCapture, routeKey } from "../../lib/nlp";
-import { fmtDayLabel, fmtDayTime, nextWeekISO, toDateISO, todayISO, tomorrowISO } from "../../lib/dates";
+import { fmtDayLabel, fmtDayTime, nextWeekISO, sameClockOn, toDateISO, todayISO, tomorrowISO } from "../../lib/dates";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { useCaptureEnv } from "../../hooks/useTaskCapture";
 import RowMenu, { type RowMenuItem } from "./RowMenu";
+import { at } from "../mobile/dayPlan";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -53,12 +54,21 @@ export function TaskDateMenu({
   const [query, setQuery] = useState("");
   const patchEach = usePatchEach(mutations);
 
+  // A day picked by hand keeps each timed task's clock (D-154); only rollover
+  // clears the hour (D-141). Untimed work is planned for the day, as before.
   const planFor = (date: string) =>
     patchEach(
       targets,
-      () => ({ status: "planned", do_date: date, start_time: null, slot_id: null }),
+      (t) => {
+        const start = sameClockOn(t, date);
+        return start
+          ? { status: "planned", do_date: date, start_time: start.toISOString(), slot_id: null }
+          : { status: "planned", do_date: date, start_time: null, slot_id: null };
+      },
       `${noun(targets)} — ${fmtDayLabel(date)}`,
     );
+  const single = targets.length === 1 ? targets[0] : null;
+  const clock = single?.start_time ? at(new Date(single.start_time)) : null;
 
   const items = useMemo<RowMenuItem[]>(() => {
     const today = todayISO();
@@ -95,7 +105,7 @@ export function TaskDateMenu({
       const date = pre.date;
       out.push({
         id: pre.label,
-        label: pre.label,
+        label: date && clock ? `${pre.label} · ${clock}` : pre.label,
         hint: date ? format(new Date(`${date}T12:00:00`), "EEE") : undefined,
         run: date
           ? () => planFor(date)

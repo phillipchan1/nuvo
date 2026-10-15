@@ -179,7 +179,10 @@ export default function SittingHarness() {
       say(`assignToSlot · ${t.title} → ${s.id}`);
       patch(t.id, { slot_id: s.id, start_time: null, do_date: s.do_date });
     },
-    backToInbox: (t: Task) => say(`backToInbox · ${t.title}`),
+    backToInbox: (t: Task) => {
+      say(`backToInbox · ${t.title}`);
+      patch(t.id, { do_date: null, start_time: null, slot_id: null });
+    },
     complete: (t: Task) => {
       say(`complete · ${t.title}`);
       patch(t.id, { status: "done", completed_at: new Date().toISOString() });

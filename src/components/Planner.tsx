@@ -349,6 +349,13 @@ export default function Planner({
     [vertical],
   );
 
+  /** The project a task block belongs to, by name — so a placed piece of
+   *  project work says whose it is on the grid, not just `▸`. */
+  const taskProject = useCallback(
+    (t: Task) => projectById(vertical, t.project_id)?.name ?? null,
+    [vertical],
+  );
+
   useRealtime(true);
 
   const rollover = useRolloverGuard(settings?.last_rollover_date);
@@ -442,7 +449,14 @@ export default function Planner({
   // answered its hotkeys: ↵ opened the *selected task* and navigated straight
   // over the record you were reading.
   const recordOpen = overlay === "project-record" || overlay === "initiative-record";
-  const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+  const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask)
+    // The shortcuts sheet is read with the keys it lists — pressing one must not
+    // fire it behind the sheet.
+    || overlay === "shortcuts";
+  // The Week's Plan slides over the calendar, not the rail: the grid's keys
+  // (w / d / m, paging) stand down so they can't swap the view hidden under it,
+  // while the rail beside it keeps its own.
+  const gridCovered = anyModalOpen || weekPlanOpen || overlay !== "none";
 
   const { data: trashedRows = [] } = useTrashedTasks();
 
@@ -599,7 +613,7 @@ export default function Planner({
           <CalendarPane
             view={view}
             onViewChange={setCalView}
-            hotkeysEnabled={!anyModalOpen && onSchedule}
+            hotkeysEnabled={!gridCovered && onSchedule}
             live={onSchedule}
             tasks={allTasksArray}
             events={events}
@@ -612,6 +626,7 @@ export default function Planner({
             taskDomain={taskDomain}
             slotTitle={slotTitle}
             slotProject={slotProject}
+            taskProject={taskProject}
             mutations={mutations}
             eventMutations={eventMutations}
             slotMutations={slotMutations}

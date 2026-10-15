@@ -153,9 +153,12 @@ describe("CalendarTargetList", () => {
 describe("Task → Event asks which calendar, on both doors", () => {
   const read = (p: string) => readFileSync(join(__dirname, "..", "src", p), "utf8");
 
+  // The block's menu is the shared TaskActionsMenu now; its "→ Event…" opens
+  // this picker in its place.
   it("the Schedule's right-click menu turns into the list and passes the pick", () => {
     const src = read("components/CalendarPane.tsx");
-    const menu = src.slice(src.indexOf("taskEventMode && onConvertTaskToEvent"));
+    expect(src).toContain("if (createTargets.choosable) setTaskEventPick({ x, y, task })");
+    const menu = src.slice(src.indexOf("taskEventPick && onConvertTaskToEvent"));
     expect(menu).toContain("<CalendarTargetList");
     expect(menu).toContain("onConvertTaskToEvent(task, target)");
   });

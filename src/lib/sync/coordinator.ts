@@ -27,7 +27,7 @@
  * against. `preserveOwingRows` only keeps rows already in *that* query's cache.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
+import { replaceEqualDeep, type QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
 import { outboxSnapshot, refreshOutboxStatus, setOutboxStatus } from "./outbox";
 import { SYNC_TABLES, type SyncTable } from "./ops";
@@ -282,9 +282,16 @@ export function preserveOwingRows<T extends { id: string }>(
 
 /** Install cache-merge + refetch gates on the queries the outbox writes to. */
 export function installOwingGuards(qc: QueryClient): void {
+  // Installing a `structuralSharing` REPLACES TanStack's own `replaceEqualDeep`,
+  // so every refetch (the 60s pull, the catch-up on every window focus, each
+  // post-drain invalidation) used to hand back all-new row objects even when
+  // nothing had changed — and the whole chain re-ran: the shell, the merged
+  // task lists, every calendar block, every rail row. Run the default sharing
+  // over the merged result, so an unchanged row keeps its identity and an
+  // unchanged list is the same array.
   const share = (table: SyncTable) => ({
     structuralSharing: (previous: unknown, incoming: unknown) =>
-      preserveOwingRows(table, previous, withholdOwedRows(table, previous, incoming)),
+      replaceEqualDeep(previous, preserveOwingRows(table, previous, withholdOwedRows(table, previous, incoming))),
   });
   qc.setQueryDefaults(["vertical", "projects"], share("projects"));
   qc.setQueryDefaults(["vertical", "initiatives"], share("initiatives"));

@@ -5656,6 +5656,74 @@ push whenever a migration was written on another machine.
 
 *Status: standing — tests green; `db push --dry-run` lists 86, 87, 88 only.*
 
+---
+
+**D-154 · 2026-10-15 · A block on the calendar wears the same task menu as every list —
+and a day you pick by hand keeps the hour.**
+
+Origin ⓟ: *"calendar view is where i spend most of my time … every interaction … desktop
+grade fast, easy, obvious … right click … all key actions to be correctly available."*
+Audit: [`schedule-ux-audit-2026-10-15.md`](../schedule-ux-audit-2026-10-15.md).
+
+- **One menu.** Right-click on a task's block opened a five-item copy built inside
+  `CalendarPane` (Open · Mark done · Duplicate · → Event · Trash). The rail's
+  `TaskActionsMenu` had the day moves, *When…*, *Move to…*, *Return to inbox*, *Commit to
+  this week* and the recurring-trash scope — so a block could be ticked but not sent to
+  tomorrow. The D-111 drift, one surface over. Blocks now get `TaskActionsMenu`; the acts
+  only a block has (Duplicate, → Event…) ride in as props; the block's own completion (paint
+  this frame, the right occurrence of a series) rides in as `onToggleDone`. The menu walks
+  with ↑↓/↵, and every letter it prints runs its item (it used to print hints that did
+  nothing while it was open).
+- **A day picked by hand keeps the hour.** Today / Tomorrow / Next week (menu), the `t`
+  presets, and the popover's date chip all wrote `planFor`, which clears `start_time` — the
+  2pm block became an untimed chip on Friday. Now a timed task keeps its clock
+  (`sameClockOn`, `lib/dates.ts`) and the label says so — *Tomorrow · 11:30am* — so the
+  difference from an untimed row's *Tomorrow* is read, not discovered. **Rollover is
+  unchanged (D-141):** an hour the user didn't re-choose still clears. *Anytime that day*
+  (menu) / *Anytime* (popover, was "Unblock") is the explicit "keep the day, drop the time".
+- **Keys act on what you can see.** The rail's click selects without drawing its cursor
+  (the lift means "its popover is open"), but every key still targeted that unlit row:
+  click a row, close its popover, click the calendar, ⌫ — and a task nobody was looking at
+  was trashed, its neighbour lit for the next ⌫. Reproduced on a live account. An unlit
+  click is now only where `j`/`k` start (`homeId`). A press in the calendar puts the rail's
+  cursor down, and list keys stand down while any `[data-nested-surface]` is open — ⌫ in a
+  block's menu used to trash the block *and* the rail's row.
+- **A rail drop names where it went** (D-063a, finally for the calendar → rail direction):
+  *↩ Back to Inbox* / *↩ Back to its project* on the cursor, then a toast with Undo.
+
+Ledger: **D4** (what did I say I'd do and haven't) and **W2** (where do my real hours go) —
+both are answered on the grid now, not only in the rail. Strains **P3** in the thin sense
+that a menu item now moves a block's clock to another day; the mitigation is that the clock
+was already the user's choice and the item says it out loud. No new pool. Names: *Anytime*
+/ *Anytime that day* retire *Unblock* rather than sitting beside it (P11, glossary). Holds
+in any account (P16).
+
+*Status: standing — typecheck and the suite green (1,800). Driven on the local dummy
+account: the block menu, ↓↓↓↵ moving a block to Friday 11:30am with the time kept and an
+undo toast, the rail drop toast, and the hidden-cursor ⌫ reproduced before / gone after.*
+
+---
+
+**D-155 · 2026-10-15 · Below 1280px the chrome yields whether or not the chat is open, and
+the toolbar names the span for every view.**
+
+- The squeeze (spine to its 64px rail, the rail to its 240px floor — render-only, saved
+  widths untouched) only applied when the chat was open. Below 1280 the chat auto-closes, so
+  the narrowest windows were the one place nothing yielded: at 1024px the week got 412px,
+  ~52px a day, titles worn to "De…". It now applies below 1280 regardless — measured 656px,
+  83px a day. The crown sizes off the rail (`@container`): its date and pips give way before
+  the door.
+- Week and Day had no title; the rail's *THIS WEEK · Oct 12 – 18* names the week you
+  *planned* (the sprint), not the one on screen, so paging forward left nothing saying which
+  week this was — and focus mode had no label at all. The toolbar's centre seat now carries
+  the span for every view in the phone's words: *Oct 12 – 18* · *Thu, Oct 15* · *October
+  2026* · the year.
+
+Ledger: **D1** — the screen you plan from says where you are in it. Strains nothing; the
+spine-as-icons below 1280 is the same rail the chat squeeze already used. No new name.
+
+*Status: standing — driven at 1024 and 1440 on the dummy account.*
+
 **D-156 · 2026-10-15 · A write is ordered against its own echoes, refetches and
 write-backs — not just against the network.**
 

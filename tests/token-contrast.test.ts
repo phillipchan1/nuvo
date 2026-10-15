@@ -166,6 +166,7 @@ const GROUNDS = ["--bg", "--surface", "--surface-2"] as const;
 const ON_PAIRS = [
   ["--on-accent", "--accent"],
   ["--on-danger", "--danger"],
+  ["--on-signal", "--signal"],
 ] as const;
 
 describe("token contrast (WCAG AA)", () => {

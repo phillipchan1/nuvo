@@ -75,3 +75,45 @@ describe("the FullCalendar element is insulated from unrelated re-renders", () =
     }
   });
 });
+
+describe("the memo's deps don't tick one callback away", () => {
+  /** A hook declaration's own dependency array — the `[...]` that closes it. */
+  function depsOf(name: string): string[] | null {
+    const decl = SRC.match(new RegExp(`const ${name} = (useCallback|useMemo)\\(`));
+    if (!decl || decl.index === undefined) return null;
+    // Walk to the matching close paren of the hook call, then read its last `[…]`.
+    let depth = 0;
+    let i = SRC.indexOf("(", decl.index);
+    for (; i < SRC.length; i++) {
+      if (SRC[i] === "(") depth++;
+      else if (SRC[i] === ")" && --depth === 0) break;
+    }
+    const call = SRC.slice(decl.index, i);
+    const open = call.lastIndexOf("[");
+    return call
+      .slice(open + 1, call.lastIndexOf("]"))
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean);
+  }
+
+  // `onFcResizeStop` was a `useCallback([resumeGridSync])`, and `resumeGridSync`
+  // a `useCallback([now])` — "stable" by declaration, so the check above passed,
+  // while the whole <FullCalendar> was re-created on every 30s clock tick.
+  it("no memo dep (followed one level through useCallback/useMemo) depends on the clock", () => {
+    const { deps } = readCalendarMemo();
+    const ticking = ["now", "fcNow"];
+    const seen = new Set<string>();
+    const walk = (name: string, via: string[]) => {
+      if (seen.has(name)) return;
+      seen.add(name);
+      const inner = depsOf(name);
+      if (!inner) return;
+      for (const d of inner) {
+        expect(ticking, `${[...via, name, d].join(" → ")} — a ticking value reaches the calendar element`).not.toContain(d);
+        walk(d, [...via, name]);
+      }
+    };
+    for (const d of deps) walk(d, []);
+  });
+});

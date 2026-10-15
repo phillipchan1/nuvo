@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
+import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "../lib/supabase";
@@ -50,7 +51,6 @@ import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSl
  * swiping to September and back to August re-fetched August immediately —
  * paying twice for something already correct in the cache.
  */
-const CALENDAR_RANGE_STALE_MS = 60_000;
 
 /** A beat before warming neighbours, so a prefetch never competes with the
  *  fetch for the screen the user is actually looking at. */
