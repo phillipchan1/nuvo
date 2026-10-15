@@ -22,11 +22,22 @@ export function announceAdded(a: CaptureAdded) {
 export default function QuickAdd({ onClose }: { onClose: () => void }) {
   // Closing is history.back() — once. Every path funnels through here.
   const closed = useRef(false);
+  const rearm = useRef<number | undefined>(undefined);
   const close = useCallback(() => {
     if (closed.current) return;
     closed.current = true;
     onClose();
+    // The latch stops an add + a stray Escape from walking history back twice.
+    // But a dialog that can be closed only once is a dialog you cannot close:
+    // when a close didn't take (the navigation left an entry still showing this
+    // door) the latch used to eat every Escape and scrim click after it. We are
+    // still mounted once the navigation has settled → the close failed → re-arm.
+    window.clearTimeout(rearm.current);
+    rearm.current = window.setTimeout(() => {
+      closed.current = false;
+    }, 400);
   }, [onClose]);
+  useEffect(() => () => window.clearTimeout(rearm.current), []);
 
   // Escape with focus outside the door (the dialog frame itself, after a
   // click on its padding). The door marks every Escape it handles.

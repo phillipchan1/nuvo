@@ -83,6 +83,10 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   const [panelAnchorEl, setPanelAnchorEl] = useState<HTMLElement | null>(null);
   const syncingRef = useRef(false);
   const seededRef = useRef(false);
+  /** A close that had to unwind past entries still carrying its overlay lands on
+   *  the first of them, then rewrites that entry with the overlay lifted —
+   *  `closeOverlay` sets it, the popstate that follows applies it. */
+  const liftRef = useRef<{ index: number; state: AppNavState } | null>(null);
 
   useEffect(() => {
     writeAgentOpen(nav.agentOpen);
@@ -181,15 +185,25 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       const idx = e.state?.[NAV_STACK_INDEX_KEY];
       const restored = readNavState(e.state?.[NAV_HISTORY_KEY]);
       syncingRef.current = true;
+      let landed: number | null = null;
       if (typeof idx === "number" && restored) {
         stackRef.current[idx] = restored;
-        applyAtIndex(idx);
+        landed = idx;
       } else if (restored) {
         const found = stackRef.current.findIndex((s) => navEqual(s, restored));
-        applyAtIndex(found >= 0 ? found : 0);
+        landed = found >= 0 ? found : 0;
       } else if (indexRef.current > 0) {
-        applyAtIndex(indexRef.current - 1);
+        landed = indexRef.current - 1;
       }
+      // Asked for by `closeOverlay`, and honoured only if the pop landed where
+      // it aimed — a stale request must never rewrite an unrelated entry.
+      const lift = liftRef.current;
+      liftRef.current = null;
+      if (landed != null && lift && lift.index === landed) {
+        stackRef.current[landed] = lift.state;
+        history.replaceState({ [NAV_HISTORY_KEY]: lift.state, [NAV_STACK_INDEX_KEY]: landed }, "");
+      }
+      if (landed != null) applyAtIndex(landed);
       queueMicrotask(() => {
         syncingRef.current = false;
       });
@@ -359,11 +373,41 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (navRef.current.overlay !== "none") {
-      // Prefer history.back() so the overlay open is removed from the stack.
-      // Fall back to a direct replace when there's nowhere to go back to
-      // (e.g. the app was reloaded mid-session with an overlay already open).
-      if (canGoBack()) back();
-      else navigate({ overlay: "none", overlayId: null, floorModal: null }, "replace");
+      const cur = navRef.current;
+      const at = indexRef.current;
+      // Where this overlay's entries begin. Anything that navigates while it is
+      // up (⌘J opening the chat, an agent move) pushes an entry that still
+      // carries the overlay, so "one step back" can land on the overlay again —
+      // and an overlay you can't close with Esc is a trapped app (⌘K did exactly
+      // this). Unwind to its first entry, the way `closeFlow` does for a flow.
+      let first = at;
+      while (first > 0) {
+        const p = stackRef.current[first - 1];
+        if (!p || p.overlay !== cur.overlay || p.overlayId !== cur.overlayId) break;
+        first--;
+      }
+      if (first === at) {
+        // Prefer history.back() so the overlay open is removed from the stack.
+        // Fall back to a direct replace when there's nowhere to go back to
+        // (e.g. the app was reloaded mid-session with an overlay already open).
+        if (canGoBack()) back();
+        else navigate({ overlay: "none", overlayId: null, floorModal: null }, "replace");
+        return;
+      }
+      // What the user did meanwhile is kept: the state to land on is the
+      // current one with only the overlay lifted. When that is exactly the entry
+      // before the overlay, step onto it; otherwise land on the overlay's first
+      // entry and rewrite it (see `liftRef`) so no entry is left showing it.
+      const lifted = mergeNav(cur, { overlay: "none", overlayId: null, floorModal: null });
+      const before = first > 0 ? stackRef.current[first - 1] : undefined;
+      let delta = first - at;
+      if (before && navEqual(before, lifted)) delta -= 1;
+      else liftRef.current = { index: first, state: lifted };
+      syncingRef.current = true;
+      history.go(delta);
+      queueMicrotask(() => {
+        syncingRef.current = false;
+      });
     } else if (navRef.current.floorModal) {
       if (canGoBack()) back();
       else navigate({ floorModal: null }, "replace");
