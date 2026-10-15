@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useOnline } from "../hooks/useOnline";
-import { useOutbox, outboxSummary } from "../hooks/useOutbox";
+import { useOutbox, useOutboxParked, outboxSummary } from "../hooks/useOutbox";
 import { discard, parkedOps, syncNowIfConfigured, unpark, type Op } from "../lib/sync";
 
 /**
@@ -115,7 +115,7 @@ export default function SyncPanel() {
  * over the app, so unlike the old strip it can't move anything.
  */
 export function useParkedAlert(openSyncSettings: () => void) {
-  const { parked } = useOutbox();
+  const parked = useOutboxParked();
   const seen = useRef(parked);
 
   useEffect(() => {

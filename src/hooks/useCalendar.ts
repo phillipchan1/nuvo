@@ -23,6 +23,7 @@ import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useOnline } from "./useOnline";
+import { useStableActions } from "./useStableActions";
 import {
   fetchPlannedAnytimeRange,
   fetchScheduledTasksRange,
@@ -64,9 +65,12 @@ export function useCalendarRefresh() {
       qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
     },
   });
+  const { mutate } = mutation;
+  const refresh = useCallback(() => mutate({}), [mutate]);
+  const fullRefresh = useCallback(() => mutate({ fullSync: true }), [mutate]);
   return {
-    refresh: () => mutation.mutate({}),
-    fullRefresh: () => mutation.mutate({ fullSync: true }),
+    refresh,
+    fullRefresh,
     refreshing: mutation.isPending,
     error: mutation.error,
   };
@@ -847,7 +851,7 @@ export function useExternalEventMutations() {
     del.mutate({ id, scope: "THIS" });
   };
 
-  return {
+  return useStableActions({
     updateEvent: update.mutate,
     moveEvent: move.mutate,
     moveEventToCalendar,
@@ -856,7 +860,7 @@ export function useExternalEventMutations() {
     deleteEvent: del.mutate,
     inviteToEvent: invite.mutateAsync,
     addMeetToEvent: addMeet.mutateAsync,
-  };
+  });
 }
 
 /** Fetch the raw event payload for a single event — attendees, organizer,

@@ -8,6 +8,7 @@ import { rememberAuthProvider } from "../lib/authProviders";
 import {
   AUTH_REQUEST_EVENT,
   AUTH_SESSION_EVENT,
+  authStorageKey,
   broadcastAuthSession,
   payloadToSession,
   persistSessionIfAbsent,
@@ -19,6 +20,25 @@ import {
 /** How long the ⌥Space panel will wait for main to hand over a session
  *  before it honestly says "Not signed in". Main is usually already up. */
 const SPOTLIGHT_AUTH_WAIT_MS = 1_200;
+
+/**
+ * Two reads of the same session. `getSession()` parses storage afresh, so a
+ * re-read hands back a new object for the same login — and `session` sits at
+ * the very top of the tree (`Shell`), where a new identity re-renders every
+ * screen in the app. Only a different login (or a refreshed token, or an
+ * updated user) is a change.
+ */
+function sameSession(a: Session | null, b: Session | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.access_token === b.access_token &&
+    a.refresh_token === b.refresh_token &&
+    a.expires_at === b.expires_at &&
+    a.user?.id === b.user?.id &&
+    a.user?.updated_at === b.user?.updated_at
+  );
+}
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,7 +53,7 @@ export function useAuth() {
 
     const apply = (next: Session | null) => {
       if (cancelled) return;
-      setSession(next);
+      setSession((prev) => (sameSession(prev, next) ? prev : next));
     };
 
     const hydrateFromStorage = async (): Promise<Session | null> => {
@@ -97,8 +117,14 @@ export function useAuth() {
     // are shared; the `storage` event often is not. Keep the listener anyway
     // — when it does fire, it's a free hydrate — and don't treat it as the
     // path the panel actually relies on.
+    //
+    // The session's own key only. `authLock` takes `nuvo.auth.lock:…-auth-token`
+    // around every `getSession()` — the outbox reads one per drain — and the old
+    // `includes("-auth-token")` matched that too: each write made in one tab
+    // re-hydrated, and re-rendered from the top, every other tab of the app.
+    const sessionKey = authStorageKey();
     const onStorage = (e: StorageEvent) => {
-      if (!e.key?.includes("-auth-token")) return;
+      if (e.key !== sessionKey) return;
       void hydrateFromStorage();
     };
     window.addEventListener("storage", onStorage);

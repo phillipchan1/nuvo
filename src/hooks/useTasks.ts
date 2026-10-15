@@ -9,6 +9,7 @@ import { needsGrooming } from "../lib/grooming";
 import { orderPatches, type Ordered, type OrderPatch } from "../lib/taskOrder";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
+import { useStableActions } from "./useStableActions";
 import {
   COALESCE,
   resolveUndoTier,
@@ -834,7 +835,7 @@ export function useTaskMutations() {
     });
   };
 
-  return {
+  return useStableActions({
     create: createTask,
     patchTask,
 
@@ -1061,7 +1062,7 @@ export function useTaskMutations() {
 
       settleWrite(qc, "tasks", ["tasks"]);
     },
-  };
+  });
 }
 
 /** Local calendar date of an instant (the user lives in APP_TZ). */

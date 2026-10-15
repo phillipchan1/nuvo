@@ -4,17 +4,30 @@
 // localStorage prototype had — now writing real rows. One task world: the
 // floors edit the same rows the calendar blocks.
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
 import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
+import { useStableActions } from "./useStableActions";
 import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
+import { sameDirectory } from "../lib/verticalDirectory";
 import { DEFAULT_DOMAIN_SYMBOL, normalizeDomainSymbol } from "../lib/domainSymbolKeys";
 import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
@@ -222,18 +235,111 @@ export interface BlueprintTree {
   }[];
 }
 
+/** Everything the store can DO — one identity for the provider's life. */
+export type VerticalActions = Omit<VerticalStore, "data" | "ready"> & {
+  /** The current snapshot, read at call time — for an event handler that needs
+   *  the vertical without the component re-rendering every time it changes. */
+  getData: () => VerticalData;
+};
+
+/** What `useVerticalSelector` selects from. */
+export interface VerticalSnapshot {
+  data: VerticalData;
+  ready: boolean;
+}
+
+/**
+ * The snapshot as a tiny external store. `data` is rebuilt on every task write
+ * (a task's status moves a project's progress), so every `useVertical()` reader
+ * re-renders on every write — the shell included, which is how one checkbox
+ * re-rendered the whole app. A surface that reads a slice subscribes to the
+ * slice instead (`useVerticalSelector`) and renders only when it moves.
+ */
+interface VerticalSource {
+  get: () => VerticalSnapshot;
+  subscribe: (fn: () => void) => () => void;
+  set: (next: VerticalSnapshot) => void;
+}
+
+function createSource(initial: VerticalSnapshot): VerticalSource {
+  let snap = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => snap,
+    subscribe: (fn) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    set: (next) => {
+      if (next.data === snap.data && next.ready === snap.ready) return;
+      snap = next;
+      for (const fn of listeners) fn();
+    },
+  };
+}
+
 const Ctx = createContext<VerticalStore | null>(null);
+const ActionsCtx = createContext<VerticalActions | null>(null);
+const SourceCtx = createContext<VerticalSource | null>(null);
+
+/**
+ * The three faces of one store: the whole of it (`useVertical`, which renders on
+ * every change), its actions alone (`useVerticalActions`, which never does), and
+ * a subscription to a slice (`useVerticalSelector`).
+ */
+function VerticalContexts({ store, children }: { store: VerticalStore; children: ReactNode }) {
+  const { data, ready, ...bag } = store;
+  const actions = useStableActions<VerticalActions>({ ...bag, getData: () => data });
+  const [source] = useState(() => createSource({ data, ready }));
+  // Layout, not passive: a selector reader that didn't render in this pass
+  // catches up before the frame paints, so the shell never disagrees with the
+  // floor beside it for a frame.
+  useLayoutEffect(() => source.set({ data, ready }), [source, data, ready]);
+  const value = useMemo<VerticalStore>(() => ({ ...actions, data, ready }), [actions, data, ready]);
+  return (
+    <ActionsCtx.Provider value={actions}>
+      <SourceCtx.Provider value={source}>
+        <Ctx.Provider value={value}>{children}</Ctx.Provider>
+      </SourceCtx.Provider>
+    </ActionsCtx.Provider>
+  );
+}
 
 /** DEV verify harnesses only: mount a fabricated store so a surface that reads
  *  `useVertical()` can be driven at phone width without an account (see
  *  `mobile/DomainHarness.tsx`, reached at `?domains`). Never used by the app. */
+export function VerticalStoreProvider({ value, children }: { value: VerticalStore; children: ReactNode }) {
+  return <VerticalContexts store={value}>{children}</VerticalContexts>;
+}
+
+/**
+ * Hold the store still for a subtree that is mounted but not on screen — a
+ * KeepAlive'd floor under the Schedule. Its readers keep the snapshot they last
+ * rendered with instead of re-rendering, invisibly, on every write made on the
+ * Schedule; they catch up once, when `frozen` lifts.
+ */
+export function VerticalFreeze({ frozen, children }: { frozen: boolean; children: ReactNode }) {
+  const store = useContext(Ctx);
+  const source = useContext(SourceCtx);
+  const held = useRef(store);
+  if (!frozen) held.current = store;
+  const [child] = useState(() => (source ? createSource(source.get()) : null));
+  useLayoutEffect(() => {
+    if (frozen || !source || !child) return;
+    child.set(source.get());
+    return source.subscribe(() => child.set(source.get()));
+  }, [frozen, source, child]);
+  if (!store || !source || !child) return <>{children}</>;
+  return (
+    <SourceCtx.Provider value={child}>
+      <Ctx.Provider value={held.current}>{children}</Ctx.Provider>
+    </SourceCtx.Provider>
+  );
+}
+
 /** Mirrors the `domains.color` schema default (migration 1). Client-minted rows
  *  must name it so the optimistic domain matches the persisted one. */
 const NEW_DOMAIN_COLOR = "#6B7280";
-
-export function VerticalStoreProvider({ value, children }: { value: VerticalStore; children: ReactNode }) {
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
 
 /** Fields whose change requires re-syncing the Google mirror event. */
 const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
@@ -1554,13 +1660,67 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     };
   }, [data, ready, qc, weekStart, domainsQ.data, tasksQ.data, recordUndo]);
 
-  return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
+  return <VerticalContexts store={store}>{children}</VerticalContexts>;
 }
 
+/** The whole store. Renders on every change to `data` — every task write
+ *  included. A surface that reads a slice should select it instead. */
 export function useVertical(): VerticalStore {
   const v = useContext(Ctx);
   if (!v) throw new Error("useVertical must be used within <VerticalProvider>");
   return v;
+}
+
+/** The store's actions (and `getData` for handlers), never re-rendering. */
+export function useVerticalActions(): VerticalActions {
+  const v = useContext(ActionsCtx);
+  if (!v) throw new Error("useVerticalActions must be used within <VerticalProvider>");
+  return v;
+}
+
+/**
+ * The vertical as a surface that only LABELS work sees it: the snapshot changes
+ * when a domain, initiative or project changes name, hue, parent or status, and
+ * not on every task write. Read only those from it — anything task-derived on
+ * it (progress, hours, counts) is as of the last directory change.
+ */
+export function useVerticalDirectory(): VerticalData {
+  return useVerticalSelector((s) => s.data, sameDirectory);
+}
+
+/** Element-wise equality for a selector that returns a small tuple or list. */
+export function sameItems<T extends readonly unknown[] | null>(a: T, b: T): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((x, i) => Object.is(x, b[i]));
+}
+
+/**
+ * Subscribe to a slice of the vertical. The component renders when `isEqual`
+ * says the slice changed, not whenever `data` does. The selector may close over
+ * props — it is re-run whenever it or the snapshot changes — but must be pure.
+ */
+export function useVerticalSelector<T>(
+  select: (s: VerticalSnapshot) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const source = useContext(SourceCtx);
+  if (!source) throw new Error("useVerticalSelector must be used within <VerticalProvider>");
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const equalRef = useRef(isEqual);
+  equalRef.current = isEqual;
+  const last = useRef<{ snap: VerticalSnapshot; select: typeof select; value: T } | null>(null);
+  const read = useCallback(() => {
+    const snap = source.get();
+    const prev = last.current;
+    if (prev && prev.snap === snap && prev.select === selectRef.current) return prev.value;
+    const next = selectRef.current(snap);
+    const value = prev && equalRef.current(prev.value, next) ? prev.value : next;
+    last.current = { snap, select: selectRef.current, value };
+    return value;
+  }, [source]);
+  return useSyncExternalStore(source.subscribe, read, read);
 }
 
 /** The store when a provider is mounted, else null — for surfaces that also

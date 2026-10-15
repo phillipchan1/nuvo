@@ -7,6 +7,7 @@ import { toDateISO } from "../lib/dates";
 import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
+import { useStableActions } from "./useStableActions";
 // One rule for "how big is this block", shared with the chat's `create_slot` —
 // see docs/planning-kernel.md §3.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
@@ -390,5 +391,5 @@ export function useSlotMutations() {
     invalidateWhenSafe(qc, "tasks", ["tasks"]); // orphaned children
   };
 
-  return { createSlot, createSlotWith, gatherIntoSlot, updateSlot, removeSlot };
+  return useStableActions({ createSlot, createSlotWith, gatherIntoSlot, updateSlot, removeSlot });
 }
