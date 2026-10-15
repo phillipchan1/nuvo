@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { isSpotlightWindow } from "../lib/platform";
+import type { LiveChange } from "../lib/sync/liveApply";
+import { liveTopic } from "../lib/sync/liveTopic";
 import { interpretSubscriptionRead, isEntitled, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
@@ -131,35 +134,46 @@ export function useSubscriptionLiveSync() {
   const qc = useQueryClient();
   useEffect(() => {
     if (isSpotlightWindow()) return;
-    const channel = supabase
-      .channel("nuvo-subscription")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "subscriptions" },
-        (payload) => {
-          if (payload.eventType === "UPDATE") {
-            const oldRow = payload.old as {
-              referral_credits_earned?: number;
-              referral_uses?: number;
-            } | null;
-            const newRow = payload.new as {
-              referral_credits_earned?: number;
-              referral_uses?: number;
-            } | null;
-            const prevCredit = oldRow?.referral_credits_earned;
-            const nextCredit = newRow?.referral_credits_earned;
-            const prevUses = oldRow?.referral_uses;
-            const nextUses = newRow?.referral_uses;
-            if (typeof nextCredit === "number" && typeof prevCredit === "number" && nextCredit > prevCredit) {
-              toast.success("You earned a free month of Nuvo — it’ll apply to your next bill.");
-            } else if (typeof nextUses === "number" && typeof prevUses === "number" && nextUses > prevUses) {
-              toast.success("A friend used your code — free month when they pay.");
-            }
-          }
-          qc.invalidateQueries({ queryKey: KEY });
-        },
-      )
-      .subscribe();
+    const onRow = (payload: LiveChange) => {
+      if (payload.eventType === "UPDATE") {
+        // `rt_broadcast('with_old')` sends the previous row for this table.
+        const oldRow = payload.old as {
+          referral_credits_earned?: number;
+          referral_uses?: number;
+        } | null;
+        const newRow = payload.new as {
+          referral_credits_earned?: number;
+          referral_uses?: number;
+        } | null;
+        const prevCredit = oldRow?.referral_credits_earned;
+        const nextCredit = newRow?.referral_credits_earned;
+        const prevUses = oldRow?.referral_uses;
+        const nextUses = newRow?.referral_uses;
+        if (typeof nextCredit === "number" && typeof prevCredit === "number" && nextCredit > prevCredit) {
+          toast.success("You earned a free month of Nuvo — it’ll apply to your next bill.");
+        } else if (typeof nextUses === "number" && typeof prevUses === "number" && nextUses > prevUses) {
+          toast.success("A friend used your code — free month when they pay.");
+        }
+      }
+      qc.invalidateQueries({ queryKey: KEY });
+    };
+    // The channel is the signed-in account's own private topic (see
+    // useRealtime), so it follows the session: none while signed out, swapped
+    // when the account changes.
+    let channel: RealtimeChannel | null = null;
+    let channelUserId: string | null = null;
+    let torn = false;
+    const follow = (userId: string | null) => {
+      if (userId === channelUserId) return;
+      if (channel) supabase.removeChannel(channel);
+      channel = null;
+      channelUserId = userId;
+      if (!userId) return;
+      channel = supabase
+        .channel(liveTopic(userId, "subscriptions"), { config: { private: true } })
+        .on("broadcast", { event: "*" }, ({ payload }) => onRow(payload as LiveChange))
+        .subscribe();
+    };
     // The cache key isn't user-scoped, so drop it whenever the signed-in
     // identity changes — otherwise signing in as a second account could show
     // the previous user's billing state until the refetch lands. Supabase
@@ -175,9 +189,15 @@ export function useSubscriptionLiveSync() {
         qc.removeQueries({ queryKey: KEY });
       }
       lastUserId = userId;
+      // Out of the auth callback: the channel's join reads the session, and
+      // supabase-js holds its auth lock for the length of this callback.
+      setTimeout(() => {
+        if (!torn) follow(userId);
+      }, 0);
     });
     return () => {
-      supabase.removeChannel(channel);
+      torn = true;
+      if (channel) supabase.removeChannel(channel);
       auth.subscription.unsubscribe();
     };
   }, [qc]);
