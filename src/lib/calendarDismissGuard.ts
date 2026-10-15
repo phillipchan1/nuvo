@@ -15,17 +15,17 @@
 // can own the ghost).
 //
 // The mark is same-gesture only. If the dismiss click never hits the grid
-// (rail, another floor…), nothing consumes it — so we drop it on pointerup
-// after dateClick has had a chance to run, and it can't eat the next create.
+// (rail, another floor…), nothing consumes it — so it is dropped at the NEXT
+// press, before anything that press could create. Not on a timer after
+// pointerup: FullCalendar fires `dateClick` from a `setTimeout(0)` scheduled at
+// mouseup (its mirror's `stop`), which runs AFTER a timeout scheduled at the
+// earlier pointerup — so the mark had always expired one task before the
+// dateClick it existed for, and a tap that closed a popover (or the draft
+// composer, D-158) opened a new draft under it anyway.
 let handled = false;
-let expireTimer: ReturnType<typeof setTimeout> | null = null;
 let stopExpireListen: (() => void) | null = null;
 
 function cancelExpire() {
-  if (expireTimer != null) {
-    clearTimeout(expireTimer);
-    expireTimer = null;
-  }
   stopExpireListen?.();
   stopExpireListen = null;
 }
@@ -34,17 +34,13 @@ export function markCalendarClickHandled() {
   handled = true;
   cancelExpire();
   if (typeof document === "undefined") return;
-  const onUp = () => {
-    document.removeEventListener("pointerup", onUp, true);
-    stopExpireListen = null;
-    // pointerup → mouseup (select) → click (dateClick), then this timeout.
-    expireTimer = setTimeout(() => {
-      handled = false;
-      expireTimer = null;
-    }, 0);
+  // Callers mark from a mousedown, after this gesture's pointerdown has gone by.
+  const onNextDown = () => {
+    handled = false;
+    cancelExpire();
   };
-  document.addEventListener("pointerup", onUp, true);
-  stopExpireListen = () => document.removeEventListener("pointerup", onUp, true);
+  document.addEventListener("pointerdown", onNextDown, true);
+  stopExpireListen = () => document.removeEventListener("pointerdown", onNextDown, true);
 }
 
 export function consumeCalendarClickHandled(): boolean {

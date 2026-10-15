@@ -2283,6 +2283,17 @@ select.field { appearance: none; -webkit-appearance: none; }
      compositing layer on the click itself, which is the moment that has to feel
      instant. Separation comes from the lift shadow alone. */
 }
+/* The rest of a ⇧/⌘-click selection (D-158): lifted where it sits — not to the
+   front at full width, which is the cursor's (`evt-focused`), or several selected
+   blocks in one column would stack over each other. Focus lifts, it doesn't outline. */
+.fc-event.evt-selected {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+}
+.fc .fc-timegrid-event-harness .fc-event.evt-selected:hover {
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-3px);
+}
 .fc-event.evt-done { opacity: 0.5; }
 /* Checkbox + strike are driven by the harness class so a click can paint
    them this frame (CalendarPane.paintCalendarTaskDone) without waiting for
@@ -2354,13 +2365,20 @@ select.field { appearance: none; -webkit-appearance: none; }
 /* Hidden events, only visible while "show hidden" is on — heavily faded so
    they read as tucked-away, not as real commitments on the board. */
 .fc-event.evt-hidden { opacity: 0.32; }
-.fc-event.evt-hidden.evt-focused { opacity: 0.6; }
+.fc-event.evt-hidden.evt-focused,
+.fc-event.evt-hidden.evt-selected { opacity: 0.6; }
 
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
 .fc-event.evt-draft-preview {
   opacity: 0.65;
   border-style: dashed !important;
   pointer-events: none;
+}
+/* …except a timed draft's ghost, which is the draft's to move and pull (D-158,
+   #33). FullCalendar marks it draggable only while the composer is open; the
+   all-day drag ghost stays see-through, so the drag drawing it can't land on it. */
+.fc-event.evt-draft-preview.fc-event-draggable {
+  pointer-events: auto;
 }
 
 /* External-drag mirror (ElementMirror — position:fixed, class fc-event-dragging).
@@ -2577,6 +2595,18 @@ select.field { appearance: none; -webkit-appearance: none; }
   color: color-mix(in srgb, var(--accent) 32%, var(--ink));
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow-lift);
+}
+/* Esc mid-drag (D-158): the chip says what letting go does now — nothing. Ink
+   on the quiet line, no colour: it isn't a destination, it's the absence of one. */
+.slot-drop-chip.drop-chip-cancel {
+  color: var(--muted);
+  border-color: var(--line-strong);
+}
+/* …and what's in hand fades, so the grid reads as already put back. */
+body.drag-cancelled .fc-event-mirror,
+body.drag-cancelled .fc-event-dragging,
+body.drag-cancelled .fc-event-resizing {
+  opacity: 0.35;
 }
 /* ── Rail drop zone: calendar → inbox ─────────────────────────────────────── */
 /* Smooth transition so the drop zone feel enters and exits gracefully. */

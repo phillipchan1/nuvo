@@ -42,7 +42,22 @@ import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import { consumeCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { isTypingIn } from "../lib/a11y";
+import { announce } from "../lib/announce";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTaskListKeys } from "./tasks/useTaskListKeys";
+import { claimKeys, keyOwner } from "./tasks/keyOwner";
+import { usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
+import {
+  DRAFT_PREVIEW_ID,
+  gridBlocks,
+  homeBlockId,
+  shiftForKey,
+  shiftSpan,
+  type BlockShift,
+  type GridBlock,
+} from "./calendar/blockKeys";
+import { createGestureCancel, type GestureCancel } from "./calendar/gestureCancel";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
@@ -75,8 +90,8 @@ const isFcView = (v: CalView) => !NON_FC_VIEWS.includes(v);
 function draftPreviewFirst(a: unknown, b: unknown): number {
   const ai = (a as EventApi).id;
   const bi = (b as EventApi).id;
-  if (ai === "draft:preview") return -1;
-  if (bi === "draft:preview") return 1;
+  if (ai === DRAFT_PREVIEW_ID) return -1;
+  if (bi === DRAFT_PREVIEW_ID) return 1;
   return 0;
 }
 
@@ -154,13 +169,32 @@ function RecurrenceDialog({
     { value: "ALL", label: "All events in series", sub: "Every occurrence shifts by the same amount" },
   ];
 
+  // A keyboard nudge of a series (⌥↓ on its block, D-158) lands here, so the
+  // question answers the keyboard: ↑↓ pick, ↵ done, Esc cancel.
+  const live = useRef({ scope, onConfirm, onCancel });
+  live.current = { scope, onConfirm, onCancel };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const { scope, onConfirm, onCancel } = live.current;
+      if (e.key === "Escape") onCancel();
+      else if (e.key === "Enter") onConfirm(scope);
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") setScope((s) => (s === "THIS" ? "ALL" : "THIS"));
+      else return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   return (
     <>
       <div
+        data-nested-surface=""
         className="fixed inset-0 z-50 bg-black/25"
         onClick={onCancel}
       />
-      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+      <div data-nested-surface="" className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
         <div className="pop-in pointer-events-auto bg-surface border border-line rounded-[var(--radius-lg)] w-[300px] p-5 elev-3">
           <p className="text-label font-semibold uppercase tracking-widest text-muted mb-1">
             Recurring event
@@ -485,6 +519,8 @@ function CalendarPane({
   // tell which span you're looking at. The Year's numeral lives here, not as
   // an in-pane masthead, so the chrome says the year once (D-123 / D-129).
   const [monthTitle, setMonthTitle] = useState("");
+  // What's drawn (activeStart → activeEnd) — where j / k start from (D-158).
+  const [visibleSpan, setVisibleSpan] = useState({ start: 0, end: 0 });
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
@@ -492,7 +528,15 @@ function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const prefetchEventDetails = usePrefetchEventDetails();
   const [showHidden, setShowHidden] = useState(false);
-  const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent; el: HTMLElement } | null>(null);
+  // `intent: "delete"` — opened by ⌫ on the block: straight to the delete step
+  // (the series' scope, or the confirm that says who gets told).
+  const [eventMenu, setEventMenu] = useState<{
+    x: number;
+    y: number;
+    event: ExternalEvent;
+    el: HTMLElement;
+    intent?: "delete";
+  } | null>(null);
   const eventMenuAccountEmail = accounts.find((a) => a.id === eventMenu?.event.account_id)?.email;
   const { data: eventMenuDetails } = useEventDetails(eventMenu?.event.id ?? null, eventMenuAccountEmail);
   const eventMenuOtherGuests = useMemo(
@@ -519,10 +563,18 @@ function CalendarPane({
   } | null>(null);
   // A block's right-click is the SAME menu every task list offers
   // (TaskActionsMenu) — the calendar used to carry a five-item copy.
-  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
+  // `startInDelete` — ⌫ on a series' block opens the menu on its scope question.
+  const [taskMenu, setTaskMenu] = useState<{
+    x: number;
+    y: number;
+    task: Task;
+    el: HTMLElement;
+    startInDelete?: boolean;
+  } | null>(null);
   const closeTaskMenu = useCallback(() => setTaskMenu(null), []);
   // Its `t` / `v` menus, anchored on the block.
-  const [taskRowMenu, setTaskRowMenu] = useState<{ kind: "date" | "move"; task: Task; anchor: DOMRect } | null>(null);
+  // `t` / `v` on a selection hit every task in it, as in a list.
+  const [taskRowMenu, setTaskRowMenu] = useState<{ kind: "date" | "move"; targets: Task[]; anchor: DOMRect } | null>(null);
   const closeTaskRowMenu = useCallback(() => setTaskRowMenu(null), []);
   // Task → Event asking which calendar (D-152), opened from the menu's item.
   const [taskEventPick, setTaskEventPick] = useState<{ x: number; y: number; task: Task } | null>(null);
@@ -560,57 +612,6 @@ function CalendarPane({
     cell?.classList.add("anytime-active");
     return () => cell?.classList.remove("anytime-active");
   }, [draft]);
-
-  // The clicked block is brought to the front of any overlap (full width, on top)
-  // so it's readable, and lifts toward you. Focus is applied IMPERATIVELY — a
-  // direct class toggle on the block's own element — rather than by re-feeding
-  // FullCalendar a new events array. Routing focus through the event model forced
-  // FC to re-parse EVERY event on each click before the class (and so the lift)
-  // could land, which is the "slight delay" you felt. A direct classList toggle
-  // lifts the clicked block on the very next frame. Click-driven (not hover);
-  // cleared by clicking empty grid or anywhere off a block.
-  const focusedElRef = useRef<HTMLElement | null>(null);
-  const clearFocus = () => {
-    focusedElRef.current?.classList.remove("evt-focused");
-    focusedElRef.current = null;
-  };
-  const focusBlock = (el: HTMLElement) => {
-    if (focusedElRef.current === el) return;
-    clearFocus();
-    el.classList.add("evt-focused");
-    focusedElRef.current = el;
-  };
-
-  // A focused block stays lifted/expanded until you move on — so a pointerdown
-  // anywhere that ISN'T a calendar block (the rail, another floor, a button)
-  // drops the focus, instead of it lingering once you've clicked elsewhere.
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t?.closest(".fc-event")) return;
-      // The block's own popover counts as still being "on" it. Dropping focus
-      // here un-expanded and un-lifted the block mid-inspection, and since the
-      // popover is anchored to that block, its ~3px lift and full-column width
-      // vanishing shifted the popover under the cursor.
-      if (t?.closest("[data-block-popover]")) return;
-      clearFocus();
-    };
-    // Esc is a way of moving on too. The popover takes the press first; once it
-    // has gone, the block it was anchored to has no reason to stay lifted —
-    // it used to sit raised at full column width until the next click.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      requestAnimationFrame(() => {
-        if (!document.querySelector("[data-block-popover]")) clearFocus();
-      });
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, []);
 
   // FullCalendar preventDefaults mousedown (so a drag can't select text), which
   // also means a press on the grid never takes focus away from a text field —
@@ -664,6 +665,83 @@ function CalendarPane({
       ro.disconnect();
     };
   }, []);
+
+  // ── The grid's selection (D-158) ───────────────────────────────────────────
+  // A block is selected by ID — never only by a class on its element. The lift
+  // used to be `classList.add("evt-focused")` on whatever element was clicked,
+  // and FullCalendar re-renders a block whenever the reconcile patches it: the
+  // class it didn't put there was gone, so a block dropped its lift the moment
+  // its own write landed, and no key could act on "the selected block" because
+  // there wasn't one. The selection is state. It is painted two ways, both off
+  // `gridSelRef`: imperatively on change (the lift lands the frame you click —
+  // no re-parse of every event, which is what made the old event-model route
+  // feel late), and through `eventClassNames`, so any render FullCalendar does
+  // of its own keeps it. The cursor lifts to the front at full column width
+  // (`evt-focused`, readable over its neighbours); the rest of a ⇧/⌘-click
+  // selection lift in place (`evt-selected`).
+  const [gridCursor, setGridCursor] = useState<string | null>(null);
+  const [gridSelected, setGridSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const gridSelRef = useRef<{ cursor: string | null; ids: ReadonlySet<string> }>({ cursor: null, ids: new Set() });
+  const paintGridSelection = (cursor: string | null, ids: ReadonlySet<string>) => {
+    gridSelRef.current = { cursor, ids };
+    const root = wrapRef.current;
+    if (!root) return;
+    root.querySelectorAll(".evt-focused, .evt-selected").forEach((el) => el.classList.remove("evt-focused", "evt-selected"));
+    const mark = (id: string, cls: string) =>
+      root.querySelectorAll(`[data-block-id="${CSS.escape(id)}"]`).forEach((el) => el.classList.add(cls));
+    ids.forEach((id) => id !== cursor && mark(id, "evt-selected"));
+    if (cursor) mark(cursor, "evt-focused");
+  };
+  useLayoutEffect(() => {
+    paintGridSelection(gridCursor, gridSelected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridCursor, gridSelected]);
+  /** Light one block (a click, j / k, a fresh copy) — painted now, not next render. */
+  const selectBlock = (id: string | null) => {
+    const none: ReadonlySet<string> = new Set();
+    paintGridSelection(id, none);
+    setGridCursor(id);
+    setGridSelected(none);
+  };
+  /** ⇧/⌘-click: add the block to the selection, or take it back out. */
+  const toggleBlock = (id: string) => {
+    const { cursor, ids } = gridSelRef.current;
+    const next = new Set(ids);
+    if (cursor) next.add(cursor);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    const nextCursor = next.has(id) ? id : ([...next].pop() ?? null);
+    paintGridSelection(nextCursor, next);
+    setGridCursor(nextCursor);
+    setGridSelected(next);
+  };
+  const clearGridSelection = () => {
+    const { cursor, ids } = gridSelRef.current;
+    if (cursor || ids.size) selectBlock(null);
+  };
+
+  // A press anywhere that isn't a block — empty grid, the rail, the toolbar,
+  // another floor — moves on from the selection, and a press in this pane hands
+  // it the keyboard (`keyOwner`; the rail puts its own cursor down for the same
+  // press). The block's popover and any floating surface (a menu, the rename
+  // field) count as still being on the block: dropping the lift under an open
+  // popover shifted the popover anchored to it.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("[data-calendar-pane]")) claimKeys("grid");
+      if (t?.closest?.(".fc-event, [data-block-popover], [data-nested-surface]")) return;
+      clearGridSelection();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Esc mid-drag (#32) — one controller for every gesture on the grid.
+  const gestureRef = useRef<GestureCancel | null>(null);
+  if (!gestureRef.current && typeof document !== "undefined") gestureRef.current = createGestureCancel();
+  useEffect(() => () => gestureRef.current?.dispose(), []);
 
   // Live ghost while dragging any all-day range — the month grid, or the
   // anytime row in week/day view (both render `.fc-daygrid-day` cells under
@@ -1004,6 +1082,16 @@ function CalendarPane({
     anytimePreview.setAttribute("aria-hidden", "true");
     document.body.appendChild(anytimePreview);
     const anytimePreviewTitle = anytimePreview.querySelector(".anytime-drop-preview-title") as HTMLElement;
+    // Esc mid-gesture (#32): the drag can't be stopped, so the cursor says what
+    // letting go will now do — nothing.
+    const cancelChip = document.createElement("div");
+    cancelChip.className = "slot-drop-chip drop-chip-cancel";
+    cancelChip.textContent = "Release to cancel";
+    cancelChip.setAttribute("aria-hidden", "true");
+    document.body.appendChild(cancelChip);
+    let lastX = 0;
+    let lastY = 0;
+    const gesture = gestureRef.current;
 
     const dragDurationMins = (): number => {
       if (dragId) {
@@ -1066,11 +1154,13 @@ function CalendarPane({
       hideAnytimePreview();
     };
 
-    const reset = () => {
+    /** The drop feedback, off — the glow, the chip, the previews. */
+    const clearFeedback = () => {
       document.body.classList.remove("cal-dragging", "over-slot", "slot-adjacent-drop", "over-anytime");
       overSlot?.classList.remove("slot-drop-target", "slot-adjacent-anchor");
       overSlot = null;
       overZone = null;
+      slotDropIntentRef.current = null;
       clearAnytimeTarget();
       chip.classList.remove("is-visible", "drop-chip-act");
       hideAdjacentPreview();
@@ -1080,6 +1170,13 @@ function CalendarPane({
         moveRaf = 0;
       }
       pendingMove = null;
+    };
+    const hideCancel = () => {
+      cancelChip.classList.remove("is-visible");
+      document.body.classList.remove("drag-cancelled");
+    };
+    const reset = () => {
+      clearFeedback();
       resumeGridSyncRef.current();
     };
     const onDown = (e: PointerEvent) => {
@@ -1088,9 +1185,11 @@ function CalendarPane({
       // A resize handle or the checkbox is a press inside a block that isn't a
       // move — arming on it faded the resize ghost over slots and offered
       // "↳ Drop into…" for a gesture that can't drop anything.
+      // The draft's ghost isn't a task: moving it adjusts the draft, and it can't
+      // drop into a slot or go back to the Inbox.
       armed =
         Boolean(el?.closest?.("[data-task-drag], [data-project-drag], .evt-task")) &&
-        !el?.closest?.(".fc-event-resizer, [data-done-toggle]");
+        !el?.closest?.(".fc-event-resizer, [data-done-toggle], .evt-draft-preview");
       // A project row is a rail-origin drag like any other — it just has no task
       // id to return to the Inbox. Resolving `dragEl` off both attributes is what
       // makes `fromRail` true for it, which is what eats the phantom click that
@@ -1283,6 +1382,13 @@ function CalendarPane({
     };
 
     const onMove = (e: PointerEvent) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (gesture?.cancelled && gesture.live) {
+        cancelChip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
+        cancelChip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+        return;
+      }
       if (!armed) return;
       // The same slop as whatever owns the drag: the rail's Draggable starts at
       // 6px, FullCalendar's block drag at 5. A 5px wobble used to arm this for a
@@ -1291,6 +1397,7 @@ function CalendarPane({
       if (!moved) {
         moved = true;
         active = true;
+        gesture?.begin();
         document.body.classList.add("cal-dragging");
         pauseGridSyncRef.current();
         snapshotDragTargets();
@@ -1304,11 +1411,15 @@ function CalendarPane({
       // click the browser fires on the original element after any drag gesture.
       const swallowClick = moved && fromRail;
       armed = false;
+      // The pointer is up; FullCalendar's drop handlers run on the mouseup
+      // after this and ask the gesture whether it was called off.
+      hideCancel();
+      gesture?.end();
       if (active && moved) {
         active = false;
         // Freeze intent before FullCalendar's async drop handlers run.
         committedSlotDropIntentRef.current = slotDropIntentRef.current;
-        const dropInbox = Boolean(dragId) && !fromRail && overRail;
+        const dropInbox = Boolean(dragId) && !fromRail && overRail && !gesture?.take();
         if (dropInbox) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
           const group = dragEl?.getAttribute("data-task-drag-group");
@@ -1343,6 +1454,9 @@ function CalendarPane({
     // Abandoning a drag must clear the glow too. Without these, Escape (which
     // the rail's reorder honours) or a cancelled pointer left `cal-dragging` on
     // the body — every day cell still lit for a drag that had already ended.
+    // `dragGroupRef` is NOT cleared here: what the user picked up is decided
+    // at pickup and consumed by the drop handler — clearing it on abort is how a
+    // cancelled four-row drag used to land as one task.
     const onAbort = () => {
       armed = false;
       active = false;
@@ -1354,11 +1468,26 @@ function CalendarPane({
       overRail = false;
       committedSlotDropIntentRef.current = null;
       slotDropIntentRef.current = null;
-      dragGroupRef.current = null;
+      hideCancel();
+      gesture?.end();
       reset();
     };
+    // Esc while something is in hand calls the gesture off: the feedback goes,
+    // the cursor says "Release to cancel", and the release writes nothing (every
+    // drop handler asks `gesture.take()`). Grid sync stays paused until the
+    // release — resuming mid-drag would move blocks under the pointer.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onAbort();
+      if (e.key !== "Escape" || !gesture?.escape()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      armed = false;
+      clearFeedback();
+      committedSlotDropIntentRef.current = null;
+      cancelChip.style.left = `${fixedCssPx(lastX + 14)}px`;
+      cancelChip.style.top = `${fixedCssPx(lastY + 16)}px`;
+      cancelChip.classList.add("is-visible");
+      document.body.classList.add("drag-cancelled");
+      announce("Drag cancelled — release to put it back");
     };
     // The targets were measured once, at the drag's first move. FullCalendar
     // autoscrolls the grid when you drag near its edge (and the wheel scrolls
@@ -1375,18 +1504,19 @@ function CalendarPane({
     document.addEventListener("pointerup", onUp, true);
     document.addEventListener("pointercancel", onAbort, true);
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", onUp, true);
       document.removeEventListener("pointercancel", onAbort, true);
       document.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       reset();
       chip.remove();
       preview.remove();
       anytimePreview.remove();
+      cancelChip.remove();
     };
   }, [railRef, defaultDurationMins]);
 
@@ -1663,14 +1793,18 @@ function CalendarPane({
     : allDayDragRange
       ? { start: allDayDragRange.start, end: allDayDragRange.end, allDay: true }
       : null;
+  // A timed draft's ghost is adjustable (#33): drag it, pull its edges — the
+  // composer's time follows (onDrop / onResize), and ↑↓ / ⇧↑↓ nudge it from the
+  // card. The all-day ghosts stay put: one is a live drag, the other a day.
   const draftPreviewEvent = previewRange
     ? {
-        id: "draft:preview",
+        id: DRAFT_PREVIEW_ID,
         title: "",
         start: previewRange.start.toISOString(),
         end: (previewRange.allDay ? addDays(previewRange.end, 1) : previewRange.end).toISOString(),
         allDay: previewRange.allDay,
-        editable: false,
+        editable: Boolean(draft) && !previewRange.allDay,
+        durationEditable: Boolean(draft) && !previewRange.allDay,
         classNames: ["evt-task", "evt-draft-preview"],
         ...blockColors("var(--accent)"),
         extendedProps: { kind: "task" as const, refId: "", barColor: "var(--accent)", recurring: false },
@@ -1759,6 +1893,13 @@ function CalendarPane({
   // FullCalendar mounts it.
   const handleEventDidMount = useCallback((arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
+    // The selection's handle (D-158): which element(s) draw this block — a
+    // multi-day chip is several. Never on a drag mirror, which isn't the block.
+    if (!arg.isMirror) arg.el.setAttribute("data-block-id", arg.event.id);
+    // A right-click is pointing at this block: the menu acts on what's lit.
+    const pointAt = () => {
+      if (!arg.isMirror && arg.event.id !== DRAFT_PREVIEW_ID) selectBlock(arg.event.id);
+    };
     if (kind === "task") {
       // The id, for the pointer-level drag watch (where the block would go
       // back to if it's let go over the rail). Ids never change under a block.
@@ -1766,7 +1907,9 @@ function CalendarPane({
       arg.el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         const task = findTask(refId);
-        if (task) setTaskMenu({ x: e.clientX, y: e.clientY, task, el: arg.el });
+        if (!task) return;
+        pointAt();
+        setTaskMenu({ x: e.clientX, y: e.clientY, task, el: arg.el });
       });
       return;
     }
@@ -1779,15 +1922,29 @@ function CalendarPane({
       arg.el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         const slot = findSlot(refId);
-        if (slot) setSlotMenu({ x: e.clientX, y: e.clientY, slot, el: arg.el });
+        if (!slot) return;
+        pointAt();
+        setSlotMenu({ x: e.clientX, y: e.clientY, slot, el: arg.el });
       });
       return;
     }
     arg.el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const evt = findEvent(refId);
-      if (evt) setEventMenu({ x: e.clientX, y: e.clientY, event: evt, el: arg.el });
+      if (!evt) return;
+      pointAt();
+      setEventMenu({ x: e.clientX, y: e.clientY, event: evt, el: arg.el });
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** `eventClassNames` — the selection survives any render FullCalendar does of
+   *  its own (see `gridSelRef`). Reads a ref, so the element memo never moves. */
+  const blockClassNames = useCallback((arg: { event: EventApi; isMirror: boolean }) => {
+    if (arg.isMirror) return [];
+    const { cursor, ids } = gridSelRef.current;
+    const id = arg.event.id;
+    return id === cursor ? ["evt-focused"] : ids.has(id) ? ["evt-selected"] : [];
   }, []);
 
   // Dismiss the menu on any outside interaction or Escape (a press inside the
@@ -1799,10 +1956,37 @@ function CalendarPane({
     eventMenu?.y ?? 0,
     `${eventMenu?.event.id}:${eventDeleteConfirm}:${eventMoveMode}:${Boolean(eventMoveConfirm)}:${eventMenuOtherGuests.length}`,
   );
+  // ⌫ on a one-off event opens straight on its confirm — the step that says
+  // who gets told. A series opens on its scope (rendered below).
+  const [eventDeleteLit, setEventDeleteLit] = useState<0 | 1>(0);
   useEffect(() => {
-    setEventDeleteConfirm(null);
+    setEventDeleteConfirm(
+      eventMenu?.intent === "delete" && !eventSeriesKey(eventMenu.event) ? "THIS" : null,
+    );
+    setEventDeleteLit(0);
     setEventMoveMode(false);
     setEventMoveConfirm(null);
+  }, [eventMenu]);
+  // The delete step answers the keyboard that opened it: ↑↓ pick the scope,
+  // ↵ runs the lit one — or the confirm's primary. (The rest of this menu
+  // waits for the one menu primitive; this is the part ⌫ lands on.)
+  const eventDeleteKeysRef = useRef<{ confirm?: () => void; pick?: boolean }>({});
+  useEffect(() => {
+    if (!eventMenu) return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = eventDeleteKeysRef.current;
+      if (e.key === "Enter" && k.confirm) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        k.confirm();
+      } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && k.pick) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setEventDeleteLit((l) => (l === 0 ? 1 : 0));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [eventMenu]);
   useEffect(() => {
     if (!eventMenu) return;
@@ -1900,6 +2084,505 @@ function CalendarPane({
       },
     });
   };
+
+
+  // ── Block keys (D-158) ─────────────────────────────────────────────────────
+  // The grid speaks the rail's grammar — the SAME hook (`useTaskListKeys`), over
+  // the grid's blocks in time order, so `e` on a block and `e` on a row are one
+  // act and can't drift (the D-111 lesson, a third time). What only a grid has
+  // rides in through `extra`: ⌥↑/⌥↓ a quarter hour, ⌥←/⌥→ a day, ⌥⇧↑/⌥⇧↓ the
+  // length, and the ⌫ cases that have to ask first (a series' scope, an event's
+  // guests). Every move records undo, as a drag does.
+  const qc = useQueryClient();
+  const setPriority = usePriorityAct(mutations);
+  const renameTask = useRenameAct(mutations);
+  const gridRows = useMemo(() => gridBlocks(fcEvents as CalendarBlockInput[]), [fcEvents]);
+  const homeId = useMemo(
+    () => homeBlockId(gridRows, visibleSpan.start, visibleSpan.end, now.getTime()),
+    [gridRows, visibleSpan, now],
+  );
+  const blockById = (id: string) => gridRows.find((b) => b.id === id);
+  const blockEl = (id: string) =>
+    wrapRef.current?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`) ?? null;
+  const blockRect = (id: string): DOMRect => {
+    const el = blockEl(id);
+    if (el) return el.getBoundingClientRect();
+    const r = wrapRef.current?.getBoundingClientRect();
+    return r ? new DOMRect(r.left + r.width / 2, r.top + r.height / 3, 0, 0) : new DOMRect(480, 240, 0, 0);
+  };
+  const taskOf = (b: GridBlock) => (b.kind === "task" ? findTask(b.refId) : undefined);
+  const tasksOf = (bs: readonly GridBlock[]) => bs.map(taskOf).filter((t): t is Task => Boolean(t));
+  const eventWritable = (ev: ExternalEvent) => isWritableCalendar(accountById.get(ev.account_id), ev.calendar_id);
+  const extPropsOf = (b: GridBlock): ExtendedProps =>
+    (calRef.current?.getApi().getEventById(b.id)?.extendedProps as ExtendedProps | undefined) ?? {
+      kind: "google",
+      refId: b.refId,
+    };
+
+  /** On screen: j past the week's last block pages to the next week. */
+  const revealAt = (id: string, start: number, end: number) => {
+    const api = calRef.current?.getApi();
+    if (!api) return;
+    const { activeStart, activeEnd } = api.view;
+    if (start >= activeEnd.getTime() || end <= activeStart.getTime()) api.gotoDate(new Date(start));
+    requestAnimationFrame(() => blockEl(id)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
+  };
+  const revealBlock = (id: string) => {
+    const b = blockById(id);
+    if (b) revealAt(id, b.start, b.end);
+  };
+
+  const openBlock = (b: GridBlock) => {
+    const el = blockEl(b.id);
+    const rect = blockRect(b.id);
+    if (b.kind === "task") {
+      const task = findTask(b.refId);
+      if (task) onOpenTask(task, rect, el);
+    } else if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (slot) onOpenSlot(slot, rect, el);
+    } else {
+      const ev = findEvent(b.refId);
+      if (ev) onOpenEvent(ev, rect, el);
+    }
+  };
+
+  /** `.` — the block's own right-click menu, at the block. */
+  const openBlockMenu = (b: GridBlock, intent?: "delete") => {
+    const el = blockEl(b.id);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = r.left + Math.min(24, r.width / 2);
+    const y = r.top + Math.min(r.height, 28);
+    if (b.kind === "task") {
+      const task = findTask(b.refId);
+      if (task) setTaskMenu({ x, y, task, el, startInDelete: intent === "delete" });
+    } else if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (slot) setSlotMenu({ x, y, slot, el });
+    } else {
+      const event = findEvent(b.refId);
+      if (event) setEventMenu({ x, y, event, el, intent });
+    }
+  };
+
+  // ── duplicate — the menu's Duplicate and ⌘D are one act, and both select the copy
+  const duplicateTask = (task: Task): string => {
+    const clientId = crypto.randomUUID();
+    void mutations.create(
+      {
+        clientId,
+        title: task.title,
+        notes: task.notes || undefined,
+        do_date: task.do_date,
+        start_time: task.start_time,
+        duration_minutes: task.duration_minutes,
+        priority: task.priority !== "none" ? task.priority : undefined,
+        domain_id: task.domain_id,
+        project_id: task.project_id,
+        labelIds: task.task_labels?.map((l) => l.label_id),
+      },
+      {
+        // The copy lands exactly on the original, so without a word it
+        // looks like nothing happened. Say it, and make it one ⌘Z away.
+        undo: "toast",
+        label: `Duplicated — ${task.title}`,
+      },
+    );
+    return `task:${clientId}`;
+  };
+  const duplicateSlot = (slot: Slot): string => {
+    const made = slotMutations.createSlot({
+      title: slot.title,
+      do_date: slot.do_date,
+      start_time: slot.start_time,
+      duration_minutes: slot.duration_minutes,
+      project_id: slot.project_id,
+      domain_id: slot.domain_id,
+      color: slot.color,
+    });
+    recordUndo({
+      label: `Duplicated — ${slotTitle(slot)}`,
+      shortLabel: "Duplicated",
+      tier: "toast",
+      undo: () => slotMutations.removeSlot(made),
+    });
+    return `slot:${made.id}`;
+  };
+  /** Guests and recurrence deliberately do NOT carry: a copy that silently
+   *  re-invited eight people would be the app mailing on the user's behalf, and
+   *  a copied series is two series. Resolves to the copy's block id. */
+  const duplicateEvent = async (ev: ExternalEvent): Promise<string | null> => {
+    const data = await eventMutations.createEvent({
+      title: `${ev.title} (copy)`,
+      start_at: ev.start_at,
+      end_at: ev.end_at,
+      all_day: ev.all_day,
+      location: ev.location ?? undefined,
+      accountId: ev.account_id,
+      calendarId: ev.calendar_id,
+      notifyGuests: false,
+    });
+    const id = (data as { event?: { id?: string } } | null)?.event?.id ?? (data as { id?: string } | null)?.id;
+    return id ? `evt:${id}` : null;
+  };
+  const duplicateBlocks = (targets: readonly GridBlock[]) => {
+    const copies: string[] = [];
+    for (const b of targets) {
+      if (b.kind === "task") {
+        const task = findTask(b.refId);
+        if (task) copies.push(duplicateTask(task));
+      } else if (b.kind === "slot") {
+        const slot = findSlot(b.refId);
+        if (slot) copies.push(duplicateSlot(slot));
+      } else {
+        const ev = findEvent(b.refId);
+        if (!ev || !eventWritable(ev)) continue;
+        // An event's copy is named by the server; select it when it lands.
+        void duplicateEvent(ev)
+          .then((id) => id && targets.length === 1 && selectBlock(id))
+          .catch(() => toast.error(`Couldn't copy ${ev.title || "the event"}`));
+      }
+    }
+    if (copies.length === 1) selectBlock(copies[0]);
+    else if (copies.length > 1) {
+      setGridCursor(copies[copies.length - 1]);
+      setGridSelected(new Set(copies));
+    }
+  };
+
+  // ── delete — ⌫ on what needs no question goes now; the rest asks, as the menu does
+  /** Guests on an event, if we know: an invite (self RSVP) means someone else
+   *  is on it; otherwise only the details payload says, and it's null until
+   *  fetched — unknown counts as "ask". */
+  const knownGuests = (ev: ExternalEvent): number | null => {
+    if (ev.self_rsvp) return 1;
+    const details = qc.getQueryData<{ attendees?: { self?: boolean }[] } | null>(["event_details", ev.id]);
+    if (details === undefined) return null;
+    return (details?.attendees ?? []).filter((a) => !a.self).length;
+  };
+  type DeletePlan = "now" | "ask" | "locked";
+  const deletePlan = (b: GridBlock): DeletePlan => {
+    if (b.kind === "task") return taskOf(b)?.recurrence_id ? "ask" : "now";
+    if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (!slot) return "locked";
+      return slot.recurrence_id || (slotTasks[slot.id]?.length ?? 0) > 0 ? "ask" : "now";
+    }
+    const ev = findEvent(b.refId);
+    if (!ev || !eventWritable(ev)) return "locked";
+    return eventSeriesKey(ev) || knownGuests(ev) !== 0 ? "ask" : "now";
+  };
+  const deleteNow = (b: GridBlock) => {
+    if (b.kind === "task") {
+      const task = taskOf(b);
+      if (task) mutations.trash(task);
+    } else if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (!slot) return;
+      slotMutations.removeSlot(slot);
+      // An empty one-off — so putting it back IS the same block (new id).
+      recordUndo({
+        label: `Deleted — ${slotTitle(slot)}`,
+        shortLabel: "Deleted",
+        tier: "toast",
+        undo: () => {
+          const back = slotMutations.createSlot({
+            title: slot.title,
+            do_date: slot.do_date,
+            start_time: slot.start_time,
+            duration_minutes: slot.duration_minutes,
+            project_id: slot.project_id,
+            domain_id: slot.domain_id,
+            color: slot.color,
+          });
+          selectBlock(`slot:${back.id}`);
+        },
+      });
+    } else {
+      const ev = findEvent(b.refId);
+      if (ev) deleteEventNow(ev, "THIS");
+    }
+  };
+  /** The question, asked where the menu asks it. A slot with work in it (or a
+   *  series) opens its detail, whose delete picker says what happens to the
+   *  work — the same route the slot's menu takes. */
+  const askToDelete = (b: GridBlock) => {
+    if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (slot) onOpenSlot(slot, blockRect(b.id), blockEl(b.id));
+      return;
+    }
+    openBlockMenu(b, "delete");
+  };
+  /** ⌫ through `extra`: true when handled here (a question was asked, or a mixed
+   *  selection was split); false hands a plain delete to the hook, which trashes
+   *  and steps the cursor to the next block. */
+  const deleteKey = (targets: readonly GridBlock[]): boolean => {
+    if (!targets.length) return false;
+    const plans = targets.map((b) => ({ b, plan: deletePlan(b) }));
+    if (plans.every((p) => p.plan === "now")) return false;
+    if (targets.length === 1) {
+      if (plans[0].plan === "locked") announce("This calendar is read-only");
+      else askToDelete(targets[0]);
+      return true;
+    }
+    // A mixed selection: what needs no question goes now; what does stays lit,
+    // to be asked one at a time — never a scope or a guest notice decided in bulk.
+    const now = plans.filter((p) => p.plan === "now").map((p) => p.b);
+    const left = plans.filter((p) => p.plan === "ask").map((p) => p.b);
+    now.forEach(deleteNow);
+    if (left.length) {
+      setGridCursor(left[0].id);
+      setGridSelected(left.length > 1 ? new Set(left.map((b) => b.id)) : new Set());
+      toast(`${left.length} still selected — a series or an invite asks first. Press ⌫ on each.`);
+    } else {
+      selectBlock(null);
+    }
+    return true;
+  };
+
+  // ── ⌘E — the title, edited where it's drawn
+  const [renaming, setRenaming] = useState<{ block: GridBlock; title: string; rect: DOMRect } | null>(null);
+  const startRename = (b: GridBlock) => {
+    const title =
+      b.kind === "task"
+        ? findTask(b.refId)?.title
+        : b.kind === "slot"
+          ? findSlot(b.refId)?.title
+          : (() => {
+              const ev = findEvent(b.refId);
+              if (ev && !eventWritable(ev)) {
+                announce("This calendar is read-only");
+                return undefined;
+              }
+              return ev?.title;
+            })();
+    if (title === undefined) return;
+    setRenaming({ block: b, title, rect: blockRect(b.id) });
+  };
+  const commitRename = (b: GridBlock, title: string | null) => {
+    setRenaming(null);
+    const next = title?.trim();
+    if (!next) return;
+    if (b.kind === "task") {
+      const task = findTask(b.refId);
+      if (task && task.title !== next) renameTask(task, next);
+    } else if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (!slot || slot.title === next) return;
+      const before = slot.title;
+      slotMutations.updateSlot({ id: slot.id, patch: { title: next } });
+      recordUndo({
+        label: `Renamed — ${next}`,
+        shortLabel: "Renamed",
+        tier: "silent",
+        undo: () => slotMutations.updateSlot({ id: slot.id, patch: { title: before } }),
+      });
+    } else {
+      const ev = findEvent(b.refId);
+      if (!ev || ev.title === next) return;
+      withRecurrenceScope(extPropsOf(b), () => {}, (scope) => {
+        eventMutations.updateEvent({ id: ev.id, patch: { title: next }, scope });
+        if (scope === "THIS") {
+          recordUndo({
+            label: `Renamed — ${next}`,
+            shortLabel: "Renamed",
+            tier: "silent",
+            undo: () => eventMutations.updateEvent({ id: ev.id, patch: { title: ev.title }, scope: "THIS" }),
+          });
+        }
+      });
+    }
+  };
+
+  // ── ⌥ arrows — a quarter hour, a day, the length
+  /** One block, one press. Null = nothing to do; "locked" = a read-only calendar. */
+  const shiftBlock = (b: GridBlock, how: BlockShift): { start: Date; end: Date } | "locked" | null => {
+    const span = shiftSpan({ start: new Date(b.start), end: new Date(b.end), allDay: b.allDay }, how);
+    if (!span) return null;
+    const resize = how === "shorter" || how === "longer";
+    const verb = resize ? "Resized" : "Moved";
+    const mins = Math.max(15, Math.round((span.end.getTime() - span.start.getTime()) / 60_000));
+    if (b.kind === "task") {
+      const task = findTask(b.refId);
+      if (!task) return null;
+      if (b.allDay) {
+        // An anytime chip has a day and no clock — it moves days, and stays anytime.
+        mutations.planFor(task, toDateISO(span.start), {
+          undo: "silent",
+          coalesceKey: "move",
+          label: `${verb} — ${task.title}`,
+        });
+        return span;
+      }
+      // A patch, not `block`: `block` re-plans the row, which would reopen a
+      // finished task for being nudged.
+      mutations.patchTask(
+        task.id,
+        {
+          start_time: span.start.toISOString(),
+          do_date: toDateISO(span.start),
+          duration_minutes: mins,
+          ...(task.recurrence_id && !task.recurrence_overridden ? { recurrence_overridden: true } : {}),
+        },
+        {
+          undo: "silent",
+          before: {
+            start_time: task.start_time,
+            do_date: task.do_date,
+            duration_minutes: task.duration_minutes,
+            recurrence_overridden: task.recurrence_overridden,
+          },
+          title: task.title,
+          label: `${verb} — ${task.title}`,
+          coalesceKey: "move",
+        },
+      );
+      return span;
+    }
+    if (b.kind === "slot") {
+      const slot = findSlot(b.refId);
+      if (!slot) return null;
+      const before = {
+        start_time: slot.start_time,
+        do_date: slot.do_date,
+        duration_minutes: slot.duration_minutes,
+        recurrence_overridden: slot.recurrence_overridden,
+      };
+      slotMutations.updateSlot({
+        id: slot.id,
+        patch: {
+          start_time: span.start.toISOString(),
+          do_date: toDateISO(span.start),
+          duration_minutes: mins,
+          ...(slot.recurrence_id ? { recurrence_overridden: true } : {}),
+        },
+      });
+      recordUndo({
+        label: `${verb} — ${slotTitle(slot)}`,
+        shortLabel: verb,
+        tier: "silent",
+        coalesceKey: "move",
+        undo: () => slotMutations.updateSlot({ id: slot.id, patch: before }),
+      });
+      return span;
+    }
+    const ev = findEvent(b.refId);
+    if (!ev) return null;
+    if (!eventWritable(ev)) return "locked";
+    const patch = spanFromCalendarDrop(span.start, span.end, b.allDay);
+    if (!patch) return null;
+    // A series asks which occurrences, from the keyboard exactly as from a drag.
+    withRecurrenceScope(extPropsOf(b), () => {}, (scope) => {
+      const before = { start_at: ev.start_at, end_at: ev.end_at };
+      eventMutations.updateEvent({ id: ev.id, patch, scope });
+      if (scope === "THIS") {
+        recordUndo({
+          label: `${verb} — ${ev.title || "event"}`,
+          shortLabel: verb,
+          tier: "silent",
+          coalesceKey: "move",
+          undo: () => eventMutations.updateEvent({ id: ev.id, patch: before, scope: "THIS" }),
+        });
+      }
+    });
+    return span;
+  };
+  const shiftBlocks = (targets: readonly GridBlock[], how: BlockShift) => {
+    let moved: { id: string; start: Date; end: Date } | null = null;
+    let locked = 0;
+    for (const b of targets) {
+      const r = shiftBlock(b, how);
+      if (r === "locked") locked++;
+      else if (r) moved = { id: b.id, ...r };
+    }
+    if (locked && !moved) announce("This calendar is read-only");
+    // The cursor follows its block across a week edge (⌥→ on Sunday).
+    if (moved && targets.length === 1) revealAt(moved.id, moved.start.getTime(), moved.end.getTime());
+  };
+
+  // Gates: only a FullCalendar view, nothing floating over the grid (a popover
+  // covering it turns `hotkeysEnabled` off), and only while the grid is the pane
+  // last pressed in — asked at keystroke time (`keyOwner`).
+  const gridKeysOn =
+    hotkeysEnabled &&
+    isFcView(view) &&
+    !draft &&
+    !taskMenu &&
+    !taskRowMenu &&
+    !eventMenu &&
+    !slotMenu &&
+    !renaming &&
+    !recurrencePrompt &&
+    !gatherOffer &&
+    !taskEventPick;
+  const onlyTasks = (targets: readonly GridBlock[], act: string): boolean => {
+    if (targets.some((b) => b.kind === "task")) return false;
+    announce(`${act} is for tasks — this block is ${targets[0]?.kind === "slot" ? "a slot" : "an event"}`);
+    return true;
+  };
+  useTaskListKeys<GridBlock>({
+    enabled: () => gridKeysOn && keyOwner() === "grid",
+    rows: gridRows,
+    handOff: false,
+    cursor: {
+      cursorId: gridCursor,
+      homeId,
+      setCursorId: (id) => {
+        setGridCursor(id);
+        if (id) revealBlock(id);
+      },
+      selectedIds: gridSelected,
+      setSelectedIds: setGridSelected,
+    },
+    acts: {
+      open: openBlock,
+      complete: (targets) =>
+        tasksOf(targets).forEach((t) => toggleCalendarTaskDone(t, blockEl(`task:${t.id}`))),
+      trash: (targets) => targets.forEach(deleteNow),
+      date: (targets) => {
+        const tasks = tasksOf(targets);
+        if (tasks.length) setTaskRowMenu({ kind: "date", targets: tasks, anchor: blockRect(`task:${tasks[0].id}`) });
+      },
+      move: (targets) => {
+        const tasks = tasksOf(targets);
+        if (tasks.length) setTaskRowMenu({ kind: "move", targets: tasks, anchor: blockRect(`task:${tasks[0].id}`) });
+      },
+      priority: (targets, p) => setPriority(tasksOf(targets), p),
+      rename: startRename,
+      menu: (b) => openBlockMenu(b),
+      duplicate: duplicateBlocks,
+      extra: (e, targets) => {
+        const how = shiftForKey(e);
+        if (how) {
+          if (!targets.length) return false;
+          shiftBlocks(targets, how);
+          return true;
+        }
+        if (e.metaKey || e.ctrlKey || e.altKey || !targets.length) return false;
+        switch (e.key) {
+          // Task acts on a selection with no task in it: say so, rather than
+          // letting `e` step the cursor past an event it can't finish.
+          case "e":
+            return onlyTasks(targets, "Done");
+          case "t":
+            return onlyTasks(targets, "When…");
+          case "v":
+            return onlyTasks(targets, "Move to…");
+          case "1":
+          case "2":
+          case "3":
+          case "4":
+            return onlyTasks(targets, "Priority");
+          case "Backspace":
+          case "Delete":
+            return deleteKey(targets);
+        }
+        return false;
+      },
+    },
+  });
 
   /**
    * **A project, dropped on the grid** — the sitting, and what goes in it.
@@ -2008,6 +2691,14 @@ function CalendarPane({
     const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
+
+    // Esc'd mid-drag: FullCalendar has already made its copy — take it away and
+    // write nothing. The group was decided at pickup and dies with this drop.
+    if (gestureRef.current?.take()) {
+      dragGroupRef.current = null;
+      info.event.remove();
+      return;
+    }
 
     // A project drags as itself — its own payload, its own drop. The phantom FC
     // made is always dropped: what renders is the sitting, out of the slots
@@ -2160,6 +2851,20 @@ function CalendarPane({
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
+    // Esc'd mid-drag (#32): put it back, write nothing.
+    if (gestureRef.current?.take()) {
+      info.revert();
+      return;
+    }
+    // The draft's ghost, moved: the draft moves with it — nothing is written
+    // until the composer creates (#33).
+    if (info.event.id === DRAFT_PREVIEW_ID) {
+      const { start, end } = info.event;
+      if (start && end && !info.event.allDay) setDraft((d) => (d ? { ...d, start, end } : d));
+      else info.revert();
+      return;
+    }
+
     // Timed events/slots cannot become all-day by landing on the anytime row.
     // Existing all-day events may move along it (or drop onto a time).
     if (!allowAnytimeLanding({ nextAllDay: info.event.allDay, wasAllDay: info.oldEvent.allDay, kind })) {
@@ -2274,6 +2979,17 @@ function CalendarPane({
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
+    if (gestureRef.current?.take()) {
+      info.revert();
+      return;
+    }
+    if (info.event.id === DRAFT_PREVIEW_ID) {
+      const { start, end } = info.event;
+      if (start && end) setDraft((d) => (d ? { ...d, start, end } : d));
+      else info.revert();
+      return;
+    }
+
     if (kind === "task") {
       const task = findTask(refId);
       if (task && info.event.start && info.event.end) {
@@ -2379,6 +3095,12 @@ function CalendarPane({
   // the grid here in the same tick as the write: the optimistic cache patch
   // agrees, and a failed write's rollback re-adds it through the grid sync.
   const onDragStop = useStableHandler((info: EventDragStopArg) => {
+    // FullCalendar runs this BEFORE eventDrop, so it only peeks at the cancel —
+    // `onDrop` consumes it (and a release off the grid fires no drop at all).
+    if (gestureRef.current?.cancelled) {
+      resumeGridSync();
+      return;
+    }
     const rail = railRef.current;
     if (rail) {
       const r = rail.getBoundingClientRect();
@@ -2408,15 +3130,20 @@ function CalendarPane({
     resumeGridSync();
   });
 
+  // Every block drag or resize is a gesture Esc can call off — events and slots
+  // too, which the pointer watch above doesn't arm for.
   const onFcDragStart = useCallback(() => {
+    gestureRef.current?.begin();
     pauseGridSync();
   }, [pauseGridSync]);
 
   const onFcResizeStart = useCallback(() => {
+    gestureRef.current?.begin();
     pauseGridSync();
   }, [pauseGridSync]);
 
   const onFcResizeStop = useCallback(() => {
+    gestureRef.current?.end();
     resumeGridSync();
   }, [resumeGridSync]);
 
@@ -2430,6 +3157,8 @@ function CalendarPane({
   // (not only on drop) so the chip never pretends it can land there.
   const eventAllow = useCallback((dropInfo: { allDay: boolean }, dragged: EventApi | null) => {
     if (!dragged) return true;
+    // A timed draft stays timed — the anytime row is a different draft.
+    if (dragged.id === DRAFT_PREVIEW_ID) return !dropInfo.allDay;
     const kind = (dragged.extendedProps as ExtendedProps).kind;
     return allowAnytimeLanding({ nextAllDay: dropInfo.allDay, wasAllDay: dragged.allDay, kind });
   }, []);
@@ -2465,7 +3194,7 @@ function CalendarPane({
       if (multiDay) kind = "event";
       setDraft({ start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
     } else {
-      clearFocus();
+      clearGridSelection();
       const je = arg.jsEvent;
       let kind: CreateKind = createMode;
       if (je?.altKey) kind = "event";
@@ -2488,7 +3217,7 @@ function CalendarPane({
     // (a separate system reacting to the same physical click) — that click
     // was a dismiss, not a request to also start a new draft.
     if (consumeCalendarClickHandled()) return;
-    clearFocus(); // clicking empty space drops the focused block
+    clearGridSelection(); // clicking empty space moves on from the selection
     if (draft) return;
     if (isMonth || arg.allDay) {
       const day = arg.date;
@@ -2615,6 +3344,8 @@ function CalendarPane({
   };
 
   const onClick = useStableHandler((info: EventClickArg) => {
+    // The draft's ghost is part of the composer, not a block.
+    if (info.event.id === DRAFT_PREVIEW_ID) return;
     const { kind, refId } = info.event.extendedProps as ExtendedProps;
     // Clicking the checkbox toggles done — handle it in FullCalendar's own click
     // (FC's native eventClick fires before React's onClick on the rendered
@@ -2640,9 +3371,17 @@ function CalendarPane({
         return;
       }
     }
-    // A click brings the block to the front of any overlap (full width, on top)
-    // and opens its detail — the lift lands this frame, the detail opens with it.
-    focusBlock(info.el);
+    // ⇧/⌘-click grows the selection — a pick, not a request to read the block,
+    // so nothing opens (the rail's modifier-click rule).
+    const je = info.jsEvent;
+    if (je && (je.shiftKey || je.metaKey || je.ctrlKey)) {
+      toggleBlock(info.event.id);
+      return;
+    }
+    // A plain click selects the block — to the front of any overlap, full width,
+    // lifted this frame — and opens its detail. Closing the detail (Esc) leaves
+    // it selected for the keys; the next Esc lets it go.
+    selectBlock(info.event.id);
     if (kind === "task") {
       const task = findTask(refId);
       if (task) onOpenTask(task, info.el.getBoundingClientRect(), info.el);
@@ -3130,6 +3869,7 @@ function CalendarPane({
     remountCache.dateISO = arg.view.currentStart.toISOString();
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
     setMonthTitle(rangeTitleFor(arg.view.type, arg.view.currentStart, arg.view.currentEnd, arg.view.title));
+    setVisibleSpan({ start: arg.view.activeStart.getTime(), end: arg.view.activeEnd.getTime() });
   });
 
   // ── The most expensive thing on this screen ───────────────────────────────
@@ -3211,6 +3951,7 @@ function CalendarPane({
             eventMouseEnter={onEventHover}
             eventMouseLeave={onEventUnhover}
             eventContent={renderEvent}
+            eventClassNames={blockClassNames}
               eventDidMount={handleEventDidMount}
               datesSet={handleDatesSet}
             />
@@ -3224,6 +3965,7 @@ function CalendarPane({
       dayHeaderContent,
       dayCellContent,
       renderEvent,
+      blockClassNames,
       handleEventDidMount,
       selectAllow,
       eventAllow,
@@ -3286,9 +4028,41 @@ function CalendarPane({
           else deleteEventNow(ev, scope);
         };
         const { top, left } = eventMenuPos;
+        const scopeOnly = eventMenu.intent === "delete" && series && !eventDeleteConfirm;
+        eventDeleteKeysRef.current = eventDeleteConfirm
+          ? { confirm: () => deleteEventNow(ev, eventDeleteConfirm) }
+          : scopeOnly
+            ? { confirm: () => requestDelete(eventDeleteLit === 0 ? "THIS" : "ALL"), pick: true }
+            : {};
+        if (scopeOnly) {
+          return (
+            <div
+              ref={eventMenuRef}
+              data-nested-surface=""
+              role="menu"
+              aria-label={`Delete ${ev.title || "event"}`}
+              className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+              style={{ top, left, boxShadow: "var(--shadow-3)" }}
+            >
+              <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
+                {ev.title || "Event"}
+              </div>
+              <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+                Delete
+              </div>
+              <EventMenuItem lit={eventDeleteLit === 0} onClick={() => requestDelete("THIS")}>
+                This event
+              </EventMenuItem>
+              <EventMenuItem lit={eventDeleteLit === 1} onClick={() => requestDelete("ALL")}>
+                All events in series
+              </EventMenuItem>
+            </div>
+          );
+        }
         return (
           <div
             ref={eventMenuRef}
+            data-nested-surface=""
             className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left }}
           >
@@ -3397,16 +4171,9 @@ function CalendarPane({
             {writable && (
               <EventMenuItem onClick={() => {
                 setEventMenu(null);
-                void eventMutations.createEvent({
-                  title: `${ev.title} (copy)`,
-                  start_at: ev.start_at,
-                  end_at: ev.end_at,
-                  all_day: ev.all_day,
-                  location: ev.location ?? undefined,
-                  accountId: ev.account_id,
-                  calendarId: ev.calendar_id,
-                  notifyGuests: false,
-                });
+                void duplicateEvent(ev)
+                  .then((id) => id && selectBlock(id))
+                  .catch(() => toast.error(`Couldn't copy ${ev.title || "the event"}`));
               }}>
                 Duplicate
               </EventMenuItem>
@@ -3516,6 +4283,7 @@ function CalendarPane({
           task={taskMenu.task}
           x={taskMenu.x}
           y={taskMenu.y}
+          startInDelete={taskMenu.startInDelete}
           mutations={mutations}
           onClose={closeTaskMenu}
           onOpen={() => {
@@ -3526,27 +4294,10 @@ function CalendarPane({
           // The block's own check: painted this frame, and a future occurrence
           // of a series redirects to today's (resolveCompleteTarget).
           onToggleDone={() => toggleCalendarTaskDone(taskMenu.task, taskMenu.el)}
-          onDate={() => setTaskRowMenu({ kind: "date", task: taskMenu.task, anchor: taskMenu.el.getBoundingClientRect() })}
-          onMove={() => setTaskRowMenu({ kind: "move", task: taskMenu.task, anchor: taskMenu.el.getBoundingClientRect() })}
-          onDuplicate={() => {
-            const task = taskMenu.task;
-            mutations.create({
-              title: task.title,
-              notes: task.notes || undefined,
-              do_date: task.do_date,
-              start_time: task.start_time,
-              duration_minutes: task.duration_minutes,
-              priority: task.priority !== "none" ? task.priority : undefined,
-              domain_id: task.domain_id,
-              project_id: task.project_id,
-              labelIds: task.task_labels?.map((l) => l.label_id),
-            }, {
-              // The copy lands exactly on the original, so without a word it
-              // looks like nothing happened. Say it, and make it one ⌘Z away.
-              undo: "toast",
-              label: `Duplicated — ${task.title}`,
-            });
-          }}
+          onDate={() => setTaskRowMenu({ kind: "date", targets: [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
+          onMove={() => setTaskRowMenu({ kind: "move", targets: [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
+          // ⌘D's act: the copy, selected.
+          onDuplicate={() => selectBlock(duplicateTask(taskMenu.task))}
           onToEvent={
             onConvertTaskToEvent && taskMenu.task.start_time
               ? {
@@ -3563,10 +4314,10 @@ function CalendarPane({
         />
       )}
       {taskRowMenu?.kind === "date" && (
-        <TaskDateMenu anchor={taskRowMenu.anchor} targets={[taskRowMenu.task]} mutations={mutations} onClose={closeTaskRowMenu} />
+        <TaskDateMenu anchor={taskRowMenu.anchor} targets={taskRowMenu.targets} mutations={mutations} onClose={closeTaskRowMenu} />
       )}
       {taskRowMenu?.kind === "move" && (
-        <TaskMoveMenu anchor={taskRowMenu.anchor} targets={[taskRowMenu.task]} mutations={mutations} onClose={closeTaskRowMenu} />
+        <TaskMoveMenu anchor={taskRowMenu.anchor} targets={taskRowMenu.targets} mutations={mutations} onClose={closeTaskRowMenu} />
       )}
       {taskEventPick && onConvertTaskToEvent && (
         <div
@@ -3596,6 +4347,16 @@ function CalendarPane({
         </div>
       )}
 
+      {renaming && (
+        <BlockRenameField
+          key={renaming.block.id}
+          rect={renaming.rect}
+          locate={() => blockEl(renaming.block.id)?.getBoundingClientRect() ?? null}
+          initial={renaming.title}
+          onDone={(title) => commitRename(renaming.block, title)}
+        />
+      )}
+
       {slotMenu && (() => {
         const slot = slotMenu.slot;
         const childCount = slotTasks[slot.id]?.length ?? 0;
@@ -3604,6 +4365,7 @@ function CalendarPane({
         return (
           <div
             ref={slotMenuRef}
+            data-nested-surface=""
             className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left }}
           >
@@ -3620,15 +4382,7 @@ function CalendarPane({
             </EventMenuItem>
             <EventMenuItem onClick={() => {
               setSlotMenu(null);
-              slotMutations.createSlot({
-                title: slot.title,
-                do_date: slot.do_date,
-                start_time: slot.start_time,
-                duration_minutes: slot.duration_minutes,
-                project_id: slot.project_id,
-                domain_id: slot.domain_id,
-                color: slot.color,
-              });
+              selectBlock(duplicateSlot(slot));
             }}>
               Duplicate
             </EventMenuItem>
@@ -3685,6 +4439,7 @@ function CalendarPane({
         return (
           <div
             ref={gatherOfferRef}
+            data-nested-surface=""
             // Opaque, like every other menu on this pane: it sits ON the block it
             // just made, and a translucent card over a tinted sitting is two
             // things you have to read through each other.
@@ -3749,6 +4504,18 @@ function CalendarPane({
             setDraft(null);
             calRef.current?.getApi().unselect();
           }}
+          onNudge={
+            draft.allDay
+              ? undefined
+              : (edge, minutes) =>
+                  setDraft((d) => {
+                    if (!d) return d;
+                    const how: BlockShift =
+                      edge === "end" ? (minutes < 0 ? "shorter" : "longer") : minutes < 0 ? "earlier" : "later";
+                    const next = shiftSpan({ start: d.start, end: d.end }, how);
+                    return next ? { ...d, ...next } : d;
+                  })
+          }
         />
       )}
 
@@ -4077,25 +4844,104 @@ function minutesToDuration(mins: number): string {
 
 /** One row in a calendar menu — the same row TaskActionsMenu draws: one
  *  height, one hover (`bg-bg`), and destructive items in ink at rest that turn
- *  `--danger` under the pointer (D-101), not `--signal` (which means "now"). */
+ *  `--danger` under the pointer (D-101), not `--signal` (which means "now").
+ *  `lit` = the keyboard's choice. */
 function EventMenuItem({
   children,
   onClick,
   danger = false,
+  lit = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
+  lit?: boolean;
 }) {
   return (
     <button
       role="menuitem"
       onClick={onClick}
-      className={`fast block min-h-7 w-full truncate px-3 py-1.5 text-left text-caption text-ink hover:bg-bg ${
-        danger ? "hover:text-danger" : ""
-      }`}
+      className={`fast block min-h-7 w-full truncate px-3 py-1.5 text-left text-caption hover:bg-bg ${
+        lit ? "bg-bg" : ""
+      } ${danger ? (lit ? "text-danger" : "text-ink hover:text-danger") : "text-ink"}`}
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * ⌘E on a block: its title, edited where it's drawn (D-158) — the rail's rename
+ * in place, on the grid. ↵ or a click away keeps it, Esc puts it back. A plain
+ * text input, so dictation works (low-data-entry).
+ */
+function BlockRenameField({
+  rect: at,
+  locate,
+  initial,
+  onDone,
+}: {
+  rect: DOMRect;
+  /** Where the block is now — the field rides it when the grid scrolls. */
+  locate: () => DOMRect | null;
+  initial: string;
+  onDone: (title: string | null) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [rect, setRect] = useState(at);
+  const locateRef = useRef(locate);
+  locateRef.current = locate;
+  useEffect(() => {
+    const follow = () => {
+      const next = locateRef.current();
+      if (next) setRect(next);
+    };
+    document.addEventListener("scroll", follow, { capture: true, passive: true });
+    window.addEventListener("resize", follow);
+    return () => {
+      document.removeEventListener("scroll", follow, { capture: true });
+      window.removeEventListener("resize", follow);
+    };
+  }, []);
+  const done = useRef(false);
+  const finish = (title: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(title);
+  };
+  const width = Math.max(rect.width, 200);
+  const left = Math.min(rect.left, window.innerWidth - width - 8);
+  return (
+    <div
+      data-nested-surface=""
+      className="fixed z-[70] rounded-[var(--radius-sm)] border border-line bg-surface p-0.5"
+      style={{
+        top: fixedCssPx(Math.max(8, rect.top - 2)),
+        left: fixedCssPx(Math.max(8, left)),
+        width: fixedCssPx(width),
+        boxShadow: "var(--shadow-lift)",
+      }}
+    >
+      <input
+        autoFocus
+        aria-label="Rename"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(value);
+          } else if (e.key === "Escape") {
+            // Only the field: the block stays selected under it.
+            e.preventDefault();
+            e.nativeEvent.stopImmediatePropagation();
+            finish(null);
+          }
+        }}
+        onBlur={() => finish(value)}
+        className="w-full rounded-[var(--radius-sm)] bg-transparent px-1.5 py-1 text-label font-semibold text-ink outline-none"
+      />
+    </div>
   );
 }

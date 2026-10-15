@@ -33,6 +33,9 @@ import { QUIET_HINT, inviteConsentPrompt } from "../../supabase/functions/_share
 import { DEFAULT_REMINDER_PREFS, defaultLeadsFor } from "../../supabase/functions/_shared/reminderRules.ts";
 import { DraftReminderSelect, type ReminderDraft } from "./ReminderSelect";
 import { useSettings } from "../hooks/useSettings";
+import { isTypingIn } from "../lib/a11y";
+import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
+import { NUDGE_MINUTES } from "./calendar/blockKeys";
 
 export type CreateKind = "task" | "event" | "slot";
 
@@ -74,6 +77,7 @@ export default function DraftComposer({
   meetPreference = DEFAULT_MEET_PREFERENCE,
   onCreate,
   onCancel,
+  onNudge,
 }: {
   start: Date;
   end: Date;
@@ -90,6 +94,10 @@ export default function DraftComposer({
   meetPreference?: MeetPreference;
   onCreate: (draft: CreateDraft) => void;
   onCancel: () => void;
+  /** ↑ / ↓ move the drawn range a quarter hour, ⇧↑ / ⇧↓ its end (D-158) — the
+   *  host owns the range (its ghost on the grid is draggable too). Absent for an
+   *  all-day draft, which has no clock to nudge. */
+  onNudge?: (edge: "both" | "end", minutes: number) => void;
 }) {
   // Whole-day drafts (anytime row or month grid) offer Task + Event, never
   // Slot — a slot needs a specific time-of-day, which a day cell doesn't have.
@@ -150,14 +158,31 @@ export default function DraftComposer({
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // The drag that opened us still has a `click` queued (mouseup → click). If
-  // the backdrop listens for that leftover click, the composer mounts and
-  // immediately cancels — leaving FullCalendar's select-mirror stuck on the
-  // grid with no card. Arm dismiss only after that gesture has finished.
-  const [backdropArmed, setBackdropArmed] = useState(false);
+  // Dismiss on a press outside — not on a full-viewport backdrop. The backdrop
+  // ate the next press whole (a press on a block did nothing but close the
+  // card) and covered the draft's own ghost, so the range you'd drawn could
+  // never be adjusted, only redrawn (#33). Listening on mousedown, not the
+  // leftover `click` of the drag that opened us, so that click can't close it.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   useEffect(() => {
-    const id = window.setTimeout(() => setBackdropArmed(true), 0);
-    return () => window.clearTimeout(id);
+    const onDown = (e: MouseEvent) => {
+      // The second press of a double-click is the same intent as the first —
+      // double-clicking the grid to make something must not throw it away.
+      if (e.detail > 1) return;
+      const t = e.target as Element | null;
+      if (!t || cardRef.current?.contains(t)) return;
+      // The ghost IS the draft: dragging or resizing it adjusts, never dismisses.
+      if (t.closest(".evt-draft-preview")) return;
+      // A picker the card opened floats in its own layer (Repeat, a calendar list).
+      if (t.closest("[data-nested-surface]")) return;
+      // A tap on empty grid that closes the card is a dismiss, not a new draft —
+      // the popovers' rule (calendarDismissGuard). A drag there still draws.
+      if (t.closest(".fc")) markCalendarClickHandled();
+      onCancelRef.current();
+    };
+    window.addEventListener("mousedown", onDown, true);
+    return () => window.removeEventListener("mousedown", onDown, true);
   }, []);
 
   // Re-place whenever the card *or* the window changes size, not just on mount:
@@ -210,9 +235,25 @@ export default function DraftComposer({
     };
   }, [point, popW]);
 
+  const onNudgeRef = useRef(onNudge);
+  onNudgeRef.current = onNudge;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { onCancel(); return; }
+      // ↑ / ↓ nudge the range, ⇧ its end — from the title (a one-line field has
+      // no use for them) or from anywhere in the card that isn't another field.
+      const nudge = onNudgeRef.current;
+      if (
+        nudge &&
+        (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+        !e.metaKey && !e.ctrlKey && !e.altKey &&
+        (e.target === inputRef.current || !isTypingIn(e.target)) &&
+        (e.target === document.body || cardRef.current?.contains(e.target as Node))
+      ) {
+        e.preventDefault();
+        nudge(e.shiftKey ? "end" : "both", e.key === "ArrowUp" ? -NUDGE_MINUTES : NUDGE_MINUTES);
+        return;
+      }
       // ⌘/Ctrl+Enter creates from anywhere in the card (title, guests, picker…),
       // not only the title field. No-ops if there's nothing valid to create yet.
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -294,9 +335,11 @@ export default function DraftComposer({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={backdropArmed ? onCancel : undefined} />
       <div
         ref={cardRef}
+        // A floating surface: the grid's block keys and the Schedule's letters
+        // stand down while it's up — ↑↓ here are the draft's.
+        data-nested-surface=""
         className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{
           top: pos.top,

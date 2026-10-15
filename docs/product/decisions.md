@@ -5808,3 +5808,72 @@ no new pool or name. Holds in any palette: `tests/token-contrast.test.ts` gates
 
 *Status: standing — driven at 1440 and 1024 on the dummy account (seeded with every RSVP
 state).*
+
+---
+
+**D-158 · 2026-10-15 · The calendar grid has a selection, and it speaks the rail's keys —
+one grammar, owned by the last pane you pressed in.**
+
+Origin ⓟ: *"calendar view is where i spend most of my time … not as fast as my brain."*
+Audit [`schedule-ux-audit-2026-10-15.md`](../schedule-ux-audit-2026-10-15.md) #31–33.
+
+- **A block can be selected, by id.** A click used to `classList.add("evt-focused")` on the
+  element it hit. FullCalendar re-renders a block whenever the reconcile patches it, so the
+  lift fell off the moment the block's own write landed, and there was no "selected block"
+  for a key to act on. The selection is now state (cursor + set), painted two ways off one
+  ref: a class toggle on change (the lift still lands the frame you click) and
+  `eventClassNames`, so any render FullCalendar does keeps it. The `<FullCalendar>` memo is
+  untouched — selection is never a dependency. ⇧/⌘-click adds a block (and opens nothing);
+  Esc peels one layer at a time — the popover, then the set, then the cursor.
+- **One keymap, not a second.** The grid runs the *same* `useTaskListKeys` the rail and
+  records run, over its blocks in time order (`calendar/blockKeys.ts`): `j`/`k` walk by time
+  (across a week edge, paging with you), `e` `t` `v` `↵` `⌘E` and priority mean what they
+  mean in a list, and the hook gained the two acts both surfaces were missing — `.` (the
+  row's own menu, which the menu's own doc already promised) and `⌘D` (the copy, selected).
+  What only a grid has rides in through `extra`: ⌥↑/⌥↓ a quarter hour (snapped to the grid
+  you drag on), ⌥←/⌥→ a day keeping the clock, ⌥⇧↑/⌥⇧↓ the length. Every move records the
+  same silent, coalesced undo a drag does — a run of nudges is one ⌘Z. `e`/`t`/`v` on an
+  event or slot say so instead of stepping past it.
+- **⌫ asks what the menu asks.** A series opens `TaskActionsMenu` on its scope question
+  (Esc closes it — there's no menu behind it you came from); an event opens its delete step
+  — the confirm that says who gets told, or the series' scope — unless we *know* it has no
+  guests; a slot with work in it opens its detail, whose picker says where the work goes. In
+  a mixed selection the unquestioned go now and the rest stay lit, one question each —
+  never a scope or a guest notice decided in bulk.
+- **Whose ⌫ is it — `keyOwner`.** Both panes listen on window in the capture phase, so which
+  hears a key first is an accident of mount order. The keyboard now belongs to the last pane
+  pressed in: a press in the grid claims it (the rail already put its cursor down, D-154), a
+  press in the rail takes it back and clears the grid's selection. A plain variable asked at
+  keystroke time, not state, so neither pane re-renders inside the pointerdown that may
+  start a drag. The rail's add box keeps `a`/`c` from either pane — it's a place, not a row.
+- **Esc mid-drag cancels (#32).** FullCalendar has no cancel, so Esc marks the gesture, the
+  cursor says *Release to cancel*, and every drop handler asks before it writes (reverting or
+  removing FullCalendar's copy). It used to clear our feedback while the release still
+  committed — and null the rail's group on the way, so a four-row drag landed as one task.
+  The group is now decided at pickup and dropped only by the drop that used it. While a drag
+  is live a hidden `[data-nested-surface]` holds the keyboard, so nothing else hears that Esc.
+- **A drawn draft can be adjusted (#33).** Its ghost drags and resizes like a block (the
+  composer's time follows; nothing is written until Create), and ↑/↓ — ⇧ for its end — nudge
+  it from the card. The full-viewport backdrop is gone: a press outside closes the card and
+  *still lands* (on a block, it selects and opens it), a double-click keeps its draft, and a
+  tap on empty grid that closes it no longer opens a new one under it — the dismiss guard
+  had always expired one task before FullCalendar's deferred `dateClick` (it fires from a
+  timeout after mouseup), so this was quietly broken for the popovers too.
+
+Ledger: **D4** (what did I say I'd do and haven't) and **D3** (I have 40 minutes — what
+fits) — the day can be finished and re-shaped on the grid at the speed of keys, without a
+menu per block. Strains **P13** in the honest sense: this is a desktop grammar with no phone
+equivalent. Mitigation: every key has a pointer path (the block's menu, the popover, a
+drag), and the phone's calendar is its own tap surface. No new pool, no new name (*Release to
+cancel* is an instruction, not a noun), holds in any account (P16). Not done: the event and
+slot menus are still mouse-first except the delete step ⌫ lands on (*One menu primitive*);
+dragging several blocks at once.
+
+*Status: standing — typecheck, `npm test` and `npm run build` green. Driven on the local
+dummy account: click → Esc keeps the selection; j/k by time; ⌥↓ ×2 + ⌥⇧↓ then one ⌘Z back;
+`.`; ⇧-click → `t` on two tasks; ⌘D selects the copy, ⌫ trashes it to the next block; `e`
+done/reopen and refused on an event; ⌘E's field (Esc leaves the title as it was); ⌫ on a series and on an invite; rail ↔ grid
+ownership; the draft's ghost dragged and resized, ↓/⇧↓, a press through to a block, a
+double-click kept, a dismiss that no longer re-drafts; Esc mid-drag on a block and on a
+two-row rail group (both wrote nothing). The mid-drag Esc was injected from the page between
+real CDP pointer events — a hardware key mid-drag wasn't possible from the harness.*

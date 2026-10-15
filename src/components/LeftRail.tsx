@@ -8,6 +8,7 @@ import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
 import { orderBeside, useTaskListKeys } from "./tasks/useTaskListKeys";
+import { claimKeys, keyOwner } from "./tasks/keyOwner";
 import { restoreFromTrashPatch } from "../lib/types";
 import { useVertical } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
@@ -18,7 +19,7 @@ import { describeQuery, queryFacetCount } from "../lib/taskFilter";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
-import { pressable } from "../lib/a11y";
+import { isTypingIn, pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
@@ -154,9 +155,18 @@ function LeftRail({
   // cursor down — both window listeners hear ⌫ in the capture phase, so a lit
   // rail row and a block's open menu used to be trashed by the same keystroke.
   // The multi-selection stays: it's an explicit pick, and the bulk bar shows it.
+  //
+  // And the other way: a press in the rail claims the keys back from the grid,
+  // which drops its block selection (CalendarPane) — `keyOwner` is the one
+  // answer to "whose ⌫ is this".
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement | null)?.closest?.("[data-calendar-pane]")) return;
+      const target = e.target as HTMLElement | null;
+      if (target && railRef.current?.contains(target)) {
+        claimKeys("rail");
+        return;
+      }
+      if (!target?.closest?.("[data-calendar-pane]")) return;
       // Only when there's a cursor to put down: an unconditional set re-rendered
       // the whole rail inside the very pointerdown that may start a drag.
       if (selectedIdRef.current === null) return;
@@ -165,7 +175,7 @@ function LeftRail({
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, []);
+  }, [railRef]);
 
   // Glass-lift is "this row's popover is open", not the keyboard cursor.
   // selectedId still drives j/k and hotkeys; it used to also paint the
@@ -423,8 +433,12 @@ function LeftRail({
   const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
   const doneIds = new Set(todaySections.done.map((t) => t.id));
+  const railKeysOn =
+    hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
   useTaskListKeys({
-    enabled: hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor,
+    // …and only while the rail is the pane last pressed in (keyOwner): with a
+    // block selected on the grid, j / ⌫ / e belong to the block.
+    enabled: () => railKeysOn && keyOwner() === "rail",
     // Only rows that are drawn: j past the last one should reach the capture
     // box, not walk into a collapsed "done" tail.
     rows: tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible,
@@ -462,6 +476,11 @@ function LeftRail({
       move: (targets) => setRowMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
       priority: setPriority,
       rename: (t) => setEditingId(t.id),
+      // `.` — the row's right-click menu, beside the row.
+      menu: (t) => {
+        const r = rowRect(t.id);
+        setContextMenu({ task: t, x: r.left + 24, y: r.bottom });
+      },
       reorderBy: (t, delta) => {
         const moved = moveBy(t.id, delta);
         // Nothing moved: the row is at the end of its band, or its band won't
@@ -548,6 +567,25 @@ function LeftRail({
       },
     },
   });
+
+  // The add box is a place, not a row act — `a` / `c` reach it from the grid too.
+  // While a block holds the keys the list above stands down entirely, which
+  // took the box's own letters with it. Bubble phase: the grid's capture-phase
+  // keys have had their turn (it binds neither letter).
+  const railKeysOnRef = useRef(railKeysOn);
+  railKeysOnRef.current = railKeysOn;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (keyOwner() !== "grid" || !railKeysOnRef.current) return;
+      if (e.defaultPrevented || isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "a" && e.key !== "A" && e.key !== "c") return;
+      if (document.querySelector("[data-nested-surface]")) return;
+      e.preventDefault();
+      captureRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const rowProps = (t: Task) => ({
     ref: (el: TaskRowHandle | null) => {

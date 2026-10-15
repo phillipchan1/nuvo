@@ -117,3 +117,18 @@ describe("the memo's deps don't tick one callback away", () => {
     for (const d of deps) walk(d, []);
   });
 });
+
+describe("the grid's block selection never rebuilds the calendar (D-158)", () => {
+  it("is painted (eventClassNames off a ref + a class toggle), never a memo dep", () => {
+    const { jsx, deps } = readCalendarMemo();
+    expect(jsx).toContain("eventClassNames={blockClassNames}");
+    for (const live of ["gridCursor", "gridSelected", "draft", "renaming", "gridRows"]) {
+      expect(deps, `\`${live}\` must not be a dependency of the calendar element memo`).not.toContain(live);
+    }
+    // The class callback reads the selection through a ref and has no deps of
+    // its own — a dep there would rebuild the element on every click.
+    const decl = SRC.match(/const blockClassNames = useCallback\([\s\S]*?\n {2}\}, \[\]\);/);
+    expect(decl, "blockClassNames must be useCallback(…, [])").not.toBeNull();
+    expect(decl![0]).toContain("gridSelRef.current");
+  });
+});

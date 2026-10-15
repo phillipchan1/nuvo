@@ -76,6 +76,7 @@ export default function TaskActionsMenu({
   onToggleDone,
   onDuplicate,
   onToEvent,
+  startInDelete = false,
 }: {
   task: Task;
   x: number;
@@ -98,11 +99,14 @@ export default function TaskActionsMenu({
   /** Acts only some hosts have — the calendar's Duplicate and → Event. */
   onDuplicate?: () => void;
   onToEvent?: { label: string; action: () => void };
+  /** Open on the series' delete scope — ⌫ on a calendar block (D-158) asks the
+   *  same question, in the same place, as ⌫ inside this menu. */
+  startInDelete?: boolean;
 }) {
   const { data: vertical } = useVertical();
   const commitToWeek = useWeekCommitAct(mutations);
   const now = new Date();
-  const [deleteMode, setDeleteMode] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(startInDelete);
   const [lit, setLit] = useState(-1);
   const { data: recurrences = [] } = useRecurrences();
   const recurrenceMutations = useRecurrenceMutations();
@@ -171,7 +175,9 @@ export default function TaskActionsMenu({
       },
     },
     { kind: "sep" },
-    { kind: "action", label: "Cancel", action: () => setDeleteMode(false) },
+    // Opened on the question (⌫ on a block): backing out of it closes the menu —
+    // there is no menu behind it the user came from.
+    { kind: "action", label: "Cancel", action: () => (startInDelete ? onClose() : setDeleteMode(false)) },
   ];
 
   // A day you pick by hand keeps the hour you chose; the label says so, so the
@@ -262,7 +268,7 @@ export default function TaskActionsMenu({
       const { actions, lit, deleteMode, recurring } = live.current;
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
-        if (deleteMode) setDeleteMode(false);
+        if (deleteMode && !startInDelete) setDeleteMode(false);
         else onClose();
         return;
       }
@@ -314,7 +320,7 @@ export default function TaskActionsMenu({
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("pointerdown", onPointerDown, true);
     };
-  }, [onClose, task, mutations]);
+  }, [onClose, task, mutations, startInDelete]);
 
   let actionIndex = -1;
   return createPortal(
