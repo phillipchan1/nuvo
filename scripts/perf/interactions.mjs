@@ -5,7 +5,12 @@
  * `act(i)` returns an expression evaluated in the page. Alternate on `i` so a
  * repeated trial genuinely changes state: clicking "Inbox" when already on
  * Inbox measures nothing and quietly reports a perfect score.
+ *
+ * The writes (drag, resize, complete, create, rail drop) live in writes.mjs —
+ * they drive trusted mouse input from the rig and undo themselves.
  */
+import { WRITE_INTERACTIONS } from "./writes.mjs";
+
 export const INTERACTIONS = [
   { key: "nav:projects",    label: "⌘2  → Projects",      act: () => `window.__key('2',true); return 1;` },
   { key: "nav:initiatives", label: "⌘3  → Initiatives",   act: () => `window.__key('3',true); return 1;` },
@@ -27,4 +32,6 @@ export const INTERACTIONS = [
 
   { key: "focus:toggle", label: "focus mode ⌘.",   act: () => `window.__key('.',true); return 1;` },
   { key: "settings:open", label: "open Settings",  act: (i) => i % 2 ? `window.__key('Escape'); return 1;` : `window.__btn('Settings')?.click(); return 1;` },
+
+  ...WRITE_INTERACTIONS,
 ];

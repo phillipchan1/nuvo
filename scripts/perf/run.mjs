@@ -21,6 +21,8 @@
  *   npm run perf -- --update      # rewrite budgets.json from this run
  *   npm run perf -- --url=http://localhost:5717
  *   npm run perf -- --headful     # watch it drive
+ *   npm run perf -- --only=write: # just the interactions whose key starts so
+ *   CHROME_PATH=… npm run perf    # a Chrome other than /Applications/Google Chrome.app
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -39,6 +41,8 @@ const UPDATE = argv.includes("--update");
 const HEADFUL = argv.includes("--headful");
 const URL = arg("url", "http://localhost:5717");
 const REPEATS = Number(arg("repeats", "3"));
+const ONLY = arg("only", "");
+const WHY = argv.includes("--why");
 
 const BUDGET_PATH = resolve(HERE, "budgets.json");
 const cfg = JSON.parse(readFileSync(BUDGET_PATH, "utf8"));
@@ -118,26 +122,52 @@ try {
     await sleep(2000);
   };
 
-  const measure = async (act, i) => {
+  // An interaction is either `act` (an in-page expression, measured from the
+  // moment it runs) or `run` (driven from here with trusted input, which opens
+  // the window itself by calling `mark` — so a drag's setup moves aren't
+  // charged to its drop). `cleanup` undoes a write outside the window.
+  const measure = async (it, i) => {
     await ensureProbe();
     await evaluate(c, `window.__key('Escape'); return 1;`);
     await sleep(450);
-    await evaluate(c, `window.__reset(); window.__frameOn(); return 1;`);
-    await evaluate(c, act(i));
-    await sleep(1400);
-    return evaluate(c, `window.__frameOff(); return window.__report();`);
+    const mark = () => evaluate(c, `window.__reset(); window.__frameOn(); return 1;`);
+    if (it.run) {
+      await it.run(c, i, { mark });
+    } else {
+      await mark();
+      await evaluate(c, it.act(i));
+    }
+    await sleep(it.settleMs ?? 1400);
+    const report = await evaluate(c, `window.__frameOff(); return window.__report();`);
+    if (it.cleanup) {
+      await it.cleanup(c, i);
+      await sleep(it.cleanupMs ?? 1500);
+    }
+    return report;
   };
 
   const rows = [];
-  for (const { key, label, act } of INTERACTIONS) {
+  for (const it of INTERACTIONS.filter((x) => !ONLY || x.key.startsWith(ONLY))) {
+    const { key, label } = it;
     const runs = [];
-    for (let i = 0; i < REPEATS; i++) runs.push(await measure(act, i));
+    try {
+      for (let i = 0; i < REPEATS; i++) runs.push(await measure(it, i));
+    } catch (e) {
+      // One interaction that can't run (no block to drag on this account) must
+      // not take the whole sweep with it — report it and keep going.
+      failed++;
+      rows.push({ key, label, error: String(e?.message ?? e).split("\n")[0] });
+      await evaluate(c, `window.__key('Escape'); return 1;`).catch(() => {});
+      continue;
+    }
     // Lens toggles alternate Week ↔ X, so an odd repeat count leaves the grid
     // on X (Year has no .fc-event at all, and the popover step then threw).
     // Every interaction starts from the Week the rig set up.
     await evaluate(c, `window.__btn('Week')?.click(); return 1;`);
     await sleep(600);
     const got = {
+      renders: median(runs.map((r) => r.renders)),
+      commits: median(runs.map((r) => r.commits)),
       forcedLayout: median(runs.map((r) => r.forcedLayout)),
       blockedMs: median(runs.map((r) => r.blockedMs)),
       dropped: median(runs.map((r) => r.dropped)),
@@ -148,21 +178,33 @@ try {
       ? Object.keys(budget).filter((m) => got[m] > budget[m])
       : [];
     if (breaches.length) failed++;
-    rows.push({ key, label, got, budget, breaches });
+    // The trial whose render count is the median — its component list is the
+    // one `--why` prints.
+    const typical = runs.find((r) => r.renders === got.renders) ?? runs[0];
+    rows.push({ key, label, got, budget, breaches, top: typical.top });
   }
 
   const pad = (s, n) => String(s).padEnd(n);
   const num = (s, n) => String(s).padStart(n);
-  console.log(`  ${pad("interaction", 26)}${num("layout", 9)}${num("blocked", 9)}${num("drop", 6)}${num("worst", 7)}   budget`);
-  console.log("  " + "-".repeat(78));
+  console.log(`  ${pad("interaction", 30)}${num("renders", 8)}${num("commits", 8)}${num("layout", 8)}${num("blocked", 9)}${num("drop", 6)}${num("worst", 7)}   budget`);
+  console.log("  " + "-".repeat(100));
   for (const r of rows) {
+    if (r.error) {
+      console.log(`  ${pad(r.label, 30)}  ERROR  ${r.error}`);
+      continue;
+    }
     const mark = r.breaches.length ? "FAIL" : "ok";
-    const b = r.budget ? `${r.budget.forcedLayout}/${r.budget.blockedMs}ms/${r.budget.dropped}` : "(none)";
+    const b = r.budget
+      ? `${r.budget.renders ?? "–"}r/${r.budget.forcedLayout}/${r.budget.blockedMs}ms/${r.budget.dropped}`
+      : "(none)";
     console.log(
-      `  ${pad(r.label, 26)}${num(r.got.forcedLayout, 9)}${num(r.got.blockedMs + "ms", 9)}${num(r.got.dropped, 6)}${num(r.got.worstFrameMs + "ms", 7)}   ${pad(b, 18)} ${mark}`,
+      `  ${pad(r.label, 30)}${num(r.got.renders, 8)}${num(r.got.commits, 8)}${num(r.got.forcedLayout, 8)}${num(r.got.blockedMs + "ms", 9)}${num(r.got.dropped, 6)}${num(r.got.worstFrameMs + "ms", 7)}   ${pad(b, 22)} ${mark}`,
     );
     for (const m of r.breaches) {
       console.log(`      ${m}: ${r.got[m]} > ${r.budget[m]}`);
+    }
+    if (WHY && r.top?.length) {
+      console.log(`      ${r.top.map(([n, k]) => `${n}×${k}`).join("  ")}`);
     }
   }
 
@@ -174,7 +216,11 @@ try {
 
   if (UPDATE) {
     for (const r of rows) {
+      if (r.error) continue;
       cfg.budgets[r.key] = {
+        // Renders are deterministic for a given account, so the ceiling is
+        // tight: a write that starts re-rendering the shell should trip it.
+        renders: Math.max(10, Math.ceil((r.got.renders * 1.25) / 10) * 10),
         forcedLayout: Math.max(50, Math.ceil((r.got.forcedLayout * 1.35) / 50) * 50),
         blockedMs: Math.max(40, Math.ceil((r.got.blockedMs * 1.5) / 10) * 10),
         dropped: r.got.dropped + 1,
