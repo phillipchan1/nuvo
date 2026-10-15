@@ -78,6 +78,17 @@ export function allDayDates(startAt: string, endAt: string): { start: string; en
   return { start, end: end > start ? end : toDateISO(addDays(parseDateISO(start), 1)) };
 }
 
+/** The same clock on another day — a timed task you move by hand keeps the
+ *  hour you gave it (D-154). Rollover is the exception: it clears the hour
+ *  (D-141). Null for an untimed task. */
+export function sameClockOn(task: { start_time: string | null }, dateISO: string): Date | null {
+  if (!task.start_time) return null;
+  const was = new Date(task.start_time);
+  const next = parseDateISO(dateISO);
+  next.setHours(was.getHours(), was.getMinutes(), 0, 0);
+  return next;
+}
+
 /** Snap a date's minutes to the nearest `step` (default 15). */
 export function snapMinutes(d: Date, step = 15): Date {
   const out = new Date(d);

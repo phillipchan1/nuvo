@@ -38,3 +38,6 @@ tests/agent/cassettes/
 .appstore-chrome-profile/
 # Rust build output inside local plugins.
 src-tauri/plugins/*/target/
+
+# Supabase CLI local state (supabase start)
+supabase/.branches

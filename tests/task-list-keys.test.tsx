@@ -108,6 +108,45 @@ describe("useTaskListKeys — one grammar for every task list", () => {
     expect(press("s").defaultPrevented).toBe(false); // the Schedule's
   });
 
+  // The rail's click selects without drawing a cursor. That unlit row used to be
+  // the act target: ⌫ trashed a task nobody could see was selected (reproduced
+  // on a live account, 2026-10-15). It is now only where navigation starts.
+  it("a home row is never acted on — it only seeds j / k", () => {
+    const acts = {
+      open: vi.fn(), complete: vi.fn(), trash: vi.fn(), date: vi.fn(), move: vi.fn(),
+      priority: vi.fn(), rename: vi.fn(), extra: undefined,
+    };
+    const hook = renderHook(() => {
+      const [cursorId, setCursorId] = useState<string | null>(null);
+      const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+      useTaskListKeys({
+        enabled: true,
+        rows: ROWS,
+        cursor: { cursorId, homeId: cursorId ? null : "b", setCursorId, selectedIds, setSelectedIds },
+        acts,
+      });
+      return { cursorId };
+    });
+    const press = (key: string) => {
+      const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => {
+        window.dispatchEvent(e);
+      });
+      return e;
+    };
+    for (const key of ["Backspace", "Delete", "e", "1", "t", "v", "Enter"]) {
+      expect(press(key).defaultPrevented).toBe(false);
+    }
+    expect(acts.trash).not.toHaveBeenCalled();
+    expect(acts.complete).not.toHaveBeenCalled();
+    expect(acts.priority).not.toHaveBeenCalled();
+    expect(acts.open).not.toHaveBeenCalled();
+    press("j");
+    expect(hook.result.current.cursorId).toBe("b"); // lit where you clicked, not the top
+    press("Backspace");
+    expect(acts.trash).toHaveBeenCalledWith([ROWS[1]]);
+  });
+
   it("Escape clears the selection, then the cursor, then lets go", () => {
     const { hook, press } = setup();
     press("j");

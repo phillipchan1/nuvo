@@ -1,6 +1,7 @@
+import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
 import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks";
@@ -40,6 +41,7 @@ export function useSlots(rangeStartISO: string, rangeEndISO: string) {
     queryFn: () => fetchSlotsRange(rangeStartISO, rangeEndISO),
     // Keep the previous range's slots on screen while a new range fetches —
     // without this the calendar goes empty for the whole round-trip.
+    staleTime: CALENDAR_RANGE_STALE_MS,
     placeholderData: (prev) => prev,
   });
 }
@@ -72,6 +74,7 @@ export function useSlotTasks(slotIds: string[]) {
     // A newly created slot changes `ids` (a new key). Keep the previous
     // children painted while the seeded list / fetch takes over — without
     // this the block reads "empty" for the whole round-trip.
+    staleTime: CALENDAR_RANGE_STALE_MS,
     placeholderData: (prev) => prev,
   });
 }
@@ -189,12 +192,25 @@ export function useSlotMutations() {
    * grid until it returned.
    */
   const updateSlot = ({ id, patch }: { id: string; patch: Partial<Slot> }) => {
+    // Every move and resize carries `do_date`, so this used to rewrite every
+    // task list in the cache (a new array each, children or not) and then
+    // refetch every task query — three or four full renders per slot drag. Only
+    // the children whose day actually changes are touched now, and only lists
+    // that hold one get a new array.
+    const children = new Set<string>();
+    if (patch.do_date !== undefined) {
+      for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+        for (const t of rows ?? []) if (t.slot_id === id && t.do_date !== patch.do_date) children.add(t.id);
+      }
+    }
     const paint = () => {
       patchSlotCaches(qc, id, patch);
-      if (patch.do_date !== undefined) {
+      if (children.size) {
         runWithoutOwingPreserve(() => {
           qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-            old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
+            old?.some((t) => children.has(t.id))
+              ? old.map((t) => (children.has(t.id) ? { ...t, do_date: patch.do_date! } : t))
+              : old,
           );
         });
       }
@@ -204,15 +220,12 @@ export function useSlotMutations() {
     void (async () => {
       await queueWrite(makeOp("slots", "update", id, patch as Record<string, unknown>));
 
-      if (patch.do_date !== undefined) {
-        const children = new Set<string>();
-        for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
-          for (const t of rows ?? []) if (t.slot_id === id) children.add(t.id);
-        }
+      if (children.size) {
         for (const taskId of children) {
           await queueWrite(makeOp("tasks", "update", taskId, { do_date: patch.do_date }));
         }
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        // Realtime echoes these; only refetch when the channel isn't live.
+        settleWrite(qc, "tasks", ["tasks"]);
       }
       if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
     })();

@@ -75,6 +75,7 @@ been used to argue against things it doesn't forbid.
 | **The rest** | Step 3 of Plan the week — the week's work that isn't a project: work that **carried over** (`roll_count > 0`), work **due** inside the week, one small task from each **quiet** domain, and **new captures**. Was two steps ("Leftovers" then "Inbox") until D-042, and named for its members twice ("Leftovers", then "Carried") before being named by exclusion — a carried task *was* a capture once, and slotting them separately produced two slots for one theme. A step, not a pool; lanes stay three for the meter's arithmetic (`laneOf`, `STEP_LANES` in `src/lib/intake.ts`). |
 | **Today / the Day** | `do_date` set; optionally blocked. |
 | **No time yet** · **On the clock** | The two groups in the Today list, on both screens: today's work that has no time on the calendar, then the work that does, in clock order. Rows don't show a clock, so the group is how you can tell which part of today is still only a wish (D-148). The day-level form of *loose* / *has a time*. |
+| **Anytime** · **Anytime that day** | Planned for a day with no time on the clock. On desktop it's the calendar's **anytime** row (the all-day lane over the grid); on the phone, the anytime chips. Rollover lands carried work here (D-141). *Anytime that day* (a task's menu) / *Anytime* (its popover) keeps the day and drops the time — it replaced *Unblock* (D-154). The opposite move keeps the clock: a timed task sent to another day by hand stays at its hour (*Tomorrow · 11:30am*). |
 
 ## The ceremonies (flows)
 

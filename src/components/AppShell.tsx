@@ -276,7 +276,13 @@ function AppShellInner() {
   // Declared here rather than beside the media queries above because it reads
   // focusMode: focus mode already hands the calendar the whole workspace, so
   // there is no squeeze left to apply — the spine and rail are shut either way.
-  const squeezed = effectiveAgentOpen && squeezeViewport && !focusMode;
+  //
+  // Below 1280 the squeeze applies whether or not the chat is open. It used to
+  // require the chat — which below 1280 is auto-closed — so the narrowest
+  // windows were the one place the chrome never yielded: at 1024 the spine
+  // (188) and rail (360) left the week ~412px, 52px a day, titles worn to "De…".
+  // Squeezed there, the same window gives the grid ~656px (~86px a day).
+  const squeezed = !focusMode && (narrowViewport || (effectiveAgentOpen && squeezeViewport));
 
   // One create surface, summonable from anywhere. There is no "more options"
   // fork any more — it swapped in a second layout mid-typing and dropped the

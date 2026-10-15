@@ -393,3 +393,28 @@ describe("TanStack cache guards", () => {
     expect(qc.getQueryData(["tasks", "inbox"])).toEqual([]);
   });
 });
+
+// The guards REPLACE TanStack's own `replaceEqualDeep` when they're installed,
+// so every refetch used to deliver all-new row objects — an unchanged week
+// re-rendered the shell, the merged lists, every block and every rail row on
+// each 60s pull and window focus. Sharing now runs over the merged result.
+describe("TanStack cache guards keep structural sharing", () => {
+  it("an unchanged refetch is the same array; a partly changed one keeps untouched rows", () => {
+    resetOwingForTests();
+    const qc = new QueryClient();
+    installOwingGuards(qc);
+    const rows = [
+      { id: "a", title: "A", updated_at: "2026-10-15T10:00:00Z" },
+      { id: "b", title: "B", updated_at: "2026-10-15T10:00:00Z" },
+    ];
+    qc.setQueryData(["tasks", "all"], rows);
+    const first = qc.getQueryData<typeof rows>(["tasks", "all"])!;
+    qc.setQueryData(["tasks", "all"], rows.map((r) => ({ ...r })));
+    expect(qc.getQueryData(["tasks", "all"])).toBe(first);
+    qc.setQueryData(["tasks", "all"], [{ ...rows[0] }, { ...rows[1], title: "B2", updated_at: "2026-10-15T11:00:00Z" }]);
+    const after = qc.getQueryData<typeof rows>(["tasks", "all"])!;
+    expect(after).not.toBe(first);
+    expect(after[0]).toBe(first[0]);
+    expect(after[1].title).toBe("B2");
+  });
+});

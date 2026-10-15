@@ -25,7 +25,8 @@ import { invalidateWhenSafe } from "../lib/sync";
 import { useVertical } from "../hooks/useVertical";
 import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
-import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
+import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, sameClockOn, toDateISO, todayISO } from "../lib/dates";
+import { at } from "./mobile/dayPlan";
 import { deriveSlotTitle } from "../lib/slots";
 import { DomainPicker } from "./floors/parts";
 import { rulesEqual, describeRule, fromGoogleRRULE, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
@@ -682,7 +683,9 @@ export function TaskPopover({
               title="Take it off the clock — it stays planned for the day"
               className="fast tap inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
             >
-              Unblock
+              {/* One name for one act (P11): the task's menu says "Anytime that
+                  day", and the row it lands in is the anytime row. */}
+              Anytime
             </button>
           )}
           <button
@@ -715,13 +718,19 @@ export function TaskPopover({
                       type="date"
                       aria-label="Do date"
                       value={task.do_date ?? ""}
-                      onChange={(e) =>
-                        e.target.value
+                      onChange={(e) => {
+                        // A new day for a timed task keeps its clock (D-154) —
+                        // moving the 2pm block to Friday used to turn it into
+                        // an untimed chip in Friday's anytime row.
+                        const moved = e.target.value ? sameClockOn(task, e.target.value) : null;
+                        return moved
+                          ? mutations.block(task, moved, task.duration_minutes ?? undefined)
+                          : e.target.value
                           ? mutations.planFor(task, e.target.value)
                           : task.project_id || task.initiative_id || task.domain_id
                             ? mutations.backToWeek(task)
-                            : mutations.backToInbox(task)
-                      }
+                            : mutations.backToInbox(task);
+                      }}
                       className="absolute inset-0 w-full cursor-pointer opacity-0"
                     />
                   </label>
@@ -730,7 +739,7 @@ export function TaskPopover({
                   <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
                     <span className={task.start_time ? "text-ink" : "text-muted"}>
-                      {task.start_time ? format(new Date(task.start_time), "h:mm a") : "no time"}
+                      {task.start_time ? at(new Date(task.start_time)) : "no time"}
                     </span>
                     <input
                       type="time"
@@ -979,11 +988,19 @@ export function TaskPopover({
             asks which occurrences you meant. */}
         <PopFooter>
           {task.status !== "inbox" && task.status !== "done" && (
+            // Project work rests in its project, never the Inbox (backToInbox
+            // already does that) — the label has to say where it actually goes.
             <PopFootAct
-              title="Move back to inbox"
-              onClick={() => { mutations.backToInbox(task, { undo: "toast" }); dismiss(); }}
+              title={task.project_id ? "Take it off the calendar, back to its project" : "Move back to inbox"}
+              onClick={() => {
+                mutations.backToInbox(task, {
+                  undo: "toast",
+                  label: `${task.project_id ? "Back to its project" : "Back to Inbox"} — ${task.title}`,
+                });
+                dismiss();
+              }}
             >
-              → Inbox
+              {task.project_id ? "→ Its project" : "→ Inbox"}
             </PopFootAct>
           )}
           {onConvertToEvent && task.start_time && (

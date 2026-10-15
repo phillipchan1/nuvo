@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import { addDays, format } from "date-fns";
+import { span } from "./mobile/dayPlan";
 import { fmtDuration, parseDateISO, toDateISO } from "../lib/dates";
 import { describeRule, expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { anchoredTop } from "../lib/anchoredTop";
@@ -286,7 +287,9 @@ export default function DraftComposer({
     ? allDay && kind !== "event"
       ? "anytime"
       : "All day"
-    : `${format(start, "h:mm")}–${format(end, "h:mm a")} · ${fmtDuration(durationMins)}`;
+    // The shared clock spelling (`span`): "11:00–1:00 PM" read as 11pm-ish —
+    // dropping the first meridiem is only safe when both ends share it.
+    : `${span(start, end)} · ${fmtDuration(durationMins)}`;
   const whenSummary = `${dayLabel} · ${timeLabel}`;
 
   return createPortal(
@@ -294,7 +297,7 @@ export default function DraftComposer({
       <div className="fixed inset-0 z-40" onClick={backdropArmed ? onCancel : undefined} />
       <div
         ref={cardRef}
-        className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{
           top: pos.top,
           left: pos.left,

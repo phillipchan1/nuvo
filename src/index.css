@@ -55,10 +55,15 @@
      --bg, --surface and --surface-2 alike (tests/token-contrast.test.ts). */
   --signal: #b54808;
   --signal-soft: rgba(224, 98, 15, 0.11);
+  /* The ink on a signal fill (today's date disc). Raw #fff passed on light
+     ember and failed on dark-mode coral (~2.3:1) — same two-way contract as
+     --on-accent / --on-danger, gated in tests/token-contrast.test.ts. */
+  --on-signal: #fff8f5;
 }
 [data-theme="dark"] {
   --signal: #ff8a4c;
   --signal-soft: rgba(255, 138, 76, 0.14);
+  --on-signal: #1f130c;
   color-scheme: dark;
 }
 
@@ -280,6 +285,9 @@
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-on-accent: var(--on-accent);
+  --color-on-signal: var(--on-signal);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-signal: var(--signal);
   --color-accent-soft: var(--accent-soft);
   --color-signal-soft: var(--signal-soft);
@@ -2232,6 +2240,21 @@ select.field { appearance: none; -webkit-appearance: none; }
   font-size: calc(var(--text-meta) * var(--ui-scale, 1));
 }
 .fc .fc-timegrid-event { box-shadow: none; }
+
+/* Short and narrow blocks are mostly handles unless they shed some.
+   · A ~15-minute block is ~14px tall, and FullCalendar's two 8px resizers
+     straddle both edges above the content — about 6px left to click or move,
+     and the checkbox half covered. A block that short resizes from its end
+     only (`.fc-timegrid-event-short` is FullCalendar's own class for it).
+   · Two overlapping blocks in a 1024px week are ~28px wide: a 3px bar, 6px of
+     padding and a checkbox whose press can't start a drag, so pressing the
+     block mostly completed it. Below 44px of inline room the check steps
+     aside (the block's menu and popover still complete it). */
+.fc .fc-timegrid-event-short .fc-event-resizer-start { display: none; }
+.fc .fc-timegrid-event .fc-event-main { container-type: inline-size; }
+@container (max-width: 44px) {
+  .fc .fc-timegrid-event [data-done-toggle] { display: none; }
+}
 .fc .fc-timegrid-event-harness .fc-event:hover {
   box-shadow: var(--shadow-2);
   transform: translateY(-1px);

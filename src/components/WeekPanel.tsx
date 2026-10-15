@@ -135,7 +135,10 @@ export default function WeekPanel({
         (looseCount > 0 ? ` · ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time` : "");
 
   return (
-    <div className="shrink-0 border-b border-line-strong">
+    // `@container`: the crown sizes off the rail, not the window — at the rail's
+    // 240px floor (a narrow window squeezes it there) the date and the pips used
+    // to shove the door half off its own row.
+    <div className="@container shrink-0 border-b border-line-strong">
       {/* The crown — identity + the week DRAWN, not written. The old header
           spent six text objects on this (span, "0 of 4 landed", a meter, a door)
           above a stack that is itself dense; the pips carry count, progress and
@@ -148,10 +151,11 @@ export default function WeekPanel({
         className="fast tap group flex w-full items-center gap-2 px-3 pb-2.5 pt-3.5 text-left"
       >
         <span className="section-label !px-0 !pb-0 shrink-0" style={{ color: "var(--accent)" }}>
-          This week{weekLabel ? ` · ${weekLabel}` : ""}
+          This week
+          {weekLabel ? <span className="hidden @[320px]:inline">{` · ${weekLabel}`}</span> : null}
         </span>
         {rows.length > 0 && (
-          <span className="flex min-w-0 items-center gap-2" aria-hidden>
+          <span className="flex min-w-0 items-center gap-2 overflow-hidden" aria-hidden>
             <SlatePips rows={rows} />
             {looseCount > 0 && <AmberMark count={looseCount} />}
           </span>

@@ -17,6 +17,13 @@
  */
 import { addDays, addMonths, differenceInCalendarDays, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 
+/** How long a calendar range stays fresh. ONE number for the prefetch and for
+ *  every range hook the grid reads: the tasks, anytime, slot and slot-children
+ *  hooks used to fall back to the app's 15s default while the prefetch warmed
+ *  them for 60s, so landing on a week warmed 20s earlier refetched four queries
+ *  — four re-render waves arriving 100–400ms after the travel. */
+export const CALENDAR_RANGE_STALE_MS = 60_000;
+
 export interface ScheduleRange {
   start: string;
   end: string;
