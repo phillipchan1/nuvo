@@ -15,12 +15,12 @@ import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { firstDayOfWeek, useSettings } from "../hooks/useSettings";
 import { useOnline } from "../hooks/useOnline";
-import { useVertical } from "../hooks/useVertical";
+import { useVertical, useVerticalDirectory } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
+import { useStableHandler } from "../hooks/useStableHandler";
+import { gridLookups } from "../lib/verticalDirectory";
 import { mergeTaskLists } from "../lib/taskMerge";
 import { convertTaskToEvent, createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
-import { deriveSlotTitle } from "../lib/slots";
 import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
@@ -333,28 +333,22 @@ export default function Planner({
     return out;
   }, [todayTasks, slotChildTasks, slots, today, allKnownTasks]);
 
+  // The grid's colours and names, keyed by id, built from the vertical's
+  // DIRECTORY — a snapshot that only moves when a name, hue or parent does. They
+  // were callbacks over the whole vertical, which is rebuilt on every task write
+  // and every 5-minute clock tick, so `fcEvents` re-made every block for them.
+  const directory = useVerticalDirectory();
+  const grid = useMemo(() => gridLookups(directory), [directory]);
   const slotTitle = useCallback(
-    (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
-    [slotTasksBySlot, vertical],
+    (s: Slot) => grid.slotTitle(s, slotTasksBySlot[s.id] ?? []),
+    [grid, slotTasksBySlot],
   );
-
   /** The project a sitting is FOR — its name, and the domain hue it carries up
    *  the vertical — so the grid can say what kind of block it is. */
-  const slotProject = useCallback(
-    (s: Slot) => {
-      const p = projectById(vertical, s.project_id);
-      if (!p) return null;
-      return { name: p.name, color: domainById(vertical, p.domainId)?.color ?? null };
-    },
-    [vertical],
-  );
-
+  const slotProject = grid.slotProject;
   /** The project a task block belongs to, by name — so a placed piece of
    *  project work says whose it is on the grid, not just `▸`. */
-  const taskProject = useCallback(
-    (t: Task) => projectById(vertical, t.project_id)?.name ?? null,
-    [vertical],
-  );
+  const taskProject = grid.taskProject;
 
   useRealtime(true);
 
@@ -391,8 +385,8 @@ export default function Planner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay]);
 
-  const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
-  const taskDomain = useCallback((t: Task) => taskDomainId(vertical, t), [vertical]);
+  const taskAccent = grid.taskColor;
+  const taskDomain = grid.taskDomain;
 
   // A block the Schedule just MADE opens on its name, so naming it is part of
   // the same gesture rather than a second trip. Cleared when the popover closes,
@@ -492,7 +486,9 @@ export default function Planner({
     return () => window.removeEventListener("keydown", onKey);
   }, [onSchedule, anyModalOpen, setTab, trashedRows.length]);
 
-  const handleConvertEventToTask = useCallback(
+  // Stable identities for everything handed to the rail and the grid — both are
+  // memo'd, and an inline arrow here re-rendered them on every Planner render.
+  const handleConvertEventToTask = useStableHandler(
     (event: ExternalEvent) => {
       const start = new Date(event.start_at);
       const end = new Date(event.end_at);
@@ -506,10 +502,9 @@ export default function Planner({
       hideEvent(event, "THIS");
       toast.success("Task created");
     },
-    [mutations, hideEvent],
   );
 
-  const handleConvertTaskToEvent = useCallback(
+  const handleConvertTaskToEvent = useStableHandler(
     async (task: Task, picked?: CreateTarget) => {
       if (!task.start_time) return;
       const durationMs = (task.duration_minutes ?? 30) * 60000;
@@ -550,7 +545,33 @@ export default function Planner({
       if (made) toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
       else toast.error("Couldn't create the event — is your calendar connected?");
     },
-    [eventMutations, mutations, accounts, settings],
+  );
+
+  const openTaskAt = useCallback(
+    (t: Task, anchor?: DOMRect | null, anchorEl?: HTMLElement | null) => openOverlay("task", t.id, anchor, anchorEl ?? null),
+    [openOverlay],
+  );
+  const openEventAt = useCallback(
+    (e: ExternalEvent, anchor?: DOMRect | null, anchorEl?: HTMLElement | null) => openOverlay("event", e.id, anchor, anchorEl),
+    [openOverlay],
+  );
+  const openSlotAt = useCallback(
+    (s: Slot, anchor?: DOMRect | null, anchorEl?: HTMLElement | null, opts?: { focusTitle?: boolean }) => {
+      setFocusSlotTitle(Boolean(opts?.focusTitle));
+      openOverlay("slot", s.id, anchor, anchorEl);
+    },
+    [openOverlay],
+  );
+  const openUpkeep = useCallback(() => openOverlay("upkeep"), [openOverlay]);
+  const weekDoor = useMemo(
+    () => ({
+      mode: weekDoorMode,
+      title: weekButtonTitle,
+      glow: weekDoorMode === "review",
+      glyph: glyphReport.emblem,
+      onOpen: openWeekDoor,
+    }),
+    [weekDoorMode, weekButtonTitle, glyphReport.emblem, openWeekDoor],
   );
 
   return (
@@ -583,20 +604,14 @@ export default function Planner({
           today={todayTasksForRail}
           labels={labels}
           mutations={mutations}
-          onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor, null)}
+          onOpenTask={openTaskAt}
           hotkeysEnabled={!anyModalOpen && !focusMode && onSchedule}
           live={onSchedule}
           now={now}
           railRef={railRef}
           collapsed={focusMode}
           squeezed={squeezed}
-          weekDoor={{
-            mode: weekDoorMode,
-            title: weekButtonTitle,
-            glow: weekDoorMode === "review",
-            glyph: glyphReport.emblem,
-            onOpen: openWeekDoor,
-          }}
+          weekDoor={weekDoor}
         />
         {/* min-w: 280 was the old floor and it was too low to be a floor at
             all — a seven-day grid at 280px is a ~48px time gutter and 34px
@@ -634,12 +649,9 @@ export default function Planner({
             onRefreshCalendars={accounts.length > 0 ? refreshCalendars : undefined}
             onFullRefreshCalendars={accounts.length > 0 ? fullRefreshCalendars : undefined}
             refreshingCalendars={refreshingCalendars}
-            onOpenTask={(t, anchor, anchorEl) => openOverlay("task", t.id, anchor, anchorEl)}
-            onOpenEvent={(e, anchor, anchorEl) => openOverlay("event", e.id, anchor, anchorEl)}
-            onOpenSlot={(s, anchor, anchorEl, opts) => {
-              setFocusSlotTitle(Boolean(opts?.focusTitle));
-              openOverlay("slot", s.id, anchor, anchorEl);
-            }}
+            onOpenTask={openTaskAt}
+            onOpenEvent={openEventAt}
+            onOpenSlot={openSlotAt}
             onRangeChange={syncRange}
             railRef={railRef}
             onWeekWorkPlaced={commitTasksToSprint}
@@ -653,8 +665,8 @@ export default function Planner({
             weekButtonGlow={onSchedule && weekDoorMode === "review"}
             focusMode={focusMode}
             onToggleFocus={onToggleFocus}
-            domains={vertical.domains}
-            onOpenUpkeep={() => openOverlay("upkeep")}
+            domains={grid.domains}
+            onOpenUpkeep={openUpkeep}
           />
           </Suspense>
 

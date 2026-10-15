@@ -33,3 +33,15 @@ export function outboxSummary(s: OutboxStatus, online: boolean): string | null {
   if (s.syncing) return `Syncing ${n}…`;
   return `${n} waiting to sync`;
 }
+
+const parkedCount = () => outboxStatus().parked;
+
+/**
+ * Just the parked count. The full status moves on every write — pending up,
+ * syncing, pending down, idle — and the shell-level alert that only cares about
+ * refusals was subscribed to all of it, so every write re-rendered the shell
+ * four or five times over.
+ */
+export function useOutboxParked(): number {
+  return useSyncExternalStore(subscribeOutbox, parkedCount, parkedCount);
+}

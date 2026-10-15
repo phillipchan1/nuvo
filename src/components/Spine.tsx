@@ -1,8 +1,8 @@
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LADDER, type Rung } from "./AppShell";
 import { useUiScale } from "../hooks/useUiScale";
-import { useVertical } from "../hooks/useVertical";
+import { useVerticalSelector } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
 import { READY, toneColor } from "./floors/ReadinessBanner";
 import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
@@ -92,25 +92,22 @@ interface SpineProps {
   forceRail?: boolean;
 }
 
-// The thin half: subscribes to the vertical, derives the spine reading, and
+/** SpineState is small pure data, so a JSON signature is an honest identity. */
+const sameSpine = (a: SpineState | null, b: SpineState | null) =>
+  a === b || (a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
+
+// The thin half: subscribes to the spine reading — not the whole vertical — and
 // hands the body a signature-stable value. The Spine is mounted on every
 // desktop surface and was the top self-time component on 18 of 24 measured
 // interactions — because every vertical rebuild re-rendered its whole DOM even
-// when the reading it displays hadn't changed. SpineState is small pure data,
-// so a JSON signature is an honest identity for it.
+// when the reading it displays hadn't changed. As a selection it doesn't even
+// re-render: a write that leaves every meter where it was costs one `readSpine`.
 export default function Spine(props: SpineProps) {
   // Reads from the same cached vertical snapshot the floors use — no extra
   // fetch. Until it's loaded the rail stays a plain table of contents (no
   // half-empty meters flashing during the first paint).
-  const { data, ready } = useVertical();
-  // Memoized on data identity: the Spine re-renders on every rung change
-  // (ancestor render), and re-walking the whole vertical for a nav that
-  // changed no data was most of its measured self time.
-  const fresh = useMemo<SpineState | null>(() => (ready ? readSpine(data) : null), [data, ready]);
-  const held = useRef<{ sig: string; value: SpineState | null }>({ sig: "", value: null });
-  const sig = useMemo(() => (fresh ? JSON.stringify(fresh) : ""), [fresh]);
-  if (sig !== held.current.sig) held.current = { sig, value: fresh };
-  return <SpineBody spine={held.current.value} {...props} />;
+  const spine = useVerticalSelector((s) => (s.ready ? readSpine(s.data) : null), sameSpine);
+  return <SpineBody spine={spine} {...props} />;
 }
 
 const SpineBody = memo(function SpineBody({

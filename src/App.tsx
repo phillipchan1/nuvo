@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, notifyManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
@@ -164,6 +164,13 @@ function isTransientWriteError(error: unknown): boolean {
 // the same bundle as the main window; this flag swaps in the bare panel instead
 // of the full app. Always false in the browser / PWA (except the DEV harness).
 const IS_SPOTLIGHT = isSpotlightWindow();
+
+// Cache notifications reach React on a microtask, not a macrotask. TanStack's
+// default scheduler is setTimeout(0): an optimistic patch made in a drop handler
+// re-rendered only after the browser had run whatever else was queued — and a
+// write that patches N task lists scheduled N timers, which React could render
+// between. A microtask lands every list in the one render, before the next frame.
+notifyManager.setScheduler(queueMicrotask);
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({

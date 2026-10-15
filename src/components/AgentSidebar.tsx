@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentAttachment, AgentSuggestion } from "../lib/agentTypes";
 import type { AgentHandle } from "../hooks/useAgent";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { useVertical } from "../hooks/useVertical";
+import { useVerticalSelector } from "../hooks/useVertical";
 import { useFileDrop, isFileDrag } from "../hooks/useFileDrop";
 import { filesToAttachments } from "../lib/agentAttachments";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
@@ -43,8 +43,19 @@ export default function AgentSidebar({
   onToggle: () => void;
 }) {
   const { nav } = useAppNavigation();
-  const { data } = useVertical();
   const { rung, projectView, initiativeView, tab, focus } = nav;
+  // The three names the hints say, not the vertical they come from — the panel
+  // sat beside the Schedule re-rendering on every write for strings that never
+  // changed.
+  const projectName = useVerticalSelector((s) =>
+    focus.projectId ? projectById(s.data, focus.projectId)?.name ?? null : null,
+  );
+  const initiativeName = useVerticalSelector((s) =>
+    focus.initiativeId ? initiativeById(s.data, focus.initiativeId)?.name ?? null : null,
+  );
+  const domainName = useVerticalSelector((s) =>
+    focus.domainId ? domainById(s.data, focus.domainId)?.name ?? null : null,
+  );
 
   const hints = useMemo(
     () =>
@@ -53,11 +64,11 @@ export default function AgentSidebar({
         projectView,
         initiativeView,
         tab,
-        projectName: focus.projectId ? projectById(data, focus.projectId)?.name : null,
-        initiativeName: focus.initiativeId ? initiativeById(data, focus.initiativeId)?.name : null,
-        domainName: focus.domainId ? domainById(data, focus.domainId)?.name : null,
+        projectName,
+        initiativeName,
+        domainName,
       }),
-    [data, focus.domainId, focus.initiativeId, focus.projectId, initiativeView, projectView, rung, tab],
+    [projectName, initiativeName, domainName, initiativeView, projectView, rung, tab],
   );
 
   const { messages, loading, error, sendMessage, clear, retry } = agent;

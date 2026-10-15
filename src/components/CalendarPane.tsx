@@ -1583,11 +1583,25 @@ function CalendarPane({
     [settings],
   );
 
+  // Which blocks are late, as a set whose identity only changes when its
+  // MEMBERSHIP does. `fcEvents` used to depend on `fcNow` itself, so the 30s
+  // clock rebuilt every block and re-ran the grid reconcile twice a minute to
+  // find, nearly always, that nothing had turned late.
+  const overdueKey = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.start_time && t.status !== "done" && isOverdue(t, fcNow))
+        .map((t) => t.id)
+        .join(","),
+    [tasks, fcNow],
+  );
+  const overdueIds = useMemo(() => new Set(overdueKey ? overdueKey.split(",") : []), [overdueKey]);
+
   const fcEvents = useMemo(() => {
     const taskEvents = tasks
       .filter((t) => t.start_time)
       .map((t) => {
-        const overdue = t.status !== "done" && isOverdue(t, fcNow);
+        const overdue = overdueIds.has(t.id);
         // Tasks share one identity — the violet accent — so "this is my work"
         // reads at a glance against the calendar's own (arbitrarily coloured)
         // events. The domain thread lives on in the thin bar; overdue turns the
@@ -1779,7 +1793,7 @@ function CalendarPane({
 
     return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, fcNow, taskAccent, slotTitle, slotProject, taskProject]);
+  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, overdueIds, taskAccent, slotTitle, slotProject, taskProject]);
 
   // Ghost block shown while dragging an all-day range (allDayDragRange, live)
   // or while the DraftComposer popover is open (draft, on release/click) — for
@@ -3862,6 +3876,13 @@ function CalendarPane({
     remountCache.dateISO = startOfDay(d).toISOString();
     onViewChange?.(next);
   };
+  // The Year's props, stable across the pane's renders: it marks only which
+  // DAY is today, so it hears the clock once a day rather than every 30s.
+  const pickYearDay = useStableHandler((d: Date) => openYearDate(d, "timeGridDay"));
+  const pickYearMonth = useStableHandler((d: Date) => openYearDate(d, "dayGridMonth"));
+  const todayKey = todayISO(now);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const yearNow = useMemo(() => now, [todayKey]);
 
   const handleDatesSet = useStableHandler((arg: DatesSetArg) => {
     // currentStart, not start: the month grid's `start` is the previous month's
@@ -4774,10 +4795,10 @@ function CalendarPane({
           >
             <CalendarYear
               year={yearCursor}
-              now={now}
+              now={yearNow}
               weekStartsOn={firstDayOfWeek(settings)}
-              onPickDay={(d) => openYearDate(d, "timeGridDay")}
-              onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
+              onPickDay={pickYearDay}
+              onPickMonth={pickYearMonth}
             />
           </div>
         )}

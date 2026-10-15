@@ -1,8 +1,9 @@
-import { useVertical } from "../../hooks/useVertical";
+import { sameItems, useVerticalSelector } from "../../hooks/useVertical";
 import { useSkin } from "../../hooks/useSkin";
 import { weekReadiness } from "../../lib/readiness";
 import { planningWeekStartISO } from "../../lib/dates";
 import { weekName } from "../../lib/week";
+import type { VerticalData } from "../../lib/vertical";
 
 // ── The status bar — the terminal skin's bottom strip ───────────────────────
 // An editor is recognisable in a thumbnail before you can read a word of it,
@@ -19,18 +20,29 @@ import { weekName } from "../../lib/week";
 //
 // Terminal-only chrome. Every other material keeps its own footer (or none) —
 // this renders null outside the console.
+type Bar = readonly [weekStart: string, inbox: number, toPlace: number, planned: boolean, outstanding: number];
+
+/** The facts the bar prints — all it needs from the vertical. */
+function readBar(data: VerticalData, ready: boolean): Bar {
+  const items = ready ? weekReadiness(data) : [];
+  return [
+    data?.sprint?.week_start ?? planningWeekStartISO(),
+    items.find((i) => i.key === "inbox")?.count ?? 0,
+    items.find((i) => i.key === "placed")?.count ?? 0,
+    items.find((i) => i.key === "planned")?.done ?? false,
+    items.filter((i) => !i.done).length,
+  ];
+}
+
 export default function StatusBar() {
   const [skin] = useSkin();
-  const { data, ready } = useVertical();
+  // Mounted on every material and null on all but one, so it selects nothing
+  // there — and on the console, re-renders only when a number it prints moves.
+  const bar = useVerticalSelector((s) => (skin === "terminal" ? readBar(s.data, s.ready) : null), sameItems);
 
-  if (skin !== "terminal") return null;
+  if (!bar) return null;
 
-  const weekStart = data?.sprint?.week_start ?? planningWeekStartISO();
-  const items = ready ? weekReadiness(data) : [];
-  const inbox = items.find((i) => i.key === "inbox")?.count ?? 0;
-  const toPlace = items.find((i) => i.key === "placed")?.count ?? 0;
-  const planned = items.find((i) => i.key === "planned")?.done ?? false;
-  const outstanding = items.filter((i) => !i.done).length;
+  const [weekStart, inbox, toPlace, planned, outstanding] = bar;
 
   return (
     <div className="term-status" role="status" aria-label="Week status">

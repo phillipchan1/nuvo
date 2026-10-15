@@ -1,9 +1,11 @@
 # Schedule UX audit — 2026-10-15
 
-*Status: audit complete; 44 of 50 findings fixed on `claude/schedule-integration` (not
-pushed) — the audit and visual pass, the write races (D-156), the stale-row fixes and grid
-selection (D-158). Open: #15–16 (render cost, in progress), the three decisions in #35, #36
-and #46, and #50 (kept by design). Decisions D-154–D-158.*
+*Status: merged to master 2026-10-15 — 46 of 50 findings fixed: the audit and visual pass,
+the write races (D-156), the stale-row fixes, grid selection (D-158), render cost, and the
+Realtime broadcast path. Production migrations: 89–90 applied before the push; 91 (closes the
+cross-account DELETE leak) goes on once this release is out. The `google-events` /
+`icloud-events` server guards (D-156) are not deployed. Open: the decisions in #35, #36 and
+#46, and #50 (kept by design). Decisions D-154–D-158.*
 
 **Thesis.** The Schedule wasn't slow because it renders slowly — the 09-03 perf work holds.
 It felt slower than thought because of **what happened around each gesture**: a 500ms
@@ -71,8 +73,8 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 | 12 | Paging to a week warmed >15s earlier refetched in four waves | Range hooks used the 15s default; the prefetch used 60s | 🧪 One `CALENDAR_RANGE_STALE_MS` for all |
 | 13 | A slot drag caused 3–4 full renders | `updateSlot` rewrote every task list and refetched every task query | ✅ Only children whose day changes; `settleWrite` |
 | 14 | The create card took 540ms to arrive | `.moment` spring | 🧪 `pop-in` (130ms), also the recurrence dialog |
-| 15 | Every cache patch reaches React one macrotask late | TanStack v5 default scheduler is `setTimeout(0)` | ➡️ *Write-path render cost* — `notifyManager.setScheduler(queueMicrotask)` needs `npm run perf` (Chrome isn't installed here) |
-| 16 | Every task write re-renders the entire app and rebuilds the vertical | `["tasks","all"]` feeds `buildVertical`; the shell subscribes to all of it; mutation objects and Planner callbacks are fresh per render | ➡️ *Write-path render cost* |
+| 15 | Every cache patch reaches React one macrotask late | TanStack v5 default scheduler is `setTimeout(0)` | ✅ Notify on a microtask (`notifyManager`), kept because the rig measured it better |
+| 16 | Every task write re-renders the entire app and rebuilds the vertical | `["tasks","all"]` feeds `buildVertical`; the shell subscribes to all of it; mutation objects and Planner callbacks are fresh per render | ✅ A write renders the Planner, not the app: ~2,640 → ~80 renders, long tasks 144–395ms → 0 (`npm run perf`) |
 
 ## P1 — interaction
 
@@ -126,10 +128,11 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
   (not pushed). A refetch now drops server-deleted rows unless this device owes a write.
 - **Sync-layer write races** — #5, #6, #7, plus the Google mirror reading a stale row
   (`mirrorTask` fires before the outbox delivers).
-- **Write-path render cost** — #15, #16; then add drop / resize / complete / create
-  interactions to `scripts/perf/interactions.mjs` (the rig has **no write interaction at
-  all** today). Needs Chrome at `/Applications/Google Chrome.app`.
-- **Grid selection + block keys** — #31–33: ✅ on `claude/beautiful-allen-bbd1a7` (D-158).
+- **Write-path render cost** — #15, #16 ✅ (`claude/youthful-kirch-38e370`): the rig drives
+  drag / resize / complete / create / rail-drop and counts React renders; a write went from
+  ~2,640 renders to ~80, and long tasks from 144–395ms to none. See
+  [perf-audit-2026-10-15-writes](perf-audit-2026-10-15-writes.md).
+- **Grid selection + block keys** — #31–33: ✅ (`claude/beautiful-allen-bbd1a7`, D-158).
   An id-based selection on the grid, owned by the last-touched pane, with the list grammar
   (e ⌫ t v ↵ ⌘E ⌘D, j/k by time, ⌥↑↓ ±15m, ⌥←→ ±1 day, ⌥⇧↑↓ resize, `.` opens the menu).
 - **One menu primitive + visual system pass** — #45, #47–49: ✅ (D-157); #50 kept by design.

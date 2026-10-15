@@ -1,10 +1,10 @@
-import { lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   initiativesOf,
   projectsOf,
 } from "../lib/vertical";
-import { VerticalProvider, useVertical } from "../hooks/useVertical";
+import { VerticalFreeze, VerticalProvider, useVerticalActions, useVerticalSelector } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
@@ -79,7 +79,10 @@ function writeFocusMode(v: boolean) {
   }
 }
 
-export default function AppShell() {
+// Memo'd with no props: `Shell` re-renders on its own state (the session, the
+// subscription, settings), and without this every one of those rebuilt the
+// provider elements below and re-rendered every screen in the app.
+const AppShell = memo(function AppShell() {
   return (
     <VerticalProvider>
       <OrientationProvider>
@@ -87,15 +90,20 @@ export default function AppShell() {
       </OrientationProvider>
     </VerticalProvider>
   );
-}
+});
+export default AppShell;
 
-// On a phone the desktop spine / rail / calendar layout is unusable, so we swap
-// in a single-column shell built for the thumb. Both share the same data layer
-// (VerticalProvider + the task hooks) and navigation context.
-function ResponsiveShell() {
-  const isMobile = useIsMobile();
-  const { data, ready } = useVertical();
-  const [skippedFirstRun, setSkippedFirstRun] = useState(false);
+/**
+ * The shell's background duties, as a leaf that renders nothing.
+ *
+ * They used to be hooks of `ResponsiveShell` itself, and each one subscribes to
+ * something that moves on every write: the reminder planner reads every task,
+ * the parked alert read the whole outbox status (pending, syncing — four or five
+ * changes per write), the event router reads thirteen weeks of events. As hooks
+ * of the shell, every one of those re-rendered the entire app. Down here a
+ * change re-renders this, and this renders null.
+ */
+function ShellEffects() {
   useEventRouter(); // quietly attribute events on unmapped calendars (Layer 3)
 
   // The sync queue's only interruption, mounted once for both shells: a write
@@ -138,31 +146,58 @@ function ResponsiveShell() {
     ),
   });
 
+  return null;
+}
+
+// On a phone the desktop spine / rail / calendar layout is unusable, so we swap
+// in a single-column shell built for the thumb. Both share the same data layer
+// (VerticalProvider + the task hooks) and navigation context.
+function ResponsiveShell() {
+  const isMobile = useIsMobile();
   // Signup seeds no domains (migration 42), so zero domains means a brand-new
   // account. One gate for both shells — the picker is single-column by design.
+  // A slice, not the whole store: this sits above every screen.
+  const brandNew = useVerticalSelector((s) => s.ready && s.data.domains.length === 0);
+  const [skippedFirstRun, setSkippedFirstRun] = useState(false);
+
   // Skipping is session-only on purpose: nothing is persisted, and the funnel
   // genuinely can't do its job until the account has named what it carries.
-  if (ready && data.domains.length === 0 && !skippedFirstRun) {
-    return <FirstRun onSkip={() => setSkippedFirstRun(true)} />;
+  // `ShellEffects` leads every branch, so it stays mounted across them.
+  if (brandNew && !skippedFirstRun) {
+    return (
+      <>
+        <ShellEffects />
+        <FirstRun onSkip={() => setSkippedFirstRun(true)} />
+      </>
+    );
   }
 
   // MobileShell gets its own boundary so a crash inside one floor surfaces the
   // recovery card without also unmounting the app-level providers above it.
-  return isMobile ? (
-    <ErrorBoundary label="mobile shell">
-      {/* null fallback: the atmosphere canvas is already painted underneath,
-          so the split chunk loads behind the same warm paper as the splash */}
-      <Suspense fallback={null}>
-        <MobileShell />
-      </Suspense>
-    </ErrorBoundary>
-  ) : (
-    <AppShellInner />
+  return (
+    <>
+      <ShellEffects />
+      {isMobile ? (
+        <ErrorBoundary label="mobile shell">
+          {/* null fallback: the atmosphere canvas is already painted underneath,
+              so the split chunk loads behind the same warm paper as the splash */}
+          <Suspense fallback={null}>
+            <MobileShell />
+          </Suspense>
+        </ErrorBoundary>
+      ) : (
+        <AppShellInner />
+      )}
+    </>
   );
 }
 
-function AppShellInner() {
-  const { data } = useVertical();
+// No props, so memo means: render for this component's own state and contexts
+// (navigation, the agent), never because the shell above it did.
+const AppShellInner = memo(function AppShellInner() {
+  // Actions only: the vertical is read inside `focusDomain`, at the moment it
+  // runs — subscribing to it here re-rendered the desktop on every write.
+  const { getData } = useVerticalActions();
   const {
     nav,
     goRung,
@@ -297,6 +332,7 @@ function AppShellInner() {
   }, [rung]);
 
   const focusDomain = (id: string) => {
+    const data = getData();
     const init = initiativesOf(data, id)[0];
     const proj = init ? projectsOf(data, init.id)[0] : null;
     navFocusDomain({
@@ -482,6 +518,10 @@ function AppShellInner() {
               className="atmosphere absolute inset-0 z-[41]"
             >
               <div className="h-full">
+                {/* Asleep under the Schedule, the floors read a held snapshot —
+                    a write on the grid otherwise re-rendered every floor you'd
+                    visited, invisibly. They catch up once, on the way back. */}
+                <VerticalFreeze frozen={rung === "day"}>
                 <Suspense fallback={null}>
                   <FloorPane
                     rung={rung === "day" ? lastBuildRung.current : rung}
@@ -496,6 +536,7 @@ function AppShellInner() {
                     setInitiativeView={setInitiativeView}
                   />
                 </Suspense>
+                </VerticalFreeze>
               </div>
             </KeepAlive>
           )}
@@ -612,4 +653,4 @@ function AppShellInner() {
       </div>
     </div>
   );
-}
+});

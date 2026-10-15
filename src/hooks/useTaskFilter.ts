@@ -14,7 +14,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useSettings } from "./useSettings";
-import { useVertical } from "./useVertical";
+import { useVerticalDirectory } from "./useVertical";
 import { filterTasks, MAX_SAVED_VIEWS, type SavedView, type TaskQuery } from "../lib/taskFilter";
 import type { Task } from "../lib/types";
 
@@ -24,7 +24,9 @@ const newId = () =>
 
 export function useTaskFilter(now: Date) {
   const { settings, update } = useSettings();
-  const { data: vertical } = useVertical();
+  // Facets read a task's domain through its parent — directory data, so a task
+  // write elsewhere doesn't re-run every filter.
+  const vertical = useVerticalDirectory();
   const [query, setQuery] = useState<TaskQuery>({});
 
   const savedViews = useMemo<SavedView[]>(() => settings?.saved_views ?? [], [settings]);

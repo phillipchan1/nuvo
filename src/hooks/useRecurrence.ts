@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
@@ -541,16 +541,21 @@ export function useRecurrenceMutations() {
     [invalidate],
   );
 
-  return {
-    materializeSeries,
-    materializeAll,
-    createSeries,
-    convertToSeries,
-    updateSeries,
-    stopSeries,
-    skipOccurrence,
-    deleteFollowing,
-    deleteSeries,
-    pauseSeries,
-  };
+  // Every member is a useCallback over `qc`/`invalidate`; the bag around them
+  // was the only fresh identity, and it is a prop of the memo'd CalendarPane.
+  return useMemo(
+    () => ({
+      materializeSeries,
+      materializeAll,
+      createSeries,
+      convertToSeries,
+      updateSeries,
+      stopSeries,
+      skipOccurrence,
+      deleteFollowing,
+      deleteSeries,
+      pauseSeries,
+    }),
+    [materializeSeries, materializeAll, createSeries, convertToSeries, updateSeries, stopSeries, skipOccurrence, deleteFollowing, deleteSeries, pauseSeries],
+  );
 }
