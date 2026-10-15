@@ -27,7 +27,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["macos-private-api", "devtools"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-tauri-plugin-shell = "2"
+# Opens links outside the app — every `<a target="_blank">` (Join Meet, a
+# location, a link in an event's notes) and the desktop's billing pages. Not
+# tauri-plugin-shell: its JS `open` runs the `open` crate even on iOS, which
+# tries to spawn a `uiopen` binary a sandboxed app can't run — while its click
+# handler has already cancelled the webview's own navigation. So every external
+# link on the phone did nothing. The opener hands iOS to UIApplication.open.
+# Held at 2.5.x, with @tauri-apps/plugin-opener ~2.5.5 in package.json: 2.6+
+# requires tauri 2.12, and `tauri build` refuses a crate/npm minor mismatch.
+tauri-plugin-opener = "~2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `nuvo://capture` / `nuvo://chat` — how the iOS lock-screen widgets reach the

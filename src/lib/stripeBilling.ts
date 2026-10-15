@@ -50,8 +50,8 @@ export async function fetchPortalUrl(): Promise<string> {
  *  inside the embedded Tauri webview. Web/PWA just navigates the tab. */
 export async function openBillingUrl(url: string): Promise<void> {
   if (isDesktopTauri()) {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
   } else {
     window.location.href = url;
   }

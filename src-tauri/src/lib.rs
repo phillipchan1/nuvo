@@ -276,7 +276,11 @@ fn align_traffic_lights(app: tauri::AppHandle, x: f64) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+        // External links. Its init script routes every `<a target="_blank">`
+        // click to the system — Safari / the Meet app on iOS, the default
+        // browser on macOS. Never swap back to tauri-plugin-shell: its `open`
+        // does nothing on iOS (see Cargo.toml).
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         // Deep links. On iOS this is what carries a widget tap into the app:
         // the OS opens `nuvo://capture`, tao raises RunEvent::Opened, and the

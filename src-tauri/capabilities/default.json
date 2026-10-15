@@ -7,7 +7,7 @@
     "core:default",
     "core:window:allow-start-dragging",
     "updater:default",
-    "shell:default",
+    "opener:default",
     "process:default",
     "deep-link:default",
     "nuvo-watch:default",
