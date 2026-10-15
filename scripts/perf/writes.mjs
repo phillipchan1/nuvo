@@ -28,8 +28,11 @@ R.slotPx = () => {
   return lanes.length > 1 ? lanes[1].getBoundingClientRect().top - lanes[0].getBoundingClientRect().top : 0;
 };
 R.view = () => { const s = R.scroller(); return s ? s.getBoundingClientRect() : null; };
-// Everything already standing in a day column, as vertical extents.
-R.taken = (date) => [...document.querySelectorAll('td.fc-timegrid-col[data-date="' + date + '"] .fc-timegrid-event-harness')]
+// Everything already standing in a day column, as vertical extents — or only
+// the slots: a task dropped over a meeting just overlaps it, but one dropped
+// into a slot JOINS it, which is a different write.
+R.taken = (date, slotsOnly) => [...document.querySelectorAll('td.fc-timegrid-col[data-date="' + date + '"] .fc-timegrid-event-harness')]
+  .filter((h) => !slotsOnly || h.querySelector('.evt-slot'))
   .map((h) => h.getBoundingClientRect()).filter((r) => r.height > 0);
 // The first open stretch of \`slots\` quarter-hours in a column, inside the
 // visible part of the grid, clear of every block by a slot's margin.
@@ -110,19 +113,45 @@ async function rigBlock(c) {
       const date = el.closest('td.fc-timegrid-col')?.dataset.date;
       return { id: el.dataset.taskId, date, x: r.left + r.width / 2, top: r.top, bottom: r.bottom, h: r.height, px };
     };
-    if (want) { const el = R.block(want); return el ? pick(el) : null; }
+    if (want) { const el = R.block(want); return el ? pick(el) : { why: 'the rig block left the grid' }; }
+    const why = [];
     for (const el of document.querySelectorAll('.fc-timegrid-event.evt-task[data-task-id]')) {
       if (el.classList.contains('evt-done') || el.classList.contains('evt-allday')) continue;
       const b = pick(el);
-      if (b.h < 3 * px || b.top < v.top + px || b.bottom + 5 * px > v.bottom) continue;
-      const below = R.taken(b.date).filter((r) => r.top >= b.bottom - 1 && r.top < b.bottom + 5 * px);
-      if (below.length) continue;
+      const at = b.date + '@' + Math.round(b.top) + '+' + Math.round(b.h);
+      if (b.h < 3 * px) { why.push(at + ' short'); continue; }
+      if (b.top < v.top + px || b.bottom + 5 * px > v.bottom) { why.push(at + ' off-view'); continue; }
+      const below = R.taken(b.date, true).filter((r) => r.top < b.bottom + 5 * px && r.bottom > b.bottom);
+      if (below.length) { why.push(at + ' crowded'); continue; }
       return b;
     }
-    return null;`);
-  if (found && !state.blockId) state.blockId = found.id;
-  if (!found) throw new Error("no timed task block with an open hour below it is on the visible grid");
+    return { why: why.join(', ') || 'no open timed task blocks' };`);
+  if (!found?.id) {
+    throw new Error(`no timed task block with an open hour below it is on the visible grid (${found?.why ?? "no grid"})`);
+  }
+  if (!state.blockId) state.blockId = found.id;
   return found;
+}
+
+const checkbox = (c, id) =>
+  geo(c, `
+    const r = R.block(${JSON.stringify(id)})?.querySelector('[data-done-toggle]')?.getBoundingClientRect();
+    return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;`);
+
+/**
+ * Uncheck the rig block if it's done, and make sure it took. One blind click
+ * was not enough: a missed uncheck left the block done, the next trial's
+ * "complete" then UNchecked it, and the median mixed the two acts.
+ */
+async function reopen(c) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const done = await evaluate(c, `return !!document.querySelector('.fc-timegrid-event.evt-done[data-task-id="${state.blockId}"]');`);
+    if (!done) return;
+    const at = await checkbox(c, state.blockId);
+    if (at) await click(c, at);
+    await sleep(800);
+  }
+  throw new Error("couldn't uncheck the rig block again");
 }
 
 export const WRITE_INTERACTIONS = [
@@ -132,9 +161,15 @@ export const WRITE_INTERACTIONS = [
     settleMs: 2000,
     run: async (c, _i, { mark }) => {
       const b = await rigBlock(c);
+      state.before = b;
       // Grab the title, clear of the checkbox (left) and the resize edges.
       const from = { x: b.x + 6, y: b.top + Math.min(b.h / 2, 2 * b.px) };
       await dragTo(c, from, { x: from.x, y: from.y + 4 * b.px }, mark);
+    },
+    verify: async (c) => {
+      const b = await rigBlock(c);
+      const moved = b.top - state.before.top;
+      return Math.abs(moved - 4 * b.px) < b.px / 2 ? null : `the block moved ${Math.round(moved)}px, not ${Math.round(4 * b.px)}`;
     },
     cleanup: async (c) => {
       const b = await rigBlock(c);
@@ -155,8 +190,13 @@ export const WRITE_INTERACTIONS = [
         const r = R.block(${JSON.stringify(b.id)})?.querySelector('.fc-event-resizer-end')?.getBoundingClientRect();
         return r && r.height ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;`);
       if (!h) throw new Error("the rig block shows no end resizer");
-      state.resizeFrom = h;
+      state.before = b;
       await dragTo(c, h, { x: h.x, y: h.y + 2 * b.px }, mark, { steps: 6 });
+    },
+    verify: async (c) => {
+      const b = await rigBlock(c);
+      const grew = b.h - state.before.h;
+      return Math.abs(grew - 2 * b.px) < b.px / 2 ? null : `the block grew ${Math.round(grew)}px, not ${Math.round(2 * b.px)}`;
     },
     cleanup: async (c) => {
       const b = await rigBlock(c);
@@ -174,18 +214,17 @@ export const WRITE_INTERACTIONS = [
     settleMs: 2000,
     run: async (c, _i, { mark }) => {
       const b = await rigBlock(c);
-      const at = await geo(c, `
-        const r = R.block(${JSON.stringify(b.id)})?.querySelector('[data-done-toggle]')?.getBoundingClientRect();
-        return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;`);
+      await reopen(c);
+      const at = await checkbox(c, b.id);
       if (!at) throw new Error("the rig block has no checkbox");
-      state.checkAt = at;
       await click(c, at, mark);
     },
+    verify: async (c) =>
+      (await evaluate(c, `return !!document.querySelector('.fc-timegrid-event.evt-done[data-task-id="${state.blockId}"]');`))
+        ? null
+        : "the block isn't checked off",
     // Uncheck it again: the next trial (and the next interaction) needs it open.
-    cleanup: async (c) => {
-      await sleep(300);
-      if (state.checkAt) await click(c, state.checkAt);
-    },
+    cleanup: (c) => reopen(c),
   },
   {
     key: "write:create",
@@ -204,6 +243,14 @@ export const WRITE_INTERACTIONS = [
       await sleep(150);
       await mark();
       await key(c, "Enter");
+    },
+    verify: async (c, i) => {
+      const title = JSON.stringify(`perf rig ${i + 1}`);
+      const found = await evaluate(
+        c,
+        `return [...document.querySelectorAll('.fc-timegrid-event [data-evt-title]')].some((t) => t.textContent.trim() === ${title});`,
+      );
+      return found ? null : "no new block with the typed title on the grid";
     },
     cleanup: async (c) => {
       await sleep(200);
@@ -230,6 +277,10 @@ export const WRITE_INTERACTIONS = [
       state.dropped = plan.id;
       await dragTo(c, plan.from, plan.to, mark, { steps: 14, hold: 120 });
     },
+    verify: async (c) =>
+      (await evaluate(c, `return !!document.querySelector('.fc-timegrid-event[data-task-id="${state.dropped}"]');`))
+        ? null
+        : "the inbox row didn't become a block on the grid",
     // The drop is a silent-undo `block`: ⌘Z puts it back in the inbox.
     cleanup: async (c) => {
       await sleep(200);
@@ -245,12 +296,12 @@ export const WRITE_INTERACTIONS = [
     // grid reconciling what arrived. Always one week forward from this week, so
     // each trial lands on the same (warmed) span.
     run: async (c, _i, { mark }) => {
-      await evaluate(c, `window.__btn('Next')?.click(); return 1;`);
+      await evaluate(c, `window.__titled('Next')?.click(); return 1;`);
       await sleep(250);
       await mark();
     },
     cleanup: async (c) => {
-      await evaluate(c, `window.__btn('Go to today')?.click(); return 1;`);
+      await evaluate(c, `window.__titled('Go to today')?.click(); return 1;`);
     },
   },
 ];

@@ -21,7 +21,7 @@
  *   npm run perf -- --update      # rewrite budgets.json from this run
  *   npm run perf -- --url=http://localhost:5717
  *   npm run perf -- --headful     # watch it drive
- *   npm run perf -- --only=write: # just the interactions whose key starts so
+ *   npm run perf -- --only=write:,cal: # just the interactions whose keys start so
  *   CHROME_PATH=… npm run perf    # a Chrome other than /Applications/Google Chrome.app
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -87,7 +87,7 @@ try {
   }
 
   await evaluate(c, INSTALL);
-  await evaluate(c, `window.__btn('Week')?.click(); return 1;`);
+  await evaluate(c, `window.__lens('Week')?.click(); return 1;`);
   await sleep(2500);
   // warm every floor so first-mount chunk loads are not charged to an interaction
   for (const k of ["2", "3", "4", "1"]) { await evaluate(c, `window.__key('${k}',true); return 1;`); await sleep(2200); }
@@ -118,7 +118,7 @@ try {
       await sleep(1000);
     }
     await evaluate(c, INSTALL);
-    await evaluate(c, `window.__btn('Week')?.click(); return 1;`);
+    await evaluate(c, `window.__lens('Week')?.click(); return 1;`);
     await sleep(2000);
   };
 
@@ -139,6 +139,11 @@ try {
     }
     await sleep(it.settleMs ?? 1400);
     const report = await evaluate(c, `window.__frameOff(); return window.__report();`);
+    // A gesture that missed (a press that landed beside the row, a drop that
+    // drew a selection instead) still produces numbers. A write says what it
+    // expected to see, and a miss is an error, not a measurement.
+    const missed = it.verify ? await it.verify(c, i) : null;
+    if (missed) throw new Error(`the write didn't land: ${missed}`);
     if (it.cleanup) {
       await it.cleanup(c, i);
       await sleep(it.cleanupMs ?? 1500);
@@ -147,7 +152,8 @@ try {
   };
 
   const rows = [];
-  for (const it of INTERACTIONS.filter((x) => !ONLY || x.key.startsWith(ONLY))) {
+  const only = ONLY ? ONLY.split(",") : [];
+  for (const it of INTERACTIONS.filter((x) => !only.length || only.some((p) => x.key.startsWith(p)))) {
     const { key, label } = it;
     const runs = [];
     try {
@@ -163,7 +169,7 @@ try {
     // Lens toggles alternate Week ↔ X, so an odd repeat count leaves the grid
     // on X (Year has no .fc-event at all, and the popover step then threw).
     // Every interaction starts from the Week the rig set up.
-    await evaluate(c, `window.__btn('Week')?.click(); return 1;`);
+    await evaluate(c, `window.__lens('Week')?.click(); return 1;`);
     await sleep(600);
     const got = {
       renders: median(runs.map((r) => r.renders)),

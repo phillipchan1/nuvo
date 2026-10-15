@@ -86,6 +86,12 @@ if (!window.__probe) {
     };
   };
   window.__btn=(t)=>[...document.querySelectorAll('button')].find(b=>((b.getAttribute('aria-label')||'')+'|'+(b.title||'')+'|'+b.textContent).includes(t));
+  // Exact handles for the controls the sweep leans on. \`__btn\` matches any
+  // button whose label merely CONTAINS the word ("Week", "Today", "Next"), so a
+  // new button anywhere on screen can silently change what the sweep clicks —
+  // and a sweep that clicks the wrong thing still reports numbers.
+  window.__lens=(name)=>[...document.querySelectorAll('[data-tabs="views"] button')].find(b=>b.textContent.trim()===name);
+  window.__titled=(prefix)=>[...document.querySelectorAll('button[title]')].find(b=>b.title.startsWith(prefix));
   window.__key=(k,meta,alt)=>document.dispatchEvent(new KeyboardEvent('keydown',{key:k,metaKey:!!meta,altKey:!!alt,bubbles:true}));
   window.__blurLayers=()=>[...document.querySelectorAll('*')].filter(e=>{const v=getComputedStyle(e).backdropFilter; return v&&v!=='none';}).length;
 }
