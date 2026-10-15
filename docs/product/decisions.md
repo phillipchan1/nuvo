@@ -5618,9 +5618,11 @@ horizontal overflow) harnesses, which seed a hidden calendar, a holiday feed and
 read-only subscription — none offered. **Not driven:** the Settings control and both Task →
 Event doors (wiring is pinned by source tests; the list itself is rendered in jsdom) —
 this checkout has no `.env.local`, so nothing ran against a real account. **Migration 87
-applied to production 2026-10-14** (after D-153 unblocked `db push`). **The agent function
-is not yet deployed:** until `supabase functions deploy agent` runs, the chat ignores the
-calendar half of the default.*
+applied to production 2026-10-14** (after D-153 unblocked `db push`). The `agent` function
+was deployed 2026-10-15 (v112), so the chat reads the calendar half of the default too.
+**`mcp` was not redeployed:** it bundles the same `agent/context.ts` and `agent/tools.ts`,
+so until `supabase functions deploy mcp` runs, an event created over MCP lands on the
+default account's own calendar.*
 
 **D-153 · 2026-10-14 · The repo's migrations match what production recorded — including the
 versions that were never committed.**
