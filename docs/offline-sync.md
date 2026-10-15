@@ -225,7 +225,8 @@ Confirmed against the live project by subscribing two channels on one socket in
 the same tick and writing a single row — the sixteen-binding channel got
 nothing, a one-binding channel got the INSERT, and sixteen channels of one
 binding each get everything. `useRealtime` now opens one channel per table
-(`nuvo-rt-<table>`). Do not consolidate them again to save connections.
+(today `nuvo:<uid>:<table>`, see below). Do not consolidate them again to save
+connections.
 
 **A table outside the `supabase_realtime` publication is just as silent.** The
 channel joins and nothing arrives. Production's membership was set by hand in
@@ -305,6 +306,55 @@ it mirrored the block as it was before the drag, or 404'd a task created a momen
 earlier. `queueWrite` remembers each row's newest write; `whenRowDelivered`
 resolves when it is acked (`false` if it is parked or discarded), and
 `mirrorTask` waits on it. A refused write is never mirrored.
+
+**Live changes ride private per-account topics, never `postgres_changes`.**
+Realtime RLS-checks an INSERT or UPDATE against each subscriber, but a DELETE
+has no row left to check, so `postgres_changes` sends every DELETE to every
+subscriber of the table. Each signed-in client was receiving the primary key of
+every row any account deleted. For `user_settings`, `subscriptions` and
+`event_domain_routing` that key is the other account's auth user id. Confirmed
+on the local stack (2026-10-15): ghost@ received dummy@'s task, `task_labels`
+and user-keyed deletes.
+
+A `user_id=eq.<uid>` filter on the binding is not the fix. Realtime matches a
+filtered DELETE against the WAL identity, which under DEFAULT replica identity
+is only the PK. The DELETE is then dropped for its **owner** too, and live
+deletes stop. With FULL identity it reaches only the owner, but that costs the
+full old row in the WAL on every UPDATE and DELETE across 13 tables, leaves
+`task_labels` (no `user_id`) unfilterable, and relies on behaviour Supabase's
+docs say does not exist. Above all, the server still serves the unfiltered
+stream to any client that asks for it: every build already installed, or anyone
+holding a JWT. The filter changes what *we* receive, not what is sent.
+
+So the database routes. `rt_broadcast()` (migration 90) is an AFTER ROW trigger
+on every live table. It sends `{ table, eventType, new, old }` (a `LiveChange`)
+to `nuvo:<owner uid>:<table>` as a private broadcast, inside the writing
+transaction, so a rolled-back write sends nothing. The owner is the table's own
+RLS rule (`user_id`; for `task_labels`, the task's owner). A `realtime.messages`
+SELECT policy lets an account join only its own `nuvo:` topics. There is no
+INSERT policy, so no client can send on one. `useRealtime` and
+`useSubscriptionLiveSync` join through `liveTopic()`. The trigger is
+`security definer` on purpose: `realtime.send` swallows its own errors, so run
+as the writing user, who has no INSERT on `realtime.messages`, every message
+would vanish with only a WARNING in the log. A device's own write still comes
+back as its echo, because PostgREST writes fire the trigger like any other.
+
+Production only ever published four of these tables (`tasks`,
+`external_events`, `calendar_accounts`, `user_settings`, migration 89). So the
+trigger turns live updates on for the other 13 **for the first time**. The
+other 12 channels used to join and report SUBSCRIBED without ever receiving a
+row. That marked the table live, and `settleWrite` and the post-drain refresh
+then skipped their refetch while waiting for an echo that never came. With the
+trigger, the echo is real.
+
+**Only migration 91 closes the leak.** It takes the live tables out of
+`supabase_realtime`. In production it ships *after* the broadcast clients have
+been picked up: an installed build still on `postgres_changes` loses its live
+updates on those four tables when 91 lands, and falls back to the 60s pull and
+focus refetches until it updates. `tests/realtime-broadcast.test.ts` fails if a live table has no
+trigger, if the trigger, policy and `liveTopic` disagree on the topic, if a
+policy lets clients write to `realtime.messages`, or if `postgres_changes`
+comes back into `src/`.
 
 ## 5. Conflict resolution
 
@@ -501,6 +551,7 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `two-windows.test.ts` (3) | Two WKWebViews on one queue: an acked op is never resurrected |
 | `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
 | `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |
+| `../realtime-broadcast.test.ts` (5) | Every live table broadcasts; trigger, policy and `liveTopic` agree; no client-writable topic; no `postgres_changes` in `src/`; 91 unpublishes them all |
 | `task-offline.test.tsx` (12) | The real `useTaskMutations` hook: offline create, reconnect delivery, force-quit survival, coalesced edits, label diffing, parked rejections |
 | `write-races.test.ts` (13) | A late echo after the ack; a refetch in flight across a drag (and its re-run after the drain); first loads never cancelled; delivery waits for the mirror |
 | `../event-writeback.test.tsx` (7) | The real `useExternalEventMutations` over a held-open transport: one PATCH at a time, coalesced, stale echoes ignored; the create's temp row and its swap; Task → Event |

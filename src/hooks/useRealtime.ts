@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
-import { applyLiveChange } from "../lib/sync/liveApply";
+import { applyLiveChange, type LiveChange } from "../lib/sync/liveApply";
+import { liveTopic } from "../lib/sync/liveTopic";
 import { invalidateWhenSafe, pendingOps, pullSyncTables, recentlyAcked, setTableLive, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
 
 const isSyncTable = (t: string): t is SyncTable =>
@@ -73,12 +74,7 @@ export function useRealtime(enabled: boolean) {
       if (pending.size && timer === null) timer = setTimeout(flush, COALESCE_MS);
     };
 
-    const onChange = (payload: {
-      table: string;
-      eventType: string;
-      new: Record<string, unknown>;
-      old: Record<string, unknown>;
-    }) => {
+    const onChange = (payload: LiveChange) => {
       const paint = (ops: Parameters<typeof applyLiveChange>[2]) => {
         // Ops this device delivered a moment ago are merged too: their echoes
         // can still be behind newer ones (see liveApply's header). Read at
@@ -120,12 +116,25 @@ export function useRealtime(enabled: boolean) {
     // Still per-table rather than schema-wide: a schema-wide listener asks
     // Realtime to decode and deliver EVERY public write, including the ones
     // this client has no query for.
+    //
+    // ── Private broadcast, not postgres_changes ──────────────────────────
+    //
+    // The channels used to be `postgres_changes` bindings, and Realtime cannot
+    // RLS-check a DELETE, so every client was sent the primary key of every row
+    // ANY account deleted. For user_settings and subscriptions that key is the
+    // other account's user id. A `user_id=eq` filter does not help: with
+    // default replica identity Realtime drops a filtered DELETE for its owner
+    // too. The database now routes each change to its owner's private topic
+    // (`rt_broadcast()`, migration 90), and an account can join only its own.
     const TABLES = Object.keys(TABLE_TO_KEYS);
     const channels = new Map<string, RealtimeChannel>();
     const retries = new Map<string, ReturnType<typeof setTimeout>>();
     const attempts = new Map<string, number>();
     const joinedOnce = new Set<string>();
     let torn = false;
+    // Whose topics. Read once: the shells that mount this only exist while
+    // signed in, so a different account is a different mount.
+    let userId: string | null = null;
 
     const clearRetry = (table: string) => {
       const t = retries.get(table);
@@ -151,16 +160,17 @@ export function useRealtime(enabled: boolean) {
     };
 
     const connect = (table: string) => {
-      if (torn) return;
+      if (torn || !userId) return;
       clearRetry(table);
       setTableLive(table, false);
       const existing = channels.get(table);
       if (existing) supabase.removeChannel(existing);
 
-      const ch = supabase.channel(`nuvo-rt-${table}`);
+      const ch = supabase.channel(liveTopic(userId, table), { config: { private: true } });
       channels.set(table, ch);
-      ch.on("postgres_changes", { event: "*", schema: "public", table }, (payload) =>
-        onChange(payload),
+      // The table comes from the topic we joined, not from the message.
+      ch.on("broadcast", { event: "*" }, ({ payload }) =>
+        onChange({ ...(payload as LiveChange), table }),
       );
       ch.subscribe((status) => {
         // A replaced channel's late CLOSED must not mark its successor down.
@@ -185,7 +195,11 @@ export function useRealtime(enabled: boolean) {
       });
     };
 
-    for (const table of TABLES) connect(table);
+    void supabase.auth.getSession().then(({ data }) => {
+      if (torn) return;
+      userId = data.session?.user.id ?? null;
+      for (const table of TABLES) connect(table);
+    });
 
     // Coming back to the app is the moment a dead channel matters. Rejoining
     // now rather than waiting out the backoff is also what makes the backfill
