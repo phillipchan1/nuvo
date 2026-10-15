@@ -67,15 +67,20 @@ describe("the two doors still mount Delete account", () => {
     expect(iapLocked.split("<DeleteAccount").length - 1).toBe(2);
   });
 
-  // plan_source has now been renumbered twice — off 70 (delete_secret owns it)
-  // and off 71 (an untracked review_account_otp already held it, which is why
-  // `db push` skipped plan_source in silence and production 400'd the whole
-  // shell for days). So pin the PROPERTY, not the number: delete_secret keeps
-  // 70, and plan_source exists exactly once, on a version of its own. Whether
-  // that version is unique across the whole folder is tests/migrations-unique.
-  it("keeps master's migration 70 as delete_secret, and gives plan_source a version of its own", () => {
-    const seventy = readFileSync("supabase/migrations/00000000000070_delete_secret.sql", "utf8");
-    expect(seventy).toMatch(/delete_secret/);
+  // Both of these have been bitten by a version production had already used
+  // for an uncommitted file. plan_source went 70 → 71 → 75 (an untracked
+  // review_account_otp held 71, so `db push` skipped plan_source in silence
+  // and production 400'd the whole shell for days). delete_secret sat at 70
+  // while production had recorded 70 for apple_billing, so it never ran at
+  // all — every account deletion since quietly left its vault secrets behind
+  // — and moved to 88 (2026-10-14). So pin the PROPERTY, not the number: each
+  // exists exactly once, on a version of its own. Whether that version is
+  // unique across the folder is tests/migrations-unique; whether it is unique
+  // against PRODUCTION only `supabase migration list` can say.
+  it("gives delete_secret and plan_source a version each of their own", () => {
+    const deleteSecret = readdirSync("supabase/migrations").filter((f) => f.endsWith("_delete_secret.sql"));
+    expect(deleteSecret).toHaveLength(1);
+    expect(readFileSync(`supabase/migrations/${deleteSecret[0]}`, "utf8")).toMatch(/function public\.delete_secret/);
     expect(existsSync("supabase/functions/delete-account/index.ts")).toBe(true);
     expect(existsSync("supabase/migrations/00000000000070_plan_source.sql")).toBe(false);
 

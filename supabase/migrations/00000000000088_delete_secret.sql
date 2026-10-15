@@ -1,3 +1,7 @@
+-- Was 00000000000070 — but production had already recorded 70 for an
+-- uncommitted apple_billing migration (now committed as 70), so `db push`
+-- skipped this one. Renumbered 2026-10-14; idempotent (`create or replace`).
+--
 -- Vault delete, matching store_secret / read_secret. Account wipe
 -- (delete-account) has to drop refresh tokens and PATs, not just the rows
 -- that point at them — vault.secrets does not cascade off auth.users.

@@ -1,0 +1,8 @@
+-- ---------------------------------------------------------------------------
+-- Applied to production out of band and never committed (recorded 2026-10-14).
+-- A diagnostic for 71.
+--
+-- Its SQL is intentionally not in the repo because it contains a credential.
+-- This empty file exists only so `supabase db push` knows the version:
+-- the CLI refuses to run while production records a version the repo lacks.
+-- ---------------------------------------------------------------------------

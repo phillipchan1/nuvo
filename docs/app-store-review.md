@@ -7,8 +7,10 @@ deletion is unchanged (Guideline **5.1.1(v)** — [`account-deletion.md`](./acco
 
 **This document never holds a password.** Credentials live in App Store Connect
 → App Review Information, and in a password manager. An earlier OTP-only
-review user (`00000000000071_review_account_otp.sql`, never applied) is why
-we do not use a code for review.
+review user (migrations 71–74) is why we do not use a code for review. Those
+four **were** applied to production, out of band, and are committed only as
+empty placeholders because their SQL holds a credential — the code path is
+still live in production (see D-153).
 
 See also: [`ios-releases.md`](./ios-releases.md) · [`apple-sign-in.md`](./apple-sign-in.md) ·
 [`billing-setup.md`](./billing-setup.md) §11.

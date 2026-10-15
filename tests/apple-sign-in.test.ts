@@ -283,7 +283,7 @@ describe("deleting the account revokes Apple's grant (guideline 5.1.1(v))", () =
     expect(sql).toContain("create table if not exists public.apple_identities");
     expect(sql).toContain("enable row level security");
     expect(sql).toContain("auth.uid() = user_id");
-    // vault.secrets does not cascade off auth.users (migration 70).
+    // vault.secrets does not cascade off auth.users (delete_secret, migration 88).
     expect(sql).toContain("refresh_token_secret_id");
   });
 });

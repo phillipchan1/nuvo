@@ -47,7 +47,8 @@ empty account.
 ## 4 · Deploy
 
 ```
-# SQL editor or supabase db push — migration 70 (delete_secret)
+# supabase db push — migration 88 (delete_secret). It was 70 until 2026-10-14,
+# when it turned out production had recorded 70 for another file and never ran it.
 supabase functions deploy delete-account --project-ref ebibzojtkzkphykznomv
 ```
 

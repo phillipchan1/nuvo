@@ -252,6 +252,8 @@ Migration `71_plan_source` adds `plan_source`, Apple transaction columns, the
 `plan` / `is_entitled` computed columns, and `apple_webhook_events`. Do **not**
 apply it from this PR. Master's migration 70 is `delete_secret` (account
 deletion) — leave it alone. No `supabase db push`, no deploy of 71.
+*(Historical. plan_source is now 75; production's 70 turned out to be an
+uncommitted `apple_billing`, now committed as 70, and delete_secret is 88.)*
 
 SKUs are already in Connect (not submitted). Do not write $29.99 / $229.99
 into the binary. Do not Submit the app from this PR. Dayspring Stripe

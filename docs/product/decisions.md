@@ -5621,3 +5621,35 @@ this checkout has no `.env.local`, so nothing ran against a real account. **Migr
 and the agent function are not deployed** by a push: until `supabase db push` runs,
 Settings stays at account grain; until `supabase functions deploy agent` runs, the chat
 ignores the calendar half of the default.*
+
+**D-153 · 2026-10-14 · The repo's migrations match what production recorded — including the
+versions that were never committed.**
+
+`supabase db push` refused to run: production's history listed **71–74**, which no file in
+the repo had. Reading production's history (`supabase migration fetch` into a scratch
+folder, `supabase migration list`, read-only catalog queries) found three drifts, all the
+same trap — a version applied from an uncommitted file:
+
+| Version | Production ran | Repo had | Consequence |
+|---|---|---|---|
+| 70 | `apple_billing` (never committed) | `delete_secret` | **delete_secret never ran.** `delete-account` swallows the failure, so every account deletion since D-129 removed the user but left their stored calendar credentials in the vault. |
+| 71–74 | App Review sign-in code work (D-137) | nothing | `db push` blocked outright. |
+| 38 | `inbound_email` | `domain_seed` | None — 38 was already marked superseded by 42, and production matches 42. |
+
+**What changed:** `apple_billing` is committed as 70, recovered verbatim, so the repo builds
+the database production has. `delete_secret` moves to **88** (idempotent) so the next push
+finally applies it. 71–74 are committed as **empty placeholders**: their SQL holds a
+credential and stays out of git, and an empty file is all `db push` needs to know the
+version. A fresh or local database therefore never gets that code path. The production
+history table was **not** rewritten (`migration repair` was the CLI's suggestion); the repo
+was brought to production, not the other way round.
+
+**Open, and the user's call:** the 71–74 code path is **still live in production**. D-137
+moved App Review to email + password, so it may no longer be needed; removing it is a
+one-line migration but changes how that account signs in.
+
+`tests/migrations-unique.test.ts` can only see collisions inside the folder. Collisions
+against production are what `supabase migration list --linked` is for — run it before a
+push whenever a migration was written on another machine.
+
+*Status: standing — tests green; `db push --dry-run` lists 86, 87, 88 only.*
