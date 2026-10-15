@@ -198,3 +198,84 @@ describe("the add box is the row after the last", () => {
     expect(hook.result.current.cursorId).toBeNull();
   });
 });
+
+describe("the grammar the calendar grid speaks too (D-156)", () => {
+  type Block = { id: string; status?: string | null };
+  const BLOCKS: Block[] = [{ id: "task:a", status: "open" }, { id: "evt:b", status: null }, { id: "slot:c", status: null }];
+
+  function setupGrid(opts: { owner?: () => boolean; rows?: Block[] } = {}) {
+    const acts = {
+      open: vi.fn(), complete: vi.fn(), trash: vi.fn(), date: vi.fn(), move: vi.fn(),
+      priority: vi.fn(), rename: vi.fn(), menu: vi.fn(), duplicate: vi.fn(),
+    };
+    let rows = opts.rows ?? BLOCKS;
+    const hook = renderHook(
+      ({ rowsNow }: { rowsNow: Block[] }) => {
+        const [cursorId, setCursorId] = useState<string | null>(null);
+        const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+        useTaskListKeys<Block>({
+          enabled: opts.owner ?? (() => true),
+          rows: rowsNow,
+          handOff: false,
+          cursor: { cursorId, setCursorId, selectedIds, setSelectedIds },
+          acts,
+        });
+        return { cursorId };
+      },
+      { initialProps: { rowsNow: rows } },
+    );
+    const press = (key: string, o: KeyboardEventInit = {}) => {
+      const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...o });
+      act(() => {
+        window.dispatchEvent(e);
+      });
+      return e;
+    };
+    const setRows = (next: Block[]) => {
+      rows = next;
+      hook.rerender({ rowsNow: next });
+    };
+    return { acts, hook, press, setRows };
+  }
+
+  it("`.` opens the row's menu and ⌘D duplicates — the browser's bookmark never sees it", () => {
+    const { acts, press } = setupGrid();
+    press("j");
+    press(".");
+    expect(acts.menu).toHaveBeenCalledWith(BLOCKS[0]);
+    expect(press("d", { metaKey: true }).defaultPrevented).toBe(true);
+    expect(acts.duplicate).toHaveBeenCalledWith([BLOCKS[0]]);
+  });
+
+  it("rows needn't be tasks — an event or a slot is walked and acted on the same way", () => {
+    const { acts, hook, press } = setupGrid();
+    press("j");
+    press("j");
+    expect(hook.result.current.cursorId).toBe("evt:b");
+    press("Enter");
+    expect(acts.open).toHaveBeenCalledWith(BLOCKS[1]);
+  });
+
+  // keyOwner: the rail and the grid both listen on window, capture phase. Which
+  // one hears a key first is mount order; whose key it IS is the last pane pressed.
+  it("`enabled` is asked at keystroke time, so a pane can lose the keys without re-rendering", () => {
+    let owns = true;
+    const { acts, hook, press } = setupGrid({ owner: () => owns });
+    press("j");
+    expect(hook.result.current.cursorId).toBe("task:a");
+    owns = false;
+    expect(press("Backspace").defaultPrevented).toBe(false);
+    expect(press("j").defaultPrevented).toBe(false);
+    expect(acts.trash).not.toHaveBeenCalled();
+    expect(hook.result.current.cursorId).toBe("task:a");
+  });
+
+  it("the grid keeps its cursor when its block leaves the rows (paged away) — no hand-off to a stranger", () => {
+    const { hook, press, setRows } = setupGrid();
+    press("j");
+    press("j");
+    expect(hook.result.current.cursorId).toBe("evt:b");
+    setRows([{ id: "task:z", status: "open" }]);
+    expect(hook.result.current.cursorId).toBe("evt:b");
+  });
+});

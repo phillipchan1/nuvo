@@ -63,7 +63,26 @@ const GROUPS: Group[] = [
       { keys: [["⌘", "E"]], label: "Rename in place" },
       { keys: [["⌥", "↑"], ["⌥", "↓"]], sep: "/", label: "Move task up / down" },
       { keys: [["A"], ["⇧", "A"]], sep: "/", label: "Add below / above" },
+      { keys: [["."]], label: "The row's menu" },
       { keys: [["Esc"]], label: "Clear selection, then cursor" },
+    ],
+  },
+  {
+    // The same grammar on the calendar (D-156): a click selects a block, ⇧/⌘-click
+    // adds to it, and the keys belong to whichever pane you pressed in last.
+    title: "Calendar blocks",
+    items: [
+      { keys: [["J"], ["K"]], sep: "/", label: "Next / previous block, by time" },
+      { keys: [["⇧", "click"], ["⌘", "click"]], sep: "or", label: "Add a block to the selection" },
+      { keys: [["E"], ["T"], ["V"]], sep: "·", label: "Done · When… · Move to… (tasks)" },
+      { keys: [["↵"], ["."]], sep: "/", label: "Open / its menu" },
+      { keys: [["⌫"]], label: "Delete — a series or an invite asks first" },
+      { keys: [["⌘", "E"], ["⌘", "D"]], sep: "/", label: "Rename / duplicate (selects the copy)" },
+      { keys: [["⌥", "↑"], ["⌥", "↓"]], sep: "/", label: "15 minutes earlier / later" },
+      { keys: [["⌥", "←"], ["⌥", "→"]], sep: "/", label: "A day earlier / later" },
+      { keys: [["⌥", "⇧", "↑"], ["⌥", "⇧", "↓"]], sep: "/", label: "15 minutes shorter / longer" },
+      { keys: [["Esc"]], label: "Mid-drag: release to cancel" },
+      { keys: [["↑"], ["↓"]], sep: "/", label: "In a new draft: nudge it (⇧ its end)" },
     ],
   },
   {
@@ -111,8 +130,12 @@ function Row({ keys, sep, label }: Shortcut) {
 
 export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
-    <Modal onClose={onClose} width="max-w-2xl">
-      <div className="flex items-center justify-between border-b border-line px-5 py-4">
+    // Centered and bounded, with the body owning the scroll: a top-anchored Modal
+    // lets its children own the height at sm+, and this sheet is taller than a
+    // laptop window — everything below Task lists was simply unreachable.
+    <Modal onClose={onClose} width="max-w-2xl" align="center">
+      <div className="flex max-h-[90vh] flex-col sm:max-h-[92vh]">
+      <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
         <div>
           <h2 className="text-head font-semibold text-ink">Keyboard shortcuts</h2>
           <p className="mt-0.5 text-caption leading-snug text-muted">
@@ -129,7 +152,7 @@ export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Two masonry-ish columns on desktop; a single column on a phone. */}
-      <div className="grid gap-x-8 gap-y-5 px-5 py-4 sm:grid-cols-2">
+      <div className="grid min-h-0 flex-1 gap-x-8 gap-y-5 overflow-y-auto px-5 py-4 sm:grid-cols-2">
         {GROUPS.map((g) => (
           <section key={g.title} className="break-inside-avoid">
             <div className="section-label pb-1">{g.title}</div>
@@ -140,6 +163,7 @@ export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
             </div>
           </section>
         ))}
+      </div>
       </div>
     </Modal>
   );

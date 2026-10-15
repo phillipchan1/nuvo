@@ -23,15 +23,20 @@ describe("calendarDismissGuard", () => {
     expect(consumeCalendarClickHandled()).toBe(false);
   });
 
-  it("expires after pointerup so a dismiss off the grid cannot eat the next create", () => {
+  it("outlives FullCalendar's deferred dateClick (a timer after mouseup)", () => {
     vi.useFakeTimers();
     markCalendarClickHandled();
     document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    // FullCalendar's dateClick runs from a setTimeout(0) scheduled at mouseup —
+    // after anything pointerup scheduled. The mark must still be there for it.
+    vi.runAllTimers();
     expect(consumeCalendarClickHandled()).toBe(true);
+  });
 
+  it("is dropped at the next press, so a dismiss off the grid cannot eat the next create", () => {
     markCalendarClickHandled();
     document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-    vi.runAllTimers();
+    document.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     expect(consumeCalendarClickHandled()).toBe(false);
   });
 });

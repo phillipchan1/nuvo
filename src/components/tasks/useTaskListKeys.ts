@@ -7,10 +7,16 @@
  *   1 2 3 4    priority high … none       x       select (then any act hits all)
  *   ⌫          trash, with undo           ⌥↑ ⌥↓   reorder
  *   a / ⇧A     add below / above          esc     clear the selection, then the cursor
+ *   .          the row's menu             ⌘D      duplicate
  *
  * Bare s / w / d / m are the Schedule's, and ⌘↑/⌘↓ travel the ladder (D-051),
  * which is why reorder sits on ⌥. A host adds its own keys through `extra`
  * (the rail's triage letters, its filter, its trash face) and those run first.
+ *
+ * The rows needn't be tasks. The calendar grid speaks the same grammar over its
+ * blocks — tasks, events and slots in time order (D-156) — so the hook is
+ * generic over anything with an id; `status` is only read to know whether `e`
+ * is finishing a row (and so should step past it).
  *
  * The listener is on window (capture phase), gated by `enabled`: a surface
  * that owns the screen passes false to the lists behind it. Every key it
@@ -21,24 +27,32 @@ import { useEffect, useRef } from "react";
 import { isTypingIn } from "../../lib/a11y";
 import type { Task } from "../../lib/types";
 
-export interface TaskListKeyActs {
-  open: (t: Task) => void;
+/** What a list's rows must have: an id, and — when `e` can finish one — a status. */
+export type KeyRow = { id: string; status?: string | null };
+
+export interface TaskListKeyActs<T extends KeyRow = Task> {
+  open: (t: T) => void;
   /** Complete (or reopen) — the host runs the row's own animation. */
-  complete: (targets: Task[]) => void;
-  trash: (targets: Task[]) => void;
-  date: (targets: Task[]) => void;
-  move: (targets: Task[]) => void;
-  priority: (targets: Task[], p: Task["priority"]) => void;
-  rename: (t: Task) => void;
+  complete: (targets: T[]) => void;
+  trash: (targets: T[]) => void;
+  date: (targets: T[]) => void;
+  move: (targets: T[]) => void;
+  priority: (targets: T[], p: Task["priority"]) => void;
+  rename: (t: T) => void;
   /** Move a row one place (⌥↑ -1, ⌥↓ +1). Absent when the list's order isn't
    *  the user's to set. */
-  reorderBy?: (t: Task, delta: 1 | -1) => void;
+  reorderBy?: (t: T, delta: 1 | -1) => void;
   /** Focus the list's add box, placing the new task beside `anchor`. */
-  add?: (anchor: Task | null, where: "below" | "above") => void;
+  add?: (anchor: T | null, where: "below" | "above") => void;
   /** ↓ past the last row — into the list's add box. */
   toComposer?: () => void;
+  /** `.` — the row's own menu (the one right-click opens), so no act is
+   *  reachable only by a mouse. */
+  menu?: (t: T) => void;
+  /** ⌘D — copy the targets. The host decides where the cursor lands. */
+  duplicate?: (targets: T[]) => void;
   /** Host keys, tried first. Return true when handled. */
-  extra?: (e: KeyboardEvent, targets: Task[]) => boolean;
+  extra?: (e: KeyboardEvent, targets: T[]) => boolean;
 }
 
 export interface TaskListCursor {
@@ -56,21 +70,32 @@ export interface TaskListCursor {
 
 const PRIORITY_KEYS: Record<string, Task["priority"]> = { "1": "high", "2": "medium", "3": "low", "4": "none" };
 
-export function useTaskListKeys({
+export function useTaskListKeys<T extends KeyRow = Task>({
   enabled,
   rows,
   cursor,
   acts,
+  handOff = true,
 }: {
-  enabled: boolean;
+  /** A boolean, or a question asked at keystroke time — for a gate that changes
+   *  without re-rendering the host (which pane was pressed last, `keyOwner`). */
+  enabled: boolean | (() => boolean);
   /** The list in display order. */
-  rows: Task[];
+  rows: T[];
   cursor: TaskListCursor;
-  acts: TaskListKeyActs;
+  acts: TaskListKeyActs<T>;
+  /** Hand the cursor to the next row when its row leaves the list. The grid
+   *  says no: a block leaves its rows when you page away from it, and the
+   *  cursor jumping to a stranger in another week is not "the next row". */
+  handOff?: boolean;
 }) {
   // Read fresh on every keystroke without re-subscribing per render.
   const live = useRef({ rows, cursor, acts, enabled });
   live.current = { rows, cursor, acts, enabled };
+  const isOn = () => {
+    const on = live.current.enabled;
+    return typeof on === "function" ? on() : on;
+  };
 
   // A row that leaves under the cursor (done, dated away, trashed) hands the
   // cursor to whatever took its place, so the next key still has a target.
@@ -78,10 +103,11 @@ export function useTaskListKeys({
   const idx = cursor.cursorId ? rows.findIndex((t) => t.id === cursor.cursorId) : -1;
   if (idx >= 0) lastIndex.current = idx;
   useEffect(() => {
-    if (!enabled || !cursor.cursorId || idx >= 0) return;
+    if (!handOff || !isOn() || !cursor.cursorId || idx >= 0) return;
     const fallback = rows[Math.min(lastIndex.current, rows.length - 1)];
     cursor.setCursorId(fallback?.id ?? null);
-  }, [enabled, idx, rows, cursor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, idx, rows, cursor, handOff]);
 
   // Subscribed ONCE, for the list's lifetime. Re-subscribing when `enabled`
   // flips (a popover opening and closing) moved this listener behind the
@@ -89,7 +115,7 @@ export function useTaskListKeys({
   // record on the press that should only have cleared the cursor.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!live.current.enabled) return;
+      if (!isOn()) return;
       if (e.defaultPrevented || isTypingIn(e.target)) return;
       // A floating surface owns the keys while it's up — a block's menu on the
       // calendar, a row menu, a task popover inside a record. `enabled` only
@@ -137,6 +163,12 @@ export function useTaskListKeys({
         acts.rename(current);
         return handled();
       }
+      // ⌘D — duplicate (the browser's bookmark is not what a list means by it).
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
+        if (!acts.duplicate || !targets.length) return;
+        acts.duplicate(targets);
+        return handled();
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       switch (e.key) {
@@ -157,6 +189,10 @@ export function useTaskListKeys({
         case "Enter":
           if (!current) return;
           acts.open(current);
+          return handled();
+        case ".":
+          if (!acts.menu || !current) return;
+          acts.menu(current);
           return handled();
         case "e": {
           if (!targets.length) return;

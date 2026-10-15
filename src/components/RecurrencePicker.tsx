@@ -519,11 +519,15 @@ export default function RecurrencePicker({
       active ? "bg-accent text-on-accent" : "text-muted hover:text-ink"
     }`;
 
+  // `data-nested-surface`: a floating layer of its own — a press in it (or on
+  // its scrim) belongs to it, not to the composer it was opened from, which
+  // closes on any press outside itself (DraftComposer, D-156).
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
+      <div data-nested-surface="" className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
         ref={popRef}
+        data-nested-surface=""
         className="moment fixed z-[61] flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{ top: pos.top, left: pos.left, width: POP_W, boxShadow: "var(--shadow-3)" }}
       >

@@ -1,7 +1,8 @@
 # Schedule UX audit — 2026-10-15
 
-*Status: audit complete; 31 of 50 findings fixed in this working tree (not yet
-committed), #8 on its own branch; the rest split into the follow-ups at the end. Decisions D-154, D-155.*
+*Status: audit complete; 31 of 50 findings fixed (commit 3360a35), #8 on its own branch,
+#31–33 on `claude/beautiful-allen-bbd1a7` (D-156); the rest split into the follow-ups at the
+end. Decisions D-154, D-155, D-156.*
 
 **Thesis.** The Schedule wasn't slow because it renders slowly — the 09-03 perf work holds.
 It felt slower than thought because of **what happened around each gesture**: a 500ms
@@ -90,9 +91,9 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 | 28 | The rail's post-drag click-swallower never expired (could eat your next click) | 🧪 Expires next task; slop matches the drag's owner (6px rail / 5px grid) |
 | 29 | A resize or checkbox press armed the drop feedback ("↳ Drop into…" while resizing) | 🧪 |
 | 30 | An anytime chip dragged onto an hour previewed 1h then landed at its own length | 🧪 `defaultTimedEventDuration` |
-| 31 | **The grid has no selection and no keys** — no ⌫/e/t/v on a block, no ⌥↑↓ nudge, no ⌘D, no j/k between blocks | ➡️ *Grid selection + block keys* |
-| 32 | Esc mid-drag hid the feedback but the release still committed (and a 4-row group landed as one) | ➡️ *Grid selection + block keys* |
-| 33 | A drawn draft is frozen — no way to nudge 9:00→9:15 without redrawing; its backdrop eats the next press and double-click | ➡️ *Grid selection + block keys* |
+| 31 | **The grid has no selection and no keys** — no ⌫/e/t/v on a block, no ⌥↑↓ nudge, no ⌘D, no j/k between blocks | ✅ id-based selection, the list's own `useTaskListKeys` over blocks in time order, `keyOwner` for whose ⌫ it is (D-156) |
+| 32 | Esc mid-drag hid the feedback but the release still committed (and a 4-row group landed as one) | ✅ *Release to cancel*; every drop handler asks the gesture; the group survives to the drop (D-156) |
+| 33 | A drawn draft is frozen — no way to nudge 9:00→9:15 without redrawing; its backdrop eats the next press and double-click | ✅ ghost drags/resizes, ↑↓ ⇧↑↓ from the card, outside-press instead of a backdrop; the dismiss guard now outlives FullCalendar's deferred `dateClick` (D-156) |
 | 34 | "Place beside a slot" sized by the default duration, so the result overlaps and disagrees with the preview | ➡️ |
 | 35 | **You can't bring a project into the week from the Schedule** (⌘2 → drag → ⌘1, or 4+ clicks into the ritual) | ❓ A *＋ Bring a project in* picker at the crown's foot — reverses a code-comment stance in `WeekPlanFloor.tsx`, not a logged decision |
 | 36 | The crown's amber "N with no time" can't be acted on; an unshaped project can't get a sitting | ❓ make it open *Find it time* (proposes, you press — N-01) |
@@ -127,9 +128,9 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 - **Write-path render cost** — #15, #16; then add drop / resize / complete / create
   interactions to `scripts/perf/interactions.mjs` (the rig has **no write interaction at
   all** today). Needs Chrome at `/Applications/Google Chrome.app`.
-- **Grid selection + block keys** — #31–33: an id-based selection on the grid, owned by the
-  last-touched pane, with the list grammar (e ⌫ t v ↵ ⌘E ⌘D, j/k by time, ⌥↑↓ ±15m,
-  ⌥←→ ±1 day, ⌥⇧↑↓ resize, `.` opens the menu).
+- **Grid selection + block keys** — #31–33: ✅ on `claude/beautiful-allen-bbd1a7` (D-156).
+  An id-based selection on the grid, owned by the last-touched pane, with the list grammar
+  (e ⌫ t v ↵ ⌘E ⌘D, j/k by time, ⌥↑↓ ±15m, ⌥←→ ±1 day, ⌥⇧↑↓ resize, `.` opens the menu).
 - **One menu primitive + visual system pass** — #19 (rest), #45, #47–50.
 
 ## Actions
@@ -138,5 +139,5 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 |---|---|
 | **Fix now** (done here) | #1–4, 9–14, 17–30, 38–44 — ✅ driven: 1, 10, 13, 17–20, 27, 38–42, 44; 🧪 the rest |
 | **Bet** (own sessions) | *Sync-layer write races* (#5–7) · *Write-path render cost* (#15–16, perf rig write interactions) · *Grid selection + block keys* (#31–33) · *One menu primitive + visual system pass* (#19, 45, 47–50) |
-| **Decision to log** | ✅ D-154, D-155 · ❓ bring a project into the week from the crown (#35) · ❓ amber mark → *Find it time* (#36) · ❓ rail rows one height, per design-law 5 (#46) · ❓ `--danger` for destructive confirms extends D-101 (applied in the calendar menus) |
+| **Decision to log** | ✅ D-154, D-155, D-156 · ❓ bring a project into the week from the crown (#35) · ❓ amber mark → *Find it time* (#36) · ❓ rail rows one height, per design-law 5 (#46) · ❓ `--danger` for destructive confirms extends D-101 (applied in the calendar menus) |
 | **Doc to update** | ✅ glossary (*Anytime*) · `design-language.md` law 5 vs the two-line rows (#46) · planner law 4 vs `--now-band` · `scripts/perf/interactions.mjs` has no write interactions |
