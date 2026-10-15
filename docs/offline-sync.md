@@ -227,6 +227,27 @@ nothing, a one-binding channel got the INSERT, and sixteen channels of one
 binding each get everything. `useRealtime` now opens one channel per table
 (`nuvo-rt-<table>`). Do not consolidate them again to save connections.
 
+**A table outside the `supabase_realtime` publication is just as silent.** The
+channel joins and nothing arrives. Production's membership was set by hand in
+the dashboard, and as of 2026-10-15 it is **four tables: `tasks`,
+`external_events`, `calendar_accounts`, `user_settings`.** The other twelve
+`nuvo-rt-*` channels, and `nuvo-subscription`, deliver nothing in production.
+Slots, projects, domains, labels and the rest catch up only through the 60s
+pull and focus refetches. The "sixteen channels get everything" check above
+wrote a single row, which can only prove the table it was written to. A stack
+built from migrations used to publish zero tables, so local testing saw no live
+update or DELETE eviction at all; that is how the ghost-row bug hid locally.
+Migration 89 now records production's four, so local matches production. It
+adds only missing members, so applying it to production changes nothing.
+
+Don't widen the publication to make the rest live. DELETEs are not
+RLS-filtered: every subscriber to a published table receives the primary key
+of every row any account deletes (confirmed locally). For `subscriptions` and
+`event_domain_routing` that key carries the other account's user id. Live
+updates for the other tables belong on per-account broadcast topics. Replica
+identity stays DEFAULT: under RLS a DELETE carries only the primary key even
+with FULL (checked locally), and that key is all `liveApply` reads.
+
 **The desktop had no pull.** The other half of the same report. `refetchOnWindowFocus` rides TanStack's focus
 manager, which listens for `visibilitychange` — a Tauri window that never leaves
 the foreground never fires it. `refetchOnMount` has already decided. `syncNow`
