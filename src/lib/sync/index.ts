@@ -60,7 +60,7 @@ export async function queueWrite(op: NewOp): Promise<Op> {
   // `void` and immediately calls `invalidateWhenSafe` (the standard
   // optimistic-patch shape) must not see a stale "nothing owed" the
   // instant this function is entered — see markOwing's own comment.
-  markOwing(op.table);
+  markOwing(op.table, op.rowId);
   const stored = await enqueue(op);
   await refreshOwing();
   // Fire and forget: a drain failure is the engine's business, not the caller's.

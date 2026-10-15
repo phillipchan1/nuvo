@@ -16,7 +16,7 @@ beforeEach(async () => {
 
 describe("preserveOwingRows", () => {
   it("keeps a local create when a refetch returns the pre-insert server list", () => {
-    markOwing("projects");
+    markOwing("projects", "local");
     const previous = [
       { id: "existing", name: "Old" },
       { id: "local", name: "HRC Marketing Plan" },

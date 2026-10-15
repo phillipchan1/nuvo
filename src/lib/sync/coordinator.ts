@@ -59,6 +59,7 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
 /** Test seam: drop the owing mirror so a suite does not leak across cases. */
 export function resetOwingForTests() {
   owing = new Set();
+  pendingRows = new Map();
   parkedRows = new Map();
   owingReady = false;
   deferred.clear();
@@ -123,14 +124,25 @@ export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
  *
  * This is not "overlay pending ops onto every filtered task list" — that was
  * rejected above. It only preserves rows *already in this query's cache*: keep
- * the local body for ids we already have, keep local-only ids, and still admit
- * genuinely new remote ids.
+ * the local body for ids we already have, keep the missing ids this device
+ * still owes a write on, and still admit genuinely new remote ids.
  *
  * This runs as TanStack `structuralSharing` on *every* data write, including
  * our own `setQueryData`. A trash (or any membership drop) while the table is
  * owing used to get undone: the previous row was "missing from incoming", so
  * it was glued back on as a local-only extra — toast fired, the Today row
  * stayed. Local cache writes opt out via `runWithoutOwingPreserve`.
+ *
+ * **A missing row is held only if this device owes a write on that row.** The
+ * refetch is the server's word on its window; the rows it may not take away are
+ * the ones a queued op is about — a create it has not seen yet, a row dragged
+ * into this list — plus the parked ones. It used to hold *every* missing id
+ * whenever the table owed anything at all, and a launch nearly always owes
+ * something (occurrences materialize on open). So a row deleted on the phone,
+ * purged from the trash or removed by the agent came back as a "local-only
+ * extra" in whichever fragments refetched in that window, went to disk with the
+ * dehydrated cache, and was defended again on the next launch — the Schedule
+ * showed a re-seeded week with every block twice, through a full reload.
  */
 let bypassOwingPreserve = 0;
 
@@ -168,16 +180,34 @@ function rowUpdatedAt(row: unknown): string {
  */
 let parkedRows = new Map<SyncTable, Set<string>>();
 
-function keepParkedRows<T extends { id: string }>(
-  table: SyncTable,
-  previous: T[],
-  next: T[],
-): T[] {
-  const ids = parkedRows.get(table);
-  if (!ids?.size) return next;
-  const incomingIds = new Set(next.map((r) => r?.id));
-  const held = previous.filter((r) => r?.id && ids.has(r.id) && !incomingIds.has(r.id));
-  return held.length ? [...next, ...held] : next;
+/** Rows with a write still queued, per table — mirrored from the outbox by
+ *  `refreshOwing`, and added synchronously by `markOwing` for the same reason
+ *  `owing` is. */
+let pendingRows = new Map<SyncTable, Set<string>>();
+
+function rowsByTable(ops: readonly { table: SyncTable; rowId: string }[]) {
+  const out = new Map<SyncTable, Set<string>>();
+  for (const op of ops) {
+    let set = out.get(op.table);
+    if (!set) out.set(op.table, (set = new Set()));
+    set.add(op.rowId);
+  }
+  return out;
+}
+
+/**
+ * Whether a queued or parked op is about this cached row. `rowId` is the
+ * table's own identity: a uuid for most, and also the week for `week_reviews`
+ * (the one natural-keyed table whose list goes through this merge). A composite
+ * `task_labels` key never matches a task row, which is right — a label write is
+ * not a reason to hold a task in a list.
+ */
+function owesRow(table: SyncTable, row: { id: string }): boolean {
+  const owed = (key: unknown) =>
+    typeof key === "string" &&
+    Boolean(pendingRows.get(table)?.has(key) || parkedRows.get(table)?.has(key));
+  if (owed(row.id)) return true;
+  return table === "week_reviews" && owed((row as { week_start?: unknown }).week_start);
 }
 
 export function preserveOwingRows<T extends { id: string }>(
@@ -189,11 +219,16 @@ export function preserveOwingRows<T extends { id: string }>(
   if (!Array.isArray(next)) return next;
   if (bypassOwingPreserve > 0) return next;
   if (!Array.isArray(previous)) return next;
-  if (!owing.has(table)) return keepParkedRows(table, previous as T[], next);
+  // Nothing owed and nothing parked: the refetch is the whole truth.
+  if (!owing.has(table) && !parkedRows.get(table)?.size) return next;
   const prevRows = previous as T[];
+  const incomingIds = new Set(next.map((r) => r?.id));
+  // The refetch is authoritative for its window except for the rows this
+  // device still owes — see the header.
+  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id) && owesRow(table, r));
+  if (!owing.has(table)) return extras.length ? [...next, ...extras] : next;
   const prevById = new Map(prevRows.filter((r) => r?.id).map((r) => [r.id, r]));
   if (prevById.size === 0) return next;
-  const incomingIds = new Set(next.map((r) => r.id));
   // Same-id: keep the local body against a stale refetch, but take incoming
   // when it is strictly newer. Completing a task is a field write on a row
   // that still belongs in Today/scheduled — the extras path never runs, and
@@ -206,7 +241,6 @@ export function preserveOwingRows<T extends { id: string }>(
     if (!prev) return r;
     return rowUpdatedAt(r) > rowUpdatedAt(prev) ? r : prev;
   });
-  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id));
   if (!extras.length && merged.every((r, i) => r === next[i])) return next;
   return extras.length ? [...merged, ...extras] : merged;
 }
@@ -241,27 +275,24 @@ export function installOwingGuards(qc: QueryClient): void {
  * — a setting (or anything else on this pattern) visibly reverting the
  * instant you change it. `refreshOwing` still reconciles against IndexedDB
  * afterward for cross-tab/session truth; this just can't wait for it.
+ *
+ * Name the row: it is what lets a refetch keep that row and still drop the
+ * ones the server deleted (see `preserveOwingRows`).
  */
-export function markOwing(table: SyncTable): void {
+export function markOwing(table: SyncTable, rowId?: string): void {
   owing.add(table);
+  if (rowId === undefined) return;
+  let set = pendingRows.get(table);
+  if (!set) pendingRows.set(table, (set = new Set()));
+  set.add(rowId);
 }
 
 /** Recompute the mirror. Called after every enqueue and every drain. */
 export async function refreshOwing(): Promise<void> {
   const { pending, parked } = await outboxSnapshot();
   owing = new Set(pending.map((o) => o.table));
-  const held = new Map<SyncTable, Set<string>>();
-  for (const op of parked) {
-    // `rowId` is the table's own key: a uuid for most, a composite for
-    // `task_labels`, a week start for `sprints`/`week_reviews`. Each is
-    // compared against the `id` of the rows in that table's own caches, so a
-    // composite simply never matches — which is right, a rejected label is not
-    // a reason to hold a task row.
-    let set = held.get(op.table);
-    if (!set) held.set(op.table, (set = new Set()));
-    set.add(op.rowId);
-  }
-  parkedRows = held;
+  pendingRows = rowsByTable(pending);
+  parkedRows = rowsByTable(parked);
   owingReady = true;
 }
 

@@ -1,7 +1,7 @@
 # Offline sync
 
 **Status:** shipped — 123 Supabase writes reduced to 13, all 13 deliberate (see §6)
-**Last updated:** 2026-08-07
+**Last updated:** 2026-10-15
 **Code:** `src/lib/sync/` · migrations 53–55 (pushed) · `npm run check:sql`
 **Tests:** `tests/sync/` — 100 tests (`npm test`) + 13 live checks (`npm run check:sql`)
 
@@ -154,6 +154,22 @@ unprotected, so the next refetch dropped it and the task vanished with only a
 Settings toast to explain it. `preserveOwingRows` now holds the specific ids
 with a rejected write behind them when the table itself is not owing. A row
 deleted on another device still leaves.
+
+**Pending rows are protected per-row too — and nothing else is.** The owing
+merge used to keep *every* cached id a refetch lacked whenever the table owed
+anything at all. A launch nearly always owes something (occurrences materialize
+on open; the rollover cron has just moved yesterday's blocks; a drag is queued),
+so a row the server had deleted or moved — on the phone, by the agent or MCP,
+by the trash purge, by the rollover — was glued back on as a "local-only extra"
+in whichever fragments refetched in that window, went to disk with the
+dehydrated cache, and was defended again on the next launch. Seen on the local
+stack: a re-seed under an open Schedule left every block twice, the deleted ids
+beside their replacements, through a full reload. A refetch is now the server's
+word on its window except for the rows this device still owes: `markOwing` and
+`refreshOwing` mirror the pending ops' `rowId`s, and `preserveOwingRows` holds a
+missing row only when a pending or parked op is about it (`week_reviews` matches
+by `week_start`, the key its ops use). A local create the refetch predates, or a
+row just dragged into the list, still survives; everything else leaves.
 
 **Two windows, one outbox.** The desktop shell runs the main window and the
 ⌥Space panel as separate WKWebViews over one IndexedDB, so both drain the same
@@ -360,6 +376,7 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `transport.test.ts` (10) | Row identity: plain id, composite key, natural key; conflict targets; missing-session backoff |
 | `idb-partial-failure.test.ts` (2) | A healthy store that refuses one write: the op stays reachable and `durable` tells the truth |
 | `parked-rows-survive.test.ts` (3) | A rejected write keeps its row through a refetch, without freezing the table |
+| `refetch-authoritative.test.ts` (7) | A refetch while owing drops server-deleted / moved-away rows and keeps only owed ones; the re-seed-then-reload case through dehydrate/hydrate |
 | `two-windows.test.ts` (3) | Two WKWebViews on one queue: an acked op is never resurrected |
 | `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
 | `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |
