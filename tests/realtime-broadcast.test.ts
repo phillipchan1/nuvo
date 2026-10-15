@@ -70,4 +70,15 @@ describe("live changes ride private broadcast topics", () => {
       "postgres_changes sends every account's DELETE primary keys to every subscriber. Use a liveTopic.",
     ).toEqual([]);
   });
+
+  it("the live tables leave supabase_realtime (migration 91)", () => {
+    const unpublished = new Set<string>();
+    for (const { sql } of migrations) {
+      if (!/alter\s+publication\s+supabase_realtime\s+drop\s+table/i.test(sql)) continue;
+      for (const m of sql.matchAll(/foreach\s+\w+\s+in\s+array\s+array\[([^\]]+)\]/gi)) {
+        for (const lit of m[1].matchAll(/'(\w+)'/g)) unpublished.add(lit[1]);
+      }
+    }
+    expect(LIVE_TABLES.filter((t) => !unpublished.has(t))).toEqual([]);
+  });
 });

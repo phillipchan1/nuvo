@@ -405,5 +405,5 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `two-windows.test.ts` (3) | Two WKWebViews on one queue: an acked op is never resurrected |
 | `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
 | `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |
-| `../realtime-broadcast.test.ts` (4) | Every live table broadcasts; trigger, policy and `liveTopic` agree; no client-writable topic; no `postgres_changes` in `src/` |
+| `../realtime-broadcast.test.ts` (5) | Every live table broadcasts; trigger, policy and `liveTopic` agree; no client-writable topic; no `postgres_changes` in `src/`; 91 unpublishes them all |
 | `task-offline.test.tsx` (12) | The real `useTaskMutations` hook: offline create, reconnect delivery, force-quit survival, coalesced edits, label diffing, parked rejections |
