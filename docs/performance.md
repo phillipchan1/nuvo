@@ -1,7 +1,8 @@
 # Keeping Nuvo fast while it grows
 
 **Status:** live · guards run on every push (`npm test`), the budget runs on demand (`npm run perf`)
-**Why this exists:** [`perf-audit-2026-09-03-schedule.md`](perf-audit-2026-09-03-schedule.md)
+**Why this exists:** [`perf-audit-2026-09-03-schedule.md`](perf-audit-2026-09-03-schedule.md) ·
+[`perf-audit-2026-10-15-writes.md`](perf-audit-2026-10-15-writes.md) (what a write costs)
 
 ---
 
@@ -40,12 +41,14 @@ Each was verified by **replaying the real regression** and watching the guard fa
 hypothetical.
 
 Also enforcing structure: `tests/calendar-element-stability.test.ts` (the `<FullCalendar>` element
-must stay memoized, with no ticking value in its deps) and `tests/sync-calendar-events.test.ts`
-(every mutation happens inside the batch).
+must stay memoized, with no ticking value in its deps), `tests/sync-calendar-events.test.ts`
+(every mutation happens inside the batch) and `tests/write-render-cost.test.tsx` (nothing above the
+Planner subscribes to what a write changes — see *A write renders the Planner, not the app* below).
 
 ### Tier 2 — `npm run perf` (on demand, real browser, real numbers)
 
 ```bash
+colima start && supabase start && scripts/local/seed-dummy.sh   # the local stack + dummy account
 npm run dev          # in another shell
 npm run perf
 ```
@@ -54,25 +57,72 @@ Drives a real, visible Chrome over CDP (zero dependencies — Node's global `Web
 interaction in `scripts/perf/interactions.mjs` and checks each against
 `scripts/perf/budgets.json`. Non-zero exit on a breach.
 
+**Measure on the local dummy account** (`scripts/local/seed-dummy.sh`), never on production data:
+the writes below really write, and the budgets are only comparable on a fixed volume of data. The
+seed is relative to today, so it is the same week whenever you run it.
+
 | flag | effect |
 |---|---|
 | `--update` | re-baseline budgets from this run (then explain it in the commit) |
 | `--headful` | watch it drive |
 | `--url=…` | point at another port |
 | `--repeats=N` | trials per interaction (default 3, median reported) |
+| `--only=write:,cal:` | just the interactions whose keys start with one of those |
+| `--why` | under each row, the components that rendered most |
+| `CHROME_PATH=…` | a Chrome other than `/Applications/Google Chrome.app` — e.g. Chrome for Testing (`npx @puppeteer/browsers install chrome@stable`) |
+
+**The writes** (`scripts/perf/writes.mjs`) — drag a block +1h, resize it +30m, check it off,
+draw-create a task and press ↵, drop an inbox row on the grid — are driven with trusted mouse input
+and **measured from the commit** (the release, the press, the ↵), not the gesture before it: what
+they hold the line on is what a write costs once it is made. Each is undone outside the measured
+window (drag back, uncheck, ⌘Z), so a run leaves the account as it found it. `cal:settle` measures
+what trails a week travel: the new span's queries landing and the neighbours warming.
 
 **Run it before shipping anything that touches a shared surface** — the calendar, the rail, the
 floors, `index.css`, or any data hook the Schedule reads.
 
 ---
 
-## The three metrics, and why these
+## The metrics, and why these
 
 - **`forcedLayout`** — every `getBoundingClientRect`, `offset*` getter and `getComputedStyle`.
   **This is the metric that found every real regression.** It is deterministic and it *is* layout
   thrash, rather than a proxy for it. Prefer it to wall-clock when comparing two builds.
+- **`renders` / `commits`** — React components rendered, and the commits they took. Read off a
+  stand-in DevTools hook the probe installs before React loads. Deterministic for a given account,
+  and **the number a "this write re-renders the whole app" regression moves first** — forcedLayout
+  only sees what reaches the DOM, and most of a wasted render never does.
 - **`blockedMs`** — long tasks. What "the app froze" actually means.
 - **`dropped` / `worstFrameMs`** — real frame pacing.
+
+---
+
+## A write renders the Planner, not the app
+
+The fourth way the Schedule got slow without any single bad line (2026-10-15, measured in
+[`perf-audit-2026-10-15-writes.md`](perf-audit-2026-10-15-writes.md)): one drag, resize or checkbox
+took **~2,640 component renders across 8–10 commits and up to 395ms of long tasks**, because the
+shell — the component above every screen — was subscribed to things every write changes. Each
+subscription was reasonable on its own. Now: ~80 renders, 3–5 commits, no long task.
+
+1. **Nothing above the Planner subscribes to what a write changes.** Not every task, not the outbox
+   status, not the whole vertical. A shell hook that does re-renders every screen, including floors
+   you can't see. Background duties live in `ShellEffects`, a leaf that renders null.
+2. **Read a slice, not the store.** `useVertical()` renders on every task write — `data` is rebuilt
+   because a task's status moves its project. `useVerticalSelector(fn, isEqual)` renders when the
+   slice moves; `useVerticalDirectory()` when a name, hue, parent or status does;
+   `useVerticalActions()` never (its `getData()` reads the snapshot at call time, for handlers).
+3. **What a memo'd component receives keeps its identity.** A mutation bag rebuilt per render, or
+   an inline arrow, re-renders the rail and the grid on every Planner render and no screenshot shows
+   it. `useStableActions` for bags, `useStableHandler` for callbacks.
+4. **Nothing per-event depends on the clock.** Derive what the clock changes (the set of overdue
+   ids) and depend on its *membership*, not the tick.
+5. **A surface kept mounted while hidden is memo'd and fed stable props** — the Year lens, once
+   visited, was re-drawing 365 days on every write. (TanStack also notifies on a microtask now,
+   set in `App.tsx`, so a write's N list patches land in one commit, not N timers.)
+
+`tests/write-render-cost.test.tsx` holds these against the source, and `npm run perf`'s `renders`
+column shows them: a write's renders should stay under ~100.
 
 ---
 

@@ -69,8 +69,8 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 | 12 | Paging to a week warmed >15s earlier refetched in four waves | Range hooks used the 15s default; the prefetch used 60s | 🧪 One `CALENDAR_RANGE_STALE_MS` for all |
 | 13 | A slot drag caused 3–4 full renders | `updateSlot` rewrote every task list and refetched every task query | ✅ Only children whose day changes; `settleWrite` |
 | 14 | The create card took 540ms to arrive | `.moment` spring | 🧪 `pop-in` (130ms), also the recurrence dialog |
-| 15 | Every cache patch reaches React one macrotask late | TanStack v5 default scheduler is `setTimeout(0)` | ➡️ *Write-path render cost* — `notifyManager.setScheduler(queueMicrotask)` needs `npm run perf` (Chrome isn't installed here) |
-| 16 | Every task write re-renders the entire app and rebuilds the vertical | `["tasks","all"]` feeds `buildVertical`; the shell subscribes to all of it; mutation objects and Planner callbacks are fresh per render | ➡️ *Write-path render cost* |
+| 15 | Every cache patch reaches React one macrotask late | TanStack v5 default scheduler is `setTimeout(0)` | ✅ `queueMicrotask` — A/B'd: a write takes 2 fewer commits, ~73 fewer layouts ([perf-audit-2026-10-15-writes](perf-audit-2026-10-15-writes.md)) |
+| 16 | Every task write re-renders the entire app and rebuilds the vertical | `["tasks","all"]` feeds `buildVertical`; the shell subscribes to all of it; mutation objects and Planner callbacks are fresh per render | ✅ a write: ~2,640 → ~80 renders, 144–395ms → 0 long tasks ([perf-audit-2026-10-15-writes](perf-audit-2026-10-15-writes.md)) |
 
 ## P1 — interaction
 
@@ -124,9 +124,9 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
   (not pushed). A refetch now drops server-deleted rows unless this device owes a write.
 - **Sync-layer write races** — #5, #6, #7, plus the Google mirror reading a stale row
   (`mirrorTask` fires before the outbox delivers).
-- **Write-path render cost** — #15, #16; then add drop / resize / complete / create
-  interactions to `scripts/perf/interactions.mjs` (the rig has **no write interaction at
-  all** today). Needs Chrome at `/Applications/Google Chrome.app`.
+- **Write-path render cost** — #15, #16 ✅ on `claude/youthful-kirch-38e370`: the rig drives
+  drag / resize / complete / create / rail-drop and counts React renders; a write went from
+  ~2,640 renders to ~80. See [perf-audit-2026-10-15-writes](perf-audit-2026-10-15-writes.md).
 - **Grid selection + block keys** — #31–33: an id-based selection on the grid, owned by the
   last-touched pane, with the list grammar (e ⌫ t v ↵ ⌘E ⌘D, j/k by time, ⌥↑↓ ±15m,
   ⌥←→ ±1 day, ⌥⇧↑↓ resize, `.` opens the menu).

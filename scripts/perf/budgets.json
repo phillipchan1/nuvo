@@ -1,72 +1,121 @@
 {
   "_comment": "Ceilings, not targets. Raising a number is allowed; doing it silently is not \u2014 say why in the commit.",
-  "_measuredOn": "`npm run dev` (dev build, StrictMode ON, so React work is ~2x production) driven by scripts/perf/run.mjs in headless Chrome at 1440x900. Re-baseline with `npm run perf -- --update` and keep the condition identical, or the numbers are not comparable.",
-  "_baselineEventCount": 88,
+  "_measuredOn": "The LOCAL DUMMY ACCOUNT (scripts/local/seed-dummy.sh \u2014 the same lived-in week whenever it's re-seeded), on `npm run dev` (dev build, StrictMode ON, so React work is ~2x production), driven by scripts/perf/run.mjs in headless Chrome at 1440x900, 5 repeats. Never production data: the write interactions really write. Re-baseline with `npm run perf -- --update --repeats=5` and keep the condition identical, or the numbers are not comparable.",
+  "_baselineEventCount": 34,
   "budgets": {
     "nav:projects": {
+      "renders": 170,
       "forcedLayout": 50,
       "blockedMs": 40,
       "dropped": 1
     },
     "nav:initiatives": {
+      "renders": 170,
       "forcedLayout": 50,
       "blockedMs": 40,
       "dropped": 1
     },
     "nav:domains": {
+      "renders": 210,
       "forcedLayout": 50,
       "blockedMs": 40,
       "dropped": 1
     },
     "nav:schedule": {
+      "renders": 140,
       "forcedLayout": 50,
       "blockedMs": 40,
       "dropped": 1
     },
     "cal:day": {
-      "forcedLayout": 300,
-      "blockedMs": 100,
+      "renders": 280,
+      "forcedLayout": 950,
+      "blockedMs": 40,
       "dropped": 2
     },
     "cal:month": {
-      "forcedLayout": 300,
+      "renders": 320,
+      "forcedLayout": 850,
       "blockedMs": 90,
       "dropped": 2
     },
     "cal:year": {
-      "forcedLayout": 300,
-      "blockedMs": 110,
-      "dropped": 2
-    },
-    "cal:travel": {
-      "forcedLayout": 50,
-      "blockedMs": 40,
-      "dropped": 2
-    },
-    "cal:today": {
+      "renders": 120,
       "forcedLayout": 50,
       "blockedMs": 40,
       "dropped": 1
     },
+    "cal:travel": {
+      "renders": 110,
+      "forcedLayout": 1000,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "cal:today": {
+      "renders": 20,
+      "forcedLayout": 400,
+      "blockedMs": 40,
+      "dropped": 1
+    },
     "rail:tabs": {
-      "forcedLayout": 300,
-      "blockedMs": 100,
-      "dropped": 2
+      "renders": 100,
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
     },
     "popover:open": {
-      "forcedLayout": 400,
-      "blockedMs": 100,
-      "dropped": 2
+      "renders": 220,
+      "forcedLayout": 100,
+      "blockedMs": 40,
+      "dropped": 1
     },
     "focus:toggle": {
-      "forcedLayout": 16050,
-      "blockedMs": 90,
-      "dropped": 2
+      "renders": 130,
+      "forcedLayout": 9000,
+      "blockedMs": 40,
+      "dropped": 1
     },
     "settings:open": {
-      "forcedLayout": 300,
-      "blockedMs": 100,
-      "dropped": 2
+      "renders": 150,
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "write:drag": {
+      "renders": 100,
+      "forcedLayout": 450,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "write:resize": {
+      "renders": 100,
+      "forcedLayout": 350,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "write:complete": {
+      "renders": 100,
+      "forcedLayout": 250,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "write:create": {
+      "renders": 100,
+      "forcedLayout": 350,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "write:rail-drop": {
+      "renders": 150,
+      "forcedLayout": 450,
+      "blockedMs": 40,
+      "dropped": 1
+    },
+    "cal:settle": {
+      "renders": 10,
+      "forcedLayout": 50,
+      "blockedMs": 40,
+      "dropped": 1
     }
   },
   "global": {

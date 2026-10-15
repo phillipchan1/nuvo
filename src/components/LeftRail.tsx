@@ -9,7 +9,7 @@ import TaskActionsMenu from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
 import { orderBeside, useTaskListKeys } from "./tasks/useTaskListKeys";
 import { restoreFromTrashPatch } from "../lib/types";
-import { useVertical } from "../hooks/useVertical";
+import { useVerticalDirectory } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
 import TaskFilter from "./TaskFilter";
 import BulkBar from "./BulkBar";
@@ -105,7 +105,11 @@ function LeftRail({
   /** The week door's lifecycle, worn by the WeekPanel header that crowns us. */
   weekDoor?: WeekDoor;
 }) {
-  const { data: vertical } = useVertical();
+  // The directory, not the whole vertical: the rail labels its rows (project,
+  // domain, hue) and offers pickers; it shows no progress. Reading the whole
+  // snapshot re-rendered every row on every write anywhere — a block dragged on
+  // Thursday redrew the inbox.
+  const vertical = useVerticalDirectory();
   const { nav } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */

@@ -247,9 +247,35 @@ describe("the Planner hands the rail and the grid stable props", () => {
     expect(read("hooks/useRecurrence.ts")).toMatch(/return useMemo\(\s*\(\) => \(\{\s*materializeSeries/);
   });
 
+  it("the rail labels its rows from the directory, so a write elsewhere doesn't redraw it", () => {
+    expect(read("components/LeftRail.tsx")).not.toMatch(/useVertical\(\)/);
+    expect(read("hooks/useTaskFilter.ts")).not.toMatch(/useVertical\(\)/);
+  });
+
   it("the grid's colours and names come from the directory, not the whole vertical", () => {
     expect(PLANNER).toMatch(/const grid = useMemo\(\(\) => gridLookups\(directory\), \[directory\]\)/);
     expect(PLANNER).not.toMatch(/\[[^\]]*\bvertical\b[^\]]*\]\s*,?\s*\)/);
+  });
+});
+
+describe("cache notifications reach React on a microtask", () => {
+  // A/B'd with the rig: on setTimeout(0) a write took two more commits, and one
+  // of them re-ran the grid reconcile.
+  it("App sets the TanStack scheduler before the client exists", () => {
+    const app = read("App.tsx");
+    const at = app.indexOf("notifyManager.setScheduler(queueMicrotask)");
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(app.indexOf("const queryClient = new QueryClient("));
+  });
+});
+
+describe("the Year, kept mounted under the grid, sits out writes", () => {
+  it("is memo'd and handed stable props", () => {
+    expect(read("components/CalendarYear.tsx")).toMatch(/export default memo\(function CalendarYear\(/);
+    const pane = read("components/CalendarPane.tsx");
+    const year = pane.slice(pane.indexOf("<CalendarYear"), pane.indexOf("/>", pane.indexOf("<CalendarYear")));
+    expect(year).not.toMatch(/=\{\s*\(/);
+    expect(year).not.toMatch(/now=\{now\}/);
   });
 });
 

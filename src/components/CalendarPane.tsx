@@ -3100,6 +3100,13 @@ function CalendarPane({
     remountCache.dateISO = startOfDay(d).toISOString();
     onViewChange?.(next);
   };
+  // The Year's props, stable across the pane's renders: it marks only which
+  // DAY is today, so it hears the clock once a day rather than every 30s.
+  const pickYearDay = useStableHandler((d: Date) => openYearDate(d, "timeGridDay"));
+  const pickYearMonth = useStableHandler((d: Date) => openYearDate(d, "dayGridMonth"));
+  const todayKey = todayISO(now);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const yearNow = useMemo(() => now, [todayKey]);
 
   const handleDatesSet = useStableHandler((arg: DatesSetArg) => {
     // currentStart, not start: the month grid's `start` is the previous month's
@@ -3987,10 +3994,10 @@ function CalendarPane({
           >
             <CalendarYear
               year={yearCursor}
-              now={now}
+              now={yearNow}
               weekStartsOn={firstDayOfWeek(settings)}
-              onPickDay={(d) => openYearDate(d, "timeGridDay")}
-              onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
+              onPickDay={pickYearDay}
+              onPickMonth={pickYearMonth}
             />
           </div>
         )}

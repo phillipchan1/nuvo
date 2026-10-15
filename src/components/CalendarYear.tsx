@@ -11,10 +11,14 @@
 // title holds). Saying it again as an in-pane masthead is the date being
 // spoken twice (D-123 / D-129). D-132 tried both seats and was reversed.
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { YearMonth } from "./calendar/YearParts";
 
-export default function CalendarYear({
+// Memo'd: once opened the Year stays mounted under the grid (`yearEverOpened`),
+// and as a plain child it re-drew all 365 days with every render of the pane —
+// six times per block dragged on the week. It only changes with the year, the
+// day, or the week start.
+export default memo(function CalendarYear({
   year,
   now,
   weekStartsOn,
@@ -81,4 +85,4 @@ export default function CalendarYear({
       </div>
     </div>
   );
-}
+});
