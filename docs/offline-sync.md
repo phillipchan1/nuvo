@@ -171,6 +171,44 @@ missing row only when a pending or parked op is about it (`week_reviews` matches
 by `week_start`, the key its ops use). A local create the refetch predates, or a
 row just dragged into the list, still survives; everything else leaves.
 
+**A row this device owes is placed by this device — in both directions.** The
+rule above holds the rows a refetch *lacks*. Its mirror image is the rows a
+refetch *has* that the list doesn't: a snapshot that predates a queued delete
+still has the row, and one that predates a queued move still has it in the list
+it left. Both were admitted as "new on the server", so a deleted slot came back
+on the Schedule, a removed step came back on its checklist, and a block dragged
+to next week stood in both weeks until the drain and a later refetch. Two fetch
+paths reach this while owing because nothing gates them: `prefetchCalendarRange`
+warming the neighbour weeks, and any key's first fetch. Now the mirror also
+records each row's last queued op (`markOwing(table, rowId, kind)`;
+`refreshOwing` takes it from the folded outbox, so a delete → insert recreate
+counts as live again):
+
+| The row in the refetch, with this queued | Before | Now |
+|---|---|---|
+| A delete | Admitted (or held as an extra) | Admitted nowhere — including a key's first fetch |
+| An insert or update, and the list doesn't have it | Admitted | Dropped: the list's membership stands |
+| An insert or update, and the list has it | Local body unless incoming is newer | Unchanged |
+| Nothing (or only parked work) | Admitted | Unchanged |
+
+"The list's membership" needs no second copy of the membership rule. Every
+local write re-places the row in every mounted list (`putTaskInCaches`,
+`putSlotInCaches`), so the previous list *is* the one rule's answer for the
+row's local post-image. **What that cannot cover is a list with no previous
+data.** On a key's first fetch there is no local answer to read, and computing
+one means asking whether this device's copy of the row belongs in that key —
+the hooks' rule, keyed on the query key that `structuralSharing` is never given.
+Re-deriving it in the coordinator is the drift the header rules out, so a first
+fetch still admits a row this device moved out of that window. It leaves at the
+drain's refetch or the next local write to the row. On the Schedule it is
+usually invisible: the fragment merge (`mergeTaskLists`, newest `updated_at`
+wins) picks the local copy, stamped by `patchCaches`, whenever another merged
+fragment still holds it. The cost runs the other way too:
+a row the server moved *into* a list while this device owes a write on it stays
+out of that list until the drain (Realtime's live apply places it at once when
+the socket is up). Parked work is out of scope: a parked delete never drains, so
+hiding the row would hide it for good on a server that still has it.
+
 **Two windows, one outbox.** The desktop shell runs the main window and the
 ⌥Space panel as separate WKWebViews over one IndexedDB, so both drain the same
 queue. Ops are idempotent, so a double send is harmless — but `recordFailure`'s
@@ -377,6 +415,7 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `idb-partial-failure.test.ts` (2) | A healthy store that refuses one write: the op stays reachable and `durable` tells the truth |
 | `parked-rows-survive.test.ts` (3) | A rejected write keeps its row through a refetch, without freezing the table |
 | `refetch-authoritative.test.ts` (7) | A refetch while owing drops server-deleted / moved-away rows and keeps only owed ones; the re-seed-then-reload case through dehydrate/hydrate |
+| `stale-refetch-removals.test.ts` (8) | A stale snapshot does not hand back a row this device deleted (existing list, first fetch, extras) or moved out of a list; a recreate and an unowed remote move still get in |
 | `two-windows.test.ts` (3) | Two WKWebViews on one queue: an acked op is never resurrected |
 | `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
 | `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |

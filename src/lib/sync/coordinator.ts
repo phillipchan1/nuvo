@@ -30,7 +30,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
 import { outboxSnapshot, refreshOutboxStatus, setOutboxStatus } from "./outbox";
-import { SYNC_TABLES, type SyncTable } from "./ops";
+import { SYNC_TABLES, type OpKind, type SyncTable } from "./ops";
 import { isTableLive } from "./liveHealth";
 
 /** Tables whose queries are waiting for a drain before they may refetch. */
@@ -60,6 +60,7 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
 export function resetOwingForTests() {
   owing = new Set();
   pendingRows = new Map();
+  pendingDeletes = new Map();
   parkedRows = new Map();
   owingReady = false;
   deferred.clear();
@@ -143,6 +144,29 @@ export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
  * extra" in whichever fragments refetched in that window, went to disk with the
  * dehydrated cache, and was defended again on the next launch — the Schedule
  * showed a re-seeded week with every block twice, through a full reload.
+ *
+ * **And a row this device owes is placed by this device, in both directions.**
+ * Holding the missing ones is half of it; the other half is the rows a refetch
+ * *has* that the cache doesn't. A snapshot that predates a queued delete still
+ * has the row, and one that predates a queued move still has it in the list it
+ * left — and both used to be admitted as "new on the server": a deleted slot
+ * back on the Schedule, a removed step back on its checklist, a block dragged
+ * to next week standing in both weeks, until the drain and a later refetch.
+ * The ungated fetches reach this while owing — `prefetchCalendarRange`, and any
+ * key's first fetch. So a row whose last queued op is a delete is admitted
+ * nowhere, and a row with any other queued op keeps the membership this list
+ * already gave it. That membership *is* `putTaskInCaches` / `putSlotInCaches`'s
+ * answer for the row's local post-image (every local write re-places the row in
+ * every mounted list), so this reads the one membership rule rather than
+ * re-deriving it.
+ *
+ * What that cannot cover is a list with no previous data — a key's first fetch.
+ * There is no local answer to read, and deciding whether this device's copy of
+ * the row belongs in that list is the surface's membership rule, which lives in
+ * the hooks and is keyed on the query key `structuralSharing` is not given. A
+ * second copy of it here is the drift the header rules out, so a first fetch
+ * admits a row this device moved out of that window (a delete still does not
+ * get in). It leaves at the drain's refetch, or the next local write to it.
  */
 let bypassOwingPreserve = 0;
 
@@ -185,29 +209,49 @@ let parkedRows = new Map<SyncTable, Set<string>>();
  *  `owing` is. */
 let pendingRows = new Map<SyncTable, Set<string>>();
 
+/** The subset of `pendingRows` whose last queued op is a delete: rows this
+ *  device has removed and the server still has. A recreate of the same id
+ *  (delete → insert never folds) takes the row back out. */
+let pendingDeletes = new Map<SyncTable, Set<string>>();
+
+function rowSet(map: Map<SyncTable, Set<string>>, table: SyncTable) {
+  let set = map.get(table);
+  if (!set) map.set(table, (set = new Set()));
+  return set;
+}
+
 function rowsByTable(ops: readonly { table: SyncTable; rowId: string }[]) {
   const out = new Map<SyncTable, Set<string>>();
+  for (const op of ops) rowSet(out, op.table).add(op.rowId);
+  return out;
+}
+
+/** `ops` in replay order, so the last op about a row decides. */
+function deletesByTable(ops: readonly { table: SyncTable; rowId: string; kind: OpKind }[]) {
+  const out = new Map<SyncTable, Set<string>>();
   for (const op of ops) {
-    let set = out.get(op.table);
-    if (!set) out.set(op.table, (set = new Set()));
-    set.add(op.rowId);
+    if (op.kind === "delete") rowSet(out, op.table).add(op.rowId);
+    else out.get(op.table)?.delete(op.rowId);
   }
   return out;
 }
 
 /**
- * Whether a queued or parked op is about this cached row. `rowId` is the
+ * Whether one of these row sets is about this cached row. `rowId` is the
  * table's own identity: a uuid for most, and also the week for `week_reviews`
  * (the one natural-keyed table whose list goes through this merge). A composite
  * `task_labels` key never matches a task row, which is right — a label write is
  * not a reason to hold a task in a list.
  */
+function rowIn(map: Map<SyncTable, Set<string>>, table: SyncTable, row: { id: string }): boolean {
+  const has = (key: unknown) => typeof key === "string" && Boolean(map.get(table)?.has(key));
+  if (has(row.id)) return true;
+  return table === "week_reviews" && has((row as { week_start?: unknown }).week_start);
+}
+
+/** Whether a queued or parked op is about this cached row. */
 function owesRow(table: SyncTable, row: { id: string }): boolean {
-  const owed = (key: unknown) =>
-    typeof key === "string" &&
-    Boolean(pendingRows.get(table)?.has(key) || parkedRows.get(table)?.has(key));
-  if (owed(row.id)) return true;
-  return table === "week_reviews" && owed((row as { week_start?: unknown }).week_start);
+  return rowIn(pendingRows, table, row) || rowIn(parkedRows, table, row);
 }
 
 export function preserveOwingRows<T extends { id: string }>(
@@ -218,30 +262,43 @@ export function preserveOwingRows<T extends { id: string }>(
   const next = incoming as T[];
   if (!Array.isArray(next)) return next;
   if (bypassOwingPreserve > 0) return next;
-  if (!Array.isArray(previous)) return next;
+  // A row this device deleted is in no list, whatever the snapshot says — and
+  // this needs no previous list, so it holds for a key's first fetch too.
+  const deleted = (r: T) => rowIn(pendingDeletes, table, r);
+  const live = pendingDeletes.get(table)?.size ? next.filter((r) => !r?.id || !deleted(r)) : next;
+  if (!Array.isArray(previous)) return live;
   // Nothing owed and nothing parked: the refetch is the whole truth.
-  if (!owing.has(table) && !parkedRows.get(table)?.size) return next;
+  if (!owing.has(table) && !parkedRows.get(table)?.size) return live;
   const prevRows = previous as T[];
   const incomingIds = new Set(next.map((r) => r?.id));
   // The refetch is authoritative for its window except for the rows this
-  // device still owes — see the header.
-  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id) && owesRow(table, r));
-  if (!owing.has(table)) return extras.length ? [...next, ...extras] : next;
+  // device still owes — see the header. A queued delete is not a reason to
+  // hold a row.
+  const extras = prevRows.filter(
+    (r) => r?.id && !incomingIds.has(r.id) && owesRow(table, r) && !deleted(r),
+  );
+  if (!owing.has(table)) return extras.length ? [...live, ...extras] : live;
   const prevById = new Map(prevRows.filter((r) => r?.id).map((r) => [r.id, r]));
-  if (prevById.size === 0) return next;
   // Same-id: keep the local body against a stale refetch, but take incoming
   // when it is strictly newer. Completing a task is a field write on a row
   // that still belongs in Today/scheduled — the extras path never runs, and
   // always preferring previous is what left the rail unchecked after the
   // toast. Membership drops (inbox, trash) still rely on extras + the local
   // write opting out via `runWithoutOwingPreserve`.
-  const merged = next.map((r) => {
-    if (!r?.id) return r;
-    const prev = prevById.get(r.id);
-    if (!prev) return r;
-    return rowUpdatedAt(r) > rowUpdatedAt(prev) ? r : prev;
-  });
-  if (!extras.length && merged.every((r, i) => r === next[i])) return next;
+  //
+  // A row this list doesn't have is new on the server — unless this device
+  // owes a write on it, in which case its absence is this device's own
+  // placement (a move out of the window the snapshot predates) and stands.
+  const merged: T[] = [];
+  for (const r of live) {
+    const prev = r?.id ? prevById.get(r.id) : undefined;
+    if (!prev) {
+      if (!r?.id || !rowIn(pendingRows, table, r)) merged.push(r);
+      continue;
+    }
+    merged.push(rowUpdatedAt(r) > rowUpdatedAt(prev) ? r : prev);
+  }
+  if (!extras.length && merged.length === next.length && merged.every((r, i) => r === next[i])) return next;
   return extras.length ? [...merged, ...extras] : merged;
 }
 
@@ -276,15 +333,16 @@ export function installOwingGuards(qc: QueryClient): void {
  * instant you change it. `refreshOwing` still reconciles against IndexedDB
  * afterward for cross-tab/session truth; this just can't wait for it.
  *
- * Name the row: it is what lets a refetch keep that row and still drop the
- * ones the server deleted (see `preserveOwingRows`).
+ * Name the row, and what the write does to it: that is what lets a refetch keep
+ * that row, drop the ones the server deleted, and not hand back one this device
+ * just deleted (see `preserveOwingRows`).
  */
-export function markOwing(table: SyncTable, rowId?: string): void {
+export function markOwing(table: SyncTable, rowId?: string, kind?: OpKind): void {
   owing.add(table);
   if (rowId === undefined) return;
-  let set = pendingRows.get(table);
-  if (!set) pendingRows.set(table, (set = new Set()));
-  set.add(rowId);
+  rowSet(pendingRows, table).add(rowId);
+  if (kind === "delete") rowSet(pendingDeletes, table).add(rowId);
+  else pendingDeletes.get(table)?.delete(rowId);
 }
 
 /** Recompute the mirror. Called after every enqueue and every drain. */
@@ -292,6 +350,7 @@ export async function refreshOwing(): Promise<void> {
   const { pending, parked } = await outboxSnapshot();
   owing = new Set(pending.map((o) => o.table));
   pendingRows = rowsByTable(pending);
+  pendingDeletes = deletesByTable(pending);
   parkedRows = rowsByTable(parked);
   owingReady = true;
 }
