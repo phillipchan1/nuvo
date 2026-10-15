@@ -360,23 +360,45 @@ function LeftRail({
     const p = projectById(vertical, t.project_id);
     return p?.name ? `${p.name} backlog` : "its project's backlog";
   };
-  const dropActs: Record<string, { label: (t: Task) => string; run: (t: Task) => void }> = {
+  // `coalesceKey` makes one drop of several rows ONE toast and one ⌘Z.
+  const dropActs: Record<string, { label: (t: Task) => string; run: (t: Task, coalesceKey?: string) => void }> = {
     inbox: {
       label: (t) => `↩ Back to ${homeOf(t)}`,
-      run: (t) =>
+      run: (t, coalesceKey) =>
         mutations.backToInbox(t, {
           undo: "toast",
           label: `${t.title} — ${homeOf(t)}`,
+          coalesceKey,
         }),
     },
     today: {
       label: () => "→ Onto today",
-      run: (t) =>
+      run: (t, coalesceKey) =>
         mutations.planFor(t, todayISO(now), {
           undo: "toast",
           label: `${t.title} — today`,
+          coalesceKey,
         }),
     },
+  };
+
+  // What a drag onto a tab carries: the whole multi-selection when the row you
+  // picked up is part of it, else that row. Captured when the drag STARTS — the
+  // drop used to act on the one row under the pointer, so three selected rows
+  // dragged to Inbox moved one and left two behind. (The calendar's drop has
+  // captured the group at drag start all along; this is the same rule.)
+  const tabDragGroupRef = useRef<string[] | null>(null);
+  const groupFor = (id: string) =>
+    selectedIds.size > 1 && selectedIds.has(id)
+      ? visible.filter((t) => selectedIds.has(t.id)).map((t) => t.id)
+      : null;
+  const groupLabel = (key: string, ids: string[]) => {
+    const rows = ids.map((x) => byId.get(x)).filter((t): t is Task => Boolean(t));
+    if (key === "today") return `→ Onto today · ${rows.length} tasks`;
+    const homes = new Set(rows.map(homeOf));
+    return homes.size === 1
+      ? `↩ Back to ${[...homes][0]} · ${rows.length} tasks`
+      : `↩ ${rows.length} tasks back to Inbox and their projects`;
   };
 
   const { draggingId, zone, moveBy } = useListReorder({
@@ -401,17 +423,29 @@ function LeftRail({
       return null;
     },
     onExternalDrop: (key, id) => {
-      const t = byId.get(id);
       const act = dropActs[key];
-      if (!t || !act) return;
-      // Mutation layer owns the toast + Undo (D-063a destination label above).
-      act.run(t);
+      if (!act) return;
+      const ids = tabDragGroupRef.current ?? [id];
+      tabDragGroupRef.current = null;
+      const rows = ids.map((x) => byId.get(x)).filter((t): t is Task => Boolean(t));
+      // Mutation layer owns the toast + Undo (D-063a destination label above);
+      // a group shares one coalesce key, so it's one toast and one ⌘Z.
+      const coalesceKey = rows.length > 1 ? `rail-tab-drop:${Date.now()}` : undefined;
+      rows.forEach((t) => act.run(t, coalesceKey));
     },
-    zoneLabel: (key, id) => dropActs[key]?.label(byId.get(id) ?? ({} as Task)) ?? "",
+    zoneLabel: (key, id) => {
+      const group = tabDragGroupRef.current;
+      if (group && group.length > 1) return groupLabel(key, group);
+      return dropActs[key]?.label(byId.get(id) ?? ({} as Task)) ?? "";
+    },
     onPointerDown: () => {
       preDragSelection.current = selectedIdRef.current;
     },
+    onDragStart: (id) => {
+      tabDragGroupRef.current = groupFor(id);
+    },
     onDragEnd: () => {
+      tabDragGroupRef.current = null;
       // Latch through the synthetic click that follows pointerup.
       suppressTabClickRef.current = true;
       requestAnimationFrame(() => {

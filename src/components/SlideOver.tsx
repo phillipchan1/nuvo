@@ -1413,6 +1413,10 @@ export function EventPopover({
   const [allDay, setAllDay] = useState(event.all_day);
   const [location, setLocation] = useState(event.location ?? "");
   const [notes, setNotes] = useState("");
+  // An event's description is READ far more than it's edited — and an invite's
+  // body is mostly a join link that a textarea can't click. It opens as text
+  // (links live, folded past ~8 lines); Edit turns it into the field.
+  const [editingNotes, setEditingNotes] = useState(false);
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
@@ -1500,6 +1504,16 @@ export function EventPopover({
   useEffect(() => {
     setNotes(plainTextFromHtml(raw?.description ?? ""));
   }, [event.id, raw?.description]);
+  useEffect(() => setEditingNotes(false), [event.id]);
+  // Size the notes field to what it holds (wrapped lines included), up to a
+  // cap — rows counted newlines only, so one long wrapped paragraph scrolled.
+  const notesRef = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const el = notesRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight + 2, 360)}px`;
+  }, [notes, editingNotes]);
 
   const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const hiddenNow = isHidden(event);
@@ -2091,7 +2105,7 @@ export function EventPopover({
               {/* A one-column card has no right side to put prose in. */}
               {!wide && raw?.description && (
                 <PopField label="Description">
-                  <DescriptionHtml html={raw.description} className="text-caption" />
+                  <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
                 </PopField>
               )}
             </PopStack>
@@ -2183,11 +2197,26 @@ export function EventPopover({
               >
                 {editable && detailsLoading ? (
                   <PopSkeleton lines={5} />
+                ) : editable && raw?.description && !editingNotes ? (
+                  <div>
+                    <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
+                    <button
+                      type="button"
+                      onClick={() => setEditingNotes(true)}
+                      className="fast mt-1.5 text-label text-muted hover:text-ink"
+                    >
+                      Edit notes
+                    </button>
+                  </div>
                 ) : editable ? (
                   <textarea
+                    ref={notesRef}
+                    // Opened by "Edit notes" — the press that asked for it.
+                    autoFocus={editingNotes}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => {
+                      setEditingNotes(false);
                       const original = plainTextFromHtml(raw?.description ?? "");
                       if (notes !== original) {
                         commitScoped(
@@ -2203,11 +2232,13 @@ export function EventPopover({
                     }}
                     placeholder="Add notes"
                     aria-label="Notes"
-                    rows={notes ? Math.min(8, notes.split("\n").length + 1) : 3}
-                    className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                    // Grows with what it holds (to 16 lines) instead of an
+                    // 8-row box scrolling a page of text inside a scrolling card.
+                    rows={notes ? Math.min(16, notes.split("\n").length + 1) : 3}
+                    className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors [overflow-wrap:anywhere] placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
                   />
                 ) : raw?.description ? (
-                  <DescriptionHtml html={raw.description} className="text-caption" />
+                  <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
                 ) : detailsLoading ? (
                   <PopSkeleton lines={5} />
                 ) : (
