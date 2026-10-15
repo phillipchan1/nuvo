@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { applyLiveChange } from "../lib/sync/liveApply";
-import { invalidateWhenSafe, pendingOps, pullSyncTables, setTableLive, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, pendingOps, pullSyncTables, recentlyAcked, setTableLive, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
 
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
@@ -80,7 +80,12 @@ export function useRealtime(enabled: boolean) {
       old: Record<string, unknown>;
     }) => {
       const paint = (ops: Parameters<typeof applyLiveChange>[2]) => {
-        if (applyLiveChange(qc, payload, ops)) return;
+        // Ops this device delivered a moment ago are merged too: their echoes
+        // can still be behind newer ones (see liveApply's header). Read at
+        // paint time, so an op acked during the IndexedDB read below is in
+        // one list or the other, never neither.
+        const delivered = recentlyAcked().filter((o) => o.table === payload.table);
+        if (applyLiveChange(qc, payload, ops, delivered)) return;
         queue(payload.table);
       };
 

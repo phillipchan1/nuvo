@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { invokeQuiet, supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 import { formatAppError } from "../lib/appError";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import {
@@ -15,9 +15,20 @@ import {
   type Label,
   type ProviderRawEvent,
   type RecurrenceScope,
+  type UserSettings,
 } from "../lib/types";
 import { applySeriesPatch, eventKey, eventSeriesKey, isEventHidden } from "../lib/eventActuals";
-import { assertCalendarWritable, eventsFunctionFor } from "../lib/calendarWrite";
+import { assertCalendarWritable, createDefaults, eventsFunctionFor, pickCreateTarget } from "../lib/calendarWrite";
+import {
+  beginEventCreate,
+  endEventCreate,
+  eventInRange,
+  holdEvent,
+  noteEventRow,
+  queueEventWrite,
+  swapCreatedEvent,
+  type EventRowAt,
+} from "../lib/eventWriteback";
 import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
@@ -327,34 +338,69 @@ export function useExternalEventMutations() {
       guardOffline();
       const awaitProvider =
         patch.recurrence !== undefined || scope === "ALL" || patch.all_day !== undefined;
-      // For THIS-only edits, write the instance row immediately so optimistic
-      // update is consistent. For ALL, the edge function shifts every mirrored
-      // instance and kicks a sync — a local single-row write here would be the
-      // dragged occurrence only, and a refetch would snap the rest back.
-      // All-day flips await the provider: Google merges PATCHes, and a local
-      // write that then fire-and-forgets left the chip flipped while the
-      // grid stayed timed (or snapped back on the next sync).
-      if (scope === "THIS" && !awaitProvider) {
-        const { description: _description, recurrence: _recurrence, ...columns } = patch;
-        if (Object.keys(columns).length) {
-          const { error } = await supabase.from("external_events").update(columns).eq("id", id);
-          if (error) throw error;
-        }
-      }
       const fn = eventsFunctionFor(providerForEvent(id));
-      const body = { eventId: id, patch, scope };
+      // Every edit to one event goes through its lane (lib/eventWriteback):
+      // one row write + provider PATCH at a time, in order, with edits that
+      // pile up behind a slow PATCH folded into one. Fired side by side, a
+      // second drag inside a second could be undone by the first drag's late
+      // row rewrite, and Google kept whichever PATCH arrived last.
+      const queued = queueEventWrite(
+        id,
+        patch,
+        { coalesce: scope === "THIS" && !awaitProvider },
+        async (merged, written) => {
+          // For THIS-only edits, write the instance row first so every device
+          // moves now. For ALL, the edge function shifts every mirrored instance
+          // and kicks a sync — a local single-row write here would be the
+          // dragged occurrence only, and a refetch would snap the rest back.
+          // All-day flips await the provider: Google merges PATCHes, and a
+          // local write that then fire-and-forgets left the chip flipped while
+          // the grid stayed timed (or snapped back on the next sync).
+          let rowAt: EventRowAt | null = null;
+          if (scope === "THIS" && !awaitProvider) {
+            const { description: _description, recurrence: _recurrence, ...columns } = merged;
+            if (Object.keys(columns).length) {
+              const { data, error } = await supabase
+                .from("external_events")
+                .update(columns)
+                .eq("id", id)
+                .select("start_at, end_at")
+                .maybeSingle();
+              if (error) throw error;
+              rowAt = (data as EventRowAt | null) ?? null;
+              if (rowAt) noteEventRow(id, rowAt);
+            }
+          }
+          written();
+          // `rowAt` is the server's guard: it rewrites the row from Google's
+          // answer only while the row still holds the times this write left.
+          const body = { eventId: id, patch: merged, scope, ...(rowAt ? { rowAt } : {}) };
+          const { data, error } = await supabase.functions.invoke(fn, { body });
+          await throwIfInvokeFailed(data, error);
+        },
+      );
       // Recurrence-rule edits and ALL-scope moves expand into a whole series
       // upstream. Await the write (and the sync kick) so the next refetch
       // actually sees the new times — invokeQuiet used to fire-and-forget,
       // leaving the dialog's revert as the last thing on screen.
       if (awaitProvider) {
-        const { data, error } = await supabase.functions.invoke(fn, { body });
-        await throwIfInvokeFailed(data, error);
-      } else {
-        invokeQuiet(fn, body);
+        await queued.done;
+        return;
       }
+      // A plain edit settles on the row write; the PATCH is the lane's to
+      // deliver, and its failure is reported the way invokeQuiet reported it.
+      await queued.written;
+      queued.done.catch((err: unknown) => {
+        void import("../lib/appError").then(({ reportAppError }) => {
+          void reportAppError(err, { source: fn });
+        });
+        console.warn(`[nuvo] edge fn ${fn} failed:`, err instanceof Error ? err.message : err);
+      });
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
+      // From the paint until the mutation settles, a Realtime echo for this
+      // event is older than the cache (the lane holds it after that).
+      const release = holdEvent(id);
       // Cancel synchronously without letting TanStack restore the query's
       // pre-fetch snapshot, then paint before yielding. Awaiting cancellation
       // left one React turn with the old geometry; cancelling with the default
@@ -394,7 +440,7 @@ export function useExternalEventMutations() {
         }
       }
       if (hadDescription) before.description = detailSnapshot?.description ?? "";
-      return { snapshot, detailSnapshot, hadDescription, id, before };
+      return { snapshot, detailSnapshot, hadDescription, id, before, release };
     },
     onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) {
@@ -431,7 +477,8 @@ export function useExternalEventMutations() {
         redo: () => update.mutate({ id: vars.id, patch: forward }),
       });
     },
-    onSettled: (_d, _e, vars) => {
+    onSettled: (_d, _e, vars, ctx) => {
+      ctx?.release();
       if (vars?.patch.recurrence !== undefined) {
         qc.invalidateQueries({ queryKey: ["event_series_rule", vars.id] });
       }
@@ -666,7 +713,8 @@ export function useExternalEventMutations() {
 
   // Create a real Google event on the primary calendar. Optimistically show the
   // event immediately; the edge function POSTs to Google and writes the DB row,
-  // then onSettled refetches to swap in the real record.
+  // and the real row takes the temporary one's place — from the function's
+  // answer or from its Realtime INSERT, whichever lands first.
   const create = useMutation({
     mutationFn: async ({
       title,
@@ -714,38 +762,58 @@ export function useExternalEventMutations() {
       await throwIfInvokeFailed(data, error);
       return data;
     },
-    onMutate: async ({ title, start_at, end_at, all_day }) => {
+    onMutate: async ({ title, start_at, end_at, all_day, accountId, calendarId, location }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const tempId = crypto.randomUUID();
+      // The calendar it is going to, as the grid draws it. Blank used to read
+      // as "no account we know", which the grid draws as a hatched read-only
+      // M365 block — then the Realtime INSERT arrived beside it. Every caller
+      // names a target; the Settings default stands in for one that doesn't.
+      const target =
+        accountId && calendarId
+          ? { accountId, calendarId }
+          : pickCreateTarget(qc.getQueryData<CalendarAccount[]>(["calendar_accounts"]) ?? [], {
+              ...createDefaults(qc.getQueryData<UserSettings | null>(["settings"])),
+              accountId,
+              calendarId,
+            });
       const optimistic: ExternalEvent = {
         id: tempId,
-        account_id: "",
+        account_id: target?.accountId ?? accountId ?? "",
         provider_event_id: tempId,
-        calendar_id: "",
+        calendar_id: target?.calendarId ?? calendarId ?? "",
         title,
         start_at,
         end_at,
         all_day: Boolean(all_day),
-        location: null,
+        location: location ?? null,
         busy: true,
         self_rsvp: null,
       };
-      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-        old ? [...old, optimistic] : [optimistic],
-      );
+      beginEventCreate(optimistic);
+      // Only the ranges it falls in. An unfetched range is left unfetched —
+      // seeding it with `[temp]` marked a loading query as loaded.
+      for (const [key, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+        if (Array.isArray(data) && eventInRange(optimistic, key)) qc.setQueryData(key, [...data, optimistic]);
+      }
       return { tempId };
     },
     onError: (_, __, ctx) => {
       if (!ctx) return;
+      endEventCreate(ctx.tempId);
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.filter((e) => e.id !== ctx.tempId),
       );
     },
-    onSuccess: (data, vars) => {
+    onSuccess: (data, vars, ctx) => {
+      const real = (data as { event?: ExternalEvent | null } | null)?.event;
+      if (ctx) {
+        endEventCreate(ctx.tempId);
+        if (real?.id) swapCreatedEvent(qc, ctx.tempId, real);
+      }
       // The edge function returns the row it wrote; without an id there is
       // nothing honest to undo TO, so we record nothing rather than guess.
-      const created = (data as { event?: { id?: string } } | null)?.event?.id
-        ?? (data as { id?: string } | null)?.id;
+      const created = real?.id ?? (data as { id?: string } | null)?.id;
       if (!created) return;
       // A created event with guests has already mailed them. Undoing cancels
       // for everyone, which is a bigger act than it looks — so it takes the
@@ -757,7 +825,16 @@ export function useExternalEventMutations() {
         undo: () => del.mutate({ id: created, scope: "THIS", notifyGuests: false }),
       });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
+    onSettled: (data, error, _vars, ctx) => {
+      // The swap already put the real row on every mounted range; refetching
+      // them all only rebuilt the grid. Without a row to swap in (a provider
+      // that answers without one, a failed create) the refetch is the repair.
+      const real = (data as { event?: ExternalEvent | null } | undefined)?.event;
+      if (error || !real?.id) {
+        if (ctx) endEventCreate(ctx.tempId);
+        void qc.invalidateQueries({ queryKey: ["external_events"] });
+      }
+    },
   });
 
   const invite = useMutation({

@@ -19,7 +19,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { mergeTaskLists } from "../lib/taskMerge";
-import { createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
+import { convertTaskToEvent, createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
 import { deriveSlotTitle } from "../lib/slots";
 import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
@@ -515,19 +515,26 @@ export default function Planner({
       const calendarName = accounts
         .find((a) => a.id === target.accountId)
         ?.calendars.find((c) => c.id === target.calendarId)?.summary;
-      try {
-        await eventMutations.createEvent({
-          title: task.title,
-          start_at: task.start_time,
-          end_at: end,
-          accountId: target.accountId,
-          calendarId: target.calendarId,
-        });
-        mutations.trash(task);
-        toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
-      } catch {
-        toast.error("Couldn't create the event — is your calendar connected?");
-      }
+      const start_at = task.start_time;
+      const made = await convertTaskToEvent(
+        () =>
+          eventMutations.createEvent({
+            title: task.title,
+            start_at,
+            end_at: end,
+            accountId: target.accountId,
+            calendarId: target.calendarId,
+          }),
+        {
+          // Silent: ⌘Z still brings the task back, but a "Trashed" toast before
+          // the event exists would announce the wrong half of the act.
+          trash: () => mutations.trash(task, { undo: "silent" }),
+          restore: () =>
+            mutations.patchTask(task.id, { status: task.status, trashed_at: task.trashed_at }, { undo: false }),
+        },
+      );
+      if (made) toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
+      else toast.error("Couldn't create the event — is your calendar connected?");
     },
     [eventMutations, mutations, accounts, settings],
   );

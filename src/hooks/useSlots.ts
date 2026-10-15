@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
+import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
 import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks";
@@ -77,6 +77,7 @@ export function useSlotTasks(slotIds: string[]) {
 }
 
 export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot>) {
+  holdFetchesBehindWrite(qc, "slots", ["slots"]);
   runWithoutOwingPreserve(() => {
     qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
       old?.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -85,6 +86,7 @@ export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot
 }
 
 export function insertSlotCache(qc: QueryClient, slot: Slot) {
+  holdFetchesBehindWrite(qc, "slots", ["slots"]);
   runWithoutOwingPreserve(() => {
     // Seed first: a slots-cache write notifies the Schedule, which remounts
     // useSlotTasks under the new id set. The children query has to exist
@@ -192,6 +194,7 @@ export function useSlotMutations() {
     const paint = () => {
       patchSlotCaches(qc, id, patch);
       if (patch.do_date !== undefined) {
+        holdFetchesBehindWrite(qc, "tasks", ["tasks"]);
         runWithoutOwingPreserve(() => {
           qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
             old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),

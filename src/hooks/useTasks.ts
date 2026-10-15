@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
+import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
@@ -501,6 +501,9 @@ export function sameTaskContent(a: Task, b: Task): boolean {
 }
 
 export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
+  // A refetch already on the wire read the row before this edit; let it land
+  // after the patch and the task moves back (see holdFetchesBehindWrite).
+  holdFetchesBehindWrite(qc, "tasks", ["tasks"]);
   // Resolve the post-patch row from any cache that already has it — needed when
   // inserting into a list the task is newly joining (slot children, etc.).
   let resolved: Task | null = null;
@@ -675,6 +678,7 @@ export function useTaskMutations() {
       task_labels: labelIds?.map((label_id) => ({ label_id })) ?? [],
     };
 
+    holdFetchesBehindWrite(qc, "tasks", ["tasks"]);
     if (isStep) {
       // Only its parent's checklist. Seeding a step into the other task lists
       // would flash a checklist line in the inbox until the refetch corrected

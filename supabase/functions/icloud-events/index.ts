@@ -19,6 +19,7 @@ import {
 } from "../_shared/icalwrite.ts";
 import { deleteEvent, getEvent, putEvent } from "../_shared/caldav.ts";
 import { icloudSeriesOrFilter } from "../_shared/icloudSeries.ts";
+import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
 
 /** The `uid::<recurrence-id>` suffix a recurring occurrence carries → ISO start. */
 function suffixToISO(suffix: string): string | null {
@@ -371,8 +372,15 @@ Deno.serve(async (req) => {
       if (p.end_at !== undefined) rowPatch.end_at = new Date(p.end_at).toISOString();
       if (p.all_day !== undefined) rowPatch.all_day = p.all_day;
       if (p.location !== undefined) rowPatch.location = p.location;
+      // Only while the row still holds the times the client's write left it
+      // at — a newer edit owns it otherwise (_shared/eventWriteback.ts).
       if (Object.keys(rowPatch).length) {
-        await admin.from("external_events").update(rowPatch).eq("id", eventId);
+        await rewriteMirrorRow(
+          admin.from("external_events") as unknown as MirrorRowTable,
+          eventId,
+          rowPatch,
+          parseRowAt(body.rowAt),
+        );
       }
     } else {
       // Same hole the Google ALL-path had: without rewriting the mirrored
