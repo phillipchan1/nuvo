@@ -292,7 +292,7 @@ describe("stale refetch cannot destroy local writes", () => {
   it.each(FIXTURES.filter((f) => f.list))(
     "$table: a pre-insert server list cannot drop a local create",
     (fix) => {
-      markOwing(fix.table);
+      markOwing(fix.table, fix.rowId);
       const previous = [
         { id: "existing", name: "Old" },
         { id: fix.rowId, ...(fix.insert as object) },
@@ -322,7 +322,7 @@ describe("stale refetch cannot destroy local writes", () => {
   });
 
   it("still admits a genuinely new remote row while owing", () => {
-    markOwing("tasks");
+    markOwing("tasks", "local");
     const previous = [{ id: "local", title: "Mine" }];
     const incoming = [
       { id: "remote", title: "Theirs" },
@@ -361,7 +361,7 @@ describe("TanStack cache guards", () => {
   it("a window-focus-shaped setQueryData cannot drop a just-created task", () => {
     const qc = new QueryClient();
     installOwingGuards(qc);
-    markOwing("tasks");
+    markOwing("tasks", "new");
     qc.setQueryData(["tasks", "all"], [
       { id: "old", title: "Existing" },
       { id: "new", title: "Typed on the Mac" },
