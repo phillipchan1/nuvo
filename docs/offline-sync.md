@@ -228,11 +228,19 @@ as the writing user, who has no INSERT on `realtime.messages`, every message
 would vanish with only a WARNING in the log. A device's own write still comes
 back as its echo, because PostgREST writes fire the trigger like any other.
 
+Production only ever published four of these tables (`tasks`,
+`external_events`, `calendar_accounts`, `user_settings`, migration 89). So the
+trigger turns live updates on for the other 13 **for the first time**. The
+other 12 channels used to join and report SUBSCRIBED without ever receiving a
+row. That marked the table live, and `settleWrite` and the post-drain refresh
+then skipped their refetch while waiting for an echo that never came. With the
+trigger, the echo is real.
+
 **Only migration 91 closes the leak.** It takes the live tables out of
 `supabase_realtime`. In production it ships *after* the broadcast clients have
 been picked up: an installed build still on `postgres_changes` loses its live
-updates when 91 lands, and falls back to the 60s pull and focus refetches until
-it updates. `tests/realtime-broadcast.test.ts` fails if a live table has no
+updates on those four tables when 91 lands, and falls back to the 60s pull and
+focus refetches until it updates. `tests/realtime-broadcast.test.ts` fails if a live table has no
 trigger, if the trigger, policy and `liveTopic` disagree on the topic, if a
 policy lets clients write to `realtime.messages`, or if `postgres_changes`
 comes back into `src/`.

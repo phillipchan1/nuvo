@@ -3,8 +3,11 @@
 --
 -- PRODUCTION: apply only after the clients that listen on broadcast
 -- (migration 90) have shipped and been picked up. A desktop or PWA build still
--- on `postgres_changes` loses its live updates here and falls back to the 60s
--- pull and focus refetches. Nothing is lost, it is just slower until it updates.
+-- on `postgres_changes` loses its live updates here, on the four tables
+-- production publishes (migration 89: tasks, external_events,
+-- calendar_accounts, user_settings), and falls back to the 60s pull and focus
+-- refetches. Nothing is lost, it is just slower until it updates. The loop
+-- names all 17 live tables so a hand-widened publication is cleaned up as well.
 --
 -- Until this runs the leak is open no matter what the clients do. Realtime
 -- answers any authenticated `postgres_changes` join on a published table with

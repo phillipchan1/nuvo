@@ -27,6 +27,14 @@
 --   old: the row for DELETE; for UPDATE only where the trigger asks for it
 --        ('with_old': `subscriptions`, whose referral toasts compare old/new)
 --
+-- Production publishes only tasks, external_events, calendar_accounts and
+-- user_settings (migration 89). The other 13 tables here have never been live
+-- there, so this turns their live updates on for the first time: more messages,
+-- and liveApply's paths for them meet production traffic. It also makes the
+-- echo `settleWrite` waits for real. Today those channels join, report
+-- SUBSCRIBED, mark the table live, and the post-write refetch is skipped for an
+-- echo that never comes.
+--
 -- This migration only ADDS the broadcast. Taking the tables out of
 -- `supabase_realtime` is migration 91, and only that closes the leak. Keep the
 -- two apart in production so installed clients still on postgres_changes keep
