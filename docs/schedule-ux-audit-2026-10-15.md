@@ -1,7 +1,7 @@
 # Schedule UX audit — 2026-10-15
 
-*Status: audit complete; 31 of 50 findings fixed in this working tree (not yet
-committed), #8 on its own branch; the rest split into the follow-ups at the end. Decisions D-154, D-155.*
+*Status: audit complete; 37 of 50 findings fixed on `claude/schedule-ux-audit` (not
+pushed), #8 on its own branch; the rest split into the follow-ups at the end. Decisions D-154, D-155.*
 
 **Thesis.** The Schedule wasn't slow because it renders slowly — the 09-03 perf work holds.
 It felt slower than thought because of **what happened around each gesture**: a 500ms
@@ -93,10 +93,10 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 | 31 | **The grid has no selection and no keys** — no ⌫/e/t/v on a block, no ⌥↑↓ nudge, no ⌘D, no j/k between blocks | ➡️ *Grid selection + block keys* |
 | 32 | Esc mid-drag hid the feedback but the release still committed (and a 4-row group landed as one) | ➡️ *Grid selection + block keys* |
 | 33 | A drawn draft is frozen — no way to nudge 9:00→9:15 without redrawing; its backdrop eats the next press and double-click | ➡️ *Grid selection + block keys* |
-| 34 | "Place beside a slot" sized by the default duration, so the result overlaps and disagrees with the preview | ➡️ |
+| 34 | "Place beside a slot" sized by the default duration, so the result overlaps and disagrees with the preview | ✅ The real length — a task's own, a group's or a project's sitting size — in the preview and the landing alike |
 | 35 | **You can't bring a project into the week from the Schedule** (⌘2 → drag → ⌘1, or 4+ clicks into the ritual) | ❓ A *＋ Bring a project in* picker at the crown's foot — reverses a code-comment stance in `WeekPlanFloor.tsx`, not a logged decision |
 | 36 | The crown's amber "N with no time" can't be acted on; an unshaped project can't get a sitting | ❓ make it open *Find it time* (proposes, you press — N-01) |
-| 37 | *Commit to this week* on a rail row vanishes it with no toast or undo | ➡️ |
+| 37 | *Commit to this week* on a rail row vanishes it with no toast or undo | 🧪 Toast with Undo (exact restore of week + status); shared by the menu and the popover's *This week* |
 
 ## P1 — design
 
@@ -109,12 +109,12 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 | 42 | Four time spellings on one screen (`2:00pm - 3:00pm`, `11:30 AM`, `12:16pm`, and the composer's ambiguous `11:00–1:00 PM`) | ✅ on blocks, the now-label, the composer and the popover's time chip — all through `at`/`span` (D-122). Remaining copies in `SlideOver`/`dates.ts` ➡️ |
 | 43 | The today disc printed raw `#fff` (~2.3:1 on dark-mode coral); destructive confirms were white on `--signal` | 🧪 `--on-signal` token (contrast-gated both themes); confirms on `--danger` / `--on-danger` |
 | 44 | A globe glyph at home said "you are where you live" in the busiest strip | ✅ `hideAtHome`, as the phone |
-| 45 | Signal diet: the now-line competes with ~12 other `--signal` marks (overdue slab, five amber marks, `!` + "4h late" on one row, today wash + underline + disc) | ➡️ *Visual system pass* |
+| 45 | Signal diet: the now-line competes with ~12 other `--signal` marks (overdue slab, five amber marks, `!` + "4h late" on one row, today wash + underline + disc) | ✅ The disc is today's one mark (no header wash, underline or signal weekday; the column a faint 5%); an overdue block keeps its fill with an ember **bar**; the crown's amber is `--warn`; a high-priority `!` is ink (priority isn't time); *This week* is `--accent` (D-156) |
 | 46 | Rail rows are two heights (54 / 37px) against design-law 5 "one line, one height"; the crown is ~31–38% of the rail | ❓ + ➡️ |
-| 47 | Menus: five widths, three hovers, three elevations, two entrance animations, `--signal` destructive at rest | ➡️ *One menu primitive* |
-| 48 | RSVP states collide with done/hidden (both 0.5 / 0.3 opacity); dashed means five things; the project sitting is `--slot` teal ("unclaimed") | ➡️ *Visual system pass* |
-| 49 | The anytime row is unbounded (D-141 sends every rolled task there); `pxPerHour` ignores it, so "fit N hours" is always short | ➡️ |
-| 50 | `.fc-col-header` is opaque `--bg` over the atmosphere (the frost-seam rule) | ➡️ verify with a before/after screenshot |
+| 47 | Menus: five widths, three hovers, three elevations, two entrance animations, `--signal` destructive at rest | ✅ One row (`min-h-7`, `bg-bg` lit), one width (224), `rise elev-3`, a title header on every menu; destructive in ink at rest, `--danger` when lit (D-101) |
+| 48 | RSVP states collide with done/hidden (both 0.5 / 0.3 opacity); dashed means five things; the project sitting is `--slot` teal ("unclaimed") | ✅ Fill = commitment: unanswered/tentative/declined are hollow (tentative adds `?`, declined is struck); dashed only for containers; a project's sitting wears its domain hue (D-156) |
+| 49 | The anytime row is unbounded (D-141 sends every rolled task there); `pxPerHour` ignores it, so "fit N hours" is always short | ✅ Anytime row capped at 3 rows (+N); `pxPerHour` subtracts its resting height |
+| 50 | `.fc-col-header` is opaque `--bg` over the atmosphere (the frost-seam rule) | Kept — the sticky header has to occlude the grid scrolling under it; transparent would show blocks through the day names. Logged as a deliberate exception |
 
 ---
 
@@ -136,7 +136,7 @@ Status: ✅ fixed and driven on the dummy account · 🧪 fixed, proven by a tes
 
 | Bucket | Items |
 |---|---|
-| **Fix now** (done here) | #1–4, 9–14, 17–30, 38–44 — ✅ driven: 1, 10, 13, 17–20, 27, 38–42, 44; 🧪 the rest |
-| **Bet** (own sessions) | *Sync-layer write races* (#5–7) · *Write-path render cost* (#15–16, perf rig write interactions) · *Grid selection + block keys* (#31–33) · *One menu primitive + visual system pass* (#19, 45, 47–50) |
-| **Decision to log** | ✅ D-154, D-155 · ❓ bring a project into the week from the crown (#35) · ❓ amber mark → *Find it time* (#36) · ❓ rail rows one height, per design-law 5 (#46) · ❓ `--danger` for destructive confirms extends D-101 (applied in the calendar menus) |
+| **Fix now** (done here) | #1–4, 9–14, 17–30, 34, 37–45, 47–49 — ✅ driven: 1, 10, 13, 17–20, 27, 34, 38–42, 44, 45, 47–49; 🧪 the rest |
+| **Bet** (own sessions) | *Sync-layer write races* (#5–7) · *Write-path render cost* (#15–16, perf rig write interactions) · *Grid selection + block keys* (#31–33) |
+| **Decision to log** | ✅ D-154, D-155, D-156 · ❓ bring a project into the week from the crown (#35) · ❓ amber mark → *Find it time* (#36) · ❓ rail rows one height, per design-law 5 (#46) · ✅ `--danger` for destructive confirms (D-156, extends D-101) |
 | **Doc to update** | ✅ glossary (*Anytime*) · `design-language.md` law 5 vs the two-line rows (#46) · planner law 4 vs `--now-band` · `scripts/perf/interactions.mjs` has no write interactions |

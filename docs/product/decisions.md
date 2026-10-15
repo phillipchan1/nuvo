@@ -5723,3 +5723,41 @@ Ledger: **D1** — the screen you plan from says where you are in it. Strains no
 spine-as-icons below 1280 is the same rail the chat squeeze already used. No new name.
 
 *Status: standing — driven at 1024 and 1440 on the dummy account.*
+
+---
+
+**D-156 · 2026-10-15 · On the Schedule, signal means now, fill means committed, and a
+menu is one object.**
+
+The visual half of the Schedule audit
+([`schedule-ux-audit-2026-10-15.md`](../schedule-ux-audit-2026-10-15.md) #45–50).
+
+- **Signal diet.** The now-line was one of about a dozen `--signal` marks on screen —
+  today's cell spent it four times (header wash, underline, weekday, disc), an overdue block
+  was a full ember slab, the crown's five "with no time" marks were ember, and a late
+  high-priority row printed `!` beside "4h late". `--signal` keeps the temporal roles
+  (D-054): **the disc is today's mark** (the column keeps a faint 5% wash; Day view none);
+  an overdue block keeps its fill and turns its **bar** ember; "no time yet" is `--warn`
+  (waiting on you, not late); priority `!` is ink (priority isn't time); *This week* is
+  `--accent` (intent).
+- **Fill means committed.** RSVP states were opacity and dashes, so a pending invite (0.5)
+  read exactly like a finished task (0.5) and a dash meant five things. An invite you
+  haven't accepted is now **hollow** — full ink when it still wants an answer, a `?` when
+  tentative, struck and half ink when declined. Dashed is for containers only (slots, the
+  draft ghost); M365 keeps its hatch, solid. A project's **sitting** wears its domain hue
+  rather than `--slot` — that token means open, unclaimed time (design-language colour
+  table), and a sitting is the opposite.
+- **One menu.** Calendar menus and the task menu now share one row (`min-h-7`, lit/hover
+  `bg-bg`), one width, one elevation and entrance, and a title header. Destructive items
+  sit in ink and turn `--danger` when lit; confirms are `--danger` / `--on-danger` — the
+  menu-side extension of D-101's quiet Trash. `--on-signal` joins the ink-on-fill tokens.
+- **Kept:** the sticky day header stays opaque `--bg`. It must occlude the grid scrolling
+  under it; this is a deliberate exception to "no opaque fill over the atmosphere", not an
+  oversight.
+
+Ledger: **D1** — what's now and next wins the eye again. Strains **P10/P11** not at all;
+no new pool or name. Holds in any palette: `tests/token-contrast.test.ts` gates
+`--on-signal` both ways.
+
+*Status: standing — driven at 1440 and 1024 on the dummy account (seeded with every RSVP
+state).*

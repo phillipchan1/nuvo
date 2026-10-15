@@ -27,10 +27,31 @@ import { at } from "../mobile/dayPlan";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { useVertical } from "../../hooks/useVertical";
+import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { fixedCssPx } from "../../hooks/useUiScale";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 const TRIAGE_UNDO = { undo: "toast" as const };
+
+/** Commit a task to this week, or take it off — said, and undoable. Committing
+ *  an inbox row usually takes it OFF the list you're looking at (it becomes
+ *  week work, in Spread), and with no word that read as "it vanished". */
+export function useWeekCommitAct(mutations: Mutations) {
+  const { data: vertical, toggleTaskSprint } = useVertical();
+  const { recordUndo } = useOptionalUndoStack();
+  return (task: Task) => {
+    const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
+    const before = { sprint_id: task.sprint_id, status: task.status };
+    toggleTaskSprint(task.id);
+    recordUndo({
+      label: inWeek ? `Off this week — ${task.title}` : `Committed to this week — ${task.title}`,
+      shortLabel: inWeek ? "Off the week" : "Committed",
+      tier: "toast",
+      undo: () => mutations.patchTask(task.id, before, { undo: false }),
+      redo: () => toggleTaskSprint(task.id),
+    });
+  };
+}
 
 /** Move a task to a day by hand. A timed task keeps its clock; an untimed one
  *  is planned for the day, as before. */
@@ -78,7 +99,8 @@ export default function TaskActionsMenu({
   onDuplicate?: () => void;
   onToEvent?: { label: string; action: () => void };
 }) {
-  const { data: vertical, toggleTaskSprint } = useVertical();
+  const { data: vertical } = useVertical();
+  const commitToWeek = useWeekCommitAct(mutations);
   const now = new Date();
   const [deleteMode, setDeleteMode] = useState(false);
   const [lit, setLit] = useState(-1);
@@ -206,7 +228,7 @@ export default function TaskActionsMenu({
     {
       kind: "action",
       label: inWeek ? "Remove from week" : "Commit to this week",
-      action: () => { toggleTaskSprint(task.id); onClose(); },
+      action: () => { commitToWeek(task); onClose(); },
     },
     ...(onDuplicate || onToEvent || onLabel ? [{ kind: "sep" as const }] : []),
     ...(onDuplicate ? [{ kind: "action" as const, label: "Duplicate", action: () => { onDuplicate(); onClose(); } }] : []),
@@ -301,12 +323,15 @@ export default function TaskActionsMenu({
       role="menu"
       aria-label={task.title}
       data-nested-surface=""
-      className="rise elev-3 fixed z-[70] w-[220px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+      className="rise elev-3 fixed z-[70] w-[224px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
       // Client px measured, CSS px placed — under UI zoom the two differ, and the
       // calendar's block menu (which now IS this menu) had always corrected it.
       style={{ top: fixedCssPx(pos.top), left: fixedCssPx(pos.left), maxHeight: "calc(100vh - 16px)" }}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {/* Whose menu this is — on a narrow calendar block it's the only place
+          the full title shows, and every calendar menu already led with it. */}
+      <div className="truncate border-b border-line px-3 pb-1.5 pt-0.5 text-meta text-muted">{task.title}</div>
       {items.map((item, i) => {
         if (item.kind === "sep") {
           // Leading, trailing and doubled rules come from optional items.
@@ -334,9 +359,11 @@ export default function TaskActionsMenu({
               e.stopPropagation();
               item.action();
             }}
-            className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption ${
+            // Destructive in ink at rest, `--danger` when lit (D-101) — not
+            // `--signal`, which on this screen means "now".
+            className={`fast flex min-h-7 w-full items-center gap-2 px-3 py-1.5 text-left text-caption ${
               on ? "bg-bg" : ""
-            } ${item.danger ? "text-signal" : "text-text"}`}
+            } ${item.danger && on ? "text-danger" : "text-text"}`}
           >
             <span className="flex-1 truncate">{item.label}</span>
             {item.key && (

@@ -74,7 +74,7 @@ export default function RowMenu({
       role="dialog"
       aria-label={title}
       data-nested-surface=""
-      className="rise elev-3 fixed z-[75] w-[260px] rounded-[10px] border border-line bg-surface p-1"
+      className="rise elev-3 fixed z-[75] w-[260px] rounded-[var(--radius)] border border-line bg-surface p-1"
       style={{ top: pos.top, left: pos.left }}
       onPointerDown={(e) => e.stopPropagation()}
     >

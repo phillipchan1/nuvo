@@ -203,4 +203,24 @@ begin
     (uid, acct, 'ev-soccer', 'dummy@nuvo.test', 'Soccer practice', ((mon + 1) + time '17:30') at time zone tz, ((mon + 1) + time '18:30') at time zone tz, false, true, 'accepted', null),
     (uid, acct, 'ev-dinner', 'dummy@nuvo.test', 'Dinner at the Parks', ((mon + 5) + time '18:00') at time zone tz, ((mon + 5) + time '20:00') at time zone tz, false, true, 'accepted', null),
     (uid, acct, 'ev-offsite', 'work@group.calendar.google.com', 'Team offsite', (mon + 4)::timestamp at time zone tz, (mon + 5)::timestamp at time zone tz, true, true, 'accepted', null);
+
+  -- `self_rsvp` is DERIVED (trg_self_rsvp, migration 18) from the attendee
+  -- marked `self` in `raw`, so it can't be inserted directly — the values above
+  -- are overwritten with null. Give each meeting a self-attendee with the state
+  -- it should show; 1:1 with Priya stays organizer-owned (no self attendee).
+  update public.external_events e
+  set raw = coalesce(e.raw, '{}'::jsonb) || jsonb_build_object('attendees', jsonb_build_array(
+    jsonb_build_object('email', 'dummy@nuvo.test', 'self', true, 'responseStatus', v.rsvp),
+    jsonb_build_object('email', 'sam@example.com', 'responseStatus', 'accepted')
+  ))
+  from (values
+    ('ev-client', 'accepted'), ('ev-lunch', 'tentative'), ('ev-design', 'accepted'),
+    ('ev-vendor', 'needsAction'), ('ev-allhands', 'declined'), ('ev-soccer', 'accepted'),
+    ('ev-dinner', 'accepted'), ('ev-offsite', 'accepted')
+  ) as v(pid, rsvp)
+  where e.user_id = uid and e.provider_event_id = v.pid;
+  update public.external_events e
+  set raw = e.raw || jsonb_build_object('attendees', jsonb_build_array(
+    jsonb_build_object('email', 'dummy@nuvo.test', 'self', true, 'responseStatus', 'accepted')))
+  where e.user_id = uid and e.provider_event_id like 'standup_%';
 end $$;

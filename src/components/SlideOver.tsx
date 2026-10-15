@@ -27,6 +27,7 @@ import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, sameClockOn, toDateISO, todayISO } from "../lib/dates";
 import { at } from "./mobile/dayPlan";
+import { useWeekCommitAct } from "./tasks/TaskActionsMenu";
 import { deriveSlotTitle } from "../lib/slots";
 import { DomainPicker } from "./floors/parts";
 import { rulesEqual, describeRule, fromGoogleRRULE, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
@@ -307,7 +308,8 @@ export function TaskPopover({
   const [preparing, setPreparing] = useState(false);
   const [prepError, setPrepError] = useState<string | null>(null);
   const qc = useQueryClient();
-  const { data: vertical, toggleTaskSprint } = useVertical();
+  const { data: vertical } = useVertical();
+  const commitToWeek = useWeekCommitAct(mutations);
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const popRef = useRef<HTMLDivElement>(null);
@@ -690,12 +692,12 @@ export function TaskPopover({
           )}
           <button
             type="button"
-            onClick={() => toggleTaskSprint(task.id)}
+            onClick={() => commitToWeek(task)}
             aria-pressed={inWeek}
             title={inWeek ? "In this week — click to release" : "Commit to this week"}
             className={`fast tap ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-label font-medium ${
               inWeek
-                ? "border-signal/35 bg-signal-soft text-signal"
+                ? "border-accent/35 bg-accent-soft text-accent"
                 : "border-line text-muted hover:border-line-strong hover:text-ink"
             }`}
           >

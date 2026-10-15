@@ -2082,28 +2082,25 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
-/* ── Today — findable at a glance ─────────────────────────────────────────
-   `--signal` is the "now" token (theme/skin/palette-aware). Month gets a soft
-   cell wash; Week gets a whisper of column tint + a stronger header rule.
-   Day view is intentionally left alone (one column = whole canvas). */
+/* ── Today — findable at a glance, without shouting ─────────────────────
+   Today used to spend `--signal` four times in one cell (a 12% header wash, a
+   2px underline, a signal weekday and the filled disc) plus a 9% column — so
+   the one signal mark that matters on this screen, the now-line, was one of a
+   dozen. The disc is today's mark now; the column keeps a faint warm wash so
+   the day is still findable from the bottom of the grid. Day view gets no
+   wash and no underline at all (one column IS the canvas). */
 .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 13%, transparent);
+  background: color-mix(in srgb, var(--signal) 7%, transparent);
 }
 .fc .fc-daygrid-body .fc-daygrid-day.fc-day-today:hover .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 18%, transparent);
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
 }
-/* Week column — a readable wash (5% vanished on warm paper). Scoped to
-   timeGridWeek so Day view never tints the whole canvas. */
 .fc-timeGridWeek-view .fc-timegrid-col.fc-day-today,
 .fc-timeGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 9%, transparent);
+  background: color-mix(in srgb, var(--signal) 5%, transparent);
 }
-.fc-timeGridWeek-view .fc-col-header-cell.fc-day-today {
-  background: color-mix(in srgb, var(--signal) 12%, transparent);
-  border-bottom: 2px solid color-mix(in srgb, var(--signal) 60%, transparent);
-}
-.fc .fc-col-header-cell.fc-day-today {
-  border-bottom: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
+.fc-timeGridDay-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+  background: transparent;
 }
 /* Month's headers are weekday names spanning every row, so FullCalendar never
    marks one "today" — the day cell carries the landmark there. Nothing to
@@ -2318,7 +2315,8 @@ select.field { appearance: none; -webkit-appearance: none; }
     color-mix(in srgb, var(--muted) 12%, transparent) 5px,
     color-mix(in srgb, var(--muted) 12%, transparent) 10px
   );
-  border: 1px dashed color-mix(in srgb, var(--muted) 55%, var(--line));
+  /* Solid: the hatch already says "read-only feed"; a dash said "slot". */
+  border: 1px solid color-mix(in srgb, var(--muted) 45%, var(--line));
   cursor: default;
 }
 /* ICS subscription: read-only like M365, but rendered as a solid tinted block
@@ -2335,17 +2333,27 @@ select.field { appearance: none; -webkit-appearance: none; }
   border-color: color-mix(in srgb, var(--slot) 68%, transparent) !important;
 }
 
-/* RSVP status: dim events the user hasn't confirmed yet.
-   needsAction = invite received, no response → noticeably dimmed
-   tentative   = "maybe" → slightly dimmed + dashed border (mirrors slot style)
-   declined    = said no → heavily dimmed (still visible so the block shows as busy) */
-.fc-event.evt-pending  { opacity: 0.5; }
-.fc-event.evt-tentative { opacity: 0.7; border-style: dashed !important; }
-.fc-event.evt-declined  { opacity: 0.3; }
+/* RSVP status — FILL means commitment; a hollow block is one you haven't said
+   yes to. These used to be opacity (pending 0.5 = done 0.5; declined 0.3 ≈
+   hidden 0.32) and dashes (tentative = slot = hidden = draft = M365), so a
+   pending invite and a finished task read identically. Dashed is reserved for
+   containers now (slots, the draft ghost).
+   needsAction = hollow, full ink — it wants an answer, so it doesn't fade
+   tentative   = hollow + a "?" before the title (renderEvent)
+   declined    = hollow, struck, half ink (still busy on the board) */
+.fc-event.evt-pending,
+.fc-event.evt-tentative,
+.fc-event.evt-declined {
+  background-color: transparent !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.fc-event.evt-declined { opacity: 0.5; }
+.fc-event.evt-declined [data-evt-title],
+.fc-event.evt-declined .fc-event-main span { text-decoration: line-through; }
 
-/* Hidden events, only visible while "show hidden" is on — heavily faded + dashed
-   so they read clearly as tucked-away (not real commitments on the board). */
-.fc-event.evt-hidden { opacity: 0.32; border-style: dashed !important; }
+/* Hidden events, only visible while "show hidden" is on — heavily faded so
+   they read as tucked-away, not as real commitments on the board. */
+.fc-event.evt-hidden { opacity: 0.32; }
 .fc-event.evt-hidden.evt-focused { opacity: 0.6; }
 
 /* Draft preview ghost block — shown while the DraftComposer popover is open */

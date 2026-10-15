@@ -678,7 +678,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
 
             {!done && (task.priority === "high" || task.priority === "medium") && (
               <span
-                className={`mono shrink-0 text-meta font-bold ${task.priority === "high" ? "text-signal" : "text-muted"}`}
+                // Priority isn't time: `--signal` is now / late (D-054 — one
+                // signal mark per row), and a late high-priority row spent it
+                // twice ("!" beside "4h late"). Ink carries the weight instead.
+                className={`mono shrink-0 text-meta font-bold ${task.priority === "high" ? "text-ink" : "text-muted"}`}
                 title={task.priority === "high" ? "High priority" : "Medium priority"}
                 aria-label={task.priority === "high" ? "High priority" : "Medium priority"}
               >

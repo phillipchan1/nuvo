@@ -748,8 +748,10 @@ function CalendarPane({
   const fitClamped = Math.min(Math.max(6, settings?.calendar_fit_hours ?? 13), windowHours);
   // px-per-hour that makes `fitClamped` hours fill the viewport; the rest
   // scrolls. (~16px chrome padding + ~52px day header subtracted.)
+  // −28: the anytime row's resting height. Ignoring it made "fit N hours"
+  // always fit a little under N.
   const pxPerHour =
-    availH > 160 ? Math.max(26, Math.min(190, (availH - 16 - 52) / fitClamped)) : 52;
+    availH > 160 ? Math.max(26, Math.min(190, (availH - 16 - 52 - 28) / fitClamped)) : 52;
   const densityRef = useRef(pxPerHour);
   densityRef.current = pxPerHour;
 
@@ -886,8 +888,9 @@ function CalendarPane({
                 : defaultDurationMins,
             ),
             classNames: ["evt-slot"],
-            backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
-            borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
+            // Same paint as the sitting it becomes (domain hue, not --slot).
+            backgroundColor: `color-mix(in srgb, ${hue} 24%, var(--surface))`,
+            borderColor: `color-mix(in srgb, ${hue} 62%, var(--line))`,
             extendedProps: {
               kind: "slot" as const,
               refId: "",
@@ -982,6 +985,7 @@ function CalendarPane({
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
     let returnLabel = "↩ Back to Inbox"; // what letting go over the rail does
+    let dragTaskId: string | null = null; // the calendar block being moved, if a task
     const chip = document.createElement("div");
     chip.className = "slot-drop-chip";
     chip.setAttribute("aria-hidden", "true");
@@ -1011,6 +1015,13 @@ function CalendarPane({
           );
         }
         return Number(dragEl?.getAttribute("data-task-duration")) || defaultDurationMins;
+      }
+      // A calendar block knows its length — the ratio below (ghost height over a
+      // neighbour's) fell back to the default next to a task and was inflated by
+      // the ghost's 3% scale, so the preview and the landing disagreed.
+      if (dragTaskId) {
+        const t = tasksRef.current.find((x) => x.id === dragTaskId);
+        if (t?.duration_minutes) return t.duration_minutes;
       }
       const mirror = document.querySelector<HTMLElement>(".fc-event-mirror, .fc-event-dragging");
       if (mirror) {
@@ -1103,6 +1114,7 @@ function CalendarPane({
       const homeId =
         dragId ?? (el?.closest?.(".evt-task") as HTMLElement | null)?.getAttribute("data-task-id") ?? null;
       const home = homeId ? tasksRef.current.find((t) => t.id === homeId) : undefined;
+      dragTaskId = dragId ? null : homeId;
       returnLabel = home?.project_id ? "↩ Back to its project" : "↩ Back to Inbox";
       startX = e.clientX;
       startY = e.clientY;
@@ -1447,8 +1459,10 @@ function CalendarPane({
         const overdue = t.status !== "done" && isOverdue(t, fcNow);
         // Tasks share one identity — the violet accent — so "this is my work"
         // reads at a glance against the calendar's own (arbitrarily coloured)
-        // events. The domain thread lives on in the thin bar; overdue goes ember.
-        const fill = overdue ? "var(--signal)" : "var(--accent)";
+        // events. The domain thread lives on in the thin bar; overdue turns the
+        // BAR ember, not the whole block — a signal slab was the loudest thing
+        // on the grid, louder than the now-line it shares a colour with.
+        const fill = "var(--accent)";
         const bar = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
         const start = toFcInstant(t.start_time!);
         return {
@@ -1598,10 +1612,19 @@ function CalendarPane({
         editable: true,
         durationEditable: true,
         classNames: ["evt-slot"],
-        // A clearly teal container — stronger than a task/event tint (14%) so a
-        // slot is unmistakable. Border comes from .evt-slot (dashed teal) in CSS.
-        backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
-        borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
+        // A plain slot is a clearly teal container — `--slot` means open /
+        // unclaimed time. A project's sitting is CLAIMED time, so it wears its
+        // project's domain hue instead (the bar already did, D-109); the dashed
+        // border still says "container".
+        ...(project?.color
+          ? {
+              backgroundColor: `color-mix(in srgb, ${project.color} 24%, var(--surface))`,
+              borderColor: `color-mix(in srgb, ${project.color} 62%, var(--line))`,
+            }
+          : {
+              backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
+              borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
+            }),
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
@@ -1937,7 +1960,12 @@ function CalendarPane({
     // Prefer the sitting the pointer was over (highlighted zone) to time-range
     // math, which breaks when FC snaps the ghost clear of an overlap.
     const intent = takeSlotDropIntent();
-    const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
+    // "Before a slot" lands the block's END on the slot's start, so it needs
+    // the block's real length — the default put a 2h sitting half on top of it.
+    const sittingMins = loose.length
+      ? sizeSlotToContents(loose.map((t) => t.duration_minutes))
+      : defaultDurationMins;
+    const resolved = resolveSlotDrop(start, intent, slotsRef.current, sittingMins);
 
     if (resolved?.kind === "adjacent") {
       void slotMutations
@@ -2032,7 +2060,12 @@ function CalendarPane({
     // Prefer the visually-highlighted target (slotDropIntentRef) over time-range
     // math, which breaks when FC snaps the ghost adjacent to avoid overlap.
     const intent = takeSlotDropIntent();
-    const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
+    // What actually lands: one task's own length, or the slot a group becomes.
+    const landingMins =
+      tasks.length > 1
+        ? sizeSlotToContents(tasks.map((t) => t.duration_minutes))
+        : tasks[0].duration_minutes ?? defaultDurationMins;
+    const resolved = resolveSlotDrop(start, intent, slotsRef.current, landingMins);
 
     if (resolved?.kind === "adjacent") {
       const fromProject = el.getAttribute("data-task-project") || null;
@@ -2142,7 +2175,7 @@ function CalendarPane({
             info.event.start,
             intent,
             slotsRef.current,
-            defaultDurationMins,
+            task.duration_minutes ?? defaultDurationMins,
           );
           if (resolved?.kind === "adjacent") {
             mutations.block(task, resolved.start);
@@ -2852,6 +2885,7 @@ function CalendarPane({
             <div className="flex min-w-0 items-center gap-1">
               {InlineWhen}
               <span className={`${titleCls} ${kind === "m365" ? "text-muted" : ""}`} style={titleStyle}>
+                {(arg.event.extendedProps as ExtendedProps).selfRsvp === "tentative" ? "? " : ""}
                 {arg.event.title || <span className="font-normal italic text-muted">(No title)</span>}
               </span>
             </div>
@@ -2906,6 +2940,10 @@ function CalendarPane({
     () => ({
       slotMinTime: `${String(viewStart).padStart(2, "0")}:00:00`,
       slotMaxTime: `${String(viewEnd).padStart(2, "0")}:00:00`,
+      // The anytime row is capped (D-141 sends every rolled task there, and an
+      // unbounded row pushed the whole day down on a bad morning) — "+N" past
+      // three rows, as Month does past four.
+      dayMaxEventRows: 3,
       slotDuration: "00:15:00",
       snapDuration: "00:15:00",
       // Cascaded overlap draws a later-starting event's card over the tail of
@@ -2968,11 +3006,7 @@ function CalendarPane({
       const todayChip = isToday;
       return (
         <div className="flex flex-col items-center gap-0.5 py-1">
-          <span
-            className={`text-micro font-semibold tracking-widest ${
-              todayChip ? "text-signal" : "text-muted"
-            }`}
-          >
+          <span className="text-micro font-semibold tracking-widest text-muted">
             {weekday}
           </span>
           <span
@@ -3252,8 +3286,8 @@ function CalendarPane({
         return (
           <div
             ref={eventMenuRef}
-            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+            className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            style={{ top, left }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
               {ev.title || "Event"}
@@ -3456,16 +3490,16 @@ function CalendarPane({
                   </div>
                 ) : series ? (
                   <>
-                    <EventMenuItem onClick={() => requestDelete("THIS")}>
-                      <span style={{ color: "var(--signal)" }}>Delete this event</span>
+                    <EventMenuItem danger onClick={() => requestDelete("THIS")}>
+                      Delete this event
                     </EventMenuItem>
-                    <EventMenuItem onClick={() => requestDelete("ALL")}>
-                      <span style={{ color: "var(--signal)" }}>Delete all events in series</span>
+                    <EventMenuItem danger onClick={() => requestDelete("ALL")}>
+                      Delete all events in series
                     </EventMenuItem>
                   </>
                 ) : (
-                  <EventMenuItem onClick={() => requestDelete("THIS")}>
-                    <span style={{ color: "var(--signal)" }}>Delete event</span>
+                  <EventMenuItem danger onClick={() => requestDelete("THIS")}>
+                    Delete event
                   </EventMenuItem>
                 )}
               </>
@@ -3535,11 +3569,10 @@ function CalendarPane({
         <div
           ref={taskEventPickRef}
           data-nested-surface=""
-          className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+          className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
           style={{
             top: fixedCssPx(Math.min(taskEventPick.y, window.innerHeight - 300)),
             left: fixedCssPx(Math.min(taskEventPick.x, window.innerWidth - 210)),
-            boxShadow: "var(--shadow-3)",
           }}
         >
           <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
@@ -3568,8 +3601,8 @@ function CalendarPane({
         return (
           <div
             ref={slotMenuRef}
-            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+            className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            style={{ top, left }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
               {slotTitle(slot)}
@@ -3608,7 +3641,7 @@ function CalendarPane({
               </EventMenuItem>
             )}
             <div className="my-1 border-t border-line" />
-            <EventMenuItem onClick={() => {
+            <EventMenuItem danger onClick={() => {
               const el = slotMenu.el;
               const rect = el.getBoundingClientRect();
               setSlotMenu(null);
@@ -3618,9 +3651,7 @@ function CalendarPane({
               if (!recurring && childCount === 0) slotMutations.removeSlot(slot);
               else onOpenSlot(slot, rect, el);
             }}>
-              <span style={{ color: "var(--signal)" }}>
-                {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}
-              </span>
+              {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}
             </EventMenuItem>
           </div>
         );
@@ -4041,12 +4072,25 @@ function minutesToDuration(mins: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** One row in the right-click event menu. */
-function EventMenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+/** One row in a calendar menu — the same row TaskActionsMenu draws: one
+ *  height, one hover (`bg-bg`), and destructive items in ink at rest that turn
+ *  `--danger` under the pointer (D-101), not `--signal` (which means "now"). */
+function EventMenuItem({
+  children,
+  onClick,
+  danger = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+}) {
   return (
     <button
+      role="menuitem"
       onClick={onClick}
-      className="fast block w-full px-3 py-1.5 text-left text-caption text-ink hover:bg-surface-2"
+      className={`fast block min-h-7 w-full truncate px-3 py-1.5 text-left text-caption text-ink hover:bg-bg ${
+        danger ? "hover:text-danger" : ""
+      }`}
     >
       {children}
     </button>

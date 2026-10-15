@@ -286,8 +286,10 @@ function WorkPips({ done, total, color }: { done: number; total: number; color: 
  *  never render as the digit 0. */
 function AmberMark({ count, words }: { count: number; words?: boolean }) {
   return (
-    <span className="mono flex shrink-0 items-center gap-1 text-micro font-medium" style={{ color: "var(--signal)" }}>
-      <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--signal)" }} />
+    // `--warn`, not `--signal`: "has no time yet" is waiting-on-you, not
+    // late-now — five signal marks in the crown out-shouted the now-line.
+    <span className="mono flex shrink-0 items-center gap-1 text-micro font-medium" style={{ color: "var(--warn)" }}>
+      <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--warn)" }} />
       {count > 0 ? `${count}${words ? " with no time" : ""}` : ""}
     </span>
   );
