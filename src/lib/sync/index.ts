@@ -8,7 +8,7 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
-import { enqueue } from "./outbox";
+import { enqueue, whenDelivered } from "./outbox";
 import { installOwingGuards, invalidateWhenSafe, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
 import { announceQueuedWrite } from "./handoff";
 import type { NewOp, Op, SyncTable } from "./ops";
@@ -21,11 +21,13 @@ export {
   outboxStatus,
   parkedOps,
   pendingOps,
+  recentlyAcked,
   subscribeOutbox,
+  whenDelivered,
   unpark,
   type OutboxStatus,
 } from "./outbox";
-export { invalidateWhenSafe, settleWrite, tablesOwing, queryKeyOwesServer, preserveOwingRows, runWithoutOwingPreserve, catchUpAfterOwingKnown, pullSyncTables, installOwingGuards, resetOwingForTests } from "./coordinator";
+export { invalidateWhenSafe, settleWrite, holdFetchesBehindWrite, tablesOwing, queryKeyOwesServer, preserveOwingRows, withholdOwedRows, runWithoutOwingPreserve, catchUpAfterOwingKnown, pullSyncTables, installOwingGuards, resetOwingForTests } from "./coordinator";
 export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";
@@ -49,25 +51,57 @@ export function teardownSync() {
   client = null;
 }
 
+/** The newest write queued for each row this session, until it lands. */
+const latestWrite = new Map<string, Promise<Op>>();
+
 /**
  * Durably record a write, then nudge the queue.
  *
  * Resolves as soon as the op is in IndexedDB — deliberately *not* when it
  * reaches Postgres. Callers await this only to know the change is safe.
  */
-export async function queueWrite(op: NewOp): Promise<Op> {
+export function queueWrite(op: NewOp): Promise<Op> {
   // Synchronous, before the first await: a caller that fires this with
   // `void` and immediately calls `invalidateWhenSafe` (the standard
   // optimistic-patch shape) must not see a stale "nothing owed" the
   // instant this function is entered — see markOwing's own comment.
-  markOwing(op.table);
-  const stored = await enqueue(op);
-  await refreshOwing();
-  // Fire and forget: a drain failure is the engine's business, not the caller's.
-  if (client) void syncNow(client);
-  // The ⌥Space panel is hidden moments after this; main must not depend on it.
-  void announceQueuedWrite(op.table);
-  return stored;
+  markOwing(op.table, op.rowId);
+  const queued = (async () => {
+    const stored = await enqueue(op);
+    await refreshOwing();
+    // Fire and forget: a drain failure is the engine's business, not the caller's.
+    if (client) void syncNow(client);
+    // The ⌥Space panel is hidden moments after this; main must not depend on it.
+    void announceQueuedWrite(op.table);
+    return stored;
+  })();
+  // Also synchronous, for the same reason: `whenRowDelivered` called on the
+  // next line has to find this write, not the one before it.
+  const key = `${op.table}:${op.rowId}`;
+  latestWrite.set(key, queued);
+  const forget = () => {
+    if (latestWrite.get(key) === queued) latestWrite.delete(key);
+  };
+  queued.then((stored) => whenDelivered(stored)).then(forget, forget);
+  return queued;
+}
+
+/**
+ * Resolves once the newest write this session queued for a row has reached
+ * Postgres — `true` — or `false` if it never will (parked, discarded). With
+ * nothing queued for the row it resolves `true` at once.
+ *
+ * For server work that reads the row back rather than taking it from the
+ * client: queued at the same moment as the write, it read the row as it was.
+ */
+export async function whenRowDelivered(table: SyncTable, rowId: string): Promise<boolean> {
+  const queued = latestWrite.get(`${table}:${rowId}`);
+  if (!queued) return true;
+  try {
+    return await whenDelivered(await queued);
+  } catch {
+    return false;
+  }
 }
 
 /**

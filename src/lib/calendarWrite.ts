@@ -214,3 +214,26 @@ export function writableCalendarTargets(
     }))
     .filter((g) => g.calendars.length > 0);
 }
+
+/**
+ * Task → Event, as one act: the task leaves the grid the moment the event is
+ * drawn, and comes back if the event never gets made.
+ *
+ * It used to wait for the provider before trashing the task, so for the whole
+ * round trip the same hour held three blocks — the task, the optimistic event,
+ * and (before the create returned) its Realtime row. Resolves whether the
+ * event was made.
+ */
+export async function convertTaskToEvent(
+  create: () => Promise<unknown>,
+  task: { trash: () => void; restore: () => void },
+): Promise<boolean> {
+  task.trash();
+  try {
+    await create();
+    return true;
+  } catch {
+    task.restore();
+    return false;
+  }
+}

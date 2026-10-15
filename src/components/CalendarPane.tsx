@@ -20,6 +20,7 @@ import { eventSeriesKey, isExternalEventRecurring, resolveRecurringEventId } fro
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../lib/calendarReveal";
 import { synClass } from "../lib/syntax";
 import { createDefaults, isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets, type CreateTarget } from "../lib/calendarWrite";
+import { isPendingEventCreate } from "../lib/eventWriteback";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
@@ -1537,8 +1538,10 @@ function CalendarPane({
         const isIcloud = account?.provider === "icloud";
         // Writable events (Google or iCloud two-way) can be dragged / resized.
         // The calendar itself must be writable too — a Family iCloud import
-        // on a two-way Google account used to drag, then snap back.
-        const writable = isWritableCalendar(account, e.calendar_id);
+        // on a two-way Google account used to drag, then snap back. A create
+        // still on the wire has no row to write to yet: drawn as itself, held
+        // still until the real row replaces it (lib/eventWriteback).
+        const writable = isWritableCalendar(account, e.calendar_id) && !isPendingEventCreate(e.id);
         const calColor =
           account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "var(--event-default)";
         // Dim events where the user hasn't confirmed yet.
@@ -3275,7 +3278,7 @@ function CalendarPane({
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
-        const writable = isWritableCalendar(account, ev.calendar_id);
+        const writable = isWritableCalendar(account, ev.calendar_id) && !isPendingEventCreate(ev.id);
         const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
         const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
         const requestDelete = (scope: RecurrenceScope) => {

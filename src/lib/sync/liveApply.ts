@@ -9,12 +9,20 @@
  * `apply_patch` uses, so a queued title edit does not hide Friday's reschedule
  * and Friday's reschedule does not wipe a newer local drag.
  *
+ * The merge also folds ops this device delivered in the last few seconds
+ * (`recentlyAcked`). An ack does not mean every older echo has arrived: drag to
+ * 9, drag to 10, both land, and the echo of the 9 can still be on the wire —
+ * merged against nothing, it moved the block back. Delivered ops never decide a
+ * DELETE, though: that is still only about work this device owes.
+ *
  * Returns whether this device could apply the row. False means the caller
  * should fall back to `invalidateWhenSafe`.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
 import { normalizeSettingsRow } from "../../hooks/useSettings";
+import { eventInRange, isStaleEventEcho, pendingCreateFor, swapCreatedEvent } from "../eventWriteback";
+import type { ExternalEvent } from "../types";
 import { putSlotInCaches } from "../../hooks/useSlots";
 import { putTaskInCaches } from "../../hooks/useTasks";
 import type { Slot, Task } from "../types";
@@ -48,6 +56,12 @@ function fieldTsOf(row: Record<string, unknown> | null): Record<string, string> 
 
 function opsFor(pending: Op[], table: string, rowId: string): Op[] {
   return pending.filter((o) => o.table === table && o.rowId === rowId).sort((a, b) => a.seq - b.seq);
+}
+
+/** What a remote row is merged against: delivered-but-recent ops, then the
+ *  ones still owed, in replay order. */
+function mergeOpsFor(pending: Op[], delivered: Op[], table: string, rowId: string): Op[] {
+  return opsFor([...delivered, ...pending], table, rowId);
 }
 
 /** Fold unsent local ops onto a remote row. `"deleted"` means this device still
@@ -121,7 +135,7 @@ function cachedTask(qc: QueryClient, id: string): Task | undefined {
   return undefined;
 }
 
-function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean {
+function applyTask(qc: QueryClient, change: LiveChange, pending: Op[], delivered: Op[]): boolean {
   const id = String((change.new ?? change.old)?.id ?? "");
   if (!id) return false;
   const local = opsFor(pending, "tasks", id);
@@ -138,7 +152,7 @@ function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   }
 
   if (!change.new) return false;
-  const merged = mergePending(change.new, fieldTsOf(change.new), local);
+  const merged = mergePending(change.new, fieldTsOf(change.new), mergeOpsFor(pending, delivered, "tasks", id));
   if (merged === "deleted") return true;
   const existing = cachedTask(qc, id);
   const next = coerceTask(merged);
@@ -146,7 +160,7 @@ function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   return true;
 }
 
-function applySlot(qc: QueryClient, change: LiveChange, pending: Op[]): boolean {
+function applySlot(qc: QueryClient, change: LiveChange, pending: Op[], delivered: Op[]): boolean {
   const id = String((change.new ?? change.old)?.id ?? "");
   if (!id) return false;
   const local = opsFor(pending, "slots", id);
@@ -158,7 +172,7 @@ function applySlot(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   }
 
   if (!change.new) return false;
-  const merged = mergePending(change.new, fieldTsOf(change.new), local);
+  const merged = mergePending(change.new, fieldTsOf(change.new), mergeOpsFor(pending, delivered, "slots", id));
   if (merged === "deleted") return true;
   putSlotInCaches(qc, id, coerceSlot(merged));
   return true;
@@ -170,6 +184,7 @@ function applyListRow(
   queryKey: string[],
   change: LiveChange,
   pending: Op[],
+  delivered: Op[],
   belongs?: (item: Record<string, unknown> & { id: string }, key: readonly unknown[]) => boolean,
 ): boolean {
   const id = String((change.new ?? change.old)?.id ?? "");
@@ -183,7 +198,7 @@ function applyListRow(
   }
 
   if (!change.new) return false;
-  const merged = mergePending(change.new, fieldTsOf(change.new), local);
+  const merged = mergePending(change.new, fieldTsOf(change.new), mergeOpsFor(pending, delivered, table, id));
   if (merged === "deleted") return true;
   const row = { ...merged, id } as Record<string, unknown> & { id: string };
   if ("start_time" in row) row.start_time = asIso(row.start_time);
@@ -193,14 +208,36 @@ function applyListRow(
   return true;
 }
 
-const EVENT_BELONGS = (row: Record<string, unknown> & { id: string }, key: readonly unknown[]) => {
-  const start = key[1] as string | undefined;
-  const end = key[2] as string | undefined;
-  if (!start || !end) return true;
-  const startAt = String(row.start_at ?? "");
-  const endAt = String(row.end_at ?? "");
-  return startAt < end && endAt > start;
-};
+/**
+ * A provider event's row. Not an outbox table — its writes are ordered by the
+ * event write-back lane (`lib/eventWriteback`), which also decides when an echo
+ * is older than the cache:
+ *
+ *  • an echo for an event this device is still writing, or one carrying times
+ *    it wrote and then moved past, is not painted — it was the jump back to
+ *    the previous drag;
+ *  • the real row of a create still on the wire replaces its temporary row
+ *    rather than being drawn beside it.
+ */
+function applyEventRow(qc: QueryClient, change: LiveChange): boolean {
+  const id = String((change.new ?? change.old)?.id ?? "");
+  if (!id) return false;
+  if (change.eventType !== "DELETE" && change.new) {
+    if (isStaleEventEcho(id, change.new)) return true;
+    const cached = qc
+      .getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })
+      .some(([, data]) => Array.isArray(data) && data.some((e) => e.id === id));
+    const tempId = cached ? undefined : pendingCreateFor(change.new);
+    if (tempId) {
+      const row = { ...change.new, id } as Record<string, unknown>;
+      if ("start_at" in row) row.start_at = asIso(row.start_at);
+      if ("end_at" in row) row.end_at = asIso(row.end_at);
+      swapCreatedEvent(qc, tempId, row as unknown as ExternalEvent);
+      return true;
+    }
+  }
+  return applyListRow(qc, "external_events", ["external_events"], change, [], [], eventInRange);
+}
 
 function applyTaskLabels(qc: QueryClient, change: LiveChange): boolean {
   const taskId = String((change.new ?? change.old)?.task_id ?? "");
@@ -227,35 +264,42 @@ function applyTaskLabels(qc: QueryClient, change: LiveChange): boolean {
  * Paint a Realtime change into the caches the UI already reads.
  * Unknown tables return false so the socket handler can invalidate instead.
  */
-export function applyLiveChange(qc: QueryClient, change: LiveChange, pending: Op[] = []): boolean {
+export function applyLiveChange(
+  qc: QueryClient,
+  change: LiveChange,
+  pending: Op[] = [],
+  delivered: Op[] = [],
+): boolean {
   switch (change.table as SyncTable | string) {
     case "tasks":
-      return applyTask(qc, change, pending);
+      return applyTask(qc, change, pending, delivered);
     case "slots":
-      return applySlot(qc, change, pending);
+      return applySlot(qc, change, pending, delivered);
     case "projects":
-      return applyListRow(qc, "projects", ["vertical", "projects"], change, pending);
+      return applyListRow(qc, "projects", ["vertical", "projects"], change, pending, delivered);
     case "domains":
-      return applyListRow(qc, "domains", ["vertical", "domains"], change, pending);
+      return applyListRow(qc, "domains", ["vertical", "domains"], change, pending, delivered);
     case "initiatives":
-      return applyListRow(qc, "initiatives", ["vertical", "initiatives"], change, pending);
+      return applyListRow(qc, "initiatives", ["vertical", "initiatives"], change, pending, delivered);
     case "labels":
-      return applyListRow(qc, "labels", ["labels"], change, pending);
+      return applyListRow(qc, "labels", ["labels"], change, pending, delivered);
     case "recurrences":
-      return applyListRow(qc, "recurrences", ["recurrences"], change, pending);
+      return applyListRow(qc, "recurrences", ["recurrences"], change, pending, delivered);
     case "week_reviews":
-      return applyListRow(qc, "week_reviews", ["week_reviews"], change, pending);
+      return applyListRow(qc, "week_reviews", ["week_reviews"], change, pending, delivered);
     case "record_comments":
-      return applyListRow(qc, "record_comments", ["record_comments"], change, pending);
+      return applyListRow(qc, "record_comments", ["record_comments"], change, pending, delivered);
     case "external_events":
-      return applyListRow(qc, "external_events", ["external_events"], change, pending, EVENT_BELONGS);
+      return applyEventRow(qc, change);
     case "reminders":
-      return applyListRow(qc, "reminders", ["reminders"], change, pending);
+      return applyListRow(qc, "reminders", ["reminders"], change, pending, delivered);
     case "task_labels":
       return applyTaskLabels(qc, change);
     case "user_settings": {
       if (change.eventType === "DELETE" || !change.new) return false;
-      const local = pending.filter((o) => o.table === "user_settings");
+      const local = [...delivered, ...pending]
+        .filter((o) => o.table === "user_settings")
+        .sort((a, b) => a.seq - b.seq);
       const merged = mergePending(change.new, fieldTsOf(change.new), local);
       if (merged === "deleted") return true;
       // Normalized like the query's own read: the raw row can carry a legacy
@@ -277,7 +321,7 @@ export function applyLiveChange(qc: QueryClient, change: LiveChange, pending: Op
         return true;
       }
       if (!change.new) return false;
-      const merged = mergePending(change.new, fieldTsOf(change.new), local);
+      const merged = mergePending(change.new, fieldTsOf(change.new), mergeOpsFor(pending, delivered, "sprints", id));
       if (merged === "deleted") return true;
       let painted = false;
       for (const [key, data] of qc.getQueriesData({ queryKey: ["sprint"] })) {

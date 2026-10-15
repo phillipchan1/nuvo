@@ -9,6 +9,7 @@ import { admin, handleOptions, json, logSync, requireActor } from "../_shared/ad
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
 import { shiftGoogleDateResource, googleStartEnd, masterToAllDay, masterToTimed } from "../_shared/googleDateTime.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
+import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
 
 /** Master series id: generated column, then raw, then the Google instance suffix. */
 function seriesMasterId(evt: {
@@ -661,18 +662,26 @@ Deno.serve(async (req) => {
     if (!res.ok) throw new Error(`google patch failed: ${res.status} ${await res.text()}`);
 
     // Keep the mirror row's raw (and location column) fresh so the inspector's
-    // notes/location reflect the write without waiting for the next sync.
+    // notes/location reflect the write without waiting for the next sync —
+    // but only while the row still holds the times the client's write left it
+    // at (`rowAt`). A newer edit owns the row by then, and this answer would
+    // put the previous drag back on every screen (_shared/eventWriteback.ts).
     const updated = await res.json().catch(() => null);
     if (updated) {
       const mapped = mapGoogleEvent(account, evt.calendar_id, updated);
-      await admin
-        .from("external_events")
-        .update({
+      const outcome = await rewriteMirrorRow(
+        admin.from("external_events") as unknown as MirrorRowTable,
+        eventId,
+        {
           raw: updated,
           ...(mapped ? { all_day: mapped.all_day, start_at: mapped.start_at, end_at: mapped.end_at } : {}),
           ...(patch.location !== undefined ? { location: patch.location ?? null } : {}),
-        })
-        .eq("id", eventId);
+        },
+        parseRowAt(body.rowAt),
+      );
+      if (outcome === "failed") {
+        await logSync("google", "event-writeback-row", "error", "mirror row rewrite failed", user.id);
+      }
     }
 
     await logSync("google", "event-writeback", "ok", undefined, user.id);

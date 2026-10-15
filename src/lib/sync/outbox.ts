@@ -113,7 +113,9 @@ async function sweep(all: Op[], dead: DeadSpan[]): Promise<void> {
       dead.some((d) => d.table === o.table && d.rowId === o.rowId && o.seq <= d.throughSeq),
     )
     .map((o) => o.seq);
-  if (doomed.length) await idbDeleteOps(doomed);
+  if (!doomed.length) return;
+  await idbDeleteOps(doomed);
+  settleWaiters(doomed, false);
 }
 
 /** Ops the server rejected outright, for the recovery UI. */
@@ -139,6 +141,70 @@ export async function outboxSnapshot(): Promise<{ pending: Op[]; parked: Op[] }>
 }
 
 /**
+ * How long a delivered op still counts when a Realtime echo is merged.
+ *
+ * An ack means Postgres has the write, not that this device has heard every
+ * echo that predates it. Drag a block to 9 then to 10: op1 lands, op2 lands,
+ * and the echo of op1 can still be on the wire. Merging only what is still
+ * *pending* painted that echo raw, and the block jumped back to 9 until op2's
+ * echo followed it (or stayed there, if the socket dropped in between). Folding
+ * the recently delivered ops through the same field-LWW rule keeps op2 on
+ * screen and costs nothing when the echo is newer: its stamps win the merge.
+ */
+export const RECENT_ACK_MS = 10_000;
+
+let recentAcks: { op: Op; at: number }[] = [];
+
+function pruneRecentAcks(now: number) {
+  if (recentAcks.length && recentAcks[0].at < now - RECENT_ACK_MS) {
+    recentAcks = recentAcks.filter((r) => r.at >= now - RECENT_ACK_MS);
+  }
+}
+
+/** Ops delivered within `RECENT_ACK_MS`, oldest first. In memory only: a
+ *  relaunch has no echoes in flight from the previous life. */
+export function recentlyAcked(now = Date.now()): Op[] {
+  pruneRecentAcks(now);
+  return recentAcks.map((r) => r.op);
+}
+
+/** Callers waiting on one stored op's fate, by `seq`. */
+const deliveryWaiters = new Map<number, ((delivered: boolean) => void)[]>();
+
+function settleWaiters(seqs: Iterable<number>, delivered: boolean) {
+  for (const seq of seqs) {
+    const waiting = deliveryWaiters.get(seq);
+    if (!waiting) continue;
+    deliveryWaiters.delete(seq);
+    for (const resolve of waiting) resolve(delivered);
+  }
+}
+
+/**
+ * Resolves `true` once this op has reached Postgres, `false` if it never will
+ * (parked, discarded, or annihilated by a later delete). It never times out:
+ * offline, it waits for the drain like the op does.
+ *
+ * For work that has to *read the row back* on the server — the Google mirror
+ * re-reads the task, so firing it at enqueue time mirrored the row as it was
+ * before the edit.
+ */
+export function whenDelivered(op: Pick<Op, "seq">): Promise<boolean> {
+  if (recentAcks.some((r) => r.op.seq === op.seq)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const waiting = deliveryWaiters.get(op.seq) ?? [];
+    waiting.push(resolve);
+    deliveryWaiters.set(op.seq, waiting);
+  });
+}
+
+/** Test seam. */
+export function resetDeliveryForTests() {
+  recentAcks = [];
+  deliveryWaiters.clear();
+}
+
+/**
  * Retire delivered work.
  *
  * Coalescing means one sent op can stand for several stored ones, so an ack
@@ -157,13 +223,16 @@ export async function ack(sent: Op[]): Promise<void> {
     const reach = op.throughSeq ?? op.seq;
     ceiling.set(key, Math.max(ceiling.get(key) ?? 0, reach));
   }
-  const doomed = all
-    .filter((o) => {
-      const limit = ceiling.get(`${o.table}:${o.rowId}`);
-      return limit != null && o.seq <= limit;
-    })
-    .map((o) => o.seq);
+  const retired = all.filter((o) => {
+    const limit = ceiling.get(`${o.table}:${o.rowId}`);
+    return limit != null && o.seq <= limit;
+  });
+  const doomed = retired.map((o) => o.seq);
   await idbDeleteOps(doomed);
+  const now = Date.now();
+  pruneRecentAcks(now);
+  for (const op of retired.sort((a, b) => a.seq - b.seq)) recentAcks.push({ op, at: now });
+  settleWaiters(doomed, true);
   await refreshOutboxStatus();
 }
 
@@ -184,6 +253,7 @@ export async function recordFailure(sent: Op, error: string, fatal: boolean): Pr
       lastError: error,
     });
   }
+  if (fatal) settleWaiters(affected.map((o) => o.seq), false);
   await refreshOutboxStatus();
 }
 
@@ -200,6 +270,7 @@ export async function unpark(seqs: number[]): Promise<void> {
  *  so it is reachable only from an explicit "discard" in the recovery UI. */
 export async function discard(seqs: number[]): Promise<void> {
   await idbDeleteOps(seqs);
+  settleWaiters(seqs, false);
   await refreshOutboxStatus();
 }
 
@@ -208,5 +279,6 @@ export async function discard(seqs: number[]): Promise<void> {
 export async function clearOutbox(): Promise<void> {
   const all = await idbAllOps<Op>();
   await idbDeleteOps(all.map((o) => o.seq));
+  settleWaiters(all.map((o) => o.seq), false);
   await refreshOutboxStatus();
 }

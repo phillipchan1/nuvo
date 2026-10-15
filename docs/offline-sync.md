@@ -1,7 +1,7 @@
 # Offline sync
 
 **Status:** shipped — 123 Supabase writes reduced to 13, all 13 deliberate (see §6)
-**Last updated:** 2026-08-07
+**Last updated:** 2026-10-15 (write races — §4 from "An ack is not the last echo", §6 "Provider events: one write at a time", D-156)
 **Code:** `src/lib/sync/` · migrations 53–55 (pushed) · `npm run check:sql`
 **Tests:** `tests/sync/` — 100 tests (`npm test`) + 13 live checks (`npm run check:sql`)
 
@@ -195,6 +195,42 @@ work on used to return `true` (handled) while doing nothing, which suppressed
 the fallback invalidate and left the row on this device permanently; it now
 returns `false` so the caller defers an invalidate behind the drain.
 
+**An ack is not the last echo.** Drag a block to 9, then to 10: both ops land,
+and the echo of the 9 can still be on the wire. `applyLiveChange` used to merge
+an echo only against ops still *pending*, so that echo painted raw and the block
+jumped back. The outbox now keeps every op it acks for `RECENT_ACK_MS` (10s, in
+memory — `recentlyAcked`), and live apply folds those through the same field-LWW
+as pending ones. It costs nothing when the echo is genuinely newer: its stamps
+win. Delivered ops never decide a DELETE — that branch is still only about work
+this device owes.
+
+**A refetch already on the wire is cancelled by a write.** The owing gates stop a
+refetch from *starting* over queued work; they cannot stop one that started a
+moment before the user acted (the focus catch-up, the minute's pull). Its answer
+predates the edit — landing after the patch it moved the task back, and put a
+task dragged out of the inbox straight back into it; landing after the ack,
+nothing defended against it at all. `holdFetchesBehindWrite` runs before every
+optimistic task and slot patch (`patchCaches`, `createTask`, `patchSlotCaches`,
+`insertSlotCache`): it cancels the in-flight fetches that already hold data —
+TanStack restores the last written state, so the patch survives — and defers
+each key behind the drain like any other invalidate. A first load is never
+cancelled: it has no state to restore and would sit empty with nothing left to
+fetch it.
+
+**A row this device is writing keeps its local body.** `withholdOwedRows` runs
+before the owing merge: a refetched row with a queued op keeps the cached body
+even when its `updated_at` is newer (a read taken after op1 landed and before op2
+did is newer than the cache and older than the user), and one the list doesn't
+have is not admitted — its absence is this device's own placement. Like the
+merge, it stands down for local writes (`runWithoutOwingPreserve`).
+
+**Server work that reads a row back waits for the row.** `task-mirror` reads the
+task from Postgres, and every caller fired it right after queueing the edit — so
+it mirrored the block as it was before the drag, or 404'd a task created a moment
+earlier. `queueWrite` remembers each row's newest write; `whenRowDelivered`
+resolves when it is acked (`false` if it is parked or discarded), and
+`mirrorTask` waits on it. A refused write is never mirrored.
+
 ## 5. Conflict resolution
 
 Per-field last-write-wins, implemented in three places that must agree:
@@ -249,6 +285,31 @@ week reviews · the agent undo path · **the weekly ritual** (`planWeek`,
 | `ensureSprint`'s server upsert | See below |
 
 **Down from 123 Supabase writes to 13.**
+
+### Provider events: one write at a time
+
+`external_events` stays online-only, but "online-only" did not mean "ordered".
+An edit is two writes — the mirror row, so every device moves now, and the
+provider PATCH, after which `google-events` / `icloud-events` rewrite the row from
+the answer — and both fired the moment a drag ended. Two drags inside a second:
+the first PATCH's rewrite could land after the second drag's row write (the block
+jumped back on every screen), and Google kept whichever PATCH arrived last.
+
+| Piece | Where | What it does |
+|---|---|---|
+| The lane | `lib/eventWriteback.ts` `queueEventWrite` | One row write + PATCH per event at a time, in order. Plain single-instance edits that pile up behind a slow PATCH fold into one (later fields win); series and recurrence edits never merge. |
+| Echo filter | `isStaleEventEcho`, read by `applyLiveChange` | While an event is being written its echoes are not painted; for 10s after, an echo carrying times this device wrote and then replaced is not either. Anything else — another device, the sync — paints. |
+| Server guard | `_shared/eventWriteback.ts` `rewriteMirrorRow` | The client sends `rowAt` (the times its row write left); the function's rewrite applies only while the row still holds them. The fields are the version — no column, no migration, and a client without `rowAt` gets the old unconditional rewrite. |
+| Creates | `beginEventCreate` / `swapCreatedEvent` | The optimistic row carries its account and calendar (it was blank, so it drew as a hatched read-only M365 block) and stays still until the real row replaces it — from the function's answer or its Realtime INSERT, whichever lands first. No refetch of every range after. |
+
+Task → Event (`convertTaskToEvent`) trashes the task as the event is drawn and
+restores it if the create fails; it used to wait for Google, so the hour held
+three blocks for the round trip.
+
+What is still open: a *refetch* of `external_events` that starts while an event
+is being written is not filtered (only echoes are) — the onMutate cancel covers
+one already in flight. And two devices editing one event at once still race at
+the provider; the guard only keeps the mirror row honest.
 
 ### The one place the ritual still needs a connection
 
@@ -364,3 +425,6 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
 | `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |
 | `task-offline.test.tsx` (12) | The real `useTaskMutations` hook: offline create, reconnect delivery, force-quit survival, coalesced edits, label diffing, parked rejections |
+| `write-races.test.ts` (13) | A late echo after the ack; a refetch in flight across a drag (and its re-run after the drain); first loads never cancelled; delivery waits for the mirror |
+| `../event-writeback.test.tsx` (7) | The real `useExternalEventMutations` over a held-open transport: one PATCH at a time, coalesced, stale echoes ignored; the create's temp row and its swap; Task → Event |
+| `../event-writeback-row.test.ts` (5) | The functions' guarded row rewrite |

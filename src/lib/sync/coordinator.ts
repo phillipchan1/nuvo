@@ -59,6 +59,7 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
 /** Test seam: drop the owing mirror so a suite does not leak across cases. */
 export function resetOwingForTests() {
   owing = new Set();
+  pendingRows = new Map();
   parkedRows = new Map();
   owingReady = false;
   deferred.clear();
@@ -168,6 +169,26 @@ function rowUpdatedAt(row: unknown): string {
  */
 let parkedRows = new Map<SyncTable, Set<string>>();
 
+/** Rows with a write still queued, per table — mirrored from the outbox by
+ *  `refreshOwing`, and added synchronously by `markOwing` for the same reason
+ *  `owing` is. */
+let pendingRows = new Map<SyncTable, Set<string>>();
+
+function rowsByTable(ops: readonly { table: SyncTable; rowId: string }[]) {
+  const out = new Map<SyncTable, Set<string>>();
+  for (const op of ops) {
+    let set = out.get(op.table);
+    if (!set) out.set(op.table, (set = new Set()));
+    set.add(op.rowId);
+  }
+  return out;
+}
+
+/** `rowId` is the table's own key: a uuid for most, a composite for
+ *  `task_labels`, a week start for `sprints`/`week_reviews`. Each is compared
+ *  against the `id` of the rows in that table's own caches, so a composite
+ *  simply never matches — which is right, a rejected label is not a reason to
+ *  hold a task row. */
 function keepParkedRows<T extends { id: string }>(
   table: SyncTable,
   previous: T[],
@@ -178,6 +199,54 @@ function keepParkedRows<T extends { id: string }>(
   const incomingIds = new Set(next.map((r) => r?.id));
   const held = previous.filter((r) => r?.id && ids.has(r.id) && !incomingIds.has(r.id));
   return held.length ? [...next, ...held] : next;
+}
+
+/**
+ * A refetch never overrides a row this device is in the middle of writing.
+ *
+ * `preserveOwingRows` decides membership for the table as a whole; this pass is
+ * about the individual rows a queued op is about, and it runs first. For those
+ * rows the cache already holds the newest truth there is — the optimistic patch
+ * is the post-image of a write the server has not finished applying — so:
+ *
+ *  • a pending row the cache has keeps the cached body. The old rule took the
+ *    incoming body whenever its `updated_at` was newer, and a refetch that read
+ *    the row after op1 landed but before op2 did is newer than the cache and
+ *    older than the user: the block jumped back.
+ *  • a pending row the cache does NOT have is dropped. A drag out of the inbox
+ *    removes the row from that list optimistically; a refetch that read the
+ *    inbox a moment before the drag put it straight back, so the task sat in
+ *    the inbox and on the grid at once. The drain's own refetch (or the echo,
+ *    which places rows through the membership rules) brings it in if the
+ *    server says it belongs.
+ *
+ * Like the merge below, this runs on our own `setQueryData` too; local writes
+ * opt out through `runWithoutOwingPreserve`, which every task and slot cache
+ * write already goes through.
+ */
+export function withholdOwedRows<T extends { id: string }>(
+  table: SyncTable,
+  previous: unknown,
+  incoming: unknown,
+): T[] {
+  const next = incoming as T[];
+  if (!Array.isArray(next) || !Array.isArray(previous)) return next;
+  if (bypassOwingPreserve > 0) return next;
+  const owed = pendingRows.get(table);
+  if (!owed?.size) return next;
+  const prevById = new Map((previous as T[]).filter((r) => r?.id).map((r) => [r.id, r]));
+  let changed = false;
+  const kept: T[] = [];
+  for (const row of next) {
+    if (!row?.id || !owed.has(row.id)) {
+      kept.push(row);
+      continue;
+    }
+    const local = prevById.get(row.id);
+    if (local !== row) changed = true;
+    if (local) kept.push(local);
+  }
+  return changed ? kept : next;
 }
 
 export function preserveOwingRows<T extends { id: string }>(
@@ -222,7 +291,7 @@ export function installOwingGuards(qc: QueryClient): void {
   // unchanged list is the same array.
   const share = (table: SyncTable) => ({
     structuralSharing: (previous: unknown, incoming: unknown) =>
-      replaceEqualDeep(previous, preserveOwingRows(table, previous, incoming)),
+      replaceEqualDeep(previous, preserveOwingRows(table, previous, withholdOwedRows(table, previous, incoming))),
   });
   qc.setQueryDefaults(["vertical", "projects"], share("projects"));
   qc.setQueryDefaults(["vertical", "initiatives"], share("initiatives"));
@@ -249,26 +318,20 @@ export function installOwingGuards(qc: QueryClient): void {
  * instant you change it. `refreshOwing` still reconciles against IndexedDB
  * afterward for cross-tab/session truth; this just can't wait for it.
  */
-export function markOwing(table: SyncTable): void {
+export function markOwing(table: SyncTable, rowId?: string): void {
   owing.add(table);
+  if (rowId === undefined) return;
+  let set = pendingRows.get(table);
+  if (!set) pendingRows.set(table, (set = new Set()));
+  set.add(rowId);
 }
 
 /** Recompute the mirror. Called after every enqueue and every drain. */
 export async function refreshOwing(): Promise<void> {
   const { pending, parked } = await outboxSnapshot();
   owing = new Set(pending.map((o) => o.table));
-  const held = new Map<SyncTable, Set<string>>();
-  for (const op of parked) {
-    // `rowId` is the table's own key: a uuid for most, a composite for
-    // `task_labels`, a week start for `sprints`/`week_reviews`. Each is
-    // compared against the `id` of the rows in that table's own caches, so a
-    // composite simply never matches — which is right, a rejected label is not
-    // a reason to hold a task row.
-    let set = held.get(op.table);
-    if (!set) held.set(op.table, (set = new Set()));
-    set.add(op.rowId);
-  }
-  parkedRows = held;
+  pendingRows = rowsByTable(pending);
+  parkedRows = rowsByTable(parked);
   owingReady = true;
 }
 
@@ -284,6 +347,43 @@ export function invalidateWhenSafe(qc: QueryClient, table: SyncTable, key: reado
   const queued: readonly string[][] = deferred.get(table) ?? [];
   if (queued.some((k) => k.join("/") === key.join("/"))) return;
   deferred.set(table, [...queued, [...key]]);
+}
+
+/**
+ * Cancel the refetches already in flight for a table this device is about to
+ * write, and run them again behind the drain.
+ *
+ * The owing gates stop a refetch from *starting* over queued work. They cannot
+ * stop one that started a moment before the user acted — the focus catch-up,
+ * the minute's pull, a drain's own refresh — and that response describes the
+ * world before the edit. Landing after the optimistic patch, it moved a dragged
+ * task back (or back into the inbox it was just dragged out of); landing after
+ * the write was acked, nothing defended against it at all.
+ *
+ * Call it before the optimistic patch. Only queries that already hold data are
+ * cancelled: TanStack restores a cancelled query to its last written state, and
+ * a first load has none, so it would sit empty with nothing left to fetch it.
+ * Each cancelled key is deferred like any invalidate over owed work, so it
+ * refetches once the drain this write starts has delivered.
+ */
+export function holdFetchesBehindWrite(
+  qc: QueryClient,
+  table: SyncTable,
+  queryKey: readonly unknown[],
+): void {
+  const inFlight = qc
+    .getQueryCache()
+    .findAll({ queryKey, fetchStatus: "fetching" })
+    .filter((q) => q.state.data !== undefined);
+  if (!inFlight.length) return;
+  const queued: readonly string[][] = deferred.get(table) ?? [];
+  const next = [...queued];
+  for (const query of inFlight) {
+    void query.cancel({ revert: true });
+    const key = query.queryKey as string[];
+    if (!next.some((k) => k.join("/") === key.join("/"))) next.push([...key]);
+  }
+  deferred.set(table, next);
 }
 
 /**

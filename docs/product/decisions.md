@@ -5724,9 +5724,56 @@ spine-as-icons below 1280 is the same rail the chat squeeze already used. No new
 
 *Status: standing — driven at 1024 and 1440 on the dummy account.*
 
+**D-156 · 2026-10-15 · A write is ordered against its own echoes, refetches and
+write-backs — not just against the network.**
+
+Origin: the 2026-10-15 Schedule audit (`docs/schedule-ux-audit-2026-10-15.md`, P0 #5–7),
+four races found by reading the code. Each is now reproduced by a test that failed before
+its fix; none was driven live (the local stack serves no edge functions, so the Google half
+runs against a stubbed transport).
+
+| Race | Fix |
+|---|---|
+| A late echo of op1 after op2 was **acked** repainted op1 (only pending ops were merged) | The outbox keeps acked ops for 10s (`recentlyAcked`); live apply folds them through field-LWW. They never decide a DELETE. |
+| A refetch in flight when the user dragged landed on the drag — and put a task dragged out of the inbox back into it | `holdFetchesBehindWrite` cancels in-flight task/slot fetches that hold data before every optimistic patch and re-runs them behind the drain; `withholdOwedRows` keeps the local body of a row with a queued op and doesn't admit one the list lacks |
+| Two drags of a Google event inside a second: the first PATCH's row rewrite landed over the second drag, and Google kept whichever PATCH arrived last | One write-back lane per event (`lib/eventWriteback`): row write + PATCH one at a time, in order, waiting edits coalesced; echoes ignored while an event is written. The functions' rewrite is conditional on `rowAt`, the times the client's write left. |
+| A created event drew hatched/read-only until refetch, with its Realtime INSERT beside it; Task → Event held three blocks | The temp row carries its account + calendar, is held still, and is swapped for the real row (answer or INSERT, whichever first) — no all-range refetch. Task → Event trashes first, restores on failure. |
+| `task-mirror` read the task before the edit reached Postgres | `mirrorTask` waits for the row's newest queued write to be acked (`whenRowDelivered`); a refused write is never mirrored |
+
+**Decided, with the alternative named:**
+
+- **The guard on the function's row rewrite is the row's own times, not a version column.**
+  A `client_seq` column would mean a migration, and a client writing a column the database
+  doesn't have yet fails every drag until it lands. The times are exactly what the rewrite
+  is about; a client that sends no `rowAt` gets the old unconditional rewrite. The lane
+  makes this device's own writes sequential anyway — the guard is for every other writer
+  (a second window, a phone, an older build).
+- **Cancel, don't merge, an in-flight refetch.** The alternative — fold pending ops onto
+  every refetched row — is the overlay `coordinator.ts`'s header already rejected (it would
+  re-derive membership per fragment). Cancelling costs one deferred refetch; the echo or the
+  drain's refresh brings everything else.
+- **A create is held still until its real row arrives** (~a round trip) rather than letting
+  a drag on the temporary id queue against an id that doesn't exist yet.
+- **Task → Event's trash is silent.** ⌘Z still brings the task back; a "Trashed" toast before
+  the event exists would announce the wrong half of the act. The success toast stays.
+
+Ledger: none — a correctness fix, not a product change. It protects **P1** (a dragged block
+is the task, and it stays where it was put) and keeps **P15**: no new state library, the
+lane is one ~300-line module over TanStack. No new pool, no new user-facing name, works the same on
+any account (P16). Coordinates with `claude/gifted-shaw-033c61` / `claude/bold-payne-37991a`
+(per-row owing mirror; a stale refetch can't re-admit a moved row) — the pending-row mirror
+here is written to match theirs.
+
+*Status: standing — typecheck and the full suite green (1,816; 25 new across
+`tests/sync/write-races.test.ts`, `tests/event-writeback.test.tsx`,
+`tests/event-writeback-row.test.ts`); edge-function parse green. **Not deployed:**
+`google-events` and `icloud-events` need `supabase functions deploy` for the server guard
+(the client half works without it). **Not driven** in the running app; `npm run perf` not
+run (the cancel walks the query cache once per patch).*
+
 ---
 
-**D-156 · 2026-10-15 · On the Schedule, signal means now, fill means committed, and a
+**D-157 · 2026-10-15 · On the Schedule, signal means now, fill means committed, and a
 menu is one object.**
 
 The visual half of the Schedule audit

@@ -73,6 +73,11 @@ export function invokeQuiet(fn: string, body: Record<string, unknown>) {
  * Fire-and-forget by design: the mirror is a server-side echo of a block, not
  * user data. Offline it simply re-syncs after the drain, so there is nothing to
  * queue and nothing lost by skipping it.
+ *
+ * It waits for the task's own write to land. `task-mirror` reads the row from
+ * Postgres, and every caller fires it right after queueing the edit — so it
+ * used to mirror the block as it was *before* the drag (or 404 a task created
+ * a moment earlier). A write the server refuses is never mirrored at all.
  */
 export function mirrorTask(taskId: string) {
   if (typeof navigator !== "undefined" && !navigator.onLine) return;
@@ -82,5 +87,10 @@ export function mirrorTask(taskId: string) {
   } catch {
     /* keep UTC */
   }
-  invokeQuiet("task-mirror", { taskId, tz });
+  // Imported lazily: the sync layer's transport imports this module.
+  void import("./sync")
+    .then(({ whenRowDelivered }) => whenRowDelivered("tasks", taskId))
+    .then((delivered) => {
+      if (delivered) invokeQuiet("task-mirror", { taskId, tz });
+    });
 }
