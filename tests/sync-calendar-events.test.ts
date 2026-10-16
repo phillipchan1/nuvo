@@ -35,6 +35,8 @@ function makeApi(initial: CalendarBlockInput[] = []): {
       borderColor: input.borderColor ?? "",
       textColor: input.textColor ?? "",
       display: input.display ?? "auto",
+      startEditable: input.editable,
+      durationEditable: input.durationEditable,
       extendedProps: { ...(input.extendedProps ?? {}) },
       setDates: vi.fn((start, end, options) => {
         record.start = new Date(start);
@@ -48,6 +50,8 @@ function makeApi(initial: CalendarBlockInput[] = []): {
         if (name === "borderColor") record.borderColor = String(value);
         if (name === "textColor") record.textColor = String(value);
         if (name === "display") record.display = String(value);
+        if (name === "editable") record.startEditable = Boolean(value);
+        if (name === "durationEditable") record.durationEditable = Boolean(value);
       }),
       setExtendedProp: vi.fn((name, value) => {
         record.extendedProps = { ...record.extendedProps, [name]: value };
@@ -276,6 +280,33 @@ describe("duplicate publicIds from an inbox drop", () => {
     expect(list).toHaveLength(1);
     expect(list[0]!.allDay).toBe(false);
     expect(list[0]!.start!.toISOString()).toBe("2026-09-03T23:00:00.000Z");
+  });
+
+  /**
+   * An all-day "planned" chip can't change length (`durationEditable: false`).
+   * Dragging it onto the grid moves the same FullCalendar event, so the timed
+   * block must say `durationEditable: true` itself or it keeps the chip's flag
+   * and shows no resize handles.
+   */
+  it("restores resize when an all-day chip becomes a timed block", () => {
+    const { api, list } = makeApi([
+      block({ id: "task:1", start: "2026-09-03", allDay: true, editable: true, durationEditable: false }),
+    ]);
+    expect(list[0]!.durationEditable).toBe(false);
+
+    const report = syncCalendarEvents(api, [
+      block({
+        id: "task:1",
+        start: "2026-09-03T16:45:00.000Z",
+        end: "2026-09-03T17:15:00.000Z",
+        allDay: false,
+        editable: true,
+        durationEditable: true,
+      }),
+    ]);
+
+    expect(report.moved).toEqual(["task:1"]);
+    expect(list[0]!.durationEditable).toBe(true);
   });
 });
 

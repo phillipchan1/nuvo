@@ -1617,6 +1617,12 @@ function CalendarPane({
           end: endOf({ start_time: start, duration_minutes: t.duration_minutes }).toISOString(),
           allDay: false,
           editable: true,
+          // Stated, not inherited: the all-day "planned" chip below is
+          // `durationEditable: false`, and when you drag it onto the grid the
+          // reconcile moves the SAME FullCalendar event (`setDates`), which only
+          // re-patches a flag the new input names. Left implicit, the block kept
+          // the chip's `false` and came up with no resize handles.
+          durationEditable: true,
           // evt-overdue carries the ember to CSS: the inline `fill` above is
           // enough on Warm Paper, but a mono skin restyles the block wholesale
           // (!important), so without a class the "this is late" signal is lost.

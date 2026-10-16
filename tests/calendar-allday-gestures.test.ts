@@ -72,6 +72,16 @@ describe("Schedule all-day events are first-class on the grid", () => {
     expect(PANE).toMatch(/eventResizableFromStart/);
   });
 
+  it("a timed task block states durationEditable, so a planned chip dragged onto the grid can resize", () => {
+    // The all-day planned chip is `durationEditable: false`; the reconcile moves
+    // the same FC event onto the grid and only re-patches a flag the input names.
+    const timed = PANE.slice(
+      PANE.indexOf("const taskEvents = tasks"),
+      PANE.indexOf("const plannedTaskEvents"),
+    );
+    expect(timed).toMatch(/allDay:\s*false,[\s\S]*?durationEditable:\s*true/);
+  });
+
   it("marks left/right grips on daygrid chips, not the time-grid bar", () => {
     expect(CSS).toMatch(/\.fc-daygrid-event \.fc-event-resizer-start/);
     expect(CSS).toMatch(/\.fc-daygrid-event \.fc-event-resizer-end/);
