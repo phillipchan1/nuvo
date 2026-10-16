@@ -1967,30 +1967,47 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: color-mix(in srgb, var(--muted) 55%, transparent);
 }
 
-/* Completion micro-interaction: check blooms, title strikes, row collapses.
+/* Completion micro-interaction: check blooms, title strikes, row folds away.
    Mutation waits for `--d-task-complete` so the list doesn't yank the row
-   before it's gone — keep the delay short so a check feels like a click. */
-:root { --d-task-complete: 180ms; }
-@keyframes task-complete {
-  0% {
-    opacity: 1;
-    max-height: 2.75rem;
-    transform: translateX(0) scale(1);
+   before it's gone.
+   The fold animates the row's REAL height (`--row-h`, measured by TaskRow when
+   the check is tapped) together with its padding and hairline. It used to run
+   `max-height` from a guessed 2.75rem to 0 — but the box is border-box with
+   py-2.5, so it could never get below ~21px: a tall row clipped instantly, then
+   a 21px sliver was deleted in one frame, and everything below lurched up. Every
+   part of the box now arrives at 0 together, so the removal is a no-op and the
+   rows below glide up on one continuous curve. The content fades out in the first
+   half so it never looks squashed. */
+:root { --d-task-complete: 270ms; }
+/* Two beats on separate clocks: the content lets go first (fade), the box then
+   folds on a symmetric curve. One shared front-loaded curve did 90% of the fold
+   in the first 80ms and then crept — read as a lurch, not a glide. */
+@keyframes task-fade {
+  to { opacity: 0; }
+}
+@keyframes task-fold {
+  from {
+    height: var(--row-h);
+    padding-top: var(--row-pt);
+    padding-bottom: var(--row-pb);
+    border-bottom-width: 1px;
   }
-  100% {
-    opacity: 0;
-    max-height: 0;
-    transform: translateX(4px) scale(0.98);
-    border-bottom-color: transparent;
+  to {
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom-width: 0;
   }
 }
 .task-completing {
   overflow: hidden;
   pointer-events: none;
-  animation: task-complete var(--d-task-complete) var(--ease-out) forwards;
+  animation:
+    task-fade 150ms ease-in-out forwards,
+    task-fold 230ms cubic-bezier(0.4, 0, 0.2, 1) 40ms forwards;
 }
 @media (prefers-reduced-motion: reduce) {
-  .task-completing { animation-duration: 1ms; }
+  .task-completing { animation-duration: 1ms; animation-delay: 0s; }
 }
 
 /* Vertical floor transition: a subtle rise as you change altitude — MOTION ONLY,

@@ -8,7 +8,7 @@ import { carriedTitle, RecurMark } from "./ui";
 import { pressable } from "../lib/a11y";
 
 /** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
-const COMPLETE_MS = 180;
+const COMPLETE_MS = 270;
 
 export interface TaskMeta {
   project?: string | null;
@@ -279,6 +279,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
   ref,
 ) {
   const [completing, setCompleting] = useState(false);
+  const rowEl = useRef<HTMLDivElement | null>(null);
   const completeTimer = useRef<number | null>(null);
   useEffect(
     () => () => {
@@ -304,6 +305,15 @@ const TaskRow = forwardRef<TaskRowHandle, {
       if (instant) {
         onToggleDone();
         return;
+      }
+      // Pin the fold's starting box to what's actually on screen (see
+      // `task-complete` in index.css) — a row can be one line or three.
+      const el = rowEl.current;
+      if (el) {
+        const cs = getComputedStyle(el);
+        el.style.setProperty("--row-h", `${el.offsetHeight}px`);
+        el.style.setProperty("--row-pt", cs.paddingTop);
+        el.style.setProperty("--row-pb", cs.paddingBottom);
       }
       setCompleting(true);
       completeTimer.current = window.setTimeout(() => {
@@ -592,6 +602,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
 
   return (
     <div
+      ref={rowEl}
       {...(draggable ? { "data-tauri-drag-region": "false" as const } : {})}
       data-task-drag={draggable ? task.id : undefined}
       data-task-drag-group={dragGroup}
