@@ -2212,7 +2212,18 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line-strong);
   pointer-events: none;
+  opacity: 0;
 }
+.fc .fc-event:hover .fc-event-resizer::after,
+.fc .fc-event:focus-visible .fc-event-resizer::after { opacity: 1; }
+/* FullCalendar keeps the band `display:none` until the block is hovered, so the
+   cursor never says "resize" when the pointer ENTERS on the edge: the band only
+   exists after the hover starts, the browser doesn't re-pick the cursor until the
+   next mouse move, and a press right there already grabs the handle while the
+   pointer still reads as the body's. Keep the band laid out always (it is
+   transparent and absolutely positioned — no layout cost); only the grip mark
+   above waits for hover. */
+.fc .fc-event .fc-event-resizer { display: block; }
 /* The time-grid hit-band is FullCalendar's 8px, centred on the block's edge:
    4px outside the block (usually the gap, or the next block's own handle) and
    only 4px inside it — a target you have to find to the pixel, on a block whose
