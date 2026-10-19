@@ -2206,13 +2206,28 @@ select.field { appearance: none; -webkit-appearance: none; }
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 22px;
-  height: 3px;
+  width: 28px;
+  height: 4px;
   border-radius: 999px;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line-strong);
   pointer-events: none;
 }
+/* The time-grid hit-band is FullCalendar's 8px, centred on the block's edge:
+   4px outside the block (usually the gap, or the next block's own handle) and
+   only 4px inside it — a target you have to find to the pixel, on a block whose
+   edge is also where the cursor flips from "move" to "resize". Make it 14px and
+   pull it mostly inside the block (3px out, 11px in), so the whole bottom lip of
+   a block is the handle and the cursor change is felt a few pixels before the
+   edge, not at it. Capped at a third of the block so a short block keeps a body
+   to grab and move; the grip mark stays centred in the band, which now sits
+   inside the block rather than straddling its edge. */
+.fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer {
+  height: min(14px, 34%);
+  min-height: 7px;
+}
+.fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer-start { top: -3px; }
+.fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer-end { bottom: -3px; }
 /* Anytime / month chips resize on the left and right (Google, Fantastical,
    Apple Calendar), not the top and bottom. The time-grid grip above is a
    horizontal bar; these are vertical pills on a wider hit-band so a
