@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
-# Patches the generated Xcode project after `tauri ios init`. Safe to re-run.
-# Called from CI (.github/workflows/ios-release.yml) and local iOS builds.
+# Patches the Xcode project at src-tauri/gen/apple.
+# Safe to re-run. Called from GitHub Actions, Xcode Cloud (ci_post_clone.sh),
+# and local iOS builds.
+#
+# The project is committed (widgets + entitlements already in-tree). The
+# xcodegen injectors (widgets / watch / SIWA) still run on GitHub Actions so
+# a watch-enabled build can add NuvoWatch. Xcode Cloud passes --no-codegen
+# and leaves the committed project alone — Cloud cannot pre-build the watch
+# app, and NUVO_IOS_WATCH defaults to 0 there.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="${ROOT}/src-tauri/gen/apple/nuvo_iOS/Info.plist"
+NO_CODEGEN=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-codegen) NO_CODEGEN=1 ;;
+    *)
+      echo "ios-postinit: unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
 
 if [ ! -f "$PLIST" ]; then
-  echo "ios-postinit: Info.plist not found at $PLIST — run 'npm run tauri ios init -- --ci' first"
+  echo "ios-postinit: Info.plist not found at $PLIST — the committed Xcode project is missing"
   exit 1
 fi
 
@@ -20,7 +37,9 @@ fi
 # vanished this way (App Store Connect kept flagging every build "Missing
 # Compliance" because of it). NUVO_IOS_WIDGETS=0 ships the plain app if the
 # extension ever blocks a build.
-if [ "${NUVO_IOS_WIDGETS:-1}" = "1" ]; then
+if [ "$NO_CODEGEN" = "1" ]; then
+  echo "ios-widgets: skipped (--no-codegen; already in the committed project)"
+elif [ "${NUVO_IOS_WIDGETS:-1}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-widgets.rb"
 else
   echo "ios-widgets: skipped (NUVO_IOS_WIDGETS=0)"
@@ -38,7 +57,9 @@ fi
 # via scripts/ios-watch-build.sh and the app's "Embed Nuvo Watch" phase copies
 # the product in; with NUVO_WATCH_APP unset that phase is a no-op, so a local
 # `tauri ios dev` is unaffected. NUVO_IOS_WATCH=0 leaves the target out entirely.
-if [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
+if [ "$NO_CODEGEN" = "1" ]; then
+  echo "ios-watch: skipped (--no-codegen; Xcode Cloud default is NUVO_IOS_WATCH=0)"
+elif [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-watch.rb"
 else
   echo "ios-watch: skipped (NUVO_IOS_WATCH=0)"
@@ -60,7 +81,9 @@ fi
 # the com.apple.developer.applesignin entitlement" (docs/apple-sign-in.md).
 # NUVO_IOS_SIWA=0 unblocks a local build without it — never a release, which
 # would be a 4.8 rejection.
-if [ "${NUVO_IOS_SIWA:-1}" = "1" ]; then
+if [ "$NO_CODEGEN" = "1" ]; then
+  echo "ios-siwa: skipped (--no-codegen; entitlements are already in the committed project)"
+elif [ "${NUVO_IOS_SIWA:-1}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-siwa.rb"
 else
   echo "ios-siwa: skipped (NUVO_IOS_SIWA=0)"

@@ -4,14 +4,10 @@
 # Adds the WidgetKit extension (src-tauri/ios/NuvoWidgets) to the Xcode project
 # `tauri ios init` generates, then regenerates the project so Xcode sees it.
 #
-# Why patch instead of commit a project: `gen/apple/` is thrown away and rebuilt
-# on every CI run, and Tauri has no hook for extra targets. What it does leave
-# behind is `project.yml` — cargo-mobile2 renders it from a template and runs
-# `xcodegen generate --no-env --spec project.yml` against it (see
-# cargo-mobile2/src/apple/project.rs). So we edit that spec, re-run the same
-# command, and the extension arrives through Tauri's own pipeline rather than
-# beside it. `tauri ios build` re-uses an existing project (its `ensure_init`
-# only regenerates when the app name changed), so the patch survives the build.
+# The Xcode project is now committed at gen/apple (Xcode Cloud needs it).
+# This script is still the injector GitHub Actions uses when the spec must be
+# re-applied (or when someone runs `tauri ios init` locally). It edits
+# `project.yml` and re-runs `xcodegen generate --no-env --spec project.yml`.
 #
 # Idempotent — safe to re-run over an already-patched project.
 # Set NUVO_IOS_WIDGETS=0 to skip it entirely and ship the plain app; nothing
@@ -61,19 +57,14 @@ app_bundle_id = app_settings['PRODUCT_BUNDLE_IDENTIFIER'] || spec.dig('options',
 fail!('could not read the app bundle identifier from project.yml') if app_bundle_id.nil?
 team = app_settings['DEVELOPMENT_TEAM'] || ENV['APPLE_DEVELOPMENT_TEAM']
 
-# App Store validation rejects an extension whose version strings differ from its
-# host app's, so stamp exactly what the app carries at build time: the version in
-# tauri.conf.json, which the Tauri CLI merges into the app's Info.plist.
-#
-# Do NOT fold the build number in here. Tauri runs `xcrun agvtool new-version -all`
-# between the build and the archive, and `-all` reaches every Info.plist in the
-# project — the widget's included (verified in CI run #10: "Updated CFBundleVersion
-# in .../NuvoWidgets/Info.plist"). Pre-stamping `<version>.<build>` only made the
-# widget run *ahead* of the app for the length of the build, which Xcode flags as
-# "CFBundleVersion of an app extension must match that of its containing parent app".
+# App Store validation rejects an extension whose version strings differ from
+# its host app's. Marketing version stays the tauri.conf.json version.
+# CFBundleVersion must follow the app's CURRENT_PROJECT_VERSION — Xcode Cloud
+# assigns that build number, and we must never write one of our own onto the
+# app. A hardcoded widget build number would drift from Cloud's.
 tauri_conf = JSON.parse(File.read(File.join(ROOT, 'src-tauri', 'tauri.conf.json')))
 short_version = tauri_conf['version'] || '0.1.0'
-bundle_version = short_version
+bundle_version = '$(CURRENT_PROJECT_VERSION)'
 
 targets[TARGET_NAME] = {
   'type' => 'app-extension',

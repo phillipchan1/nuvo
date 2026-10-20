@@ -64,13 +64,12 @@ fail!('could not read the app bundle identifier from project.yml') if app_bundle
 team = app_settings['DEVELOPMENT_TEAM'] || ENV['APPLE_DEVELOPMENT_TEAM']
 watch_bundle_id = "#{app_bundle_id}.watchkitapp"
 
-# Version strings must match the host app's exactly, and the build number must
-# NOT be folded in here — Tauri runs `xcrun agvtool new-version -all` between the
-# build and the archive, and `-all` reaches every Info.plist in the project. See
-# the long comment in ios-widgets.rb; pre-stamping made the widget run *ahead* of
-# the app and Xcode rejected the archive for it.
+# Marketing version matches the host app. CFBundleVersion follows
+# CURRENT_PROJECT_VERSION so Xcode Cloud's build number (and GitHub's
+# agvtool --build-number) stay in lockstep across every nested bundle.
 tauri_conf = JSON.parse(File.read(File.join(ROOT, 'src-tauri', 'tauri.conf.json')))
 short_version = tauri_conf['version'] || '0.1.0'
+bundle_version = '$(CURRENT_PROJECT_VERSION)'
 
 targets[TARGET_NAME] = {
   # A modern SINGLE-TARGET watch app (Xcode 14+) is a plain `application` on
@@ -93,7 +92,7 @@ targets[TARGET_NAME] = {
     'properties' => {
       'CFBundleDisplayName' => 'Nuvo',
       'CFBundleShortVersionString' => short_version,
-      'CFBundleVersion' => short_version,
+      'CFBundleVersion' => bundle_version,
       # App Store validation rejects a watch app without an icon, twice over:
       # "A value for the Info.plist key 'CFBundleIconName' is missing" (90713)
       # and "No icons found for watch application" (90391). GENERATE_INFOPLIST_FILE
@@ -165,7 +164,7 @@ targets[WIDGET_TARGET] = {
     'properties' => {
       'CFBundleDisplayName' => 'Nuvo',
       'CFBundleShortVersionString' => short_version,
-      'CFBundleVersion' => short_version,
+      'CFBundleVersion' => bundle_version,
       'NSExtension' => {
         'NSExtensionPointIdentifier' => 'com.apple.widgetkit-extension'
       }
