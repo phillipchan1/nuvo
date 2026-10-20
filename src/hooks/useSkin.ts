@@ -79,6 +79,11 @@ export const SCHEMES: Record<Skin, Scheme[]> = {
     { id: "chalk", name: "Chalk", hint: "Neutral azure",
       light: { bg: "#f7f7f5", surface: "#ffffff", line: "#eae9e7", accent: "#1b72c9" },
       dark:  { bg: "#191919", surface: "#202020", line: "#2f2f2f", accent: "#529cca" } },
+    // Chalk's neutrals with the accent taken out of the chrome: selection and
+    // links are ink, not azure, so nothing in the shell reads as "the blue app".
+    { id: "ink", name: "Ink", hint: "Near-white, no hue",
+      light: { bg: "#fbfbfa", surface: "#ffffff", line: "#ebeae8", accent: "#37352f" },
+      dark:  { bg: "#191919", surface: "#202020", line: "#2f2f2f", accent: "#ebebea" } },
     { id: "arctic", name: "Arctic", hint: "Cool indigo",
       light: { bg: "#eef2fa", surface: "#ffffff", line: "#dde4f1", accent: "#4f46e5" },
       dark:  { bg: "#0b0d13", surface: "#141720", line: "#232936", accent: "#8b93ff" } },

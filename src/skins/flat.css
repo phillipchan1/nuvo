@@ -544,6 +544,61 @@ html[data-skin="flat"][data-palette="chalk"][data-theme="dark"] {
   --slot: #4dab9a; --event-default: #7f7f7f;
 }
 
+/* INK — Chalk's neutrals with the colour taken out of the chrome.
+
+   Chalk keeps an azure accent "for UI state", but state is most of what the
+   chrome says: the wordmark, the active nav row and its edge, the Today tab,
+   every link, the Plan pill, the ✦ launcher, the focus ring. On a near-white
+   ground that is the only saturated hue on screen, so the whole app reads as
+   blue. The register Chalk imitates doesn't do that — its sidebar selection is
+   a grey wash and its ink is the only dark thing in the room.
+
+   So here the accent IS the ink. Selection, links and filled controls are
+   black-on-white (and the reverse in dark); the colour on screen is left to
+   what carries meaning — a domain's identity hue, --signal for now, --slot for
+   open time. The flat chrome rules above (accent-soft fill, accent edge, accent
+   label ink) need no changes: they resolve to a grey wash and dark text.
+
+   The ground is a notch whiter than Chalk's (#fbfbfa, not #f7f7f5): the work
+   still sits on a sheet above it, but the step is a whisper, so the pane reads
+   as one white page rather than grey chrome around a white one.
+
+   Contrast: --accent doubles as text (links, the section labels), so it has to
+   clear AA on all three grounds; as ink on white it is ~12:1. --muted is one
+   step darker than Chalk's #787774, which sat at 4.4:1 on #fbfbfa. */
+html[data-skin="flat"][data-palette="ink"][data-theme="light"] {
+  --bg: #fbfbfa; --surface: #ffffff; --surface-2: #fdfdfc;
+  --line: #ebeae8; --line-strong: #dddcd9; --text: #37352f; --muted: #73716d;
+  --accent: #37352f; --accent-2: #5a5853; --on-accent: #ffffff;
+  --accent-soft: rgba(55, 53, 47, 0.07); --accent-glow: rgba(55, 53, 47, 0.30);
+  --slot: #0f7b6c; --event-default: #9b9a97;
+}
+
+html[data-skin="flat"][data-palette="ink"][data-theme="dark"] {
+  --bg: #191919; --surface: #202020; --surface-2: #252525;
+  --line: #2f2f2f; --line-strong: #414141; --text: #ebebea; --muted: #9b9a97;
+  --accent: #ebebea; --accent-2: #bdbdbb; --on-accent: #191919;
+  --accent-soft: rgba(235, 235, 234, 0.10); --accent-glow: rgba(235, 235, 234, 0.34);
+  --slot: #4dab9a; --event-default: #7f7f7f;
+}
+
+/* The focus ring is the one place the accent has to be seen against white, not
+   read as text: at --accent-glow's alpha a 2px ring over #fff is ~2:1, which is
+   a keyboard user's only cue. A solid ink ring is the unambiguous version, and
+   costs nothing in a tone whose accent is already the ink. */
+html[data-skin="flat"][data-palette="ink"] :focus-visible {
+  outline-color: var(--accent);
+}
+
+/* Selection fills with the accent wash (flat's law), but the base rule also
+   draws a 2px accent edge — fine in azure, a heavy black box when the accent is
+   the ink. Keep the wash, and let a mid-grey hairline do the edge. */
+html[data-skin="flat"][data-palette="ink"] .glass-lift,
+html[data-skin="flat"][data-palette="ink"] .glass-lift-row {
+  border-color: color-mix(in srgb, var(--text) 38%, var(--surface)) !important;
+  box-shadow: none;
+}
+
 /* Flat: quick and smooth — the modern-app snap.
    html background matches the ground so iOS safe-area / any gap past #root
    is not a stray --surface bar under chrome that now rides --bg. */
