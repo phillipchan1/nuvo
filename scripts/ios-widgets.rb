@@ -25,8 +25,8 @@ PROJECT_DIR = File.join(ROOT, 'src-tauri', 'gen', 'apple')
 SPEC_PATH = File.join(PROJECT_DIR, 'project.yml')
 
 TARGET_NAME = 'NuvoWidgets'
-# Sources live outside gen/apple (which is gitignored) so the Swift is committed
-# and reviewable; XcodeGen is happy to reference a path above the project.
+# Sources live outside gen/apple so the Swift is committed and reviewable;
+# XcodeGen is happy to reference a path above the project.
 SOURCE_PATH = '../../ios/NuvoWidgets'
 # Lock-screen accessory families are iOS 16+. The app itself still targets 15.0;
 # an extension may sit higher than its host, it just won't install below this.
@@ -61,7 +61,15 @@ team = app_settings['DEVELOPMENT_TEAM'] || ENV['APPLE_DEVELOPMENT_TEAM']
 # its host app's. Marketing version stays the tauri.conf.json version.
 # CFBundleVersion must follow the app's CURRENT_PROJECT_VERSION — Xcode Cloud
 # assigns that build number, and we must never write one of our own onto the
-# app. A hardcoded widget build number would drift from Cloud's.
+# app Info.plist. A hardcoded widget build number would drift from Cloud's.
+#
+# Do NOT fold the GitHub build number in here. Tauri runs
+# `xcrun agvtool new-version -all` between the build and the archive, and
+# `-all` reaches every Info.plist in the project — the widget's included
+# (verified in CI run #10: "Updated CFBundleVersion in .../NuvoWidgets/Info.plist").
+# Pre-stamping `<version>.<build>` only made the widget run *ahead* of the
+# app for the length of the build, which Xcode flags as "CFBundleVersion of
+# an app extension must match that of its containing parent app".
 tauri_conf = JSON.parse(File.read(File.join(ROOT, 'src-tauri', 'tauri.conf.json')))
 short_version = tauri_conf['version'] || '0.1.0'
 bundle_version = '$(CURRENT_PROJECT_VERSION)'

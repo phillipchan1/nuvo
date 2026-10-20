@@ -5,6 +5,9 @@
 #
 # Do not set CFBundleVersion on nuvo_iOS — Xcode Cloud assigns
 # CURRENT_PROJECT_VERSION. The widget follows that same setting.
+# CURRENT_PROJECT_VERSION = 1 + VERSIONING_SYSTEM = apple-generic are
+# required so `agvtool new-version -all` (tauri ios build --build-number)
+# can rewrite the number; Cloud overwrites it on every archive.
 name: nuvo
 options:
   bundleIdPrefix: day.nuvo.app
@@ -16,6 +19,10 @@ fileGroups:
 configs:
   debug: debug
   release: release
+settings:
+  base:
+    VERSIONING_SYSTEM: apple-generic
+    CURRENT_PROJECT_VERSION: 1
 settingGroups:
   app:
     base:

@@ -50,6 +50,15 @@ describe("committed Xcode project (Xcode Cloud)", () => {
     );
   });
 
+  it("keeps apple-generic versioning so agvtool and Cloud can assign the build number", () => {
+    const pbx = read("nuvo.xcodeproj/project.pbxproj");
+    expect(pbx).toContain("VERSIONING_SYSTEM = \"apple-generic\"");
+    expect(pbx).toMatch(/CURRENT_PROJECT_VERSION = 1;/);
+    expect(read("project.yml")).toContain("VERSIONING_SYSTEM: apple-generic");
+    expect(read("project.yml")).toContain("CURRENT_PROJECT_VERSION: 1");
+    expect(read("nuvo_iOS/Info.plist")).not.toContain("CFBundleVersion");
+  });
+
   it("embeds NuvoWidgets and does not embed the watch app", () => {
     const spec = read("project.yml");
     expect(spec).toContain("target: NuvoWidgets");
