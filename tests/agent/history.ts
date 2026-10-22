@@ -21,6 +21,7 @@
 //
 // Pure: no fs, no clock, no network. The runner passes those in.
 
+import type { Usage } from "./cost.ts";
 import type { Verdict } from "./verdict.ts";
 
 export interface ScenarioVerdict {
@@ -48,6 +49,14 @@ export interface RunRecord {
   /** Red and not parked — what would fail CI. */
   blocked: number;
   seconds: number;
+  /** Tokens the run spent, as the provider reported them. Absent on runs made
+   *  before the battery measured itself (and on replays, which spend none). */
+  usage?: Usage;
+  /** Dollars at the table price on the day (cost.ts), when the model is priced. */
+  usd?: number;
+  /** Set on a `--changed` run: the groups that ran at `repeat`. Everything
+   *  else ran once, so `repeat` is that scope's depth, not the whole suite's. */
+  changed?: string[];
 }
 
 /** Model + prompt + reasoning. Two runs are only comparable within one cell. */
@@ -165,7 +174,7 @@ export function formatMatrix(history: RunRecord[]): string {
     const blocked = r.blocked ? `  ${r.blocked} blocking` : "";
     lines.push(
       `  ${cellKey(r).padEnd(width)}  ${String(r.passed).padStart(3)}/${r.total}` +
-        `  ×${r.repeat}  ${r.mode}  ${r.at.slice(0, 10)}${blocked}`,
+        `  ×${r.repeat}${r.changed ? " (changed)" : ""}  ${r.mode}  ${r.at.slice(0, 10)}${blocked}`,
     );
   }
   return lines.join("\n");

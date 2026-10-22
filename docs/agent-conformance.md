@@ -129,17 +129,66 @@ three outcomes rather than two:
 capability looks present, so nobody investigates, and the user is the one who
 finds the 1-in-5.
 
-Because one green run is weak evidence against a 100% bar, **`--repeat 5` is
-what gates a prompt, tool or model change.** A single run is a smoke test and
-the runner says so.
+Because one green run is weak evidence against a 100% bar, a prompt, tool or
+model change is gated on **repeats** — but only of what it touched. **`npm run
+eval:gate`** (`--changed`) diffs the agent code and `scenarios.ts` against
+`master` (working tree included), runs every group the diff reaches **×5**, and
+runs the rest of the suite **once**. A group is "reached" when one of its
+scenarios changed, or when a changed line in `supabase/functions/agent/**` names
+a tool one of its scenarios asserts on (a prompt edit about `create_slot` is an
+edit to every scenario that checks `create_slot`). The rest still runs, so a
+regression elsewhere still shows up red; it just isn't interrogated for
+flakiness until it does. The header prints which groups were picked and why, and
+names any changed agent file that reached nothing by that rule — if that edit is
+aimed at a capability, add `--group <name> --repeat 5` for it.
 
 ```bash
-npm run eval                      # smoke: every scenario, once each
-npm run eval -- --repeat 5        # the real reliability read — use this to ship
-npm run eval -- --group slots     # one capability
-npm run eval -- --only slot-one   # one scenario
-npm run eval:replay               # recorded runs: deterministic, free
+npm run eval:gate                    # THE gate: touched groups ×5, the rest ×1   (~$1)
+npm run eval:gate -- --no-rest       # touched groups only — blind elsewhere      (~$0.40 a group)
+npm run eval                         # smoke: every scenario, once each           (~$0.80)
+npm run eval -- --group slots        # one capability
+npm run eval -- --only slot-one      # one scenario                               (~$0.05)
+npm run eval -- --repeat 5           # everything ×5 — a model swap, not a prompt edit (~$4)
+npm run eval:replay                  # recorded runs: deterministic, free
 ```
+
+`--base <branch>` diffs against something other than `master`; `--repeat N`
+changes the depth of the touched groups.
+
+#### What a run costs — measured, and asked for before it's spent
+
+Every request carries all the tool definitions and the whole static prompt —
+**~20.6k input tokens a round** on `gpt-5.6-terra`, and most scenarios take two
+rounds, so a scenario-run is ~41k tokens in. The battery used to print none of
+that: on 2026-10-22 ~495 scenario-runs (the full suite ×5 plus group re-runs)
+came to about **$5** when pennies were expected. So now:
+
+- **After a live run** it prints the provider's own count — requests, input,
+  the **cache hit rate**, output, dollars — and the three heaviest scenarios.
+  The harness reads each response's `usage` (streamed rounds ask for it with
+  `stream_options.include_usage`) through a metered `fetch`; the deployed loop
+  is untouched. Every live run, filtered or not, appends that to
+  `tests/agent/history/usage.jsonl` — the spend ledger.
+- **Before a live run** it estimates the bill from the ledger (the last five
+  runs of the same model) and **refuses above `--max-cost`** (default **$2**,
+  or `EVAL_MAX_COST`): it asks at a terminal, and exits 3 without one. `--yes`
+  spends it anyway. With no measured run of that model, the estimate is the
+  worst case — two rounds of the request about to be sent, nothing cached.
+- **Prices** are in `tests/agent/cost.ts` — OpenAI's list prices read on
+  2026-10-22 (terra $2 in / $0.20 cached / $12 out per 1M; these are
+  promotional rates said to run at least to 2026-11-21 — re-check after). A
+  model that isn't in the table gets tokens and no dollar figure;
+  `EVAL_PRICE="input,cached,output"` prices it.
+
+**Prefix caching works**, and it is most of why a run is affordable. The tools
+and the static prompt come first and are byte-identical on every request
+(`turn.ts` keeps the dynamic half in a second system message), so after a run's
+first request, ~95% of every request's input is served at the cached rate
+(measured 2026-10-22: round 2 of a scenario read 20,588 of ~20.6k tokens from
+cache; the run's first, cold request read none). The battery also sends
+`prompt_cache_key: "nuvo-eval"` so every scenario lands on the same cache. At
+that rate a scenario-run is about **$0.013**, which puts a **full ×1 pass at
+~$0.80** and a **full ×5 at ~$4**. The ~$5 day was volume, not a broken cache.
 
 **Quarantine is the only exception, and it can't be added quietly.** A
 known-red scenario can be parked with a dated sentence — `quarantined:
@@ -171,11 +220,14 @@ construction rather than by discipline.
 | `AGENT_PROMPT` | `thin` — anything else is `full` | `full` (what ships) |
 
 ```bash
-# the four cells; --repeat 5 because one run is a smoke test
+# the four cells; --repeat 5 because one run is a smoke test. This is the
+# expensive run — ~$4 a terra cell, about twice that for sol, so ~$25 for the
+# grid — and the one place a full ×5 is the right tool. --yes because it is a
+# decision you've already made.
 for m in gpt-5.6-terra gpt-5.6-sol; do
   for p in full thin; do
     echo "== $m / $p"
-    AGENT_MODEL=$m AGENT_PROMPT=$p npm run eval -- --repeat 5
+    AGENT_MODEL=$m AGENT_PROMPT=$p npm run eval -- --repeat 5 --yes
   done
 done
 ```
@@ -224,11 +276,17 @@ reasoning) and only ever compared within one, so a model change cannot be
 credited to a prompt edit.
 
 ```bash
-npm run eval -- --repeat 5   # runs, records, and diffs against this cell's last run
+npm run eval:gate            # runs, records, and diffs against this cell's last run
 npm run eval:history         # every recorded run + the matrix; runs nothing, costs nothing
 ```
 
-Filtered runs (`--only`, `--group`) are deliberately not recorded — a slice of
+A record carries the run's `usage` and `usd` too, and a `--changed` run carries
+the groups it repeated (`changed`), shown as `×5 (changed)` in the matrix. A
+live run in which no request reached the model (no key, a bad key, the provider
+down) is not recorded — it says nothing about the chat, and a 0/61 in the
+history would read as the suite collapsing.
+
+Filtered runs (`--only`, `--group`, `--no-rest`) are deliberately not recorded — a slice of
 the suite is not comparable to the whole of it. `--no-record` opts out.
 Recording happens *before* the blocking exit, so a red run is recorded too;
 that is the one you most want in the history.
@@ -431,7 +489,7 @@ refusal to act** — "the model should be smart" is not a scenario.
 2. There is no weighting to choose — every scenario is held to 100%. If you
    think it can't hold, that's a signal the expectation is too loose or the
    chat needs the rule stated more sharply; write it tightly instead.
-3. Record a cassette: `npm run eval -- --only <id>`.
+3. Record a cassette: `npm run eval -- --only <id>` (~$0.05).
 4. Update the map above in the same commit — `npm test` fails when the map and
    the suite disagree about which groups exist.
 
@@ -457,7 +515,7 @@ scenario and the map row together.
   protect the plumbing; they say nothing about whether a prompt edit made the
   chat dumber. Only `npm run eval` does, and it costs tokens.
 - **One model.** The battery runs whatever `AGENT_MODEL` points at. A model
-  swap needs a full live run at `--repeat 5` before it ships.
+  swap needs a full live run at `--repeat 5` before it ships (~$4 on terra).
 - **100% is a bar, not yet a measurement.** No live run has been recorded, so
   which scenarios actually hold at 100% is unknown. The first full
   `--repeat 5` is what turns this section from an intention into a number, and

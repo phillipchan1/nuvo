@@ -317,8 +317,11 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
 - **`npm run eval`** runs the behavioral battery against a live model — scenarios in
   `tests/agent/scenarios.ts`. **The bar is 100%: every scenario, every run.** The runner
   calls a partial pass **flaky**, which is a bug (the chat drifts, or the assertion is
-  loose), not a tolerance. **Gate a prompt change, a new tool or a model swap on
-  `npm run eval -- --repeat 5`** — one run is a smoke test. A known-red scenario can be
+  loose), not a tolerance. **Gate a prompt change or a new tool on
+  `npm run eval:gate`** — the groups the diff touches ×5, the rest once (~$1);
+  a model swap on the full `npm run eval -- --repeat 5` (~$4). Every live run
+  prints its tokens, cache rate and cost, and refuses above `--max-cost` ($2)
+  unless `--yes` — never loop a full ×5 to "make it green". A known-red scenario can be
   parked only with a dated `quarantined:` line, capped at 10% of the suite.
 - **A new chat capability ships with its scenario and its row in the map**, in the same
   commit. `npm test` fails when the map and the suite disagree.
