@@ -438,7 +438,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_recurring_task",
       description:
-        "Create a repeating upkeep task series (e.g. every 5 months, weekly, every year, the last Friday of the month). Use when the user names a cadence and no such series exists yet — NOT create_task, and NOT when recurringUpkeep already has it (use update_recurring_task). Pass task_id to make an EXISTING task the first occurrence instead of creating a second copy.",
+        "Create a repeating upkeep task series (e.g. every 5 months, weekly, every year, the last Friday of the month). Use when the user names a cadence and no such series exists yet — NOT create_task, and NOT when recurringUpkeep already has it (use update_recurring_task). Pass task_id to make an EXISTING task the first occurrence instead of creating a second copy. Repeating TIME that will hold several tasks is create_recurring_slot, not this.",
       parameters: {
         type: "object",
         properties: {
@@ -454,10 +454,14 @@ const RAW_TOOL_DEFINITIONS = [
               "Monthly/yearly only: which occurrence of the weekday — 1, 2, 3, 4, or -1 for LAST. Use this for 'the last Friday of the month', 'every second Tuesday of the month'. Without it the series repeats on the anchor's date.",
           },
           byweekday: {
-            type: "integer",
-            description: "0=Sun … 6=Sat. Only with bysetpos; defaults to the anchor date's own weekday.",
+            type: "array",
+            items: { type: "integer" },
+            description: "0=Sun … 6=Sat. Weekly: every day it repeats on ('every Mon & Thu' = [1,4]). With bysetpos: one day. Defaults to the anchor date's own weekday.",
           },
           anchor_date: { type: "string", description: "First occurrence YYYY-MM-DD; default today" },
+          time: { type: "string", description: "Clock time each occurrence is blocked at, 'HH:MM' 24h in the user's zone. Omit for a dated to-do with no block." },
+          until: { type: "string", description: "Stop after this date, YYYY-MM-DD." },
+          count: { type: "integer", description: "Stop after this many occurrences." },
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           project_id: { type: "string" },
@@ -493,6 +497,7 @@ const RAW_TOOL_DEFINITIONS = [
           },
           until: { type: "string", description: "Stop after this date, YYYY-MM-DD. Empty string clears an end date." },
           count: { type: "integer", description: "Stop after this many occurrences. 0 clears a previous count." },
+          time: { type: "string", description: "New clock time, 'HH:MM' 24h in the user's zone. Empty string makes it an untimed dated to-do." },
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           project_id: { type: "string", description: "File the series under a project. Empty string unfiles it." },
@@ -564,7 +569,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_slot",
       description:
-        `Hold ONE block of time that owns several tasks. Use this when the user names a single window and more than one piece of work for it ("9am slot where I'll update the docs, deploy Dayspring and fix the subdomains", "block 2–4 for the Meridian work") — NOT one scheduled task per item. YOU write the title: ${SLOT_NAMING_RUBRIC} One thing at a stated time is schedule_task instead.`,
+        `Hold ONE block of time that owns several tasks. Use this when the user names a single window and more than one piece of work for it ("9am slot where I'll update the docs, deploy Dayspring and fix the subdomains", "block 2–4 for the Meridian work") — NOT one scheduled task per item. YOU write the title: ${SLOT_NAMING_RUBRIC} One thing at a stated time is schedule_task instead. A block that REPEATS ("every Thursday 3–4", "every morning is Trading") is create_recurring_slot — never several one-off create_slot calls.`,
       parameters: {
         type: "object",
         properties: {
@@ -601,8 +606,9 @@ const RAW_TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          slot_id: { type: "string", description: "The slot's id from todaySlots." },
+          slot_id: { type: "string", description: "The slot's id from todaySlots, or from create_recurring_slot's occurrences." },
           slot_title: { type: "string", description: "The block's name, if you don't have its id." },
+          date: { type: "string", description: "YYYY-MM-DD — which occurrence, when slot_title names a repeating block." },
           task_ids: { type: "array", items: { type: "string" }, description: "Existing tasks to move into the block." },
           tasks: {
             type: "array",
@@ -621,12 +627,13 @@ const RAW_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "reschedule_slot",
-      description: "Move a block of time, or resize it. The work inside travels with it — never take the tasks out and re-place them individually.",
+      description: "Move a block of time, or resize it. The work inside travels with it — never take the tasks out and re-place them individually. On a repeating block this moves ONE occurrence; moving every one is update_recurring_slot.",
       parameters: {
         type: "object",
         properties: {
           slot_id: { type: "string" },
           slot_title: { type: "string" },
+          date: { type: "string", description: "YYYY-MM-DD — which occurrence, when slot_title names a repeating block." },
           start_local: { type: "string", description: "New LOCAL start: 'YYYY-MM-DDTHH:MM'. Omit to only change the length." },
           duration_minutes: { type: "integer" },
         },
@@ -637,13 +644,99 @@ const RAW_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "delete_slot",
-      description: "Release a block of time. The tasks inside are NOT deleted — they fall back onto the day, un-blocked. Say that when you confirm.",
+      description: "Release a block of time. The tasks inside are NOT deleted — they fall back onto the day, un-blocked. Say that when you confirm. On a repeating block this skips ONE occurrence and the series continues; ending the series is end_recurring_slot.",
       parameters: {
         type: "object",
         properties: {
           slot_id: { type: "string" },
           slot_title: { type: "string" },
+          date: { type: "string", description: "YYYY-MM-DD — which occurrence, when slot_title names a repeating block." },
         },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_recurring_slot",
+      description:
+        `Hold a block of time that REPEATS and holds work — "every Thursday 3–4 for leadership strategy", "weekday mornings 7–9 are Trading", "the first Monday of the month for finances". Each occurrence is an ordinary block: put tasks in one with add_to_slot (the result lists occurrence ids). Three ways in: (1) fresh — title + start_local (the first occurrence) + cadence; (2) slot_id — make an existing block repeat, keeping what's in it; (3) from_series_id — turn a repeating TASK from recurringUpkeep into a repeating block: its cadence, clock, length and filing carry over, and the task series ends from today in the SAME call (never also call end_recurring_task). Already in recurringSlots → update_recurring_slot instead. YOU write a fresh block's title: ${SLOT_NAMING_RUBRIC}`,
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "The block's name. Required when fresh; otherwise defaults to the source's." },
+          start_local: { type: "string", description: "The FIRST occurrence, LOCAL 'YYYY-MM-DDTHH:MM' (24h). With slot_id / from_series_id it only overrides the clock (and, if later than today, the hand-over date)." },
+          duration_minutes: { type: "integer", description: "Length of each block. Default: the source's, else 60." },
+          freq: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"], description: "How often. Implied weekly when byweekday is given." },
+          interval: { type: "integer", description: "Every N units — 2 for 'every other week'. Default 1." },
+          byweekday: {
+            type: "array",
+            items: { type: "integer" },
+            description: "0=Sun … 6=Sat. Weekly: every day it lands on (weekdays = [1,2,3,4,5]). With bysetpos: one day. Default: the first occurrence's weekday.",
+          },
+          bysetpos: { type: "integer", description: "Monthly/yearly: which occurrence of the weekday — 1, 2, 3, 4, or -1 for LAST." },
+          until: { type: "string", description: "Stop after this date, YYYY-MM-DD. Omit for no end." },
+          count: { type: "integer", description: "Stop after this many occurrences. Omit for no end." },
+          project_id: { type: "string", description: "One project owns the time — it then counts as that project's sittings." },
+          domain_id: { type: "string", description: "One life area owns the time (standing time) — the weekly plan routes that area's work into it." },
+          slot_id: { type: "string", description: "Make this existing one-off block the first occurrence." },
+          slot_title: { type: "string", description: "Find that block by name, if you don't have its id." },
+          from_series_id: { type: "string", description: "A repeating TASK series id from recurringUpkeep to convert into a repeating block." },
+          from_series_title: { type: "string", description: "That task series' title, if you don't have its id." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_recurring_slot",
+      description:
+        "Change a repeating block for EVERY occurrence from today on — its time, length, cadence, end, name, or what it's for. Occurrences the new rule still lands on are edited in place and KEEP the tasks inside; dates it gives up are removed (their tasks stay on that day). One occurrence only is reschedule_slot. Look the series up in recurringSlots, or name any occurrence by slot_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          series_id: { type: "string", description: "The series id from recurringSlots." },
+          series_title: { type: "string" },
+          slot_id: { type: "string", description: "Any occurrence's id — its series is what changes." },
+          slot_title: { type: "string" },
+          title: { type: "string", description: "Rename the series." },
+          time: { type: "string", description: "New clock time, 'HH:MM' 24h in the user's zone." },
+          duration_minutes: { type: "integer" },
+          freq: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
+          interval: { type: "integer" },
+          byweekday: { type: "array", items: { type: "integer" }, description: "0=Sun … 6=Sat. Weekly: the days. With bysetpos: one day." },
+          bysetpos: { type: "integer", description: "Monthly/yearly: 1, 2, 3, 4, or -1 for LAST." },
+          until: { type: "string", description: "Stop after this date, YYYY-MM-DD. Empty string clears an end date." },
+          count: { type: "integer", description: "Stop after this many occurrences. 0 clears it." },
+          project_id: { type: "string", description: "Empty string clears it." },
+          domain_id: { type: "string", description: "Empty string clears it." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "end_recurring_slot",
+      description:
+        "Pause, stop, or delete a repeating block, or drop one date. NOT delete_slot for the whole thing — that removes one occurrence and the series carries on. Tasks inside removed blocks are never deleted; they stay on their day, un-blocked — say so.",
+      parameters: {
+        type: "object",
+        properties: {
+          series_id: { type: "string" },
+          series_title: { type: "string" },
+          slot_id: { type: "string", description: "Any occurrence's id, when that's what you have." },
+          slot_title: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["pause", "stop", "delete", "skip", "following"],
+            description:
+              "pause: no new occurrences; existing ones stay. stop: stop repeating after from_date (default today); earlier blocks become ordinary blocks. delete: the series and every block in it. skip: one date only — from_date required. following: this date and every later one — from_date required.",
+          },
+          from_date: { type: "string", description: "YYYY-MM-DD. Required for skip and following." },
+        },
+        required: ["action"],
       },
     },
   },

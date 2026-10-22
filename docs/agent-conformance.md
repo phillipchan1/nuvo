@@ -75,8 +75,8 @@ correct agent does about it. It runs the **real** system prompt, the **real**
 message assembly, the **real** tool definitions and the **real** turn loop.
 Two things are swapped:
 
-- **The database is a fixture** (`world.ts`). Six worlds — `loaded`, `cold`,
-  `traveling`, `overloaded`, `ambiguous`, `holding` — each frozen at one instant
+- **The database is a fixture** (`world.ts`). Seven worlds — `loaded`, `cold`,
+  `traveling`, `overloaded`, `ambiguous`, `holding`, `standing` — each frozen at one instant
   so "today" and "this week" mean the same thing on every run. Fixtures rather
   than a live account on purpose: an account-shaped test passes for reasons
   nobody chose (Principle 16).
@@ -322,7 +322,13 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Releasing a block keeps the work on the day | `delete_slot` | ◐ handler tested, no scenario |
 | Held time reads as busy | context | ✅ `slot-time-is-busy` |
 | Slot tied to a project / domain (standing time) | `create_slot` | ◐ argument supported, no scenario |
-| Recurring slots ("every morning is Trading") | — | ○ `recurrences` exists; the chat can't write one |
+| A window that repeats and holds work is ONE series, not N copies | `create_recurring_slot` | ✅ `slot-series-from-a-cadence` |
+| A repeating task → a repeating slot, in one call (the task series hands over) | `create_recurring_slot` (`from_series_id`) | ✅ `slot-series-converts-the-repeating-task` |
+| A one-off slot made to repeat, keeping what's inside | `create_recurring_slot` (`slot_id`) | ◐ handler path, no scenario |
+| "From now on" edits the series; placed work stays in its occurrence | `update_recurring_slot` | ✅ `slot-series-edit-is-the-series` |
+| Filling one week's occurrence | `add_to_slot` (`slot_id` / `date`) | ✅ `slot-series-fill-one-occurrence` |
+| Pausing, stopping, skipping, deleting a repeating slot | `end_recurring_slot` | ◐ no scenario |
+| Moving / dropping ONE occurrence pins it / records the skip (as the grid does) | `reschedule_slot` · `delete_slot` | ◐ handler only, no scenario |
 
 ### C · Calendar — `calendar`
 

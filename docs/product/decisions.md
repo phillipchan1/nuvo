@@ -5877,3 +5877,53 @@ ownership; the draft's ghost dragged and resized, ↓/⇧↓, a press through to
 double-click kept, a dismiss that no longer re-drafts; Esc mid-drag on a block and on a
 two-row rail group (both wrote nothing). The mid-drag Esc was injected from the page between
 real CDP pointer events — a hardware key mid-drag wasn't possible from the harness.*
+
+**D-160 · 2026-10-22 · The chat can make, convert, edit and end a repeating slot — the
+same series the app has always made.**
+
+Asked for *"a repeating SLOT vs event so I can put tasks in there"*, the chat answered that
+Nuvo *"only lets me repeat tasks, not slots"* and offered to hand-lay eight one-off slots
+and top them up by hand. Nuvo has had slot series since the recurrence engine shipped
+(`recurrences.kind = 'slot'`, the Repeat picker, the capture door's Slot face); the chat's
+vocabulary simply stopped at `create_recurring_task`, and its snapshot never showed a slot
+series at all. The conformance map had carried the gap as an open ○ row. The chat was
+confidently wrong about the product, which is the failure `agent-conformance.md` exists for.
+
+**What changed:**
+- **Three tools, the task trio's twins** — `create_recurring_slot`, `update_recurring_slot`,
+  `end_recurring_slot`. MCP gets them for free (same tool list). Create has three doors:
+  fresh (title + first occurrence + cadence), `slot_id` (make a one-off slot repeat, keeping
+  what's inside), and **`from_series_id` — turn a repeating task into a repeating slot in one
+  call.** Cadence, clock, length and filing carry over; the slot series is written first and
+  the task series is then truncated from today (`truncateSeries`, the same act as the panel's
+  *this and following*), so a failure in between leaves both visible rather than neither.
+- **A slot-series edit keeps the work you already placed.** The panel regenerates every
+  future occurrence on a rule edit, which is harmless for a task series and wrong for a
+  series that *holds* tasks — it would spill next Thursday's agenda back onto the day. The
+  chat edits in place any occurrence the new rule still lands on and removes only the dates
+  it gave up (their tasks stay on the day, and the reply says so). *This is a deliberate,
+  more conservative divergence from `useRecurrence.updateSeries`; bringing the panel to the
+  same behaviour is the follow-up, not a second rule.*
+- **One occurrence behaves as it does on the grid.** `reschedule_slot` on an occurrence pins
+  it (`recurrence_overridden`), and `delete_slot` records an exdate — without that, the next
+  top-up saw the date missing and put the slot straight back. `add_to_slot` /
+  `reschedule_slot` / `delete_slot` take a `date`, because every occurrence shares a title.
+- **The snapshot shows the series** — `recurringSlots` (cadence, clock, next date) and a
+  `seriesId` on each `todaySlots` entry.
+- Two parity fixes on the task side that fell out of it: `create_recurring_task` kept only
+  freq + interval from a parsed cadence (*"every Mon & Thu"* lost its days) — it now takes
+  the whole rule — and both task tools accept a `time`, so a repeating task can be created
+  or moved to a clock time from chat.
+
+**Anchor.** Closes the chat's half of **D2** (*what's already decided so I don't have to
+re-decide it*) for the *discipline* kind of commitment — time, not tasks (personas §1, the domain kinds).
+Strains **P3** (Nuvo proposes; you promote): conversion ends a task series, so the prompt
+reserves it for an explicit ask, and an external meeting is never cancelled without a yes.
+The four no's: no new pool (a slot series already existed), no new name (**Repeating slot**
+is glossed as *a Slot with a cadence*, distinct from **Block**), works on an untimed task
+series by asking for a time, nothing account-specific.
+
+*Status: built — `npm test` (1931) and typecheck green, edge functions parse-checked; four
+new `slots` scenarios (`slot-series-*`) and a `standing` world. **Not deployed**, and the
+behavioural battery has not been run against a live model for these scenarios yet
+(`npm run eval -- --group slots --repeat 5` is the gate).*

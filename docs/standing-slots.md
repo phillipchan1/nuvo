@@ -149,3 +149,6 @@ placement. That's exactly "look for domain slots first, then spill."
 - Energy/time-of-day fit inside a standing slot (the user's fixed time overrides the
   scheduler's guess by design — that's the point).
 - A mobile creation affordance for standing slots (setup is desktop-first, like rituals).
+  *Partly answered 2026-10-22 (D-160):* the chat — on either shell, and over MCP — makes one
+  with `create_recurring_slot` plus a `domain_id` / `project_id`, and can convert a repeating
+  task into one. There is still no phone *form* for it.
