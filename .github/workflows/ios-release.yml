@@ -1,7 +1,9 @@
 name: iOS TestFlight
 
 # Builds a signed iOS IPA and uploads to TestFlight on every push to master.
-# One-time Apple + GitHub secrets setup: docs/ios-releases.md
+# Xcode Cloud is the intended replacement (scheme nuvo_iOS, committed project
+# at src-tauri/gen/apple). This workflow still works against that project —
+# it does not re-run `tauri ios init` over it. One-time setup: docs/ios-releases.md
 #
 # Runs in parallel with release.yml (macOS) and Vercel (PWA). Same version
 # stamp scheme: <major>.<minor>.<commit_count> from package.json + the total
@@ -160,7 +162,7 @@ jobs:
           echo "BUILD_NUMBER=$RESOLVED" >> "$GITHUB_ENV"
           echo "Resolved iOS build number: $RESOLVED"
 
-      - name: Initialize iOS project
+      - name: Prepare committed iOS project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -169,7 +171,16 @@ jobs:
             echo "::error::Missing APPLE_TEAM_ID secret. See docs/ios-releases.md."
             exit 1
           fi
-          npm run tauri ios init -- --ci
+          if [ -f src-tauri/gen/apple/project.yml ] && [ -d src-tauri/gen/apple/nuvo.xcodeproj ]; then
+            echo "Using committed Xcode project (scheme nuvo_iOS) — not re-running tauri ios init."
+          else
+            echo "::warning::Committed Xcode project missing; falling back to tauri ios init."
+            npm run tauri ios init -- --ci
+          fi
+          # Watch injection still regenerates via xcodegen when NUVO_IOS_WATCH=1.
+          if [ "${NUVO_IOS_WATCH:-1}" != "0" ] && ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
           bash scripts/ios-postinit.sh
 
       # Built on its own, against the watchOS SDK, BEFORE the app is archived.

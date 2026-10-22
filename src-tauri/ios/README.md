@@ -2,16 +2,16 @@
 
 Swift code for capabilities Apple does not expose to a WKWebView. Everything
 here is committed and reviewable; the Xcode project that consumes it
-(`../gen/apple/`) is generated and gitignored.
+(`../gen/apple/`, scheme **`nuvo_iOS`**) is committed for Xcode Cloud.
 
 - **`NuvoWidgets/`** — the WidgetKit extension: lock-screen and Home Screen
   launchers for the phone's two floating actions, **Capture** (`nuvo://capture`)
   and **Ask Nuvo** (`nuvo://chat`). No data on purpose — see the header comment
   in `NuvoWidgets.swift`.
 
-  The target is added to the generated project by `scripts/ios-widgets.rb`
-  (called from `scripts/ios-postinit.sh`), which patches `project.yml` and
-  re-runs xcodegen. `NUVO_IOS_WIDGETS=0` skips it.
+  The target lives in the committed `gen/apple` project. `scripts/ios-widgets.rb`
+  (called from `scripts/ios-postinit.sh` on GitHub Actions) can still re-patch
+  `project.yml` and re-run xcodegen. `NUVO_IOS_WIDGETS=0` skips it.
 
 - **Deep links** — the `nuvo://` scheme is registered in `Info.plist` by
   `scripts/ios-postinit.sh` and delivered by `tauri-plugin-deep-link`. The
