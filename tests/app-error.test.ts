@@ -45,6 +45,30 @@ describe("formatAppError", () => {
     expect(out.message).toBe("start_at and end_at required");
     expect(out.detail).toContain("google-events");
   });
+
+  it("a deployed function's own 404 says its reason, not 'isn't deployed'", async () => {
+    const err = Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+      context: {
+        status: 404,
+        url: "https://example.supabase.co/functions/v1/icloud-events",
+        json: async () => ({ error: "event not found" }),
+      },
+    });
+    const out = await formatAppError(err);
+    expect(out.message).toBe("event not found");
+  });
+
+  it("the gateway's own 404 still reads as not deployed", async () => {
+    const err = Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+      context: {
+        status: 404,
+        url: "https://example.supabase.co/functions/v1/icloud-events",
+        json: async () => ({ code: "NOT_FOUND", message: "Requested function was not found" }),
+      },
+    });
+    const out = await formatAppError(err);
+    expect(out.message).toBe("icloud-events isn't deployed on the server.");
+  });
 });
 
 describe("reportAppError repeat throttle", () => {

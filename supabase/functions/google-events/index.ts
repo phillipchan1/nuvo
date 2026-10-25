@@ -10,6 +10,10 @@ import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "
 import { shiftGoogleDateResource, googleStartEnd, masterToAllDay, masterToTimed } from "../_shared/googleDateTime.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
+import { isGoogleSeriesMaster } from "../_shared/google.ts";
+import { googleSeriesOrFilter, materializeGoogleResource } from "../_shared/googleSeries.ts";
+import { isUsableTimeZone, toIcalLocal } from "../_shared/icalTz.ts";
+import { shiftRRuleDays } from "../_shared/recurrence.ts";
 
 /** Master series id: generated column, then raw, then the Google instance suffix. */
 function seriesMasterId(evt: {
@@ -119,6 +123,11 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
     const { eventId, action, patch, scope = "THIS" } = body;
+    // The client's IANA zone. Google REQUIRES a timeZone on a recurring event
+    // ("Missing time zone definition") and expands BYDAY in it — without one a
+    // weekly create failed outright, and converting a Nuvo-made event to
+    // weekly did too.
+    const timeZone = isUsableTimeZone(body.timeZone) ? (body.timeZone as string) : null;
 
     // ── Create a new event on the primary Google calendar ────────────────
     if (action === "create") {
@@ -177,6 +186,10 @@ Deno.serve(async (req) => {
       }
 
       const { start, end } = googleStartEnd(start_at, end_at, all_day);
+      if (!all_day && timeZone) {
+        start.timeZone = timeZone;
+        end.timeZone = timeZone;
+      }
 
       const res = await gFetch(
         account,
@@ -237,6 +250,20 @@ Deno.serve(async (req) => {
       // email, which Google returns as the organizer). Write the row now so it
       // shows without waiting on sync.
       const calendarId = targetCal || (created.organizer?.email as string) || account.email;
+      // A series is stored as its instances, never as the master.
+      if (isGoogleSeriesMaster(created)) {
+        let event = null;
+        try {
+          event = await materializeGoogleResource(account, calendarId, created, {
+            anchorMs: new Date(start_at).getTime(),
+          });
+        } catch (e) {
+          // Google has the series; the next sync brings it in. Not a create failure.
+          await logSync("google", "event-create-instances", "error", String(e), user.id);
+        }
+        await logSync("google", "event-create", "ok", undefined, user.id);
+        return json({ ok: true, event, meetUrl: joinUrl(created) });
+      }
       const row = mapGoogleEvent(account, calendarId, created);
       let event = null;
       if (row) {
@@ -476,9 +503,9 @@ Deno.serve(async (req) => {
         // Legacy callers passed sendUpdates directly; keep honouring it.
         : body.sendUpdates === "all" || (body.sendUpdates === undefined && notifyByDefault);
       const sendUpdates = notifyGuests ? "all" : "none";
-      const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as
-        | string
-        | undefined;
+      // The same master lookup every other action uses (column, raw, id
+      // pattern) — reading raw alone missed series whose raw lacked it.
+      const recurringEventId = seriesMasterId(evt);
       // scope="ALL" deletes the whole series (the master event); otherwise
       // just this instance / single event.
       const targetId = scope === "ALL" && recurringEventId ? recurringEventId : evt.provider_event_id;
@@ -499,7 +526,7 @@ Deno.serve(async (req) => {
           .delete()
           .eq("account_id", evt.account_id)
           .eq("calendar_id", evt.calendar_id)
-          .eq("recurring_event_id", recurringEventId);
+          .or(googleSeriesOrFilter(recurringEventId));
         if (delErr) throw delErr;
       } else {
         const { error: delErr } = await admin.from("external_events").delete().eq("id", eventId);
@@ -550,35 +577,53 @@ Deno.serve(async (req) => {
     // Always targets the master — a single event becomes a series; a series
     // is un-recurred or re-ruled in place.
     if (patch?.recurrence !== undefined) {
-      const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
-      const recurringEventId = rawEvent.recurringEventId as string | undefined;
-      const targetId = recurringEventId ?? evt.provider_event_id;
+      const targetId = seriesMasterId(evt) ?? evt.provider_event_id;
       const nextRecurrence = patch.recurrence === null || (Array.isArray(patch.recurrence) && patch.recurrence.length === 0)
         ? []
         : (patch.recurrence as string[]);
 
+      const gPatch: Record<string, unknown> = { recurrence: nextRecurrence };
+      if (nextRecurrence.length) {
+        // A series needs a zone. Nuvo-made events were written as bare UTC
+        // instants, and Google refuses recurrence on those — anchor them to
+        // the editor's zone, keeping the same instants.
+        const masterRes = await gFetch(
+          account,
+          `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(targetId)}`,
+        );
+        if (!masterRes.ok) throw new Error(`fetch master: ${masterRes.status} ${await masterRes.text()}`);
+        const master = await masterRes.json();
+        const zone = timeZone ?? "UTC";
+        if (master.start?.dateTime && !master.start?.timeZone) {
+          gPatch.start = { dateTime: master.start.dateTime, timeZone: zone };
+        }
+        if (master.end?.dateTime && !master.end?.timeZone) {
+          gPatch.end = { dateTime: master.end.dateTime, timeZone: zone };
+        }
+      }
+
       const res = await gFetch(
         account,
         `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(targetId)}`,
-        { method: "PATCH", body: JSON.stringify({ recurrence: nextRecurrence }) },
+        { method: "PATCH", body: JSON.stringify(gPatch) },
       );
       if (!res.ok) throw new Error(`patch recurrence: ${res.status} ${await res.text()}`);
 
-      // Google expands the series upstream; pull the new instances into the
-      // mirror now rather than waiting for a webhook or the 15-minute poll.
+      // Store the series as Google now expands it, keeping the open row's id —
+      // upserting the master here painted a phantom on the first date and,
+      // when it took over the open row, made a later THIS edit hit the series.
       const updated = await res.json().catch(() => null);
+      let event = null;
       if (updated) {
-        const mapped = mapGoogleEvent(account, evt.calendar_id, updated);
-        if (mapped) {
-          await admin
-            .from("external_events")
-            .upsert(mapped, { onConflict: "account_id,calendar_id,provider_event_id" });
-        }
+        event = await materializeGoogleResource(account, evt.calendar_id, updated, {
+          rowId: eventId,
+          anchorMs: new Date(evt.start_at).getTime(),
+        });
       }
       await kickGoogleSync(account, evt.calendar_id, user.id, "event-recurrence-sync");
 
       await logSync("google", "event-recurrence", "ok", undefined, user.id);
-      return json({ ok: true });
+      return json({ ok: true, event });
     }
 
     if (scope === "ALL") {
@@ -613,6 +658,14 @@ Deno.serve(async (req) => {
               new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime();
             const next = shiftGoogleDateResource(master.start, delta);
             if (next) gPatch.start = next;
+            // Moving the series to another DAY moves the rule's days too —
+            // shifting only the start left BYDAY=WE generating Wednesdays.
+            const ruleZone = master.start?.timeZone ?? timeZone;
+            if (Array.isArray(master.recurrence) && isUsableTimeZone(ruleZone)) {
+              const day = (iso: string) => Date.parse(`${toIcalLocal(iso, ruleZone).replace(/^(\d{4})(\d{2})(\d{2}).*$/, "$1-$2-$3")}T00:00:00Z`);
+              const dayDelta = Math.round((day(patch.start_at as string) - day(evt.start_at as string)) / 86_400_000);
+              if (dayDelta) gPatch.recurrence = shiftRRuleDays(master.recurrence as string[], dayDelta);
+            }
           }
           if (patch.end_at) {
             const delta =
@@ -625,6 +678,7 @@ Deno.serve(async (req) => {
         if (patch.location !== undefined) gPatch.location = patch.location ?? "";
         if (patch.description !== undefined) gPatch.description = patch.description ?? "";
 
+        let after = master;
         if (Object.keys(gPatch).length) {
           const res = await gFetch(
             account,
@@ -632,12 +686,26 @@ Deno.serve(async (req) => {
             { method: "PATCH", body: JSON.stringify(gPatch) },
           );
           if (!res.ok) throw new Error(`patch master: ${res.status} ${await res.text()}`);
+          after = (await res.json().catch(() => null)) ?? master;
         }
 
-        await shiftLocalSeries(evt, recurringEventId, patch);
+        // Instances are named by their original start, so moving the series
+        // renames every one of them: re-read them and keep the open row's id.
+        // The delta-shift stays as the fallback when that read fails.
+        const startDelta = patch.start_at
+          ? new Date(patch.start_at as string).getTime() - new Date(evt.start_at as string).getTime()
+          : 0;
+        const event = await materializeGoogleResource(account, evt.calendar_id, after, {
+          rowId: eventId,
+          anchorMs: new Date(evt.start_at as string).getTime() + startDelta,
+        }).catch(async (e) => {
+          await logSync("google", "event-writeback-all-instances", "error", String(e), user.id);
+          await shiftLocalSeries(evt, recurringEventId, patch);
+          return null;
+        });
         await kickGoogleSync(account, evt.calendar_id, user.id, "event-writeback-all-sync");
         await logSync("google", "event-writeback-all", "ok", undefined, user.id);
-        return json({ ok: true });
+        return json({ ok: true, event });
       }
     }
 

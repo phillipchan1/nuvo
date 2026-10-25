@@ -13,7 +13,7 @@ import { firstDayOfWeek } from "../hooks/useSettings";
 import { allDayDates, allDayRangeFromStart, allowAnytimeLanding, endOf, isOverdue, parseDateISO, spanFromCalendarDrop, toDateISO, todayISO, toFcInstant } from "../lib/dates";
 import { resolveCompleteTarget } from "../lib/completeTarget";
 import { addDays, startOfDay } from "date-fns";
-import { expandRule, toGoogleRRULE } from "../lib/recurrence";
+import { eventRRule, expandRule } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey, isExternalEventRecurring, resolveRecurringEventId } from "../lib/now";
@@ -3326,7 +3326,7 @@ function CalendarPane({
           title,
           ...range,
           all_day: eventAllDay,
-          ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
+          ...(recurrence ? { recurrence: eventRRule(recurrence, eventAllDay) } : {}),
           ...(attendees.length ? { attendees, notifyGuests } : {}),
           accountId: target.accountId,
           calendarId: target.calendarId,

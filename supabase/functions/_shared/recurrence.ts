@@ -2,6 +2,7 @@
 // Date math uses UTC YYYY-MM-DD (same convention as planningRules).
 
 import { dayMs, dayOfWeek, isoOf } from "./planningRules.ts";
+import { isUsableTimeZone, localIcalToMs, toIcalLocal } from "./icalTz.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -422,7 +423,13 @@ export function rulesEqual(a: RecurrenceRule | null, b: RecurrenceRule | null): 
 
 export const WEEKDAY_LABELS = WD_SHORT;
 
-export function toGoogleRRULE(rule: RecurrenceRule): string[] {
+/** How an event's series ends is a fact about ITS calendar day, not UTC's.
+ *  `tz` is the zone the event lives in; `allDay` writes a DATE UNTIL, which
+ *  RFC 5545 requires when DTSTART is a DATE. Omitted → the old UTC-day reading
+ *  (tasks, which have no clock). */
+export type RRuleZone = { tz?: string | null; allDay?: boolean };
+
+export function toGoogleRRULE(rule: RecurrenceRule, zone?: RRuleZone): string[] {
   const parts: string[] = [`FREQ=${rule.freq.toUpperCase()}`];
   if ((rule.interval || 1) > 1) parts.push(`INTERVAL=${rule.interval}`);
   if (rule.freq === "weekly" && rule.byweekday?.length) {
@@ -441,11 +448,48 @@ export function toGoogleRRULE(rule: RecurrenceRule): string[] {
   if (rule.freq === "yearly" && rule.bymonth) parts.push(`BYMONTH=${rule.bymonth}`);
   if (rule.count) parts.push(`COUNT=${rule.count}`);
   else if (rule.until) {
-    const ms = dayMs(rule.until);
-    const u = new Date(ms + DAY_MS - 1000);
-    parts.push(`UNTIL=${u.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`);
+    if (zone?.allDay) {
+      parts.push(`UNTIL=${rule.until.replace(/-/g, "")}`);
+    } else {
+      // The last instant of that day where the event is. 23:59:59 UTC dropped
+      // a 6pm-Pacific final occurrence (it starts at 02:00Z the next day) and
+      // let an extra day through east of UTC.
+      const ms = isUsableTimeZone(zone?.tz)
+        ? localIcalToMs(`${rule.until.replace(/-/g, "")}T235959`, zone!.tz!)
+        : dayMs(rule.until) + DAY_MS - 1000;
+      const u = new Date(ms);
+      parts.push(`UNTIL=${u.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`);
+    }
   }
   return [`RRULE:${parts.join(";")}`];
+}
+
+/**
+ * RRULE lines for a series whose start moved `dayDelta` days. Moving "every
+ * Wednesday" to Thursday has to move BYDAY with it — shifting only DTSTART
+ * left the rule generating Wednesdays, and the grid snapped back on sync.
+ * Weekday codes (with or without an ordinal) and BYMONTHDAY move; everything
+ * else is untouched. Not RRULE lines (EXDATE, RDATE) pass through.
+ */
+export function shiftRRuleDays(lines: string[], dayDelta: number): string[] {
+  if (!dayDelta) return lines;
+  const codes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+  return lines.map((line) => {
+    if (!/^RRULE:/i.test(line)) return line;
+    return line.replace(/(BYDAY=)([^;]+)/i, (_, key: string, list: string) =>
+      key + list.split(",").map((d) => {
+        const m = d.trim().match(/^([+-]?\d+)?(SU|MO|TU|WE|TH|FR|SA)$/i);
+        if (!m) return d;
+        const i = codes.indexOf(m[2].toUpperCase());
+        return `${m[1] ?? ""}${codes[(((i + dayDelta) % 7) + 7) % 7]}`;
+      }).join(",")
+    ).replace(/(BYMONTHDAY=)([^;]+)/i, (whole, key: string, list: string) => {
+      const days = list.split(",").map((d) => Number(d));
+      if (days.some((d) => !Number.isFinite(d) || d < 1)) return whole;
+      const moved = days.map((d) => d + dayDelta);
+      return moved.every((d) => d >= 1 && d <= 31) ? key + moved.join(",") : whole;
+    });
+  });
 }
 
 const RRULE_WD: Record<string, number> = {
@@ -453,7 +497,7 @@ const RRULE_WD: Record<string, number> = {
 };
 
 /** Parse Google / iCalendar RRULE lines back into our RecurrenceRule shape. */
-export function fromGoogleRRULE(lines: string[] | null | undefined): RecurrenceRule | null {
+export function fromGoogleRRULE(lines: string[] | null | undefined, zone?: RRuleZone): RecurrenceRule | null {
   if (!lines?.length) return null;
   const line = lines.find((l) => /^RRULE:/i.test(l) || /^FREQ=/i.test(l));
   if (!line) return null;
@@ -513,8 +557,18 @@ export function fromGoogleRRULE(lines: string[] | null | undefined): RecurrenceR
 
   const until = parts.get("UNTIL");
   if (until && !count) {
-    const m = until.match(/^(\d{4})(\d{2})(\d{2})/);
-    if (m) rule.until = `${m[1]}-${m[2]}-${m[3]}`;
+    const m = until.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z))?/i);
+    if (m) {
+      rule.until = `${m[1]}-${m[2]}-${m[3]}`;
+      // A UTC UNTIL names the zone's day it falls in: Google writes "ends Dec
+      // 16" in Los Angeles as 20261217T075959Z, which must read back as Dec 16
+      // — reading the UTC date grew the series a day on every re-save.
+      if (m[7] && isUsableTimeZone(zone?.tz)) {
+        const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])).toISOString();
+        const local = toIcalLocal(at, zone!.tz!);
+        rule.until = `${local.slice(0, 4)}-${local.slice(4, 6)}-${local.slice(6, 8)}`;
+      }
+    }
   }
 
   return rule;

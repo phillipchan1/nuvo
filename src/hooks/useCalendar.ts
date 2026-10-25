@@ -30,10 +30,11 @@ import {
   swapCreatedEvent,
   type EventRowAt,
 } from "../lib/eventWriteback";
-import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import { readEventRRule, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useOnline } from "./useOnline";
+import { detectDeviceTz } from "../lib/timezone";
 import { useStableActions } from "./useStableActions";
 import {
   fetchPlannedAnytimeRange,
@@ -378,7 +379,9 @@ export function useExternalEventMutations() {
           written();
           // `rowAt` is the server's guard: it rewrites the row from Google's
           // answer only while the row still holds the times this write left.
-          const body = { eventId: id, patch: merged, scope, ...(rowAt ? { rowAt } : {}) };
+          // The zone the edit was made in: a series is anchored to it, so
+          // "weekly" means this weekday here, not in UTC (icalTz.ts).
+          const body = { eventId: id, patch: merged, scope, timeZone: detectDeviceTz(), ...(rowAt ? { rowAt } : {}) };
           const { data, error } = await supabase.functions.invoke(fn, { body });
           await throwIfInvokeFailed(data, error);
         },
@@ -761,7 +764,7 @@ export function useExternalEventMutations() {
       guardOffline();
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
-        body: { action: "create", title, start_at, end_at, all_day, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
+        body: { action: "create", title, start_at, end_at, all_day, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, timeZone: detectDeviceTz(), ...(provider === "google" ? { addMeet } : {}) },
       });
       await throwIfInvokeFailed(data, error);
       return data;
@@ -1003,7 +1006,10 @@ export function usePrefetchEventDetails() {
 export function useEventSeriesRule(
   eventId: string | null,
   isRecurring: boolean,
-  provider?: CalendarProvider | null,
+  // Required, not optional: both sheets used to omit it, which left the query
+  // disabled forever — every series showed "Does not repeat", so picking
+  // "Does not repeat" was a no-op and any rule change started from blank.
+  provider: CalendarProvider | null,
 ) {
   const writable = provider === "google" || provider === "icloud";
   return useQuery({
@@ -1022,7 +1028,7 @@ export function useEventSeriesRule(
       });
       await throwIfInvokeFailed(data, error);
       const recurrence = (data as { recurrence?: string[] | null })?.recurrence;
-      return fromGoogleRRULE(recurrence ?? null);
+      return readEventRRule(recurrence ?? null);
     },
   });
 }

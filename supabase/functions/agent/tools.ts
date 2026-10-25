@@ -1606,6 +1606,10 @@ function resolveCalendarByName(cals: WritableCal[], query: string): WritableCal 
 }
 
 /** Display name for a calendar_id within an account (falls back to provider). */
+function providerLabel(provider: string): string {
+  return provider === "icloud" ? "Apple Calendar" : "Google Calendar";
+}
+
 function calendarLabel(cals: WritableCal[], accountId: string, calendarId: string, provider: string): string {
   const hit = cals.find((c) => c.accountId === accountId && c.calendarId === calendarId);
   if (hit) return hit.name;
@@ -1716,6 +1720,22 @@ async function moveEventToTarget(
         ref: { kind: "event", id: evt.id },
       },
     };
+  }
+
+  // Across accounts a move is create-here + delete-there, of ONE occurrence.
+  // For a series that copied one date and punched a hole in the original —
+  // refuse by name instead of quietly breaking the series in two.
+  const { data: series } = await admin
+    .from("external_events")
+    .select("provider_event_id, recurring_event_id, raw")
+    .eq("id", evt.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const s = series as { provider_event_id?: string; recurring_event_id?: string | null; raw?: { recurringEventId?: string } | null } | null;
+  if (s && (s.recurring_event_id || s.raw?.recurringEventId || String(s.provider_event_id ?? "").includes("::"))) {
+    throw new Error(
+      `"${evt.title}" repeats, and a repeating event can't be moved between ${providerLabel(sourceProvider)} and ${providerLabel(target.provider)} yet — only within the same account. Say so; offer to create the series on ${target.name} and then delete the original series, as two steps the user confirms.`,
+    );
   }
 
   const description =
@@ -1956,7 +1976,7 @@ async function stageInvite(
       : shouldAddMeet(await meetPreference(userId), recipients.length);
 
   const recurrenceRule = recurrenceRuleFromArgs(args, startLocal);
-  const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule) : undefined;
+  const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule, { tz }) : undefined;
 
   const invite: InviteDraft = {
     mode: "create",
@@ -3266,7 +3286,7 @@ export async function executeTool(
       // the series natively; icloud-events writes them into the VEVENT) — same
       // shape the calendar UI's repeat picker sends via toGoogleRRULE.
       const recurrenceRule = recurrenceRuleFromArgs(args, startLocal);
-      const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule) : undefined;
+      const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule, { tz }) : undefined;
       const res = await invokeFnJson(
         fn,
         {
@@ -3276,6 +3296,10 @@ export async function executeTool(
           end_at,
           ...(location ? { location } : {}),
           ...(recurrence ? { recurrence } : {}),
+          // The zone the user said the time in. A series is anchored to it,
+          // so "every Wednesday 6pm" repeats on the local Wednesday — not on
+          // whatever weekday 6pm Pacific is in UTC (Tuesday, at 01:00Z).
+          timeZone: tz,
           // No attendees ever reach here — a guest list is routed to
           // stageInvite above, so this call can never put mail on the wire.
           // Omitted → the account's auto_add_meet preference decides, the same

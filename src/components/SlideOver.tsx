@@ -30,7 +30,7 @@ import { at } from "./mobile/dayPlan";
 import { useWeekCommitAct } from "./tasks/TaskActionsMenu";
 import { deriveSlotTitle } from "../lib/slots";
 import { DomainPicker } from "./floors/parts";
-import { rulesEqual, describeRule, fromGoogleRRULE, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import { rulesEqual, describeRule, eventRRule, readEventRRule, type RecurrenceRule } from "../lib/recurrence";
 import {
   POP_INPUT_CLS,
   POP_W_NARROW,
@@ -1451,11 +1451,15 @@ export function EventPopover({
   const { pending: editScope, commit: commitScoped, confirm: confirmScope, cancel: cancelScope, dismiss: dismissScope } =
     useRecurringScope(recurring);
   const inlineRule = useMemo(
-    () => fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence),
+    () => readEventRRule((raw as { recurrence?: string[] } | null)?.recurrence),
     [raw],
   );
-  const { data: seriesRule } = useEventSeriesRule(event.id, recurring);
-  const repeatRule = inlineRule ?? seriesRule ?? null;
+  const { data: seriesRule } = useEventSeriesRule(event.id, recurring, ownerAccount?.provider ?? null);
+  // What the user just picked, shown until the series' own rule comes back —
+  // otherwise the picker snaps to "Does not repeat" for the round trip.
+  const [pickedRule, setPickedRule] = useState<RecurrenceRule | null | undefined>(undefined);
+  useEffect(() => setPickedRule(undefined), [event.id]);
+  const repeatRule = pickedRule !== undefined ? pickedRule : (inlineRule ?? seriesRule ?? null);
 
   // Two columns are earned by having people or prose to put in the right one —
   // but the card must decide that ONCE, before it is on screen, and then hold
@@ -1727,12 +1731,15 @@ export function EventPopover({
 
   const applyRepeat = (rule: RecurrenceRule | null) => {
     if (rulesEqual(repeatRule, rule)) return;
+    if (!rule && !recurring) return;
+    setPickedRule(rule);
+    const revert = { onError: () => setPickedRule(undefined) };
     if (rule && !recurring) {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: toGoogleRRULE(rule) } });
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: eventRRule(rule, allDay) } }, revert);
     } else if (rule && recurring) {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: toGoogleRRULE(rule) }, scope: "ALL" });
-    } else if (!rule && recurring) {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: null }, scope: "ALL" });
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: eventRRule(rule, allDay) }, scope: "ALL" }, revert);
+    } else {
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: null }, scope: "ALL" }, revert);
     }
   };
 
