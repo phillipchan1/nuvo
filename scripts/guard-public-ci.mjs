@@ -15,12 +15,15 @@
  *      ($(which curl), `curl`, env/command curl, …).
  *   3. Any uses: matching /upload|release/, plus ./ and docker://, outside
  *      the allowlists. actions/upload-artifact is path-checked.
- *   4. gh gist create, gh release upload. File-valued flags on gh release /
- *      issue / pr / gist (--notes-file, --body-file, -F) are denied unless
- *      the value is on ALLOWED_GH_FILE_FLAG_VALUES (empty by default).
- *      gh release create positional assets are allowed ONLY in release.yml
- *      and ONLY $DMG $STABLE_DMG $APPTAR latest.json, and that file must
- *      contain exactly one --repo $RELEASES_REPO.
+ *   4. Outside release.yml, gh release create / edit / upload is denied
+ *      entirely. Inside release.yml, create is allowed only as: exactly one
+ *      --repo/-R on the line, value $RELEASES_REPO; notes only the literal
+ *      --notes "$NOTES"; NOTES assigned only from $(cat RELEASE_NOTES.md);
+ *      assets only $DMG $STABLE_DMG $APPTAR latest.json. File-valued flags
+ *      stay denied (empty allowlist). gh issue/pr/gist create or comment
+ *      is denied when a body/notes value (--notes/-n/--body/-b/-F/
+ *      --body-file/--notes-file, including glued -Fdump.sql / -bX) contains
+ *      $, a backtick, or $(. gh gist create is always denied.
  *   5. actions/cache and actions/cache/save (restore-only is allowed).
  *   6. YAML is fail-closed: parse errors, doc.errors, more than one
  *      document, a non-mapping root, duplicate keys, or << merge keys
@@ -68,6 +71,21 @@ export const ALLOWED_GH_FILE_FLAG_VALUES = Object.freeze([]);
 
 const GH_FILE_VALUE_FLAGS = new Set(["--notes-file", "--body-file", "-F"]);
 const GH_FILE_FLAG_COMMANDS = new Set(["release", "issue", "pr", "gist"]);
+const GH_NOTES_BODY_FLAGS = new Set([
+  "--notes",
+  "-n",
+  "--body",
+  "-b",
+  "-F",
+  "--body-file",
+  "--notes-file",
+]);
+const GH_REPO_FLAGS = new Set(["--repo", "-R"]);
+const ALLOWED_NOTES_ASSIGNMENTS = new Set([
+  "$(cat RELEASE_NOTES.md)",
+  '"$(cat RELEASE_NOTES.md)"',
+  "'$(cat RELEASE_NOTES.md)'",
+]);
 
 const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--repo",
@@ -298,7 +316,47 @@ function isGhSubcommand(tokens, ...parts) {
 }
 
 function flagName(tok) {
-  return String(tok).split("=")[0];
+  return splitFlag(tok)?.name ?? String(tok).split("=")[0];
+}
+
+/** `-Fdump.sql`, `-F=dump`, `--notes=x`, `--notes` + next token. */
+export function splitFlag(tok) {
+  const t = String(tok);
+  if (!t.startsWith("-")) return null;
+  if (t.startsWith("--")) {
+    const eq = t.indexOf("=");
+    if (eq < 0) return { name: t, value: null, glued: false };
+    return { name: t.slice(0, eq), value: t.slice(eq + 1), glued: true };
+  }
+  const name = t.slice(0, 2);
+  const rest = t.slice(2);
+  if (!rest) return { name, value: null, glued: false };
+  if (rest.startsWith("=")) return { name, value: rest.slice(1), glued: true };
+  return { name, value: rest, glued: true };
+}
+
+function flagValuePairs(tokens, names) {
+  const pairs = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const f = splitFlag(tokens[i]);
+    if (!f || !names.has(f.name)) continue;
+    if (f.value != null) {
+      pairs.push({ name: f.name, value: f.value });
+      continue;
+    }
+    const next = tokens[i + 1];
+    if (next != null && !String(next).startsWith("-")) {
+      pairs.push({ name: f.name, value: next });
+      i += 1;
+    } else {
+      pairs.push({ name: f.name, value: "" });
+    }
+  }
+  return pairs;
+}
+
+export function looksInterpolated(val) {
+  return /\$|`/.test(String(val));
 }
 
 function hasHttpUploadFileFlag(tokens, kind) {
@@ -391,18 +449,6 @@ export function lineLooksLikeCacheSave(line) {
   return false;
 }
 
-function hasReleaseRepoFlag(tokens) {
-  for (let i = 0; i < tokens.length; i++) {
-    const name = flagName(tokens[i]);
-    if (name !== "--repo" && name !== "-R") continue;
-    const val = tokens[i].includes("=")
-      ? tokens[i].slice(tokens[i].indexOf("=") + 1)
-      : tokens[i + 1];
-    if (val === "$RELEASES_REPO") return true;
-  }
-  return false;
-}
-
 /** Positional assets after `gh release create <tag>` (flags + tag skipped). */
 export function ghReleaseCreateFiles(tokens) {
   const i = ghTokenIndex(tokens);
@@ -413,8 +459,8 @@ export function ghReleaseCreateFiles(tokens) {
   for (let j = 0; j < rest.length; j++) {
     const t = rest[j];
     if (t.startsWith("-")) {
-      const name = flagName(t);
-      if (!t.includes("=") && GH_RELEASE_CREATE_VALUE_FLAGS.has(name)) j += 1;
+      const f = splitFlag(t);
+      if (f && !f.glued && GH_RELEASE_CREATE_VALUE_FLAGS.has(f.name)) j += 1;
       continue;
     }
     if (!seenTag) {
@@ -426,59 +472,63 @@ export function ghReleaseCreateFiles(tokens) {
   return files;
 }
 
-function forbiddenReleaseCreateKind(tokens, filename) {
-  const files = ghReleaseCreateFiles(tokens);
-  if (!files.length) return null;
-  const allowed =
-    filename === "release.yml" &&
-    hasReleaseRepoFlag(tokens) &&
-    files.every((f) => RELEASE_YML_ALLOWED_ASSETS.includes(f));
-  return allowed ? null : "gh release create file";
-}
-
 /** File-valued flags on gh release / issue / pr / gist, unless allowlisted. */
 export function ghFileFlagValues(tokens) {
   const i = ghTokenIndex(tokens);
   if (i < 0) return [];
   if (!GH_FILE_FLAG_COMMANDS.has(tokens[i + 1])) return [];
-  const values = [];
-  for (let j = i + 1; j < tokens.length; j++) {
-    const t = tokens[j];
-    const name = flagName(t);
-    if (!GH_FILE_VALUE_FLAGS.has(name)) continue;
-    const val = t.includes("=") ? t.slice(t.indexOf("=") + 1) : tokens[++j];
-    if (val != null) values.push(val);
-  }
-  return values;
+  return flagValuePairs(tokens, GH_FILE_VALUE_FLAGS).map((p) => p.value);
 }
 
 function ghForbiddenFileFlags(tokens) {
   return ghFileFlagValues(tokens).filter((v) => !ALLOWED_GH_FILE_FLAG_VALUES.includes(v));
 }
 
-export function countReleaseRepoFlags(workflowText) {
-  let n = 0;
-  for (const step of collectSteps(workflowText)) {
-    if (!step.run) continue;
-    for (const { text } of logicalLines(step.run)) {
-      const tokens = tokenize(stripFullLineComment(text));
-      n += countRepoReleaseRepo(tokens);
+export function notesAssignments(run) {
+  const found = [];
+  for (const { text } of logicalLines(run)) {
+    const stripped = stripFullLineComment(text);
+    for (const part of stripped.split(";")) {
+      const m = part.trim().match(/^NOTES=(.*)$/);
+      if (m) found.push(m[1].trim());
     }
   }
-  return n;
+  return found;
 }
 
-function countRepoReleaseRepo(tokens) {
-  let n = 0;
-  for (let i = 0; i < tokens.length; i++) {
-    const name = flagName(tokens[i]);
-    if (name !== "--repo" && name !== "-R") continue;
-    const val = tokens[i].includes("=")
-      ? tokens[i].slice(tokens[i].indexOf("=") + 1)
-      : tokens[i + 1];
-    if (val === "$RELEASES_REPO") n += 1;
+function isIssuePrGistWrite(tokens) {
+  const i = ghTokenIndex(tokens);
+  if (i < 0) return false;
+  const cmd = tokens[i + 1];
+  const sub = tokens[i + 2];
+  if (!["issue", "pr", "gist"].includes(cmd)) return false;
+  return sub === "create" || sub === "comment";
+}
+
+function interpolatedNotesBody(tokens) {
+  if (!isIssuePrGistWrite(tokens)) return [];
+  return flagValuePairs(tokens, GH_NOTES_BODY_FLAGS).filter((p) => looksInterpolated(p.value));
+}
+
+export function releaseCreateShapeHits(tokens, run) {
+  const hits = [];
+  const repos = flagValuePairs(tokens, GH_REPO_FLAGS);
+  if (repos.length !== 1 || repos[0].value !== "$RELEASES_REPO") {
+    hits.push("gh release repo");
   }
-  return n;
+  const notes = flagValuePairs(tokens, GH_NOTES_BODY_FLAGS);
+  if (notes.length !== 1 || notes[0].name !== "--notes" || notes[0].value !== "$NOTES") {
+    hits.push("gh release notes");
+  }
+  const assigns = notesAssignments(run);
+  if (!assigns.length || assigns.some((a) => !ALLOWED_NOTES_ASSIGNMENTS.has(a))) {
+    hits.push("NOTES assignment");
+  }
+  const files = ghReleaseCreateFiles(tokens);
+  if (!files.length || files.some((f) => !RELEASE_YML_ALLOWED_ASSETS.includes(f))) {
+    hits.push("gh release create file");
+  }
+  return hits;
 }
 
 function forbiddenUseKind(action) {
@@ -500,16 +550,29 @@ function scanRunScript(run, filename) {
       if (lineLooksLikeHttpUpload(code)) hits.push({ line, kind: "curl/wget upload" });
     }
     if (kind === "gh") {
-      if (isGhSubcommand(tokens, "release", "upload")) {
-        hits.push({ line, kind: "gh release upload" });
-      } else if (isGhSubcommand(tokens, "gist", "create")) {
-        hits.push({ line, kind: "gh gist create" });
-      } else if (isGhSubcommand(tokens, "release", "create")) {
-        const releaseKind = forbiddenReleaseCreateKind(tokens, filename);
-        if (releaseKind) hits.push({ line, kind: releaseKind });
-      }
-      if (ghForbiddenFileFlags(tokens).length) {
-        hits.push({ line, kind: "gh file flag" });
+      const releaseWrite =
+        isGhSubcommand(tokens, "release", "create") ||
+        isGhSubcommand(tokens, "release", "edit") ||
+        isGhSubcommand(tokens, "release", "upload");
+      if (releaseWrite) {
+        const sub = tokens[ghTokenIndex(tokens) + 2];
+        if (filename !== "release.yml" || sub !== "create") {
+          hits.push({ line, kind: `gh release ${sub}` });
+        } else {
+          for (const shapeKind of releaseCreateShapeHits(tokens, run)) {
+            hits.push({ line, kind: shapeKind });
+          }
+        }
+      } else {
+        if (isGhSubcommand(tokens, "gist", "create")) {
+          hits.push({ line, kind: "gh gist create" });
+        }
+        if (interpolatedNotesBody(tokens).length) {
+          hits.push({ line, kind: "gh interpolated notes" });
+        }
+        if (ghForbiddenFileFlags(tokens).length) {
+          hits.push({ line, kind: "gh file flag" });
+        }
       }
       if (lineLooksLikeGhApiInput(code)) {
         hits.push({
@@ -539,12 +602,6 @@ export function assertWorkflowUploadAllowlist(workflowText, filename = "workflow
   const problems = [];
   for (const hit of findForbiddenUploadCommands(workflowText, filename)) {
     problems.push(`${filename}:${hit.line}: forbidden upload (${hit.kind})`);
-  }
-  if (filename === "release.yml") {
-    const repos = countReleaseRepoFlags(workflowText);
-    if (repos !== 1) {
-      problems.push(`${filename}: must have exactly one --repo $RELEASES_REPO (found ${repos})`);
-    }
   }
   const steps = extractUploadArtifactSteps(workflowText);
   for (const step of steps) {
