@@ -14,6 +14,12 @@ import {
   collectSteps,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
+  isStepAllowlisted,
+  loadRunAllowlist,
+  neededRunAllowlist,
+  runContentHash,
+  runNeedsAllowlist,
+  runShapeReasons,
   isAtFileToken,
   isDataUrlencodeFileArg,
   isLtFileToken,
@@ -503,7 +509,7 @@ describe("public-repo CI guard", () => {
     );
     expect(findForbiddenUploadCommands(runYaml('eval "gh gist create dump.sql"')).map((h) => h.kind)).toContain("eval");
     expect(findForbiddenUploadCommands(runYaml('bash -c "$CMD"')).map((h) => h.kind)).toContain("shell -c");
-    expect(findForbiddenUploadCommands(runYaml("bash -c 'echo ok'"))).toEqual([]);
+    expect(findForbiddenUploadCommands(runYaml("bash -c 'echo ok'")).map((h) => h.kind)).toContain("run allowlist");
   });
 
   it("rejects backslashes, quotes, and $ / ${} / $(...) in command position", () => {
@@ -525,12 +531,12 @@ describe("public-repo CI guard", () => {
   });
 
   it("denies gh alias set and gh alias import everywhere", () => {
-    expect(findForbiddenUploadCommands(runYaml("gh alias set leak 'pr create --title t'"))).toEqual([
-      { line: 1, kind: "gh alias" },
-    ]);
-    expect(findForbiddenUploadCommands(runYaml("gh alias import aliases.yml"), "release.yml")).toEqual([
-      { line: 1, kind: "gh alias" },
-    ]);
+    expect(findForbiddenUploadCommands(runYaml("gh alias set leak 'pr create --title t'")).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["gh alias", "run allowlist"]),
+    );
+    expect(findForbiddenUploadCommands(runYaml("gh alias import aliases.yml"), "release.yml").map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["gh alias", "run allowlist"]),
+    );
     expect(() => assertWorkflowUploadAllowlist(runYaml("gh alias set x 'pr create'"), "alias.yml")).toThrow(
       /gh alias/,
     );
@@ -586,6 +592,75 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/Python or Node/);
     expect(doc).toMatch(/non-`gh` exfil/);
     expect(doc).toMatch(/`nc`/);
+    expect(doc).toMatch(/guard-public-ci\.allowlist\.json/);
+    expect(src).toMatch(/guard-public-ci\.allowlist\.json/);
+  });
+
+  it("rejects su -c, xargs sh -c, here-docs, sourced scripts, pipes into bash, functions, and gh extension", () => {
+    const bypasses: Array<[string, string]> = [
+      ["su -c 'gh gist create dump.sql'", "shell -c"],
+      ["xargs sh -c 'gh api -f body=@dump.sql'", "shell -c"],
+      ["cat <<'EOF'\ngh gist create dump.sql\nEOF", "here-doc"],
+      ["echo 'gh gist create dump.sql' > x.sh; source x.sh", "shell-file"],
+      ["echo 'gh gist create dump.sql' > x.sh; . x.sh", "shell-file"],
+      ["echo 'gh gist create dump.sql' > x.sh; bash x.sh", "shell-file"],
+      ["./leak.sh", "shell-file"],
+      ["echo 'gh gist create dump.sql' | bash", "pipe-to-interpreter"],
+      ["leak(){ gh gist create dump.sql; }; leak", "function"],
+      ["function leak { gh gist create dump.sql; }", "function"],
+      ["gh extension install owner/leak", "gh extension/alias"],
+    ];
+    for (const [cmd, shape] of bypasses) {
+      expect(runShapeReasons(cmd), cmd).toContain(shape);
+      expect(findForbiddenUploadCommands(runYaml(cmd)).map((h) => h.kind), cmd).toContain("run allowlist");
+    }
+  });
+
+  it("accepts a dangerous run only when step id + hash match the allowlist", () => {
+    const text = ["id: pinned", "run: |", "  cat <<'EOF'", "  hello", "  EOF", ""].join("\n");
+    const step = collectSteps(text)[0];
+    expect(step?.id).toBe("pinned");
+    expect(runNeedsAllowlist(step?.run ?? "")).toBe(true);
+    const hash = runContentHash(step?.run ?? "");
+    expect(
+      findForbiddenUploadCommands(text, "t.yml", { allowlist: [] }).map((h) => h.kind),
+    ).toContain("run allowlist");
+    expect(
+      findForbiddenUploadCommands(text, "t.yml", {
+        allowlist: [{ file: "t.yml", id: "pinned", sha256: hash }],
+      }),
+    ).toEqual([]);
+    expect(
+      findForbiddenUploadCommands(text, "t.yml", {
+        allowlist: [{ file: "t.yml", id: "pinned", sha256: "0".repeat(64) }],
+      }).map((h) => h.kind),
+    ).toContain("run allowlist");
+    expect(isStepAllowlisted("t.yml", "pinned", step?.run ?? "", [{ file: "t.yml", id: "pinned", sha256: hash }])).toBe(
+      true,
+    );
+  });
+
+  it("denies release.yml writes to DMG/STABLE_DMG/APPTAR/latest.json/$BUNDLE/dmg unless allowlisted", () => {
+    const writes = [
+      'cp "$DMG" /tmp/out.dmg',
+      'mv "$STABLE_DMG" /tmp/x',
+      "tee latest.json",
+      'install -m 644 dump "$BUNDLE"/dmg/leak.dmg',
+      "jq -n '{}' > latest.json",
+    ];
+    for (const cmd of writes) {
+      expect(findForbiddenUploadCommands(runYaml(cmd), "release.yml").map((h) => h.kind), cmd).toContain(
+        "run allowlist",
+      );
+      expect(findForbiddenUploadCommands(runYaml(cmd), "cutover-migrate.yml")).toEqual([]);
+    }
+  });
+
+  it("committed allowlist hashes match every dangerous run block", () => {
+    const needed = neededRunAllowlist(join(ROOT, ".github/workflows"));
+    const committed = loadRunAllowlist();
+    expect(needed.map((s) => s.id).every(Boolean)).toBe(true);
+    expect(committed).toEqual(needed);
   });
 
   it("rejects a multi-path dump + hash upload", () => {

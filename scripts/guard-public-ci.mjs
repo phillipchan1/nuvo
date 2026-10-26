@@ -34,8 +34,16 @@
  *   8. In the release.yml step that runs `gh release create`, each of
  *      DMG / STABLE_DMG / APPTAR / NOTES has exactly one pinned assignment
  *      from the known build paths; any reassignment fails.
- *   9. actions/cache and actions/cache/save (restore-only is allowed).
- *  10. YAML is fail-closed: parse errors, doc.errors, more than one
+ *   9. Fail-closed run-block allowlist: a here-doc, a pipe into a
+ *      shell/interpreter, source/./sh/bash/zsh of a file, a function
+ *      definition, -c on any shell/su/xargs/sudo, eval, or gh
+ *      extension/alias is denied unless that exact run is listed by
+ *      step id + sha256 in guard-public-ci.allowlist.json.
+ *  10. In release.yml, mv/cp/redirect/tee/install writes whose target is
+ *      $DMG / $STABLE_DMG / $APPTAR / latest.json / $BUNDLE/dmg are
+ *      denied unless that step is allowlisted by hash.
+ *  11. actions/cache and actions/cache/save (restore-only is allowed).
+ *  12. YAML is fail-closed: parse errors, doc.errors, more than one
  *      document, a non-mapping root, duplicate keys, or << merge keys
  *      throw. There is no raw-text fallback.
  *
@@ -44,8 +52,10 @@
  * This deny-list does not cover `actions/github-script` or upload code
  * written in Python or Node (or any other runtime) inside a `run:` step.
  * `nc`, `python`, and other non-`gh` exfil channels are out of scope.
- * Reviewers must check those paths by hand.
+ * Reviewers must check those paths by hand — including inside an
+ * allowlisted here-doc whose hash they approved.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -116,6 +126,9 @@ const COMMAND_PREFIXES = new Set([
   "command",
   "builtin",
   "env",
+  "su",
+  "sudo",
+  "xargs",
   "then",
   "else",
   "elif",
@@ -203,14 +216,15 @@ export function actionName(uses) {
 }
 
 function normalizeStep(step, line = 1) {
-  if (step == null) return { uses: null, run: "", with: {}, name: "", line };
-  if (typeof step === "string") return { uses: null, run: step, with: {}, name: "", line };
+  if (step == null) return { uses: null, run: "", with: {}, name: "", id: "", line };
+  if (typeof step === "string") return { uses: null, run: step, with: {}, name: "", id: "", line };
   const withBlock = step.with && typeof step.with === "object" ? step.with : {};
   return {
     uses: normalizeUses(step.uses),
     run: step.run == null ? "" : String(step.run),
     with: withBlock,
     name: step.name == null ? "" : String(step.name),
+    id: step.id == null ? "" : String(step.id),
     line,
   };
 }
@@ -951,6 +965,238 @@ export function stripHeredocBodies(run) {
   return out.join("\n");
 }
 
+const INTERPRETERS = new Set([
+  ...SHELL_NAMES,
+  "python",
+  "python2",
+  "python3",
+  "node",
+  "nodejs",
+  "deno",
+  "bun",
+  "ruby",
+  "perl",
+  "php",
+  "lua",
+  "osascript",
+  "pwsh",
+  "powershell",
+]);
+const DASH_C_HOSTS = new Set([...SHELL_NAMES, "su", "sudo", "xargs"]);
+const PROTECTED_WRITE_CMDS = new Set(["cp", "mv", "install", "tee"]);
+
+export const RUN_ALLOWLIST_PATH = join(dirname(fileURLToPath(import.meta.url)), "guard-public-ci.allowlist.json");
+
+export function runContentHash(run) {
+  return createHash("sha256").update(String(run), "utf8").digest("hex");
+}
+
+export function loadRunAllowlist(path = RUN_ALLOWLIST_PATH) {
+  if (!existsSync(path)) return [];
+  const raw = JSON.parse(readFileSync(path, "utf8"));
+  const steps = raw?.steps;
+  if (!Array.isArray(steps)) return [];
+  return steps.map((s) => ({
+    file: String(s.file ?? ""),
+    id: String(s.id ?? ""),
+    sha256: String(s.sha256 ?? ""),
+  }));
+}
+
+export function isStepAllowlisted(filename, id, run, allowlist) {
+  if (!id) return false;
+  const hash = runContentHash(run);
+  return allowlist.some((e) => e.file === filename && e.id === id && e.sha256 === hash);
+}
+
+export function hasHeredoc(run) {
+  return /<</.test(String(run));
+}
+
+export function pipelineStages(line) {
+  const stages = [];
+  let cur = "";
+  let quote = null;
+  let depth = 0;
+  const s = String(line);
+  const push = () => {
+    if (cur.trim()) stages.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    if (c === "$" && s[i + 1] === "(") {
+      depth += 1;
+      cur += "$(";
+      i += 1;
+      continue;
+    }
+    if (c === "(" && depth > 0) {
+      depth += 1;
+      cur += c;
+      continue;
+    }
+    if (c === ")" && depth > 0) {
+      depth -= 1;
+      cur += c;
+      continue;
+    }
+    if (depth === 0 && c === "|" && s[i + 1] !== "|") {
+      push();
+      continue;
+    }
+    cur += c;
+  }
+  push();
+  return stages;
+}
+
+export function hasPipeToInterpreter(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const code = stripFullLineComment(text);
+    if (!code.trim()) continue;
+    const stages = pipelineStages(code);
+    if (stages.length < 2) continue;
+    for (let i = 1; i < stages.length; i++) {
+      const found = firstCommandWord(stages[i]);
+      if (found?.error) return true;
+      if (found?.cmd && INTERPRETERS.has(commandBase(found.cmd))) return true;
+    }
+  }
+  return false;
+}
+
+export function hasShellFileInvocation(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const code = stripFullLineComment(text);
+    if (!code.trim()) continue;
+    const segs = splitShellSegments(code);
+    if (segs.error) return true;
+    for (const seg of segs.parts) {
+      const found = firstCommandWord(seg);
+      if (found?.error) return true;
+      if (!found?.cmd) continue;
+      const cmd = stripWrappingQuotes(found.cmd);
+      const base = commandBase(found.cmd);
+      if (base === "source" || cmd === ".") return true;
+      if (/^(?:\.\/|\.\.\/)/.test(cmd) || /\.(?:sh|bash|zsh)$/.test(cmd)) return true;
+      if (SHELL_NAMES.has(base) && !dashCScript(found.rest)) {
+        if (found.rest.some((t) => !String(t).startsWith("-"))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function hasFunctionDef(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const code = stripFullLineComment(text);
+    if (/^\s*function\s+[A-Za-z_]/.test(code)) return true;
+    if (/^\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\{/.test(code)) return true;
+  }
+  return false;
+}
+
+export function hasDashCInvocation(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const tokens = tokenize(stripFullLineComment(text));
+    for (let i = 0; i < tokens.length; i++) {
+      if (!DASH_C_HOSTS.has(commandBase(tokens[i]))) continue;
+      if (dashCScript(tokens.slice(i + 1))) return true;
+    }
+  }
+  return false;
+}
+
+export function hasEvalInvocation(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const segs = splitShellSegments(stripFullLineComment(text));
+    if (segs.error) return true;
+    for (const seg of segs.parts) {
+      const found = firstCommandWord(seg);
+      if (found?.error) return true;
+      if (found?.cmd && commandBase(found.cmd) === "eval") return true;
+    }
+  }
+  return false;
+}
+
+export function hasGhExtensionOrAlias(run) {
+  for (const { text } of logicalLines(run)) {
+    const tokens = tokenize(stripFullLineComment(text));
+    if (isGhSubcommand(tokens, "extension") || isGhSubcommand(tokens, "alias")) return true;
+  }
+  return false;
+}
+
+export function isProtectedReleaseTarget(tok) {
+  const t = String(tok).replace(/['"]/g, "");
+  if (t === "$DMG" || t === "$STABLE_DMG" || t === "$APPTAR") return true;
+  if (t === "latest.json" || t === "./latest.json") return true;
+  if (/\$\{?BUNDLE\}?\/dmg/.test(t)) return true;
+  return false;
+}
+
+export function hasProtectedReleaseWrite(run) {
+  for (const { text } of logicalLines(stripHeredocBodies(run))) {
+    const code = stripFullLineComment(text);
+    if (!code.trim()) continue;
+    const redir = code.match(/(?:^|[\s;|&])(?:>>?)\s*(\S+)/);
+    if (redir && isProtectedReleaseTarget(redir[1])) return true;
+    const segs = splitShellSegments(code);
+    if (segs.error) return true;
+    for (const seg of segs.parts) {
+      const found = firstCommandWord(seg);
+      if (found?.error) return true;
+      if (!found?.cmd) continue;
+      if (!PROTECTED_WRITE_CMDS.has(commandBase(found.cmd))) continue;
+      if (found.rest.some((t) => isProtectedReleaseTarget(t))) return true;
+    }
+  }
+  return false;
+}
+
+/** Shapes that require a committed step-id + hash, independent of filename. */
+export function runShapeReasons(run) {
+  const reasons = [];
+  if (hasHeredoc(run)) reasons.push("here-doc");
+  if (hasPipeToInterpreter(run)) reasons.push("pipe-to-interpreter");
+  if (hasShellFileInvocation(run)) reasons.push("shell-file");
+  if (hasFunctionDef(run)) reasons.push("function");
+  if (hasDashCInvocation(run)) reasons.push("shell -c");
+  if (hasEvalInvocation(run)) reasons.push("eval");
+  if (hasGhExtensionOrAlias(run)) reasons.push("gh extension/alias");
+  return reasons;
+}
+
+export function runNeedsAllowlist(run, filename = "workflow") {
+  if (runShapeReasons(run).length) return true;
+  return filename === "release.yml" && hasProtectedReleaseWrite(run);
+}
+
+export function neededRunAllowlist(workflowsDir) {
+  const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
+  const needed = [];
+  for (const name of names.sort()) {
+    const text = readFileSync(join(workflowsDir, name), "utf8");
+    for (const step of collectSteps(text)) {
+      if (!step.run || !runNeedsAllowlist(step.run, name)) continue;
+      needed.push({ file: name, id: step.id, sha256: runContentHash(step.run) });
+    }
+  }
+  return needed;
+}
+
 function scanRunScript(run, filename, depth = 0) {
   if (depth > MAX_SHELL_DEPTH) return [{ line: 1, kind: "unparseable shell" }];
   const hits = [];
@@ -1032,13 +1278,18 @@ function scanRunScript(run, filename, depth = 0) {
   return hits;
 }
 
-export function findForbiddenUploadCommands(workflowText, filename = "workflow") {
+export function findForbiddenUploadCommands(workflowText, filename = "workflow", options = {}) {
   const hits = [];
+  const allowlist = options.allowlist ?? loadRunAllowlist();
   for (const step of collectSteps(workflowText)) {
     if (step.uses && isForbiddenUse(step.uses)) {
       hits.push({ line: step.line, kind: forbiddenUseKind(step.uses) });
     }
-    if (step.run) hits.push(...scanRunScript(step.run, filename));
+    if (!step.run) continue;
+    hits.push(...scanRunScript(step.run, filename));
+    if (runNeedsAllowlist(step.run, filename) && !isStepAllowlisted(filename, step.id, step.run, allowlist)) {
+      pushHit(hits, step.line, "run allowlist");
+    }
   }
   return hits;
 }

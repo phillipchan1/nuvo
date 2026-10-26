@@ -81,7 +81,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Mask secrets and resolve target
+      - id: mask
+        name: Mask secrets and resolve target
         run: |
           set +x
           set -eu
@@ -178,7 +179,8 @@ jobs:
           print(f"mode={mode} target={kind}", flush=True)
           PY
 
-      - name: Install postgresql-client-17
+      - id: install-pg
+        name: Install postgresql-client-17
         run: |
           set +x
           set -eu
@@ -191,7 +193,8 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_restore --version
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
-      - name: Write cutover helper
+      - id: write-helper
+        name: Write cutover helper
         run: |
           set +x
           set -eu
@@ -1181,7 +1184,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Shred dumps
+      - id: shred
+        name: Shred dumps
         if: ${{ always() }}
         run: |
           set +x

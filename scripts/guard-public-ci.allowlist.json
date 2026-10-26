@@ -1,0 +1,55 @@
+{
+  "algorithm": "sha256",
+  "steps": [
+    {
+      "file": "cutover-migrate.yml",
+      "id": "mask",
+      "sha256": "a51c6483a718d1171c8fb557fb105cd2fb1142543a6b29011b0f29d384038ea6"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "id": "install-pg",
+      "sha256": "2355286aa8cd8a027cd8d00298598190d10cd47fc15ae5ce5856c80b55f76247"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "id": "write-helper",
+      "sha256": "0dbe80c4b3c390a9c85ffcb37c70f37205ad8637d453b96b6c7ce9cc6ab424df"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "id": "shred",
+      "sha256": "5022efb80969e1ec52f70e49e2705712bf4a96f5a4e353f40ae03188e39a8322"
+    },
+    {
+      "file": "ios-release.yml",
+      "id": "decide",
+      "sha256": "8e674743ed0e093956cbb6b011790e83ee10ab6b05b3ef5b0cdd162b81a123a6"
+    },
+    {
+      "file": "ios-release.yml",
+      "id": "ios-init",
+      "sha256": "6ca34d4b1a89abbc388e4cb0308721b54fa728d33d5b1165e0730ce4a4393908"
+    },
+    {
+      "file": "ios-release.yml",
+      "id": "watch-build",
+      "sha256": "fe8cfec87f9f2d44d695aba7d846981009315f8ab40338344352d09174c01026"
+    },
+    {
+      "file": "release.yml",
+      "id": "decide",
+      "sha256": "7100526d2f3813f69932ad90248074cb5f485a4af6c19fe5faaa682a22a8389e"
+    },
+    {
+      "file": "release.yml",
+      "id": "release-notes",
+      "sha256": "948cef8bb1cadb2e3a8a85a3b1dbb25c0260817291a09e691afe3982783581bd"
+    },
+    {
+      "file": "release.yml",
+      "id": "publish",
+      "sha256": "5ca6f90fc56d6e63cb3cc8f22d8ebebaf3f80282a28b3c1eb63cbb2a2b36e0db"
+    }
+  ]
+}

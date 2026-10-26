@@ -160,7 +160,8 @@ jobs:
           echo "BUILD_NUMBER=$RESOLVED" >> "$GITHUB_ENV"
           echo "Resolved iOS build number: $RESOLVED"
 
-      - name: Initialize iOS project
+      - id: ios-init
+        name: Initialize iOS project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -178,7 +179,8 @@ jobs:
       # SDKROOT and compiled the watch app for iOS (run 31719213175). This step
       # exports NUVO_WATCH_APP; the app's "Embed Nuvo Watch" phase copies that
       # product into Nuvo.app/Watch/ during the archive below.
-      - name: Build the watchOS companion
+      - id: watch-build
+        name: Build the watchOS companion
         if: env.NUVO_IOS_WATCH != '0'
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}

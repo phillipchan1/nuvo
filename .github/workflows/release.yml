@@ -131,7 +131,8 @@ jobs:
             echo "Missing cert/identity/password — building unsigned (ad-hoc)."
           fi
 
-      - name: Generate release notes
+      - id: release-notes
+        name: Generate release notes
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
@@ -202,7 +203,8 @@ jobs:
           done
           echo "All build attempts failed"; exit 1
 
-      - name: Publish to releases repo
+      - id: publish
+        name: Publish to releases repo
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |

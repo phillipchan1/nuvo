@@ -85,10 +85,16 @@ else.
 ### Limits
 
 The guard is a deny-list of workflow `uses:` and of `curl` / `wget` / `gh`
-file uploads. It does **not** cover `actions/github-script` or upload code
-written in Python or Node (or any other runtime) inside a `run:` step.
-`nc`, `python`, and other non-`gh` exfil channels are out of scope.
-Reviewers must check those paths by hand.
+file uploads, plus a fail-closed allowlist (`scripts/guard-public-ci.allowlist.json`)
+of `run:` blocks that use a here-doc, a pipe into a shell/interpreter,
+`source` / `./` / `sh` / `bash` / `zsh` of a file, a function, `-c` on a
+shell / `su` / `xargs` / `sudo`, `eval`, or `gh extension` / `gh alias`.
+Those shapes are rejected unless the step `id` and a sha256 of the exact
+run text are committed. It does **not** cover `actions/github-script` or
+upload code written in Python or Node (or any other runtime) inside a
+`run:` step. `nc`, `python`, and other non-`gh` exfil channels are out of
+scope. Reviewers must check those paths by hand — including inside an
+allowlisted here-doc whose hash they approved.
 
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
