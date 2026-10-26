@@ -190,6 +190,12 @@ explicit `ssl` flag. Direct remote `DATABASE_URL`s (Neon) always require
 TLS, even when `sslmode` is `prefer`, `allow`, or `disable`.
 Connection errors stay generic — they never echo the internal host.
 
+**Connect timeout:** a refused origin is already 503. A hung one (accept and
+silence) used to wait for the Worker/OS timeout. `openSql` sets postgres.js
+`connect_timeout` (5s) and `openAuth` sets `connectionTimeoutMillis` (5s).
+The auth 503 probe (`SELECT 1`) is raced against the same deadline, so OTP
+send fails fast as `{"error":"service unavailable"}`.
+
 Planner `users.auth_id` is the Better Auth user id. `bootstrapUser` looks that
 up first, adopts a row **only when the BA email is verified**, and never
 auto-signs-in an unverified email+password account
