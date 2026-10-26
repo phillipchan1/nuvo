@@ -224,7 +224,7 @@ No automated `supabase db push` or `functions deploy` in CI.
 - `/functions/v1/agent` and `/functions/v1/mcp` (session / connection scoped on Neon)
 - `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
 - Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune` (iterate `users`)
-- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Live check: [`billing-live-check.md`](./billing-live-check.md)
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Friend-code minting (`referral-code`) is **not** ported; the share block is disabled on the flag-on Billing pane. Live check: [`billing-live-check.md`](./billing-live-check.md)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.
 

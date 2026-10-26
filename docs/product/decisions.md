@@ -6246,6 +6246,10 @@ to `/api/entitlement` (Better Auth session, Bearer + cookies). Stripe,
 StoreKit, Checkout, portal, IAP purchase / restore, and webhooks are
 untouched — they still write the Supabase row the Worker SELECTs. A Worker
 error is verify-error, never an unlock; `isEntitled` stays the one function.
+The read also returns `current_period_end`, `cancel_at_period_end`, and
+referral display fields so Billing can say Ends / Resume. Friend-code
+minting stays on today's path — the share block is disabled when the flag
+is on.
 
 **Anchor.** No Question Ledger row — infrastructure, same as D-164. Strains
 nothing in the product grammar. The four no's: no pool, no new user-facing
@@ -6253,4 +6257,4 @@ name, no clean-data requirement, nothing that only holds in the builder's
 account. Pre-flip live check:
 [`cloudflare-migration/billing-live-check.md`](../cloudflare-migration/billing-live-check.md).
 
-*Status: standing — flag-off is a no-op. Tests: `tests/entitlement-read.test.ts`.*
+*Status: standing — flag-off is a no-op. Tests: `tests/entitlement-read.test.ts`, `tests/billing-share-worker.test.tsx`.*

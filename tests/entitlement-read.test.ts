@@ -45,6 +45,11 @@ const workerPaid = {
   plan_source: "stripe",
   status: "active",
   trial_ends_at: "2026-08-01T00:00:00Z",
+  current_period_end: "2026-11-26T00:00:00Z",
+  cancel_at_period_end: true,
+  referral_code: "PHIL-TEST",
+  referral_uses: 2,
+  referral_credits_earned: 1,
 };
 
 const workerFree = {
@@ -100,6 +105,14 @@ describe("an entitled user stays entitled on both paths", () => {
     expect(row).not.toBeNull();
     expect(isEntitled(row)).toBe(true);
     expect(view({ subscription: row })).toBe("open");
+    expect(row?.current_period_end).toBe("2026-11-26T00:00:00Z");
+    expect(row?.cancel_at_period_end).toBe(true);
+    expect(row?.referral_code).toBe("PHIL-TEST");
+    expect(row?.referral_uses).toBe(2);
+    expect(row?.referral_credits_earned).toBe(1);
+    expect(row?.stripe_customer_id).toBeNull();
+    expect(row?.stripe_subscription_id).toBeNull();
+    expect(row?.price_id).toBeNull();
   });
 
   it("Worker Apple-paid body is the same yes as Stripe", () => {
@@ -126,6 +139,22 @@ describe("a free user stays free on both paths", () => {
     expect(subscriptionFromWorkerBody({ present: false, entitled: false })).toBeNull();
     expect(isEntitled(null)).toBe(false);
     expect(view({ subscription: null })).toBe("locked");
+  });
+
+  it("past_due stays locked on both paths", () => {
+    const pastDue = { ...freePostgrest, status: "past_due" as const, plan: "past_due" as const };
+    expect(isEntitled(pastDue)).toBe(false);
+    expect(view({ subscription: pastDue })).toBe("locked");
+    const row = subscriptionFromWorkerBody({
+      entitled: false,
+      present: true,
+      plan: "past_due",
+      status: "past_due",
+      plan_source: "stripe",
+      trial_ends_at: "2026-01-01T00:00:00Z",
+    });
+    expect(isEntitled(row)).toBe(false);
+    expect(view({ subscription: row })).toBe("locked");
   });
 });
 

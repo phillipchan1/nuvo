@@ -30,6 +30,13 @@ export interface WorkerEntitlementBody {
   plan_source?: unknown;
   status?: unknown;
   trial_ends_at?: unknown;
+  current_period_end?: unknown;
+  cancel_at_period_end?: unknown;
+  referral_code?: unknown;
+  referral_uses?: unknown;
+  referral_last_use_at?: unknown;
+  referral_credits_earned?: unknown;
+  referral_last_credit_at?: unknown;
 }
 
 const PLAN_STATES: ReadonlySet<string> = new Set([
@@ -52,8 +59,9 @@ function asPlanSource(value: unknown): PlanSource | null {
 /**
  * Map a Worker entitlement JSON body onto the Subscription shape the shell
  * already reads. `present: false` is a real empty answer (service-role
- * lookup, not RLS) — same as PostgREST `null`. Writer-only billing
- * fields stay null; this path does not fetch them.
+ * lookup, not RLS) — same as PostgREST `null`. Stripe / Apple identifiers
+ * stay null; period, cancel, and referral display fields come through so
+ * Settings → Billing can say "Ends …" / "Resume subscription".
  */
 export function subscriptionFromWorkerBody(
   body: WorkerEntitlementBody,
@@ -62,6 +70,14 @@ export function subscriptionFromWorkerBody(
   const status = asPlanState(body.status) ?? asPlanState(body.plan);
   if (!status) return null;
   const trial = typeof body.trial_ends_at === "string" ? body.trial_ends_at : "";
+  const period = typeof body.current_period_end === "string" ? body.current_period_end : null;
+  const code = typeof body.referral_code === "string" ? body.referral_code : null;
+  const uses = typeof body.referral_uses === "number" && Number.isFinite(body.referral_uses)
+    ? Math.max(0, Math.floor(body.referral_uses))
+    : 0;
+  const credits = typeof body.referral_credits_earned === "number" && Number.isFinite(body.referral_credits_earned)
+    ? Math.max(0, Math.floor(body.referral_credits_earned))
+    : 0;
   return {
     user_id: "",
     status,
@@ -71,8 +87,13 @@ export function subscriptionFromWorkerBody(
     stripe_customer_id: null,
     stripe_subscription_id: null,
     price_id: null,
-    current_period_end: null,
-    cancel_at_period_end: false,
+    current_period_end: period,
+    cancel_at_period_end: body.cancel_at_period_end === true,
+    referral_code: code,
+    referral_uses: uses,
+    referral_last_use_at: typeof body.referral_last_use_at === "string" ? body.referral_last_use_at : null,
+    referral_credits_earned: credits,
+    referral_last_credit_at: typeof body.referral_last_credit_at === "string" ? body.referral_last_credit_at : null,
     entitled: body.entitled === true,
   };
 }

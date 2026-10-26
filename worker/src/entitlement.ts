@@ -15,12 +15,20 @@ export interface EntitlementEnv {
   SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
-/** Physical columns only — never the `entitled` / `plan` SQL functions. */
+/** Physical columns only — never the `entitled` / `plan` SQL functions,
+ *  and never Stripe / Apple identifiers. */
 export interface SubscriptionColumns {
   user_id: string;
   status: PlanState | null;
   trial_ends_at: string | null;
   plan_source: PlanSource | null;
+  current_period_end?: string | null;
+  cancel_at_period_end?: boolean;
+  referral_code?: string | null;
+  referral_uses?: number;
+  referral_last_use_at?: string | null;
+  referral_credits_earned?: number;
+  referral_last_credit_at?: string | null;
 }
 
 export interface Entitlement {
@@ -31,6 +39,13 @@ export interface Entitlement {
   planSource: PlanSource | null;
   status: PlanState | null;
   trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  referralCode: string | null;
+  referralUses: number;
+  referralLastUseAt: string | null;
+  referralCreditsEarned: number;
+  referralLastCreditAt: string | null;
 }
 
 export class EntitlementUnavailableError extends Error {
@@ -46,7 +61,19 @@ export type SubscriptionFetcher = (
   userId: string,
 ) => Promise<SubscriptionColumns | null>;
 
-const PHYSICAL_SELECT = "user_id,status,trial_ends_at,plan_source";
+const PHYSICAL_SELECT = [
+  "user_id",
+  "status",
+  "trial_ends_at",
+  "plan_source",
+  "current_period_end",
+  "cancel_at_period_end",
+  "referral_code",
+  "referral_uses",
+  "referral_last_use_at",
+  "referral_credits_earned",
+  "referral_last_credit_at",
+].join(",");
 
 /** PostgREST URL: filter is only `user_id=eq.<session id>`. */
 export function subscriptionQueryUrl(baseUrl: string, userId: string): string {
@@ -55,6 +82,14 @@ export function subscriptionQueryUrl(baseUrl: string, userId: string): string {
   params.set("user_id", `eq.${userId}`);
   params.set("select", PHYSICAL_SELECT);
   return `${base}/rest/v1/subscriptions?${params.toString()}`;
+}
+
+function asIso(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+function asCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
 }
 
 export function entitlementOf(
@@ -71,6 +106,13 @@ export function entitlementOf(
     planSource: row?.plan_source ?? null,
     status: row?.status ?? plan,
     trialEndsAt: row?.trial_ends_at ?? null,
+    currentPeriodEnd: row?.current_period_end ?? null,
+    cancelAtPeriodEnd: row?.cancel_at_period_end === true,
+    referralCode: row?.referral_code ?? null,
+    referralUses: row?.referral_uses ?? 0,
+    referralLastUseAt: row?.referral_last_use_at ?? null,
+    referralCreditsEarned: row?.referral_credits_earned ?? 0,
+    referralLastCreditAt: row?.referral_last_credit_at ?? null,
   };
 }
 
@@ -80,13 +122,19 @@ function parseSubscriptionRow(value: unknown): SubscriptionColumns | null {
   const userId = typeof row.user_id === "string" ? row.user_id : "";
   if (!userId) return null;
   const status = typeof row.status === "string" ? (row.status as PlanState) : null;
-  const trial = row.trial_ends_at;
   const source = row.plan_source;
   return {
     user_id: userId,
     status,
-    trial_ends_at: typeof trial === "string" ? trial : null,
+    trial_ends_at: asIso(row.trial_ends_at),
     plan_source: source === "stripe" || source === "apple" ? source : null,
+    current_period_end: asIso(row.current_period_end),
+    cancel_at_period_end: row.cancel_at_period_end === true,
+    referral_code: asIso(row.referral_code),
+    referral_uses: asCount(row.referral_uses),
+    referral_last_use_at: asIso(row.referral_last_use_at),
+    referral_credits_earned: asCount(row.referral_credits_earned),
+    referral_last_credit_at: asIso(row.referral_last_credit_at),
   };
 }
 
@@ -160,5 +208,12 @@ export function entitlementResponseBody(entitlement: Entitlement): Record<string
     plan_source: entitlement.planSource,
     status: entitlement.status,
     trial_ends_at: entitlement.trialEndsAt,
+    current_period_end: entitlement.currentPeriodEnd,
+    cancel_at_period_end: entitlement.cancelAtPeriodEnd,
+    referral_code: entitlement.referralCode,
+    referral_uses: entitlement.referralUses,
+    referral_last_use_at: entitlement.referralLastUseAt,
+    referral_credits_earned: entitlement.referralCreditsEarned,
+    referral_last_credit_at: entitlement.referralLastCreditAt,
   };
 }
