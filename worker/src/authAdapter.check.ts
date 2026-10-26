@@ -1,6 +1,7 @@
-// Standalone Better Auth adapter check against PGlite + worker/schema/better-auth.sql.
-// Proves createAuth's snake_case field map can insert and select a real user
-// and a verification row. Run: node --experimental-strip-types worker/src/authAdapter.check.ts
+// Real better-auth@1.7.13 against worker/schema/better-auth.sql on PGlite.
+// The four HTTP routes that 500 on snake_case (OTP send, OTP sign-in,
+// sign-up, get-session) must return 200 against this camelCase schema.
+// Run: node --experimental-strip-types worker/src/authAdapter.check.ts
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,7 +19,6 @@ import {
   type Driver,
   type QueryResult,
 } from "kysely";
-import { authAccount, authSession, authUser, authVerification } from "./authSchema.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -29,6 +29,13 @@ function ok(cond: boolean, msg: string) {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = readFileSync(join(here, "../schema/better-auth.sql"), "utf8");
+const authSrc = readFileSync(join(here, "auth.ts"), "utf8");
+ok(/"emailVerified"/.test(schema), "schema: user.emailVerified is camelCase");
+ok(/"userId"/.test(schema), "schema: session.userId is camelCase");
+ok(/"expiresAt"/.test(schema), "schema: verification.expiresAt is camelCase");
+ok(!/email_verified/.test(schema), "schema: no snake_case email_verified");
+ok(!/authSchema/.test(authSrc), "createAuth: no snake_case field map");
+ok(!/emailVerified:\s*"email_verified"/.test(authSrc), "createAuth: no emailVerified remap");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
@@ -90,11 +97,8 @@ const auth = betterAuth({
   baseURL: "http://localhost:8787",
   basePath: "/api/auth",
   database: { db: kysely, type: "postgres" },
-  user: authUser,
-  session: authSession,
-  account: authAccount,
-  verification: authVerification,
   emailAndPassword: { enabled: true, minPasswordLength: 8 },
+  trustedOrigins: ["http://localhost:8787"],
   plugins: [
     emailOTP({
       otpLength: 6,
@@ -106,49 +110,104 @@ const auth = betterAuth({
   ],
 });
 
+const origin = "http://localhost:8787";
+
+async function post(path: string, body: Record<string, unknown>, cookie = ""): Promise<Response> {
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    Origin: origin,
+  });
+  if (cookie) headers.set("Cookie", cookie);
+  return auth.handler(new Request(`http://localhost:8787${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  }));
+}
+
+async function get(path: string, cookie = ""): Promise<Response> {
+  const headers = new Headers({ Origin: origin });
+  if (cookie) headers.set("Cookie", cookie);
+  return auth.handler(new Request(`http://localhost:8787${path}`, { headers }));
+}
+
+function cookieHeader(res: Response): string {
+  const getSetCookie = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const parts = typeof getSetCookie === "function" ? getSetCookie.call(res.headers) : [];
+  if (parts.length) {
+    return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  }
+  const single = res.headers.get("set-cookie");
+  return single ? single.split(";")[0] : "";
+}
+
 const email = "adapter@example.test";
-const signed = await auth.api.signUpEmail({
-  body: { email, password: "password12", name: "Adapter" },
+
+const signUp = await post("/api/auth/sign-up/email", {
+  email,
+  password: "password12",
+  name: "Adapter",
 });
-ok(Boolean(signed.user?.id), "signUpEmail: returns a user");
-ok(signed.user?.email === email, "signUpEmail: email matches");
+const signUpText = await signUp.text();
+ok(signUp.status === 200, `sign-up: HTTP ${signUp.status} ${signUpText.slice(0, 200)}`);
+const signed = JSON.parse(signUpText || "{}") as { user?: { id?: string; email?: string } };
+ok(Boolean(signed.user?.id), "sign-up: returns a user");
+ok(signed.user?.email === email, "sign-up: email matches");
 
 const userRows = await db.query<{
   email: string;
-  email_verified: boolean;
-  created_at: Date | string;
-}>('SELECT email, email_verified, created_at FROM "user" WHERE email = $1', [email]);
-ok(userRows.rows.length === 1, "insert: snake_case user row exists");
+  emailVerified: boolean;
+  createdAt: Date | string;
+}>('SELECT email, "emailVerified", "createdAt" FROM "user" WHERE email = $1', [email]);
+ok(userRows.rows.length === 1, "insert: camelCase user row exists");
 ok(userRows.rows[0]?.email === email, "select: email column readable");
-ok(userRows.rows[0]?.created_at != null, "select: created_at (not createdAt) is set");
+ok(userRows.rows[0]?.createdAt != null, "select: createdAt (not created_at) is set");
 
-const accountRows = await db.query<{ user_id: string; provider_id: string }>(
-  "SELECT user_id, provider_id FROM account WHERE user_id = $1",
-  [signed.user.id],
+const accountRows = await db.query<{ userId: string; providerId: string }>(
+  'SELECT "userId", "providerId" FROM account WHERE "userId" = $1',
+  [signed.user?.id],
 );
-ok(accountRows.rows.length >= 1, "insert: account row uses user_id");
-ok(accountRows.rows[0]?.provider_id === "credential", "select: provider_id is credential");
+ok(accountRows.rows.length >= 1, "insert: account row uses userId");
+ok(accountRows.rows[0]?.providerId === "credential", "select: providerId is credential");
 
-const otp = await auth.api.sendVerificationOTP({
-  body: { email, type: "sign-in" },
+const sendOtp = await post("/api/auth/email-otp/send-verification-otp", {
+  email,
+  type: "sign-in",
 });
-ok(otp.success === true, "sendVerificationOTP: success");
-ok(sent.length === 1 && sent[0]?.email === email, "sendVerificationOTP: callback fired");
+const sendText = await sendOtp.text();
+ok(sendOtp.status === 200, `OTP send: HTTP ${sendOtp.status} ${sendText.slice(0, 200)}`);
+ok(JSON.parse(sendText || "{}").success === true, "OTP send: success");
+ok(sent.length >= 1 && sent[0]?.email === email, "OTP send: callback fired");
 
-const verifyRows = await db.query<{ identifier: string; value: string; expires_at: Date | string }>(
-  "SELECT identifier, value, expires_at FROM verification",
+const verifyRows = await db.query<{ identifier: string; value: string; expiresAt: Date | string }>(
+  'SELECT identifier, value, "expiresAt" FROM verification',
 );
 ok(verifyRows.rows.length >= 1, "insert: verification row exists");
 ok(
   verifyRows.rows.some((r) => String(r.identifier).includes(email)),
   "select: verification identifier carries the email",
 );
-ok(verifyRows.rows.some((r) => r.expires_at != null), "select: expires_at (not expiresAt) is set");
+ok(verifyRows.rows.some((r) => r.expiresAt != null), "select: expiresAt (not expires_at) is set");
 
-const found = await auth.api.getSession({
-  headers: new Headers(),
-});
-ok(found === null || found.user == null, "getSession: no cookie is null, not a schema error");
+const otp = sent[sent.length - 1]?.otp ?? "";
+const signIn = await post("/api/auth/sign-in/email-otp", { email, otp });
+const signInText = await signIn.text();
+ok(signIn.status === 200, `OTP sign-in: HTTP ${signIn.status} ${signInText.slice(0, 200)}`);
+const sessionBody = JSON.parse(signInText || "{}") as { user?: { email?: string }; token?: string };
+ok(sessionBody.user?.email === email, "OTP sign-in: user email matches");
+ok(typeof sessionBody.token === "string" && sessionBody.token.length > 8, "OTP sign-in: session token");
+
+const cookie = cookieHeader(signIn);
+ok(cookie.length > 0 || Boolean(sessionBody.token), "OTP sign-in: cookie or bearer token");
+
+const session = await get("/api/auth/get-session", cookie);
+const sessionText = await session.text();
+ok(session.status === 200, `get-session: HTTP ${session.status} ${sessionText.slice(0, 200)}`);
+const got = JSON.parse(sessionText || "null") as { user?: { email?: string } } | null;
+ok(got?.user?.email === email, "get-session: returns the signed-in user");
+
+const emptySession = await get("/api/auth/get-session");
+ok(emptySession.status === 200, `get-session (anon): HTTP ${emptySession.status}, not a schema 500`);
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

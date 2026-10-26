@@ -38,6 +38,50 @@ export function makeStore(sql: Sql, userId: string): Store {
   return { sql, userId };
 }
 
+const OWNED_FKS: Partial<Record<PlannerTable, { field: string; table: PlannerTable }[]>> = {
+  projects: [
+    { field: "domain_id", table: "domains" },
+    { field: "initiative_id", table: "initiatives" },
+  ],
+  tasks: [
+    { field: "project_id", table: "projects" },
+    { field: "domain_id", table: "domains" },
+    { field: "slot_id", table: "slots" },
+    { field: "parent_task_id", table: "tasks" },
+  ],
+  initiatives: [{ field: "domain_id", table: "domains" }],
+  key_results: [{ field: "initiative_id", table: "initiatives" }],
+  slots: [
+    { field: "project_id", table: "projects" },
+    { field: "domain_id", table: "domains" },
+  ],
+  record_comments: [
+    { field: "project_id", table: "projects" },
+    { field: "initiative_id", table: "initiatives" },
+  ],
+  event_domain_routing: [{ field: "domain_id", table: "domains" }],
+};
+
+function optId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Every FK on insert / update / upsert must resolve to a row this owner can read. */
+export async function assertOwnedFks(
+  store: Store,
+  table: PlannerTable,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  for (const { field, table: parent } of OWNED_FKS[table] ?? []) {
+    if (!(field in row)) continue;
+    const value = row[field];
+    if (value == null || value === "") continue;
+    if (typeof value !== "string") return false;
+    if (!(await getOwned(store, parent, value))) return false;
+  }
+  return true;
+}
+
 export async function listOwned(
   store: Store,
   table: PlannerTable,
@@ -118,13 +162,26 @@ export async function getOwned(
 
 export async function insertTask(
   store: Store,
-  row: { id?: string; title: string; notes?: string; status?: string },
+  row: {
+    id?: string;
+    title: string;
+    notes?: string;
+    status?: string;
+    project_id?: string | null;
+    domain_id?: string | null;
+    slot_id?: string | null;
+    parent_task_id?: string | null;
+  },
 ): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "tasks", row))) return null;
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
   const rows = await sql`
-    INSERT INTO tasks (id, user_id, title, notes, status)
-    VALUES (${id}, ${store.userId}, ${row.title}, ${row.notes ?? ""}, ${row.status ?? "inbox"})
+    INSERT INTO tasks (id, user_id, title, notes, status, project_id, domain_id, slot_id, parent_task_id)
+    VALUES (
+      ${id}, ${store.userId}, ${row.title}, ${row.notes ?? ""}, ${row.status ?? "inbox"},
+      ${row.project_id ?? null}, ${row.domain_id ?? null}, ${row.slot_id ?? null}, ${row.parent_task_id ?? null}
+    )
     RETURNING *
   `;
   return rows[0] ?? null;
@@ -146,16 +203,106 @@ export async function insertDomain(
 
 export async function insertProject(
   store: Store,
-  row: { id?: string; name: string; domain_id?: string | null },
+  row: { id?: string; name: string; domain_id?: string | null; initiative_id?: string | null },
 ): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "projects", row))) return null;
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
   const rows = await sql`
-    INSERT INTO projects (id, user_id, name, domain_id)
+    INSERT INTO projects (id, user_id, name, domain_id, initiative_id)
+    VALUES (${id}, ${store.userId}, ${row.name}, ${row.domain_id ?? null}, ${row.initiative_id ?? null})
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertInitiative(
+  store: Store,
+  row: { id?: string; name: string; domain_id?: string | null },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "initiatives", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO initiatives (id, user_id, name, domain_id)
     VALUES (${id}, ${store.userId}, ${row.name}, ${row.domain_id ?? null})
     RETURNING *
   `;
   return rows[0] ?? null;
+}
+
+export async function insertKeyResult(
+  store: Store,
+  row: { id?: string; name: string; initiative_id: string },
+): Promise<Record<string, unknown> | null> {
+  if (!row.initiative_id) return null;
+  if (!(await assertOwnedFks(store, "key_results", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO key_results (id, user_id, name, initiative_id)
+    VALUES (${id}, ${store.userId}, ${row.name}, ${row.initiative_id})
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertSlot(
+  store: Store,
+  row: {
+    id?: string;
+    title: string;
+    do_date: string;
+    start_time: string;
+    duration_minutes: number;
+    project_id?: string | null;
+    domain_id?: string | null;
+  },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "slots", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO slots (id, user_id, title, do_date, start_time, duration_minutes, project_id, domain_id)
+    VALUES (
+      ${id}, ${store.userId}, ${row.title}, ${row.do_date}, ${row.start_time},
+      ${row.duration_minutes}, ${row.project_id ?? null}, ${row.domain_id ?? null}
+    )
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertRecordComment(
+  store: Store,
+  row: { id?: string; body: string; project_id?: string | null; initiative_id?: string | null },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "record_comments", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO record_comments (id, user_id, body, project_id, initiative_id)
+    VALUES (${id}, ${store.userId}, ${row.body}, ${row.project_id ?? null}, ${row.initiative_id ?? null})
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function upsertEventDomainRouting(
+  store: Store,
+  row: { id?: string; event_key: string; domain_id?: string | null },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "event_domain_routing", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO event_domain_routing (id, user_id, event_key, domain_id)
+    VALUES (${id}, ${store.userId}, ${row.event_key}, ${row.domain_id ?? null})
+    ON CONFLICT (user_id, event_key) DO UPDATE
+    SET domain_id = EXCLUDED.domain_id
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function insertOwned(
@@ -163,12 +310,17 @@ export async function insertOwned(
   table: PlannerTable,
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, table, row))) return null;
   if (table === "tasks") {
     return insertTask(store, {
       id: typeof row.id === "string" ? row.id : undefined,
       title: String(row.title ?? "Untitled"),
       notes: typeof row.notes === "string" ? row.notes : "",
       status: typeof row.status === "string" ? row.status : "inbox",
+      project_id: optId(row.project_id),
+      domain_id: optId(row.domain_id),
+      slot_id: optId(row.slot_id),
+      parent_task_id: optId(row.parent_task_id),
     });
   }
   if (table === "domains") {
@@ -182,20 +334,88 @@ export async function insertOwned(
     return insertProject(store, {
       id: typeof row.id === "string" ? row.id : undefined,
       name: String(row.name ?? "Untitled"),
-      domain_id: typeof row.domain_id === "string" ? row.domain_id : null,
+      domain_id: optId(row.domain_id),
+      initiative_id: optId(row.initiative_id),
+    });
+  }
+  if (table === "initiatives") {
+    return insertInitiative(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      name: String(row.name ?? "Untitled"),
+      domain_id: optId(row.domain_id),
+    });
+  }
+  if (table === "key_results") {
+    const initiativeId = optId(row.initiative_id);
+    if (!initiativeId) return null;
+    return insertKeyResult(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      name: String(row.name ?? "Untitled"),
+      initiative_id: initiativeId,
+    });
+  }
+  if (table === "slots") {
+    if (typeof row.do_date !== "string" || typeof row.start_time !== "string") return null;
+    const duration = Number(row.duration_minutes);
+    if (!Number.isFinite(duration) || duration <= 0) return null;
+    return insertSlot(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      title: String(row.title ?? ""),
+      do_date: row.do_date,
+      start_time: row.start_time,
+      duration_minutes: duration,
+      project_id: optId(row.project_id),
+      domain_id: optId(row.domain_id),
+    });
+  }
+  if (table === "record_comments") {
+    return insertRecordComment(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      body: String(row.body ?? ""),
+      project_id: optId(row.project_id),
+      initiative_id: optId(row.initiative_id),
+    });
+  }
+  if (table === "event_domain_routing") {
+    if (typeof row.event_key !== "string" || !row.event_key) return null;
+    return upsertEventDomainRouting(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      event_key: row.event_key,
+      domain_id: optId(row.domain_id),
     });
   }
   if (table === "user_settings") {
-    const sql = store.sql;
-    const rows = await sql`
-      INSERT INTO user_settings (user_id, theme)
-      VALUES (${store.userId}, ${typeof row.theme === "string" ? row.theme : "system"})
-      ON CONFLICT (user_id) DO NOTHING
-      RETURNING *
-    `;
-    return rows[0] ?? getOwned(store, "user_settings", store.userId);
+    return upsertSettings(store, typeof row.theme === "string" ? row.theme : "system");
   }
   return null;
+}
+
+export async function upsertOwned(
+  store: Store,
+  table: PlannerTable,
+  row: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, table, row))) return null;
+  if (typeof row.id === "string") {
+    const existing = await getOwned(store, table, row.id);
+    if (existing) return updateOwned(store, table, row.id, row);
+  }
+  return insertOwned(store, table, row);
+}
+
+export async function upsertSettings(
+  store: Store,
+  theme: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    INSERT INTO user_settings (user_id, theme)
+    VALUES (${store.userId}, ${theme})
+    ON CONFLICT (user_id) DO UPDATE
+    SET theme = EXCLUDED.theme, updated_at = now()
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateTaskTitle(
@@ -211,7 +431,7 @@ export async function updateTaskTitle(
       AND user_id = ${store.userId}
     RETURNING *
   `;
-  return rows[0] ?? null;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateDomainName(
@@ -227,7 +447,7 @@ export async function updateDomainName(
       AND user_id = ${store.userId}
     RETURNING *
   `;
-  return rows[0] ?? null;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateProjectName(
@@ -235,15 +455,33 @@ export async function updateProjectName(
   id: string,
   name: string,
 ): Promise<Record<string, unknown> | null> {
+  return updateProject(store, id, { name });
+}
+
+export async function updateProject(
+  store: Store,
+  id: string,
+  patch: { name?: string; domain_id?: string | null; initiative_id?: string | null },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "projects", patch))) return null;
   const sql = store.sql;
+  const setName = typeof patch.name === "string" ? 1 : 0;
+  const setDomain = "domain_id" in patch ? 1 : 0;
+  const setInit = "initiative_id" in patch ? 1 : 0;
+  const name = typeof patch.name === "string" ? patch.name : "";
+  const domainId = patch.domain_id ?? null;
+  const initiativeId = patch.initiative_id ?? null;
   const rows = await sql`
     UPDATE projects
-    SET name = ${name}
+    SET
+      name = CASE WHEN ${setName} = 1 THEN ${name} ELSE name END,
+      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
+      initiative_id = CASE WHEN ${setInit} = 1 THEN ${initiativeId} ELSE initiative_id END
     WHERE id = ${id}
       AND user_id = ${store.userId}
     RETURNING *
   `;
-  return rows[0] ?? null;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateSettingsTheme(
@@ -257,7 +495,7 @@ export async function updateSettingsTheme(
     WHERE user_id = ${store.userId}
     RETURNING *
   `;
-  return rows[0] ?? null;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateOwned(
@@ -266,19 +504,72 @@ export async function updateOwned(
   id: string,
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
-  if (table === "tasks" && typeof patch.title === "string") {
-    return updateTaskTitle(store, id, patch.title);
+  if (!(await assertOwnedFks(store, table, patch))) return null;
+  if (table === "tasks") {
+    if (typeof patch.title === "string") return updateTaskTitle(store, id, patch.title);
+    if ("project_id" in patch || "domain_id" in patch || "slot_id" in patch || "parent_task_id" in patch) {
+      return updateTaskFks(store, id, patch);
+    }
+    return null;
   }
-  if (table === "domains" && typeof patch.name === "string") {
+  if (table === "domains") {
+    if (typeof patch.name !== "string") return null;
     return updateDomainName(store, id, patch.name);
   }
-  if (table === "projects" && typeof patch.name === "string") {
-    return updateProjectName(store, id, patch.name);
+  if (table === "projects") {
+    const hasName = typeof patch.name === "string";
+    const hasFk = "domain_id" in patch || "initiative_id" in patch;
+    if (!hasName && !hasFk) return null;
+    return updateProject(store, id, {
+      name: hasName ? String(patch.name) : undefined,
+      domain_id: "domain_id" in patch ? optId(patch.domain_id) : undefined,
+      initiative_id: "initiative_id" in patch ? optId(patch.initiative_id) : undefined,
+    });
   }
-  if (table === "user_settings" && typeof patch.theme === "string") {
+  if (table === "user_settings") {
+    if (typeof patch.theme !== "string") return null;
     return updateSettingsTheme(store, patch.theme);
   }
-  return getOwned(store, table, id);
+  if (table === "event_domain_routing" && "domain_id" in patch) {
+    const current = await getOwned(store, table, id);
+    if (!current || typeof current.event_key !== "string") return null;
+    return upsertEventDomainRouting(store, {
+      id,
+      event_key: current.event_key,
+      domain_id: optId(patch.domain_id),
+    });
+  }
+  return null;
+}
+
+export async function updateTaskFks(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "tasks", patch))) return null;
+  const sql = store.sql;
+  const setProject = "project_id" in patch ? 1 : 0;
+  const setDomain = "domain_id" in patch ? 1 : 0;
+  const setSlot = "slot_id" in patch ? 1 : 0;
+  const setParent = "parent_task_id" in patch ? 1 : 0;
+  const projectId = optId(patch.project_id);
+  const domainId = optId(patch.domain_id);
+  const slotId = optId(patch.slot_id);
+  const parentId = optId(patch.parent_task_id);
+  const rows = await sql`
+    UPDATE tasks
+    SET
+      project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
+      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
+      slot_id = CASE WHEN ${setSlot} = 1 THEN ${slotId} ELSE slot_id END,
+      parent_task_id = CASE WHEN ${setParent} = 1 THEN ${parentId} ELSE parent_task_id END,
+      updated_at = now()
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function deleteOwned(

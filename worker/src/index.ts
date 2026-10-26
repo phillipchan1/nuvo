@@ -11,7 +11,6 @@ import {
   deleteOwned,
   deleteTaskLabel,
   getOwned,
-  insertOwned,
   insertTaskLabel,
   isPlannerTable,
   listOwned,
@@ -19,6 +18,7 @@ import {
   makeStore,
   rotateInboundToken,
   updateOwned,
+  upsertOwned,
   type PlannerTable,
 } from "./store.ts";
 
@@ -73,9 +73,8 @@ app.all("/api/auth/*", async (c) => {
       headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
     }
     return new Response(res.body, { status: res.status, headers });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: message }), {
+  } catch {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500,
       headers: { "Content-Type": "application/json", ...cors },
     });
@@ -147,7 +146,7 @@ app.post("/api/data/:table", async (c) => {
   const got = await requireStore(c);
   if ("error" in got) return got.error;
   const body = await c.req.json<Record<string, unknown>>();
-  const row = await insertOwned(got.store, table as PlannerTable, body);
+  const row = await upsertOwned(got.store, table as PlannerTable, body);
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
@@ -183,9 +182,8 @@ app.post("/api/rpc/apply_patch", async (c) => {
   try {
     const result = await applyPatch(got.store, body.p_table, body.p_match, body.p_patch);
     return json({ data: result }, 200, OPEN_CORS);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return json({ error: message }, 400, OPEN_CORS);
+  } catch {
+    return json({ error: "request failed" }, 400, OPEN_CORS);
   }
 });
 

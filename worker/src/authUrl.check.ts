@@ -134,10 +134,7 @@ if (!started.ok) {
     "non-loopback misconfig omits credentials",
   );
   const body = await started.response.json() as { error?: string };
-  ok(
-    typeof body.error === "string" && body.error.includes("BETTER_AUTH_URL must be set"),
-    "misconfig body names BETTER_AUTH_URL",
-  );
+  ok(body.error === "internal error", "misconfig body is generic");
 }
 
 const loopbackErr = authConfigErrorResponse("http://localhost:5717", new Error("BETTER_AUTH_URL must be set"));

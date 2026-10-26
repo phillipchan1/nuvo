@@ -38,7 +38,7 @@ jobs:
     outputs:
       should_run: ${{ steps.decide.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
       - id: decide
@@ -72,12 +72,12 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
           cache: npm

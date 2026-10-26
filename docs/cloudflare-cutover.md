@@ -41,7 +41,7 @@ None of these belong in the Vite bundle.
 | `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | local `.dev.vars` only | `local` for `wrangler dev`. Must not be `local` on workers.dev |
-| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged (dev only) |
+| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT=local` |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
@@ -164,6 +164,13 @@ npm run check:worker
 npm run check:isolation-mutation
 npm run cf:preview:dry-run
 ```
+
+Better Auth tables in `worker/schema/better-auth.sql` use the 1.7.13 default
+camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case
+schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a
+`fields` map. `npm run check:worker` drives those four routes through real
+Better Auth on PGlite. Billing `subscriptions` stays on Supabase — it is not
+in the Neon rehearsal schema.
 
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each

@@ -1,8 +1,7 @@
 import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
-import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
-import { authAccount, authSession, authUser, authVerification } from "./authSchema.ts";
+import { authCookieSecure, isLocalAuthHost, isLocalAuthRuntime, resolveAuthBaseURL } from "./authUrl.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
 type AuthInstance = ReturnType<typeof createAuth>;
@@ -15,7 +14,9 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
     : "Your Nuvo sign-in code";
   const text = `Your code is ${otp}. It expires in 5 minutes.\n\nIf you did not request this, ignore the email.`;
   if (!env.RESEND_API_KEY) {
-    console.log(`[auth] OTP for ${email} (${type}): ${otp}`);
+    if (isLocalAuthRuntime(env)) {
+      console.log(`[auth] OTP for ${email} (${type}): ${otp}`);
+    }
     return;
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -48,10 +49,6 @@ export function createAuth(env: Env) {
     baseURL,
     basePath: "/api/auth",
     database: new Pool({ connectionString: url, max: 5 }),
-    user: authUser,
-    session: authSession,
-    account: authAccount,
-    verification: authVerification,
     // App Review + the existing review login need a password. OTP is the
     // everyday path (same as today's GoTrue email code).
     emailAndPassword: { enabled: true, minPasswordLength: 8 },

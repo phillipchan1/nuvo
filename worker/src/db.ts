@@ -1,10 +1,33 @@
 import postgres from "postgres";
+import { isLoopbackHostname } from "./authUrl.ts";
 import type { Env } from "./env.ts";
 import { databaseUrl } from "./env.ts";
 
 export type Sql = postgres.Sql;
 
 const cache = new WeakMap<object, Sql>();
+
+/**
+ * TLS from the URL's sslmode, not a substring of the connection string.
+ * `?application_name=localhost` on a Neon host must still require TLS.
+ */
+export function postgresSsl(connectionString: string): false | "require" {
+  try {
+    const parsed = new URL(connectionString);
+    const mode = (parsed.searchParams.get("sslmode") ?? "").toLowerCase();
+    if (mode === "disable" || mode === "prefer" || mode === "allow" || mode === "false") {
+      return false;
+    }
+    if (mode === "require" || mode === "verify-ca" || mode === "verify-full") {
+      return "require";
+    }
+    const host = parsed.hostname.replace(/^\[|\]$/g, "");
+    if (isLoopbackHostname(host)) return false;
+    return "require";
+  } catch {
+    return "require";
+  }
+}
 
 export function getSql(env: Env): Sql {
   const cached = cache.get(env);
@@ -13,9 +36,8 @@ export function getSql(env: Env): Sql {
   if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");
   const sql = postgres(url, {
     max: 5,
-    fetch_types: false,
     prepare: false,
-    ssl: url.includes("localhost") || url.includes("127.0.0.1") || url.includes("[::1]") ? false : "require",
+    ssl: postgresSsl(url),
   });
   cache.set(env, sql);
   return sql;

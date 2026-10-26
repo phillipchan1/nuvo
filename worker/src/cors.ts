@@ -56,7 +56,6 @@ export function authConfigErrorResponse(
   origin: string | null | undefined,
   err: unknown,
 ): Response {
-  const message = err instanceof Error ? err.message : String(err);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...API_SECURITY,
@@ -64,7 +63,7 @@ export function authConfigErrorResponse(
   if (origin && isLocalAuthHost(origin)) {
     Object.assign(headers, credentialedCors(origin));
   }
-  return new Response(JSON.stringify({ error: message }), { status: 500, headers });
+  return new Response(JSON.stringify({ error: "internal error" }), { status: 500, headers });
 }
 
 export function beginAuthCors(

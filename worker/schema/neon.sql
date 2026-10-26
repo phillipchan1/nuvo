@@ -197,12 +197,6 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
   name TEXT
 );
 
-CREATE TABLE IF NOT EXISTS public.subscriptions (
-  user_id UUID PRIMARY KEY REFERENCES public.users (id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'trialing',
-  current_period_end TIMESTAMPTZ
-);
-
 CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON public.tasks (user_id, status, do_date);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON public.domains (user_id);
 CREATE INDEX IF NOT EXISTS projects_user_idx ON public.projects (user_id);

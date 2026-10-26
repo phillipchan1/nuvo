@@ -15,6 +15,7 @@ import {
   deleteTaskLabel,
   getOwned,
   insertOwned,
+  insertProject,
   insertTask,
   insertTaskLabel,
   listOwned,
@@ -23,9 +24,11 @@ import {
   PLANNER_TABLES,
   rotateInboundToken,
   updateDomainName,
+  updateOwned,
   updateProjectName,
   updateSettingsTheme,
   updateTaskTitle,
+  upsertOwned,
   type PlannerTable,
 } from "./store.ts";
 
@@ -169,6 +172,91 @@ const forgedInsert = await insertOwned(storeA, "tasks", {
 });
 ok(forgedInsert?.user_id === A, "insertOwned: client user_id is ignored; row is A's");
 ok((await count("tasks", "user_id = $1 AND title = $2", [B, "forged"])) === 0, "insertOwned: no forged B row");
+
+const stealDomain = await insertProject(storeA, { name: "planted on B domain", domain_id: DOMAIN_B });
+ok(stealDomain === null, "insertProject: A cannot attach B domain_id");
+ok((await count("projects", "user_id = $1 AND domain_id = $2", [A, DOMAIN_B])) === 0, "insertProject: no A row on B domain");
+ok((await count("projects", "user_id = $1", [B])) === 1, "insertProject: B project count unchanged");
+
+const ownProject = await insertProject(storeA, { name: "A on A domain", domain_id: DOMAIN_A });
+ok(ownProject?.user_id === A && ownProject.domain_id === DOMAIN_A, "insertProject: A can attach own domain");
+
+ok(
+  (await insertOwned(storeA, "tasks", { title: "on B project", project_id: PROJECT_B })) === null,
+  "insertOwned tasks: A cannot attach B project_id",
+);
+ok(
+  (await insertOwned(storeA, "initiatives", { name: "steal", domain_id: DOMAIN_B })) === null,
+  "insertOwned initiatives: A cannot attach B domain_id",
+);
+ok(
+  (await insertOwned(storeA, "key_results", { name: "steal", initiative_id: B_ROW.initiatives })) === null,
+  "insertOwned key_results: A cannot attach B initiative_id",
+);
+ok(
+  (await insertOwned(storeA, "slots", {
+    title: "steal",
+    do_date: "2026-10-26",
+    start_time: "2026-10-26T10:00:00Z",
+    duration_minutes: 30,
+    project_id: PROJECT_B,
+  })) === null,
+  "insertOwned slots: A cannot attach B project_id",
+);
+ok(
+  (await insertOwned(storeA, "record_comments", { body: "steal", project_id: PROJECT_B })) === null,
+  "insertOwned comments: A cannot attach B project_id",
+);
+ok(
+  (await insertOwned(storeA, "event_domain_routing", { event_key: "evt-steal", domain_id: DOMAIN_B })) === null,
+  "insertOwned routing: A cannot attach B domain_id",
+);
+ok(
+  (await upsertOwned(storeA, "event_domain_routing", { event_key: "evt-a", domain_id: DOMAIN_B })) === null,
+  "upsertOwned routing: A cannot rehome evt-a onto B domain",
+);
+ok(
+  (await scalar<string>("SELECT domain_id::text FROM event_domain_routing WHERE event_key = $1", ["evt-a"])) === DOMAIN_A,
+  "upsertOwned routing: A's evt-a domain unchanged",
+);
+
+const aDomainBefore = await scalar<string>("SELECT domain_id::text FROM projects WHERE id = $1", [PROJECT_A]);
+ok(
+  (await updateOwned(storeA, "projects", PROJECT_A, { domain_id: DOMAIN_B })) === null,
+  "updateOwned project: A cannot set domain_id to B",
+);
+ok(
+  (await scalar<string>("SELECT domain_id::text FROM projects WHERE id = $1", [PROJECT_A])) === aDomainBefore,
+  "updateOwned project: A domain_id unchanged",
+);
+ok(
+  (await updateOwned(storeA, "projects", PROJECT_A, { domain_id: DOMAIN_A }))?.id === PROJECT_A,
+  "updateOwned project: A can set own domain_id",
+);
+ok(
+  (await updateOwned(storeA, "tasks", TASK_B, { project_id: PROJECT_A })) === null,
+  "updateOwned task: A cannot rehome B onto A's project",
+);
+ok(
+  (await scalar<string>("SELECT project_id::text FROM tasks WHERE id = $1", [TASK_B])) === PROJECT_B,
+  "updateOwned task: B project_id unchanged",
+);
+
+for (let i = 0; i < 8; i++) {
+  ok(
+    (await updateOwned(storeA, "domains", DOMAIN_B, { name: `stolen-${i}` })) === null,
+    `updateOwned domain run ${i + 1}/8: A PATCH B is null`,
+  );
+  ok(
+    (await scalar<string>("SELECT name FROM domains WHERE id = $1", [DOMAIN_B])) === "B Work",
+    `updateOwned domain run ${i + 1}/8: B name unchanged`,
+  );
+}
+ok(
+  (await updateOwned(storeA, "domains", DOMAIN_B, { color: "#000000" })) === null,
+  "updateOwned domain: unrecognized patch is not a 200 via getOwned",
+);
+ok((await updateDomainName(storeA, DOMAIN_B, "stolen")) === null, "updateDomainName: A cannot rename B (rows affected)");
 
 ok((await getOwned(storeA, "sprints", "bbbbbbbb-6666-4000-8000-000000000001")) === null, "getOwned sprints: A cannot read B week");
 

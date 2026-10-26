@@ -70,8 +70,11 @@ export function invokeQuiet(fn: string, body: Record<string, unknown>) {
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(body),
-    }).then((res) => {
-      if (!res.ok) report(`${res.status}`);
+    }).then(async (res) => {
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        report(`${res.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);
+      }
     }).catch((err: unknown) => {
       report(err instanceof Error ? err.message : String(err));
     });
