@@ -480,7 +480,9 @@ try {
     8000,
     "cron",
   );
-  ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+  ok(cron.status === 200, `cron authorized push-dispatch: HTTP ${cron.status}`);
+  const cronBody = await cron.json() as { ok?: boolean };
+  ok(cronBody.ok === true, "cron push-dispatch: ok");
 } finally {
   await worker?.stop();
 }

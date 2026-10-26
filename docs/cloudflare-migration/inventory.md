@@ -112,11 +112,11 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `inbound-email` | Svix + inbound token | no | Stay |
 | `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
 | `mcp` | Connection bearer | no | Route alias only |
-| `push-dispatch` | Service role cron | no | Stay |
+| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; pg_cron stays until flip |
 | `referral-code` | User JWT | Stripe | Stay |
 | `rollover` | Service role cron | no | Stay |
 | `route-events` | User JWT | no | Stay |
-| `slot-mirror` / `task-mirror` | JWT / service | no | Stay |
+| `slot-mirror` / `task-mirror` | JWT / session | Google / CalDAV | **Ported** — session owner; foreign id ≡ random id → 404 |
 | `stripe-checkout` / `stripe-portal` | User JWT | **Stripe** | **Stay — do not touch** |
 | `stripe-webhook` | Stripe signature | **Stripe** | **Stay — do not touch** |
 
@@ -181,16 +181,16 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 | `nuvo-trim-sync-log` | SQL |
 | `nuvo-github-poll` | `github-activity` |
 | `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) |
-| `nuvo-push-dispatch` | `push-dispatch` |
+| `nuvo-push-dispatch` | `push-dispatch` (Worker Cron Trigger `* * * * *` + `/api/cron/push-dispatch`) |
 | `nuvo-reminder-deliveries-prune` | SQL |
 | `nuvo-purge-trash` | SQL |
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
-`scheduled` handler. `CRON_SECRET` is compared in constant time on
-`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
-§ Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker `scheduled`
+handler runs **push-dispatch** every minute. `CRON_SECRET` is compared in
+constant time on `/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
+§ Crons.
 
 ---
 
@@ -218,12 +218,14 @@ No automated `supabase db push` or `functions deploy` in CI.
 - Planner REST: tasks, domains, projects, initiatives, key_results, slots, labels, recurrences, record_comments, week_reviews, sprints, reminders, event_domain_routing, user_settings
 - `apply_patch`, `contacts`, `rotate_inbound_token`, `claim_reminder`
 - `/functions/v1/agent` and `/functions/v1/mcp` **aliases** (501 until those handlers move)
+- `slot-mirror` / `task-mirror` (session-owned; 404 existence oracle)
+- `push-dispatch` + Worker cron `nuvo-push-dispatch` (same VAPID pair; per-user loop, no Queue)
 
 **Stay on Supabase until a later cutover**
 
 - Billing webhooks and writers (Stripe, Apple IAP, StoreKit)
-- Calendar OAuth, sync, mirrors, Vault refresh tokens
-- Capture / MCP bearer, inbound email, push-dispatch cron
+- Calendar OAuth, sync, Vault refresh tokens (PR A/B/C)
+- Capture / MCP bearer, inbound email
 - Realtime broadcast
 - `handle_new_user` on `auth.users`
 - Google / Apple identity linking as GoTrue providers (Worker has email paths only)

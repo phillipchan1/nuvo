@@ -14,6 +14,15 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** 32-byte AES-256-GCM key (base64). PR A interface; mirrors open calendar tokens. */
+  TOKEN_ENC_KEY_V1?: string;
+  /** Same VAPID pair as today's Supabase function — a new pair breaks every sub. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+  /** Google token refresh when an access token has expired. Optional until PR B. */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

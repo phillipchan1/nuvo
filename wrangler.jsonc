@@ -34,6 +34,12 @@
   "observability": {
     "enabled": true
   },
+  // Every minute — same cadence as pg_cron `nuvo-push-dispatch`.
+  // Fan-out is a per-user SQL loop (no Queue). Flag if account count
+  // grows past Workers Paid's included CPU.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   // workers.dev only. No routes, no custom domain. Do not deploy without
   // `--env preview`. See docs/cloudflare-cutover.md.
   "env": {

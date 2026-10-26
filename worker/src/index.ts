@@ -33,10 +33,27 @@ import {
   upsertOwned,
   type PlannerTable,
 } from "./store.ts";
+import { handleSlotMirror } from "./slotMirror.ts";
+import { handleTaskMirror } from "./taskMirror.ts";
+import { PUSH_CRON_JOBS, runPushDispatch } from "./pushDispatch.ts";
+import type { FetchLike } from "./lib/webpush.ts";
 
 type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
 const app = new Hono<AppEnv>();
+
+/** Test-only: mock Google / CalDAV / web-push endpoints. */
+let testFetch: FetchLike | undefined;
+export function installWorkerFetchForTests(fn?: FetchLike): () => void {
+  testFetch = fn;
+  return () => {
+    testFetch = undefined;
+  };
+}
+
+function workerFetch(): FetchLike | undefined {
+  return testFetch;
+}
 
 /** Clone — Workers Response headers are immutable; mutating them becomes a plain-text 500. */
 function withClonedHeaders(res: Response, extra: Record<string, string>): Response {
@@ -332,12 +349,73 @@ function notPorted(name: string): Response {
   );
 }
 
-app.all("/api/cron/:job", (c) => {
+async function handlePushHttp(c: Context<AppEnv>, requireCron: boolean): Promise<Response> {
+  if (c.req.method === "OPTIONS") return new Response("ok", { headers: OPEN_CORS });
+  if (requireCron) {
+    const token = bearerToken(c.req.header("authorization"));
+    if (!cronAuthorized(token, c.env.CRON_SECRET)) {
+      return json({ error: "unauthorized" }, 401, OPEN_CORS);
+    }
+  }
+  let body: { selfTest?: boolean; clientPublicKey?: string; nowMs?: number } = {};
+  try {
+    body = await readJson(c);
+  } catch {
+    body = {};
+  }
+  const io = await requestIo(c);
+  try {
+    const result = await runPushDispatch(io.sql, c.env, {
+      selfTest: body.selfTest === true,
+      clientPublicKey: body.clientPublicKey,
+      nowMs: typeof body.nowMs === "number" ? body.nowMs : undefined,
+      fetchImpl: workerFetch(),
+    });
+    return json(result, 200, OPEN_CORS);
+  } catch {
+    return json({ error: "request failed" }, 500, OPEN_CORS);
+  }
+}
+
+app.options("/api/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+
+app.all("/api/slot-mirror", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerFetch() });
+});
+app.all("/functions/v1/slot-mirror", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerFetch() });
+});
+app.all("/api/task-mirror", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerFetch() });
+});
+app.all("/functions/v1/task-mirror", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerFetch() });
+});
+
+app.all("/api/push-dispatch", (c) => handlePushHttp(c, true));
+app.all("/functions/v1/push-dispatch", (c) => handlePushHttp(c, true));
+
+app.all("/api/cron/:job", async (c) => {
   const token = bearerToken(c.req.header("authorization"));
   if (!cronAuthorized(token, c.env.CRON_SECRET)) {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
-  return notPorted(c.req.param("job"));
+  const job = c.req.param("job");
+  if (PUSH_CRON_JOBS.has(job)) return handlePushHttp(c, false);
+  return notPorted(job);
 });
 
 app.all("/api/agent", () => notPorted("agent"));
@@ -365,4 +443,19 @@ async function fromAssets(c: { env: Env; req: { raw: Request; url: string } }): 
 app.all("/assets/*", (c) => fromAssets(c));
 app.all("*", (c) => fromAssets(c));
 
-export default app;
+async function runScheduledPush(env: Env): Promise<void> {
+  const io = openRequestIo(env);
+  try {
+    await runPushDispatch(io.sql, env, { fetchImpl: workerFetch() });
+  } finally {
+    await io.close();
+  }
+}
+
+const worker = Object.assign(app, {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runScheduledPush(env));
+  },
+});
+
+export default worker;

@@ -20,7 +20,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (aliases; handlers not ported yet) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
+| Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; same VAPID pair). Supabase copies stay until flip | n/a |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
@@ -43,7 +43,10 @@ None of these belong in the Vite bundle.
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
 | `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Jobs are not ported (501) |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. `push-dispatch` / `nuvo-push-dispatch` run; other jobs stay 501 |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **Same pair as today's Supabase function** — a new pair breaks every existing subscription |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM (base64). Mirrors open sealed calendar tokens (PR A interface) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Optional until PR B. Mirror refresh when an access token has expired |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -118,23 +121,28 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ---
 
-## Crons stay off the Worker
+## Crons
 
-`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
+`vercel.json` has **no `crons`**. The Worker now has a `scheduled` handler and a
+`* * * * *` Cron Trigger for **push-dispatch only** (same cadence as
+`nuvo-push-dispatch`). Fan-out is a per-user SQL loop — no Queue. Flag if
+account count grows past Workers Paid's included CPU.
+
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
-or wrong; 501 stay-on-Supabase if it matches). Do not add Workers Cron
-Triggers in this rehearsal.
+or wrong). Matching `push-dispatch` / `nuvo-push-dispatch` runs the dispatcher;
+every other job still returns 501 stay-on-Supabase.
 
-Every recurring job stays where it is today:
+Supabase `pg_cron` stays scheduled until flip (`cron.unschedule` is reversible
+via `00000000000002_cron.sql`):
 
 | Where | What |
 |---|---|
-| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch, github-poll, SQL prune/purge |
-| **Vercel** | nothing scheduled. If a Vercel cron is added later, it stays on Vercel until a signed-off Workers port |
+| **Worker Cron Trigger** | `push-dispatch` (VAPID web-push; same keys as Supabase) |
+| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch (until flip), github-poll, SQL prune/purge |
+| **Vercel** | nothing scheduled |
 
-A later cutover that wants Workers Cron Triggers would need a `scheduled`
-export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the
-matching `pg_cron` job — none of that is this PR.
+A later cutover that wants the remaining jobs on Workers Cron Triggers still
+needs a decision to stop each matching `pg_cron` job.
 
 ---
 

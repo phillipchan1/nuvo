@@ -6234,3 +6234,37 @@ and tel (read from the pinned 2.5.5 source), but no device was in the loop; and 
 popover (`SlideOver`), which needs a signed-in app, so it has unit tests and a typecheck only.
 Open: the first number as a 44px **Call** act in the sheet's strip beside Mark done (the Join
 pattern); the same recognition for Nuvo's pre-work, which renders as markdown.*
+
+**D-166 · 2026-10-26 · slot-mirror, task-mirror and push-dispatch run on the
+Worker against Neon. The VAPID pair does not change. A foreign id is 404.**
+
+The three functions that write a person's blocks onto their phone calendar, or
+nudge a closed app, now have a Worker + Neon path. Supabase copies stay until
+flip. The Worker is the tenant wall (no RLS): every user-data query is scoped
+by the verified session `user_id`, or by an explicit per-user loop on cron.
+
+**Mirrors.** Google-with-a-mirror-calendar still wins, then the first writable
+iCloud account (D-085 / the 2026-08-12 rank-3 audit). The device zone rides the
+request and falls back to UTC, never a home zone (D-082). A missing or foreign
+`slotId` / `taskId` is 404 — the same body as a random id — so a POST is not an
+existence oracle. Tokens open through `openToken` with AAD
+`calendar_accounts:row_id:user_id` (PR A interface).
+
+**Push.** The dispatcher still decides nothing: anchors and fire instants come
+from the shared kernel (`reminderRules.ts` / `reminderAnchors.ts`), so an open
+app and the cron still race for the same claim key. `DISPATCH_LAG_MS` is 30s.
+Fan-out is a per-user SQL loop — no Queue. 404/410 deletes that device's
+subscription only. **The VAPID pair is the same pair as today's Supabase
+function.** A new pair would silently stop every existing subscription.
+
+**Anchor.** No Question Ledger row — infrastructure, like D-164. Strains
+nothing in the product grammar. The four no's: no pool, no new user-facing
+name, no clean-data requirement, nothing that only holds in the builder's
+account.
+
+*Status: standing — rehearsal. Worker routes `/api` + `/functions/v1`. Cron
+Trigger `* * * * *` plus `/api/cron/push-dispatch`. Tests:
+`worker/src/accessHttp.check.ts` (A/B + oracle),
+`worker/src/pushDispatch.check.ts` (mocked endpoint, claim, gone),
+`worker/src/secrets.check.ts`. Inventory:
+[`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).*
