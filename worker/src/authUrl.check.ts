@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import app from "./index.ts";
+import { otpConsoleAllowed } from "./auth.ts";
 import { authConfigErrorResponse, beginAuthCors } from "./cors.ts";
+import { bearerToken, cronAuthorized, timingSafeEqualString } from "./cron.ts";
 import {
   authCookieSecure,
   connectionHostname,
@@ -52,6 +54,8 @@ ok(!isLocalAuthRuntime({ DATABASE_URL: neon }), "Neon URL is not local");
 ok(!isLocalAuthRuntime({}), "empty env is not local");
 ok(!isLocalAuthRuntime({ ENVIRONMENT: "dev" }), "ENVIRONMENT=dev is not local");
 ok(!isLocalAuthRuntime({ ENVIRONMENT: "development" }), "ENVIRONMENT=development is not local");
+ok(!isLocalAuthRuntime({ ENVIRONMENT: "preview" }), "ENVIRONMENT=preview is not a localhost fallback");
+ok(!isLocalAuthRuntime({ ENVIRONMENT: "production" }), "ENVIRONMENT=production is not local");
 ok(isLocalAuthRuntime({ ENVIRONMENT: "local" }), "ENVIRONMENT=local is local");
 ok(isLocalAuthRuntime({ ENVIRONMENT: "LOCAL" }), "ENVIRONMENT=LOCAL is local");
 ok(isLocalAuthRuntime({ DATABASE_URL: loopbackPg }), "hostname localhost is local");
@@ -104,6 +108,30 @@ ok(
   readFileSync(join(root, "wrangler.jsonc"), "utf8").includes("ENVIRONMENT=local"),
   "wrangler.jsonc documents ENVIRONMENT=local",
 );
+ok(
+  /"ENVIRONMENT": "preview"/.test(readFileSync(join(root, "wrangler.jsonc"), "utf8")),
+  "wrangler preview sets ENVIRONMENT=preview",
+);
+ok(otpConsoleAllowed({ ENVIRONMENT: "local" }), "OTP console: local");
+ok(otpConsoleAllowed({ ENVIRONMENT: "LOCAL" }), "OTP console: LOCAL");
+ok(otpConsoleAllowed({ ENVIRONMENT: "preview" }), "OTP console: preview");
+ok(otpConsoleAllowed({ ENVIRONMENT: "PREVIEW" }), "OTP console: PREVIEW");
+ok(!otpConsoleAllowed({ ENVIRONMENT: "production" }), "OTP console: never production");
+ok(!otpConsoleAllowed({ ENVIRONMENT: "prod" }), "OTP console: never prod");
+ok(!otpConsoleAllowed({}), "OTP console: unset ENVIRONMENT is silent");
+ok(!otpConsoleAllowed({ ENVIRONMENT: "dev" }), "OTP console: never dev");
+ok(timingSafeEqualString("abc", "abc"), "timing-safe: equal");
+ok(!timingSafeEqualString("abc", "abd"), "timing-safe: different bytes");
+ok(!timingSafeEqualString("abc", "ab"), "timing-safe: different length");
+ok(timingSafeEqualString("", ""), "timing-safe: empty strings compare equal");
+ok(!cronAuthorized("", ""), "cron: empty provided vs empty secret is deny");
+ok(!cronAuthorized("secret", undefined), "cron: unset secret is deny");
+ok(!cronAuthorized("secret", ""), "cron: empty secret is deny");
+ok(cronAuthorized("secret", "secret"), "cron: matching secret is allow");
+ok(!cronAuthorized("secret", "Secret"), "cron: case-sensitive");
+ok(bearerToken("Bearer abc") === "abc", "bearer: strips Bearer");
+ok(bearerToken("bearer abc") === "abc", "bearer: strips bearer");
+ok(bearerToken("abc") === "abc", "bearer: raw token");
 ok(
   /ENVIRONMENT=local/.test(readFileSync(join(root, ".dev.vars.example"), "utf8")),
   ".dev.vars.example sets ENVIRONMENT=local",
@@ -169,6 +197,30 @@ const health = await app.request("http://localhost/api/health");
 ok(health.status === 200, "GET /api/health is 200");
 const healthBody = await health.json() as { ok?: boolean; service?: string };
 ok(healthBody.ok === true && healthBody.service === "nuvo", "health body names nuvo");
+ok(health.headers.get("x-content-type-options") === "nosniff", "health: cloned security headers");
+
+const cronDenied = await app.request("http://localhost/api/cron/push-dispatch", {
+  headers: { Authorization: "Bearer nope" },
+}, { ...prodEnv, CRON_SECRET: "cron-test-secret" });
+ok(cronDenied.status === 401, `cron wrong secret: HTTP ${cronDenied.status}`);
+ok((cronDenied.headers.get("content-type") ?? "").includes("application/json"), "cron 401 is JSON");
+
+const cronUnset = await app.request("http://localhost/api/cron/push-dispatch", {
+  headers: { Authorization: "Bearer cron-test-secret" },
+}, prodEnv);
+ok(cronUnset.status === 401, "cron unset secret: 401");
+
+const cronOk = await app.request("http://localhost/api/cron/push-dispatch", {
+  headers: { Authorization: "Bearer cron-test-secret" },
+}, { ...prodEnv, CRON_SECRET: "cron-test-secret" });
+ok(cronOk.status === 501, `cron matching secret: HTTP ${cronOk.status} (not ported)`);
+const cronBody = await cronOk.json() as { stay_on_supabase?: boolean };
+ok(cronBody.stay_on_supabase === true, "cron matching secret stays on supabase");
+
+ok(
+  !/c\.res\.headers\.set/.test(readFileSync(join(root, "worker/src/index.ts"), "utf8")),
+  "index.ts does not mutate immutable c.res.headers",
+);
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

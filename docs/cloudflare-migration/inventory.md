@@ -187,9 +187,10 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker does not read
-`CRON_SECRET` and has no `scheduled` handler — see
-[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
+`scheduled` handler. `CRON_SECRET` is compared in constant time on
+`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
+§ Crons stay off the Worker.
 
 ---
 

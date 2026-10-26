@@ -7,3 +7,5 @@ BETTER_AUTH_SECRET=replace-with-32-plus-random-bytes
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
 # RESEND_API_KEY=
 # RESEND_FROM=Nuvo <noreply@localhost>
+# Optional. /api/cron/* compares this bearer in constant time.
+# CRON_SECRET=

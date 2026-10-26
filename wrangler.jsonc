@@ -16,8 +16,9 @@
   // with the Worker. Local (`.dev.vars`): ENVIRONMENT=local and optionally
   // BETTER_AUTH_URL=http://localhost:8787. ENVIRONMENT=local (or a
   // DB/Hyperdrive hostname that is exactly loopback) is the only unset-URL
-  // fallback. Preview/prod: omit ENVIRONMENT and set BETTER_AUTH_URL to the
-  // public Worker origin (docs/cloudflare-cutover.md).
+  // fallback. Preview sets ENVIRONMENT=preview (OTP log path, not a
+  // localhost fallback) and BETTER_AUTH_URL to the public Worker origin
+  // (docs/cloudflare-cutover.md). Production omits ENVIRONMENT.
   "vars": {
     "RESEND_FROM": "Nuvo <noreply@localhost>"
   },
@@ -44,7 +45,8 @@
       // dry-run warning about a missing HYPERDRIVE on preview is expected.
       "vars": {
         "RESEND_FROM": "Nuvo <noreply@localhost>",
-        "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev"
+        "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
+        "ENVIRONMENT": "preview"
       }
     }
   }

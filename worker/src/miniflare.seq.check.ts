@@ -1,0 +1,261 @@
+// workerd / miniflare sequential requests against real Postgres.
+// create → read → patch → list + cross-user isolation, each on a fresh
+// per-request client. This is the CONNECTION_ENDED path the Node+PGlite
+// harness cannot see.
+// Run: DATABASE_URL=postgresql://… node --experimental-strip-types worker/src/miniflare.seq.check.ts
+
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import postgres from "postgres";
+import { unstable_dev, type Unstable_DevWorker } from "wrangler";
+import { postgresSsl } from "./db.ts";
+
+const fails: string[] = [];
+let checks = 0;
+function ok(cond: boolean, msg: string) {
+  checks++;
+  if (!cond) fails.push(msg);
+}
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const pgUrl =
+  process.env.WORKER_SEQ_DATABASE_URL?.trim() ||
+  process.env.DATABASE_URL?.trim() ||
+  "postgresql://postgres:postgres@127.0.0.1:5432/nuvo";
+
+async function canConnect(url: string): Promise<boolean> {
+  const sql = postgres(url, { max: 1, connect_timeout: 3, ssl: postgresSsl(url) });
+  try {
+    await sql`SELECT 1`;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await sql.end({ timeout: 2 }).catch(() => undefined);
+  }
+}
+
+if (!(await canConnect(pgUrl))) {
+  if (process.env.CI) {
+    console.error(`miniflare seq: cannot reach Postgres at ${pgUrl}`);
+    process.exit(1);
+  }
+  console.log("miniflare seq: skipped (no Postgres). Set DATABASE_URL to run.");
+  process.exit(0);
+}
+
+const apply = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
+try {
+  await apply.unsafe("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;");
+  const { readFileSync } = await import("node:fs");
+  const schemaDir = join(root, "worker/schema");
+  await apply.unsafe(readFileSync(join(schemaDir, "neon.sql"), "utf8"));
+  await apply.unsafe(readFileSync(join(schemaDir, "better-auth.sql"), "utf8"));
+} finally {
+  await apply.end({ timeout: 5 });
+}
+
+mkdirSync(join(root, "dist"), { recursive: true });
+writeFileSync(join(root, "dist/index.html"), "<!doctype html><title>nuvo</title>\n");
+
+const port = 18787;
+const origin = `http://127.0.0.1:${port}`;
+const secret = "miniflare-seq-secret-32-bytes-long!";
+const cronSecret = "miniflare-seq-cron-secret";
+
+let worker: Unstable_DevWorker | undefined;
+try {
+  worker = await unstable_dev(join(root, "worker/src/index.ts"), {
+    env: "preview",
+    ip: "127.0.0.1",
+    port,
+    local: true,
+    persist: false,
+    inspect: false,
+    logLevel: "error",
+    vars: {
+      DATABASE_URL: pgUrl,
+      BETTER_AUTH_SECRET: secret,
+      BETTER_AUTH_URL: origin,
+      ENVIRONMENT: "preview",
+      CRON_SECRET: cronSecret,
+    },
+    experimental: {
+      disableExperimentalWarning: true,
+      disableDevRegistry: true,
+      watch: false,
+      showInteractiveDevSession: false,
+    },
+  });
+
+  async function request(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (!headers.has("Origin")) headers.set("Origin", origin);
+    return worker!.fetch(`${origin}${path}`, { ...init, headers });
+  }
+
+  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${label} hung after ${ms}ms`)), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
+  const health = await withTimeout(request("/api/health"), 8000, "health");
+  ok(health.status === 200, `health: HTTP ${health.status}`);
+  ok(health.headers.get("x-content-type-options") === "nosniff", "health: cloned security headers");
+
+  async function signUp(email: string, name: string): Promise<{ token: string; id: string }> {
+    const res = await withTimeout(
+      request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: "password12", name }),
+      }),
+      15000,
+      `sign-up ${email}`,
+    );
+    const text = await res.text();
+    ok(res.status === 200, `sign-up ${email}: HTTP ${res.status} ${text.slice(0, 160)}`);
+    const body = JSON.parse(text || "{}") as { token?: string; user?: { id?: string } };
+    ok(typeof body.token === "string" && body.token.length > 8, `sign-up ${email}: token`);
+    ok(typeof body.user?.id === "string", `sign-up ${email}: user id`);
+    return { token: body.token ?? "", id: body.user?.id ?? "" };
+  }
+
+  const a = await signUp("seq-a@example.test", "Seq A");
+  const b = await signUp("seq-b@example.test", "Seq B");
+
+  const createRes = await withTimeout(
+    request("/api/data/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${a.token}`,
+      },
+      body: JSON.stringify({ title: "seq create" }),
+    }),
+    15000,
+    "create",
+  );
+  const createText = await createRes.text();
+  ok(createRes.status === 200, `create: HTTP ${createRes.status} ${createText.slice(0, 200)}`);
+  const created = JSON.parse(createText || "{}") as { data?: { id?: string; title?: string; user_id?: string } };
+  ok(created.data?.title === "seq create", "create: title stored");
+  ok(typeof created.data?.id === "string", "create: id");
+  const taskId = created.data?.id ?? "";
+
+  const readRes = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${a.token}` },
+    }),
+    15000,
+    "read",
+  );
+  const readText = await readRes.text();
+  ok(readRes.status === 200, `read: HTTP ${readRes.status} ${readText.slice(0, 200)}`);
+  const read = JSON.parse(readText || "{}") as { data?: { title?: string } };
+  ok(read.data?.title === "seq create", "read: same task");
+
+  const patchRes = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${a.token}`,
+      },
+      body: JSON.stringify({ title: "seq patched" }),
+    }),
+    15000,
+    "patch",
+  );
+  const patchText = await patchRes.text();
+  ok(patchRes.status === 200, `patch: HTTP ${patchRes.status} ${patchText.slice(0, 200)}`);
+  const patched = JSON.parse(patchText || "{}") as { data?: { title?: string } };
+  ok(patched.data?.title === "seq patched", "patch: title updated");
+
+  const listRes = await withTimeout(
+    request("/api/data/tasks", {
+      headers: { Authorization: `Bearer ${a.token}` },
+    }),
+    15000,
+    "list",
+  );
+  const listText = await listRes.text();
+  ok(listRes.status === 200, `list: HTTP ${listRes.status} ${listText.slice(0, 200)}`);
+  const listed = JSON.parse(listText || "{}") as { data?: { id?: string; title?: string }[] };
+  ok(Array.isArray(listed.data) && listed.data.some((row) => row.id === taskId && row.title === "seq patched"), "list: includes patched task");
+
+  const bList = await withTimeout(
+    request("/api/data/tasks", {
+      headers: { Authorization: `Bearer ${b.token}` },
+    }),
+    15000,
+    "B list",
+  );
+  const bListBody = await bList.json() as { data?: { id?: string }[] };
+  ok(bList.status === 200, `B list: HTTP ${bList.status}`);
+  ok(Array.isArray(bListBody.data) && !bListBody.data.some((row) => row.id === taskId), "isolation: B list omits A's task");
+
+  const bRead = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${b.token}` },
+    }),
+    15000,
+    "B read",
+  );
+  ok(bRead.status === 404, `isolation: B read of A is HTTP ${bRead.status}`);
+  ok((bRead.headers.get("content-type") ?? "").includes("application/json"), "isolation: B 404 is JSON, not a plain-text 500");
+
+  const bPatch = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${b.token}`,
+      },
+      body: JSON.stringify({ title: "hijacked" }),
+    }),
+    15000,
+    "B patch",
+  );
+  ok(bPatch.status === 404, `isolation: B patch of A is HTTP ${bPatch.status}`);
+
+  const aReadAfter = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${a.token}` },
+    }),
+    15000,
+    "A re-read",
+  );
+  const after = await aReadAfter.json() as { data?: { title?: string } };
+  ok(aReadAfter.status === 200 && after.data?.title === "seq patched", "isolation: A title unchanged after B patch");
+
+  const cron = await withTimeout(
+    request("/api/cron/push-dispatch", {
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    }),
+    8000,
+    "cron",
+  );
+  ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+} finally {
+  await worker?.stop();
+}
+
+console.log(`${checks} checks, ${fails.length} failed`);
+if (fails.length) {
+  for (const f of fails) console.error("  FAIL", f);
+  process.exit(1);
+}
+console.log("miniflare seq: ok");

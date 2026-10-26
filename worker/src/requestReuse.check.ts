@@ -46,6 +46,9 @@ ok(/openSql/.test(dbSrc), "db.ts exports openSql (per-request)");
 ok(/openAuth/.test(authSrc), "auth.ts exports openAuth (per-request)");
 ok(/waitUntil/.test(ioSrc), "requestIo closes via waitUntil");
 ok(/openRequestIo/.test(indexSrc) && /scheduleClose/.test(indexSrc), "index.ts uses per-request IO + scheduleClose");
+ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
+ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
+ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;

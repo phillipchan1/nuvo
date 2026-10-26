@@ -761,13 +761,72 @@ export async function contacts(
   `;
 }
 
-export async function bootstrapUser(store: Store, email: string | null): Promise<void> {
+/**
+ * Link the Better Auth session to a planner `users` row.
+ * New auth ids collide on `users_email_key` if we only upsert by id — adopt
+ * the existing row for that verified email, or insert when the email is free.
+ * An already-linked id never takes over another row.
+ */
+export async function bootstrapUser(store: Store, email: string | null): Promise<Store> {
   const sql = store.sql;
-  await sql`
-    INSERT INTO users (id, email)
-    VALUES (${store.userId}, ${email})
-    ON CONFLICT (id) DO NOTHING
-  `;
+  const sessionId = store.userId;
+  const normalized = email?.trim().toLowerCase() || null;
+
+  const byId = (await sql`
+    SELECT id, email FROM users WHERE id = ${sessionId} LIMIT 1
+  `) as { id: string; email: string | null }[];
+  if (byId[0]) {
+    const row = byId[0];
+    if (normalized && (row.email ?? "").toLowerCase() !== normalized) {
+      const taken = (await sql`
+        SELECT id FROM users
+        WHERE lower(email) = ${normalized} AND id <> ${sessionId}
+        LIMIT 1
+      `) as { id: string }[];
+      if (!taken[0]) {
+        await sql`UPDATE users SET email = ${normalized} WHERE id = ${sessionId}`;
+      }
+    }
+    await ensureSettingsAndDomains(store);
+    return store;
+  }
+
+  if (normalized) {
+    const byEmail = (await sql`
+      SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+    `) as { id: string }[];
+    if (byEmail[0]) {
+      const adopted = makeStore(sql, byEmail[0].id);
+      await ensureSettingsAndDomains(adopted);
+      return adopted;
+    }
+  }
+
+  try {
+    await sql`
+      INSERT INTO users (id, email)
+      VALUES (${sessionId}, ${normalized})
+    `;
+  } catch {
+    if (normalized) {
+      const raced = (await sql`
+        SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+      `) as { id: string }[];
+      if (raced[0]) {
+        const adopted = makeStore(sql, raced[0].id);
+        await ensureSettingsAndDomains(adopted);
+        return adopted;
+      }
+    }
+    throw new Error("users insert failed");
+  }
+
+  await ensureSettingsAndDomains(store);
+  return store;
+}
+
+async function ensureSettingsAndDomains(store: Store): Promise<void> {
+  const sql = store.sql;
   await sql`
     INSERT INTO user_settings (user_id)
     VALUES (${store.userId})

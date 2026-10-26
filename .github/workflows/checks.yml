@@ -18,6 +18,20 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nuvo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nuvo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -49,6 +63,8 @@ jobs:
       - name: Worker typecheck
         run: npm run typecheck:worker
       - name: Worker auth + isolation + adapter checks
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nuvo
         run: npm run check:worker
       - name: Wrangler preview dry-run
         run: npm run cf:preview:dry-run

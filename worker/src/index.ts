@@ -1,6 +1,8 @@
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
 import { sessionUser } from "./auth.ts";
+import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
@@ -26,24 +28,46 @@ type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
 const app = new Hono<AppEnv>();
 
+/** Clone — Workers Response headers are immutable; mutating them becomes a plain-text 500. */
+function withClonedHeaders(res: Response, extra: Record<string, string>): Response {
+  const headers = new Headers(res.headers);
+  for (const [key, value] of Object.entries(extra)) {
+    headers.set(key, value);
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 app.use("*", async (c, next) => {
   await next();
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/") || path.startsWith("/functions/v1/")) {
-    for (const [key, value] of Object.entries(API_SECURITY)) {
-      c.res.headers.set(key, value);
-    }
+    c.res = withClonedHeaders(c.res, API_SECURITY);
   }
 });
 
-async function withIo<T>(c: { env: Env; set: (k: "io", v: RequestIo) => void; executionCtx: unknown }, fn: (io: RequestIo) => Promise<T>): Promise<T> {
+/**
+ * Open I/O lazily. Close only after `next()` (the handler) and the close
+ * itself have finished. Starting `sql.end()` from requireStore used to
+ * kill queries still running in the route (CONNECTION_ENDED).
+ */
+app.use("/api/*", async (c, next) => {
+  try {
+    await next();
+  } finally {
+    const io = c.get("io");
+    if (!io) return;
+    const closing = io.close();
+    scheduleClose(c, closing);
+    await closing;
+  }
+});
+
+async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
+  const existing = c.get("io");
+  if (existing) return existing;
   const io = openRequestIo(c.env);
   c.set("io", io);
-  try {
-    return await fn(io);
-  } finally {
-    scheduleClose(c as Parameters<typeof scheduleClose>[0], io.close());
-  }
+  return io;
 }
 
 function missingAsset(): Response {
@@ -71,21 +95,20 @@ app.all("/api/auth/*", async (c) => {
   const cors = started.cors;
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    return await withIo(c, async (io) => {
-      const res = await io.auth.handler(c.req.raw);
-      const headers = new Headers(res.headers);
-      for (const [k, v] of Object.entries(cors)) {
-        if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
-      }
-      headers.delete("Access-Control-Allow-Credentials");
-      if (cors["Access-Control-Allow-Credentials"]) {
-        headers.set("Access-Control-Allow-Credentials", "true");
-      }
-      if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
-        headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
-      }
-      return new Response(res.body, { status: res.status, headers });
-    });
+    const io = await requestIo(c);
+    const res = await io.auth.handler(c.req.raw);
+    const headers = new Headers(res.headers);
+    for (const [k, v] of Object.entries(cors)) {
+      if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
+    }
+    headers.delete("Access-Control-Allow-Credentials");
+    if (cors["Access-Control-Allow-Credentials"]) {
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+    if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
+      headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
+    }
+    return new Response(res.body, { status: res.status, headers });
   } catch {
     return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500,
@@ -94,14 +117,12 @@ app.all("/api/auth/*", async (c) => {
   }
 });
 
-async function requireStore(c: { env: Env; req: { raw: Request }; set: (k: "io", v: RequestIo) => void; executionCtx: unknown }) {
-  return withIo(c, async (io) => {
-    const user = await sessionUser(io.auth, c.req.raw);
-    if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-    const store = makeStore(io.sql, user.id);
-    await bootstrapUser(store, user.email ?? null);
-    return { store };
-  });
+async function requireStore(c: Context<AppEnv>) {
+  const io = await requestIo(c);
+  const user = await sessionUser(io.auth, c.req.raw);
+  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
+  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null);
+  return { store };
 }
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
@@ -237,6 +258,14 @@ function notPorted(name: string): Response {
     OPEN_CORS,
   );
 }
+
+app.all("/api/cron/:job", (c) => {
+  const token = bearerToken(c.req.header("authorization"));
+  if (!cronAuthorized(token, c.env.CRON_SECRET)) {
+    return json({ error: "unauthorized" }, 401, OPEN_CORS);
+  }
+  return notPorted(c.req.param("job"));
+});
 
 app.all("/api/agent", () => notPorted("agent"));
 app.all("/api/mcp", () => notPorted("mcp"));

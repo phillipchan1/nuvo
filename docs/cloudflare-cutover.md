@@ -40,9 +40,10 @@ None of these belong in the Vite bundle.
 | `DATABASE_URL` | secret | **Required on preview.** Optional local fallback when Hyperdrive is set |
 | `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
-| `ENVIRONMENT` | local `.dev.vars` only | `local` for `wrangler dev`. Must not be `local` on workers.dev |
-| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT=local` |
+| `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
+| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Jobs are not ported (501) |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -87,8 +88,10 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ## Crons stay off the Worker
 
-`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler** and
-does not read `CRON_SECRET`. Do not add either for this rehearsal.
+`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
+`CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
+or wrong; 501 stay-on-Supabase if it matches). Do not add Workers Cron
+Triggers in this rehearsal.
 
 Every recurring job stays where it is today:
 

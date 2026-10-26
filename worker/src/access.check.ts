@@ -291,6 +291,31 @@ ok((await count("domains", "user_id = $1", [C])) === 4, "bootstrap: empty C stil
 ok((await count("domains", "user_id = $1 AND name = $2", [C, "B Work"])) === 0, "bootstrap: C did not inherit B Work");
 ok((await count("domains", "user_id = $1", [B])) === 1, "bootstrap: B domain count unchanged");
 
+const SEED = "44444444-4444-4444-4444-444444444444";
+const AUTH_NEW = "55555555-5555-5555-5555-555555555555";
+await db.exec(`
+  INSERT INTO users (id, email) VALUES ('${SEED}', 'seed@example.test');
+  INSERT INTO domains (id, user_id, name, color) VALUES
+    ('44444444-0000-4000-8000-000000000001', '${SEED}', 'Seed Work', '#2563EB');
+`);
+const adopted = await bootstrapUser(makeStore(sql, AUTH_NEW), "seed@example.test");
+ok(adopted.userId === SEED, "bootstrap: new auth id adopts the existing email row");
+ok((await count("users", "lower(email) = $1", ["seed@example.test"])) === 1, "bootstrap: email stays unique");
+ok((await count("users", "id = $1", [AUTH_NEW])) === 0, "bootstrap: does not insert a colliding auth id");
+ok((await count("domains", "user_id = $1 AND name = $2", [SEED, "Seed Work"])) === 1, "bootstrap: adopted row keeps its domain");
+ok((await getOwned(adopted, "domains", "44444444-0000-4000-8000-000000000001")) != null, "bootstrap: adopted store can read the row");
+
+const stayC = await bootstrapUser(storeC, "b@example.test");
+ok(stayC.userId === C, "bootstrap: existing user cannot take over another email's row");
+ok((await getOwned(stayC, "domains", DOMAIN_B)) === null, "bootstrap: C still cannot read B after a takeover attempt");
+ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [C])) === "c@example.test", "bootstrap: C email unchanged when target email is taken");
+ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [B])) === "b@example.test", "bootstrap: B email unchanged");
+
+const reB = await bootstrapUser(makeStore(sql, "66666666-6666-6666-6666-666666666666"), "b@example.test");
+ok(reB.userId === B, "bootstrap: re-signup of B's email adopts B");
+ok((await getOwned(reB, "domains", DOMAIN_B)) != null, "bootstrap: adopted B session sees B's domain");
+ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B still cannot read A");
+
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {
   for (const f of fails) console.error("  FAIL", f);

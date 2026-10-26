@@ -1,11 +1,17 @@
 import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
-import { authCookieSecure, isLocalAuthHost, isLocalAuthRuntime, resolveAuthBaseURL } from "./authUrl.ts";
+import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
 export type AuthInstance = ReturnType<typeof createAuth>;
+
+/** Console OTP delivery: `ENVIRONMENT=local` or `ENVIRONMENT=preview` only. Never production. */
+export function otpConsoleAllowed(env: Pick<Env, "ENVIRONMENT">): boolean {
+  const mode = (env.ENVIRONMENT ?? "").trim().toLowerCase();
+  return mode === "local" || mode === "preview";
+}
 
 async function sendOtpEmail(env: Env, email: string, otp: string, type: string): Promise<void> {
   const subject = type === "forget-password"
@@ -13,7 +19,7 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
     : "Your Nuvo sign-in code";
   const text = `Your code is ${otp}. It expires in 5 minutes.\n\nIf you did not request this, ignore the email.`;
   if (!env.RESEND_API_KEY) {
-    if (isLocalAuthRuntime(env)) {
+    if (otpConsoleAllowed(env)) {
       console.log(`[auth] OTP for ${email} (${type}): ${otp}`);
     }
     return;
