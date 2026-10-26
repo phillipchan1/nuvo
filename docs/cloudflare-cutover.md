@@ -7,6 +7,7 @@ Live Nuvo stays on Vercel + Supabase. This branch adds a Worker that is inert
 unless `VITE_API_BASE_URL` is set on a build.
 
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
+Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
 ---

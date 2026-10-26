@@ -154,7 +154,14 @@ export async function getOwned(
       case "event_domain_routing":
         return sql`SELECT * FROM event_domain_routing WHERE id = ${id} AND user_id = ${store.userId} LIMIT 1`;
       case "user_settings":
-        return sql`SELECT * FROM user_settings WHERE user_id = ${store.userId} LIMIT 1`;
+        // PK is user_id. Path id must be this session's owner — a foreign
+        // id used to return the caller's own row (and DELETE would wipe it).
+        return sql`
+          SELECT * FROM user_settings
+          WHERE user_id = ${store.userId}
+            AND user_id = ${id}
+          LIMIT 1
+        `;
     }
   })();
   return rows[0] ?? null;
@@ -536,6 +543,7 @@ export async function updateOwned(
     });
   }
   if (table === "user_settings") {
+    if (id !== store.userId) return null;
     if (typeof patch.theme !== "string") return null;
     return updateSettingsTheme(store, patch.theme);
   }
@@ -616,7 +624,12 @@ export async function deleteOwned(
       case "event_domain_routing":
         return sql`DELETE FROM event_domain_routing WHERE id = ${id} AND user_id = ${store.userId} RETURNING id`;
       case "user_settings":
-        return sql`DELETE FROM user_settings WHERE user_id = ${store.userId} RETURNING user_id AS id`;
+        return sql`
+          DELETE FROM user_settings
+          WHERE user_id = ${store.userId}
+            AND user_id = ${id}
+          RETURNING user_id AS id
+        `;
     }
   })();
   return rows.length;
@@ -715,6 +728,9 @@ export async function applyPatch(
     return { applied: row ? ["name"] : [], rejected, matched: row ? 1 : 0 };
   }
   if (table === "user_settings" && theme) {
+    if (matchId && matchId !== store.userId) {
+      return { applied: [], rejected, matched: 0 };
+    }
     const row = await updateSettingsTheme(store, theme);
     return { applied: row ? ["theme"] : [], rejected, matched: row ? 1 : 0 };
   }
