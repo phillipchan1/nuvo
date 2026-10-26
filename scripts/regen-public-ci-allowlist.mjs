@@ -1,8 +1,9 @@
 /**
  * Rewrite scripts/guard-public-ci.allowlist.json from the committed
  * workflows. Every run/uses step (and reusable-workflow job.uses) is
- * hashed: canonical step fields + job env/defaults/runs-on/needs +
- * workflow on:/env/defaults/permissions.
+ * hashed as the whole step + whole job minus steps + whole workflow
+ * minus jobs. Also records the ordered job list per workflow and the
+ * ordered step-id list per job.
  *
  *   node scripts/regen-public-ci-allowlist.mjs
  *

@@ -1,0 +1,4 @@
+# Public-repo CI guard: default-deny allowlist and every workflow step.
+scripts/guard-public-ci.allowlist.json @phillipchan1
+scripts/guard-public-ci.mjs @phillipchan1
+.github/workflows/ @phillipchan1

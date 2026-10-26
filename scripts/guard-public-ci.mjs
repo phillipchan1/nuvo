@@ -37,10 +37,15 @@
  *   9. Default-deny allowlist: every step (run and uses, including
  *      actions/github-script) and every reusable-workflow job uses is
  *      rejected unless listed by file+job+step id with a sha256 of the
- *      canonicalized step (run, uses, with, shell, env, working-directory,
- *      if, continue-on-error) plus the job's env/defaults/runs-on/needs
- *      and the workflow's on:/env/defaults/permissions. A new job, step,
- *      trigger, or env change fails. Regen: scripts/regen-public-ci-allowlist.mjs.
+ *      whole canonical step (every key, including timeout-minutes) plus
+ *      the whole job minus steps (container, services, strategy, if,
+ *      environment, permissions, outputs, concurrency, timeout-minutes,
+ *      uses/with/secrets, …) plus the whole workflow minus jobs
+ *      (on, concurrency, run-name, env, defaults, permissions, …).
+ *      Unknown keys are included — the full object is hashed, not a key
+ *      list. Per job, the ordered step-id list is hashed and duplicate
+ *      ids are rejected. Per workflow, the ordered job list is hashed.
+ *      Regen: scripts/regen-public-ci-allowlist.mjs.
  *  10. Always, even on an allowlisted step: BASH_ENV / ENV keys.
  *      Outside an allowlisted step: writes to $GITHUB_ENV / $GITHUB_PATH,
  *      and writes to RELEASE_NOTES.md or release paths.
@@ -52,7 +57,9 @@
  * ## Limits
  *
  * `actions/github-script` and reusable-workflow `jobs.<id>.uses` are
- * covered by the default-deny allowlist. `nc` and other non-`gh` exfil
+ * covered by the default-deny allowlist. The whole job minus steps and
+ * the whole workflow minus jobs are hashed; duplicate step ids and a
+ * changed job/step order fail. `nc` and other non-`gh` exfil
  * inside an already-allowlisted run are out of scope for the value
  * deny-list. Reviewers must read the hashed step before bumping its
  * sha256. Regenerating hashes is
@@ -253,64 +260,84 @@ function normalizeStep(step, line = 1) {
   };
 }
 
-function workflowContext(doc) {
-  return {
-    on: doc?.on ?? null,
-    env: doc?.env ?? null,
-    defaults: doc?.defaults ?? null,
-    permissions: doc?.permissions ?? null,
-  };
-}
-
-function jobContext(job) {
-  if (!job || typeof job !== "object") {
-    return { env: null, defaults: null, "runs-on": null, needs: null, uses: null };
+/** Copy an object minus one key. Arrays and non-objects pass through. */
+export function omitKey(obj, key) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj ?? null;
+  const out = {};
+  for (const k of Object.keys(obj)) {
+    if (k !== key) out[k] = obj[k];
   }
-  return {
-    env: job.env ?? null,
-    defaults: job.defaults ?? null,
-    "runs-on": job["runs-on"] ?? null,
-    needs: job.needs ?? null,
-    uses: job.uses ?? null,
-  };
+  return out;
 }
 
-function unitFromStep(step, jobName, wfCtx, jobCtx, kind = "step") {
+export function canonicalizeWorkflow(doc) {
+  return stableValue(omitKey(doc, "jobs"));
+}
+
+export function canonicalizeJob(job) {
+  return stableValue(omitKey(job, "steps"));
+}
+
+export function canonicalizeStep(step) {
+  if (step == null) return null;
+  if (typeof step === "string") return stableValue({ run: step });
+  return stableValue(step);
+}
+
+function unitFromStep(step, jobName, wfCanon, jobCanon, kind = "step") {
   const n = normalizeStep(step);
-  return { ...n, job: jobName, kind, wfCtx, jobCtx };
+  return {
+    ...n,
+    job: jobName,
+    kind,
+    wfCanon,
+    jobCanon,
+    stepCanon: canonicalizeStep(kind === "job-uses" ? omitKey(step, "id") : step),
+    jobCtx: jobCanon,
+    wfCtx: wfCanon,
+  };
 }
 
 /**
- * Every run/uses step and reusable-workflow job.uses, with the workflow
- * and job fields that go into the allowlist hash.
+ * Every run/uses step and reusable-workflow job.uses, with the full
+ * workflow (minus jobs) and job (minus steps) objects that go into the
+ * allowlist hash.
  */
 export function collectWorkflowUnits(workflowText) {
   const doc = parseWorkflowDocument(workflowText);
-  const wfCtx = workflowContext(doc);
+  const wfCanon = canonicalizeWorkflow(doc);
   const units = [];
+  const jobs = [];
   if (doc.jobs && typeof doc.jobs === "object") {
+    const jobOrder = Object.keys(doc.jobs);
     for (const [jobName, job] of Object.entries(doc.jobs)) {
       if (!job || typeof job !== "object") continue;
-      const jobCtx = jobContext(job);
+      const jobCanon = canonicalizeJob(job);
+      const stepIds = [];
+      const seen = new Set();
+      const duplicateIds = [];
       if (job.uses) {
-        units.push(
-          unitFromStep({ uses: job.uses, with: job.with, id: "" }, jobName, wfCtx, jobCtx, "job-uses"),
-        );
+        units.push(unitFromStep(job, jobName, wfCanon, jobCanon, "job-uses"));
       }
       if (Array.isArray(job.steps)) {
         for (const step of job.steps) {
-          units.push(unitFromStep(step, jobName, wfCtx, jobCtx, "step"));
+          const id = step && typeof step === "object" ? String(step.id ?? "") : "";
+          if (seen.has(id)) duplicateIds.push(id);
+          seen.add(id);
+          stepIds.push(id);
+          units.push(unitFromStep(step, jobName, wfCanon, jobCanon, "step"));
         }
       }
+      jobs.push({ name: jobName, stepIds, duplicateIds, jobCanon });
     }
-    return { doc, full: true, units };
+    return { doc, full: true, units, jobs, jobOrder, wfCanon };
   }
   if (Array.isArray(doc.steps)) {
-    for (const step of doc.steps) units.push(unitFromStep(step, "", wfCtx, jobContext(null)));
+    for (const step of doc.steps) units.push(unitFromStep(step, "", wfCanon, null));
   } else if (doc.uses != null || doc.run != null) {
-    units.push(unitFromStep(doc, "", wfCtx, jobContext(null)));
+    units.push(unitFromStep(doc, "", wfCanon, null));
   }
-  return { doc, full: false, units };
+  return { doc, full: false, units, jobs, jobOrder: [], wfCanon };
 }
 
 /**
@@ -1072,30 +1099,10 @@ export function stableValue(value) {
 }
 
 export function canonicalizeUnit(unit) {
-  const withBlock = unit.with && typeof unit.with === "object" && Object.keys(unit.with).length ? unit.with : null;
   return stableValue({
-    on: unit.wfCtx?.on ?? null,
-    env: unit.wfCtx?.env ?? null,
-    defaults: unit.wfCtx?.defaults ?? null,
-    permissions: unit.wfCtx?.permissions ?? null,
-    job: {
-      env: unit.jobCtx?.env ?? null,
-      defaults: unit.jobCtx?.defaults ?? null,
-      "runs-on": unit.jobCtx?.["runs-on"] ?? null,
-      needs: unit.jobCtx?.needs ?? null,
-      uses: unit.jobCtx?.uses ?? null,
-    },
-    step: {
-      id: unit.id || "",
-      run: unit.run || null,
-      uses: unit.uses || null,
-      with: withBlock,
-      shell: unit.shell ?? null,
-      env: unit.env ?? null,
-      "working-directory": unit.workingDirectory ?? null,
-      if: unit.if ?? null,
-      "continue-on-error": unit.continueOnError ?? null,
-    },
+    workflow: unit.wfCanon ?? null,
+    job: unit.jobCanon ?? null,
+    step: unit.stepCanon ?? null,
   });
 }
 
@@ -1103,37 +1110,101 @@ export function unitHash(unit) {
   return runContentHash(canonicalizeUnit(unit));
 }
 
-export function loadRunAllowlist(path = RUN_ALLOWLIST_PATH) {
-  if (!existsSync(path)) return [];
-  const raw = JSON.parse(readFileSync(path, "utf8"));
-  const steps = raw?.steps;
-  if (!Array.isArray(steps)) return [];
-  return steps.map((s) => ({
+export function listHash(ids) {
+  return runContentHash(Array.isArray(ids) ? ids : []);
+}
+
+function sameList(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+function normalizeStepEntry(s) {
+  return {
     file: String(s.file ?? ""),
     job: String(s.job ?? ""),
     id: String(s.id ?? ""),
     sha256: String(s.sha256 ?? ""),
-  }));
+  };
+}
+
+function normalizeJobStepsEntry(s) {
+  const ids = Array.isArray(s.ids) ? s.ids.map((id) => String(id ?? "")) : [];
+  return {
+    file: String(s.file ?? ""),
+    job: String(s.job ?? ""),
+    ids,
+    sha256: String(s.sha256 ?? listHash(ids)),
+  };
+}
+
+function normalizeWorkflowJobsEntry(s) {
+  const jobs = Array.isArray(s.jobs) ? s.jobs.map((j) => String(j ?? "")) : [];
+  return {
+    file: String(s.file ?? ""),
+    jobs,
+    sha256: String(s.sha256 ?? listHash(jobs)),
+  };
+}
+
+export function normalizeAllowlist(raw) {
+  if (Array.isArray(raw)) {
+    return { steps: raw.map(normalizeStepEntry), job_steps: null, workflow_jobs: null };
+  }
+  if (!raw || typeof raw !== "object") {
+    return { steps: [], job_steps: [], workflow_jobs: [] };
+  }
+  return {
+    steps: Array.isArray(raw.steps) ? raw.steps.map(normalizeStepEntry) : [],
+    job_steps: Array.isArray(raw.job_steps) ? raw.job_steps.map(normalizeJobStepsEntry) : [],
+    workflow_jobs: Array.isArray(raw.workflow_jobs) ? raw.workflow_jobs.map(normalizeWorkflowJobsEntry) : [],
+  };
+}
+
+export function loadRunAllowlist(path = RUN_ALLOWLIST_PATH) {
+  if (!existsSync(path)) return { steps: [], job_steps: [], workflow_jobs: [] };
+  return normalizeAllowlist(JSON.parse(readFileSync(path, "utf8")));
 }
 
 export function isUnitAllowlisted(filename, unit, allowlist) {
+  const steps = Array.isArray(allowlist) ? allowlist : (allowlist?.steps ?? []);
   const hash = unitHash(unit);
-  return allowlist.some(
+  return steps.some(
     (e) => e.file === filename && e.job === (unit.job || "") && e.id === (unit.id || "") && e.sha256 === hash,
   );
 }
 
-export function neededStepAllowlist(workflowsDir) {
+export function neededAllowlist(workflowsDir) {
   const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
-  const needed = [];
+  const steps = [];
+  const job_steps = [];
+  const workflow_jobs = [];
   for (const name of names.sort()) {
     const text = readFileSync(join(workflowsDir, name), "utf8");
-    const { units } = collectWorkflowUnits(text);
-    for (const unit of units) {
-      needed.push({ file: name, job: unit.job || "", id: unit.id || "", sha256: unitHash(unit) });
+    const collected = collectWorkflowUnits(text);
+    for (const unit of collected.units) {
+      steps.push({ file: name, job: unit.job || "", id: unit.id || "", sha256: unitHash(unit) });
+    }
+    if (collected.full) {
+      workflow_jobs.push({
+        file: name,
+        jobs: collected.jobOrder,
+        sha256: listHash(collected.jobOrder),
+      });
+      for (const job of collected.jobs) {
+        job_steps.push({
+          file: name,
+          job: job.name,
+          ids: job.stepIds,
+          sha256: listHash(job.stepIds),
+        });
+      }
     }
   }
-  return needed;
+  return { steps, job_steps, workflow_jobs };
+}
+
+export function neededStepAllowlist(workflowsDir) {
+  return neededAllowlist(workflowsDir).steps;
 }
 
 export function hasHeredoc(run) {
@@ -1447,9 +1518,33 @@ function scanRunScript(run, filename, depth = 0) {
 
 export function findForbiddenUploadCommands(workflowText, filename = "workflow", options = {}) {
   const hits = [];
-  const allowlist = options.allowlist ?? loadRunAllowlist();
-  const { doc, full, units } = collectWorkflowUnits(workflowText);
+  const allowlist = normalizeAllowlist(options.allowlist ?? loadRunAllowlist());
+  const { doc, full, units, jobs, jobOrder } = collectWorkflowUnits(workflowText);
   for (const hit of forbiddenEnvKeyHits(doc, units)) hits.push(hit);
+  if (full) {
+    for (const job of jobs) {
+      for (const _id of job.duplicateIds) {
+        pushHit(hits, 1, "duplicate step id");
+      }
+      if (allowlist.job_steps) {
+        const listed = allowlist.job_steps.find((j) => j.file === filename && j.job === job.name);
+        if (!listed || listed.sha256 !== listHash(job.stepIds) || !sameList(listed.ids, job.stepIds)) {
+          pushHit(hits, 1, "job step ids");
+        }
+      }
+    }
+    if (allowlist.job_steps) {
+      for (const listed of allowlist.job_steps.filter((j) => j.file === filename)) {
+        if (!jobs.some((j) => j.name === listed.job)) pushHit(hits, 1, "job step ids");
+      }
+    }
+    if (allowlist.workflow_jobs) {
+      const listed = allowlist.workflow_jobs.find((w) => w.file === filename);
+      if (!listed || listed.sha256 !== listHash(jobOrder) || !sameList(listed.jobs, jobOrder)) {
+        pushHit(hits, 1, "workflow jobs");
+      }
+    }
+  }
   for (const unit of units) {
     if (unit.uses && isForbiddenUse(unit.uses)) {
       hits.push({ line: unit.line, kind: forbiddenUseKind(unit.uses) });
@@ -1645,9 +1740,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const writeAllowlist = process.argv.includes("--write-allowlist");
   if (writeAllowlist) {
     const dir = join(here, "..", ".github", "workflows");
-    const steps = neededStepAllowlist(dir);
-    writeFileSync(RUN_ALLOWLIST_PATH, `${JSON.stringify({ algorithm: "sha256", steps }, null, 2)}\n`);
-    console.log(`public-ci-guard: wrote ${steps.length} step hash(es) to ${RUN_ALLOWLIST_PATH}`);
+    const needed = neededAllowlist(dir);
+    writeFileSync(RUN_ALLOWLIST_PATH, `${JSON.stringify({ algorithm: "sha256", ...needed }, null, 2)}\n`);
+    console.log(
+      `public-ci-guard: wrote ${needed.steps.length} step hash(es), ${needed.job_steps.length} job id-list(s), ${needed.workflow_jobs.length} workflow job-list(s) to ${RUN_ALLOWLIST_PATH}`,
+    );
   } else if (checkLog) {
     const idx = process.argv.indexOf("--check-log");
     const logDir = process.argv[idx + 1] || process.env.CUTOVER_LOG_DIR || "";

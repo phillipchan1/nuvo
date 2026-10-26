@@ -17,7 +17,9 @@ import {
   findForbiddenUploadCommands,
   isUnitAllowlisted,
   loadRunAllowlist,
+  neededAllowlist,
   neededStepAllowlist,
+  listHash,
   unitHash,
   writesGithubEnv,
   writesGithubPath,
@@ -630,6 +632,10 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/guard-public-ci\.allowlist\.json/);
     expect(doc).toMatch(/regen-public-ci-allowlist/);
     expect(doc).toMatch(/pull_request_target/);
+    expect(doc).toMatch(/job minus `steps`/);
+    expect(doc).toMatch(/ordered step-id list/);
+    expect(src).toMatch(/whole canonical step/);
+    expect(src).toMatch(/duplicate step ids/);
     expect(existsSync(join(ROOT, "scripts/regen-public-ci-allowlist.mjs"))).toBe(true);
   });
 
@@ -655,11 +661,14 @@ describe("public-repo CI guard", () => {
   });
 
   it("committed allowlist hashes match every workflow unit", () => {
-    const needed = neededStepAllowlist(join(ROOT, ".github/workflows"));
+    const needed = neededAllowlist(join(ROOT, ".github/workflows"));
     const committed = loadRunAllowlist();
-    expect(needed.length).toBeGreaterThan(10);
-    expect(needed.every((s) => s.file && s.job && s.id && s.sha256)).toBe(true);
+    expect(needed.steps.length).toBeGreaterThan(10);
+    expect(needed.steps.every((s) => s.file && s.job && s.id && s.sha256)).toBe(true);
+    expect(needed.job_steps.every((j) => j.file && j.job && Array.isArray(j.ids) && j.sha256)).toBe(true);
+    expect(needed.workflow_jobs.every((w) => w.file && Array.isArray(w.jobs) && w.sha256)).toBe(true);
     expect(committed).toEqual(needed);
+    expect(neededStepAllowlist(join(ROOT, ".github/workflows"))).toEqual(needed.steps);
   });
 
   it("100e: env/shell/working-directory edits, copied job BUNDLE override, pull_request_target", () => {
@@ -672,18 +681,24 @@ describe("public-repo CI guard", () => {
     expect(
       isUnitAllowlisted(
         "release.yml",
-        { ...publish, env: { ...(publish.env ?? {}), LEAK: "1" } },
+        { ...publish, stepCanon: { ...publish.stepCanon, env: { ...(publish.stepCanon?.env ?? {}), LEAK: "1" } } },
         allowlist,
       ),
     ).toBe(false);
-    expect(isUnitAllowlisted("release.yml", { ...publish, shell: "bash" }, allowlist)).toBe(false);
     expect(
-      isUnitAllowlisted("release.yml", { ...publish, workingDirectory: "/tmp" }, allowlist),
+      isUnitAllowlisted("release.yml", { ...publish, stepCanon: { ...publish.stepCanon, shell: "bash" } }, allowlist),
     ).toBe(false);
     expect(
       isUnitAllowlisted(
         "release.yml",
-        { ...publish, wfCtx: { ...publish.wfCtx, on: { pull_request_target: {} } } },
+        { ...publish, stepCanon: { ...publish.stepCanon, "working-directory": "/tmp" } },
+        allowlist,
+      ),
+    ).toBe(false);
+    expect(
+      isUnitAllowlisted(
+        "release.yml",
+        { ...publish, wfCanon: { ...publish.wfCanon, on: { pull_request_target: {} } } },
         allowlist,
       ),
     ).toBe(false);
@@ -693,7 +708,7 @@ describe("public-repo CI guard", () => {
         {
           ...publish,
           job: "leak",
-          jobCtx: { ...publish.jobCtx, env: { ...(publish.jobCtx?.env ?? {}), BUNDLE: "/tmp/leak" } },
+          jobCanon: { ...publish.jobCanon, env: { ...(publish.jobCanon?.env ?? {}), BUNDLE: "/tmp/leak" } },
         },
         allowlist,
       ),
@@ -701,14 +716,24 @@ describe("public-repo CI guard", () => {
 
     const envEdit = wf("- id: s\n  run: echo hi\n  env:\n    FOO: bar");
     const envUnit = collectWorkflowUnits(envEdit).units[0];
-    const envEntry = { file: "t.yml", job: "t", id: "s", sha256: unitHash({ ...envUnit, env: null }) };
+    const envEntry = {
+      file: "t.yml",
+      job: "t",
+      id: "s",
+      sha256: unitHash({ ...envUnit, stepCanon: { ...envUnit.stepCanon, env: null } }),
+    };
     expect(findForbiddenUploadCommands(envEdit, "t.yml", { allowlist: [envEntry] }).map((h) => h.kind)).toContain(
       "step allowlist",
     );
 
     const shellEdit = wf("- id: s\n  shell: bash\n  run: echo hi");
     const shellUnit = collectWorkflowUnits(shellEdit).units[0];
-    const shellEntry = { file: "t.yml", job: "t", id: "s", sha256: unitHash({ ...shellUnit, shell: null }) };
+    const shellEntry = {
+      file: "t.yml",
+      job: "t",
+      id: "s",
+      sha256: unitHash({ ...shellUnit, stepCanon: { ...shellUnit.stepCanon, shell: null } }),
+    };
     expect(findForbiddenUploadCommands(shellEdit, "t.yml", { allowlist: [shellEntry] }).map((h) => h.kind)).toContain(
       "step allowlist",
     );
@@ -719,7 +744,7 @@ describe("public-repo CI guard", () => {
       file: "t.yml",
       job: "t",
       id: "s",
-      sha256: unitHash({ ...wdUnit, workingDirectory: null }),
+      sha256: unitHash({ ...wdUnit, stepCanon: { ...wdUnit.stepCanon, "working-directory": null } }),
     };
     expect(findForbiddenUploadCommands(wdEdit, "t.yml", { allowlist: [wdEntry] }).map((h) => h.kind)).toContain(
       "step allowlist",
@@ -880,6 +905,89 @@ describe("public-repo CI guard", () => {
     }
   });
 
+  it("100h: container on release job, deleted/reordered/duplicated steps, extra job", () => {
+    const release = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
+    const allowlist = loadRunAllowlist();
+    expect(findForbiddenUploadCommands(release, "release.yml", { allowlist })).toEqual([]);
+
+    const withContainer = release.replace(
+      /  release:\n    needs: changes/,
+      "  release:\n    container: evil\n    needs: changes",
+    );
+    expect(findForbiddenUploadCommands(withContainer, "release.yml", { allowlist }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
+
+    const deletedSigning = release.replace(/\n      - id: signing\n[\s\S]*?(?=\n      - id: release-notes)/, "\n");
+    expect(findForbiddenUploadCommands(deletedSigning, "release.yml", { allowlist }).map((h) => h.kind)).toContain(
+      "job step ids",
+    );
+
+    const cutover = readFileSync(join(ROOT, ".github/workflows/cutover-migrate.yml"), "utf8");
+    const deletedAssert = cutover.replace(/\n      - id: assert-logs\n[\s\S]*?(?=\n      # Guard:)/, "\n");
+    expect(findForbiddenUploadCommands(deletedAssert, "cutover-migrate.yml", { allowlist }).map((h) => h.kind)).toContain(
+      "job step ids",
+    );
+
+    const publishBlock = release.match(/\n      - id: publish\n[\s\S]*?(?=\n      - id: record-sha)/)?.[0];
+    if (!publishBlock) throw new Error("publish block missing");
+    const reordered = release.replace(publishBlock, "\n").replace(
+      /(\n      - id: checkout\n        uses: actions\/checkout[^\n]+\n        with:\n          fetch-depth: 0\n\n      - id: setup-node)/,
+      `${publishBlock}$1`,
+    );
+    expect(findForbiddenUploadCommands(reordered, "release.yml", { allowlist }).map((h) => h.kind)).toContain(
+      "job step ids",
+    );
+
+    const duplicated = release.replace(
+      /(\n      - id: publish\n)/,
+      "$1        name: First publish\n        run: echo one\n      - id: publish\n",
+    );
+    expect(findForbiddenUploadCommands(duplicated, "release.yml", { allowlist }).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["duplicate step id", "job step ids"]),
+    );
+
+    const extraJob = `${release.trimEnd()}\n  sneak:\n    runs-on: ubuntu-latest\n    steps:\n      - id: x\n        run: echo hi\n`;
+    expect(findForbiddenUploadCommands(extraJob, "release.yml", { allowlist }).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["workflow jobs", "step allowlist", "job step ids"]),
+    );
+
+    const timeout = wf("- id: s\n  timeout-minutes: 5\n  run: echo hi");
+    const base = collectWorkflowUnits(wf("- id: s\n  run: echo hi")).units[0];
+    const timed = collectWorkflowUnits(timeout).units[0];
+    expect(unitHash(timed)).not.toBe(unitHash(base));
+    expect(
+      findForbiddenUploadCommands(timeout, "t.yml", {
+        allowlist: [{ file: "t.yml", job: "t", id: "s", sha256: unitHash(base) }],
+      }).map((h) => h.kind),
+    ).toContain("step allowlist");
+
+    const runName = wf("- id: s\n  run: echo hi").replace("on: push", "run-name: leak\non: push");
+    const plain = collectWorkflowUnits(wf("- id: s\n  run: echo hi")).units[0];
+    expect(
+      findForbiddenUploadCommands(runName, "t.yml", {
+        allowlist: [{ file: "t.yml", job: "t", id: "s", sha256: unitHash(plain) }],
+      }).map((h) => h.kind),
+    ).toContain("step allowlist");
+
+    expect(listHash(["a", "b"])).not.toBe(listHash(["b", "a"]));
+    expect(listHash(["a", "b"])).not.toBe(listHash(["a"]));
+  });
+
+  it("pins third-party actions to full commit SHAs and requires CODEOWNERS review", () => {
+    const dir = join(ROOT, ".github/workflows");
+    for (const name of ["checks.yml", "cutover-migrate.yml", "ios-release.yml", "release.yml"]) {
+      for (const unit of collectSteps(readFileSync(join(dir, name), "utf8"))) {
+        if (!unit.uses) continue;
+        expect(unit.uses, `${name} ${unit.id}`).toMatch(/@[0-9a-f]{40}\b/i);
+      }
+    }
+    const owners = readFileSync(join(ROOT, ".github/CODEOWNERS"), "utf8");
+    expect(owners).toMatch(/scripts\/guard-public-ci\.allowlist\.json\s+@phillipchan1/);
+    expect(owners).toMatch(/scripts\/guard-public-ci\.mjs\s+@phillipchan1/);
+    expect(owners).toMatch(/\.github\/workflows\/\s+@phillipchan1/);
+  });
+
   it("rejects a multi-path dump + hash upload", () => {
     expect(() =>
       assertWorkflowUploadAllowlist(
@@ -1005,6 +1113,9 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/name: Shred dumps/);
     expect(workflow).toMatch(/id: guard/);
     expect(workflow).toMatch(/id: assert-logs/);
+    expect(workflow).toMatch(/id: setup-node/);
+    expect(workflow).toMatch(/id: seal-tokens/);
+    expect(workflow).toMatch(/id: resync/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);
     expect(workflow).toMatch(/--check-log/);
     expect(workflow).toContain("name: Assert cutover logs have no row data\n        if: ${{ always() }}");
