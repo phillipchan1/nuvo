@@ -27,3 +27,9 @@ export function authBaseUrl(): string {
   if (raw.endsWith("/functions/v1")) return raw.replace(/\/functions\/v1$/, "/api");
   return `${raw}/api`;
 }
+
+/** `GET /api/entitlement`. Empty when the Worker flag is off. */
+export function entitlementUrl(authBase = authBaseUrl()): string {
+  const base = authBase.replace(/\/+$/, "");
+  return base ? `${base}/entitlement` : "";
+}

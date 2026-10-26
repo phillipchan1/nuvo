@@ -8,6 +8,8 @@ unless `VITE_API_BASE_URL` is set on a build.
 
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
+Cutover-night route table: [`cloudflare-migration/route-inventory.md`](./cloudflare-migration/route-inventory.md).
+Pre-flip billing read: [`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
@@ -20,7 +22,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
 | Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
-| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (aliases; handlers not ported yet) | Point the flag at `/functions/v1` |
+| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
 | Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
 
@@ -43,11 +45,17 @@ None of these belong in the Vite bundle.
 | `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
-| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
+| `RESEND_API_KEY` | secret | OTP email + inbound-email body fetch. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. `github-poll` / `trim-sync-log` are ported; other jobs 501 |
-| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (PR A). Required for github-activity connect/sync |
-| `OPENAI_API_KEY` | secret | Direct OpenAI for github `theme`. Unset → theme lines fall back to null |
+| `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
+| `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push / google-renew stay 501 |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns |
+| `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
+| `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
+| `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
+| `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
+| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -65,6 +73,7 @@ also requires the confirm input exactly `CUTOVER nuvo`.
 | `SOURCE_DATABASE_URL` | always | Read-only Supabase URI. `PGOPTIONS=default_transaction_read_only=on`. Dump + `COPY … TO STDOUT` only |
 | `SCRATCH_DATABASE_URL` | `mode=dry-run` | Empty Neon branch the restore lands in |
 | `TARGET_DATABASE_URL` | `mode=cutover` | Neon URI. Hyperdrive is later; this job talks to Neon directly |
+| `TOKEN_ENC_KEY_V1` | token copy (after restore) | Same AES-256-GCM key as the Worker. The job calls `migration_tmp.vault_tokens()` (applied by hand — never by this workflow), seals in-process, `UPDATE`s Neon. Counts only; no token files or artifacts |
 
 Set them for the run, then **delete them**:
 
@@ -72,6 +81,7 @@ Set them for the run, then **delete them**:
 gh secret delete SOURCE_DATABASE_URL
 gh secret delete SCRATCH_DATABASE_URL
 gh secret delete TARGET_DATABASE_URL
+gh secret delete TOKEN_ENC_KEY_V1
 ```
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
@@ -157,21 +167,149 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ---
 
-## Crons
+## Crons and Queues (Workers Paid)
 
-`vercel.json` has **no `crons`**. `CRON_SECRET` is compared in constant time
-on `/api/cron/:job` (401 if unset or wrong).
+`vercel.json` still has **no `crons`**. The Worker now has Cron Triggers
+(UTC, matching today's `pg_cron`) and a `scheduled` + `queue` export.
 
-Ported to the Worker (`scheduled` + `/api/cron/:job`):
+`CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
+or wrong). The scheduled handler is Cloudflare-authenticated and calls the
+same runners. Ported jobs (`rollover`, `purge-trash`,
+`reminder-deliveries-prune`, `github-poll`, `trim-sync-log`) iterate `users`
+then scope by `user_id`. Calendar-dispatch enqueues due accounts onto
+`CALENDAR_SYNC_QUEUE`. Push / google-renew stay 501 / `stay_on_supabase`.
+`trim-sync-log` deletes by `created_at < now() - 30 days` and, when the
+identity is parked (`last_value >= 1e6`), also `id < last_value - 1e6 + 1`
+so it never deletes rows in A's resync window or resets `sync_log_id_seq`.
 
-| Job | Trigger | Notes |
+| Cron (UTC) | Job | This PR |
 |---|---|---|
-| `github-poll` / `nuvo-github-poll` | `20 9 * * *` | Per-user loop over `activity_sources`. No Queue — current scale is well inside Workers Paid CPU. |
-| `trim-sync-log` / `nuvo-trim-sync-log` | `0 10 * * 0` | Per-user `DELETE` of `sync_log` older than 30 days |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 |
+| `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
+| `15 9 * * *` | `google-renew` | 501 |
+| `20 9 * * *` | `github-poll` | ported — iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken` |
+| `0 10 * * 0` | `trim-sync-log` | ported — per-user age delete; never deletes ids in the parked identity window |
+| `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
+| `0 4 * * *` | `purge-trash` | ported — iterates `users`, scopes `DELETE` by `user_id` |
 
-Supabase `pg_cron` definitions stay in place until the flip
-(`cron.unschedule` then, reversible). Other jobs (rollover, google-renew,
-calendar-dispatch, push-dispatch, prune/purge) still 501 on the Worker.
+**Queue projection (flag, not extra spend):** one send + one consume per due
+account per minute. At the current ~12 accounts that is ~35k ops/day, inside
+Workers Paid's included Queue operations. Revisit past a few hundred accounts.
+
+`pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`).
+
+## Write freeze
+
+`MAINTENANCE_WRITE_FREEZE=1` on the Worker makes `GET /api/maintenance`
+return `{ write_freeze: true, cutover_armed: … }`. Mutating `/api/data`
+and write RPCs then 503. RPC reads (`contacts`) stay open. The SPA reads
+that flag (or `VITE_MAINTENANCE_URL` / `VITE_WRITE_FREEZE`) and the
+Supabase transport refuses writes so the outbox retries after the window.
+Auth refresh is not frozen.
+
+Fail-open if the flag URL is unreachable — unless a cutover is **armed**
+(`CUTOVER_ARMED` on the Worker, `VITE_CUTOVER_ARMED=1` on a build, or
+`cutover_armed: true` on the last successful payload). Armed + unreachable
+is fail-closed.
+
+**Ship the armed build first.** Before you flip `CUTOVER_ARMED` on the
+Worker, ship a build with `VITE_MAINTENANCE_URL` (the Worker
+`GET /api/maintenance` URL) and `VITE_CUTOVER_ARMED=1` baked in. The
+copy job reads that same endpoint (`MAINTENANCE_URL` / `VITE_MAINTENANCE_URL`
+Actions variable) and **refuses to start dump** unless the payload reports
+`cutover_armed: true`. An unarmed SPA would keep writing through the
+window; the job will not copy against that.
+
+Non-billing Supabase edge functions that write with `service_role` also
+read `WRITE_FREEZE` **or** `MAINTENANCE_WRITE_FREEZE`
+(`supabase/functions/_shared/writeFreeze.ts`) and 503 if either is
+truthy. Set one of them as an edge-function secret when you arm.
+Covered: agent, capture (POST only; GET is a poll), mcp, inbound-email,
+google-webhook, delete-account,
+google-sync / oauth / events / contacts, m365-oauth / sync, ics-sync /
+subscribe, icloud-connect / sync / events / contacts, calendar-refresh,
+slot-mirror, task-mirror, route-events, rollover, push-dispatch,
+github-activity, apple-identity. **Not** covered — do not add it:
+`stripe-webhook`, `apple-webhook`, stripe-checkout / portal, apple-iap,
+iap-catalog, referral-code. Those keep writing billing tables.
+
+## Copy-window freeze (hand-applied, not CI)
+
+`docs/cloudflare-migration/freeze.sql` and `unfreeze.sql` are committed
+and reviewed. Do **not** apply them from CI, the Worker, or
+`cutover-migrate.yml`. Billing stays on Supabase: `subscriptions`,
+`stripe_webhook_events`, `apple_webhook_events`, and
+`apple_notification_events` are excluded from the freeze, from
+`pg_dump --exclude-table`, from `source-snapshot.json`, and from the
+parity proof. `sync_log` **structure** is dumped (`--exclude-table-data`);
+its rows stay out of snapshot/parity (billing webhooks insert via
+`logSync`). After the switch, `phase=resync` copies **every** source
+row whose `id` is missing on the target. An incoming id that already
+exists on Neon with **different content** aborts (count only — no row
+data). Then, in the **same transaction** (table + sequence locked),
+`setval`s `GREATEST(max(id), last_value, 1)` so the parked identity
+never decreases — `--exclude-table-data` drops sequence data and
+`OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
+`sync_log`), the job `setval`s to source `max(id)` plus a 1e6 margin
+and keeps Neon ids in that parked range for the whole switch window,
+so they cannot overlap Supabase ids below the park. A dump-time
+watermark (`max(id)`, `max(created_at)`) is reported only — a
+late-committed lower id must still land. `push_subscriptions` stays in
+the copy; resync **deletes missing ids first**, then upserts full
+source rows (`ON CONFLICT (id) DO UPDATE` all columns, counts only),
+so a row re-created with the same `(user_id, endpoint)` under a new
+id does not hit the UNIQUE constraint. Webhook deletes **and**
+`last_seen_at` / `failure_count` edits during the window land. If a
+billing-written table ever has to be copied *and* stay frozen, it
+needs the freeze too.
+
+Grants are recorded from `aclexplode(relacl)`, including `PUBLIC`, and
+`unfreeze.sql` restores those exact ACL entries — no new direct grants
+to `anon` / `authenticated` that were only inherited via `PUBLIC`.
+`unfreeze.sql` is idempotent (NOTICE no-op if the recording tables are
+already gone). Partitioned tables, views, and column-level grants
+(`attacl`) are out of scope: Nuvo public app tables are ordinary
+relations.
+
+Order:
+
+0. **Ship the armed build** — `VITE_MAINTENANCE_URL` + `VITE_CUTOVER_ARMED=1`.
+   The copy job will refuse to start until that endpoint reports armed.
+1. **Arm** — set `CUTOVER_ARMED=1` on the Worker, `WRITE_FREEZE=1` on
+   the non-billing edge functions, and `MAINTENANCE_WRITE_FREEZE=1` if
+   you want Worker writes frozen too.
+2. **Freeze** — apply `freeze.sql` by hand. Records `aclexplode` write
+   ACLs (including `PUBLIC`), then revokes `INSERT`/`UPDATE`/`DELETE`
+   on public app tables from `PUBLIC`, `anon`, and `authenticated`
+   (SELECT stays). Pauses every `nuvo-*` `pg_cron` job via
+   `cron.alter_job(..., active := false)` after recording the prior
+   `active` flag. `service_role` and the billing tables are untouched.
+3. **Snapshot** — `cutover-migrate` `dump` first GETs the maintenance
+   endpoint and dies unless `cutover_armed` is true, POSTs one gated
+   edge function (`calendar-refresh`) and dies unless it 503s, and
+   checks `has_table_privilege(anon, sync_log, INSERT)` is false.
+   Then records per-table counts + md5 for the frozen copy set only
+   (`source-snapshot.json` in runner temp) plus the `sync_log`
+   watermark (report only, on `cutover-report.md`).
+4. **Copy** — restore + token seal into Neon. Billing tables are not in
+   the dump TOC. `sync_log` is: structure only, no rows. Restore
+   `setval`s the empty identity past source `max(id)` + 1e6 so any
+   pre-resync Neon insert cannot collide with a Supabase id.
+5. **Verify** — `verify` recomputes source and target hashes against the
+   snapshot and dies if either drifted (writes leaked, or the copy is short).
+   Parity covers only the frozen tables (`sync_log` excluded).
+6. **First resync** — the same job copies every `sync_log` id missing
+   on Neon (aborts on a content collision), `setval`s
+   `GREATEST(max(id), last_value, 1)` in that transaction so the park
+   never drops, then deletes missing `push_subscriptions` ids and
+   upserts the rest.
+7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
+   `cutover-migrate` with `phase=resync` so post-switch billing
+   inserts/updates/deletes land (id anti-join + setval + delete-then-upsert). Or
+   **unfreeze** — apply `unfreeze.sql`, which restores the recorded
+   ACLs and each job's prior `active` exactly (idempotent), then clear
+   `CUTOVER_ARMED` and `WRITE_FREEZE`.
 
 ---
 
@@ -235,6 +373,9 @@ npm test
 npm run check:worker
 npm run check:isolation-mutation
 npm run cf:preview:dry-run
+# Live cutover only (SOURCE_DATABASE_URL + TARGET_DATABASE_URL):
+# npm run check:entitlement-parity
+# tokenDecrypt.check.ts skips unless TOKEN_ENC_KEY_V1 + DATABASE_URL point at a sealed Neon
 ```
 
 Postgres.js and the Better Auth `pg` Pool are **per-request**. Workers cannot
@@ -276,7 +417,15 @@ camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case
 schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a
 `fields` map. `npm run check:worker` drives those four routes through real
 Better Auth on PGlite. Billing `subscriptions` stays on Supabase — it is not
-in the Neon rehearsal schema.
+in the Neon rehearsal schema. The Worker entitlement check
+(`GET /api/entitlement`) reads that table by the preserved session user id
+(Better Auth `user.id` = `auth.users.id`). Stripe / StoreKit writers are
+unchanged. `scripts/check-entitlement-parity.ts` proves the 1:1 auth copy
+and that every subscription keeps the same tier. The SPA's paid gate
+(`useSubscription`) reads `GET /api/entitlement` when `VITE_API_BASE_URL`
+is set, and keeps today's PostgREST select when it is not. Live Stripe +
+StoreKit proof before a flip:
+[`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each

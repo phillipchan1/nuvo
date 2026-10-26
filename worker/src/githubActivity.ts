@@ -6,30 +6,29 @@
 import type { Context } from "hono";
 import { json, OPEN_CORS } from "./cors.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
-import { jsonParam, openSql, closeSql, type Sql } from "./db.ts";
+import { jsonParam, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
-import { SessionLookupError, sessionUser } from "./auth.ts";
 import { BadRequestError, readJson } from "./http.ts";
-import { openRequestIo, type RequestIo } from "./requestIo.ts";
-import { bootstrapUser, makeStore, type Store } from "./store.ts";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import {
-  asBytes,
-  githubTokenShapeOk,
-  importTokenKey,
   openToken,
+  parseTokenKeyring,
   sealToken,
-  tokenAad,
-  TokenKeyError,
-} from "./lib/secrets.ts";
+  TokenCryptoError,
+  type TokenAad,
+  type TokenKeyring,
+} from "./secrets.ts";
+import { requestIo, requireStore, type AppEnv } from "./session.ts";
+import type { Store } from "./store.ts";
 
 const GH = "https://api.github.com";
-const GH_CRONS = new Set(["github-poll", "nuvo-github-poll"]);
-const TRIM_CRONS = new Set(["trim-sync-log", "nuvo-trim-sync-log"]);
+
+/** Same margin as `scripts/cutover_copy.py` `SYNC_LOG_SEQUENCE_MARGIN`. */
+export const SYNC_LOG_SEQUENCE_MARGIN = 1_000_000;
+export const SYNC_LOG_SEQ_NAME = "public.sync_log_id_seq";
 
 export const GITHUB_POLL_CRON = "20 9 * * *";
 export const TRIM_SYNC_LOG_CRON = "0 10 * * 0";
-
-type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
 function ghHeaders(token: string): Record<string, string> {
   return {
@@ -65,30 +64,33 @@ interface SourceRow {
   key_version: number | null;
 }
 
-async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
-  const existing = c.get("io");
-  if (existing) return existing;
-  const io = openRequestIo(c.env);
-  c.set("io", io);
-  return io;
+function asBytes(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (typeof value === "string" && value.startsWith("\\x")) {
+    const hex = value.slice(2);
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+  return null;
 }
 
-async function requireGithubStore(c: Context<AppEnv>): Promise<{ store: Store } | { error: Response }> {
-  const io = await requestIo(c);
-  let user;
-  try {
-    user = await sessionUser(io.auth, c.req.raw);
-  } catch (err) {
-    if (err instanceof SessionLookupError) {
-      return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };
-    }
-    throw err;
-  }
-  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
-    emailVerified: user.emailVerified,
+/** Prefix/length only — never log the token. */
+export function githubTokenShapeOk(token: string): boolean {
+  return /^(ghp_|github_pat_|gho_|ghu_|ghs_)/.test(token) && token.length >= 20;
+}
+
+function sourceAad(rowId: string, userId: string): TokenAad {
+  return { table: "activity_sources", rowId, userId };
+}
+
+async function tokenRing(env: Env): Promise<TokenKeyring> {
+  return parseTokenKeyring({
+    TOKEN_ENC_KEY_V1: env.TOKEN_ENC_KEY_V1,
+    TOKEN_ENC_KEY_V2: env.TOKEN_ENC_KEY_V2,
+    TOKEN_ENC_CURRENT: env.TOKEN_ENC_CURRENT,
   });
-  return { store };
 }
 
 export async function fetchRepos(token: string): Promise<RepoMeta[]> {
@@ -141,9 +143,13 @@ async function openSourceToken(env: Env, src: SourceRow): Promise<string | null>
   const enc = asBytes(src.refresh_token_enc);
   const iv = asBytes(src.refresh_token_iv);
   if (!enc || !iv) return null;
-  const key = await importTokenKey(env.TOKEN_ENC_KEY_V1);
   try {
-    return await openToken(key, { enc, iv, keyVersion: src.key_version ?? 1 }, tokenAad("activity_sources", src.id, src.user_id));
+    const ring = await tokenRing(env);
+    return await openToken(
+      { ciphertext: enc, iv, keyVersion: src.key_version ?? 1 },
+      sourceAad(src.id, src.user_id),
+      ring,
+    );
   } catch {
     return null;
   }
@@ -305,52 +311,67 @@ export async function runGithubPoll(sql: Sql, env: Env): Promise<{ ok: true; syn
   return { ok: true, synced, users: users.length };
 }
 
-export async function runTrimSyncLog(sql: Sql): Promise<{ ok: true; deleted: number; users: number }> {
+/**
+ * Parked identity floor for A's sync_log resync.
+ *
+ * After restore, cutover `setval`s `sync_log_id_seq` to source max(id) +
+ * 1e6 so Neon inserts sit above Supabase ids. Resync copies missing
+ * source ids (OVERRIDING SYSTEM VALUE) and setvals
+ * GREATEST(max(id), last_value, 1) — the park never decreases.
+ *
+ * Trim must not delete rows newer than that reserved window (ids at or
+ * above last_value - margin + 1), and must never reset the sequence.
+ * Fresh / unparked sequences (last_value < margin) trim by age only.
+ */
+export async function parkedSyncLogFloor(sql: Sql): Promise<number | null> {
+  const rows = (await sql`SELECT last_value FROM public.sync_log_id_seq`) as { last_value: string | number }[];
+  const last = Number(rows[0]?.last_value ?? 0);
+  if (!Number.isFinite(last) || last < SYNC_LOG_SEQUENCE_MARGIN) return null;
+  return Math.max(last - SYNC_LOG_SEQUENCE_MARGIN + 1, 1);
+}
+
+export async function runTrimSyncLog(sql: Sql): Promise<{
+  ok: true;
+  deleted: number;
+  users: number;
+  parked_floor: number | null;
+}> {
+  const parkedFloor = await parkedSyncLogFloor(sql);
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
   let deleted = 0;
   for (const user of users) {
-    const rows = (await sql`
-      DELETE FROM sync_log
-      WHERE user_id = ${user.id}
-        AND created_at < now() - interval '30 days'
-      RETURNING id
-    `) as { id: number }[];
+    const rows = parkedFloor == null
+      ? ((await sql`
+          DELETE FROM sync_log
+          WHERE user_id = ${user.id}
+            AND created_at < now() - interval '30 days'
+          RETURNING id
+        `) as { id: number }[])
+      : ((await sql`
+          DELETE FROM sync_log
+          WHERE user_id = ${user.id}
+            AND created_at < now() - interval '30 days'
+            AND id < ${parkedFloor}
+          RETURNING id
+        `) as { id: number }[]);
     deleted += rows.length;
   }
-  const orphans = (await sql`
-    DELETE FROM sync_log
-    WHERE user_id IS NULL
-      AND created_at < now() - interval '30 days'
-    RETURNING id
-  `) as { id: number }[];
+  const orphans = parkedFloor == null
+    ? ((await sql`
+        DELETE FROM sync_log
+        WHERE user_id IS NULL
+          AND created_at < now() - interval '30 days'
+        RETURNING id
+      `) as { id: number }[])
+    : ((await sql`
+        DELETE FROM sync_log
+        WHERE user_id IS NULL
+          AND created_at < now() - interval '30 days'
+          AND id < ${parkedFloor}
+        RETURNING id
+      `) as { id: number }[]);
   deleted += orphans.length;
-  return { ok: true, deleted, users: users.length };
-}
-
-export function cronJobForTrigger(cron: string): "github-poll" | "trim-sync-log" | null {
-  if (cron === GITHUB_POLL_CRON) return "github-poll";
-  if (cron === TRIM_SYNC_LOG_CRON) return "trim-sync-log";
-  return null;
-}
-
-export function isGithubCronJob(job: string): boolean {
-  return GH_CRONS.has(job);
-}
-
-export function isTrimCronJob(job: string): boolean {
-  return TRIM_CRONS.has(job);
-}
-
-export async function handleScheduled(event: { cron: string }, env: Env): Promise<void> {
-  const job = cronJobForTrigger(event.cron);
-  if (!job) return;
-  const sql = openSql(env);
-  try {
-    if (job === "github-poll") await runGithubPoll(sql, env);
-    else await runTrimSyncLog(sql);
-  } finally {
-    await closeSql(sql);
-  }
+  return { ok: true, deleted, users: users.length, parked_floor: parkedFloor };
 }
 
 async function connectSource(store: Store, env: Env, token: string): Promise<Response> {
@@ -385,11 +406,11 @@ async function connectSource(store: Store, env: Env, token: string): Promise<Res
   const row = inserted[0];
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
 
-  const key = await importTokenKey(env.TOKEN_ENC_KEY_V1);
-  const sealed = await sealToken(key, token, tokenAad("activity_sources", row.id, store.userId));
+  const ring = await tokenRing(env);
+  const sealed = await sealToken(token, sourceAad(row.id, store.userId), ring);
   await store.sql`
     UPDATE activity_sources
-    SET refresh_token_enc = ${sealed.enc},
+    SET refresh_token_enc = ${sealed.ciphertext},
         refresh_token_iv = ${sealed.iv},
         key_version = ${sealed.keyVersion},
         token_secret_id = NULL,
@@ -417,11 +438,17 @@ export async function handleGithubActivity(c: Context<AppEnv>): Promise<Response
   const io = await requestIo(c);
   const cronToken = bearerToken(c.req.header("authorization"));
   if (action === "sync" && cronAuthorized(cronToken, c.env.CRON_SECRET)) {
+    if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
+      return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
+    }
     return json(await runGithubPoll(io.sql, c.env), 200, OPEN_CORS);
   }
 
-  const got = await requireGithubStore(c);
+  const got = await requireStore(c);
   if ("error" in got) return got.error;
+  if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
+    return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
+  }
   const { store } = got;
 
   try {
@@ -543,9 +570,7 @@ Respond with JSON only: {"lines":[{"i":<group index>,"line":"<one sentence>"}]}`
 
     return json({ error: `Unknown action: ${action}` }, 400, OPEN_CORS);
   } catch (err) {
-    if (err instanceof TokenKeyError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    if (err instanceof TokenCryptoError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
     throw err;
   }
 }
-
-export { githubTokenShapeOk };

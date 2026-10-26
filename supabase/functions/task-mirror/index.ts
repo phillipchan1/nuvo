@@ -16,10 +16,13 @@
 import { admin, handleOptions, json, logSync, readSecret, requireUser } from "../_shared/admin.ts";
 import { mirrorDescription, mirrorSpan, mirrorTitle, shouldMirror } from "../_shared/mirror.ts";
 import { deleteMirror, putMirror, resolveMirrorTarget } from "../_shared/mirrorTargets.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const body_ = await req.json();

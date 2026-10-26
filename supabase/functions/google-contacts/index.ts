@@ -12,6 +12,7 @@
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import { type GoogleAccount, gFetch, loadGoogleAccounts } from "../_shared/google.ts";
 import { type DirectoryContact, writeContacts } from "../_shared/contacts.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const PEOPLE_API = "https://people.googleapis.com/v1";
 const PAGE_SIZE = 1000;
@@ -102,6 +103,8 @@ async function syncAccount(account: GoogleAccount): Promise<number> {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const { accountId } = await req.json().catch(() => ({}));

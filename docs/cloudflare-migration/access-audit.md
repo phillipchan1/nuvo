@@ -9,8 +9,10 @@ that fail if that wall is cut.
 Sister docs: [`inventory.md`](./inventory.md) (what Supabase does today),
 [`cloudflare-cutover.md`](../cloudflare-cutover.md) (the rehearsal).
 
-Billing, Stripe, StoreKit, and calendar/push stay on Supabase. They are
-out of this matrix.
+Billing **writers** (Stripe, StoreKit, webhooks) stay on Supabase and are
+out of this matrix. The Worker **reads** `subscriptions` for
+`GET /api/entitlement` by the verified session user id — never a client
+id, never an email remap.
 
 ---
 
@@ -89,23 +91,34 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
-### GitHub activity + housekeeping crons
+### Billing read (Supabase `subscriptions`, not Neon)
 
 | Route | Scope | Cross-user | Test |
 |---|---|---|---|
-| `POST /api/github-activity` · `/functions/v1/github-activity` | Session store. Connect / repos / sync / theme / disconnect / bind filter `activity_*` by `user_id = store.userId`. PAT sealed with `sealToken` (AAD `activity_sources:id:user_id`). | B sync/bind/disconnect of A's `sourceId` = random id (404 or `{count:0}`); A's units unchanged. Bind onto A's `project_id` rejected (`assertOwnedFks` equivalent). | `accessHttp.check.ts` + `tokenDecrypt.check.ts` |
+| `GET /api/entitlement` | `readEntitlement(env, session.user.id)` — PostgREST `user_id=eq.<session>` | 200, B sees B's row only (tier + period / cancel / referral display; no Stripe ids). Query / `X-User-Id` ignored | `accessHttp.check.ts` + `entitlement.check.ts` |
+| `POST/PATCH/DELETE /api/entitlement` | No writes. Same 404 body whether the posted id exists | 404, no existence oracle | `accessHttp.check.ts` |
+
+### Agent / MCP / day / capture / inbound / cron
+
+Owner is still the session (or the connection / inbound token → that user).
+Full table: [`route-inventory.md`](./route-inventory.md).
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST/GET /api/agent` | Session store. Snapshot + tools filter `user_id = store.userId` | B snapshot omits A; B tool on A's id = random id | `accessHttp.check.ts` |
+| `POST /api/mcp` | `connections.token_hash`; tools run as `conn.user_id` | B token omits A | same |
+| `GET /api/day` | Session; events/tasks/slots `user_id = store.userId` | B schedule omits A | same |
+| `GET/POST /api/capture` | Connection hash; tasks `user_id` + `connection_id` | B omits A's tasks | same |
+| `POST /api/inbound-email` | Svix + `user_settings.inbound_token` | unknown token writes nothing; A's token writes A | same |
+| `POST /api/route-events` | Session; domains + routing owned | unauth 401 | same |
+| `POST /api/rollover` | Session user only | B does not roll A | same |
+| `POST /api/github-activity` · `/functions/v1/github-activity` | Session `requireStore`. Connect / repos / sync / theme / disconnect / bind filter `activity_*` by `user_id = store.userId`. PAT sealed with A's `sealToken` (AAD `activity_sources:row_id:user_id`). Writes refuse `writeFrozen`. | B sync/bind/disconnect of A's `sourceId` = random id (404 or `{count:0}`); A's units unchanged. Bind onto A's `project_id` rejected. Unauth frozen is still 401. | `accessHttp.check.ts` + `secrets.check.ts` |
 | `POST /api/cron/github-poll` · `nuvo-github-poll` | `CRON_SECRET`. Iterates `SELECT id FROM users` then `activity_sources WHERE user_id = $id`. | unauth 401; poll does not move A's units onto B | `accessHttp.check.ts` |
-| `POST /api/cron/trim-sync-log` · `nuvo-trim-sync-log` | `CRON_SECRET`. Per-user `DELETE FROM sync_log WHERE user_id = $id AND created_at < now() - 30 days`. | unauth 401; recent rows kept | `accessHttp.check.ts` |
+| `POST /api/cron/trim-sync-log` · `nuvo-trim-sync-log` | `CRON_SECRET`. Per-user `DELETE` of `sync_log` older than 30 days. When `sync_log_id_seq.last_value >= 1e6`, also `id < last_value - 1e6 + 1` (A's parked identity / resync window). Never `setval`. | unauth 401; recent rows kept; parked-range old ids kept; sequence unchanged | `accessHttp.check.ts` |
+| `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar 501 | unauth 401; purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `miniflare.seq.check.ts` |
 
-### Stubs / cron (no planner SQL)
-
-| Route | Scope | Test |
-|---|---|---|
-| `ALL /api/cron/:job` (other jobs) | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Unported match → 501 | `miniflare.seq.check.ts` |
-| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` (except `github-activity`) | 501 stay-on-Supabase. No DB | — |
-
-`subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
-are **not** on this Worker.
+`stripe_*`, `apple_*` writers, calendar tokens, and push tables are
+**not** on this Worker. `subscriptions` is read-only via `/api/entitlement`.
 
 ---
 
@@ -118,7 +131,8 @@ deletes each clause in turn and expects `access.check.ts` to fail.
 | Function | Filter |
 |---|---|
 | `listOwned` / `getOwned` / `deleteOwned` | per-table `user_id = store.userId` (`user_settings` also requires path id = session) |
-| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids |
+| `listDayScheduledTasks` / `listDaySlots` | windowed `user_id = store.userId` (A's in-window `start_time` is seeded so dropping the filter fails) |
+| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids (reminders: `target_id` is checked on the table that matches `target_kind`) |
 | `updateTaskTitle` / `updateDomainName` / `updateProject` / `updateTaskFks` | `WHERE id = $id AND user_id = store.userId` |
 | `updateSettingsTheme` / `rotateInboundToken` / `upsertSettings` | `WHERE user_id = store.userId` |
 | `listTaskLabels` / `insertTaskLabel` / `deleteTaskLabel` | task (and label, on insert) owned |
@@ -153,8 +167,9 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log crons included. |
-| `worker/src/tokenDecrypt.check.ts` | GitHub PAT seal/open: prefix/length only; AAD user/row/table mismatch fails; sealed `activity_sources` row decrypts. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log (including parked identity) included. |
+| `worker/src/entitlement.check.ts` | Lookup URL is `user_id=eq.<session>`; Stripe/Apple rows share `isEntitled`; a remapped auth id fails the parity proof |
+| `scripts/check-entitlement-parity.ts` | 1:1 auth copy + per-user tier match. Counts only |
 | `scripts/prove-isolation-mutation.mjs` | Deleting any `user_id = ${store.userId}` clause turns `access.check.ts` red |
 | `worker/src/miniflare.seq.check.ts` | Real workerd + Postgres: task create/read/patch + B 404 + unauthenticated-style raw token 401 |
 | `worker/src/requestReuse.check.ts` | Invalid bearer 401; client-supplied foreign id does not overwrite |

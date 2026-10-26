@@ -6234,3 +6234,27 @@ and tel (read from the pinned 2.5.5 source), but no device was in the loop; and 
 popover (`SlideOver`), which needs a signed-in app, so it has unit tests and a typecheck only.
 Open: the first number as a 44px **Call** act in the sheet's strip beside Mark done (the Join
 pattern); the same recognition for Nuvo's pre-work, which renders as markdown.*
+
+**D-166 · 2026-10-26 · The SPA's paid gate reads Worker `GET /api/entitlement`
+when the cutover flag is on; today's PostgREST path stays until then.**
+
+Phil approved the follow-up to D-164 / the entitlement Worker read: after
+Better Auth there is no GoTrue JWT for RLS on `subscriptions`, so the SPA
+cannot keep selecting that table once `VITE_API_BASE_URL` is set. The same
+flag that moves auth and planner CRUD now moves the **read** of entitlement
+to `/api/entitlement` (Better Auth session, Bearer + cookies). Stripe,
+StoreKit, Checkout, portal, IAP purchase / restore, and webhooks are
+untouched — they still write the Supabase row the Worker SELECTs. A Worker
+error is verify-error, never an unlock; `isEntitled` stays the one function.
+The read also returns `current_period_end`, `cancel_at_period_end`, and
+referral display fields so Billing can say Ends / Resume. Friend-code
+minting stays on today's path — the share block is disabled when the flag
+is on.
+
+**Anchor.** No Question Ledger row — infrastructure, same as D-164. Strains
+nothing in the product grammar. The four no's: no pool, no new user-facing
+name, no clean-data requirement, nothing that only holds in the builder's
+account. Pre-flip live check:
+[`cloudflare-migration/billing-live-check.md`](../cloudflare-migration/billing-live-check.md).
+
+*Status: standing — flag-off is a no-op. Tests: `tests/entitlement-read.test.ts`, `tests/billing-share-worker.test.tsx`.*
