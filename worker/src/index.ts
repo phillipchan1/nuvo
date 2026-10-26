@@ -14,6 +14,11 @@ import {
   requireJsonObject,
   requireUuid,
 } from "./http.ts";
+import {
+  EntitlementUnavailableError,
+  entitlementResponseBody,
+  readEntitlement,
+} from "./entitlement.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
@@ -32,6 +37,7 @@ import {
   updateOwned,
   upsertOwned,
   type PlannerTable,
+  type Store,
 } from "./store.ts";
 
 type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
@@ -167,7 +173,9 @@ async function sanitizeAuthResponse(res: Response, sql?: Sql): Promise<Response>
   });
 }
 
-async function requireStore(c: Context<AppEnv>) {
+async function requireSession(
+  c: Context<AppEnv>,
+): Promise<{ error: Response } | { user: { id: string; email?: string | null; emailVerified: boolean }; io: RequestIo }> {
   const io = await requestIo(c);
   let user;
   try {
@@ -179,8 +187,14 @@ async function requireStore(c: Context<AppEnv>) {
     throw err;
   }
   if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
-    emailVerified: user.emailVerified,
+  return { user, io };
+}
+
+async function requireStore(c: Context<AppEnv>): Promise<{ error: Response } | { store: Store }> {
+  const got = await requireSession(c);
+  if ("error" in got) return { error: got.error };
+  const store = await bootstrapUser(makeStore(got.io.sql, got.user.id), got.user.email ?? null, {
+    emailVerified: got.user.emailVerified,
   });
   return { store };
 }
@@ -188,6 +202,7 @@ async function requireStore(c: Context<AppEnv>) {
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
   if (err instanceof SessionLookupError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+  if (err instanceof EntitlementUnavailableError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (isDatabaseUnavailable(err)) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (postgresInputError(err)) return json({ error: "bad request" }, 400, OPEN_CORS);
   return json({ error: "internal error" }, 500, OPEN_CORS);
@@ -195,6 +210,45 @@ app.onError((err, c) => {
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
+
+/**
+ * Billing stays on Supabase. The session id is the preserved auth.users
+ * id — never a client-supplied owner, never an email remap.
+ */
+app.get("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  try {
+    const entitlement = await readEntitlement(c.env, got.user.id);
+    return json(entitlementResponseBody(entitlement), 200, OPEN_CORS);
+  } catch (err) {
+    if (err instanceof EntitlementUnavailableError) {
+      return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    }
+    throw err;
+  }
+});
+
+function entitlementWriteDenied(): Response {
+  return json({ error: "not found" }, 404, OPEN_CORS);
+}
+
+app.post("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.patch("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.delete("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
 
 app.get("/api/data/task_labels", async (c) => {
   const got = await requireStore(c);

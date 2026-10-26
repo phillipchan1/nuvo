@@ -221,6 +221,7 @@ No automated `supabase db push` or `functions deploy` in CI.
 - Better Auth (email OTP + email/password for App Review / dev)
 - Planner REST: tasks, domains, projects, initiatives, key_results, slots, labels, recurrences, record_comments, week_reviews, sprints, reminders, event_domain_routing, user_settings
 - `apply_patch`, `contacts`, `rotate_inbound_token`, `claim_reminder`
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay)
 - `/functions/v1/agent` and `/functions/v1/mcp` **aliases** (501 until those handlers move)
 
 **Stay on Supabase until a later cutover**

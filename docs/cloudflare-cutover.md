@@ -46,6 +46,8 @@ None of these belong in the Vite bundle.
 | `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Jobs are not ported (501) |
+| `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
+| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -235,6 +237,8 @@ npm test
 npm run check:worker
 npm run check:isolation-mutation
 npm run cf:preview:dry-run
+# Live cutover only (SOURCE_DATABASE_URL + TARGET_DATABASE_URL):
+# npm run check:entitlement-parity
 ```
 
 Postgres.js and the Better Auth `pg` Pool are **per-request**. Workers cannot
@@ -276,7 +280,11 @@ camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case
 schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a
 `fields` map. `npm run check:worker` drives those four routes through real
 Better Auth on PGlite. Billing `subscriptions` stays on Supabase — it is not
-in the Neon rehearsal schema.
+in the Neon rehearsal schema. The Worker entitlement check
+(`GET /api/entitlement`) reads that table by the preserved session user id
+(Better Auth `user.id` = `auth.users.id`). Stripe / StoreKit writers are
+unchanged. `scripts/check-entitlement-parity.ts` proves the 1:1 auth copy
+and that every subscription keeps the same tier.
 
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each
