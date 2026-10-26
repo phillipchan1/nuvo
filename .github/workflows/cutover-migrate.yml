@@ -17,6 +17,9 @@
 #   gh secret delete SCRATCH_DATABASE_URL
 #   gh secret delete TARGET_DATABASE_URL
 #
+# Cutover additionally requires the confirm input exactly `CUTOVER nuvo` and
+# runs in the `nuvo-cutover` environment (set required reviewers there).
+#
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
 # AI Gateway — Nuvo stays on direct OpenAI. Does not deploy, change DNS,
 # or write production hosts.
@@ -34,6 +37,13 @@ on:
           - dry-run
           - cutover
         default: dry-run
+      confirm:
+        description: >
+          Type CUTOVER nuvo to write TARGET_DATABASE_URL. Required when
+          mode=cutover. Leave empty for dry-run.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: cutover-migrate
@@ -41,17 +51,18 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   cutover:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: nuvo-cutover
     env:
       SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
       TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
       SCRATCH_DATABASE_URL: ${{ secrets.SCRATCH_DATABASE_URL }}
       MODE: ${{ inputs.mode }}
+      CONFIRM: ${{ inputs.confirm }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -105,6 +116,7 @@ jobs:
               return bool(a) and bool(b) and host_of(a) == host_of(b) and dbname_of(a) == dbname_of(b)
 
           mode = (os.environ.get("MODE") or "").strip().lower()
+          confirm = (os.environ.get("CONFIRM") or "").strip()
           source = (os.environ.get("SOURCE_DATABASE_URL") or "").strip()
           neon = (os.environ.get("TARGET_DATABASE_URL") or "").strip()
           scratch = (os.environ.get("SCRATCH_DATABASE_URL") or "").strip()
@@ -112,6 +124,9 @@ jobs:
               mask(value)
           if mode not in {"dry-run", "cutover"}:
               print("::error::mode must be dry-run or cutover", file=sys.stderr)
+              sys.exit(1)
+          if mode == "cutover" and confirm != "CUTOVER nuvo":
+              print("::error::cutover requires confirm input exactly: CUTOVER nuvo", file=sys.stderr)
               sys.exit(1)
           if not source:
               print("::error::Missing repo secret SOURCE_DATABASE_URL", file=sys.stderr)
@@ -263,7 +278,8 @@ jobs:
                    email,
                    COALESCE(email_confirmed_at IS NOT NULL, false),
                    created_at,
-                   updated_at
+                   updated_at,
+                   email_confirmed_at
             FROM auth.users
           ) TO STDOUT WITH CSV
           """
@@ -473,6 +489,7 @@ jobs:
                           "email_verified": cols[3] if len(cols) > 3 else "",
                           "created_at": cols[4] if len(cols) > 4 else "",
                           "updated_at": cols[5] if len(cols) > 5 else "",
+                          "email_confirmed_at": cols[6] if len(cols) > 6 else "",
                       }
                   )
               return users
@@ -589,12 +606,18 @@ jobs:
               if tables:
                   shown = ", ".join(tables[:20])
                   die(f"target public is not empty — abort, wrote nothing: {shown}")
+              # Split: AND does not short-circuit relation lookup, so
+              # EXISTS(auth.users) errors on a fresh DB with no auth schema.
+              present = psql(
+                  url,
+                  "SELECT to_regclass('auth.users') IS NOT NULL",
+                  extra=["-tA"],
+              ).strip()
+              if present != "t":
+                  return
               exists = psql(
                   url,
-                  """
-                  SELECT to_regclass('auth.users') IS NOT NULL
-                      AND EXISTS (SELECT 1 FROM auth.users)
-                  """,
+                  "SELECT EXISTS (SELECT 1 FROM auth.users)",
                   extra=["-tA"],
               ).strip()
               if exists == "t":
@@ -640,6 +663,15 @@ jobs:
                   for chunk in iter(lambda: fh.read(1024 * 1024), b""):
                       digest.update(chunk)
               return digest.hexdigest()
+
+          def assert_dump_checksum(dump_path: Path, sha_path: Path) -> str:
+              if not sha_path.exists():
+                  die("missing artifacts/nuvo-source.sha256")
+              expected = sha_path.read_text(encoding="utf-8").split()[0].lower()
+              actual = sha256_file(dump_path)
+              if actual != expected:
+                  die(f"dump sha256 mismatch: recorded {expected} current {actual}")
+              return actual
 
           def cmd_resolve() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
@@ -720,6 +752,8 @@ jobs:
               better_auth = Path("worker/schema/better-auth.sql")
               if not dump_path.exists() or not dump_path.stat().st_size:
                   die("missing verified dump artifacts/nuvo-source.dump")
+              digest = assert_dump_checksum(dump_path, artifacts / "nuvo-source.sha256")
+              print(f"re-verified dump sha256={digest} before restore", flush=True)
               if not better_auth.exists():
                   die("missing worker/schema/better-auth.sql")
               users = load_users(users_path)
@@ -738,7 +772,7 @@ jobs:
                   user_sql.append(
                       "INSERT INTO auth.users (id, email, email_confirmed_at, created_at, updated_at) VALUES ("
                       f"{sql_literal(user['id'])}::uuid, {sql_literal(user['email'])}, "
-                      f"{'now()' if user['email_verified'] in {'t', 'true', '1', 'TRUE'} else 'NULL'}, "
+                      f"{sql_timestamp(user.get('email_confirmed_at') or '')}, "
                       f"{sql_timestamp(user['created_at'])}, {sql_timestamp(user['updated_at'] or user['created_at'])}"
                       ") ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;"
                   )
@@ -949,8 +983,6 @@ jobs:
             artifacts/nuvo-source.dump
             artifacts/nuvo-source.sha256
             artifacts/nuvo-source.toc
-            artifacts/auth-users.csv
-            artifacts/auth-identities.csv
           retention-days: 7
           if-no-files-found: error
 
