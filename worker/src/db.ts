@@ -54,6 +54,34 @@ export function clientSsl(env: Pick<Env, "HYPERDRIVE">, connectionString: string
 }
 
 /**
+ * Drop `sslmode` so node-pg / postgres.js cannot re-enable TLS from the
+ * URL after we decided `ssl: false` (Hyperdrive bindings often append
+ * `?sslmode=require`).
+ */
+export function stripSslMode(connectionString: string): string {
+  try {
+    const parsed = new URL(connectionString);
+    if (!parsed.searchParams.has("sslmode")) return connectionString;
+    parsed.searchParams.delete("sslmode");
+    return parsed.toString();
+  } catch {
+    return connectionString;
+  }
+}
+
+/** Connection string + ssl for a client. `sslmode` never overrides `ssl`. */
+export function clientConnection(
+  env: Pick<Env, "HYPERDRIVE">,
+  connectionString: string,
+): { connectionString: string; ssl: false | "require" } {
+  const ssl = clientSsl(env, connectionString);
+  return {
+    connectionString: ssl === false ? stripSslMode(connectionString) : connectionString,
+    ssl,
+  };
+}
+
+/**
  * Fresh client per request. Workers cannot reuse TCP sockets across requests.
  * `max: 1` — this is one of two sockets a data request opens (see openAuth).
  * Production multiplexes both through Hyperdrive (docs/cloudflare-cutover.md).
@@ -61,10 +89,11 @@ export function clientSsl(env: Pick<Env, "HYPERDRIVE">, connectionString: string
 export function openSql(env: Env): Sql {
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured");
-  return postgres(url, {
+  const { connectionString, ssl } = clientConnection(env, url);
+  return postgres(connectionString, {
     max: 1,
     prepare: false,
-    ssl: clientSsl(env, url),
+    ssl,
   });
 }
 

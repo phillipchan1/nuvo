@@ -20,6 +20,7 @@ import {
   type QueryResult,
 } from "kysely";
 import { createAuth } from "./auth.ts";
+import { isUnavailableText } from "./http.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
@@ -52,8 +53,16 @@ ok(/exposeSignedAuthToken/.test(indexSrc), "auth responses rewrite the JSON toke
 ok(/signBearerToken/.test(authSrc), "auth.ts can HMAC a raw session token for cookie-only get-session");
 ok(/SessionLookupError/.test(authSrc), "session lookup failures are not treated as no session");
 ok(/clientSsl/.test(dbSrc) && /isHyperdriveHostname/.test(dbSrc), "db.ts disables client TLS for Hyperdrive");
-ok(/clientSsl/.test(authSrc), "openAuth uses clientSsl (no client TLS to Hyperdrive)");
+ok(/clientConnection/.test(dbSrc) && /stripSslMode/.test(dbSrc), "db.ts strips sslmode when Hyperdrive TLS is off");
+ok(/clientConnection/.test(authSrc), "openAuth uses clientConnection (no client TLS to Hyperdrive)");
 ok(/sanitizeAuthResponse/.test(indexSrc), "auth 5xx bodies are sanitized (no internal host)");
+ok(/requireJsonObject/.test(indexSrc), "data POST/PATCH require a JSON object");
+ok(/sqlUnavailable|SELECT 1/.test(indexSrc), "auth 5xx probes SQL when Better Auth swallows the driver error");
+ok(isUnavailableText("disconnected: Connection refused"), "isUnavailableText: Hyperdrive disconnected + refused");
+ok(isUnavailableText("disconnected"), "isUnavailableText: disconnected alone");
+ok(isUnavailableText("connect ECONNREFUSED 127.0.0.1:5432"), "isUnavailableText: ECONNREFUSED");
+ok(!isUnavailableText("internal error"), "isUnavailableText: generic 500 text is not unavailable");
+ok(!isUnavailableText("Failed to create verification"), "isUnavailableText: Better Auth 500 text is not unavailable");
 ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
 ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
 ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
@@ -380,6 +389,45 @@ const nulJson = await withTimeout(
 );
 ok(nulJson.status === 400, `NUL body: HTTP ${nulJson.status}`);
 
+const tasksBeforeBad = (
+  await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE user_id = $1", [signed.id])
+).rows[0]?.n ?? 0;
+const untitledBefore = (
+  await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE user_id = $1 AND title = $2", [signed.id, "Untitled"])
+).rows[0]?.n ?? 0;
+
+for (const [label, body] of [
+  ["JSON string", '"just a string"'],
+  ["null body", "null"],
+  ["array body", "[]"],
+] as const) {
+  const res = await withTimeout(
+    request("/api/data/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${signed.token}`,
+      },
+      body,
+    }),
+    8000,
+    label,
+  );
+  ok(res.status === 400, `${label}: HTTP ${res.status} (not 500, no write)`);
+  ok((res.headers.get("content-type") ?? "").includes("application/json"), `${label}: JSON`);
+  const text = await res.text();
+  ok(!text.includes("Untitled"), `${label}: no Untitled leak`);
+}
+
+const tasksAfterBad = (
+  await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE user_id = $1", [signed.id])
+).rows[0]?.n ?? 0;
+const untitledAfter = (
+  await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE user_id = $1 AND title = $2", [signed.id, "Untitled"])
+).rows[0]?.n ?? 0;
+ok(tasksAfterBad === tasksBeforeBad, "non-object POST: no task row written");
+ok(untitledAfter === untitledBefore, "non-object POST: no Untitled task created");
+
 const badId = await withTimeout(
   request("/api/data/tasks/not-a-uuid", {
     headers: { Authorization: `Bearer ${signed.token}` },
@@ -508,6 +556,99 @@ ok(otpBodyText.includes("service unavailable"), "OTP 5xx body: generic unavailab
 ok(!otpBodyText.includes("hyperdrive"), "OTP 5xx body: no hyperdrive host");
 ok(!otpBodyText.includes("ECONNREFUSED"), "OTP 5xx body: no driver error");
 restoreOtpBody();
+
+const restoreOtpGeneric = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () =>
+        new Response(JSON.stringify({ message: "Failed to create verification" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const otpGeneric = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+  }),
+  8000,
+  "OTP generic 500 healthy DB",
+);
+ok(otpGeneric.status === 500, `OTP generic 500 with healthy DB: HTTP ${otpGeneric.status} (not remapped to 503)`);
+ok((await otpGeneric.text()).includes("internal error"), "OTP generic 500 healthy DB: generic internal error");
+restoreOtpGeneric();
+
+async function downSql() {
+  throw new Error("disconnected: Connection refused");
+}
+const restoreOtpSwallowed = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql: downSql as unknown as typeof sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () =>
+        new Response(JSON.stringify({ message: "Failed to create verification" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const otpSwallowed = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+  }),
+  8000,
+  "OTP swallowed DB down",
+);
+const otpSwallowedText = await otpSwallowed.text();
+ok(otpSwallowed.status === 503, `OTP swallowed DB down: HTTP ${otpSwallowed.status} (not Better Auth 500)`);
+ok(otpSwallowedText.includes("service unavailable"), "OTP swallowed DB down: generic unavailable");
+ok(!otpSwallowedText.includes("disconnected"), "OTP swallowed DB down: no driver text");
+ok(!otpSwallowedText.includes("hyperdrive"), "OTP swallowed DB down: no internal host");
+restoreOtpSwallowed();
+
+const deadEnv = {
+  DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:1/nuvo",
+  BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+  BETTER_AUTH_URL: env.BETTER_AUTH_URL,
+};
+const deadOtp = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/auth/email-otp/send-verification-otp",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+    },
+    deadEnv,
+  ),
+  8000,
+  "OTP send real BA DB down",
+);
+const deadText = await deadOtp.text();
+ok(deadOtp.status === 503, `OTP send real BA DB down: HTTP ${deadOtp.status} (not Better Auth 500)`);
+ok(deadText.includes("service unavailable"), "OTP send real BA DB down: generic unavailable");
+ok(!deadText.includes("ECONNREFUSED"), "OTP send real BA DB down: no driver error");
+ok(!deadText.includes("127.0.0.1"), "OTP send real BA DB down: no host");
+ok(!deadText.includes("disconnected"), "OTP send real BA DB down: no disconnected text");
+ok((deadOtp.headers.get("content-type") ?? "").includes("application/json"), "OTP send real BA DB down: JSON");
+
 await kysely.destroy();
 await db.close();
 

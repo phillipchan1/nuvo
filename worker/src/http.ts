@@ -41,6 +41,14 @@ export async function readJson<T>(c: Context): Promise<T> {
   return body as T;
 }
 
+/** POST/PATCH table bodies must be a JSON object. A string, null, or [] is 400. */
+export function requireJsonObject(body: unknown): Record<string, unknown> {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new BadRequestError("malformed body");
+  }
+  return body as Record<string, unknown>;
+}
+
 export function postgresInputError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const code = "code" in err ? String((err as { code?: unknown }).code) : "";
@@ -88,9 +96,14 @@ export function isUnavailableText(text: string): boolean {
   return (
     lower.includes("econnrefused") ||
     lower.includes("connection refused") ||
+    // Hyperdrive / pg when origin is down: "disconnected: Connection refused"
+    lower.includes("disconnected") ||
     lower.includes("connect timeout") ||
+    lower.includes("connect_timeout") ||
     lower.includes("connection terminated") ||
     lower.includes("connection ended") ||
+    lower.includes("connection_ended") ||
+    lower.includes("connection_closed") ||
     lower.includes("enotfound") ||
     lower.includes("etimedout") ||
     lower.includes("econnreset") ||

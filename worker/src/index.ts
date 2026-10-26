@@ -4,12 +4,14 @@ import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
+import type { Sql } from "./db.ts";
 import {
   BadRequestError,
   isDatabaseUnavailable,
   isUnavailableText,
   postgresInputError,
   readJson,
+  requireJsonObject,
   requireUuid,
 } from "./http.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
@@ -109,7 +111,7 @@ app.all("/api/auth/*", async (c) => {
       c.env.BETTER_AUTH_SECRET ?? "",
       c.req.header("cookie"),
     );
-    return withAuthCors(await sanitizeAuthResponse(res), cors);
+    return withAuthCors(await sanitizeAuthResponse(res, io.sql), cors);
   } catch (err) {
     const unavailable = isDatabaseUnavailable(err);
     return new Response(JSON.stringify({ error: unavailable ? "service unavailable" : "internal error" }), {
@@ -134,11 +136,26 @@ function withAuthCors(res: Response, cors: Record<string, string>): Response {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
-/** Never forward a 5xx body — adapter errors can name `*.hyperdrive.local`. */
-async function sanitizeAuthResponse(res: Response): Promise<Response> {
+async function sqlUnavailable(sql: Sql): Promise<boolean> {
+  try {
+    await sql`SELECT 1`;
+    return false;
+  } catch (err) {
+    return isDatabaseUnavailable(err);
+  }
+}
+
+/**
+ * Never forward a 5xx body — adapter errors can name `*.hyperdrive.local`.
+ * Better Auth swallows the driver error and returns its own 500, so a
+ * generic body is remapped to 503 only after the request's SQL client
+ * also cannot reach the database.
+ */
+async function sanitizeAuthResponse(res: Response, sql?: Sql): Promise<Response> {
   if (res.status < 500) return res;
   const text = await res.text().catch(() => "");
-  const unavailable = res.status === 503 || isUnavailableText(text);
+  let unavailable = res.status === 503 || isUnavailableText(text);
+  if (!unavailable && sql) unavailable = await sqlUnavailable(sql);
   return new Response(JSON.stringify({ error: unavailable ? "service unavailable" : "internal error" }), {
     status: unavailable ? 503 : 500,
     headers: { "Content-Type": "application/json" },
@@ -231,7 +248,7 @@ app.post("/api/data/:table", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await readJson<Record<string, unknown>>(c);
+  const body = requireJsonObject(await readJson<unknown>(c));
   const row = await upsertOwned(got.store, table as PlannerTable, body);
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
@@ -242,7 +259,7 @@ app.patch("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await readJson<Record<string, unknown>>(c);
+  const body = requireJsonObject(await readJson<unknown>(c));
   const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);

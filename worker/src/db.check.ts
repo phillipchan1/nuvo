@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
-import { clientSsl, postgresSsl, usesHyperdrive } from "./db.ts";
+import ConnectionParameters from "pg/lib/connection-parameters.js";
+import { clientConnection, clientSsl, postgresSsl, stripSslMode, usesHyperdrive } from "./db.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 
 const fails: string[] = [];
@@ -67,10 +68,39 @@ ok(usesHyperdrive({ HYPERDRIVE: { connectionString: hyperdrive } }), "usesHyperd
 ok(!usesHyperdrive({ HYPERDRIVE: { connectionString: "postgresql://x@y/z?id=00000000000000000000000000000000" } }), "usesHyperdrive: placeholder id is ignored");
 ok(!usesHyperdrive({}), "usesHyperdrive: unset binding");
 
+const hyperdriveRequire = `${hyperdrive}?sslmode=require`;
+const hyperCfg = clientConnection({ HYPERDRIVE: { connectionString: hyperdriveRequire } }, hyperdriveRequire);
+ok(hyperCfg.ssl === false, "clientConnection: HYPERDRIVE + sslmode=require is not TLS");
+ok(!/[?&]sslmode=/i.test(hyperCfg.connectionString), "clientConnection: sslmode stripped so pg cannot re-enable TLS");
+ok(stripSslMode(hyperdriveRequire) === hyperdrive || !/[?&]sslmode=/i.test(stripSslMode(hyperdriveRequire)), "stripSslMode removes sslmode=require");
+const neonCfg = clientConnection({}, neonRequire);
+ok(neonCfg.ssl === "require", "clientConnection: direct Neon + sslmode=require still requires TLS");
+ok(/sslmode=require/i.test(neonCfg.connectionString), "clientConnection: Neon URL keeps sslmode when TLS is on");
+const boundNeon = `postgresql://neondb@ep-bound.example/nuvo?sslmode=require`;
+const boundCfg = clientConnection({ HYPERDRIVE: { connectionString: boundNeon } }, boundNeon);
+ok(boundCfg.ssl === false, "clientConnection: HYPERDRIVE binding wins over sslmode=require on a non-hyperdrive host");
+ok(!/[?&]sslmode=/i.test(boundCfg.connectionString), "clientConnection: binding URL sslmode is stripped");
+const pgHyper = new ConnectionParameters({
+  connectionString: hyperCfg.connectionString,
+  ssl: hyperCfg.ssl === "require",
+});
+ok(!pgHyper.ssl, "pg client: Hyperdrive ?sslmode=require does not force TLS");
+const pgBound = new ConnectionParameters({
+  connectionString: boundCfg.connectionString,
+  ssl: boundCfg.ssl === "require",
+});
+ok(!pgBound.ssl, "pg client: HYPERDRIVE binding URL ?sslmode=require does not force TLS");
+const pgNeon = new ConnectionParameters({
+  connectionString: neonCfg.connectionString,
+  ssl: neonCfg.ssl === "require",
+});
+ok(Boolean(pgNeon.ssl), "pg client: direct Neon still requires TLS");
+
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "db.ts"), "utf8");
 ok(!/fetch_types:\s*false/.test(src), "db.ts does not disable fetch_types");
 ok(src.includes("postgresSsl"), "db.ts uses postgresSsl");
+ok(src.includes("clientConnection") && src.includes("stripSslMode"), "db.ts strips sslmode when TLS is off");
 ok(!/url\.includes\("localhost"\)/.test(src), "db.ts does not substring-match localhost for TLS");
 ok(!/includes\("hyperdrive"\)/.test(src), "db.ts does not substring-match hyperdrive for TLS");
 ok(!/WeakMap/.test(src), "db.ts does not cache Sql in a WeakMap");

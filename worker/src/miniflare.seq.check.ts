@@ -428,6 +428,42 @@ try {
   );
   ok(badJson.status === 400, `bad JSON: HTTP ${badJson.status}`);
 
+  const beforeBad = await withTimeout(
+    request("/api/data/tasks", { headers: { Authorization: `Bearer ${a.token}` } }),
+    15000,
+    "list before bad bodies",
+  );
+  const beforeBadBody = await beforeBad.json() as { data?: { title?: string }[] };
+  const beforeCount = Array.isArray(beforeBadBody.data) ? beforeBadBody.data.length : 0;
+  for (const [label, body] of [
+    ["JSON string", '"just a string"'],
+    ["null body", "null"],
+    ["array body", "[]"],
+  ] as const) {
+    const res = await withTimeout(
+      request("/api/data/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${a.token}`,
+        },
+        body,
+      }),
+      15000,
+      label,
+    );
+    ok(res.status === 400, `${label}: HTTP ${res.status} (not 500)`);
+  }
+  const afterBad = await withTimeout(
+    request("/api/data/tasks", { headers: { Authorization: `Bearer ${a.token}` } }),
+    15000,
+    "list after bad bodies",
+  );
+  const afterBadBody = await afterBad.json() as { data?: { title?: string }[] };
+  const afterCount = Array.isArray(afterBadBody.data) ? afterBadBody.data.length : 0;
+  ok(afterCount === beforeCount, "non-object POST: no task row written");
+  ok(!(afterBadBody.data ?? []).some((row) => row.title === "Untitled"), "non-object POST: no Untitled task");
+
   const badId = await withTimeout(
     request(`/api/data/tasks/not-a-uuid`, {
       headers: { Authorization: `Bearer ${a.token}` },
