@@ -131,7 +131,9 @@ ok(!/-f .*freeze\.sql/.test(workflow), "cutover-migrate.yml does not -f freeze.s
 ok(!/-f .*unfreeze\.sql/.test(workflow), "cutover-migrate.yml does not -f unfreeze.sql");
 ok(/BILLING_TABLES/.test(workflow), "cutover-migrate.yml names BILLING_TABLES");
 ok(/COPY_SKIP_TABLES/.test(workflow) && /sync_log/.test(workflow), "cutover-migrate.yml skips sync_log from the frozen copy");
-ok(/--exclude-table=public\.\$\{name\}/.test(workflow) || /exclude-table=public/.test(workflow), "cutover-migrate.yml excludes billing tables from the dump");
+const copyPy = readFileSync(join(root, "scripts/cutover_copy.py"), "utf8");
+ok(/--exclude-table=public\.\{name\}/.test(copyPy) || /exclude-table=public/.test(copyPy), "cutover_copy.py excludes billing + sync_log from the dump");
+ok(/dump_exclude_args/.test(workflow), "cutover-migrate.yml uses dump_exclude_args for the frozen copy");
 ok(/source-snapshot\.json/.test(workflow), "cutover-migrate.yml records a frozen-table snapshot");
 ok(/subscriptions/.test(workflow) && /stripe_webhook_events/.test(workflow) && /apple_webhook_events/.test(workflow), "cutover-migrate.yml lists billing tables");
 ok(/require_cutover_armed/.test(workflow) && /MAINTENANCE_URL/.test(workflow), "cutover-migrate.yml refuses dump unless maintenance is armed");
