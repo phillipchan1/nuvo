@@ -13,6 +13,10 @@ interface ImportMetaEnv {
   readonly VITE_DEV_PASSWORD?: string;
   /** Empty = today's Supabase path. Worker: `/api` or `https://<worker>/api`. */
   readonly VITE_API_BASE_URL?: string;
+  /** Optional absolute URL for GET {write_freeze}. Used when the API base is still Supabase. */
+  readonly VITE_MAINTENANCE_URL?: string;
+  /** Build-time write freeze (`1` / `true`). Prefer the Worker flag for a 15-minute window. */
+  readonly VITE_WRITE_FREEZE?: string;
   readonly VITE_IAP_ONLY?: string;
   /** "1" forces the email+password review form on this build (native iOS
    *  already shows it). Never a password. See docs/app-store-review.md. */

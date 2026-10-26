@@ -484,6 +484,11 @@ try {
     "cron",
   );
   ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+
+  const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
+  ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);
+  const maintenanceBody = (await maintenance.json()) as { write_freeze?: boolean };
+  ok(maintenanceBody.write_freeze === false, "preview write_freeze is off");
 } finally {
   await worker?.stop();
 }

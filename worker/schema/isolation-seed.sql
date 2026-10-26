@@ -68,3 +68,43 @@ INSERT INTO public.week_reviews (id, user_id, week_start) VALUES
 INSERT INTO public.event_domain_routing (id, user_id, event_key, domain_id) VALUES
   ('aaaaaaaa-dddd-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'evt-a', 'aaaaaaaa-0000-4000-8000-000000000001'),
   ('bbbbbbbb-dddd-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'evt-b', 'bbbbbbbb-0000-4000-8000-000000000001');
+
+INSERT INTO public.calendar_accounts (id, user_id, provider, email, sync_direction) VALUES
+  ('aaaaaaaa-eeee-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'google', 'a@example.test', 'two_way'),
+  ('bbbbbbbb-eeee-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'google', 'b@example.test', 'two_way');
+
+INSERT INTO public.external_events (id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at) VALUES
+  ('aaaaaaaa-ffff-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-eeee-4000-8000-000000000001', 'evt-a-1', 'primary', 'A meeting', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z'),
+  ('bbbbbbbb-ffff-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-eeee-4000-8000-000000000001', 'evt-b-1', 'primary', 'B meeting', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z');
+
+INSERT INTO public.push_subscriptions (id, user_id, endpoint, p256dh, auth, label) VALUES
+  ('aaaaaaaa-0101-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'https://push.example/a', 'p256-a', 'auth-a', 'A phone'),
+  ('bbbbbbbb-0101-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'https://push.example/b', 'p256-b', 'auth-b', 'B phone');
+
+INSERT INTO public.activity_sources (id, user_id, kind, login) VALUES
+  ('aaaaaaaa-0202-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'github', 'user-a'),
+  ('bbbbbbbb-0202-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'github', 'user-b');
+
+INSERT INTO public.activity_bindings (id, user_id, source_id, project_id, selector) VALUES
+  ('aaaaaaaa-0303-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0202-4000-8000-000000000001', 'aaaaaaaa-1111-4000-8000-000000000001', 'phil/a'),
+  ('bbbbbbbb-0303-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-0202-4000-8000-000000000001', 'bbbbbbbb-1111-4000-8000-000000000001', 'phil/b');
+
+INSERT INTO public.activity_units (id, user_id, source_id, kind, external_id, title, occurred_at, project_id) VALUES
+  ('aaaaaaaa-0404-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0202-4000-8000-000000000001', 'github', 'PR_A', 'A shipped', '2026-10-26T12:00:00Z', 'aaaaaaaa-1111-4000-8000-000000000001'),
+  ('bbbbbbbb-0404-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-0202-4000-8000-000000000001', 'github', 'PR_B', 'B shipped', '2026-10-26T12:00:00Z', 'bbbbbbbb-1111-4000-8000-000000000001');
+
+INSERT INTO public.apple_identities (user_id, apple_user_id, email, is_private_relay) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'apple-sub-a', 'a@privaterelay.appleid.com', TRUE),
+  ('22222222-2222-2222-2222-222222222222', 'apple-sub-b', 'b@privaterelay.appleid.com', TRUE);
+
+INSERT INTO public.connections (id, user_id, app, name, token_hash, last_four) VALUES
+  ('aaaaaaaa-0505-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'lead_well', 'A app', 'hash-a', 'aaa1'),
+  ('bbbbbbbb-0505-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'lead_well', 'B app', 'hash-b', 'bbb2');
+
+INSERT INTO public.inbound_emails (email_id, user_id, subject) VALUES
+  ('email-a-1', '11111111-1111-1111-1111-111111111111', 'A inbound'),
+  ('email-b-1', '22222222-2222-2222-2222-222222222222', 'B inbound');
+
+INSERT INTO public.sync_log (user_id, provider, operation, status) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'google', 'sync', 'ok'),
+  ('22222222-2222-2222-2222-222222222222', 'google', 'sync', 'ok');

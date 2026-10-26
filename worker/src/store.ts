@@ -1358,6 +1358,311 @@ async function finishLinked(
   return linked;
 }
 
+// Blocked-route tables. Not on generic /api/data (token columns). Owner
+// filters stay in this file so isolation-mutation can delete them.
+
+export async function listOwnedCalendarAccounts(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, provider, email, sync_direction, calendars,
+           webhook_expires_at, mirror_calendar_id, needs_reconnect,
+           next_sync_at, sync_failures, created_at, updated_at
+    FROM calendar_accounts
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function getOwnedCalendarAccount(
+  store: Store,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT * FROM calendar_accounts
+    WHERE id = ${id} AND user_id = ${store.userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertCalendarAccount(
+  store: Store,
+  row: { id?: string; provider: string; email: string; sync_direction?: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO calendar_accounts (id, user_id, provider, email, sync_direction)
+    VALUES (${id}, ${store.userId}, ${row.provider}, ${row.email}, ${row.sync_direction ?? "read_only"})
+    RETURNING id, user_id, provider, email, sync_direction
+  `;
+  return rows[0] ?? null;
+}
+
+export async function deleteOwnedCalendarAccount(store: Store, id: string): Promise<number> {
+  const sql = store.sql;
+  const rows = await sql`
+    DELETE FROM calendar_accounts
+    WHERE id = ${id} AND user_id = ${store.userId}
+    RETURNING id
+  `;
+  return rows.length;
+}
+
+export async function listOwnedExternalEvents(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, account_id, title, start_at, end_at, all_day, calendar_id
+    FROM external_events
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function getOwnedExternalEvent(
+  store: Store,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT id, user_id, account_id, title, start_at, end_at
+    FROM external_events
+    WHERE id = ${id} AND user_id = ${store.userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertExternalEvent(
+  store: Store,
+  row: {
+    id?: string;
+    account_id: string;
+    title: string;
+    start_at: string;
+    end_at: string;
+    calendar_id?: string;
+    provider_event_id?: string;
+  },
+): Promise<Record<string, unknown> | null> {
+  if (!(await getOwnedCalendarAccount(store, row.account_id))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO external_events (
+      id, user_id, account_id, title, start_at, end_at, calendar_id, provider_event_id
+    ) VALUES (
+      ${id}, ${store.userId}, ${row.account_id}, ${row.title},
+      ${row.start_at}, ${row.end_at}, ${row.calendar_id ?? "primary"},
+      ${row.provider_event_id ?? id}
+    )
+    RETURNING id, user_id, account_id, title
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedPushSubscriptions(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, endpoint, label, time_zone, failure_count
+    FROM push_subscriptions
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function insertPushSubscription(
+  store: Store,
+  row: { id?: string; endpoint: string; p256dh: string; auth: string; label?: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, label)
+    VALUES (${id}, ${store.userId}, ${row.endpoint}, ${row.p256dh}, ${row.auth}, ${row.label ?? null})
+    RETURNING id, user_id, endpoint
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedActivitySources(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, kind, login, needs_reconnect
+    FROM activity_sources
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function getOwnedActivitySource(
+  store: Store,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT id, user_id, kind, login
+    FROM activity_sources
+    WHERE id = ${id} AND user_id = ${store.userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertActivitySource(
+  store: Store,
+  row: { id?: string; kind?: string; login?: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO activity_sources (id, user_id, kind, login)
+    VALUES (${id}, ${store.userId}, ${row.kind ?? "github"}, ${row.login ?? null})
+    RETURNING id, user_id, kind, login
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedActivityBindings(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, source_id, project_id, selector
+    FROM activity_bindings
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function insertActivityBinding(
+  store: Store,
+  row: { id?: string; source_id: string; project_id: string; selector: string },
+): Promise<Record<string, unknown> | null> {
+  if (!(await getOwnedActivitySource(store, row.source_id))) return null;
+  if (!(await getOwned(store, "projects", row.project_id))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO activity_bindings (id, user_id, source_id, project_id, selector)
+    VALUES (${id}, ${store.userId}, ${row.source_id}, ${row.project_id}, ${row.selector})
+    RETURNING id, user_id, source_id, project_id
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedActivityUnits(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, source_id, title, external_id, project_id
+    FROM activity_units
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function insertActivityUnit(
+  store: Store,
+  row: {
+    id?: string;
+    source_id: string;
+    external_id: string;
+    title: string;
+    occurred_at: string;
+    project_id?: string | null;
+  },
+): Promise<Record<string, unknown> | null> {
+  if (!(await getOwnedActivitySource(store, row.source_id))) return null;
+  if (row.project_id && !(await getOwned(store, "projects", row.project_id))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO activity_units (
+      id, user_id, source_id, external_id, title, occurred_at, project_id
+    ) VALUES (
+      ${id}, ${store.userId}, ${row.source_id}, ${row.external_id},
+      ${row.title}, ${row.occurred_at}, ${row.project_id ?? null}
+    )
+    RETURNING id, user_id, source_id
+  `;
+  return rows[0] ?? null;
+}
+
+export async function getOwnedAppleIdentity(store: Store): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT user_id, apple_user_id, email, given_name, family_name, is_private_relay
+    FROM apple_identities
+    WHERE user_id = ${store.userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function upsertAppleIdentity(
+  store: Store,
+  row: { apple_user_id?: string; email?: string; is_private_relay?: boolean },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    INSERT INTO apple_identities (user_id, apple_user_id, email, is_private_relay)
+    VALUES (${store.userId}, ${row.apple_user_id ?? null}, ${row.email ?? null}, ${row.is_private_relay ?? false})
+    ON CONFLICT (user_id) DO UPDATE SET
+      apple_user_id = COALESCE(EXCLUDED.apple_user_id, apple_identities.apple_user_id),
+      email = COALESCE(EXCLUDED.email, apple_identities.email),
+      is_private_relay = EXCLUDED.is_private_relay
+    RETURNING user_id, apple_user_id, email, is_private_relay
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedConnections(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, app, name, last_four, revoked_at
+    FROM connections
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function insertConnection(
+  store: Store,
+  row: { id?: string; app: string; name: string; token_hash: string; last_four?: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO connections (id, user_id, app, name, token_hash, last_four)
+    VALUES (${id}, ${store.userId}, ${row.app}, ${row.name}, ${row.token_hash}, ${row.last_four ?? null})
+    RETURNING id, user_id, app, name
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedInboundEmails(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT email_id, user_id, subject, received_at
+    FROM inbound_emails
+    WHERE user_id = ${store.userId}
+  `;
+}
+
+export async function insertInboundEmail(
+  store: Store,
+  row: { email_id: string; subject?: string; from_address?: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    INSERT INTO inbound_emails (email_id, user_id, subject, from_address)
+    VALUES (${row.email_id}, ${store.userId}, ${row.subject ?? null}, ${row.from_address ?? null})
+    RETURNING email_id, user_id
+  `;
+  return rows[0] ?? null;
+}
+
+export async function listOwnedSyncLog(store: Store): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, user_id, provider, operation, status
+    FROM sync_log
+    WHERE user_id = ${store.userId}
+  `;
+}
+
 async function ensureSettingsAndDomains(store: Store): Promise<void> {
   const sql = store.sql;
   await sql`

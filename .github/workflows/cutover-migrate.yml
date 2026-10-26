@@ -24,10 +24,14 @@
 #   SOURCE_DATABASE_URL   Supabase session-pooler or direct URI (read-only)
 #   SCRATCH_DATABASE_URL  empty Neon branch used when mode=dry-run
 #   TARGET_DATABASE_URL   Neon URI used when mode=cutover (Hyperdrive later)
+#   TOKEN_ENC_KEY_V1      32-byte AES-256-GCM key (hex or base64). Same value
+#                         as the Worker secret. Used only to re-seal Vault
+#                         tokens in-runner. Never logged, never an artifact.
 # Delete them after the run:
 #   gh secret delete SOURCE_DATABASE_URL
 #   gh secret delete SCRATCH_DATABASE_URL
 #   gh secret delete TARGET_DATABASE_URL
+#   gh secret delete TOKEN_ENC_KEY_V1
 #
 # Cutover additionally requires the confirm input exactly `CUTOVER nuvo` and
 # runs in the `nuvo-cutover` environment (set required reviewers there).
@@ -73,6 +77,9 @@ jobs:
       SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
       TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
       SCRATCH_DATABASE_URL: ${{ secrets.SCRATCH_DATABASE_URL }}
+      TOKEN_ENC_KEY_V1: ${{ secrets.TOKEN_ENC_KEY_V1 }}
+      TOKEN_ENC_KEY_V2: ${{ secrets.TOKEN_ENC_KEY_V2 }}
+      TOKEN_ENC_CURRENT: ${{ vars.TOKEN_ENC_CURRENT }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
       CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
@@ -80,6 +87,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Setup Node (token seal, same module as the Worker)
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JS deps for token seal
+        run: npm ci --ignore-scripts
 
       - name: Mask secrets and resolve target
         run: |
@@ -134,7 +150,9 @@ jobs:
           source = (os.environ.get("SOURCE_DATABASE_URL") or "").strip()
           neon = (os.environ.get("TARGET_DATABASE_URL") or "").strip()
           scratch = (os.environ.get("SCRATCH_DATABASE_URL") or "").strip()
-          for value in (source, neon, scratch):
+          token_key = (os.environ.get("TOKEN_ENC_KEY_V1") or "").strip()
+          token_key_v2 = (os.environ.get("TOKEN_ENC_KEY_V2") or "").strip()
+          for value in (source, neon, scratch, token_key, token_key_v2):
               mask(value)
           if mode not in {"dry-run", "cutover"}:
               print("::error::mode must be dry-run or cutover", file=sys.stderr)
@@ -415,6 +433,8 @@ jobs:
                   "RESTORE_DATABASE_URL",
                   "TARGET_DATABASE_URL",
                   "SCRATCH_DATABASE_URL",
+                  "TOKEN_ENC_KEY_V1",
+                  "TOKEN_ENC_KEY_V2",
               ):
                   value = (os.environ.get(key) or "").strip()
                   if not value:
@@ -1171,6 +1191,16 @@ jobs:
           set +x
           set -eu
           node scripts/guard-public-ci.mjs --job
+
+      - name: Re-encrypt vault tokens in-runner
+        env:
+          PGOPTIONS: "-c default_transaction_read_only=on"
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          node --experimental-strip-types scripts/cutover-seal-tokens.mjs
 
       - name: Upload checksum report
         if: ${{ always() && steps.guard.outcome == 'success' }}

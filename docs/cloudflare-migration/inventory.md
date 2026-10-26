@@ -190,10 +190,11 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
-`scheduled` handler. `CRON_SECRET` is compared in constant time on
-`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
-§ Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker now has
+Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
+`/api/cron/:job` still requires `CRON_SECRET`. Unported jobs stay 501.
+Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` — see
+[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---
 
@@ -230,8 +231,8 @@ See [`route-inventory.md`](./route-inventory.md) for the full table.
 
 **Stay on Supabase until a later cutover**
 
-- Billing webhooks and writers (Stripe, Apple IAP, StoreKit) — **flagged**: they also write `subscriptions` which is not in the Neon schema
-- Calendar OAuth, sync, mirrors, Vault refresh tokens — **flagged**: they write `calendar_accounts` / `external_events` / `tasks.google_event_id` that move to Neon
+- Billing webhooks and writers (Stripe, Apple IAP, StoreKit) — **flagged**: they also write `subscriptions` / `stripe_webhook_events` / `apple_webhook_events`, which stay on Supabase and are excluded from the copy set
+- Calendar OAuth, sync, mirrors, Vault refresh tokens — **flagged**: they write `calendar_accounts` / `external_events` / `tasks.google_event_id` that move to Neon (sealed token columns exist; routes still 501 except calendar-dispatch enqueue)
 - Push-dispatch cron — **flagged**: reads user-data tables moving to Neon
 - Capture / MCP bearer and inbound email are **ported** (connection hash / inbound token on Neon)
 - Realtime broadcast

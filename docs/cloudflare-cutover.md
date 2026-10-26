@@ -48,7 +48,11 @@ None of these belong in the Vite bundle.
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune. Push / calendar / github stay 501 |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push / github stay 501 |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns |
+| `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
+| `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
+| `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
@@ -68,6 +72,7 @@ also requires the confirm input exactly `CUTOVER nuvo`.
 | `SOURCE_DATABASE_URL` | always | Read-only Supabase URI. `PGOPTIONS=default_transaction_read_only=on`. Dump + `COPY … TO STDOUT` only |
 | `SCRATCH_DATABASE_URL` | `mode=dry-run` | Empty Neon branch the restore lands in |
 | `TARGET_DATABASE_URL` | `mode=cutover` | Neon URI. Hyperdrive is later; this job talks to Neon directly |
+| `TOKEN_ENC_KEY_V1` | token copy (after restore) | Same AES-256-GCM key as the Worker. The job calls `migration_tmp.vault_tokens()` (applied by hand — never by this workflow), seals in-process, `UPDATE`s Neon. Counts only; no token files or artifacts |
 
 Set them for the run, then **delete them**:
 
@@ -75,6 +80,7 @@ Set them for the run, then **delete them**:
 gh secret delete SOURCE_DATABASE_URL
 gh secret delete SCRATCH_DATABASE_URL
 gh secret delete TARGET_DATABASE_URL
+gh secret delete TOKEN_ENC_KEY_V1
 ```
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
@@ -160,23 +166,42 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ---
 
-## Crons stay off the Worker
+## Crons and Queues (Workers Paid)
 
-`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
+`vercel.json` still has **no `crons`**. The Worker now has Cron Triggers
+(UTC, matching today's `pg_cron`) and a `scheduled` + `queue` export.
+
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
-or wrong). Ported jobs (`rollover`, `purge-trash`, `reminder-deliveries-prune`)
-iterate `users` then scope by `user_id`. Push / calendar / github still 501.
-Do not add Workers Cron Triggers in this rehearsal.
+or wrong). The scheduled handler is Cloudflare-authenticated and calls the
+same runners. Ported jobs (`rollover`, `purge-trash`,
+`reminder-deliveries-prune`) iterate `users` then scope by `user_id`.
+Calendar-dispatch enqueues due accounts onto `CALENDAR_SYNC_QUEUE`. Push /
+github still 501 / `stay_on_supabase`.
 
-| Where | What |
-|---|---|
-| **Worker `/api/cron/:job`** | rollover, purge-trash, reminder-deliveries-prune |
-| **Supabase `pg_cron`** (until cutover) | google-renew, calendar-dispatch, push-dispatch, github-poll |
-| **Vercel** | nothing scheduled |
+| Cron (UTC) | Job | This PR |
+|---|---|---|
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 |
+| `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
+| `15 9 * * *` | `google-renew` | 501 |
+| `20 9 * * *` | `github-poll` | 501 |
+| `0 10 * * 0` | `trim-sync-log` | 501 |
+| `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
+| `0 4 * * *` | `purge-trash` | ported — iterates `users`, scopes `DELETE` by `user_id` |
 
-A later cutover that wants Workers Cron Triggers would need a `scheduled`
-export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the
-matching `pg_cron` job — none of that is this PR.
+**Queue projection (flag, not extra spend):** one send + one consume per due
+account per minute. At the current ~12 accounts that is ~35k ops/day, inside
+Workers Paid's included Queue operations. Revisit past a few hundred accounts.
+
+`pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`).
+
+## Write freeze
+
+`MAINTENANCE_WRITE_FREEZE=1` on the Worker makes `GET /api/maintenance`
+return `{ write_freeze: true }`. Mutating `/api/data` and `/api/rpc` then
+503. The SPA reads that flag (or `VITE_MAINTENANCE_URL` / `VITE_WRITE_FREEZE`)
+and the Supabase transport refuses writes so the outbox retries after the
+window. Auth refresh is not frozen.
 
 ---
 
@@ -242,6 +267,7 @@ npm run check:isolation-mutation
 npm run cf:preview:dry-run
 # Live cutover only (SOURCE_DATABASE_URL + TARGET_DATABASE_URL):
 # npm run check:entitlement-parity
+# tokenDecrypt.check.ts skips unless TOKEN_ENC_KEY_V1 + DATABASE_URL point at a sealed Neon
 ```
 
 Postgres.js and the Better Auth `pg` Pool are **per-request**. Workers cannot

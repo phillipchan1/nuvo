@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
 import { edgeFunctionUrl, workersEnabled } from "./backend";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance";
 import { isSpotlightWindow } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -28,9 +29,29 @@ export function functionUrl(name: string): string {
  * with the server. Wrapping it here is the only place that observes the real
  * traffic. Records into `window.__nuvoTiming`; tree-shaken from production.
  */
-const timedFetch: typeof fetch | undefined = import.meta.env.DEV
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
+  if (init?.method) return init.method.toUpperCase();
+  if (typeof input !== "string" && !(input instanceof URL) && input.method) return input.method.toUpperCase();
+  return "GET";
+}
+
+function isAuthUrl(url: string): boolean {
+  return /\/auth\/v1\//i.test(url);
+}
+
+function isMutatingMethod(method: string): boolean {
+  return method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
+}
+
+const innerFetch: typeof fetch = import.meta.env.DEV
   ? async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = requestUrl(input);
       const started = performance.now();
       const res = await fetch(input, init);
       const ms = performance.now() - started;
@@ -38,7 +59,20 @@ const timedFetch: typeof fetch | undefined = import.meta.env.DEV
       log.push({ url, ms: Math.round(ms), at: Math.round(started) });
       return res;
     }
-  : undefined;
+  : fetch;
+
+/** Freeze data writes on the live Supabase path. Auth refresh stays allowed. */
+const guardedFetch: typeof fetch = async (input, init) => {
+  const method = requestMethod(input, init);
+  const url = requestUrl(input);
+  if (isMutatingMethod(method) && !isAuthUrl(url) && (await writeFrozen())) {
+    return new Response(JSON.stringify({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return innerFetch(input, init);
+};
 
 // Spotlight is a consumer of the session main writes, not a second refresher.
 // Two heaps rotating one refresh token is `refresh_token_already_used`, and
@@ -48,7 +82,7 @@ const timedFetch: typeof fetch | undefined = import.meta.env.DEV
 const spotlight = isSpotlightWindow();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: timedFetch ? { fetch: timedFetch } : {},
+  global: { fetch: guardedFetch },
   auth: {
     autoRefreshToken: !spotlight,
     detectSessionInUrl: !spotlight,
