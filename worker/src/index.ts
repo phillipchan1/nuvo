@@ -39,6 +39,7 @@ import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
+import { registerGoogleRoutes } from "./google/routes.ts";
 import {
   applyPatch,
   claimReminder,
@@ -405,6 +406,20 @@ function refuseIfFrozen(c: Context<AppEnv>): Response | null {
   if (!writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) return null;
   return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
 }
+
+async function requirePlanner(
+  c: Context<AppEnv>,
+  raw?: Request,
+): Promise<{ userId: string } | { error: Response }> {
+  const got = await requireStore(c, raw);
+  if ("error" in got) return got;
+  return { userId: got.store.userId };
+}
+
+registerGoogleRoutes(app, {
+  requireUser: requirePlanner,
+  requestIo,
+});
 
 app.all("/api/cron/:job", (c) => handleCron(c));
 app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));

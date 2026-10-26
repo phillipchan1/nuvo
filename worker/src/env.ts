@@ -37,6 +37,10 @@ export interface Env {
   CUTOVER_ARMED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** SPA origin for OAuth redirects after consent. */
+  APP_URL?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

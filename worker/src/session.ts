@@ -17,11 +17,12 @@ export async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
 
 export async function requireStore(
   c: Context<AppEnv>,
+  raw?: Request,
 ): Promise<{ store: Store; email: string | null } | { error: Response }> {
   const io = await requestIo(c);
   let user;
   try {
-    user = await sessionUser(io.auth, c.req.raw);
+    user = await sessionUser(io.auth, raw ?? c.req.raw);
   } catch (err) {
     if (err instanceof SessionLookupError) {
       return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };

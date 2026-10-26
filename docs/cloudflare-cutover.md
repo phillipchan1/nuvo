@@ -24,7 +24,8 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
+| Billing / push / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** | n/a |
+| Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
@@ -49,13 +50,16 @@ None of these belong in the Vite bundle.
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push / github stay 501 |
-| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune, `google-renew`, `calendar-dispatch`, `google-resubscribe`. Push / github stay 501 |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id` |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
 | `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
+| `GOOGLE_CLIENT_ID` | secret | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | secret | Google OAuth |
+| `APP_URL` | var | SPA origin for the post-consent redirect |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -163,7 +167,9 @@ npx wrangler deploy --env preview
 ```
 
 Do **not** run `wrangler deploy` without `--env preview`. Do **not** attach a
-custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
+custom domain. Do **not** retarget Stripe, Apple, or Resend webhooks. Google
+Calendar push channels re-subscribe to the Worker at the flip
+(`POST /api/cron/google-resubscribe`); `calendar-dispatch` is the poll fallback.
 
 ---
 
@@ -176,14 +182,17 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 or wrong). The scheduled handler is Cloudflare-authenticated and calls the
 same runners. Ported jobs (`rollover`, `purge-trash`,
 `reminder-deliveries-prune`) iterate `users` then scope by `user_id`.
-Calendar-dispatch enqueues due accounts onto `CALENDAR_SYNC_QUEUE`. Push /
-github still 501 / `stay_on_supabase`.
+Calendar-dispatch enqueues due accounts onto `CALENDAR_SYNC_QUEUE` and
+consumes Google (other providers ack for PR C). `google-renew` re-watches
+channels that expire within 48h. Flip tooling:
+`POST /api/cron/google-resubscribe`. Push / github still 501 /
+`stay_on_supabase`.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch 501 |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
-| `15 9 * * *` | `google-renew` | 501 |
+| `15 9 * * *` | `google-renew` | ported — re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | 501 |
 | `0 10 * * 0` | `trim-sync-log` | 501 |
 | `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
@@ -194,7 +203,10 @@ account per minute. At the current ~12 accounts that is ~35k ops/day, inside
 Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 
 `pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
-`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`).
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`). Flip
+tooling: `POST /api/cron/google-resubscribe` re-watches every Google
+channel onto the Worker webhook; `calendar-dispatch` poll covers watch
+setup failures (unverified domain).
 
 ## Write freeze
 
