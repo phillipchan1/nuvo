@@ -38,12 +38,17 @@ function denied(status: number): boolean {
 const here = dirname(fileURLToPath(import.meta.url));
 const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
 const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
+const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
 
 ok(/sessionUser\(io\.auth/.test(indexSrc), "requireStore: owner comes from verified session");
 ok(!/c\.req\.query\(["']user_id["']\)/.test(indexSrc), "routes: no user_id query param");
 ok(!/c\.req\.header\(["'](?:x-user-id|user-id)["']\)/i.test(indexSrc), "routes: no client user-id header");
 ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
+ok(/user_id = \$\{store\.userId\}/.test(ghSrc), "github-activity: owner filter is store.userId");
+ok(/user_id = \$\{user\.id\}/.test(ghSrc), "github-poll: iterates users then scopes user_id");
+ok(/user_id = \$\{src\.user_id\}/.test(ghSrc), "github-activity: source writes stay on src.user_id");
+ok(!/c\.req\.query\(["']user_id["']\)/.test(ghSrc), "github-activity: no user_id query");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
@@ -100,6 +105,8 @@ const env = {
   DATABASE_URL: "postgresql://neondb@ep-prod.us-east-1.aws.neon.tech/nuvo",
   BETTER_AUTH_SECRET: "access-http-secret-32-bytes-long!!",
   BETTER_AUTH_URL: "http://localhost:8787",
+  CRON_SECRET: "access-http-cron-secret",
+  TOKEN_ENC_KEY_V1: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 };
 
 const restore = installRequestIoForTests(() => {
@@ -312,6 +319,10 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/api/rpc/contacts", body: { search: "secret" } },
   { method: "POST", path: "/api/rpc/rotate_inbound_token" },
   { method: "POST", path: "/api/rpc/claim_reminder", body: { reminder_key: A_ROW.reminders, fire_at: "2026-10-26T09:00:00Z" } },
+  { method: "POST", path: "/api/github-activity", body: { action: "sync" } },
+  { method: "POST", path: "/functions/v1/github-activity", body: { action: "connect", token: "x" } },
+  { method: "POST", path: "/api/cron/github-poll" },
+  { method: "POST", path: "/api/cron/trim-sync-log" },
 ];
 
 for (const route of unauth) {
@@ -518,6 +529,211 @@ const aOwn = await withTimeout(
 ok(aOwn.status === 200, `A still reads own task: HTTP ${aOwn.status}`);
 const aOwnBody = (await aOwn.json()) as { data?: { title?: string } };
 ok(aOwnBody.data?.title === "A secret task", "A still reads own task title");
+
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input);
+  const auth = new Headers(init?.headers).get("Authorization") ?? "";
+  if (url.startsWith("https://api.github.com/user") && !url.includes("/repos")) {
+    if (auth.includes("bad-token")) return new Response("", { status: 401 });
+    const login = auth.includes("token-b") ? "octo-b" : "octo-a";
+    return new Response(JSON.stringify({ login, avatar_url: "https://example.test/a.png" }), { status: 200 });
+  }
+  if (url.includes("api.github.com/user/repos")) {
+    const full = auth.includes("token-b") ? "octo-b/lab" : "octo-a/nuvo";
+    return new Response(JSON.stringify([{ full_name: full, pushed_at: "2026-10-01T00:00:00Z", private: false }]), {
+      status: 200,
+    });
+  }
+  if (url.includes("api.github.com/search/issues")) {
+    const title = url.includes("octo-b") ? "B only PR" : "A secret PR";
+    return new Response(
+      JSON.stringify({
+        items: [
+          {
+            node_id: title === "B only PR" ? "PR_kwDOB" : "PR_kwDOA",
+            title,
+            html_url: "https://github.com/example/pull/1",
+            pull_request: { merged_at: "2026-10-20T12:00:00Z" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }
+  return realFetch(input, init);
+};
+
+const RANDOM_SRC = "b0b0b0b0-0000-4000-8000-00000000ffff";
+const connectA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ action: "connect", token: "github_pat_11AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", user_id: b.id }),
+  }),
+  8000,
+  "A github connect",
+);
+ok(connectA.status === 200, `A github connect: HTTP ${connectA.status}`);
+const connectABody = (await connectA.json()) as { source?: { id?: string; login?: string } };
+ok(connectABody.source?.login === "octo-a", "A github connect: login from GitHub");
+const sourceA = connectABody.source?.id ?? "";
+ok(sourceA.length > 0, "A github connect: source id");
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceA, a.id])) === 1, "A github connect: row is A's");
+ok((await count("activity_sources", "user_id = $1", [b.id])) === 0, "A github connect: forged user_id did not plant on B");
+
+const connectB = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "connect", token: "github_pat_11BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", user_id: a.id }),
+  }),
+  8000,
+  "B github connect",
+);
+ok(connectB.status === 200, `B github connect: HTTP ${connectB.status}`);
+const sourceB = ((await connectB.json()) as { source?: { id?: string } }).source?.id ?? "";
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceB, b.id])) === 1, "B github connect: row is B's");
+ok((await count("activity_sources", "user_id = $1 AND id = $2", [a.id, sourceB])) === 0, "B github connect: client user_id ignored");
+
+const bindA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceA, projectId: A_ROW.projects, repo: "octo-a/nuvo" }),
+  }),
+  8000,
+  "A github bind",
+);
+ok(bindA.status === 200, `A github bind: HTTP ${bindA.status}`);
+const bindABody = (await bindA.json()) as { count?: number; recent?: Array<{ title?: string }> };
+ok((bindABody.count ?? 0) >= 1, "A github bind: pulled a PR");
+ok(bindABody.recent?.some((r) => r.title === "A secret PR"), "A github bind: recent is A's title");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "A github bind: unit on A");
+
+const bindFk = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceB, projectId: A_ROW.projects, repo: "octo-b/lab" }),
+  }),
+  8000,
+  "B bind A's project",
+);
+const bindFkRand = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceB, projectId: RANDOM_SRC, repo: "octo-b/lab" }),
+  }),
+  8000,
+  "B bind random project",
+);
+ok(denied(bindFk.status), `B bind A's project: HTTP ${bindFk.status}`);
+ok(bindFk.status === bindFkRand.status, `B bind FK vs random: ${bindFk.status} vs ${bindFkRand.status}`);
+ok((await count("activity_bindings", "user_id = $1 AND project_id = $2", [b.id, A_ROW.projects])) === 0, "B bind: no row on A's project");
+
+const stealSrc = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceA, projectId: A_ROW.projects, repo: "octo-a/nuvo" }),
+  }),
+  8000,
+  "B bind A's source",
+);
+ok(denied(stealSrc.status), `B bind A's source: HTTP ${stealSrc.status}`);
+ok((await count("activity_bindings", "source_id = $1 AND user_id = $2", [sourceA, b.id])) === 0, "B bind A's source: no binding planted");
+
+const syncBOnA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "sync", sourceId: sourceA }),
+  }),
+  8000,
+  "B sync A's source",
+);
+const syncBOnABody = (await syncBOnA.json()) as { count?: number; recent?: unknown[] };
+ok(syncBOnA.status === 200 && syncBOnABody.count === 0, `B sync A's source: count=${syncBOnABody.count}`);
+ok((await count("activity_units", "user_id = $1 AND title = $2", [b.id, "A secret PR"])) === 0, "B sync: A's PR not planted on B");
+
+const themeB = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "theme", weekStartISO: "2026-10-19T00:00:00.000Z" }),
+  }),
+  8000,
+  "B theme",
+);
+ok(themeB.status === 200, `B theme: HTTP ${themeB.status}`);
+const themeBBody = (await themeB.json()) as { groups?: Array<{ titles?: string[] }> };
+const themeTitles = (themeBBody.groups ?? []).flatMap((g) => g.titles ?? []);
+ok(!themeTitles.includes("A secret PR"), "B theme: omits A's titles");
+
+const discA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "disconnect", sourceId: sourceA }),
+  }),
+  8000,
+  "B disconnect A's source",
+);
+const discRand = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "disconnect", sourceId: RANDOM_SRC }),
+  }),
+  8000,
+  "B disconnect random",
+);
+ok(discA.status === discRand.status, `B disconnect A's id vs random: ${discA.status} vs ${discRand.status}`);
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceA, a.id])) === 1, "B disconnect: A's source remains");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "B disconnect: A's unit remains");
+
+const cronNo = await withTimeout(request("/api/cron/github-poll", { method: "POST" }), 8000, "cron github unauth");
+ok(cronNo.status === 401, `cron github-poll unauth: HTTP ${cronNo.status}`);
+const cronTrimNo = await withTimeout(request("/api/cron/trim-sync-log", { method: "POST" }), 8000, "cron trim unauth");
+ok(cronTrimNo.status === 401, `cron trim-sync-log unauth: HTTP ${cronTrimNo.status}`);
+
+await db.query(
+  `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
+   VALUES ($1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+  [a.id],
+);
+await db.query(
+  `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
+   VALUES ($1, 'github', 'sync', 'ok', now())`,
+  [a.id],
+);
+const cronTrim = await withTimeout(
+  request("/api/cron/nuvo-trim-sync-log", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.CRON_SECRET}` },
+  }),
+  8000,
+  "cron trim",
+);
+ok(cronTrim.status === 200, `cron trim-sync-log: HTTP ${cronTrim.status}`);
+ok((await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id])) === 0, "cron trim: old A rows gone");
+ok((await count("sync_log", "user_id = $1", [a.id])) === 1, "cron trim: recent A row kept");
+
+const cronPoll = await withTimeout(
+  request("/api/cron/github-poll", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.CRON_SECRET}` },
+  }),
+  8000,
+  "cron poll",
+);
+ok(cronPoll.status === 200, `cron github-poll: HTTP ${cronPoll.status}`);
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "cron poll: A's unit still A's");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [b.id, "A secret PR"])) === 0, "cron poll: A's title not on B");
+
+globalThis.fetch = realFetch;
 
 restore();
 await kysely.destroy();

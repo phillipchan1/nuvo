@@ -14,6 +14,11 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** 32-byte AES-256-GCM key (hex / base64 / raw). PR A crypto. */
+  TOKEN_ENC_KEY_V1?: string;
+  /** Direct OpenAI — theme only. Unset → theme lines fall back to null. */
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

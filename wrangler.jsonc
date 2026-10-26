@@ -34,6 +34,15 @@
   "observability": {
     "enabled": true
   },
+  // github-poll (09:20 UTC daily) and trim-sync-log (Sunday 10:00 UTC).
+  // Same expressions as supabase/migrations cron. Fan-out is an in-request
+  // per-user loop (current scale ≪ Workers Paid CPU). Queues not needed.
+  "triggers": {
+    "crons": [
+      "20 9 * * *",
+      "0 10 * * 0"
+    ]
+  },
   // workers.dev only. No routes, no custom domain. Do not deploy without
   // `--env preview`. See docs/cloudflare-cutover.md.
   "env": {

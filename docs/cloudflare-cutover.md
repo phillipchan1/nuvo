@@ -45,7 +45,9 @@ None of these belong in the Vite bundle.
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
 | `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Jobs are not ported (501) |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. `github-poll` / `trim-sync-log` are ported; other jobs 501 |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (PR A). Required for github-activity connect/sync |
+| `OPENAI_API_KEY` | secret | Direct OpenAI for github `theme`. Unset → theme lines fall back to null |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -155,23 +157,21 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ---
 
-## Crons stay off the Worker
+## Crons
 
-`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
-`CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
-or wrong; 501 stay-on-Supabase if it matches). Do not add Workers Cron
-Triggers in this rehearsal.
+`vercel.json` has **no `crons`**. `CRON_SECRET` is compared in constant time
+on `/api/cron/:job` (401 if unset or wrong).
 
-Every recurring job stays where it is today:
+Ported to the Worker (`scheduled` + `/api/cron/:job`):
 
-| Where | What |
-|---|---|
-| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch, github-poll, SQL prune/purge |
-| **Vercel** | nothing scheduled. If a Vercel cron is added later, it stays on Vercel until a signed-off Workers port |
+| Job | Trigger | Notes |
+|---|---|---|
+| `github-poll` / `nuvo-github-poll` | `20 9 * * *` | Per-user loop over `activity_sources`. No Queue — current scale is well inside Workers Paid CPU. |
+| `trim-sync-log` / `nuvo-trim-sync-log` | `0 10 * * 0` | Per-user `DELETE` of `sync_log` older than 30 days |
 
-A later cutover that wants Workers Cron Triggers would need a `scheduled`
-export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the
-matching `pg_cron` job — none of that is this PR.
+Supabase `pg_cron` definitions stay in place until the flip
+(`cron.unschedule` then, reversible). Other jobs (rollover, google-renew,
+calendar-dispatch, push-dispatch, prune/purge) still 501 on the Worker.
 
 ---
 

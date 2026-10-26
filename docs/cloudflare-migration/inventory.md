@@ -103,7 +103,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `capture` | Connection bearer | no | Stay |
 | `day` | User JWT | no | Stay |
 | `delete-account` | User JWT + confirm | Stripe cancel | Stay |
-| `github-activity` | JWT or service role | no | Stay |
+| `github-activity` | JWT or `CRON_SECRET` | no | Worker + Neon (sealed PAT). Supabase fn stays for rollback. |
 | `google-contacts` | JWT / service | no | Stay |
 | `google-events` | JWT | no | Stay |
 | `google-oauth` | OAuth state | no | Stay |
@@ -181,8 +181,8 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 |---|---|
 | `nuvo-rollover-pst` / `pdt` | `rollover` |
 | `nuvo-google-renew` | `google-sync` |
-| `nuvo-trim-sync-log` | SQL |
-| `nuvo-github-poll` | `github-activity` |
+| `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (per-user DELETE) |
+| `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` |
 | `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) |
 | `nuvo-push-dispatch` | `push-dispatch` |
 | `nuvo-reminder-deliveries-prune` | SQL |
@@ -190,10 +190,10 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
-`scheduled` handler. `CRON_SECRET` is compared in constant time on
-`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
-§ Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker `scheduled`
+handler runs `github-poll` and `trim-sync-log`. `CRON_SECRET` is compared
+in constant time on `/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
+§ Crons.
 
 ---
 

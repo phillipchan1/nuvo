@@ -89,12 +89,20 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
+### GitHub activity + housekeeping crons
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST /api/github-activity` · `/functions/v1/github-activity` | Session store. Connect / repos / sync / theme / disconnect / bind filter `activity_*` by `user_id = store.userId`. PAT sealed with `sealToken` (AAD `activity_sources:id:user_id`). | B sync/bind/disconnect of A's `sourceId` = random id (404 or `{count:0}`); A's units unchanged. Bind onto A's `project_id` rejected (`assertOwnedFks` equivalent). | `accessHttp.check.ts` + `tokenDecrypt.check.ts` |
+| `POST /api/cron/github-poll` · `nuvo-github-poll` | `CRON_SECRET`. Iterates `SELECT id FROM users` then `activity_sources WHERE user_id = $id`. | unauth 401; poll does not move A's units onto B | `accessHttp.check.ts` |
+| `POST /api/cron/trim-sync-log` · `nuvo-trim-sync-log` | `CRON_SECRET`. Per-user `DELETE FROM sync_log WHERE user_id = $id AND created_at < now() - 30 days`. | unauth 401; recent rows kept | `accessHttp.check.ts` |
+
 ### Stubs / cron (no planner SQL)
 
 | Route | Scope | Test |
 |---|---|---|
-| `ALL /api/cron/:job` | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Match → 501 (not ported) | `miniflare.seq.check.ts` |
-| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` | 501 stay-on-Supabase. No DB | — |
+| `ALL /api/cron/:job` (other jobs) | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Unported match → 501 | `miniflare.seq.check.ts` |
+| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` (except `github-activity`) | 501 stay-on-Supabase. No DB | — |
 
 `subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
 are **not** on this Worker.
@@ -145,7 +153,8 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log crons included. |
+| `worker/src/tokenDecrypt.check.ts` | GitHub PAT seal/open: prefix/length only; AAD user/row/table mismatch fails; sealed `activity_sources` row decrypts. |
 | `scripts/prove-isolation-mutation.mjs` | Deleting any `user_id = ${store.userId}` clause turns `access.check.ts` red |
 | `worker/src/miniflare.seq.check.ts` | Real workerd + Postgres: task create/read/patch + B 404 + unauthenticated-style raw token 401 |
 | `worker/src/requestReuse.check.ts` | Invalid bearer 401; client-supplied foreign id does not overwrite |

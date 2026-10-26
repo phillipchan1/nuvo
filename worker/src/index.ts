@@ -14,6 +14,14 @@ import {
   requireJsonObject,
   requireUuid,
 } from "./http.ts";
+import {
+  handleGithubActivity,
+  handleScheduled,
+  isGithubCronJob,
+  isTrimCronJob,
+  runGithubPoll,
+  runTrimSyncLog,
+} from "./githubActivity.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
@@ -332,19 +340,34 @@ function notPorted(name: string): Response {
   );
 }
 
-app.all("/api/cron/:job", (c) => {
+app.all("/api/github-activity", (c) => handleGithubActivity(c));
+app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
+
+app.all("/api/cron/:job", async (c) => {
   const token = bearerToken(c.req.header("authorization"));
   if (!cronAuthorized(token, c.env.CRON_SECRET)) {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
-  return notPorted(c.req.param("job"));
+  const job = c.req.param("job");
+  if (isGithubCronJob(job)) {
+    const io = await requestIo(c);
+    return json(await runGithubPoll(io.sql, c.env), 200, OPEN_CORS);
+  }
+  if (isTrimCronJob(job)) {
+    const io = await requestIo(c);
+    return json(await runTrimSyncLog(io.sql), 200, OPEN_CORS);
+  }
+  return notPorted(job);
 });
 
 app.all("/api/agent", () => notPorted("agent"));
 app.all("/api/mcp", () => notPorted("mcp"));
 app.all("/functions/v1/agent", () => notPorted("agent"));
 app.all("/functions/v1/mcp", () => notPorted("mcp"));
-app.all("/functions/v1/:name", (c) => notPorted(c.req.param("name")));
+app.all("/functions/v1/:name", (c) => {
+  if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
+  return notPorted(c.req.param("name"));
+});
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);
@@ -365,4 +388,7 @@ async function fromAssets(c: { env: Env; req: { raw: Request; url: string } }): 
 app.all("/assets/*", (c) => fromAssets(c));
 app.all("*", (c) => fromAssets(c));
 
-export default app;
+type WorkerApp = typeof app & { scheduled: typeof handleScheduled };
+const worker = app as WorkerApp;
+worker.scheduled = handleScheduled;
+export default worker;

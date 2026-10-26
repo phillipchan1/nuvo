@@ -207,3 +207,68 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
 CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON public.tasks (user_id, status, do_date);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON public.domains (user_id);
 CREATE INDEX IF NOT EXISTS projects_user_idx ON public.projects (user_id);
+
+-- Activity sources (GitHub PATs). Enc columns are PR A's vault replacement.
+CREATE TABLE IF NOT EXISTS public.activity_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'github',
+  login TEXT,
+  avatar_url TEXT,
+  token_secret_id UUID,
+  repos JSONB NOT NULL DEFAULT '[]'::jsonb,
+  needs_reconnect BOOLEAN NOT NULL DEFAULT false,
+  cursor TIMESTAMPTZ,
+  last_synced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  refresh_token_enc BYTEA,
+  refresh_token_iv BYTEA,
+  key_version SMALLINT,
+  UNIQUE (user_id, kind, login)
+);
+
+ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
+ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
+ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS key_version SMALLINT;
+
+CREATE TABLE IF NOT EXISTS public.activity_bindings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  source_id UUID NOT NULL REFERENCES public.activity_sources (id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES public.projects (id) ON DELETE CASCADE,
+  selector TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_id, selector)
+);
+
+CREATE TABLE IF NOT EXISTS public.activity_units (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  source_id UUID NOT NULL REFERENCES public.activity_sources (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'github',
+  external_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  url TEXT,
+  selector TEXT,
+  project_id UUID REFERENCES public.projects (id) ON DELETE SET NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  raw JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_id, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS activity_units_user_occurred ON public.activity_units (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS activity_sources_user_idx ON public.activity_sources (user_id);
+
+CREATE TABLE IF NOT EXISTS public.sync_log (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID REFERENCES public.users (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS sync_log_user_created_idx ON public.sync_log (user_id, created_at);
