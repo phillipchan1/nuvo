@@ -953,6 +953,8 @@ jobs:
                   )
               ba_sql.append("COMMIT;")
               psql(target, "\n".join(ba_sql))
+              # Contract: worker/src/lib/authMap.ts — Apple identity_data.sub
+              # becomes account.accountId; user_id is preserved as account.userId.
               print("mapping auth.identities → account (google / apple / email)…", flush=True)
               acc_sql = ["BEGIN;"]
               mapped = 0

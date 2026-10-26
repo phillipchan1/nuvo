@@ -22,6 +22,9 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
+import { installBillingReaderForTests } from "./lib/billingRead.ts";
+import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
+import { mapAuthIdentityToAccount } from "./lib/authMap.ts";
 import app from "./index.ts";
 
 const fails: string[] = [];
@@ -44,6 +47,23 @@ ok(!/c\.req\.query\(["']user_id["']\)/.test(indexSrc), "routes: no user_id query
 ok(!/c\.req\.header\(["'](?:x-user-id|user-id)["']\)/i.test(indexSrc), "routes: no client user-id header");
 ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
+ok(/persistAppleIdentity/.test(indexSrc) && /deleteOwnedAccount/.test(indexSrc), "routes: apple-identity and delete-account are mounted");
+ok(!/STRIPE_SECRET|stripe\.subscriptions|api\.stripe\.com/.test(readFileSync(join(here, "deleteAccount.ts"), "utf8")), "delete-account: no Stripe secret or API");
+ok(/socialProviders/.test(readFileSync(join(here, "auth.ts"), "utf8")) && /apple:/.test(readFileSync(join(here, "auth.ts"), "utf8")), "createAuth: Better Auth Apple provider is wired");
+
+const appleMap = mapAuthIdentityToAccount({
+  user_id: "11111111-1111-1111-1111-111111111111",
+  provider: "apple",
+  provider_id: "should-lose",
+  identity_data: { sub: "001234.apple-sub.0001", provider_id: "should-lose" },
+});
+ok(appleMap?.accountId === "001234.apple-sub.0001", "auth map: Apple sub becomes accountId");
+ok(appleMap?.providerId === "apple", "auth map: provider is apple");
+ok(appleMap?.userId === "11111111-1111-1111-1111-111111111111", "auth map: user_id is preserved");
+const copyYml = readFileSync(join(here, "../../.github/workflows/cutover-migrate.yml"), "utf8");
+ok(copyYml.includes("identity_data->>'sub'"), "copy: Apple sub is the identity account id");
+ok(copyYml.includes('provider in {"google", "apple"}'), "copy: apple maps to Better Auth apple");
+ok(copyYml.includes('"accountId"') && copyYml.includes('"userId"'), "copy: writes BA accountId + userId");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
@@ -105,6 +125,11 @@ const env = {
 const restore = installRequestIoForTests(() => {
   const auth = createAuth(env, { db: kysely, type: "postgres" });
   return { sql, auth, close: async () => {} };
+});
+const stripeHolders = new Set<string>();
+const restoreBilling = installBillingReaderForTests(async (_env, userId) => {
+  if (!stripeHolders.has(userId)) return null;
+  return { status: "active", plan_source: "stripe", stripe_subscription_id: "sub_test" };
 });
 
 const origin = "http://localhost:8787";
@@ -312,6 +337,10 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/api/rpc/contacts", body: { search: "secret" } },
   { method: "POST", path: "/api/rpc/rotate_inbound_token" },
   { method: "POST", path: "/api/rpc/claim_reminder", body: { reminder_key: A_ROW.reminders, fire_at: "2026-10-26T09:00:00Z" } },
+  { method: "POST", path: "/api/apple-identity", body: { appleUserId: "anon" } },
+  { method: "POST", path: "/functions/v1/apple-identity", body: { appleUserId: "anon" } },
+  { method: "POST", path: "/api/delete-account", body: { confirm: ACCOUNT_DELETE_CONFIRM } },
+  { method: "POST", path: "/functions/v1/delete-account", body: { confirm: ACCOUNT_DELETE_CONFIRM } },
 ];
 
 for (const route of unauth) {
@@ -519,6 +548,156 @@ ok(aOwn.status === 200, `A still reads own task: HTTP ${aOwn.status}`);
 const aOwnBody = (await aOwn.json()) as { data?: { title?: string } };
 ok(aOwnBody.data?.title === "A secret task", "A still reads own task title");
 
+const appleA = await withTimeout(
+  request("/api/apple-identity", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({
+      appleUserId: "001234.apple-a",
+      email: "iso-a@example.test",
+      givenName: "Ada",
+      familyName: "Iso",
+    }),
+  }),
+  8000,
+  "A apple-identity",
+);
+ok(appleA.status === 200, `A apple-identity: HTTP ${appleA.status}`);
+const appleABody = (await appleA.json()) as { ok?: boolean };
+ok(appleABody.ok === true, "A apple-identity: ok");
+ok(
+  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [a.id])) === "001234.apple-a",
+  "A apple-identity: stored own sub",
+);
+ok(
+  (await count("account", `"userId" = $1 AND "providerId" = 'apple' AND "accountId" = $2`, [a.id, "001234.apple-a"])) === 1,
+  "A apple-identity: Better Auth account linked to Apple sub",
+);
+
+const appleSteal = await withTimeout(
+  request("/api/apple-identity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({
+      appleUserId: "001234.apple-a",
+      user_id: a.id,
+      email: "stolen@example.test",
+      givenName: "Thief",
+    }),
+  }),
+  8000,
+  "B apple-identity plant",
+);
+ok(appleSteal.status === 200, `B apple-identity with A's sub + user_id: HTTP ${appleSteal.status}`);
+const appleStealBody = (await appleSteal.json()) as { ok?: boolean; error?: string };
+ok(appleStealBody.ok === true, "B apple-identity: no existence oracle (same ok)");
+ok(!appleStealBody.error, "B apple-identity: no error naming A");
+ok(
+  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [a.id])) === "001234.apple-a",
+  "B apple-identity: A's sub unchanged",
+);
+ok(
+  (await scalar<string>("SELECT email FROM apple_identities WHERE user_id = $1", [a.id])) === "iso-a@example.test",
+  "B apple-identity: A's email unchanged",
+);
+ok(
+  (await count("apple_identities", "user_id = $1 AND apple_user_id = $2", [b.id, "001234.apple-a"])) === 0,
+  "B apple-identity: did not attach A's sub",
+);
+ok(
+  (await count("account", `"userId" = $1 AND "accountId" = $2`, [b.id, "001234.apple-a"])) === 0,
+  "B apple-identity: did not plant a BA account on A's sub",
+);
+
+const fnAlias = await withTimeout(
+  request("/functions/v1/apple-identity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ appleUserId: "001234.apple-b", email: "iso-b@example.test" }),
+  }),
+  8000,
+  "B apple-identity alias",
+);
+ok(fnAlias.status === 200, `B apple-identity alias: HTTP ${fnAlias.status}`);
+
+const noConfirm = await withTimeout(
+  request("/api/delete-account", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ confirm: "delete" }),
+  }),
+  8000,
+  "A delete bad confirm",
+);
+ok(noConfirm.status === 400, `A delete without DELETE: HTTP ${noConfirm.status}`);
+ok((await count("users", "id = $1", [a.id])) === 1, "A delete without DELETE: planner row remains");
+
+stripeHolders.add(a.id);
+const stripeBlock = await withTimeout(
+  request("/api/delete-account", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ confirm: ACCOUNT_DELETE_CONFIRM, user_id: b.id }),
+  }),
+  8000,
+  "A delete with active Stripe",
+);
+ok(stripeBlock.status === 409, `A delete with active Stripe: HTTP ${stripeBlock.status}`);
+const stripeBlockBody = (await stripeBlock.json()) as { error?: string; ok?: boolean };
+ok(
+  typeof stripeBlockBody.error === "string" && /Billing/i.test(stripeBlockBody.error) && /cancel/i.test(stripeBlockBody.error),
+  "A delete with active Stripe: clear cancel-first message",
+);
+ok(stripeBlockBody.ok !== true, "A delete with active Stripe: not ok");
+ok((await count("users", "id = $1", [a.id])) === 1, "A delete with active Stripe: planner rows remain");
+ok((await count("tasks", "id = $1", [A_ROW.tasks])) === 1, "A delete with active Stripe: task remains");
+ok((await count('"user"', "id = $1", [a.id])) === 1, "A delete with active Stripe: Better Auth user remains");
+stripeHolders.delete(a.id);
+
+const forgedDelete = await withTimeout(
+  request("/api/delete-account", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ confirm: ACCOUNT_DELETE_CONFIRM, user_id: a.id }),
+  }),
+  8000,
+  "B delete with A's id",
+);
+ok(forgedDelete.status === 200, `B delete with A's id: HTTP ${forgedDelete.status}`);
+ok((await count("users", "id = $1", [a.id])) === 1, "B delete with A's id: A planner remains");
+ok((await count("tasks", "id = $1", [A_ROW.tasks])) === 1, "B delete with A's id: A task remains");
+ok((await count('"user"', "id = $1", [a.id])) === 1, "B delete with A's id: A Better Auth user remains");
+ok((await count("users", "id = $1", [b.id])) === 0, "B delete with A's id: wiped B (session owner), not A");
+ok((await count('"user"', "id = $1", [b.id])) === 0, "B delete with A's id: B Better Auth user gone");
+
+const c = await signInOtp("iso-c@example.test");
+const cTask = await withTimeout(
+  request("/api/data/tasks", {
+    method: "POST",
+    headers: jsonHeaders(c.token),
+    body: JSON.stringify({ title: "C only" }),
+  }),
+  8000,
+  "C task",
+);
+ok(cTask.status === 200, `C task: HTTP ${cTask.status}`);
+const wipeC = await withTimeout(
+  request("/functions/v1/delete-account", {
+    method: "POST",
+    headers: jsonHeaders(c.token),
+    body: JSON.stringify({ confirm: ACCOUNT_DELETE_CONFIRM }),
+  }),
+  8000,
+  "C delete",
+);
+ok(wipeC.status === 200, `C delete: HTTP ${wipeC.status}`);
+const wipeCBody = (await wipeC.json()) as { ok?: boolean };
+ok(wipeCBody.ok === true, "C delete: ok");
+ok((await count("users", "id = $1", [c.id])) === 0, "C delete: planner user gone");
+ok((await count('"user"', "id = $1", [c.id])) === 0, "C delete: Better Auth user gone");
+ok((await count("users", "id = $1", [a.id])) === 1, "C delete: A planner untouched");
+
+restoreBilling();
 restore();
 await kysely.destroy();
 await db.close();

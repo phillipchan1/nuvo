@@ -68,3 +68,7 @@ INSERT INTO public.week_reviews (id, user_id, week_start) VALUES
 INSERT INTO public.event_domain_routing (id, user_id, event_key, domain_id) VALUES
   ('aaaaaaaa-dddd-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'evt-a', 'aaaaaaaa-0000-4000-8000-000000000001'),
   ('bbbbbbbb-dddd-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'evt-b', 'bbbbbbbb-0000-4000-8000-000000000001');
+
+INSERT INTO public.apple_identities (user_id, apple_user_id, email, given_name, family_name, is_private_relay) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'apple-sub-a.001', 'a@example.test', 'Ada', 'A', false),
+  ('22222222-2222-2222-2222-222222222222', 'apple-sub-b.002', 'b@example.test', 'Bea', 'B', false);

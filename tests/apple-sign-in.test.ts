@@ -278,6 +278,21 @@ describe("deleting the account revokes Apple's grant (guideline 5.1.1(v))", () =
     expect(fn).toContain("mergeAppleProfile");
   });
 
+  it("the Worker ports apple-identity onto Better Auth's Apple account row", () => {
+    const fn = read("worker/src/appleIdentity.ts");
+    expect(fn).toContain("mergeAppleProfile");
+    expect(fn).toContain("exchangeAppleAuthorizationCode");
+    expect(fn).toContain("linkOwnedAppleAccount");
+    const auth = read("worker/src/auth.ts");
+    expect(auth).toContain("socialProviders");
+    expect(auth).toMatch(/apple:/);
+    const spa = read("src/lib/appleAuth.ts");
+    expect(spa).toContain("workersEnabled");
+    expect(spa).toContain("signIn.social");
+    expect(spa).toContain("linkSocial");
+    expect(spa).toContain('provider: "apple"');
+  });
+
   it("the migration creates apple_identities with owner-only reads", () => {
     const sql = read("supabase/migrations/00000000000076_apple_identities.sql");
     expect(sql).toContain("create table if not exists public.apple_identities");

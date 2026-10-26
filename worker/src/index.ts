@@ -33,6 +33,8 @@ import {
   upsertOwned,
   type PlannerTable,
 } from "./store.ts";
+import { persistAppleIdentity } from "./appleIdentity.ts";
+import { deleteOwnedAccount } from "./deleteAccount.ts";
 
 type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
@@ -60,7 +62,7 @@ app.use("*", async (c, next) => {
  * itself have finished. Starting `sql.end()` from requireStore used to
  * kill queries still running in the route (CONNECTION_ENDED).
  */
-app.use("/api/*", async (c, next) => {
+async function closeRequestIo(c: Context<AppEnv>, next: () => Promise<void>) {
   try {
     await next();
   } finally {
@@ -70,7 +72,10 @@ app.use("/api/*", async (c, next) => {
     scheduleClose(c, closing);
     await closing;
   }
-});
+}
+
+app.use("/api/*", closeRequestIo);
+app.use("/functions/v1/*", closeRequestIo);
 
 async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
   const existing = c.get("io");
@@ -182,7 +187,7 @@ async function requireStore(c: Context<AppEnv>) {
   const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
     emailVerified: user.emailVerified,
   });
-  return { store };
+  return { store, user };
 }
 
 app.onError((err, c) => {
@@ -338,6 +343,35 @@ app.all("/api/cron/:job", (c) => {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
   return notPorted(c.req.param("job"));
+});
+
+app.options("/api/apple-identity", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/delete-account", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/apple-identity", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/delete-account", () => new Response("ok", { headers: OPEN_CORS }));
+
+app.post("/api/apple-identity", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  const body = await readJson<unknown>(c).catch(() => ({}));
+  return persistAppleIdentity(got.store, got.user, body, c.env);
+});
+app.post("/functions/v1/apple-identity", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  const body = await readJson<unknown>(c).catch(() => ({}));
+  return persistAppleIdentity(got.store, got.user, body, c.env);
+});
+
+app.post("/api/delete-account", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return deleteOwnedAccount(got.store, got.user, await readJson<unknown>(c), c.env);
+});
+app.post("/functions/v1/delete-account", async (c) => {
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
+  return deleteOwnedAccount(got.store, got.user, await readJson<unknown>(c), c.env);
 });
 
 app.all("/api/agent", () => notPorted("agent"));

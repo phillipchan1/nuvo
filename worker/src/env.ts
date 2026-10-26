@@ -14,6 +14,19 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** Better Auth Apple provider (Services ID or bundle id) + client_secret JWT. */
+  APPLE_CLIENT_ID?: string;
+  APPLE_CLIENT_SECRET?: string;
+  APPLE_BUNDLE_ID?: string;
+  APPLE_SIWA_CLIENT_ID?: string;
+  APPLE_SIWA_TEAM_ID?: string;
+  APPLE_SIWA_KEY_ID?: string;
+  APPLE_SIWA_PRIVATE_KEY?: string;
+  /** Read-only Supabase PostgREST for `subscriptions`. Never a Stripe secret. */
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  /** PR A seal key. Unset → Apple refresh token lives on the BA account row. */
+  TOKEN_ENC_KEY_V1?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

@@ -97,12 +97,12 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 |---|---|---|---|
 | `agent` | User JWT | no | Route alias only (handler still Deno/Supabase) |
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
-| `apple-identity` | User JWT | no | Stay |
+| `apple-identity` | User JWT | no | Dual-path (Worker + Better Auth Apple provider) |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
 | `calendar-refresh` | User JWT | no | Stay |
 | `capture` | Connection bearer | no | Stay |
 | `day` | User JWT | no | Stay |
-| `delete-account` | User JWT + confirm | Stripe cancel | Stay |
+| `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if active) | Dual-path |
 | `github-activity` | JWT or service role | no | Stay |
 | `google-contacts` | JWT / service | no | Stay |
 | `google-events` | JWT | no | Stay |

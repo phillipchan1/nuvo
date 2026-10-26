@@ -204,6 +204,25 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
   name TEXT
 );
 
+CREATE TABLE IF NOT EXISTS public.apple_identities (
+  user_id UUID PRIMARY KEY REFERENCES public.users (id) ON DELETE CASCADE,
+  apple_user_id TEXT,
+  email TEXT,
+  given_name TEXT,
+  family_name TEXT,
+  is_private_relay BOOLEAN NOT NULL DEFAULT FALSE,
+  refresh_token_secret_id UUID,
+  refresh_token_enc BYTEA,
+  refresh_token_iv BYTEA,
+  key_version SMALLINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS apple_identities_apple_user_id_uidx
+  ON public.apple_identities (apple_user_id)
+  WHERE apple_user_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON public.tasks (user_id, status, do_date);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON public.domains (user_id);
 CREATE INDEX IF NOT EXISTS projects_user_idx ON public.projects (user_id);

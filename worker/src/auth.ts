@@ -44,15 +44,29 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
   }
 }
 
+function appleSocialProvider(env: Env) {
+  const clientId = (env.APPLE_CLIENT_ID ?? env.APPLE_SIWA_CLIENT_ID ?? env.APPLE_BUNDLE_ID)?.trim();
+  const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return undefined;
+  const bundle = env.APPLE_BUNDLE_ID?.trim();
+  return {
+    clientId,
+    clientSecret,
+    ...(bundle ? { appBundleIdentifier: bundle } : {}),
+  };
+}
+
 export function createAuth(env: Env, database: AuthDatabase) {
   const secret = env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
   const baseURL = resolveAuthBaseURL(env);
+  const apple = appleSocialProvider(env);
   return betterAuth({
     secret,
     baseURL,
     basePath: "/api/auth",
     database,
+    ...(apple ? { socialProviders: { apple } } : {}),
     // Password stays for App Review / already-verified accounts. Sign-up
     // must not auto-sign-in: an unverified email+password account would
     // otherwise adopt the planner row for that email (account takeover).

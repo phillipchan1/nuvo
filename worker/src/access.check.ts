@@ -29,6 +29,9 @@ import {
   updateSettingsTheme,
   updateTaskTitle,
   upsertOwned,
+  getOwnedAppleIdentity,
+  appleUserIdTakenByOther,
+  upsertOwnedAppleIdentity,
   type PlannerTable,
 } from "./store.ts";
 
@@ -350,6 +353,27 @@ const reB = await bootstrapUser(makeStore(sql, "66666666-6666-6666-6666-66666666
 ok(reB.userId === B, "bootstrap: verified re-signup of B's email adopts B");
 ok((await getOwned(reB, "domains", DOMAIN_B)) != null, "bootstrap: adopted B session sees B's domain");
 ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B still cannot read A");
+
+const appleA = await getOwnedAppleIdentity(storeA);
+ok(appleA?.apple_user_id === "apple-sub-a.001", "apple identity: A reads own sub");
+ok((await getOwnedAppleIdentity(storeA))?.email !== "b@example.test", "apple identity: A does not see B email");
+ok(await appleUserIdTakenByOther(storeA, "apple-sub-b.002"), "apple identity: B's sub is taken from A's view");
+ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a.001")), "apple identity: own sub is not taken-by-other");
+await upsertOwnedAppleIdentity(storeA, {
+  apple_user_id: "apple-sub-a.001",
+  email: "a-renamed@example.test",
+  given_name: "Ada",
+  family_name: "A",
+  is_private_relay: false,
+});
+ok(
+  (await scalar<string>("SELECT email FROM apple_identities WHERE user_id = $1", [B])) === "b@example.test",
+  "apple identity: upsert on A does not rewrite B",
+);
+ok(
+  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [B])) === "apple-sub-b.002",
+  "apple identity: B sub unchanged after A upsert",
+);
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

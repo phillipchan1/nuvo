@@ -89,14 +89,22 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
+### Identity + deletion
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST /api/apple-identity` (and `/functions/v1/apple-identity`) | Session owner. Merges name/email (`mergeAppleProfile`), links Better Auth `account` (`providerId=apple`, `accountId` = Apple `sub`). Client `user_id` ignored. A foreign Apple sub is dropped with the same `{ ok: true }` — no existence oracle. | 200, A's row unchanged | `accessHttp.check.ts` + `access.check.ts` |
+| `POST /api/delete-account` (and `/functions/v1/delete-account`) | Session owner. Confirm word `DELETE`. Active Stripe sub (Supabase `subscriptions` read-only — **no Stripe secret, no Stripe API**) → **409** with a cancel-in-Billing message. Else wipe Neon `users` (cascade) + Better Auth `"user"` (cascade). | B posting A's id wipes **B**, not A. Unauth → 401 | `accessHttp.check.ts` + `tests/delete-account-worker.test.ts` |
+
 ### Stubs / cron (no planner SQL)
 
 | Route | Scope | Test |
 |---|---|---|
 | `ALL /api/cron/:job` | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Match → 501 (not ported) | `miniflare.seq.check.ts` |
-| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` | 501 stay-on-Supabase. No DB | — |
+| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` (except the two routes above) | 501 stay-on-Supabase. No DB | — |
 
-`subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
+`subscriptions` stay on Supabase; the Worker only **reads** status to refuse
+a wipe. `stripe_*` writers, StoreKit, calendar tokens, and push tables
 are **not** on this Worker.
 
 ---
@@ -118,6 +126,11 @@ deletes each clause in turn and expects `access.check.ts` to fail.
 | `claimReminder` | reminder owned, then insert delivery as `store.userId` |
 | `contacts` | `contacts_directory.user_id = store.userId` |
 | `bootstrapUser` | looks up `users` by `auth_id` / id / verified email; never by a client user id |
+| `getOwnedAppleIdentity` / `upsertOwnedAppleIdentity` | `apple_identities.user_id = store.userId` |
+| `appleUserIdTakenByOther` | unique `apple_user_id` belonging to someone else |
+| `linkOwnedAppleAccount` / `ownedAppleRefreshToken` | Better Auth `account` where `"userId"` is the session BA id and `"providerId" = 'apple'` |
+| `wipePlannerUser` | `DELETE FROM users WHERE id = store.userId` (cascade) |
+| `wipeBetterAuthUser` | `DELETE FROM "user" WHERE id = <session id>` |
 
 `users` itself is not a REST table. Adoption of an existing email row
 requires `emailVerified` on the session (OTP). Unverified
@@ -145,7 +158,7 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. **apple-identity / delete-account:** B posting A's Apple sub or user id cannot take A's identity or wipe A; unauthenticated POSTs are 401; an active Stripe row is 409 and A's rows remain. |
 | `scripts/prove-isolation-mutation.mjs` | Deleting any `user_id = ${store.userId}` clause turns `access.check.ts` red |
 | `worker/src/miniflare.seq.check.ts` | Real workerd + Postgres: task create/read/patch + B 404 + unauthenticated-style raw token 401 |
 | `worker/src/requestReuse.check.ts` | Invalid bearer 401; client-supplied foreign id does not overwrite |
