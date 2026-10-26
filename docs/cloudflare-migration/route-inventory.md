@@ -157,14 +157,15 @@ cutover.
 
 | File | Count | What |
 |---|---|---|
-| `access.check.ts` | 197 | Store-layer isolation + FK plant + day window + reminder target table |
-| `accessHttp.check.ts` | 333 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune crons + every ported route above |
-| `authUrl.check.ts` | 98 | auth URL / local fallback |
+| `access.check.ts` | 230 | Store-layer isolation + FK plant + day window + reminder target table |
+| `accessHttp.check.ts` | 440 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity + github-poll / trim-sync-log (parked identity) |
+| `authUrl.check.ts` | 99 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
+| `secrets.check.ts` | 103 | A's seal/open + writeFrozen + cron aliases + github PAT AAD + trim parked margin |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
 
-`npm run check:isolation-mutation`: **66/66** owner filters in `store.ts`.
+`npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.
 
-SPA: `npm run typecheck` clean · `npm test` **2103** passed (160 files).
+SPA: `npm run typecheck` clean · `npm test` **2229** passed (167 files).
