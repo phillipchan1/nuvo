@@ -1,10 +1,16 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import { handleAgent } from "./agentHttp.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
-import { bearerToken, cronAuthorized } from "./cron.ts";
-import type { Env } from "./env.ts";
+import { stayOnSupabase } from "./blocked.ts";
+import { handleCapture } from "./captureHttp.ts";
+import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import { handleCron, handleUserRollover } from "./cronJobs.ts";
+import { handleDay } from "./dayHttp.ts";
 import { CONNECT_TIMEOUT_MS, raceTimeout, type Sql } from "./db.ts";
+import type { Env } from "./env.ts";
+import type { RequestIo } from "./requestIo.ts";
+import type { AppEnv } from "./session.ts";
 import {
   BadRequestError,
   isDatabaseUnavailable,
@@ -19,10 +25,13 @@ import {
   entitlementResponseBody,
   readEntitlement,
 } from "./entitlement.ts";
-import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
+import { handleInboundEmail } from "./inboundHttp.ts";
+import { handleMcp } from "./mcpHttp.ts";
+import { scheduleClose } from "./requestIo.ts";
+import { handleRouteEvents } from "./routeEventsHttp.ts";
+import { requestIo, requireStore } from "./session.ts";
 import {
   applyPatch,
-  bootstrapUser,
   claimReminder,
   contacts,
   deleteOwned,
@@ -32,15 +41,12 @@ import {
   isPlannerTable,
   listOwned,
   listTaskLabels,
-  makeStore,
   rotateInboundToken,
   updateOwned,
   upsertOwned,
   type PlannerTable,
   type Store,
 } from "./store.ts";
-
-type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
 const app = new Hono<AppEnv>();
 
@@ -66,7 +72,10 @@ app.use("*", async (c, next) => {
  * itself have finished. Starting `sql.end()` from requireStore used to
  * kill queries still running in the route (CONNECTION_ENDED).
  */
-app.use("/api/*", async (c, next) => {
+app.use("/api/*", closeIo);
+app.use("/functions/v1/*", closeIo);
+
+async function closeIo(c: Context<AppEnv>, next: () => Promise<void>) {
   try {
     await next();
   } finally {
@@ -76,14 +85,6 @@ app.use("/api/*", async (c, next) => {
     scheduleClose(c, closing);
     await closing;
   }
-});
-
-async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
-  const existing = c.get("io");
-  if (existing) return existing;
-  const io = openRequestIo(c.env);
-  c.set("io", io);
-  return io;
 }
 
 function missingAsset(): Response {
@@ -190,14 +191,6 @@ async function requireSession(
   return { user, io };
 }
 
-async function requireStore(c: Context<AppEnv>): Promise<{ error: Response } | { store: Store }> {
-  const got = await requireSession(c);
-  if ("error" in got) return { error: got.error };
-  const store = await bootstrapUser(makeStore(got.io.sql, got.user.id), got.user.email ?? null, {
-    emailVerified: got.user.emailVerified,
-  });
-  return { store };
-}
 
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
@@ -375,30 +368,23 @@ app.post("/api/rpc/claim_reminder", async (c) => {
   return json({ data: ok }, ok ? 200 : 404, OPEN_CORS);
 });
 
-function notPorted(name: string): Response {
-  return json(
-    {
-      error: `${name} is not ported to the Worker yet`,
-      stay_on_supabase: true,
-    },
-    501,
-    OPEN_CORS,
-  );
-}
+app.all("/api/cron/:job", (c) => handleCron(c));
+app.all("/api/agent", (c) => handleAgent(c));
+app.all("/api/mcp", (c) => handleMcp(c));
+app.all("/api/day", (c) => handleDay(c));
+app.all("/api/capture", (c) => handleCapture(c));
+app.all("/api/inbound-email", (c) => handleInboundEmail(c));
+app.all("/api/route-events", (c) => handleRouteEvents(c));
 
-app.all("/api/cron/:job", (c) => {
-  const token = bearerToken(c.req.header("authorization"));
-  if (!cronAuthorized(token, c.env.CRON_SECRET)) {
-    return json({ error: "unauthorized" }, 401, OPEN_CORS);
-  }
-  return notPorted(c.req.param("job"));
-});
-
-app.all("/api/agent", () => notPorted("agent"));
-app.all("/api/mcp", () => notPorted("mcp"));
-app.all("/functions/v1/agent", () => notPorted("agent"));
-app.all("/functions/v1/mcp", () => notPorted("mcp"));
-app.all("/functions/v1/:name", (c) => notPorted(c.req.param("name")));
+app.all("/functions/v1/agent", (c) => handleAgent(c));
+app.all("/functions/v1/mcp", (c) => handleMcp(c));
+app.all("/functions/v1/day", (c) => handleDay(c));
+app.all("/functions/v1/capture", (c) => handleCapture(c));
+app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
+app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
+app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
+app.all("/api/rollover", (c) => handleUserRollover(c));
+app.all("/functions/v1/:name", (c) => stayOnSupabase(c.req.param("name")));
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);

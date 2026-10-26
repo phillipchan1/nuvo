@@ -17,9 +17,9 @@ INSERT INTO public.projects (id, user_id, name, domain_id) VALUES
   ('aaaaaaaa-1111-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A Project', 'aaaaaaaa-0000-4000-8000-000000000001'),
   ('bbbbbbbb-1111-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'B Project', 'bbbbbbbb-0000-4000-8000-000000000001');
 
-INSERT INTO public.tasks (id, user_id, title, notes, status, project_id) VALUES
-  ('aaaaaaaa-2222-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A only task', 'private A', 'inbox', 'aaaaaaaa-1111-4000-8000-000000000001'),
-  ('bbbbbbbb-2222-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'B only task', 'private B', 'inbox', 'bbbbbbbb-1111-4000-8000-000000000001');
+INSERT INTO public.tasks (id, user_id, title, notes, status, project_id, do_date, start_time) VALUES
+  ('aaaaaaaa-2222-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A only task', 'private A', 'planned', 'aaaaaaaa-1111-4000-8000-000000000001', '2026-10-26', '2026-10-26T10:00:00Z'),
+  ('bbbbbbbb-2222-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'B only task', 'private B', 'planned', 'bbbbbbbb-1111-4000-8000-000000000001', '2026-10-26', '2026-10-26T10:00:00Z');
 
 INSERT INTO public.labels (id, user_id, name) VALUES
   ('aaaaaaaa-3333-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A tag'),

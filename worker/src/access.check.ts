@@ -18,6 +18,8 @@ import {
   insertProject,
   insertTask,
   insertTaskLabel,
+  listDayScheduledTasks,
+  listDaySlots,
   listOwned,
   listTaskLabels,
   makeStore,
@@ -93,6 +95,19 @@ const tasksB = await listOwned(storeB, "tasks");
 ok(tasksA.length === 1 && tasksA[0]?.id === TASK_A, "listOwned tasks: A sees only own");
 ok(!tasksA.some((t) => t.id === TASK_B), "listOwned tasks: A cannot list B");
 ok(tasksB.length === 1 && tasksB[0]?.id === TASK_B, "listOwned tasks: B sees only own");
+
+const DAY_START = "2026-10-25T00:00:00.000Z";
+const DAY_END = "2026-10-28T00:00:00.000Z";
+const SLOT_A = "aaaaaaaa-9999-4000-8000-000000000001";
+const dayTasksA = await listDayScheduledTasks(storeA, DAY_START, DAY_END);
+ok(dayTasksA.length === 1 && dayTasksA[0]?.id === TASK_A, "listDayScheduledTasks: A sees only own in-window task");
+ok(!dayTasksA.some((t) => t.id === TASK_B), "listDayScheduledTasks: A cannot see B");
+const dayTasksB = await listDayScheduledTasks(storeB, DAY_START, DAY_END);
+ok(dayTasksB.length === 1 && dayTasksB[0]?.id === TASK_B, "listDayScheduledTasks: B sees only own in-window task");
+ok(!dayTasksB.some((t) => t.id === TASK_A), "listDayScheduledTasks: B cannot see A");
+const daySlotsA = await listDaySlots(storeA, DAY_START, DAY_END);
+ok(daySlotsA.length === 1 && daySlotsA[0]?.id === SLOT_A, "listDaySlots: A sees only own");
+ok(!daySlotsA.some((s) => s.id === B_ROW.slots), "listDaySlots: A cannot see B");
 
 ok((await getOwned(storeA, "tasks", TASK_A))?.id === TASK_A, "getOwned: A can read own task");
 ok((await getOwned(storeA, "tasks", TASK_B)) === null, "getOwned: A asking for B task is null");
@@ -217,6 +232,26 @@ ok(
   "insertOwned routing: A cannot attach B domain_id",
 );
 ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: SLOT_A })) != null,
+  "insertOwned reminder: A can target own slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: TASK_A })) === null,
+  "insertOwned reminder: slot kind rejects a task id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "task", target_id: SLOT_A })) === null,
+  "insertOwned reminder: task kind rejects a slot id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: B_ROW.slots })) === null,
+  "insertOwned reminder: A cannot target B slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "event", target_id: TASK_A })) === null,
+  "insertOwned reminder: event kind rejects target_id",
+);
+ok(
   (await upsertOwned(storeA, "event_domain_routing", { event_key: "evt-a", domain_id: DOMAIN_B })) === null,
   "upsertOwned routing: A cannot rehome evt-a onto B domain",
 );
@@ -245,6 +280,74 @@ ok(
 ok(
   (await scalar<string>("SELECT project_id::text FROM tasks WHERE id = $1", [TASK_B])) === PROJECT_B,
   "updateOwned task: B project_id unchanged",
+);
+ok(
+  (await updateOwned(storeA, "initiatives", B_ROW.initiatives, { name: "stolen" })) === null,
+  "updateOwned initiative: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM initiatives WHERE id = $1", [B_ROW.initiatives])) === "B Initiative",
+  "updateOwned initiative: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "key_results", B_ROW.key_results, { name: "stolen" })) === null,
+  "updateOwned key_result: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM key_results WHERE id = $1", [B_ROW.key_results])) === "B KR",
+  "updateOwned key_result: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "slots", B_ROW.slots, { title: "stolen" })) === null,
+  "updateOwned slot: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT title FROM slots WHERE id = $1", [B_ROW.slots])) === "B slot",
+  "updateOwned slot: B title unchanged",
+);
+ok(
+  (await updateOwned(storeA, "record_comments", B_ROW.record_comments, { body: "stolen" })) === null,
+  "updateOwned comment: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT body FROM record_comments WHERE id = $1", [B_ROW.record_comments])) === "B note",
+  "updateOwned comment: B body unchanged",
+);
+ok(
+  (await updateOwned(storeA, "reminders", B_ROW.reminders, { anchor: "end" })) === null,
+  "updateOwned reminder: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT anchor FROM reminders WHERE id = $1", [B_ROW.reminders])) === "start",
+  "updateOwned reminder: B anchor unchanged",
+);
+ok(
+  (await updateOwned(storeA, "labels", B_ROW.labels, { name: "stolen" })) === null,
+  "updateOwned label: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM labels WHERE id = $1", [B_ROW.labels])) === "B tag",
+  "updateOwned label: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "recurrences", B_ROW.recurrences, { rrule: "FREQ=YEARLY" })) === null,
+  "updateOwned recurrence: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT rrule FROM recurrences WHERE id = $1", [B_ROW.recurrences])) === "FREQ=DAILY",
+  "updateOwned recurrence: B rrule unchanged",
+);
+ok(
+  (await updateOwned(storeA, "week_reviews", B_ROW.week_reviews, { report: { stolen: true } })) === null,
+  "updateOwned week_review: A cannot edit B",
+);
+ok(
+  (await updateOwned(storeA, "sprints", B_ROW.sprints, { week_start: "1999-01-01" })) === null,
+  "updateOwned sprint: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT week_start::text FROM sprints WHERE id = $1", [B_ROW.sprints])) === "2026-10-26",
+  "updateOwned sprint: B week_start unchanged",
 );
 
 for (let i = 0; i < 8; i++) {

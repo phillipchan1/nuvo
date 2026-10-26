@@ -98,12 +98,21 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `GET /api/entitlement` | `readEntitlement(env, session.user.id)` — PostgREST `user_id=eq.<session>` | 200, B sees B's row only. Query / `X-User-Id` ignored | `accessHttp.check.ts` + `entitlement.check.ts` |
 | `POST/PATCH/DELETE /api/entitlement` | No writes. Same 404 body whether the posted id exists | 404, no existence oracle | `accessHttp.check.ts` |
 
-### Stubs / cron (no planner SQL)
+### Agent / MCP / day / capture / inbound / cron
 
-| Route | Scope | Test |
-|---|---|---|
-| `ALL /api/cron/:job` | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Match → 501 (not ported) | `miniflare.seq.check.ts` |
-| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` | 501 stay-on-Supabase. No DB | — |
+Owner is still the session (or the connection / inbound token → that user).
+Full table: [`route-inventory.md`](./route-inventory.md).
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST/GET /api/agent` | Session store. Snapshot + tools filter `user_id = store.userId` | B snapshot omits A; B tool on A's id = random id | `accessHttp.check.ts` |
+| `POST /api/mcp` | `connections.token_hash`; tools run as `conn.user_id` | B token omits A | same |
+| `GET /api/day` | Session; events/tasks/slots `user_id = store.userId` | B schedule omits A | same |
+| `GET/POST /api/capture` | Connection hash; tasks `user_id` + `connection_id` | B omits A's tasks | same |
+| `POST /api/inbound-email` | Svix + `user_settings.inbound_token` | unknown token writes nothing; A's token writes A | same |
+| `POST /api/route-events` | Session; domains + routing owned | unauth 401 | same |
+| `POST /api/rollover` | Session user only | B does not roll A | same |
+| `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar/github 501 | unauth 401; purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `miniflare.seq.check.ts` |
 
 `stripe_*`, `apple_*` writers, calendar tokens, and push tables are
 **not** on this Worker. `subscriptions` is read-only via `/api/entitlement`.
@@ -119,7 +128,8 @@ deletes each clause in turn and expects `access.check.ts` to fail.
 | Function | Filter |
 |---|---|
 | `listOwned` / `getOwned` / `deleteOwned` | per-table `user_id = store.userId` (`user_settings` also requires path id = session) |
-| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids |
+| `listDayScheduledTasks` / `listDaySlots` | windowed `user_id = store.userId` (A's in-window `start_time` is seeded so dropping the filter fails) |
+| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids (reminders: `target_id` is checked on the table that matches `target_kind`) |
 | `updateTaskTitle` / `updateDomainName` / `updateProject` / `updateTaskFks` | `WHERE id = $id AND user_id = store.userId` |
 | `updateSettingsTheme` / `rotateInboundToken` / `upsertSettings` | `WHERE user_id = store.userId` |
 | `listTaskLabels` / `insertTaskLabel` / `deleteTaskLabel` | task (and label, on insert) owned |

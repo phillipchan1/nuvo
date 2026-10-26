@@ -62,6 +62,30 @@ const OWNED_FKS: Partial<Record<PlannerTable, { field: string; table: PlannerTab
   event_domain_routing: [{ field: "domain_id", table: "domains" }],
 };
 
+function reminderTargetTable(kind: unknown): PlannerTable | null {
+  if (kind === "task") return "tasks";
+  if (kind === "slot") return "slots";
+  return null;
+}
+
+async function assertOwnedReminderTarget(
+  store: Store,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  const kind = typeof row.target_kind === "string" ? row.target_kind : undefined;
+  if (kind === "event") {
+    const value = row.target_id;
+    return value == null || value === "";
+  }
+  if (!("target_id" in row)) return kind == null || kind === "task" || kind === "slot";
+  const value = row.target_id;
+  if (value == null || value === "") return true;
+  if (typeof value !== "string") return false;
+  const parent = reminderTargetTable(kind ?? "task");
+  if (!parent) return false;
+  return (await getOwned(store, parent, value)) != null;
+}
+
 function optId(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -72,6 +96,7 @@ export async function assertOwnedFks(
   table: PlannerTable,
   row: Record<string, unknown>,
 ): Promise<boolean> {
+  if (table === "reminders") return assertOwnedReminderTarget(store, row);
   for (const { field, table: parent } of OWNED_FKS[table] ?? []) {
     if (!(field in row)) continue;
     const value = row[field];
@@ -117,6 +142,39 @@ export async function listOwned(
     case "user_settings":
       return sql`SELECT * FROM user_settings WHERE user_id = ${store.userId}`;
   }
+}
+
+export async function listDayScheduledTasks(
+  store: Store,
+  startISO: string,
+  endISO: string,
+): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count
+    FROM tasks
+    WHERE user_id = ${store.userId}
+      AND start_time IS NOT NULL
+      AND status IN ('planned', 'done')
+      AND start_time >= ${startISO}
+      AND start_time < ${endISO}
+  `;
+}
+
+export async function listDaySlots(
+  store: Store,
+  startISO: string,
+  endISO: string,
+): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, title, do_date, start_time, duration_minutes, project_id, domain_id
+    FROM slots
+    WHERE user_id = ${store.userId}
+      AND start_time >= ${startISO}
+      AND start_time < ${endISO}
+    ORDER BY start_time
+  `;
 }
 
 export async function getOwned(
@@ -312,6 +370,92 @@ export async function upsertEventDomainRouting(
   return rows.length ? rows[0] ?? null : null;
 }
 
+export async function insertLabel(
+  store: Store,
+  row: { id?: string; name: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  try {
+    const rows = await sql`
+      INSERT INTO labels (id, user_id, name)
+      VALUES (${id}, ${store.userId}, ${row.name})
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  } catch (err) {
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+}
+
+export async function insertRecurrence(
+  store: Store,
+  row: { id?: string; kind: string; rrule: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO recurrences (id, user_id, kind, rrule)
+    VALUES (${id}, ${store.userId}, ${row.kind}, ${row.rrule})
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function insertWeekReview(
+  store: Store,
+  row: { id?: string; week_start: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  try {
+    const rows = await sql`
+      INSERT INTO week_reviews (id, user_id, week_start)
+      VALUES (${id}, ${store.userId}, ${row.week_start})
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  } catch (err) {
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+}
+
+export async function insertSprint(
+  store: Store,
+  row: { id?: string; week_start: string },
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  try {
+    const rows = await sql`
+      INSERT INTO sprints (id, user_id, week_start)
+      VALUES (${id}, ${store.userId}, ${row.week_start})
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  } catch (err) {
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+}
+
+export async function insertReminder(
+  store: Store,
+  row: { id?: string; target_kind: string; target_id?: string | null },
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "reminders", row))) return null;
+  const sql = store.sql;
+  const id = row.id ?? crypto.randomUUID();
+  const rows = await sql`
+    INSERT INTO reminders (id, user_id, target_kind, target_id)
+    VALUES (${id}, ${store.userId}, ${row.target_kind}, ${row.target_id ?? null})
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
 export async function insertOwned(
   store: Store,
   table: PlannerTable,
@@ -394,6 +538,40 @@ export async function insertOwned(
   if (table === "user_settings") {
     return upsertSettings(store, typeof row.theme === "string" ? row.theme : "system");
   }
+  if (table === "labels") {
+    return insertLabel(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      name: String(row.name ?? "Untitled"),
+    });
+  }
+  if (table === "recurrences") {
+    return insertRecurrence(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      kind: typeof row.kind === "string" ? row.kind : "task",
+      rrule: typeof row.rrule === "string" ? row.rrule : "",
+    });
+  }
+  if (table === "week_reviews") {
+    if (typeof row.week_start !== "string") return null;
+    return insertWeekReview(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      week_start: row.week_start,
+    });
+  }
+  if (table === "sprints") {
+    if (typeof row.week_start !== "string") return null;
+    return insertSprint(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      week_start: row.week_start,
+    });
+  }
+  if (table === "reminders") {
+    return insertReminder(store, {
+      id: typeof row.id === "string" ? row.id : undefined,
+      target_kind: typeof row.target_kind === "string" ? row.target_kind : "task",
+      target_id: optId(row.target_id),
+    });
+  }
   return null;
 }
 
@@ -406,6 +584,10 @@ export async function upsertOwned(
   if (typeof row.id === "string") {
     const existing = await getOwned(store, table, row.id);
     if (existing) return updateOwned(store, table, row.id, row);
+    // Id is not owned (missing or foreign). Inserting under that id would
+    // 23505 on a live row and leak existence vs a random unused id.
+    const { id: _ignored, ...rest } = row;
+    return insertOwned(store, table, rest);
   }
   try {
     return await insertOwned(store, table, row);
@@ -556,7 +738,246 @@ export async function updateOwned(
       domain_id: optId(patch.domain_id),
     });
   }
+  if (table === "initiatives") {
+    return updateInitiative(store, id, patch);
+  }
+  if (table === "key_results") {
+    return updateKeyResult(store, id, patch);
+  }
+  if (table === "slots") {
+    return updateSlot(store, id, patch);
+  }
+  if (table === "record_comments") {
+    return updateRecordComment(store, id, patch);
+  }
+  if (table === "reminders") {
+    return updateReminder(store, id, patch);
+  }
+  if (table === "labels") {
+    if (typeof patch.name !== "string") return null;
+    return updateLabelName(store, id, patch.name);
+  }
+  if (table === "recurrences") {
+    if (typeof patch.rrule !== "string") return null;
+    return updateRecurrenceRule(store, id, patch.rrule);
+  }
+  if (table === "week_reviews" && patch.report != null) {
+    return updateWeekReviewReport(store, id, patch.report);
+  }
+  if (table === "sprints" && typeof patch.week_start === "string") {
+    return updateSprintWeek(store, id, patch.week_start);
+  }
   return null;
+}
+
+export async function updateInitiative(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "initiatives", patch))) return null;
+  const hasName = typeof patch.name === "string";
+  const hasFk = "domain_id" in patch;
+  if (!hasName && !hasFk) return null;
+  const sql = store.sql;
+  const setName = hasName ? 1 : 0;
+  const setDomain = hasFk ? 1 : 0;
+  const name = hasName ? String(patch.name) : "";
+  const domainId = optId(patch.domain_id);
+  const rows = await sql`
+    UPDATE initiatives
+    SET
+      name = CASE WHEN ${setName} = 1 THEN ${name} ELSE name END,
+      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateKeyResult(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "key_results", patch))) return null;
+  const hasName = typeof patch.name === "string";
+  const hasFk = "initiative_id" in patch;
+  if (!hasName && !hasFk) return null;
+  const sql = store.sql;
+  const setName = hasName ? 1 : 0;
+  const setInit = hasFk ? 1 : 0;
+  const name = hasName ? String(patch.name) : "";
+  const initiativeId = optId(patch.initiative_id);
+  const rows = await sql`
+    UPDATE key_results
+    SET
+      name = CASE WHEN ${setName} = 1 THEN ${name} ELSE name END,
+      initiative_id = CASE WHEN ${setInit} = 1 THEN ${initiativeId} ELSE initiative_id END
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateSlot(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "slots", patch))) return null;
+  const hasTitle = typeof patch.title === "string";
+  const hasProject = "project_id" in patch;
+  const hasDomain = "domain_id" in patch;
+  if (!hasTitle && !hasProject && !hasDomain) return null;
+  const sql = store.sql;
+  const setTitle = hasTitle ? 1 : 0;
+  const setProject = hasProject ? 1 : 0;
+  const setDomain = hasDomain ? 1 : 0;
+  const title = hasTitle ? String(patch.title) : "";
+  const projectId = optId(patch.project_id);
+  const domainId = optId(patch.domain_id);
+  const rows = await sql`
+    UPDATE slots
+    SET
+      title = CASE WHEN ${setTitle} = 1 THEN ${title} ELSE title END,
+      project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
+      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
+      updated_at = now()
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateRecordComment(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "record_comments", patch))) return null;
+  const hasBody = typeof patch.body === "string";
+  const hasProject = "project_id" in patch;
+  const hasInit = "initiative_id" in patch;
+  if (!hasBody && !hasProject && !hasInit) return null;
+  const sql = store.sql;
+  const setBody = hasBody ? 1 : 0;
+  const setProject = hasProject ? 1 : 0;
+  const setInit = hasInit ? 1 : 0;
+  const body = hasBody ? String(patch.body) : "";
+  const projectId = optId(patch.project_id);
+  const initiativeId = optId(patch.initiative_id);
+  const rows = await sql`
+    UPDATE record_comments
+    SET
+      body = CASE WHEN ${setBody} = 1 THEN ${body} ELSE body END,
+      project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
+      initiative_id = CASE WHEN ${setInit} = 1 THEN ${initiativeId} ELSE initiative_id END
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateReminder(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const next = { ...patch };
+  if ("target_id" in next && !("target_kind" in next)) {
+    const existing = await getOwned(store, "reminders", id);
+    if (!existing) return null;
+    next.target_kind = existing.target_kind;
+  }
+  if (!(await assertOwnedFks(store, "reminders", next))) return null;
+  const hasAnchor = typeof patch.anchor === "string";
+  const hasTarget = "target_id" in patch;
+  if (!hasAnchor && !hasTarget) return null;
+  const sql = store.sql;
+  const setAnchor = hasAnchor ? 1 : 0;
+  const setTarget = hasTarget ? 1 : 0;
+  const anchor = hasAnchor ? String(patch.anchor) : "";
+  const targetId = optId(patch.target_id);
+  const rows = await sql`
+    UPDATE reminders
+    SET
+      anchor = CASE WHEN ${setAnchor} = 1 THEN ${anchor} ELSE anchor END,
+      target_id = CASE WHEN ${setTarget} = 1 THEN ${targetId} ELSE target_id END
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateLabelName(
+  store: Store,
+  id: string,
+  name: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    UPDATE labels
+    SET name = ${name}
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateRecurrenceRule(
+  store: Store,
+  id: string,
+  rrule: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    UPDATE recurrences
+    SET rrule = ${rrule}
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateWeekReviewReport(
+  store: Store,
+  id: string,
+  report: unknown,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const payload = JSON.stringify(report ?? {});
+  const rows = await sql`
+    UPDATE week_reviews
+    SET report = ${payload}::jsonb
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateSprintWeek(
+  store: Store,
+  id: string,
+  weekStart: string,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    UPDATE sprints
+    SET week_start = ${weekStart}
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
 }
 
 export async function updateTaskFks(

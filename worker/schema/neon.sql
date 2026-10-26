@@ -204,6 +204,76 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
   name TEXT
 );
 
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS charter TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS context JSONB;
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS icon TEXT;
+
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS work_start_minutes INTEGER NOT NULL DEFAULT 480;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS work_end_minutes INTEGER NOT NULL DEFAULT 990;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS hidden_events JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS confidence NUMERIC;
+ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS routed_at TIMESTAMPTZ;
+
+ALTER TABLE public.sprints ADD COLUMN IF NOT EXISTS goal TEXT;
+ALTER TABLE public.sprints ADD COLUMN IF NOT EXISTS big_rocks JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+
+CREATE TABLE IF NOT EXISTS public.connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  app TEXT NOT NULL,
+  name TEXT NOT NULL,
+  scopes TEXT[] NOT NULL DEFAULT ARRAY['inbox:write']::text[],
+  token_hash TEXT NOT NULL UNIQUE,
+  last_four TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS connections_user_idx ON public.connections (user_id);
+CREATE INDEX IF NOT EXISTS connections_token_hash_active_idx
+  ON public.connections (token_hash) WHERE revoked_at IS NULL;
+
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS connection_id UUID REFERENCES public.connections (id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_connection_external_id_idx
+  ON public.tasks (connection_id, external_id)
+  WHERE connection_id IS NOT NULL AND external_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.inbound_emails (
+  email_id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  task_id UUID REFERENCES public.tasks (id) ON DELETE SET NULL,
+  from_address TEXT,
+  subject TEXT,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS inbound_emails_user_idx ON public.inbound_emails (user_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.external_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '',
+  start_at TIMESTAMPTZ,
+  end_at TIMESTAMPTZ,
+  all_day BOOLEAN NOT NULL DEFAULT FALSE,
+  busy BOOLEAN NOT NULL DEFAULT TRUE,
+  location TEXT,
+  calendar_id TEXT,
+  account_id UUID,
+  provider_event_id TEXT,
+  recurring_event_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS external_events_user_idx ON public.external_events (user_id, start_at);
+
 CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON public.tasks (user_id, status, do_date);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON public.domains (user_id);
 CREATE INDEX IF NOT EXISTS projects_user_idx ON public.projects (user_id);

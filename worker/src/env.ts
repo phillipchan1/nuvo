@@ -14,6 +14,10 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503. */
+  OPENAI_API_KEY?: string;
+  /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
+  RESEND_WEBHOOK_SECRET?: string;
   /** Supabase origin for the billing read. Subscriptions stay there. */
   SUPABASE_URL?: string;
   /** Service-role key used only to SELECT subscriptions by session user_id. Never a Stripe secret. */
