@@ -1,0 +1,6 @@
+xcuserdata/
+build/
+Externals/*
+!Externals/.gitkeep
+*.xcuserstate
+derivedData/

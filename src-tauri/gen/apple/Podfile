@@ -1,0 +1,7 @@
+# CocoaPods spec shipped with the committed Xcode project.
+# Nuvo does not currently declare any pods — ci_post_clone.sh only runs
+# `pod install` if this file names one.
+
+target 'nuvo_iOS' do
+  platform :ios, '15.0'
+end

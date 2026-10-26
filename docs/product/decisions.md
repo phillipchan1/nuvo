@@ -3517,10 +3517,11 @@ is the only place that acts on it. This is the same rule the planning kernel and
 drift into meaning different things. The PWA gained an **Ask Nuvo** manifest shortcut in
 the same move, so both shells have both doors.
 
-→ **The extension arrives through Tauri's own pipeline, not beside it.** `gen/apple/` is
-regenerated on every CI run and Tauri has no hook for extra targets — but cargo-mobile2
-leaves `project.yml` and builds by running xcodegen against it, so `scripts/ios-widgets.rb`
-patches that spec and re-runs the same command. `NUVO_IOS_WIDGETS=0` skips the whole step:
+→ **The extension arrives through Tauri's own pipeline, not beside it.** That was
+written when `gen/apple/` was regenerated every CI run; Xcode Cloud later required
+the patched project to be committed (`project.yml` + `nuvo.xcodeproj`, scheme
+`nuvo_iOS`). `scripts/ios-widgets.rb` still patches that spec and re-runs xcodegen
+when GitHub Actions re-applies it. `NUVO_IOS_WIDGETS=0` skips the whole step:
 a widget must never be able to cost us the app's release train.
 
 → **Principle strained: P11 (no overlapping names).** The widget gallery now shows

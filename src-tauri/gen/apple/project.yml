@@ -1,0 +1,172 @@
+# Source of truth for the committed Nuvo iOS project.
+# Rendered by XcodeGen into nuvo.xcodeproj. Matches what `tauri ios init`
+# writes (Tauri 2 / cargo-mobile2), plus the widgets + entitlements +
+# plist patches that scripts/ios-postinit.sh used to apply after init.
+#
+# Do not set CFBundleVersion on nuvo_iOS — Xcode Cloud assigns
+# CURRENT_PROJECT_VERSION. The widget follows that same setting.
+# CURRENT_PROJECT_VERSION = 1 + VERSIONING_SYSTEM = apple-generic are
+# required so `agvtool new-version -all` (tauri ios build --build-number)
+# can rewrite the number; Cloud overwrites it on every archive.
+name: nuvo
+options:
+  bundleIdPrefix: day.nuvo.app
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+fileGroups:
+  - ../../src
+configs:
+  debug: debug
+  release: release
+settings:
+  base:
+    VERSIONING_SYSTEM: apple-generic
+    CURRENT_PROJECT_VERSION: 1
+settingGroups:
+  app:
+    base:
+      PRODUCT_NAME: Nuvo
+      PRODUCT_BUNDLE_IDENTIFIER: day.nuvo.app
+      MARKETING_VERSION: 0.1.0
+targetTemplates:
+  app:
+    type: application
+    sources:
+      - path: Sources
+    scheme:
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      groups: [app]
+targets:
+  nuvo_iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+      # Exclude built static libs: regenerating with xcodegen after a build
+      # otherwise turns the per-configuration libapp.a copies into colliding
+      # resources ("Multiple commands produce …/libapp.a"). They are linked
+      # via LIBRARY_SEARCH_PATHS, never bundled as resources.
+      - path: Externals
+        excludes: ["**/*.a"]
+      - path: nuvo_iOS
+      - path: assets
+        buildPhase: resources
+        type: folder
+      - path: LaunchScreen.storyboard
+    info:
+      path: nuvo_iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Nuvo
+        LSRequiresIPhoneOS: true
+        UILaunchStoryboardName: LaunchScreen
+        UIRequiredDeviceCapabilities: [arm64, metal]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: day.nuvo.app
+            CFBundleURLSchemes:
+              - nuvo
+        CFBundleShortVersionString: 0.1.0
+        # Intentionally no CFBundleVersion — Xcode Cloud's build number wins.
+    entitlements:
+      path: nuvo_iOS/nuvo_iOS.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+        com.apple.security.application-groups:
+          - group.day.nuvo.app
+    scheme:
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      base:
+        ENABLE_BITCODE: false
+        ARCHS: [arm64]
+        VALID_ARCHS: arm64
+        LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: false
+        MARKETING_VERSION: 0.1.0
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        TARGETED_DEVICE_FAMILY: "1"
+      groups: [app]
+    dependencies:
+      - target: NuvoWidgets
+        embed: true
+      - framework: libapp.a
+        embed: false
+      - sdk: CoreGraphics.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: Security.framework
+      - sdk: UIKit.framework
+      - sdk: WebKit.framework
+    preBuildScripts:
+      - name: Build Rust Code
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(SRCROOT)/Externals/x86_64/$(CONFIGURATION)/libapp.a
+          - $(SRCROOT)/Externals/arm64/$(CONFIGURATION)/libapp.a
+        script: |
+          set -euo pipefail
+          # Xcode Cloud's -hideShellScriptEnvironment strips PATH. The
+          # ci_scripts persist cargo + node + VITE_* here.
+          if [ -f "${HOME}/.nuvo_xcode_cloud_env.sh" ]; then
+            . "${HOME}/.nuvo_xcode_cloud_env.sh"
+          elif [ -f /tmp/nuvo_xcode_cloud_env.sh ]; then
+            . /tmp/nuvo_xcode_cloud_env.sh
+          fi
+          if [ -f "${HOME}/.cargo/env" ]; then
+            . "${HOME}/.cargo/env"
+          fi
+          export PATH="${HOME}/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:${PATH}"
+
+          REPO_ROOT="${SRCROOT}/../.."
+          TAURI="${REPO_ROOT}/node_modules/.bin/tauri"
+          if [ ! -x "$TAURI" ]; then
+            echo "error: Tauri CLI not found at $TAURI — run npm ci first (ci_post_clone.sh)." >&2
+            exit 1
+          fi
+          cd "$REPO_ROOT"
+          "$TAURI" ios xcode-script -v --platform "${PLATFORM_DISPLAY_NAME:?}" --sdk-root "${SDKROOT:?}" --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration "${CONFIGURATION:?}" ${FORCE_COLOR:-} ${ARCHS:?}
+
+  NuvoWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../ios/NuvoWidgets
+    info:
+      path: NuvoWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Nuvo
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_NAME: NuvoWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: day.nuvo.app.widgets
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: NO
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: 0.1.0
+    dependencies:
+      - sdk: SwiftUI.framework
+      - sdk: WidgetKit.framework

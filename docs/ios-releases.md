@@ -4,8 +4,10 @@ How the native iPhone app is built, signed, and uploaded to TestFlight on every
 merge to `master`. Same React SPA and `dist/` as the PWA and macOS app — Tauri
 iOS wraps `MobileShell` in a WKWebView.
 
-**Status:** spec, CI scaffolded — complete the one-time Apple setup below, then
-every merge to `master` uploads a new TestFlight build automatically.
+**Status:** Xcode Cloud is the intended TestFlight path. The Xcode project is
+committed at `src-tauri/gen/apple` (scheme **`nuvo_iOS`**). GitHub Actions
+(`ios-release.yml`) still builds against that same project and must not
+re-run `tauri ios init` over it.
 
 See also: [`desktop-releases.md`](./desktop-releases.md) (macOS), [`APPLE_WATCH.md`](./APPLE_WATCH.md)
 (wrist capture via Shortcuts today).
@@ -18,7 +20,7 @@ See also: [`desktop-releases.md`](./desktop-releases.md) (macOS), [`APPLE_WATCH.
 |---|---|---|
 | **PWA** (Vercel) | merge → `master` | Service worker (instant-ish on resume) |
 | **macOS** (`release.yml`) | merge → `master` | Tauri background updater |
-| **iOS TestFlight** (`ios-release.yml`) | merge → `master` | TestFlight app (enable **Automatic Updates**) |
+| **iOS TestFlight** (Xcode Cloud → `nuvo_iOS`; `ios-release.yml` fallback) | merge → `master` | TestFlight app (enable **Automatic Updates**) |
 
 You never manually deploy. Merge to `master`; all three run in parallel.
 
@@ -31,14 +33,43 @@ src/                     React SPA (MobileShell on phone)
 src-tauri/
   tauri.conf.json        identifier com.nuvo.app (macOS desktop)
   tauri.ios.conf.json    identifier day.nuvo.app (iOS / TestFlight)
-  gen/apple/             Generated Xcode project (gitignored; CI regenerates)
+  gen/apple/             Committed Xcode project (scheme nuvo_iOS)
+  gen/apple/ci_scripts/  Xcode Cloud: ci_post_clone.sh · ci_pre_xcodebuild.sh
   ios/                   Committed native code (widgets · watch app · App Intents)
 .github/workflows/
-  ios-release.yml        Build signed IPA → upload TestFlight
+  ios-release.yml        Fallback: build committed project → TestFlight
 ```
 
 **D-012** still holds: one SPA, no router. **D-099** adds a third delivery
 channel (native iOS shell) without forking the frontend.
+
+**Scheme name: `nuvo_iOS`.** Point the Xcode Cloud workflow at
+`src-tauri/gen/apple/nuvo.xcodeproj` and that scheme. Bundle IDs:
+`day.nuvo.app` (app), `day.nuvo.app.widgets` (widgets), App Group
+`group.day.nuvo.app`. Do not set the app's `CFBundleVersion` — Cloud's
+build number (`CURRENT_PROJECT_VERSION`) wins; the widget plist uses
+`$(CURRENT_PROJECT_VERSION)` so the two stay in lockstep.
+
+### Xcode Cloud environment variables
+
+Set these on the workflow (App Store Connect → Xcode Cloud → Environment).
+The `ci_scripts` fail the build if any required value is missing. Do **not**
+put a `CFBundleVersion` / build number here.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `VITE_SUPABASE_URL` | yes | Same as web/desktop |
+| `VITE_SUPABASE_ANON_KEY` | yes | Same as web/desktop |
+| `VITE_POSTHOG_PROJECT_TOKEN` | yes | Same as web/desktop (D-114) |
+| `VITE_POSTHOG_HOST` | yes | Same as web/desktop |
+| `VITE_NUVO_IAP_MONTHLY` | yes | Public StoreKit product id (`NUVO_IAP_MONTHLY`) |
+| `VITE_NUVO_IAP_ANNUAL` | yes | Public StoreKit product id (`NUVO_IAP_ANNUAL`) |
+| `APPLE_DEVELOPMENT_TEAM` | yes | 10-char Team ID |
+
+`ci_post_clone.sh` installs Node 20, Rust stable + `aarch64-apple-ios`,
+runs `npm ci`, and skips the watch app (`NUVO_IOS_WATCH=0`).
+`ci_pre_xcodebuild.sh` puts Node/Rust back on `PATH` for Tauri's
+"Build Rust Code" phase. StoreKit / IAP configuration is not touched.
 
 ---
 
@@ -60,9 +91,11 @@ On every push to `master` (and manual **Run workflow**):
    for this exact version was already uploaded — only matters on a manual
    re-run of a commit that already shipped; the normal per-commit case is a
    no-op and iOS stays numbered identically to desktop.
-3. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
-4. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
-   **Nuvo app icons** (copies `src-tauri/icons/ios/` over Tauri's default catalog).
+3. Use the committed Xcode project at `src-tauri/gen/apple` (scheme
+   **`nuvo_iOS`**). Do **not** re-run `tauri ios init` over it.
+4. `scripts/ios-postinit.sh` — icons + plist belt-and-suspenders; injects the
+   watch target only when `NUVO_IOS_WATCH=1` (GitHub). Xcode Cloud passes
+   `--no-codegen` and keeps `NUVO_IOS_WATCH=0`.
 5. `tauri ios build --export-method app-store-connect` — signed IPA.
 6. `xcrun altool --upload-app` → App Store Connect → TestFlight.
 
@@ -230,9 +263,10 @@ session. Paid Apps Agreement status is ASC-side; this repo cannot see it.
 xcode-select -p
 pod --version
 
-# Init + simulator run
+# The Xcode project is committed. Open it, or run the existing postinit
+# (watch injection still needs xcodegen when NUVO_IOS_WATCH=1):
 export APPLE_DEVELOPMENT_TEAM=<your-team-id>
-CI=1 npm run tauri ios init -- --ci
+open src-tauri/gen/apple/nuvo.xcodeproj   # scheme: nuvo_iOS
 bash scripts/ios-postinit.sh
 npm run tauri:ios:dev
 
@@ -309,20 +343,20 @@ variables can't be read from Swift, so `Paper` in the Swift file is a copy — i
 
 ### How the target gets into the Xcode project
 
-`gen/apple/` is regenerated on every CI run and Tauri has no hook for extra
-targets — but cargo-mobile2 leaves `project.yml` behind and builds the project by
-running `xcodegen` against it. So:
+`gen/apple/` is **committed** (Xcode Cloud needs the project after clone).
+`project.yml` is the source of truth; XcodeGen rendered `nuvo.xcodeproj`.
+GitHub Actions still runs the injector when the spec must be re-applied:
 
-1. `tauri ios init --ci` → writes `gen/apple/project.yml`, runs xcodegen.
-2. `scripts/ios-postinit.sh` → plist patches, icons, then
-   **`scripts/ios-widgets.rb`**.
+1. The committed `src-tauri/gen/apple/project.yml` already contains `NuvoWidgets`.
+2. GitHub Actions may still run `scripts/ios-postinit.sh` → plist / icons, then
+   **`scripts/ios-widgets.rb`** if the spec must be re-applied.
 3. `ios-widgets.rb` adds a `NuvoWidgets` app-extension target to `project.yml`,
    adds it to the app target's dependencies with `embed: true` (that's the
    "Embed App Extensions" phase — without it the extension builds and never
-   ships, which looks exactly like a widget that won't appear), and re-runs the
-   same `xcodegen generate --no-env --spec project.yml` cargo-mobile2 uses.
+   ships, which looks exactly like a widget that won't appear), and re-runs
+   `xcodegen generate --no-env --spec project.yml`.
 4. `tauri ios build` re-uses the existing project — its `ensure_init` only
-   regenerates when the app name changed — so the patch survives to the archive.
+   regenerates when the app name changed — so the committed project survives.
 
 Details that are load-bearing:
 
@@ -330,9 +364,10 @@ Details that are load-bearing:
   spec so it can never drift from the app's.
 - **Versions must match the host app** or App Store validation rejects the build.
   The script stamps `CFBundleShortVersionString` from `tauri.conf.json` and
-  `CFBundleVersion` as `<version>.<BUILD_NUMBER>` — the same pair Tauri gives the
-  app (it then runs `xcrun agvtool new-version -all` at archive time, which
-  covers every target).
+  `CFBundleVersion` as `$(CURRENT_PROJECT_VERSION)` so the widget follows the
+  app. Xcode Cloud assigns that build number; never write `CFBundleVersion` on
+  the app itself. GitHub Actions still passes `--build-number` to
+  `tauri ios build`, which runs `agvtool new-version -all`.
 - **Signing** is automatic: Tauri archives with `-allowProvisioningUpdates` and
   the App Store Connect API key, so the extension's App ID and profile are
   created on first upload. Manual signing (the `IOS_*` secrets fallback) would
@@ -393,10 +428,9 @@ PWA home-screen icon gets the same fix automatically.
 pillow`; cairosvg needs the system Cairo library — `brew install cairo` on
 macOS).
 
-CI runs `tauri ios init` fresh each build, which emits Tauri's **default**
-placeholder catalog. `scripts/ios-postinit.sh` copies `src-tauri/icons/ios/*.png`
-into `gen/apple/Assets.xcassets/AppIcon.appiconset/` before the Xcode build, then
-verifies none of the copied PNGs carry an alpha channel (see below) before
+The committed catalog already carries the Nuvo icons. `scripts/ios-postinit.sh`
+still copies `src-tauri/icons/ios/*.png` over `gen/apple/Assets.xcassets/AppIcon.appiconset/`
+and verifies none of the PNGs carry an alpha channel (see below) before
 letting the build continue.
 
 After changing either SVG, run `npm run tauri:icon` and commit the updated
@@ -433,13 +467,13 @@ step) at `app-icon.svg` directly.
 | Visible white/cream ring around the installed icon | `icons/ios/*.png` was generated from `app-icon.svg` (has its own rounded corners) instead of `app-icon-ios.svg` (full-bleed). Rerun `npm run tauri:icon` and recommit. |
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
 | Widgets don't appear in the gallery | The extension wasn't embedded. Check the build log for `ios-widgets: added NuvoWidgets…`, and that `nuvo_iOS`'s dependencies in `gen/apple/project.yml` include `target: NuvoWidgets, embed: true` |
-| Upload rejected: extension bundle version mismatch | `scripts/ios-widgets.rb` stamps the widget plist from `tauri.conf.json` + `BUILD_NUMBER`. If CI computes the version differently, that script has to learn the same rule |
+| Upload rejected: extension bundle version mismatch | Widget `CFBundleVersion` must be `$(CURRENT_PROJECT_VERSION)`. Never hardcode a number on the app — Xcode Cloud's build number wins |
 | `exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"` / `No profiles for 'day.nuvo.app.widgets' were found` | The extension's App ID doesn't exist yet and CI can't create it through the API key. Register `day.nuvo.app.widgets` by hand — § One-time setup step 3 — then re-run. With manual `IOS_*` secrets you also need a second App Store provisioning profile for it |
 | Same, for `day.nuvo.app.watchkitapp` | Identical cause and fix — register the watch App ID by hand. `NUVO_IOS_WATCH=0` ships without the watch app until you do |
 | `Choose a certificate to revoke` / `maximum number of certificates` on **Build the watchOS companion** | CI used to call `-allowProvisioningUpdates` on a fresh runner every push, minting a new **Apple Development: Created via API** cert until the account cap broke all uploads (runs 31895025088+). `scripts/ios-watch-build.sh` now builds **unsigned in CI**; the host app's app-store export carries the nested watch bundle. Revoke stale **Created via API** Development certs in [Certificates](https://developer.apple.com/account/resources/certificates/list) if the portal still complains. Set `NUVO_IOS_WATCH=0` in `ios-release.yml` to ship the plain iPhone app meanwhile |
 | `Multiple commands produce .../NuvoWatch.app/NuvoWatch` | The watch target is `application.watchapp2` (legacy: the `.app` wraps Apple's WatchKit stub binary), so the stub copy and our own link both write the executable. A single-target watch app must be `type: application` on `platform: watchOS` — see `scripts/ios-watch.rb` |
 | Archive has no watch app inside it | Check the app target's `NuvoWatch` dependency still carries the explicit `copy:` block. A plain `application` gets **no** inferred "Embed Watch Content" phase. Note XcodeGen names the emitted phase **Embed Dependencies** — verify with `grep -A5 'dstSubfolderSpec = 16' …/project.pbxproj`, not by the Xcode phase name |
-| `CFBundleVersion of an app extension must match that of its containing parent app` | `scripts/ios-widgets.rb` must stamp the widget with the plain `tauri.conf.json` version, *not* `<version>.<build>` — Tauri's `agvtool new-version -all` adds the build number to both plists between build and archive |
+| `CFBundleVersion of an app extension must match that of its containing parent app` | Widget plist must use `$(CURRENT_PROJECT_VERSION)`, not a hardcoded number. The app Info.plist must not set `CFBundleVersion` at all |
 | Anything widget-related blocking a TestFlight build | Set `NUVO_IOS_WIDGETS=0` on the workflow step to ship the plain app while you fix it |
 | Widget taps open the app but nothing happens | The deep link isn't arriving: check `deep-link:default` is in `capabilities/default.json` and the plugin is registered in `src-tauri/src/lib.rs`; reproduce with `xcrun simctl openurl booted nuvo://capture` |
 | Widget opens the capture / chat sheet but you still have to tap the field | The sheet is up and the caret is not. SPA: `useRaiseKeyboard` (immediate + 120ms + one resume retry, stamps `data-raise-keyboard`) and `useDialogFocus` preferring that marked field over ✕. Native: `NuvoWatchPlugin.load` must set `keyboardDisplayRequiresUserAction = false` — without it iOS ignores programmatic `focus()` after a widget tap (D-115). Reproduce with `xcrun simctl openurl booted nuvo://capture` |
