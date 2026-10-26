@@ -29,9 +29,9 @@ import {
   type VerticalData,
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
-import { composeWeek, type DayContext, type Placement } from "../lib/compose";
+import { composeWeek, draftableKept, type DayContext, type Placement } from "../lib/compose";
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
-import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
+import { batchLooseWork, clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
@@ -130,10 +130,11 @@ export function useWeekDraft() {
   }, [suggestions, data]);
 
   // raw rows for the kept candidates — the composer needs the deadline ISO that
-  // VTask drops; exclude anything already on the calendar (no double-placing)
+  // VTask drops; exclude anything already on the calendar (no double-placing),
+  // but a missed block from a past week is placed fresh
   const keptTasks = useMemo<Task[]>(
-    () => allTasks.filter((t) => kept.has(t.id) && !t.start_time && !t.slot_id && t.status !== "done"),
-    [allTasks, kept],
+    () => draftableKept(allTasks, kept, weekStartISO),
+    [allTasks, kept, weekStartISO],
   );
 
   // ── layer 0 · standing slots: route matching work into the recurring blocks
@@ -170,7 +171,7 @@ export function useWeekDraft() {
   // A project's steps belong to one sitting: "Thursday 1–3 is Stampede v3", not
   // four errands scattered across three days. So we cluster the draft's project
   // work into a slot per project (chunked to a sitting) and hand the composer the
-  // SLOT as one block; loose work still places per task.
+  // SLOT as one block.
   const projectSlots = useMemo(
     () => clusterWeek(pooledTasks.filter((t) => t.project_id), data),
     [pooledTasks, data],
@@ -180,14 +181,25 @@ export function useWeekDraft() {
   // like everything else here — one board, one set of proposals you can move.
   const [runs, setRuns] = useState<Batch[]>([]);
   const runMemberIds = useMemo(() => new Set(runs.flatMap((r) => r.taskIds)), [runs]);
+  /** Tasks you took out of a domain batch — they place on their own from then on. */
+  const [unbatched, setUnbatched] = useState<Set<string>>(new Set());
 
-  // a task inside a run is placed BY the run — it must not also place on its own;
-  // routed-into-a-standing-slot work is excluded via pooledTasks
-  const looseTasks = useMemo(
-    () => pooledTasks.filter((t) => !t.project_id && !runMemberIds.has(t.id)),
-    [pooledTasks, runMemberIds],
+  // Loose work the runs don't cover is gathered by domain, so a missing or failed
+  // AI call never leaves the week as a scatter of single errands. A task inside a
+  // run is placed BY the run — it must not also place on its own; routed-into-a-
+  // standing-slot work is excluded via pooledTasks.
+  const looseBatching = useMemo(() => {
+    const pool = pooledTasks.filter((t) => !t.project_id && !runMemberIds.has(t.id));
+    const { batches, singles } = batchLooseWork(pool.filter((t) => !unbatched.has(t.id)), data);
+    return { batches, singles: [...singles, ...pool.filter((t) => unbatched.has(t.id))] };
+  }, [pooledTasks, runMemberIds, unbatched, data]);
+  const looseBatches = looseBatching.batches;
+  const looseTasks = looseBatching.singles;
+  const shownRuns = useMemo(() => [...looseBatches, ...runs], [looseBatches, runs]);
+  const draftBlocks = useMemo(
+    () => [...projectSlots, ...looseBatches, ...runs],
+    [projectSlots, looseBatches, runs],
   );
-  const draftBlocks = useMemo(() => [...projectSlots, ...runs], [projectSlots, runs]);
   const slotById = useMemo(() => new Map(draftBlocks.map((b) => [b.id, b])), [draftBlocks]);
   const composeTasks = useMemo<Task[]>(
     () => [...draftBlocks.map(synthTask), ...looseTasks],
@@ -468,6 +480,11 @@ export function useWeekDraft() {
    * its own; the block shrinks by its duration, or disappears if it was the last.
    */
   const removeFromRun = useCallback((runId: string, taskId: string) => {
+    // a domain batch isn't a run — taking a task out of one just stops batching it
+    if (!runs.some((r) => r.id === runId)) {
+      setUnbatched((prev) => new Set([...prev, taskId]));
+      return;
+    }
     setRuns((prev) =>
       prev
         .map((r) => {
@@ -478,7 +495,7 @@ export function useWeekDraft() {
         })
         .filter((r) => r.taskIds.length > 0),
     );
-  }, [allTasks]);
+  }, [allTasks, runs]);
 
   // ── reclaiming time — an event you won't attend isn't capacity ────────────
   // Nuvo already knows how to ignore one (`hidden_events` + `isEventHidden`, read
@@ -638,7 +655,9 @@ export function useWeekDraft() {
     routing,
     routedCount,
     slotById,
-    runs,
+    /** Every grouped run of loose work on the board — the domain batches and the
+     *  AI's themed runs — so both shells list (and let you take apart) one set. */
+    runs: shownRuns,
     removeFromRun,
     // the calendar the week lands in
     visibleEvents,

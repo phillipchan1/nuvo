@@ -6117,3 +6117,47 @@ home-indicator inset and the keyboard inset are unseen on a real engine; the Sim
 but its access prompt was not granted. **Open question:** the date/time inputs commit on every
 `change`, which on an iOS wheel may fire per tick (and ask the this-or-all question per tick on a
 repeating event) — check on a device before leaving it.*
+
+---
+
+**D-163 · 2026-10-25 · Plan the week places in the hours you'd keep — projects take the
+morning, the week is spread, loose work is gathered by domain, and a missed block is placed
+fresh.** *(Review: [`plan-the-week-ux-review-2026-10-25.md`](../plan-the-week-ux-review-2026-10-25.md).)*
+
+Origin ⓟ: *"it automatically bunches up times, and it's not intelligent in terms of what times
+it picks."* Driven on an open demo week: four projects landed Mon–Tue 1–4:30pm, every morning
+and all of Wed–Fri empty. The composer's windows were keyed on energy, and a project sitting is
+`deep` only when one of its tasks is tagged so — almost none are — so the week's intent went to
+the afternoon; and days were tried Monday-first, first fit wins.
+
+- **Trust order for placement: declared > proven > default.** Standing slots (declared) already
+  route first; learned rhythm (proven) is proposed, not built; this entry fixes the defaults —
+  which are the whole product for a stranger with no history (P7, P16).
+- **Project work takes the morning, whatever its energy tag.** Loose quick work keeps the
+  afternoon.
+- **The week is spread.** A piece tries the day with the most open time first; a project gets one
+  *sitting* (`atomicIds`) a day and each sitting leaves a later day for the ones after it — both
+  given up before anything is refused. Overdue work stays chronological; a project's loose steps
+  (Find Time's shape) try their previous step's day first.
+- **Loose work is batched by domain by default** (`batchLooseWork`); the AI's themed runs re-theme
+  what they cover. A failed `clusterInbox` call no longer scatters the week into single errands.
+- **A missed one-off block from a past week has lost its hour** (consistent with D-141): kept in
+  the plan, it is placed fresh; committed but unplaced, it joins the week untimed. Repeating
+  occurrences never carry (D-009) and the pull stops offering them as presence work — re-placing
+  one duplicated a block the series already had.
+- **The flow says each thing once** (design pass, both shells): one hero per step (the question),
+  the week named once as an eyebrow, no "Step N of M", no "next ·" caption, no serif "Week of",
+  no `wordmark` face outside the Nuvo mark, no per-day bar chart restating the grid, no look-back
+  chips on the phone's Projects step, no glyphs (`▸ ✦ ⛶`) in front of a block's name, one time
+  spelling (`at` / `span`), `--on-accent` instead of `#fff`, no per-block `backdrop-filter`, one
+  set of forward verbs (`STEP_DONE`) on both shells, one-line task rows on the phone.
+
+Closes more of **W2** (the best hours now go to the week's projects); keeps **D2** honest. Strains
+**P3** only as far as any draft does — nothing leaves it without the commit. Not **N-01**: it
+proposes a week you accept. No pool, no new name, holds with an empty account.
+
+*Status: built — fixtures in `tests/plan-week-defaults.test.ts` (each new rule replayed against
+the old code and fails), full suite, typecheck, build; driven on both shells against a demo
+account, light and dark. The commit-side clearing of a stale block was **not** driven live (it
+writes); it has no unit harness. Open: non-work domains still share the work window; per-day
+hours and learned proposals are bets 2–3 in the review.*

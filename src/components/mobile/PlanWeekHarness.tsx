@@ -102,7 +102,6 @@ const busyAt = (d: number, h: number, mins: number, title: string) => ({
 });
 const BUSY = [busyAt(0, 11, 60, "Standup"), busyAt(1, 9, 90, "Board sync"), busyAt(3, 13, 120, "Offsite")];
 
-const GAIN = { doneCount: 11, doneMins: 540, topMove: { name: "Clearstream", from: 40, to: 62 }, quiet: ["Family"] };
 
 function Frame({ label, step, children }: { label: string; step: Step; children: React.ReactNode }) {
   return (
@@ -151,7 +150,6 @@ export default function PlanWeekHarness() {
             data={DATA}
             weekStartISO={weekISO}
             pushes={PUSHES}
-            gain={GAIN}
             suggestions={PROJECT_WORK}
             kept={KEPT}
             setKept={() => {}}

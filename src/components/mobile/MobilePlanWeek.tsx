@@ -34,25 +34,29 @@ import { domainById, taskDomainColor, type Project, type VerticalData } from "..
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { weekName, weekSpan } from "../../lib/week";
-import { LANE_QUESTION, REVEALED_BY_LANE, STEP_QUESTION, workBadge } from "../../lib/intake";
+import { REVEALED_BY_LANE, STEP_ASK, STEP_DONE, STEP_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
 import { toBusyBlocks, type BusyBlock } from "../../lib/now";
+import { at } from "./dayPlan";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
 
 /** The forward beat — named after the ACT, not the destination. "Leftovers →"
  *  said where you'd land and nothing about what pressing it does; each press
  *  pours one more source into the week. */
+// The same verbs as the desktop's walk button (STEP_DONE) — one act, one voice.
 const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
-  open: { to: "projects", label: "Add your projects →" },
-  projects: { to: "rest", label: "Add the rest →" },
-  rest: { to: "week", label: "See the week →" },
+  open: { to: "projects", label: `${STEP_DONE.open} →` },
+  projects: { to: "rest", label: `${STEP_DONE.projects} →` },
+  rest: { to: "week", label: `${STEP_DONE.rest} →` },
 };
 
-const fmtMinShort = (m: number) => {
-  const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", hh = ((h + 11) % 12) + 1;
-  return mm === 0 ? `${hh}${ap}` : `${hh}:${String(mm).padStart(2, "0")}${ap}`;
+// the app's one clock spelling (D-122), fed minutes-from-midnight
+const atMin = (m: number) => {
+  const d = new Date(2000, 0, 1);
+  d.setHours(Math.floor(m / 60), m % 60, 0, 0);
+  return at(d);
 };
 
 export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
@@ -79,7 +83,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     workEnd,
     result,
     placements,
-    gain,
     inboxCount,
     slotLooseWork,
     theming,
@@ -105,8 +108,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   // week already owes, so an empty-looking day full of meetings can't read as free
   const busy = useMemo(() => toBusyBlocks(visibleEvents, onCalBlocks), [visibleEvents, onCalBlocks]);
 
-  const weekLabel = format(parseDateISO(weekStartISO), "MMMM d");
-  const spanLabel = weekSpan(weekStartISO);
 
   if (committed) {
     return (
@@ -134,11 +135,13 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
       {/* Header — transparent over the atmosphere, hairline only */}
       <header className="shrink-0 border-b border-line px-4 pb-2 pt-safe">
         <div className="flex items-start gap-2 pt-2">
-          <div className="min-w-0 flex-1">
+          {/* The week, named once, as an eyebrow — the step's question below is
+              the screen's one hero. "Week of October 26" in serif above it was a
+              second headline saying what the eyebrow already said. */}
+          <div className="min-w-0 flex-1 self-center">
             <div className="section-label !p-0">
-              <span style={{ color: "var(--accent)" }}>{weekName(weekStartISO)}</span> · {spanLabel}
+              Plan the week · <span className="text-ink">{weekName(weekStartISO)}</span> · {weekSpan(weekStartISO)}
             </div>
-            <h1 className="masthead truncate text-head text-ink">Week of {weekLabel}</h1>
           </div>
           <button
             onClick={onClose}
@@ -177,7 +180,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             data={data}
             weekStartISO={weekStartISO}
             pushes={pushes}
-            gain={gain}
             suggestions={byLane.projects}
             kept={kept}
             setKept={setKept}
@@ -187,10 +189,12 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
           />
         )}
         {step === "open" && (
-          <p className="text-body text-muted">
-            The week as it already stands — {hrs(intake.blockedMins)}h already committed. The desktop lets
-            you set a meeting aside here; on a phone, take it as read.
-          </p>
+          <>
+            <StepHead question={STEP_QUESTION.open} />
+            <p className="text-body text-muted">
+              <span className="mono text-ink">{hrs(intake.blockedMins)}h</span> already on the calendar.
+            </p>
+          </>
         )}
         {step === "rest" && (
           <CarriedStep
@@ -223,7 +227,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      <Footer progress={(WEEK_STEPS.indexOf(step) + 1) / WEEK_STEPS.length}>
+      <Footer>
         <div className="flex items-center gap-3">
           {/* The capacity read lives once, in the header meter — a second one down
               here quoted different arithmetic for the same week. */}
@@ -352,23 +356,6 @@ function PrimaryButton({
   );
 }
 
-function Chip({ children, tone }: { children: React.ReactNode; tone?: "accent" | "signal" }) {
-  return (
-    <span
-      className="mono rounded-full px-2 py-0.5 text-micro"
-      style={
-        tone === "accent"
-          ? { color: "var(--accent)", background: "var(--accent-soft)" }
-          : tone === "signal"
-            ? { color: "var(--signal)", background: "var(--signal-soft)" }
-            : { color: "var(--muted)", border: "1px solid var(--line)" }
-      }
-    >
-      {children}
-    </span>
-  );
-}
-
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-3 text-caption text-muted">{children}</p>;
 }
@@ -378,11 +365,14 @@ function Empty({ children }: { children: React.ReactNode }) {
  *  cut: they teach a mechanic you learn once and then re-read fifty-one times a
  *  year. What survives is state, and state gets a number or a shape, not a
  *  sentence. */
-function StepHead({ question, count }: { question: string; count?: React.ReactNode }) {
+function StepHead({ question, ask, count }: { question: string; ask?: string; count?: React.ReactNode }) {
   return (
-    <div className="mb-3 flex items-baseline gap-2">
-      <h2 className="masthead min-w-0 flex-1 text-head text-ink">{question}</h2>
-      {count && <span className="mono shrink-0 text-meta text-muted">{count}</span>}
+    <div className="mb-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="masthead min-w-0 flex-1 text-head text-ink">{question}</h2>
+        {count && <span className="mono shrink-0 text-meta text-muted">{count}</span>}
+      </div>
+      {ask && <p className="mt-1 text-caption text-muted">{ask}</p>}
     </div>
   );
 }
@@ -395,7 +385,6 @@ export function ProjectsStep({
   data,
   weekStartISO,
   pushes,
-  gain,
   suggestions,
   kept,
   setKept,
@@ -406,7 +395,6 @@ export function ProjectsStep({
   data: VerticalData;
   weekStartISO: string;
   pushes: ReturnType<typeof weekPushes>;
-  gain: { doneCount: number; doneMins: number; topMove: { name: string; from: number; to: number } | null; quiet: string[] };
   suggestions: Suggestion[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
@@ -434,19 +422,10 @@ export function ProjectsStep({
 
   return (
     <div>
-      {/* last week, as chips. It was a sentence with three clauses and two full
-          stops; nobody parses grammar to learn they did nine hours. */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Chip>{gain.doneCount} done · {hrs(gain.doneMins)}h</Chip>
-        {gain.topMove && (
-          <Chip tone="accent">{gain.topMove.name} ↑{gain.topMove.to - gain.topMove.from}</Chip>
-        )}
-        {gain.quiet.map((q) => (
-          <Chip key={q} tone="signal">{q} quiet</Chip>
-        ))}
-      </div>
-
-      <h2 className="masthead mt-4 text-head text-ink">{LANE_QUESTION.projects}</h2>
+      {/* Last week's look-back chips (done · hours · quiet domains) used to sit
+          above the question. They answer the Review's question, not this one —
+          the desktop dropped them for that reason, and the phone now matches. */}
+      <StepHead question={STEP_QUESTION.projects} ask={STEP_ASK.projects} />
 
       {pushes.length > 0 ? (
         <div className="mt-3 border-t border-line">
@@ -669,7 +648,7 @@ export function CarriedStep({
 
   return (
     <div>
-      <StepHead question={STEP_QUESTION.rest} />
+      <StepHead question={STEP_QUESTION.rest} ask={STEP_ASK.rest} />
 
       {/* the slots first — they're the proposal you're here to agree with */}
       {slotting && runs.length === 0 ? (
@@ -732,20 +711,23 @@ function WorkRow({
     <button
       onClick={onToggle}
       title={s.reason}
-      className="tap fast flex w-full items-start gap-2.5 border-b border-line py-3 text-left active:bg-surface-2"
+      // one line, one height (design-language: hierarchy 5) — the 44px duration
+      // target sets the row; padding on top of it made each task ~70px and
+      // dropped its length onto a second visual line
+      className="tap fast flex w-full items-center gap-2.5 border-b border-line text-left active:bg-surface-2"
     >
       <span
-        className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
+        className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
         style={on ? { background: color, borderColor: color } : { borderColor: "var(--line-strong)" }}
       >
-        <Icon name="check" size={11} className={on ? "opacity-100" : "opacity-0"} style={{ color: "#fff" }} />
+        <Icon name="check" size={11} className={on ? "opacity-100" : "opacity-0"} style={{ color: "var(--on-accent)" }} />
       </span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>
       </span>
       {!hideReason && badge && (
         <span
-          className="mono shrink-0 self-center rounded-full px-1.5 py-0.5 text-micro"
+          className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro"
           style={
             badge.urgent
               ? { color: "var(--signal)", background: "var(--signal-soft)" }
@@ -758,7 +740,7 @@ function WorkRow({
       <DurationSelect
         value={s.task.durationMins}
         onChange={(m) => onDuration(s.task.id, m)}
-        className="tap shrink-0 rounded px-1.5 py-1 pt-0.5 hover:bg-surface-2"
+        className="tap shrink-0 rounded px-1.5 hover:bg-surface-2"
         title="Sitting length"
       />
     </button>
@@ -906,7 +888,7 @@ export function WeekStep({
                   const title = slot ? slot.name : p.task.title;
                   return (
                     <div key={`${p.task.id}#${p.part ?? 1}`} className="flex items-start gap-3 border-b border-line py-2.5">
-                      <span className="mono w-[58px] shrink-0 pt-0.5 text-micro text-muted">{fmtMinShort(p.startMin)}</span>
+                      <span className="mono w-[58px] shrink-0 pt-0.5 text-micro text-muted">{atMin(p.startMin)}</span>
                       <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-body text-ink">

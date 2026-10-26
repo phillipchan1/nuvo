@@ -93,10 +93,13 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   }
 
   // 5 · presence: one small task from each domain that's going quiet.
+  //    Never an occurrence of a repeating series — the series keeps its own
+  //    days, so pulling one (often a missed one from weeks ago) only duplicated
+  //    a block the week already had.
   for (const domain of d.domains) {
     if (showingUp(domain).lit) continue;
     const candidates = d.tasks
-      .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !picked.has(t.id))
+      .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !t.recurring && !picked.has(t.id))
       .sort((a, b) => a.durationMins - b.durationMins);
     const why = domain.lastTouchedDays == null
       ? `nothing has landed in ${domain.name} yet`

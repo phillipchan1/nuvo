@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ReactNode, SelectHTMLAttributes, InputHTMLAttributes } from "react";
 
 /* ── The input design language ─────────────────────────────────────────────
@@ -8,7 +9,8 @@ import type { ReactNode, SelectHTMLAttributes, InputHTMLAttributes } from "react
 
    Field      — a labelled row (title · description · control), the settings unit
    TextInput  — single-line text / url / password / email
-   Select     — native select with our own chevron
+   TimeInput  — a clock time, saved once you've finished setting it
+   Select    — native select with our own chevron
    Toggle     — the on/off switch
    Checkbox   — inline check (when a switch would be too heavy)
    Stepper    — −  value  +  for bounded numbers
@@ -82,6 +84,66 @@ export function TextInput({
   ...props
 }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`field w-full ${className}`} />;
+}
+
+// ── TimeInput ──────────────────────────────────────────────────────────────
+const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/**
+ * A clock time (minutes from midnight) that is only *saved* once you've finished
+ * setting it — on blur or Enter.
+ *
+ * A native time field fires `change` on every segment you touch, and writing that
+ * straight through made the first digit a real setting: typing "11" saved 1:00am
+ * the moment the "1" landed, the re-render reset the field's typing state, and the
+ * second "1" was swallowed. Working hours became 1am–5:30pm and could not be typed
+ * back. The field now keeps its own draft; arrows and the phone's wheel still
+ * work, they just save on the way out.
+ */
+export function TimeInput({
+  minutes,
+  onCommit,
+  className = "",
+  onKeyDown,
+  ...props
+}: { minutes: number; onCommit: (minutes: number) => void } & Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type" | "value" | "onChange" | "onBlur"
+>) {
+  const saved = toHHMM(minutes);
+  const [draft, setDraft] = useState(saved);
+  const [editing, setEditing] = useState(false);
+  // follow the saved value whenever you aren't mid-edit (another surface changed it)
+  useEffect(() => {
+    if (!editing) setDraft(saved);
+  }, [saved, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const m = /^(\d{2}):(\d{2})/.exec(draft);
+    // a half-cleared field isn't a time — put the saved one back
+    if (!m) return setDraft(saved);
+    const next = Number(m[1]) * 60 + Number(m[2]);
+    if (next !== minutes) onCommit(next);
+  };
+
+  return (
+    <input
+      {...props}
+      type="time"
+      value={draft}
+      onChange={(e) => {
+        setEditing(true);
+        setDraft(e.target.value);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        onKeyDown?.(e);
+      }}
+      className={`field w-full ${className}`}
+    />
+  );
 }
 
 // ── Select (custom chevron) ─────────────────────────────────────────────────

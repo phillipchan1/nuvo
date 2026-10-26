@@ -6,19 +6,22 @@
 // post-process it later, but the schedule itself never hallucinates.
 //
 // Encoded practice (the boundaries of the intelligence):
-//   · deep work lands in the morning, max two deep blocks a day
+//   · project work takes the morning, whatever its energy tag — the week's intent
+//     gets the best hours, not the leftovers
+//   · deep work lands in the morning too, max two deep blocks a day
 //   · a 15m breather follows every deep block of an hour or more
 //   · decide-work lands late morning / early afternoon (judgment, not flow)
-//   · quick + delegate work is batched into afternoon runs, same project
-//     kept adjacent (one context, many small wins)
-//   · deadlines schedule before their due day; lead-★ bets schedule earliest
+//   · quick + delegate loose work is batched into afternoon runs
+//   · the week is spread, not front-loaded: each piece tries the day with the
+//     most open time first, and a project gets at most one sitting a day
+//   · deadlines schedule before their due day; overdue work takes the first
+//     open slot; lead-★ bets outrank the rest
 //   · no day is filled past ~75% of its free time — slack is the plan
 //   · 10m buffer around every immovable event
 
 import { addDays, format } from "date-fns";
 import type { ExternalEvent, Task } from "./types";
 import { endOf, parseDateISO } from "./dates";
-import type { Energy } from "./energy";
 
 export interface Placement {
   task: Task;
@@ -98,7 +101,8 @@ export interface ComposeInput {
   weeklyBudgetMins?: number | null;
   /** Ids that must never be carved across sittings. A project slot is a container
    *  holding real tasks — half of it is meaningless, and two placements of one
-   *  slot would fight over the same members at commit. */
+   *  slot would fight over the same members at commit. These are also what
+   *  "a sitting" means to the spread: a project gets one of them a day. */
   atomicIds?: string[];
 }
 
@@ -274,10 +278,21 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     return ka.localeCompare(kb);
   });
 
-  // ── 3 · greedy placement inside each energy's natural window ───────────────
+  // ── 3 · greedy placement inside each piece's natural window ────────────────
   const NOON = 12 * 60 + 30;
-  const windowFor = (energy: Energy | null): { from: number; to: number; label: string } => {
-    switch (energy) {
+  /**
+   * Where a piece wants to sit in its day.
+   *
+   * **Project work takes the morning, whatever its energy tag.** The windows used
+   * to be keyed on energy alone, and a project sitting is only `deep` when one of
+   * its tasks happens to be tagged so — which almost nothing captured or drafted
+   * is. So the week's projects went to the 1pm "afternoon batch" and every
+   * morning stayed empty: on an open week, four projects landed Mon–Tue 1–4:30
+   * with nothing before noon. The best hours belong to the work the week is for.
+   */
+  const windowFor = (t: Task): { from: number; to: number; label: string } => {
+    if (t.project_id) return { from: workStartMin, to: Math.min(NOON, workEndMin), label: "morning — project time" };
+    switch (t.energy) {
       case "deep": return { from: workStartMin, to: Math.min(NOON, workEndMin), label: "morning deep window" };
       case "decide": return { from: Math.min(10 * 60 + 30, workEndMin), to: Math.min(15 * 60, workEndMin), label: "judgment hours" };
       default: return { from: Math.min(13 * 60, workEndMin), to: workEndMin, label: "afternoon batch" };
@@ -300,9 +315,30 @@ export function composeWeek(input: ComposeInput): ComposeResult {
    */
   const projectAfter = new Map<string, { dayISO: string; endMin: number }>();
 
+  /**
+   * The order a piece tries the week's days in.
+   *
+   * It used to be Monday first, always — and the first fit wins, so an open week
+   * piled onto Monday and Tuesday while Wednesday to Friday sat empty. Now the day
+   * with the most open time left goes first (the earlier day on a tie), so the
+   * week fills evenly. Two exceptions: overdue work still takes the first open
+   * slot, because it is owed; and a project's loose piece tries the day its
+   * previous piece landed on first, so a project's steps stay one context.
+   */
+  const dayOrder = (overdue: boolean, sameDayAs: string | null): typeof days => {
+    if (overdue) return days;
+    const openLeftOn = (d: (typeof days)[number]) => d.free - d.placed;
+    const ranked = [...days].sort((a, b) => openLeftOn(b) - openLeftOn(a) || a.iso.localeCompare(b.iso));
+    const i = sameDayAs ? ranked.findIndex((d) => d.iso === sameDayAs) : -1;
+    return i > 0 ? [ranked[i], ...ranked.slice(0, i), ...ranked.slice(i + 1)] : ranked;
+  };
+  /** A project's sitting already on this day — one a day, while there's a choice. */
+  const hasSittingOn = (dayISO: string, projectId: string) =>
+    placements.some((p) => p.dayISO === dayISO && p.task.project_id === projectId && atomic.has(p.task.id));
+
   const tryPlace = (t: Task, relaxed: boolean, tight = false): boolean => {
     const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
-    const win = windowFor(t.energy);
+    const win = windowFor(t);
     const dueBefore = t.deadline ?? null;
     // An already-passed deadline isn't a ceiling — it's a "do this first" flag.
     // Overdue work is the most urgent thing you have; schedule it ASAP (the queue
@@ -312,12 +348,20 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     const shallow = t.energy === "quick" || t.energy === "delegate" || t.energy == null;
     // a project's earlier pieces pin the floor for its later ones
     const after = t.project_id ? projectAfter.get(t.project_id) : undefined;
-    for (const day of days) {
+    // a sitting is a whole block of a project; its loose pieces are not
+    const sitting = t.project_id != null && atomic.has(t.id);
+    for (const day of dayOrder(overdue, !sitting && after ? after.dayISO : null)) {
       if (after && day.iso < after.dayISO) continue; // its predecessor is later in the week
-      if (dueBefore && !overdue && day.iso > dueBefore) break; // a live deadline is a hard boundary
+      if (dueBefore && !overdue && day.iso > dueBefore) continue; // a live deadline is a hard boundary
       // context rules are boundaries — hard in both passes
       if (day.rules.shallowOnly && !shallow) continue;
       if (t.energy === "deep" && day.deepCount >= day.rules.maxDeep) continue;
+      if (sitting && !relaxed) {
+        // one sitting of a project a day, and room left after it for the ones
+        // still to come — given up only when the week can't otherwise hold it
+        if (hasSittingOn(day.iso, t.project_id!)) continue;
+        if (days.filter((d) => d.iso > day.iso).length < (sittingsAfter.get(t.id) ?? 0)) continue;
+      }
       // the fill cap is soft on normal days (relaxed pass may exceed it),
       // hard wherever a context deliberately keeps the day small
       const capHard = day.context !== "normal";
@@ -521,6 +565,12 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     if (last && t.project_id && last[0].project_id === t.project_id) last.push(t);
     else projectRuns.push([t]);
   }
+  /** How many of a project's sittings come after this one — each needs a later day. */
+  const sittingsAfter = new Map<string, number>();
+  for (const group of projectRuns) {
+    const sittings = group.filter((t) => atomic.has(t.id));
+    sittings.forEach((t, i) => sittingsAfter.set(t.id, sittings.length - 1 - i));
+  }
 
   type Snapshot = ReturnType<typeof snapshot>;
   const snapshot = () => ({
@@ -597,6 +647,39 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       placedMins: d.placed,
     })),
   };
+}
+
+/**
+ * A block whose hour belongs to a week that has already passed — a missed block
+ * that rollover never cleared. Its time is gone (D-141: "the hour was for a day
+ * that has passed"), so a week can take it as unplaced work.
+ *
+ * It used to vanish instead: the pull offered it ("going quiet") and you could
+ * keep it, but the draft drops anything that already has a `start_time`, and
+ * that time wasn't in this week's blocks either — so it landed nowhere and was
+ * reported nowhere.
+ */
+export function isStaleBlock(t: Pick<Task, "start_time" | "recurrence_id">, weekStartISO: string): boolean {
+  // a repeating occurrence never carries (D-009) — its series already has this
+  // week's own occurrences, so an old one is not work to re-place
+  return !!t.start_time && !t.recurrence_id && minutesOn(t.start_time).day < weekStartISO;
+}
+
+/**
+ * What the composer may place out of the tasks you kept: open work with no time
+ * yet, plus stale one-off blocks with their old time cleared. Anything already on this
+ * week's calendar, or filed in a slot, stays where it is — no double-placing.
+ */
+export function draftableKept(tasks: Task[], kept: Set<string>, weekStartISO: string): Task[] {
+  return tasks
+    .filter(
+      (t) =>
+        kept.has(t.id) &&
+        !t.slot_id &&
+        t.status !== "done" &&
+        (!t.start_time || isStaleBlock(t, weekStartISO)),
+    )
+    .map((t) => (t.start_time ? { ...t, start_time: null } : t));
 }
 
 export const fmtSlot = (p: Placement) => `${fmtMin(p.startMin)}–${fmtMin(p.startMin + p.durationMin)}`;

@@ -27,6 +27,7 @@ import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
+import { isStaleBlock } from "../lib/compose";
 import { sameDirectory } from "../lib/verticalDirectory";
 import { DEFAULT_DOMAIN_SYMBOL, normalizeDomainSymbol } from "../lib/domainSymbolKeys";
 import { upsertPushVerdict } from "../lib/priorities";
@@ -1489,16 +1490,25 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const sprint = await ensureSprint();
 
         // 1 · every kept candidate becomes a week commitment (the funnel),
-        //     and any inbox capture among them is processed out of the inbox
+        //     and any inbox capture among them is processed out of the inbox.
+        //     A missed block from a past week loses its old hour here (D-141) —
+        //     step 2 gives it a new one if the week had room, and otherwise it
+        //     joins the week untimed instead of carrying last week's clock.
         if (commitTaskIds.length) {
           const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
           for (const id of commitTaskIds) {
-            const patch: Partial<Task> =
-              byId.get(id)?.status === "inbox"
-                ? { sprint_id: sprint.id, status: "backlog" }
-                : { sprint_id: sprint.id };
+            const row = byId.get(id);
+            const stale = row != null && isStaleBlock(row, weekStart);
+            // (an undated block isn't "planned" — the same shape `unplanTask` writes)
+            const patch: Partial<Task> = {
+              sprint_id: sprint.id,
+              ...(row?.status === "inbox" || stale ? { status: "backlog" as const } : {}),
+              ...(stale ? { do_date: null, start_time: null } : {}),
+            };
             patchCaches(qc, id, patch);
             await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+            // the mirror's copy of the old block goes with the hour
+            if (stale && navigator.onLine) mirrorTask(id);
           }
         }
 

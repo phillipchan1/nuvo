@@ -181,6 +181,30 @@ export function clusterWeek(tasks: Task[], data: VerticalData): Batch[] {
   return batches;
 }
 
+/**
+ * Loose work, gathered by domain — the floor under the AI's themed runs.
+ *
+ * Loose tasks only grouped when the `clusterInbox` call came back: a failed or
+ * empty call left every capture as its own 15-minute block, scattered through
+ * the week, though the deterministic shallow-by-domain pass above already
+ * existed. So loose work batches by domain by default (deep and decide work by
+ * initiative, then domain), and the AI's runs, when they arrive, re-theme
+ * whatever they cover. A group of one isn't a batch — it stays a task.
+ */
+export function batchLooseWork(tasks: Task[], data: VerticalData): { batches: Batch[]; singles: Task[] } {
+  const loose = tasks.filter((t) => !t.project_id);
+  const byId = new Map(loose.map((t) => [t.id, t]));
+  const batches: Batch[] = [];
+  const singles: Task[] = [];
+  for (const b of clusterWeek(loose, data)) {
+    if (b.taskIds.length < 2) singles.push(byId.get(b.taskIds[0])!);
+    // its own id space — `clusterWeek` numbers from zero on every call, and the
+    // project sittings already hold `batch-0…`
+    else batches.push({ ...b, id: `loose-${batches.length}` });
+  }
+  return { batches, singles };
+}
+
 /** Build a batch from an explicit group (AI-themed inbox run): keep the given
  *  name + energy, derive the rest (duration, domain, color) from the members. */
 function makeInboxBatch(members: Task[], energy: Energy, name: string, data: VerticalData, seq: number, part: number): Batch {

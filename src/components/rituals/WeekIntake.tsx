@@ -82,7 +82,7 @@ export default function SourceSwitch({
                   style={{
                     background: active ? "var(--accent)" : "transparent",
                     border: active ? "none" : `1px solid ${done ? "var(--accent)" : "var(--line-strong)"}`,
-                    color: active ? "#fff" : ink,
+                    color: active ? "var(--on-accent)" : ink,
                   }}
                 >
                   {done ? "✓" : i + 1}
@@ -195,9 +195,10 @@ export function CapacityMeter({
           <span className="mono text-head text-ink">{hrs(intake.loadMins)}h</span>
           {/* The one calibration sentence, in words, because it's now the ONLY
               thing calibration does here — it used to also silently refuse work. */}
-          {budgetMins == null ? (
-            <span className="mono text-meta text-muted"> · no usual week yet</span>
-          ) : overMins > 0 ? (
+          {/* No history yet is silence, not a clause — "· no usual week yet"
+              rode every screen of a new account's first month. The tooltip
+              still says why there's no comparison. */}
+          {budgetMins == null ? null : overMins > 0 ? (
             <span className="mono text-meta" style={{ color: "var(--signal)" }}>
               {" · "}{hrs(overMins)}h past your usual {hrs(budgetMins)}h
             </span>

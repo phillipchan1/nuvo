@@ -75,7 +75,7 @@ export const STEP_LABEL: Record<WeekPlanStep, string> = {
   rest: "The rest",
 };
 export const STEP_QUESTION: Record<WeekPlanStep, string> = {
-  open: "What room does this week actually have?",
+  open: "What room does this week have?",
   projects: "What are you moving this week?",
   rest: "What else is the week carrying?",
 };
@@ -89,9 +89,22 @@ export const STEP_QUESTION: Record<WeekPlanStep, string> = {
  * these steps changes the grid on the right the moment you touch it.
  */
 export const STEP_ASK: Record<WeekPlanStep, string> = {
-  open: "Its time opens up on the week.",
-  projects: "Keep what should move. Nuvo gives each piece a time on the week — the marks say what landed.",
-  rest: "Keep what still matters. What's left fills in around the projects.",
+  open: "Click a meeting you'll skip — its time opens up.",
+  projects: "Keep what should move; each piece gets a time.",
+  rest: "Keep what still matters; it fills in around the projects.",
+};
+
+/**
+ * The walk's forward button, on both shells — it **completes the step you're
+ * on**, in your own voice, rather than naming the next one ("Add your projects"
+ * on the open-time step described a screen you weren't on yet). The phone has one
+ * more station, the day-by-day read, so it carries one more verb.
+ */
+export const STEP_DONE: Record<WeekPlanStep | "week", string> = {
+  open: "That's my open time",
+  projects: "That's what I'm moving",
+  rest: "See the week",
+  week: "Commit the week",
 };
 
 /**

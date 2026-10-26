@@ -29,7 +29,7 @@ import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
-import { Field, PaneHeader, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
+import { Field, PaneHeader, TextInput, TimeInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
@@ -143,9 +143,6 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
 // `Row` is the settings field unit — Field from the form primitives (label-left
 // / control-right, stacking full-width on a phone).
 const Row = Field;
-
-const toMinLabel = (m: number) =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 // ── Appearance: live theme preview tiles ──────────────────────────────────
 const PALETTES = {
@@ -509,12 +506,6 @@ function SchedulePane({
   /** Supplied by the mobile shell, whose Calendar has no ⋯ to hold it. */
   onOpenUpkeep?: () => void;
 }) {
-  const setWork = (key: "work_start_minutes" | "work_end_minutes") => (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.value) return;
-    const [h, mm] = e.target.value.split(":").map(Number);
-    updateSettings({ [key]: h * 60 + mm });
-  };
-
   const [maxPerWeek, setMaxPerWeekPref] = useMaxPerWeek();
   const [maxPerQuarter, setMaxPerQuarterPref] = useMaxPerQuarter();
 
@@ -579,19 +570,17 @@ function SchedulePane({
 
         <Row layout="stack" title="Working hours" desc="The window Nuvo proposes focus blocks inside.">
           <div className="flex items-center gap-2.5">
-            <TextInput
-              type="time"
+            <TimeInput
               step={900}
-              value={toMinLabel(settings?.work_start_minutes ?? 480)}
-              onChange={setWork("work_start_minutes")}
+              minutes={settings?.work_start_minutes ?? 480}
+              onCommit={(m) => updateSettings({ work_start_minutes: m })}
               className="mono w-full sm:w-36"
             />
             <span className="text-caption text-muted">to</span>
-            <TextInput
-              type="time"
+            <TimeInput
               step={900}
-              value={toMinLabel(settings?.work_end_minutes ?? 990)}
-              onChange={setWork("work_end_minutes")}
+              minutes={settings?.work_end_minutes ?? 990}
+              onCommit={(m) => updateSettings({ work_end_minutes: m })}
               className="mono w-full sm:w-36"
             />
           </div>
@@ -666,15 +655,10 @@ function SchedulePane({
               ))}
             </Select>
             <span className="text-caption text-muted">at</span>
-            <TextInput
-              type="time"
+            <TimeInput
               step={900}
-              value={toMinLabel(reveal.minutes)}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                const [h, mm] = e.target.value.split(":").map(Number);
-                patchReveal({ minutes: h * 60 + mm });
-              }}
+              minutes={reveal.minutes}
+              onCommit={(m) => patchReveal({ minutes: m })}
               disabled={!reveal.enabled}
               className="mono w-32"
             />
@@ -1458,16 +1442,11 @@ function RemindersPane({
         </Row>
 
         <Row layout="stack" title="On the day, at" desc="When a date-only reminder speaks — deadlines, all-day events, and a reminder you set on an untimed task.">
-          <TextInput
-            type="time"
+          <TimeInput
             step={900}
             disabled={!prefs.enabled}
-            value={toMinLabel(prefs.deadline_time_minutes)}
-            onChange={(e) => {
-              if (!e.target.value) return;
-              const [h, mm] = e.target.value.split(":").map(Number);
-              patch({ deadline_time_minutes: h * 60 + mm });
-            }}
+            minutes={prefs.deadline_time_minutes}
+            onCommit={(m) => patch({ deadline_time_minutes: m })}
             className="mono w-full sm:w-36"
           />
         </Row>

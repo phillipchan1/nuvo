@@ -199,6 +199,9 @@ export interface VTask {
   startTime: string | null;
   /** Inside a time slot — the slot carries the day/time; the task's own start_time is null. */
   slotId: string | null;
+  /** An occurrence of a repeating series. Its series shows up on its own; one
+   *  occurrence is never "the work" a week pulls in. */
+  recurring?: boolean;
   /** when it was captured — lets a week judge the plan it made, not what landed after. */
   createdAt: string | null;
   completedAt: string | null;
@@ -362,6 +365,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     sprint: Boolean(currentSprintId && t.sprint_id === currentSprintId),
     doDate: t.do_date,
     startTime: t.start_time,
+    recurring: t.recurrence_id != null,
     slotId: t.slot_id,
     createdAt: t.created_at ?? null,
     completedAt: t.completed_at,
