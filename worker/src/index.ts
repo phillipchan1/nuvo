@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { sessionUser } from "./auth.ts";
+import { exposeSignedAuthToken, sessionUser } from "./auth.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
@@ -96,7 +96,7 @@ app.all("/api/auth/*", async (c) => {
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const io = await requestIo(c);
-    const res = await io.auth.handler(c.req.raw);
+    const res = await exposeSignedAuthToken(await io.auth.handler(c.req.raw));
     const headers = new Headers(res.headers);
     for (const [k, v] of Object.entries(cors)) {
       if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);

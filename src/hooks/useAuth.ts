@@ -71,17 +71,23 @@ export function useAuth() {
   useEffect(() => {
     if (workersEnabled) {
       let cancelled = false;
-      void import("../lib/authClient").then(async ({ createNuvoAuthClient }) => {
+      void import("../lib/authClient").then(async ({ createNuvoAuthClient, signedBearerToken }) => {
         if (cancelled) return;
         const client = createNuvoAuthClient();
-        const applyBa = (data: { user?: { id: string; email?: string | null; updatedAt?: Date | string } | null; session?: { token: string; expiresAt: Date | string } | null } | null) => {
+        const applyBa = (data: {
+          user?: { id: string; email?: string | null; updatedAt?: Date | string } | null;
+          session?: { token: string; expiresAt: Date | string } | null;
+          token?: string;
+        } | null) => {
           if (cancelled) return;
-          if (!data?.user || !data.session) {
+          const token = signedBearerToken() ?? data?.session?.token ?? data?.token;
+          if (!data?.user || !token) {
             setSession(null);
             return;
           }
+          const expiresAt = data.session?.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
           setSession((prev) => {
-            const next = sessionFromBetterAuth(data.user!, data.session!.token, data.session!.expiresAt);
+            const next = sessionFromBetterAuth(data.user!, token, expiresAt);
             return sameSession(prev, next) ? prev : next;
           });
         };

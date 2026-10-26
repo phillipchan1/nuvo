@@ -46,6 +46,8 @@ ok(/openSql/.test(dbSrc), "db.ts exports openSql (per-request)");
 ok(/openAuth/.test(authSrc), "auth.ts exports openAuth (per-request)");
 ok(/waitUntil/.test(ioSrc), "requestIo closes via waitUntil");
 ok(/openRequestIo/.test(indexSrc) && /scheduleClose/.test(indexSrc), "index.ts uses per-request IO + scheduleClose");
+ok(/requireSignature:\s*true/.test(authSrc), "createAuth requires signed bearer tokens");
+ok(/exposeSignedAuthToken/.test(indexSrc), "auth responses rewrite the JSON token to the signed form");
 ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
 ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
 ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
@@ -171,6 +173,7 @@ const signUpText = await signUpRes.text();
 ok(signUpRes.status === 200, `sign-up: HTTP ${signUpRes.status} ${signUpText.slice(0, 160)}`);
 const signed = JSON.parse(signUpText || "{}") as { token?: string; user?: { id?: string } };
 ok(typeof signed.token === "string" && signed.token.length > 8, "sign-up: session token");
+ok(signed.token.includes("."), "sign-up: token is signed (token.signature), not the raw DB value");
 
 const writeRes = await withTimeout(
   request("/api/data/tasks", {
@@ -189,6 +192,26 @@ ok(writeRes.status === 200, `authed write: HTTP ${writeRes.status} ${writeText.s
 const written = JSON.parse(writeText || "{}") as { data?: { title?: string; user_id?: string } };
 ok(written.data?.title === "sequential write", "authed write: task title stored");
 ok(written.data?.user_id === signed.user?.id, "authed write: task belongs to the signed-up user");
+
+const rawRows = await db.query<{ token: string }>(
+  'SELECT token FROM session WHERE "userId" = $1',
+  [signed.user?.id],
+);
+const rawDbToken = rawRows.rows[0]?.token ?? "";
+ok(rawDbToken.length > 8, "session table has a raw token");
+ok(rawDbToken !== signed.token, "JSON token is not the raw DB session token");
+ok(!rawDbToken.includes("."), "raw DB token is unsigned");
+
+const rawBearer = await withTimeout(
+  request("/api/data/tasks", {
+    headers: { Authorization: `Bearer ${rawDbToken}` },
+  }),
+  8000,
+  "raw DB bearer",
+);
+ok(rawBearer.status === 401, `raw DB token as Bearer: HTTP ${rawBearer.status}`);
+const rawBody = await rawBearer.json() as { error?: string };
+ok(rawBody.error === "unauthorized", "raw DB token: generic unauthorized");
 
 const unauthRes = await withTimeout(
   request("/api/data/tasks", {

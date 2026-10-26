@@ -135,6 +135,31 @@ try {
 
   const a = await signUp("seq-a@example.test", "Seq A");
   const b = await signUp("seq-b@example.test", "Seq B");
+  ok(a.token.includes("."), "sign-up A: JSON token is signed");
+
+  const inspect = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
+  let rawDbToken = "";
+  try {
+    const rows = await inspect<{ token: string }[]>`
+      SELECT token FROM session WHERE "userId" = ${a.id} LIMIT 1
+    `;
+    rawDbToken = rows[0]?.token ?? "";
+  } finally {
+    await inspect.end({ timeout: 5 });
+  }
+  ok(rawDbToken.length > 8, "session table has a raw token for A");
+  ok(rawDbToken !== a.token, "JSON token is not the raw DB session token");
+  ok(!rawDbToken.includes("."), "raw DB token is unsigned");
+
+  const rawBearer = await withTimeout(
+    request("/api/data/tasks", {
+      headers: { Authorization: `Bearer ${rawDbToken}` },
+    }),
+    15000,
+    "raw DB bearer",
+  );
+  ok(rawBearer.status === 401, `raw DB token as Bearer: HTTP ${rawBearer.status}`);
+  ok((rawBearer.headers.get("content-type") ?? "").includes("application/json"), "raw DB token 401 is JSON");
 
   const createRes = await withTimeout(
     request("/api/data/tasks", {

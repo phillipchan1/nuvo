@@ -70,7 +70,7 @@ export function createAuth(env: Env, database: AuthDatabase) {
       },
     },
     plugins: [
-      bearer(),
+      bearer({ requireSignature: true }),
       emailOTP({
         otpLength: 6,
         expiresIn: 300,
@@ -94,6 +94,33 @@ export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<v
       await pool.end();
     },
   };
+}
+
+/** Prefer the signed cookie value (`set-auth-token`) over the raw DB session token. */
+export async function exposeSignedAuthToken(res: Response): Promise<Response> {
+  const signed = res.headers.get("set-auth-token");
+  if (!signed) return res;
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) return res;
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text) as Record<string, unknown> | null;
+    if (body && typeof body === "object") {
+      if (typeof body.token === "string" && !body.token.includes(".")) body.token = signed;
+      const session = body.session;
+      if (session && typeof session === "object") {
+        const row = session as Record<string, unknown>;
+        if (typeof row.token === "string" && !row.token.includes(".")) row.token = signed;
+      }
+    }
+    return new Response(JSON.stringify(body), {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
+  } catch {
+    return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
+  }
 }
 
 export async function sessionUser(

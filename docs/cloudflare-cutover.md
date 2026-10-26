@@ -17,7 +17,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 |---|---|---|---|
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
 | Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
-| Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + password) | Same flag flip |
+| Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (aliases; handlers not ported yet) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
 | Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
