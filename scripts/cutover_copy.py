@@ -225,6 +225,35 @@ def sync_log_anti_join_insert_sql() -> str:
     )
 
 
+# --exclude-table-data drops sequence data; OVERRIDING SYSTEM VALUE does
+# not advance the identity. After resync, park last_value at max(id).
+# After restore (empty table), park past source max + margin so a
+# pre-resync Neon insert cannot take a Supabase id and silently drop it
+# (ON CONFLICT DO NOTHING).
+SYNC_LOG_SEQUENCE_MARGIN = 1_000_000
+
+
+def sync_log_setval_sql() -> str:
+    return (
+        "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), "
+        "GREATEST((SELECT max(id) FROM public.sync_log),1))"
+    )
+
+
+def sync_log_reserve_sequence_sql(
+    source_max_id: int,
+    *,
+    margin: int = SYNC_LOG_SEQUENCE_MARGIN,
+) -> str:
+    parked = max(int(source_max_id), 0) + int(margin)
+    if parked < 1:
+        parked = 1
+    return (
+        "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), "
+        f"{parked})"
+    )
+
+
 def watermark_filter_ids(source_ids: list[int], watermark_id: int) -> list[int]:
     """What a max(id) tail would copy — misses late-committed lower ids."""
     return [i for i in source_ids if i > watermark_id]

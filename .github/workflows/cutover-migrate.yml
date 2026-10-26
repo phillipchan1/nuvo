@@ -41,10 +41,13 @@
 # stripe_webhook_events, apple_webhook_events, apple_notification_events.
 # sync_log structure is dumped (--exclude-table-data); its rows stay out
 # of snapshot/parity. After switch, resync inserts every source row whose
-# id is missing on the target (ON CONFLICT DO NOTHING). The dump-time
-# watermark is reported only — a late-committed lower id must still land.
-# push_subscriptions stays in the copy; resync upserts full source rows
-# (ON CONFLICT (id) DO UPDATE) then deletes missing ids (counts only).
+# id is missing on the target (ON CONFLICT DO NOTHING), then setval the
+# identity to GREATEST(max(id),1). After restore, setval to source max(id)
+# plus a 1e6 margin so a pre-resync Neon write cannot collide with and
+# silently drop a Supabase row. The dump-time watermark is reported only
+# — a late-committed lower id must still land. push_subscriptions stays
+# in the copy; resync deletes missing ids first, then upserts full source
+# rows (ON CONFLICT (id) DO UPDATE), counts only.
 # Dump refuses unless GET MAINTENANCE_URL reports cutover_armed, a gated
 # edge POST returns 503, and anon INSERT on a frozen table is denied.
 # freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
@@ -295,9 +298,12 @@ jobs:
               push_upsert_sql,
               resolve_edge_preflight_url,
               skipped_from_copy,
+              SYNC_LOG_SEQUENCE_MARGIN,
               sync_log_anti_join_insert_sql,
               sync_log_copy_sql,
               sync_log_load_sql,
+              sync_log_reserve_sequence_sql,
+              sync_log_setval_sql,
               sync_log_watermark_sql,
           )
 
@@ -1240,6 +1246,17 @@ jobs:
                       )
               if auth_problems:
                   die("auth count or content-hash mismatch — abort:\n  " + "\n  ".join(auth_problems))
+              mark = load_sync_log_watermark(work)
+              reserved = psql(
+                  target,
+                  sync_log_reserve_sequence_sql(int(mark["id"])),
+                  extra=["-tA"],
+              ).strip()
+              print(
+                  f"reserved sync_log identity setval={reserved} "
+                  f"(source max={mark.get('id')} + margin {SYNC_LOG_SEQUENCE_MARGIN})",
+                  flush=True,
+              )
               print(f"restored into {os.environ.get('RESTORE_KIND', 'target')}", flush=True)
 
           def cmd_verify() -> None:
@@ -1390,8 +1407,8 @@ jobs:
                           push_load_rows_sql() + ";",
                           f"\\copy cutover_push_rows ({push_cols}) "
                           f"FROM {sql_literal(str(push_path))} WITH CSV",
-                          push_upsert_sql() + ";",
                           push_anti_join_delete_sql() + ";",
+                          push_upsert_sql() + ";",
                           "",
                       ]
                   ),
@@ -1404,11 +1421,13 @@ jobs:
                   if line.strip().isdigit()
               ]
               inserted = counts[0] if counts else "?"
-              upserted = counts[1] if len(counts) > 1 else "?"
-              deleted = counts[2] if len(counts) > 2 else "?"
+              deleted = counts[1] if len(counts) > 1 else "?"
+              upserted = counts[2] if len(counts) > 2 else "?"
               print(f"sync_log inserted (id anti-join): {inserted}", flush=True)
-              print(f"push_subscriptions upserted: {upserted}", flush=True)
+              setval_out = psql(target, sync_log_setval_sql(), extra=["-tA"]).strip()
+              print(f"sync_log identity setval={setval_out}", flush=True)
               print(f"push_subscriptions deleted on target (anti-join): {deleted}", flush=True)
+              print(f"push_subscriptions upserted: {upserted}", flush=True)
               for path in (sync_path, push_path, script):
                   try:
                       path.unlink()

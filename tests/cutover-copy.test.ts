@@ -57,7 +57,16 @@ describe("cutover_copy helpers", () => {
     expect(sql).toMatch(/ON CONFLICT \(id\) DO NOTHING/);
   });
 
-  it("push resync upserts every column then deletes missing ids", () => {
+  it("setvals the sync_log identity after resync and reserves past source max after restore", () => {
+    const setval = py("from cutover_copy import sync_log_setval_sql; print(sync_log_setval_sql())");
+    expect(setval).toBe(
+      "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), GREATEST((SELECT max(id) FROM public.sync_log),1))",
+    );
+    const reserved = py("from cutover_copy import sync_log_reserve_sequence_sql, SYNC_LOG_SEQUENCE_MARGIN; print(sync_log_reserve_sequence_sql(6)); print(SYNC_LOG_SEQUENCE_MARGIN)");
+    expect(reserved).toMatch(/^SELECT setval\(pg_get_serial_sequence\('public\.sync_log','id'\), 1000006\)\n1000000$/);
+  });
+
+  it("push resync deletes missing ids before upserting every column", () => {
     const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql())");
     expect(sql).toMatch(/FROM public\.push_subscriptions/);
     expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE SET/);
@@ -66,6 +75,10 @@ describe("cutover_copy helpers", () => {
     expect(sql).toMatch(/DELETE FROM public\.push_subscriptions/);
     expect(sql).toMatch(/SELECT COUNT\(\*\) FROM gone/);
     expect(sql).not.toMatch(/RETURNING \*/);
+    const idxDelete = WORKFLOW.indexOf("push_anti_join_delete_sql() + \";\"");
+    const idxUpsert = WORKFLOW.indexOf("push_upsert_sql() + \";\"");
+    expect(idxDelete).toBeGreaterThan(0);
+    expect(idxUpsert).toBeGreaterThan(idxDelete);
   });
 });
 
@@ -187,6 +200,8 @@ describe("cutover-migrate.yml", () => {
   it("keeps push_subscriptions in the copy and upserts after switch", () => {
     expect(WORKFLOW).toMatch(/push_subscriptions upserted/);
     expect(WORKFLOW).toMatch(/push_subscriptions deleted on target \(anti-join\)/);
+    expect(WORKFLOW).toMatch(/sync_log identity setval=/);
+    expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
   });
 });
@@ -227,6 +242,8 @@ describe("runbook", () => {
     expect(DOC).toMatch(/watermark/);
     expect(DOC).toMatch(/late-committed/);
     expect(DOC).toMatch(/ON CONFLICT \(id\) DO UPDATE/);
+    expect(DOC).toMatch(/setval/);
+    expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
   });
 

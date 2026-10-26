@@ -41,7 +41,8 @@ CREATE TABLE public.push_subscriptions (
   label TEXT,
   time_zone TEXT,
   last_seen_at TIMESTAMPTZ,
-  failure_count INTEGER NOT NULL DEFAULT 0
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (user_id, endpoint)
 );
 `;
 
@@ -123,6 +124,73 @@ describe("sync_log late commit", () => {
     await source.close();
     await target.close();
   });
+
+  it("plain insert after resync succeeds, and a pre-resync Neon write does not drop a Supabase row", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+
+    for (const id of [1, 2, 3]) {
+      await source.query(
+        `INSERT INTO public.sync_log (id, provider, operation, status)
+         OVERRIDING SYSTEM VALUE VALUES ($1, 'google', 'sync', 'ok')`,
+        [id],
+      );
+    }
+
+    // Empty target (exclude-table-data). Reserve past source max so a
+    // pre-resync Neon write cannot take id 1 and silently drop it.
+    const reserve = py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))");
+    const reserved = await target.query<{ setval: string }>(reserve);
+    expect(Number(reserved.rows[0]?.setval)).toBe(1_000_003);
+
+    const neonPre = await target.query<{ id: string }>(
+      `INSERT INTO public.sync_log (provider, operation, status)
+       VALUES ('neon', 'pre-resync', 'ok') RETURNING id`,
+    );
+    const neonPreId = Number(neonPre.rows[0]?.id);
+    expect(neonPreId).toBeGreaterThan(3);
+
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    for (const id of [1, 2, 3]) {
+      const row = await source.query<{
+        id: string;
+        user_id: string | null;
+        provider: string;
+        operation: string;
+        status: string;
+        error: string | null;
+        created_at: string;
+      }>("SELECT id, user_id, provider, operation, status, error, created_at FROM public.sync_log WHERE id = $1", [id]);
+      const r = row.rows[0];
+      await target.query(
+        `INSERT INTO cutover_sync_log_src (id, user_id, provider, operation, status, error, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [r.id, r.user_id, r.provider, r.operation, r.status, r.error, r.created_at],
+      );
+    }
+    const insertSql = py("from cutover_copy import sync_log_anti_join_insert_sql; print(sync_log_anti_join_insert_sql())");
+    const inserted = await target.query<{ count: string }>(insertSql);
+    expect(Number(inserted.rows[0]?.count)).toBe(3);
+    const afterResync = await idsOf(target);
+    expect(afterResync).toEqual([1, 2, 3, neonPreId]);
+
+    const setval = py("from cutover_copy import sync_log_setval_sql; print(sync_log_setval_sql())");
+    const parked = await target.query<{ setval: string }>(setval);
+    expect(Number(parked.rows[0]?.setval)).toBe(neonPreId);
+
+    const post = await target.query<{ id: string }>(
+      `INSERT INTO public.sync_log (provider, operation, status)
+       VALUES ('neon', 'post-resync', 'ok') RETURNING id`,
+    );
+    const postId = Number(post.rows[0]?.id);
+    expect(postId).toBe(neonPreId + 1);
+    expect(await idsOf(target)).toEqual([1, 2, 3, neonPreId, postId]);
+
+    await source.close();
+    await target.close();
+  });
 });
 
 describe("push_subscriptions window edits", () => {
@@ -177,10 +245,10 @@ describe("push_subscriptions window edits", () => {
       );
     }
 
-    const upserted = await target.query<{ count: string }>(py("from cutover_copy import push_upsert_sql; print(push_upsert_sql())"));
-    expect(Number(upserted.rows[0]?.count)).toBe(1);
     const deleted = await target.query<{ count: string }>(py("from cutover_copy import push_anti_join_delete_sql; print(push_anti_join_delete_sql())"));
     expect(Number(deleted.rows[0]?.count)).toBe(1);
+    const upserted = await target.query<{ count: string }>(py("from cutover_copy import push_upsert_sql; print(push_upsert_sql())"));
+    expect(Number(upserted.rows[0]?.count)).toBe(1);
 
     const row = await target.query<{ last_seen_at: string; failure_count: number }>(
       "SELECT last_seen_at, failure_count FROM public.push_subscriptions WHERE id = $1",
@@ -191,6 +259,68 @@ describe("push_subscriptions window edits", () => {
     expect(new Date(row.rows[0]!.last_seen_at).toISOString()).toBe("2026-10-26T10:00:00.000Z");
     const leftover = await target.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM public.push_subscriptions WHERE id = $1", [gone]);
     expect(Number(leftover.rows[0]?.n)).toBe(0);
+
+    await source.close();
+    await target.close();
+  });
+
+  it("deletes a stale (user_id, endpoint) before upserting the recreated id", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(PUSH_DDL);
+    await target.exec(PUSH_DDL);
+
+    const user = "22222222-2222-2222-2222-222222222222";
+    const oldId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const newId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    await target.query(
+      `INSERT INTO public.push_subscriptions
+        (id, user_id, endpoint, p256dh, auth, last_seen_at, failure_count)
+       VALUES ($1, $2, 'https://push.example/same', 'oldk', 'olds', '2026-10-26T08:00:00Z', 2)`,
+      [oldId, user],
+    );
+    await source.query(
+      `INSERT INTO public.push_subscriptions
+        (id, user_id, endpoint, p256dh, auth, last_seen_at, failure_count)
+       VALUES ($1, $2, 'https://push.example/same', 'newk', 'news', '2026-10-26T11:00:00Z', 0)`,
+      [newId, user],
+    );
+
+    await target.exec(py("from cutover_copy import push_load_rows_sql; print(push_load_rows_sql())") + ";");
+    const src = await source.query<{
+      id: string;
+      user_id: string;
+      created_at: string;
+      updated_at: string;
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+      label: string | null;
+      time_zone: string | null;
+      last_seen_at: string | null;
+      failure_count: number;
+    }>("SELECT id, user_id, created_at, updated_at, endpoint, p256dh, auth, label, time_zone, last_seen_at, failure_count FROM public.push_subscriptions");
+    for (const r of src.rows) {
+      await target.query(
+        `INSERT INTO cutover_push_rows
+          (id, user_id, created_at, updated_at, endpoint, p256dh, auth, label, time_zone, last_seen_at, failure_count)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [r.id, r.user_id, r.created_at, r.updated_at, r.endpoint, r.p256dh, r.auth, r.label, r.time_zone, r.last_seen_at, r.failure_count],
+      );
+    }
+
+    const deleted = await target.query<{ count: string }>(py("from cutover_copy import push_anti_join_delete_sql; print(push_anti_join_delete_sql())"));
+    expect(Number(deleted.rows[0]?.count)).toBe(1);
+    const upserted = await target.query<{ count: string }>(py("from cutover_copy import push_upsert_sql; print(push_upsert_sql())"));
+    expect(Number(upserted.rows[0]?.count)).toBe(1);
+
+    const rows = await target.query<{ id: string; p256dh: string }>(
+      "SELECT id, p256dh FROM public.push_subscriptions WHERE user_id = $1",
+      [user],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.id).toBe(newId);
+    expect(rows.rows[0]?.p256dh).toBe("newk");
 
     await source.close();
     await target.close();
