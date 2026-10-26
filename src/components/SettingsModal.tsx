@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { signOut } from "../lib/authActions";
 import { supabase } from "../lib/supabase";
 import { linkGoogleIdentity } from "../lib/googleAuth";
 import { appleLinkAvailable, linkAppleIdentity } from "../lib/appleAuth";
@@ -1580,7 +1581,7 @@ function AccountPane() {
           <div className="mono truncate text-body text-ink">{email || "…"}</div>
         </div>
         <div className="flex-1" />
-        <Btn kind="signal" onClick={() => supabase.auth.signOut()}>
+        <Btn kind="signal" onClick={() => void signOut()}>
           Sign out
         </Btn>
       </div>

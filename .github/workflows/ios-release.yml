@@ -186,6 +186,10 @@ jobs:
 
       - name: Build signed IPA
         env:
+          # Repo variable (not a secret). Empty = today's Supabase path.
+          # Cutover: https://nuvo-preview.<account>.workers.dev/api
+          # See docs/cloudflare-cutover.md and docs/ios-releases.md.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}

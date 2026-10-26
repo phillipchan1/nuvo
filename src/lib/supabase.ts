@@ -1,17 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
+import { edgeFunctionUrl, workersEnabled } from "./backend";
 import { isSpotlightWindow } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-export const supabaseConfigured = Boolean(url && anonKey);
+export const supabaseConfigured = Boolean((url && anonKey) || workersEnabled);
 
 // Exported so callers that need to stream an edge function (the agent replies
 // over SSE, which `functions.invoke` can't consume) can build the request URL
 // and auth headers themselves.
 export const supabaseUrl = url ?? "http://localhost:54321";
 export const supabaseAnonKey = anonKey ?? "missing-anon-key";
+
+/** Edge-function URL. Unchanged when `VITE_API_BASE_URL` is unset. */
+export function functionUrl(name: string): string {
+  return edgeFunctionUrl(supabaseUrl, name);
+}
 
 /**
  * Dev-only request timing.
@@ -52,12 +58,28 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {
+  const report = (message: string) => {
+    void import("./appError").then(({ reportAppError }) => {
+      void reportAppError(new Error(message), { source: fn });
+    });
+    console.warn(`[nuvo] edge fn ${fn} failed:`, message);
+  };
+  if (workersEnabled) {
+    fetch(functionUrl(fn), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    }).then((res) => {
+      if (!res.ok) report(`${res.status}`);
+    }).catch((err: unknown) => {
+      report(err instanceof Error ? err.message : String(err));
+    });
+    return;
+  }
   supabase.functions.invoke(fn, { body }).then(({ error }) => {
     if (!error) return;
-    void import("./appError").then(({ reportAppError }) => {
-      void reportAppError(error, { source: fn });
-    });
-    console.warn(`[nuvo] edge fn ${fn} failed:`, error.message);
+    report(error.message);
   });
 }
 

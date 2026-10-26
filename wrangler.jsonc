@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nuvo",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+  // Static Vite build. Deep links fall back to index.html (same as Vercel SPA).
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  // BETTER_AUTH_URL and ENVIRONMENT are not set here — wrangler vars ship
+  // with the Worker. Local (`.dev.vars`): ENVIRONMENT=local and optionally
+  // BETTER_AUTH_URL=http://localhost:8787. ENVIRONMENT=local (or a
+  // DB/Hyperdrive hostname that is exactly loopback) is the only unset-URL
+  // fallback. Preview/prod: omit ENVIRONMENT and set BETTER_AUTH_URL to the
+  // public Worker origin (docs/cloudflare-cutover.md).
+  "vars": {
+    "RESEND_FROM": "Nuvo <noreply@localhost>"
+  },
+  // Replace `id` with a real Hyperdrive config before a real deploy.
+  // Local `wrangler dev` uses localConnectionString (or DATABASE_URL in .dev.vars).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  // workers.dev only. No routes, no custom domain. Do not deploy without
+  // `--env preview`. See docs/cloudflare-cutover.md.
+  "env": {
+    "preview": {
+      "name": "nuvo-preview",
+      "workers_dev": true,
+      "vars": {
+        "RESEND_FROM": "Nuvo <noreply@localhost>"
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "00000000000000000000000000000000",
+          "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
+        }
+      ]
+    }
+  }
+}

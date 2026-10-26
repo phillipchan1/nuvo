@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { workersEnabled } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
 import { writeWasEntitled } from "../lib/subscription";
@@ -40,11 +41,67 @@ function sameSession(a: Session | null, b: Session | null): boolean {
   );
 }
 
+function sessionFromBetterAuth(user: { id: string; email?: string | null; updatedAt?: Date | string }, token: string, expiresAt: Date | string): Session {
+  const exp = typeof expiresAt === "string" ? new Date(expiresAt) : expiresAt;
+  const updated = user.updatedAt
+    ? (typeof user.updatedAt === "string" ? user.updatedAt : user.updatedAt.toISOString())
+    : new Date().toISOString();
+  return {
+    access_token: token,
+    refresh_token: "",
+    expires_in: Math.max(0, Math.floor((exp.getTime() - Date.now()) / 1000)),
+    expires_at: Math.floor(exp.getTime() / 1000),
+    token_type: "bearer",
+    user: {
+      id: user.id,
+      email: user.email ?? undefined,
+      app_metadata: { provider: "email" },
+      user_metadata: {},
+      aud: "authenticated",
+      created_at: updated,
+      updated_at: updated,
+    },
+  } as Session;
+}
+
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (workersEnabled) {
+      let cancelled = false;
+      void import("../lib/authClient").then(async ({ createNuvoAuthClient }) => {
+        if (cancelled) return;
+        const client = createNuvoAuthClient();
+        const applyBa = (data: { user?: { id: string; email?: string | null; updatedAt?: Date | string } | null; session?: { token: string; expiresAt: Date | string } | null } | null) => {
+          if (cancelled) return;
+          if (!data?.user || !data.session) {
+            setSession(null);
+            return;
+          }
+          setSession((prev) => {
+            const next = sessionFromBetterAuth(data.user!, data.session!.token, data.session!.expiresAt);
+            return sameSession(prev, next) ? prev : next;
+          });
+        };
+        const { data } = await client.getSession();
+        applyBa(data);
+        if (import.meta.env.DEV && !data?.session) {
+          const email = import.meta.env.VITE_DEV_EMAIL as string | undefined;
+          const password = import.meta.env.VITE_DEV_PASSWORD as string | undefined;
+          if (email && password) {
+            const signed = await client.signIn.email({ email, password });
+            applyBa(signed.data ?? null);
+          }
+        }
+        if (!cancelled) setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const spotlight = isSpotlightWindow();
     let cancelled = false;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;

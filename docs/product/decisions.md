@@ -6161,3 +6161,22 @@ the old code and fails), full suite, typecheck, build; driven on both shells aga
 account, light and dark. The commit-side clearing of a stale block was **not** driven live (it
 writes); it has no unit harness. Open: non-work domains still share the work window; per-day
 hours and learned proposals are bets 2–3 in the review.*
+
+**D-164 · 2026-10-26 · The Cloudflare Workers + Neon + Better Auth path is a
+rehearsal. Production stays on Vercel + Supabase until a signed-off cutover.**
+
+A dual backend is in the repo (`worker/`, `VITE_API_BASE_URL`) so we can prove
+owner isolation without RLS and rehearse a workers.dev preview. The shipped web
+and iOS app keep talking to Supabase when the flag is empty. Billing webhooks,
+calendar OAuth/sync, capture/MCP, inbound email, push cron, Realtime, and
+Google/Apple as GoTrue providers stay on Supabase. No DNS change, no prod
+deploy, no App Store submission from this work.
+
+**Anchor.** No Question Ledger row — this is infrastructure, not a question in
+the operator's head. Strains nothing in the product grammar. The four no's:
+no pool, no new user-facing name, no clean-data requirement, nothing that only
+holds in the builder's account.
+
+*Status: standing — rehearsal only. Inventory:
+[`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).
+Cutover / rollback: [`cloudflare-cutover.md`](../cloudflare-cutover.md).*

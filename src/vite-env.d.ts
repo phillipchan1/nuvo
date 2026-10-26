@@ -7,6 +7,12 @@ declare const __APP_VERSION__: string;
 declare const __TAURI_IOS__: boolean;
 
 interface ImportMetaEnv {
+  readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_ANON_KEY?: string;
+  readonly VITE_DEV_EMAIL?: string;
+  readonly VITE_DEV_PASSWORD?: string;
+  /** Empty = today's Supabase path. Worker: `/api` or `https://<worker>/api`. */
+  readonly VITE_API_BASE_URL?: string;
   readonly VITE_IAP_ONLY?: string;
   /** "1" forces the email+password review form on this build (native iOS
    *  already shows it). Never a password. See docs/app-store-review.md. */

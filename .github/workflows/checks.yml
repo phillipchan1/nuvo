@@ -30,6 +30,11 @@ jobs:
       - name: Typecheck (SPA)
         run: npm run typecheck
       - name: Conformance suite (app ↔ agent must agree)
+        env:
+          # APP_TZ is America/Los_Angeles. Capture "Tomorrow" labels only
+          # match startOfDay(new Date()) when the runner's zone agrees;
+          # ubuntu-latest is UTC, which splits the calendar day 00:00–07:00.
+          TZ: America/Los_Angeles
         run: npm test
       # The chat's behavioral battery is deliberately NOT here: it calls a live
       # model, so it costs money and its result is sampled. `npm test` already
@@ -41,3 +46,20 @@ jobs:
           set -e
           find supabase/functions -name '*.ts' -print0 \
             | xargs -0 -n1 npx esbuild --bundle=false --outfile=/dev/null
+      - name: Worker typecheck
+        run: npm run typecheck:worker
+      - name: Worker auth + isolation checks
+        run: npm run check:worker
+
+  isolation-mutation:
+    name: isolation-mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Isolation mutation proof
+        run: npm run check:isolation-mutation

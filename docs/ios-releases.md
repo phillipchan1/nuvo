@@ -185,8 +185,24 @@ signing fails, provide manual certs (same as
 
 Settings → Secrets and variables → Actions:
 
+#### 6b · API base URL (Cloudflare rehearsal — inert unless set)
+
+The IPA reads `VITE_API_BASE_URL` from a GitHub **Actions variable** (Settings →
+Secrets and variables → Actions → **Variables**), not a secret. Leave it empty
+until cutover. The iOS app is a WKWebView loading local files, so a same-origin
+`/api` will not resolve — set the **absolute** Worker origin + `/api`.
+
+See [`cloudflare-cutover.md`](./cloudflare-cutover.md).
+
+**Signing target:** automatic signing with an App Store Connect API key via
+`-allowProvisioningUpdates` (`tauri ios build --export-method app-store-connect --ci`).
+Required secrets: `APPSTORE_KEY_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_PRIVATE_KEY`,
+`APPLE_TEAM_ID`. Manual fallback: `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`,
+`IOS_MOBILE_PROVISION`.
+
 | Secret | Required | Value |
 |---|---|---|
+| `VITE_API_BASE_URL` | no (variable) | Empty today. Workers preview: `https://nuvo-preview.<account>.workers.dev/api` |
 | `VITE_SUPABASE_URL` | yes | Same as web/desktop build |
 | `VITE_SUPABASE_ANON_KEY` | yes | Same as web/desktop build |
 | `VITE_POSTHOG_PROJECT_TOKEN` | yes | Same as web/desktop build (D-114) |
