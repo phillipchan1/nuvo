@@ -31,7 +31,7 @@ performance fix into a product regression.
    frames on 8 of 9 desktop scroll surfaces), CLS (0.000–0.006), the Realtime layer
    (120ms coalesce + outbox-aware deferral), `lucide-react` icon usage.
 6. **Gates:** `npm run typecheck` clean, `npm test` green, `npm run build` green. If you
-   touch the chat/agent, `npm run eval -- --repeat 5` at 100%.
+   touch the chat/agent, `npm run eval:gate` at 100%.
 
 ### Do NOT delete — these look dead and are not
 

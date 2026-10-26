@@ -5971,3 +5971,54 @@ series by asking for a time, nothing account-specific.
 new `slots` scenarios (`slot-series-*`) and a `standing` world. **Not deployed**, and the
 behavioural battery has not been run against a live model for these scenarios yet
 (`npm run eval -- --group slots --repeat 5` is the gate).*
+
+**D-161 · 2026-10-26 · Repeating calendar events behave like a mature calendar's —
+the right weekday in your zone, and "this and following events" on both providers.**
+
+Reported as a P1 from the phone: *"every Wednesday 6–7p soccer for kids"* on an Apple
+calendar. The chat said it was added; the calendar disagreed, and turning the event weekly by
+hand failed with *"icloud-events isn't deployed on the server."* Three defects stacked:
+
+- **Wrong weekday.** CalDAV writes were UTC (`DTSTART:20261029T010000Z`) with `BYDAY=WE`, and
+  RFC 5545 expands BYDAY in DTSTART's zone — the series landed on **Tuesdays at 5pm**, and
+  slid an hour at DST. Google rejected a zoneless recurring create outright.
+- **A dead id.** A recurring create stored one bare-UID row; the next sync replaced it with
+  per-occurrence rows and swept it, so the chat card and the open sheet pointed at nothing.
+  Their next edit got `event not found` (404), which the client misreported as "not deployed".
+- **A blind picker.** `useEventSeriesRule` was called without its provider on both shells,
+  so every series read *Does not repeat* — and removing a rule was impossible.
+
+**What is now true (first commit, `e32023c`):** a series is anchored to the zone it was made
+in (`DTSTART;TZID=…` + an exact VTIMEZONE, `_shared/icalTz.ts`; Google gets `timeZone`). An
+occurrence is named by its own RECURRENCE-ID in the master's form, so "just this one" hits
+the real occurrence on native Apple series. Every write that reshapes a series stores the
+provider's new occurrences itself and **re-keys the open row** instead of letting a sweep
+delete it (`_shared/seriesRows.ts`); Google masters are never stored. UNTIL is the last
+instant of the event's local day. Moving a whole series to another day moves BYDAY with it.
+
+**This and following events (second commit).** The scope question now offers **Just this
+event · This and following events · All events in series** for edits, moves and deletes, on
+both shells. It is the split every mature calendar does: the old series ends one tick before
+the occurrence (UNTIL; COUNT hands the remainder over), a new series starts at it carrying
+the edit, and later per-occurrence edits move with it. `icalwrite.splitSeries` and
+`googleSplit.planGoogleSplit` are pure and held to the same cases. From a series' first
+occurrence it is *all*. Two places deliberately don't offer it: **answering** (RSVP, guests,
+Meet) — splitting someone's series to answer it is wrong — and the **repeat picker**, which
+asks *from here or the whole series* (one occurrence can't repeat differently from itself).
+A series you don't organise refuses a split by name rather than making you organiser of a copy.
+
+**Anchor.** No Question Ledger row asks this directly, and that is the honest reading: it is
+**P15 (protect the boring core)** — a calendar the user lives in has to get the weekday right
+and survive editing, or none of the rows that read the calendar can be trusted. Strains **P10**
+lightly (a third scope choice on a dialog) — paid for because it already existed for task
+series (`truncateSeries`, D-160) and was missing only for events. The four no's: no pool, no
+new name (*this and following* was already the task panel's phrase), works on any account's
+data including native Apple and Google series, nothing builder-specific.
+
+*Status: built and merged — typecheck, the suite (new: `icloud-recurrence`, `series-split`,
+`event-rrule-zone`, `recurrence-scope-dialog`), a Deno type check of every function touched,
+and both builds green. **Not driven against a real account** — this container has no
+`.env.local`, so no dev auto-login. **Not deployed:** needs `supabase functions deploy
+icloud-events google-events agent icloud-sync google-sync`. A series Nuvo already wrote in
+UTC is repaired when its repeat or the whole series is next edited. Moving a repeating event
+*between* Apple and Google is refused by the chat rather than half-done.*

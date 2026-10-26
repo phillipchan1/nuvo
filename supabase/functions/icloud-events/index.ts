@@ -5,12 +5,23 @@
 //   action=delete               → remove the event (or one occurrence)
 //
 // scope="THIS" (default) edits/deletes a single occurrence of a recurring series;
-// scope="ALL" edits/deletes the whole series. Single-occurrence edits on a series
-// are best-effort (RECURRENCE-ID/EXDATE are written in UTC).
+// scope="FOLLOWING" splits the series there (icalwrite.splitSeries) and edits or
+// ends the new half; scope="ALL" edits/deletes the whole series. An occurrence is named by its row's
+// own RECURRENCE-ID suffix, written in the master's form (TZID wall clock, DATE
+// or UTC) — see icalwrite.ts. `timeZone` (the client's IANA zone) anchors a
+// series that has none yet, so BYDAY means the local weekday across DST.
+//
+// Every series-level write (create, a rule change, an ALL edit) re-materializes
+// the series locally from the ICS it PUT and keeps the edited row's id
+// (_shared/icloudExpand.ts) — the open sheet and the chat card stay valid.
 import { admin, handleOptions, json, logSync, readSecret, requireActor } from "../_shared/admin.ts";
 import {
   addExdate,
   buildEvent,
+  foreignOrganizer,
+  seriesCount,
+  splitSeries,
+  withoutOverrides,
   partstatFor,
   patchMaster,
   setPartstat,
@@ -19,14 +30,60 @@ import {
 } from "../_shared/icalwrite.ts";
 import { deleteEvent, getEvent, putEvent } from "../_shared/caldav.ts";
 import { icloudSeriesOrFilter } from "../_shared/icloudSeries.ts";
+import { materializeIcloudResource } from "../_shared/icloudExpand.ts";
+import { countRuleOccurrencesBefore } from "../_shared/ics.ts";
+import { isUsableTimeZone } from "../_shared/icalTz.ts";
 import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
 
-/** The `uid::<recurrence-id>` suffix a recurring occurrence carries → ISO start. */
-function suffixToISO(suffix: string): string | null {
-  const m = suffix.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2}))?/);
-  if (!m) return null;
-  const [, y, mo, d, h = "0", mi = "0", se = "0"] = m;
-  return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +se)).toISOString();
+type EventPatch = {
+  title?: string;
+  start_at?: string;
+  end_at?: string;
+  all_day?: boolean;
+  location?: string | null;
+  description?: string | null;
+  recurrence?: string[] | null;
+};
+
+/**
+ * Apply an edit to a series as a whole: the ALL edit, and the edit to the new
+ * half of a "this and following" split. `evt` is the occurrence the user
+ * touched — its times give the delta every occurrence moves by.
+ */
+function editSeries(
+  ics: string,
+  p: EventPatch,
+  evt: { start_at: string; end_at: string },
+  timeZone: string | null,
+): string {
+  if (p.recurrence !== undefined) {
+    // A new rule renames every occurrence; overrides keyed to the old ones
+    // would orphan into duplicates.
+    const ruled = patchMaster(ics, {
+      recurrence: p.recurrence?.length ? p.recurrence : null,
+      title: p.title,
+      location: p.location,
+      description: p.description,
+      timeZone,
+    });
+    return withoutOverrides(ruled);
+  }
+  if (p.all_day !== undefined) {
+    // Timed ↔ all-day is a type change on the master, not a millisecond shift.
+    return patchMaster(ics, { title: p.title, allDay: p.all_day, location: p.location, description: p.description });
+  }
+  if (p.start_at || p.end_at) {
+    // Shift the whole series by the instance's time delta (+ retitle).
+    const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+    const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
+    let next = shiftMaster(ics, startDelta, p.title, endDelta, timeZone);
+    if (p.location !== undefined || p.description !== undefined) {
+      next = patchMaster(next, { location: p.location, description: p.description });
+    }
+    return next;
+  }
+  // Title / place / notes only — don't invent a time shift.
+  return patchMaster(ics, { title: p.title, location: p.location, description: p.description });
 }
 
 Deno.serve(async (req) => {
@@ -36,7 +93,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
-    const { eventId, action, patch, scope = "THIS" } = body;
+    const { eventId, action, patch } = body;
+    let scope = (body.scope as string | undefined) ?? "THIS";
+    const timeZone = isUsableTimeZone(body.timeZone) ? (body.timeZone as string) : null;
 
     // ── Create a new event on an iCloud calendar ─────────────────────────
     if (action === "create") {
@@ -91,7 +150,17 @@ Deno.serve(async (req) => {
       const location = (body.location as string | undefined) ?? null;
       const description = (body.description as string | undefined) ?? null;
       const uid = `nuvo-${crypto.randomUUID()}`;
-      const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, allDay: all_day, location, description, recurrence });
+      const ics = buildEvent({
+        uid,
+        title,
+        startISO: start_at,
+        endISO: end_at,
+        allDay: all_day,
+        location,
+        description,
+        recurrence,
+        timeZone,
+      });
       const href = `${calendarUrl.replace(/\/$/, "")}/${uid}.ics`;
       let etag: string | null;
       try {
@@ -104,6 +173,29 @@ Deno.serve(async (req) => {
           );
         }
         throw e;
+      }
+
+      // A series becomes every occurrence now, keyed the way sync will key
+      // them — not one bare-UID row that the next poll sweeps out from under
+      // the chat card that points at it.
+      const materialized = recurrence?.length
+        ? await materializeIcloudResource(
+          {
+            userId: user.id,
+            accountId: account.id,
+            accountEmail: account.email,
+            calendarId: calendarUrl,
+            uid,
+            href,
+            etag,
+          },
+          ics,
+          { anchorMs: new Date(start_at).getTime() },
+        )
+        : null;
+      if (materialized) {
+        await logSync("icloud", "event-create", "ok", undefined, user.id);
+        return json({ ok: true, event: materialized });
       }
 
       const { data: event } = await admin
@@ -141,7 +233,9 @@ Deno.serve(async (req) => {
       .eq("id", eventId)
       .eq("user_id", user.id)
       .single();
-    if (error || !evt) return json({ error: "event not found" }, 404);
+    if (error || !evt) {
+      return json({ error: "This event changed on Apple Calendar since it was opened — close it and open it again." }, 404);
+    }
 
     // deno-lint-ignore no-explicit-any
     const account = evt.calendar_accounts as any;
@@ -156,14 +250,76 @@ Deno.serve(async (req) => {
 
     const [uidBase, suffix] = String(evt.provider_event_id).split("::");
     const isOccurrence = Boolean(suffix);
-    const occurrenceISO = suffix ? suffixToISO(suffix) : null;
+    // The occurrence's identity, verbatim from the expansion that made the row.
+    const occurrence = suffix || null;
+    const series = {
+      userId: user.id,
+      accountId: evt.account_id as string,
+      accountEmail: account.email as string,
+      calendarId: evt.calendar_id as string,
+      uid: uidBase,
+      href,
+    };
+
+    // ── This and following: split the series at this occurrence ─────────
+    // The old resource ends just before it; a new one starts at it and takes
+    // the edit (or, for a delete, simply isn't made). From the series' first
+    // occurrence there is nothing before it to keep, so it IS "all".
+    if (scope === "FOLLOWING" && isOccurrence && occurrence && (action === "delete" || (!action && patch))) {
+      const { ics, etag } = await getEvent(href, account.email, password);
+      const foreign = foreignOrganizer(ics, account.email);
+      if (foreign) {
+        return json({
+          error: `Only the organizer (${foreign}) can change this and following events — change just this one, or all of them.`,
+        }, 400);
+      }
+      const newUid = `nuvo-${crypto.randomUUID()}`;
+      let split = splitSeries(ics, occurrence, { newUid });
+      if (split && seriesCount(ics) != null) {
+        const countBefore = countRuleOccurrencesBefore(ics, Date.parse(split.occurrenceISO));
+        split = splitSeries(ics, occurrence, { newUid, countBefore });
+      }
+      if (split) {
+        if (action === "delete") {
+          const headEtag = await putEvent(href, split.head, account.email, password, etag);
+          await materializeIcloudResource({ ...series, etag: headEtag }, split.head);
+          await logSync("icloud", "event-delete-following", "ok", undefined, user.id);
+          return json({ ok: true });
+        }
+        const p = patch as EventPatch;
+        const tail = editSeries(split.tail, p, evt, timeZone);
+        const newHref = `${String(evt.calendar_id).replace(/\/$/, "")}/${newUid}.ics`;
+        // New half first: if ending the old half then fails, take the new one
+        // back down rather than leave the following weeks on the calendar twice.
+        const tailEtag = await putEvent(newHref, tail, account.email, password);
+        let headEtag: string | null;
+        try {
+          headEtag = await putEvent(href, split.head, account.email, password, etag);
+        } catch (e) {
+          await deleteEvent(newHref, account.email, password).catch(() => {});
+          throw e;
+        }
+        const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+        // The open row moves to the new series first, so the old series'
+        // sweep below doesn't take it.
+        const event = await materializeIcloudResource(
+          { ...series, uid: newUid, href: newHref, etag: tailEtag },
+          tail,
+          { rowId: eventId, anchorMs: Date.parse(split.occurrenceISO) + startDelta },
+        );
+        await materializeIcloudResource({ ...series, etag: headEtag }, split.head);
+        await logSync("icloud", "event-writeback-following", "ok", undefined, user.id);
+        return json({ ok: true, event });
+      }
+      scope = "ALL";
+    }
 
     // ── Delete / cancel ──────────────────────────────────────────────────
     if (action === "delete") {
-      if (isOccurrence && scope !== "ALL" && occurrenceISO) {
+      if (isOccurrence && scope !== "ALL" && occurrence) {
         // Remove just this occurrence: EXDATE onto the master, then PUT back.
         const { ics, etag } = await getEvent(href, account.email, password);
-        const next = addExdate(ics, occurrenceISO);
+        const next = addExdate(ics, occurrence);
         await putEvent(href, next, account.email, password, etag);
         await admin.from("external_events").delete().eq("id", eventId);
       } else {
@@ -239,9 +395,9 @@ Deno.serve(async (req) => {
         // asked to. Say so rather than silently reporting success.
         return json({ error: "You're not listed as a guest on this event" }, 400);
       }
-      const thisOccurrence = isOccurrence && scope !== "ALL" && occurrenceISO;
+      const thisOccurrence = isOccurrence && scope !== "ALL" && occurrence;
       const next = thisOccurrence
-        ? setPartstat(ics, account.email, partstat, occurrenceISO)
+        ? setPartstat(ics, account.email, partstat, occurrence)
         : setPartstat(ics, account.email, partstat);
       await putEvent(href, next, account.email, password, etag);
 
@@ -274,75 +430,30 @@ Deno.serve(async (req) => {
     }
 
     // ── Move / resize / retitle / relocate / re-note / re-rule ───────────
-    const p = patch as {
-      title?: string;
-      start_at?: string;
-      end_at?: string;
-      all_day?: boolean;
-      location?: string | null;
-      description?: string | null;
-      recurrence?: string[] | null;
-    };
+    const p = patch as EventPatch;
     const { ics, etag } = await getEvent(href, account.email, password);
 
     // Recurrence always edits the master VEVENT — never a per-occurrence override.
     if (p.recurrence !== undefined) {
-      const next = patchMaster(ics, {
-        recurrence: p.recurrence === null || (Array.isArray(p.recurrence) && p.recurrence.length === 0)
-          ? null
-          : p.recurrence,
+      const next = editSeries(ics, { recurrence: p.recurrence }, evt, timeZone);
+      const newEtag = await putEvent(href, next, account.email, password, etag);
+      // Materialize here rather than kicking icloud-sync: the sweep there
+      // deleted the row the sheet had open (a single event's bare UID becomes
+      // `uid::…` occurrences), so the next tap on that sheet 404'd.
+      const event = await materializeIcloudResource({ ...series, etag: newEtag }, next, {
+        rowId: eventId,
+        anchorMs: new Date(evt.start_at).getTime(),
       });
-      await putEvent(href, next, account.email, password, etag);
-      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/icloud-sync`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ accountId: account.id }),
-      });
-      if (!syncRes.ok) {
-        await logSync(
-          "icloud",
-          "event-recurrence-sync",
-          "error",
-          await syncRes.text(),
-          user.id,
-        );
-      }
       await logSync("icloud", "event-recurrence", "ok", undefined, user.id);
-      return json({ ok: true });
+      return json({ ok: true, event });
     }
 
     let next: string;
     if (isOccurrence && scope === "ALL") {
-      if (p.all_day !== undefined) {
-        // Timed ↔ all-day is a type change on the master, not a millisecond shift.
-        next = patchMaster(ics, {
-          title: p.title,
-          allDay: p.all_day,
-          location: p.location,
-          description: p.description,
-        });
-      } else if (p.start_at || p.end_at) {
-        // Shift the whole series by the instance's time delta (+ retitle).
-        const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
-        const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
-        next = shiftMaster(ics, startDelta, p.title, endDelta);
-        if (p.location !== undefined || p.description !== undefined) {
-          next = patchMaster(next, { location: p.location, description: p.description });
-        }
-      } else {
-        // Title / place / notes only — don't invent a time shift.
-        next = patchMaster(ics, {
-          title: p.title,
-          location: p.location,
-          description: p.description,
-        });
-      }
-    } else if (isOccurrence && occurrenceISO) {
+      next = editSeries(ics, p, evt, timeZone);
+    } else if (isOccurrence && occurrence) {
       // Edit just this occurrence via a RECURRENCE-ID override.
-      next = upsertOverride(ics, occurrenceISO, {
+      next = upsertOverride(ics, occurrence, {
         title: p.title,
         startISO: p.start_at,
         endISO: p.end_at,
@@ -359,10 +470,11 @@ Deno.serve(async (req) => {
         allDay: p.all_day,
         location: p.location,
         description: p.description,
+        timeZone,
       });
     }
 
-    await putEvent(href, next, account.email, password, etag);
+    const newEtag = await putEvent(href, next, account.email, password, etag);
 
     // description isn't a column — it lives in the ICS and comes back via sync.
     if (scope !== "ALL") {
@@ -383,39 +495,18 @@ Deno.serve(async (req) => {
         );
       }
     } else {
-      // Same hole the Google ALL-path had: without rewriting the mirrored
-      // occurrences, the client's refetch after the dialog is the old times.
+      // The whole series moved, retitled or changed type: re-materialize it
+      // from the ICS we just PUT. A local delta-shift was right for times but
+      // could not follow occurrence ids (a TZID series renames every
+      // RECURRENCE-ID when it moves) or a series re-anchored to its zone, and
+      // a full CalDAV reconcile kick deleted the rows the client had open.
       const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
-      const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : 0;
-      const { data: rows, error: seriesErr } = await admin
-        .from("external_events")
-        .select("id, start_at, end_at")
-        .eq("account_id", evt.account_id)
-        .eq("calendar_id", evt.calendar_id)
-        .or(icloudSeriesOrFilter(uidBase));
-      if (seriesErr) throw new Error(`shift local series: ${seriesErr.message}`);
-      await Promise.all(
-        (rows ?? []).map((row: { id: string; start_at: string; end_at: string }) => {
-          const rowPatch: Record<string, unknown> = {};
-          if (p.start_at) {
-            rowPatch.start_at = new Date(new Date(row.start_at).getTime() + startDelta).toISOString();
-          }
-          if (p.end_at) {
-            rowPatch.end_at = new Date(new Date(row.end_at).getTime() + endDelta).toISOString();
-          }
-          if (p.title !== undefined) rowPatch.title = p.title;
-          if (p.location !== undefined) rowPatch.location = p.location;
-          if (p.all_day !== undefined) rowPatch.all_day = p.all_day;
-          if (!Object.keys(rowPatch).length) return Promise.resolve();
-          return admin.from("external_events").update(rowPatch).eq("id", row.id);
-        }),
-      );
-      // Do not kick a full CalDAV reconcile here. iCloud sync sweeps the window
-      // and deletes any provider_event_id it didn't just emit — and a TZID
-      // rewrite (or a too-soon GET of the pre-PUT resource) changes those
-      // ids, so the kick deleted the shifted rows and the client snapped back.
-      // The local rewrite above is what the dialog's refetch must see. The
-      // next 15-minute poll catches iCloud once the PUT has settled.
+      const event = await materializeIcloudResource({ ...series, etag: newEtag }, next, {
+        rowId: eventId,
+        anchorMs: new Date(evt.start_at).getTime() + startDelta,
+      });
+      await logSync("icloud", "event-writeback", "ok", undefined, user.id);
+      return json({ ok: true, event });
     }
 
     await logSync("icloud", "event-writeback", "ok", undefined, user.id);

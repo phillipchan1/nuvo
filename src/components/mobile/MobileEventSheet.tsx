@@ -22,7 +22,7 @@ import { CALENDAR_OFFLINE_NOTE, isWritableCalendar } from "../../lib/calendarWri
 import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
 import { DescriptionHtml } from "../../lib/descriptionHtml";
-import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
+import { eventRRule, readEventRRule, rulesEqual, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl, RecurrenceScopeDialog, useRecurringScope } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import EventDomainControl from "../domain/EventDomainControl";
@@ -86,6 +86,17 @@ export default function MobileEventSheet({
   // the raw event for its conference link the same way the desktop inspector
   // does. Null for a task block — hooks can't hide behind the branch below.
   const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null, account?.email);
+  // Re-read when the calendar cache changes: turning a single event into a
+  // series re-keys its row to an occurrence, and the sheet has to notice it is
+  // now recurring (scope prompts, the series rule) without being reopened.
+  const [cacheTick, setCacheTick] = useState(0);
+  useEffect(
+    () =>
+      qc.getQueryCache().subscribe((e) => {
+        if (e.type === "updated" && e.query.queryKey[0] === "external_events") setCacheTick((t) => t + 1);
+      }),
+    [qc],
+  );
   const cachedEvent = useMemo(() => {
     if (tap.kind !== "event") return undefined;
     for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
@@ -93,7 +104,8 @@ export default function MobileEventSheet({
       if (found) return found;
     }
     return undefined;
-  }, [qc, tap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qc, tap, cacheTick]);
   const attributionEvent =
     tap.kind === "event"
       ? (cachedEvent ?? {
@@ -114,9 +126,14 @@ export default function MobileEventSheet({
         provider: account?.provider ?? "google",
       },
     );
-  const inlineRule = fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence);
-  const { data: seriesRule } = useEventSeriesRule(tap.kind === "event" ? tap.id : null, recurring);
-  const repeatRule = inlineRule ?? seriesRule ?? null;
+  const inlineRule = readEventRRule((raw as { recurrence?: string[] } | null)?.recurrence);
+  const { data: seriesRule } = useEventSeriesRule(tap.kind === "event" ? tap.id : null, recurring, account?.provider ?? null);
+  // What the user just picked, shown until the series' own rule comes back —
+  // otherwise the picker snaps to "Does not repeat" for the round trip and
+  // reads as though the change didn't take.
+  const [pickedRule, setPickedRule] = useState<RecurrenceRule | null | undefined>(undefined);
+  useEffect(() => setPickedRule(undefined), [tap.kind === "event" ? tap.id : ""]);
+  const repeatRule = pickedRule !== undefined ? pickedRule : (inlineRule ?? seriesRule ?? null);
   const meetLink = joinUrl(raw, tap.kind === "event" ? tap.location : null);
   const [rsvping, setRsvping] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
@@ -196,7 +213,7 @@ export default function MobileEventSheet({
           setRsvping(false);
           onClose();
         }
-      });
+      }, undefined, "answer");
     };
 
     const toDateInput = (iso: string) => {
@@ -268,13 +285,22 @@ export default function MobileEventSheet({
 
     const applyRepeat = (rule: RecurrenceRule | null) => {
       if (rulesEqual(repeatRule, rule)) return;
-      if (rule && !recurring) {
-        updateEvent({ id: tap.id, patch: { recurrence: toGoogleRRULE(rule) } });
-      } else if (rule && recurring) {
-        updateEvent({ id: tap.id, patch: { recurrence: toGoogleRRULE(rule) }, scope: "ALL" });
-      } else if (!rule && recurring) {
-        updateEvent({ id: tap.id, patch: { recurrence: null }, scope: "ALL" });
+      if (!rule && !recurring) return;
+      const recurrence = rule ? eventRRule(rule, allDay) : null;
+      if (!recurring) {
+        setPickedRule(rule);
+        updateEvent({ id: tap.id, patch: { recurrence } }, { onError: () => setPickedRule(undefined) });
+        return;
       }
+      // A series asks: from this occurrence on, or the whole thing?
+      commitScoped(
+        (scope) => {
+          setPickedRule(rule);
+          updateEvent({ id: tap.id, patch: { recurrence }, scope }, { onError: () => setPickedRule(undefined) });
+        },
+        () => {},
+        "rule",
+      );
     };
 
     const commitTitle = () => {

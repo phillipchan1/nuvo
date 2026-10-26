@@ -24,6 +24,9 @@ const MAX = 30;
 
 const GENERIC = "Something went wrong";
 const EDGE_GENERIC = /edge function returned a non-2xx|failed to send a request to the edge function/i;
+const NOT_DEPLOYED = " isn't deployed on the server.";
+/** What the Supabase gateway itself says for a function that doesn't exist. */
+const GATEWAY_NOT_FOUND = /requested function was not found|function not found/i;
 
 export function readErrorLog(): AppErrorNote[] {
   try {
@@ -97,7 +100,7 @@ export function formatAppErrorSync(error: unknown): { message: string; detail?: 
   }
 
   if (status === 404 && fn) {
-    return { message: `${fn} isn't deployed on the server.`, detail: `HTTP ${status}` };
+    return { message: `${fn}${NOT_DEPLOYED}`, detail: `HTTP ${status}` };
   }
   if (status === 401) {
     return { message: "Couldn't reach the server — try signing in again.", detail: fn ? `${fn} 401` : "401" };
@@ -112,6 +115,12 @@ export async function formatAppError(error: unknown): Promise<{ message: string;
   if (!body) return base;
   const fromBody = body.error || body.message || body.msg;
   if (!fromBody) return base;
+  // A 404 is only "not deployed" when the GATEWAY says so. A deployed function
+  // answering 404 with its own reason ("event not found") was being reported
+  // as missing from the server — a P1 for Apple events looked like an outage.
+  if (base.message.endsWith(NOT_DEPLOYED) && !GATEWAY_NOT_FOUND.test(fromBody)) {
+    return { message: fromBody, detail: base.detail };
+  }
   if (base.message === GENERIC || EDGE_GENERIC.test(base.message)) {
     return { message: fromBody, detail: base.detail };
   }

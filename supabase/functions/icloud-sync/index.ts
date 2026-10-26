@@ -9,9 +9,10 @@ import { discoverCalendars, fetchEvents } from "../_shared/caldav.ts";
 import { isMirrorUid, withoutMirrorCalendar } from "../_shared/mirror.ts";
 import { reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
-
-const WINDOW_PAST_DAYS = 30;
-const WINDOW_FUTURE_DAYS = 120;
+import {
+  SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
+  SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
+} from "../_shared/syncWindow.ts";
 
 interface IcloudAccount {
   id: string;

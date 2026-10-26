@@ -41,7 +41,8 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   private filters: Filter[] = [];
   private selectStr = "*";
   private limitN: number | null = null;
-  private mode: "select" | "update" | "delete" | "insert" = "select";
+  private mode: "select" | "update" | "delete" | "insert" | "upsert" = "select";
+  private conflictCols: string[] = [];
   private payload: Row | Row[] | null = null;
   private singleMode: "one" | "maybe" | null = null;
   private selectCalled = false;
@@ -86,6 +87,22 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     this.filters.push((r) => r[col] !== val);
     return this;
   }
+  /** PostgREST `or` — just the `col.eq."v"` / `col.like."v*"` terms the
+   *  iCloud series filter (`icloudSeriesOrFilter`) builds. */
+  or(expr: string) {
+    const terms = [...expr.matchAll(/([a-z_]+)\.(eq|like)\."((?:[^"]|"")*)"/g)].map(([, col, op, raw]) => ({
+      col,
+      op,
+      val: raw.replace(/""/g, '"'),
+    }));
+    if (!terms.length) throw new Error(`fakeSupabase: or(${expr}) unsupported`);
+    this.filters.push((r) =>
+      terms.some((t) =>
+        t.op === "eq" ? r[t.col] === t.val : like(r[t.col], t.val.replace(/\*/g, "%"))
+      )
+    );
+    return this;
+  }
   order() {
     return this; // insertion order is the fixture's order — deliberate
   }
@@ -109,6 +126,12 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   insert(rows: Row | Row[]) {
     this.mode = "insert";
     this.payload = rows;
+    return this;
+  }
+  upsert(rows: Row | Row[], opts?: { onConflict?: string }) {
+    this.mode = "upsert";
+    this.payload = rows;
+    this.conflictCols = (opts?.onConflict ?? "id").split(",").map((c) => c.trim());
     return this;
   }
 
@@ -158,9 +181,30 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       }
       return { data: stored, error: null };
     }
+    if (this.mode === "upsert") {
+      const rows = Array.isArray(this.payload) ? this.payload : [this.payload!];
+      const out: Row[] = [];
+      for (const r of rows) {
+        const hit = this.rows.find((s) => this.conflictCols.every((c) => s[c] === r[c]));
+        if (hit) {
+          Object.assign(hit, r);
+          out.push(hit);
+        } else {
+          const stored = { id: r.id ?? `gen-${++inserted}`, ...r };
+          this.rows.push(stored);
+          out.push(stored);
+        }
+      }
+      if (!this.selectCalled) return { data: null, error: null };
+      if (this.singleMode) return { data: out[0] ?? null, error: null };
+      return { data: out, error: null };
+    }
     if (this.mode === "update") {
-      for (const r of this.matched()) Object.assign(r, this.payload);
-      return { data: null, error: null };
+      const hits = this.matched();
+      for (const r of hits) Object.assign(r, this.payload);
+      if (!this.selectCalled) return { data: null, error: null };
+      if (this.singleMode) return { data: hits[0] ? { ...hits[0] } : null, error: null };
+      return { data: hits.map((r) => ({ ...r })), error: null };
     }
     if (this.mode === "delete") {
       const doomed = new Set(this.matched());

@@ -100,9 +100,12 @@ export function applySeriesPatch<
     location?: string | null;
     all_day?: boolean;
   },
+  /** "This and following": only this occurrence and the later ones move. */
+  opts?: { following?: boolean },
 ): T[] {
   const edited = events.find((e) => e.id === editedId);
   if (!edited) return events;
+  const fromMs = opts?.following ? new Date(edited.start_at).getTime() : -Infinity;
   // iCloud occurrences store the master id in `uid::RECURRENCE-ID`, not
   // `recurring_event_id` (that's a generated Google column). Matching only the
   // column left siblings unmoved, so ALL looked like it only shifted the
@@ -122,6 +125,7 @@ export function applySeriesPatch<
     const match =
       e.id === editedId ||
       (seriesId != null &&
+        new Date(e.start_at).getTime() >= fromMs &&
         resolveRecurringEventId({
           recurring_event_id: e.recurring_event_id,
           provider_event_id: e.provider_event_id ?? "",
@@ -233,4 +237,30 @@ export function eventDomainId(
   routingMap?: EventDomainRoutingMap,
 ): string | null {
   return eventDomainAttribution(e, calendarDomainMap, routingMap).domainId;
+}
+
+/** The rows a scoped delete takes: this one, this and the later ones, or the
+ *  whole series — the same set the provider removes, so the grid doesn't show
+ *  the rest of a deleted series until the refetch lands. */
+export function seriesScopeIds<
+  T extends { id: string; recurring_event_id?: string | null; provider_event_id?: string; start_at: string },
+>(events: T[], editedId: string, scope: "THIS" | "FOLLOWING" | "ALL"): Set<string> {
+  const ids = new Set([editedId]);
+  const edited = events.find((e) => e.id === editedId);
+  if (!edited || scope === "THIS") return ids;
+  const seriesId = resolveRecurringEventId({
+    recurring_event_id: edited.recurring_event_id,
+    provider_event_id: edited.provider_event_id ?? "",
+  });
+  if (seriesId == null) return ids;
+  const fromMs = scope === "FOLLOWING" ? new Date(edited.start_at).getTime() : -Infinity;
+  for (const e of events) {
+    if (new Date(e.start_at).getTime() < fromMs) continue;
+    const sid = resolveRecurringEventId({
+      recurring_event_id: e.recurring_event_id,
+      provider_event_id: e.provider_event_id ?? "",
+    });
+    if (sid === seriesId) ids.add(e.id);
+  }
+  return ids;
 }

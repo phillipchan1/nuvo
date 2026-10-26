@@ -36,6 +36,7 @@ import { buildTurnMessages } from "../../supabase/functions/agent/turn.ts";
 import { describeModelChoice, resolveAgentModel } from "../../supabase/functions/agent/modelChoice.ts";
 import { readPromptVariant } from "../../supabase/functions/agent/prompt.ts";
 import { MARQUEE_TARGETS, tzFor, world, type WorldName } from "./world.ts";
+import { addUsage, emptyUsage, readUsage, type Usage } from "./cost.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CASSETTE_DIR = join(HERE, "cassettes");
@@ -158,6 +159,54 @@ function recording(inner: ChatClient, tape: Recorded): ChatClient {
   };
 }
 
+// ── what it cost ─────────────────────────────────────────────────────────────
+
+/** Every live request's `usage`, summed since the process started. The runner
+ *  snapshots it around each scenario and prints the total. Global on purpose: a
+ *  scenario that throws mid-turn still spent its tokens, and a per-call return
+ *  value would lose exactly those. */
+export const spend: Usage = emptyUsage();
+const pendingUsage = new Set<Promise<void>>();
+
+/** Wait for streamed rounds still being scanned for their usage chunk. */
+export async function settleSpend(): Promise<Usage> {
+  await Promise.all([...pendingUsage]);
+  return spend;
+}
+
+/** Read the usage off a stream's final `data:` chunk (stream_options.include_usage). */
+async function usageFromStream(body: ReadableStream<Uint8Array>): Promise<void> {
+  const text = await new Response(body).text();
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const payload = line.slice(6).trim();
+    if (payload === "[DONE]") continue;
+    try {
+      const u = readUsage(JSON.parse(payload)?.usage);
+      if (u) addUsage(spend, u);
+    } catch { /* a partial chunk is not a usage chunk */ }
+  }
+}
+
+/** fetch, plus a copy of every response read for its `usage`. The loop sees the
+ *  response untouched — this measures the deployed transport, it doesn't wrap it. */
+const meteredFetch: typeof fetch = async (input, init) => {
+  const res = await fetch(input, init);
+  if (!res.ok || !res.body) return res;
+  if ((res.headers.get("content-type") ?? "").includes("text/event-stream")) {
+    const [mine, theirs] = res.body.tee();
+    const p = usageFromStream(mine).catch(() => {});
+    pendingUsage.add(p);
+    void p.finally(() => pendingUsage.delete(p));
+    return new Response(theirs, { status: res.status, statusText: res.statusText, headers: res.headers });
+  }
+  try {
+    const u = readUsage((await res.clone().json())?.usage);
+    if (u) addUsage(spend, u);
+  } catch { /* not JSON — nothing to count */ }
+  return res;
+};
+
 export function liveModel(): { model: string; client: ChatClient } {
   const orKey = process.env.OPENROUTER_API_KEY;
   const key = orKey ?? process.env.OPENAI_API_KEY;
@@ -201,6 +250,12 @@ export function liveModel(): { model: string; client: ChatClient } {
       // --repeat matters MORE, not less — there is no sampling floor left.
       temperature: 0,
       reasoningEffort: choice.reasoningEffort,
+      // Measured, not guessed: every round reports its tokens (see cost.ts).
+      includeUsage: true,
+      fetchImpl: meteredFetch,
+      // Every scenario shares the same ~24k-token prefix (tools + static
+      // prompt); one key keeps them on one cache.
+      promptCacheKey: choice.provider === "openai" ? "nuvo-eval" : undefined,
     }),
   };
 }
@@ -226,7 +281,11 @@ export interface RunOutcome {
   messages: ChatMessage[];
 }
 
-export async function runScenario(opts: RunOptions): Promise<RunOutcome> {
+/** The first request a scenario sends, exactly — the runner sizes its cost
+ *  estimate from this, so the estimate grows when the prompt or tools do. */
+export function firstRequest(
+  opts: Pick<RunOptions, "worldName" | "turns" | "navFocus">,
+): { messages: ChatMessage[]; tools: unknown[] } {
   const ctx = world(opts.worldName);
   const tz = tzFor(opts.worldName);
 
@@ -247,6 +306,11 @@ export async function runScenario(opts: RunOptions): Promise<RunOutcome> {
     promptVariant: readPromptVariant(process.env.AGENT_PROMPT),
   });
   const tools = [...TOOL_DEFINITIONS, buildPointAtTool(MARQUEE_TARGETS)];
+  return { messages, tools };
+}
+
+export async function runScenario(opts: RunOptions): Promise<RunOutcome> {
+  const { messages, tools } = firstRequest(opts);
 
   const tape: Recorded = { rounds: [] };
   // Only a real model's answers are worth recording. A scripted client (the

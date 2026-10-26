@@ -1,0 +1,1 @@
+{"at":"2026-10-22T16:16:26.256Z","model":"gpt-5.6-terra","scenarioRuns":1,"usage":{"requests":2,"prompt":41236,"cached":20588,"completion":34},"usd":0.0458216,"args":"--only capture-inbox","git":"fad0883"}

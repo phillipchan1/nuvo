@@ -181,6 +181,36 @@ function slimFeed(text: string, windowStart: Date, windowEnd: Date): string {
   return header + blocks.join("\n") + footer;
 }
 
+/**
+ * How many occurrences a series' RRULE generates before `beforeMs` — EXDATEd
+ * ones included, because RFC 5545 counts COUNT before exclusions. Splitting a
+ * COUNT series ("this and following") hands the new series the rest.
+ */
+export function countRuleOccurrencesBefore(icsText: string, beforeMs: number): number {
+  const comp = new ICAL.Component(ICAL.parse(icsText));
+  for (const vt of comp.getAllSubcomponents("vtimezone")) {
+    const tzid = String(vt.getFirstPropertyValue("tzid") ?? "");
+    if (tzid && !ICAL.TimezoneService.has(tzid)) {
+      ICAL.TimezoneService.register(new ICAL.Timezone({ component: vt, tzid }));
+    }
+  }
+  const master = comp.getAllSubcomponents("vevent").find((ve) => !ve.hasProperty("recurrence-id"));
+  if (!master) return 0;
+  const rrule = master.getFirstPropertyValue("rrule");
+  const start = master.getFirstPropertyValue("dtstart");
+  if (!rrule || !start) return 0;
+  // deno-lint-ignore no-explicit-any
+  const it = (rrule as any).iterator(start);
+  let n = 0;
+  // deno-lint-ignore no-explicit-any
+  let next: any;
+  while ((next = it.next()) && n < 100_000) {
+    if (next.toJSDate().getTime() >= beforeMs) break;
+    n++;
+  }
+  return n;
+}
+
 export function parseIcs(
   icsText: string,
   opts: {

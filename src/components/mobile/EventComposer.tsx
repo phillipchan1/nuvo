@@ -23,7 +23,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { isWritableAccount } from "../../lib/calendarWrite";
 import { EventCalendarPicker, useEventCalendar } from "../calendar/EventCalendarPicker";
 import { allDayRangeFromStart, defaultTimedRange, toDateISO } from "../../lib/dates";
-import { toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
+import { eventRRule, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import { GuestsInput } from "../GuestsInput";
 import {
@@ -183,7 +183,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
         start_at: startAt,
         end_at: endAt,
         all_day: allDay,
-        recurrence: repeat ? toGoogleRRULE(repeat) : undefined,
+        recurrence: repeat ? eventRRule(repeat, allDay) : undefined,
         attendees: guests.length ? guests : undefined,
         accountId: target.accountId,
         calendarId: target.calendarId,

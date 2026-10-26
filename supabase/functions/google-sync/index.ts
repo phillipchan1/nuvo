@@ -14,9 +14,11 @@ import {
 } from "../_shared/google.ts";
 import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
 import { markSyncResult } from "../_shared/syncSchedule.ts";
+import {
+  SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
+  SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
+} from "../_shared/syncWindow.ts";
 
-const WINDOW_PAST_DAYS = 30;
-const WINDOW_FUTURE_DAYS = 120;
 const CHANNEL_RENEW_AHEAD_MS = 48 * 3600_000;
 // Poll catches up any calendar not synced within this window. Just under the
 // 5-minute cron cadence so a calendar with a dead webhook is re-synced on the

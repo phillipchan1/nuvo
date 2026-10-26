@@ -361,6 +361,16 @@ export interface ChatClientConfig {
   /** GPT-5.6's reasoning axis ("none" … "max"). Unset leaves the provider
    *  default, which is what the chat ran on before this existed. */
   reasoningEffort?: string;
+  /** Ask a streamed round to end with a `usage` chunk (`stream_options`), the
+   *  way a non-streamed one always does. readStream skips that chunk — it has no
+   *  delta — so this changes nothing about the turn; the battery sets it so a
+   *  run can say what it cost (tests/agent/cost.ts). */
+  includeUsage?: boolean;
+  /** OpenAI's `prompt_cache_key`: requests sharing one are routed to the same
+   *  prefix cache, which is what makes the ~24k-token tools + static prompt
+   *  prefix a 90%-off read instead of a full-price one. OpenAI-only — left unset
+   *  for any other host, which may reject an unknown field. */
+  promptCacheKey?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -426,7 +436,9 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
       ...(effort ? { reasoning_effort: effort } : {}),
       // Temperature travels except when real reasoning is doing the sampling.
       ...(!realReasoning && cfg.temperature != null ? { temperature: cfg.temperature } : {}),
+      ...(cfg.promptCacheKey ? { prompt_cache_key: cfg.promptCacheKey } : {}),
       ...(stream ? { stream: true } : {}),
+      ...(stream && cfg.includeUsage ? { stream_options: { include_usage: true } } : {}),
     });
   };
 

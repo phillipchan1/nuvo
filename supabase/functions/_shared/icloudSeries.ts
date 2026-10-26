@@ -9,3 +9,4 @@ export function icloudSeriesOrFilter(uidBase: string): string {
   const q = uidBase.replace(/"/g, '""');
   return `provider_event_id.eq."${q}",provider_event_id.like."${q}::*"`;
 }
+
