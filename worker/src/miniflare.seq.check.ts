@@ -333,6 +333,30 @@ try {
   const after = await aReadAfter.json() as { data?: { title?: string } };
   ok(aReadAfter.status === 200 && after.data?.title === "seq patched", "isolation: A title unchanged after B patch");
 
+  const steal = await withTimeout(
+    request("/api/data/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${b.token}`,
+      },
+      body: JSON.stringify({ id: taskId, title: "steal" }),
+    }),
+    15000,
+    "foreign id",
+  );
+  ok(steal.status >= 400 && steal.status < 500, `POST other owner's id: HTTP ${steal.status} (4xx, not 500)`);
+  ok((await steal.clone().text()).includes("hyperdrive") === false, "foreign id: no internal host");
+  const aReadSteal = await withTimeout(
+    request(`/api/data/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${a.token}` },
+    }),
+    15000,
+    "A re-read after steal",
+  );
+  const afterSteal = await aReadSteal.json() as { data?: { title?: string } };
+  ok(aReadSteal.status === 200 && afterSteal.data?.title === "seq patched", "foreign id: A title unchanged");
+
   const adopted = await signInOtp(seedEmail);
   const adoptedDomains = await withTimeout(
     request("/api/data/domains", {

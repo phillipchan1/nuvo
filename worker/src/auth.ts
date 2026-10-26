@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
+import { clientSsl } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
@@ -96,8 +97,9 @@ export function createAuth(env: Env, database: AuthDatabase) {
  */
 export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<void> } {
   const url = databaseUrl(env);
-  if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");
-  const pool = new Pool({ connectionString: url, max: 1 });
+  if (!url) throw new Error("database is not configured");
+  const ssl = clientSsl(env, url);
+  const pool = new Pool({ connectionString: url, max: 1, ssl: ssl === "require" });
   const auth = createAuth(env, pool);
   return {
     auth,

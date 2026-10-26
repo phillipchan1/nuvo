@@ -182,6 +182,12 @@ Hyperdrive binding and talks to `DATABASE_URL` directly; it is not sized for
 that concurrency (CI sequential tests are fine). Do not point preview at a
 100-connection Neon without Hyperdrive and then hammer it.
 
+**Hyperdrive TLS:** Cloudflare already TLS-terminates to the origin. Client
+TLS to `*.hyperdrive.local` hangs, so `postgresSsl` / `clientSsl` set
+`ssl: false` when the string comes from `env.HYPERDRIVE` or the hostname is
+`hyperdrive.local`. Direct remote `DATABASE_URL`s (Neon) still require TLS.
+Connection errors stay generic — they never echo the internal host.
+
 Planner `users.auth_id` is the Better Auth user id. `bootstrapUser` looks that
 up first, adopts a row **only when the BA email is verified**, and never
 auto-signs-in an unverified email+password account

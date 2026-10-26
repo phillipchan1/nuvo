@@ -400,7 +400,16 @@ export async function upsertOwned(
     const existing = await getOwned(store, table, row.id);
     if (existing) return updateOwned(store, table, row.id, row);
   }
-  return insertOwned(store, table, row);
+  try {
+    return await insertOwned(store, table, row);
+  } catch (err) {
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && String((err as { code?: unknown }).code) === "23505";
 }
 
 export async function upsertSettings(
@@ -816,7 +825,7 @@ export async function bootstrapUser(
     }
   }
 
-  const insertEmail = await emailForInsert(sql, normalized, verified);
+  const insertEmail = await emailForInsert(sql, normalized);
 
   try {
     await sql`
@@ -824,45 +833,60 @@ export async function bootstrapUser(
       VALUES (${authId}, ${insertEmail}, ${authId})
     `;
   } catch {
-    const racedAuth = (await sql`
-      SELECT id FROM users WHERE auth_id = ${authId} LIMIT 1
-    `) as { id: string }[];
-    if (racedAuth[0]) {
-      const adopted = makeStore(sql, racedAuth[0].id);
-      await ensureSettingsAndDomains(adopted);
-      return adopted;
+    const recovered = await recoverInsert(sql, authId, normalized, verified);
+    if (recovered) return recovered;
+    try {
+      await sql`
+        INSERT INTO users (id, email, auth_id)
+        VALUES (${authId}, NULL, ${authId})
+      `;
+    } catch {
+      const last = await recoverInsert(sql, authId, normalized, verified);
+      if (last) return last;
+      throw new Error("users insert failed");
     }
-    if (verified && normalized) {
-      const racedEmail = (await sql`
-        SELECT id, auth_id FROM users WHERE lower(email) = ${normalized} LIMIT 1
-      `) as { id: string; auth_id: string | null }[];
-      const raced = racedEmail[0];
-      if (raced && (raced.auth_id == null || raced.auth_id === authId)) {
-        await sql`
-          UPDATE users
-          SET auth_id = ${authId}
-          WHERE id = ${raced.id}
-            AND (auth_id IS NULL OR auth_id = ${authId})
-        `;
-        const adopted = makeStore(sql, raced.id);
-        await ensureSettingsAndDomains(adopted);
-        return adopted;
-      }
-    }
-    throw new Error("users insert failed");
   }
 
   await ensureSettingsAndDomains(store);
   return store;
 }
 
-async function emailForInsert(
+async function recoverInsert(
   sql: Sql,
+  authId: string,
   normalized: string | null,
   verified: boolean,
-): Promise<string | null> {
+): Promise<Store | null> {
+  const racedAuth = (await sql`
+    SELECT id FROM users WHERE auth_id = ${authId} LIMIT 1
+  `) as { id: string }[];
+  if (racedAuth[0]) {
+    const adopted = makeStore(sql, racedAuth[0].id);
+    await ensureSettingsAndDomains(adopted);
+    return adopted;
+  }
+  if (verified && normalized) {
+    const racedEmail = (await sql`
+      SELECT id, auth_id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+    `) as { id: string; auth_id: string | null }[];
+    const raced = racedEmail[0];
+    if (raced && (raced.auth_id == null || raced.auth_id === authId)) {
+      await sql`
+        UPDATE users
+        SET auth_id = ${authId}
+        WHERE id = ${raced.id}
+          AND (auth_id IS NULL OR auth_id = ${authId})
+      `;
+      const adopted = makeStore(sql, raced.id);
+      await ensureSettingsAndDomains(adopted);
+      return adopted;
+    }
+  }
+  return null;
+}
+
+async function emailForInsert(sql: Sql, normalized: string | null): Promise<string | null> {
   if (!normalized) return null;
-  if (verified) return normalized;
   const taken = (await sql`
     SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
   `) as { id: string }[];

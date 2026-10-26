@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
-import { postgresSsl } from "./db.ts";
+import { clientSsl, postgresSsl, usesHyperdrive } from "./db.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 
 const fails: string[] = [];
@@ -39,11 +39,40 @@ ok(
   "localhost in the user does not disable TLS",
 );
 
+const hyperdrive = "postgresql://user:pass@abcd1234.hyperdrive.local:5432/nuvo";
+ok(postgresSsl(hyperdrive) === false, "hyperdrive.local is not client TLS");
+ok(
+  postgresSsl(`${hyperdrive}?sslmode=require`) === false,
+  "hyperdrive.local wins over sslmode=require",
+);
+ok(
+  postgresSsl("postgresql://user:pass@hyperdrive.local:5432/nuvo") === false,
+  "bare hyperdrive.local is not client TLS",
+);
+ok(
+  postgresSsl("postgresql://hyperdrive@ep-prod.us-east-1.aws.neon.tech/nuvo") === "require",
+  "hyperdrive in the user does not disable TLS",
+);
+ok(
+  postgresSsl("postgresql://neondb@ep-prod.us-east-1.aws.neon.tech/hyperdrive") === "require",
+  "hyperdrive in the db name does not disable TLS",
+);
+ok(clientSsl({ HYPERDRIVE: { connectionString: hyperdrive } }, hyperdrive) === false, "HYPERDRIVE binding disables client TLS");
+ok(
+  clientSsl({ HYPERDRIVE: { connectionString: neon } }, neon) === false,
+  "HYPERDRIVE binding disables TLS even when the hostname is not hyperdrive.local",
+);
+ok(clientSsl({}, neon) === "require", "direct remote URL without HYPERDRIVE still requires TLS");
+ok(usesHyperdrive({ HYPERDRIVE: { connectionString: hyperdrive } }), "usesHyperdrive: real binding");
+ok(!usesHyperdrive({ HYPERDRIVE: { connectionString: "postgresql://x@y/z?id=00000000000000000000000000000000" } }), "usesHyperdrive: placeholder id is ignored");
+ok(!usesHyperdrive({}), "usesHyperdrive: unset binding");
+
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "db.ts"), "utf8");
 ok(!/fetch_types:\s*false/.test(src), "db.ts does not disable fetch_types");
 ok(src.includes("postgresSsl"), "db.ts uses postgresSsl");
 ok(!/url\.includes\("localhost"\)/.test(src), "db.ts does not substring-match localhost for TLS");
+ok(!/includes\("hyperdrive"\)/.test(src), "db.ts does not substring-match hyperdrive for TLS");
 ok(!/WeakMap/.test(src), "db.ts does not cache Sql in a WeakMap");
 ok(/export function openSql/.test(src), "db.ts opens a fresh client per call");
 ok(/max:\s*1/.test(src), "db.ts caps postgres.js at 1 socket per request");

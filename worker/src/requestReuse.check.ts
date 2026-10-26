@@ -51,6 +51,9 @@ ok(/requireEmailVerification:\s*true/.test(authSrc), "createAuth requires email 
 ok(/exposeSignedAuthToken/.test(indexSrc), "auth responses rewrite the JSON token to the signed form");
 ok(/signBearerToken/.test(authSrc), "auth.ts can HMAC a raw session token for cookie-only get-session");
 ok(/SessionLookupError/.test(authSrc), "session lookup failures are not treated as no session");
+ok(/clientSsl/.test(dbSrc) && /isHyperdriveHostname/.test(dbSrc), "db.ts disables client TLS for Hyperdrive");
+ok(/clientSsl/.test(authSrc), "openAuth uses clientSsl (no client TLS to Hyperdrive)");
+ok(/sanitizeAuthResponse/.test(indexSrc), "auth 5xx bodies are sanitized (no internal host)");
 ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
 ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
 ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
@@ -386,6 +389,27 @@ const badId = await withTimeout(
 );
 ok(badId.status === 400, `malformed id: HTTP ${badId.status}`);
 
+const foreignId = "bbbbbbbb-2222-4000-8000-000000000001";
+const steal = await withTimeout(
+  request("/api/data/tasks", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${signed.token}`,
+    },
+    body: JSON.stringify({ id: foreignId, title: "steal" }),
+  }),
+  8000,
+  "foreign id insert",
+);
+ok(steal.status >= 400 && steal.status < 500, `POST other owner's id: HTTP ${steal.status} (4xx, not 500)`);
+ok((steal.headers.get("content-type") ?? "").includes("application/json"), "foreign id insert: JSON");
+ok((await steal.clone().text()).includes("hyperdrive.local") === false, "foreign id insert: no internal host");
+ok(
+  (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE id = $1 AND title = $2", [foreignId, "steal"])).rows[0]?.n === 0,
+  "foreign id insert: B's task title unchanged",
+);
+
 restore();
 
 const restoreFail = installRequestIoForTests(() => {
@@ -415,7 +439,75 @@ const lookupFail = await withTimeout(
 ok(lookupFail.status === 503, `session lookup DB error: HTTP ${lookupFail.status} (not 401)`);
 const lookupBody = await lookupFail.json() as { error?: string };
 ok(lookupBody.error === "service unavailable", "session lookup DB error: service unavailable");
+ok(JSON.stringify(lookupBody).includes("hyperdrive") === false, "session lookup error: no internal host");
 restoreFail();
+
+const restoreOtpDown = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () => {
+        const err = new Error("connect ECONNREFUSED 127.0.0.1:1 abcd1234.hyperdrive.local");
+        (err as { code?: string }).code = "ECONNREFUSED";
+        throw err;
+      },
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const otpDown = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+  }),
+  8000,
+  "OTP send DB down",
+);
+const otpDownText = await otpDown.text();
+ok(otpDown.status === 503, `OTP send DB down: HTTP ${otpDown.status} (not 500)`);
+ok(otpDownText.includes("service unavailable"), "OTP send DB down: generic unavailable");
+ok(!otpDownText.includes("hyperdrive"), "OTP send DB down: no hyperdrive host");
+ok(!otpDownText.includes("ECONNREFUSED"), "OTP send DB down: no driver error");
+ok((otpDown.headers.get("content-type") ?? "").includes("application/json"), "OTP send DB down: JSON");
+restoreOtpDown();
+
+const restoreOtpBody = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () =>
+        new Response(
+          JSON.stringify({ message: "connect ECONNREFUSED abcd1234.hyperdrive.local:5432" }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ),
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const otpBody = await withTimeout(
+  request("/api/auth/sign-in/email-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", otp: "000000" }),
+  }),
+  8000,
+  "OTP 5xx body",
+);
+const otpBodyText = await otpBody.text();
+ok(otpBody.status === 503, `OTP 5xx body: HTTP ${otpBody.status} (not 500)`);
+ok(otpBodyText.includes("service unavailable"), "OTP 5xx body: generic unavailable");
+ok(!otpBodyText.includes("hyperdrive"), "OTP 5xx body: no hyperdrive host");
+ok(!otpBodyText.includes("ECONNREFUSED"), "OTP 5xx body: no driver error");
+restoreOtpBody();
 await kysely.destroy();
 await db.close();
 

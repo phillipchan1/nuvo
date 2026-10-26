@@ -4,7 +4,14 @@ import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
-import { BadRequestError, postgresInputError, readJson, requireUuid } from "./http.ts";
+import {
+  BadRequestError,
+  isDatabaseUnavailable,
+  isUnavailableText,
+  postgresInputError,
+  readJson,
+  requireUuid,
+} from "./http.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
@@ -102,25 +109,41 @@ app.all("/api/auth/*", async (c) => {
       c.env.BETTER_AUTH_SECRET ?? "",
       c.req.header("cookie"),
     );
-    const headers = new Headers(res.headers);
-    for (const [k, v] of Object.entries(cors)) {
-      if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
-    }
-    headers.delete("Access-Control-Allow-Credentials");
-    if (cors["Access-Control-Allow-Credentials"]) {
-      headers.set("Access-Control-Allow-Credentials", "true");
-    }
-    if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
-      headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
-    }
-    return new Response(res.body, { status: res.status, headers });
-  } catch {
-    return new Response(JSON.stringify({ error: "internal error" }), {
-      status: 500,
+    return withAuthCors(await sanitizeAuthResponse(res), cors);
+  } catch (err) {
+    const unavailable = isDatabaseUnavailable(err);
+    return new Response(JSON.stringify({ error: unavailable ? "service unavailable" : "internal error" }), {
+      status: unavailable ? 503 : 500,
       headers: { "Content-Type": "application/json", ...cors },
     });
   }
 });
+
+function withAuthCors(res: Response, cors: Record<string, string>): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors)) {
+    if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
+  }
+  headers.delete("Access-Control-Allow-Credentials");
+  if (cors["Access-Control-Allow-Credentials"]) {
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
+  if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
+    headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+/** Never forward a 5xx body — adapter errors can name `*.hyperdrive.local`. */
+async function sanitizeAuthResponse(res: Response): Promise<Response> {
+  if (res.status < 500) return res;
+  const text = await res.text().catch(() => "");
+  const unavailable = res.status === 503 || isUnavailableText(text);
+  return new Response(JSON.stringify({ error: unavailable ? "service unavailable" : "internal error" }), {
+    status: unavailable ? 503 : 500,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 async function requireStore(c: Context<AppEnv>) {
   const io = await requestIo(c);
@@ -143,6 +166,7 @@ async function requireStore(c: Context<AppEnv>) {
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
   if (err instanceof SessionLookupError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+  if (isDatabaseUnavailable(err)) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (postgresInputError(err)) return json({ error: "bad request" }, 400, OPEN_CORS);
   return json({ error: "internal error" }, 500, OPEN_CORS);
 });

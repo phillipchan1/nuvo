@@ -44,5 +44,58 @@ export async function readJson<T>(c: Context): Promise<T> {
 export function postgresInputError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const code = "code" in err ? String((err as { code?: unknown }).code) : "";
-  return code === "22P02" || code === "22P05" || code === "22021" || code === "22P03";
+  return code === "22P02" || code === "22P05" || code === "22021" || code === "22P03" || code === "23505";
+}
+
+const UNAVAILABLE_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "57P01",
+  "57P03",
+  "08000",
+  "08001",
+  "08003",
+  "08006",
+]);
+
+function errorText(err: unknown): string {
+  if (!err) return "";
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const row = err as { code?: unknown; errno?: unknown; message?: unknown };
+    return [row.code, row.errno, row.message].filter((v) => v != null).join(" ");
+  }
+  return String(err);
+}
+
+/** Connection / DB-down. Never use the message as a client body (hosts leak). */
+export function isDatabaseUnavailable(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return typeof err === "string" && isUnavailableText(err);
+  }
+  const row = err as { code?: unknown; errno?: unknown; cause?: unknown };
+  const code = String(row.code ?? row.errno ?? "");
+  if (UNAVAILABLE_CODES.has(code)) return true;
+  if (row.cause && isDatabaseUnavailable(row.cause)) return true;
+  return isUnavailableText(errorText(err));
+}
+
+export function isUnavailableText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("econnrefused") ||
+    lower.includes("connection refused") ||
+    lower.includes("connect timeout") ||
+    lower.includes("connection terminated") ||
+    lower.includes("connection ended") ||
+    lower.includes("enotfound") ||
+    lower.includes("etimedout") ||
+    lower.includes("econnreset") ||
+    lower.includes("too many clients") ||
+    lower.includes("the database system is starting") ||
+    lower.includes("the database system is shutting")
+  );
 }

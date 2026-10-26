@@ -315,6 +315,15 @@ ok((await scalar<string>("SELECT auth_id::text FROM users WHERE id = $1", [SEED]
 ok((await count("domains", "user_id = $1 AND name = $2", [SEED, "Seed Work"])) === 1, "bootstrap: adopted row keeps its domain");
 ok((await getOwned(adopted, "domains", SEED_DOMAIN)) != null, "bootstrap: adopted store can read the row");
 
+const AUTH_SECOND = "99999999-9999-9999-9999-999999999999";
+const second = await bootstrapUser(makeStore(sql, AUTH_SECOND), "seed@example.test", { emailVerified: true });
+ok(second.userId === AUTH_SECOND, "bootstrap: second verified user gets a new row (no crash)");
+ok(second.userId !== SEED, "bootstrap: second verified user does not take over the linked row");
+ok((await getOwned(second, "domains", SEED_DOMAIN)) === null, "bootstrap: second verified user cannot read seed data");
+ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [SEED])) === "seed@example.test", "bootstrap: linked email unchanged");
+ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [AUTH_SECOND])) == null, "bootstrap: second user is inserted without the taken email");
+ok((await scalar<string>("SELECT auth_id::text FROM users WHERE id = $1", [SEED])) === AUTH_NEW, "bootstrap: original auth_id unchanged");
+
 const renamed = await bootstrapUser(makeStore(sql, AUTH_NEW), "renamed-seed@example.test", { emailVerified: true });
 ok(renamed.userId === SEED, "bootstrap: auth_id link survives an email change");
 ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [SEED])) === "renamed-seed@example.test", "bootstrap: linked row takes the new email");
