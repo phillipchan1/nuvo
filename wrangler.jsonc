@@ -21,8 +21,8 @@
   "vars": {
     "RESEND_FROM": "Nuvo <noreply@localhost>"
   },
-  // Replace `id` with a real Hyperdrive config before a real deploy.
-  // Local `wrangler dev` uses localConnectionString (or DATABASE_URL in .dev.vars).
+  // Production / `wrangler dev` only. Preview uses DATABASE_URL (see env.preview).
+  // Replace `id` with a real Hyperdrive config before a production deploy.
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -39,16 +39,13 @@
     "preview": {
       "name": "nuvo-preview",
       "workers_dev": true,
+      // No Hyperdrive here on purpose. Wrangler does not inherit the
+      // top-level binding; preview uses the DATABASE_URL secret. The
+      // dry-run warning about a missing HYPERDRIVE on preview is expected.
       "vars": {
-        "RESEND_FROM": "Nuvo <noreply@localhost>"
-      },
-      "hyperdrive": [
-        {
-          "binding": "HYPERDRIVE",
-          "id": "00000000000000000000000000000000",
-          "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
-        }
-      ]
+        "RESEND_FROM": "Nuvo <noreply@localhost>",
+        "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev"
+      }
     }
   }
 }

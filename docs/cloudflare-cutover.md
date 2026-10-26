@@ -36,10 +36,10 @@ None of these belong in the Vite bundle.
 
 | Name | Kind | Required |
 |---|---|---|
-| `HYPERDRIVE` | Worker binding | Yes for a real preview/prod Worker |
-| `DATABASE_URL` | secret | Optional local fallback / seed |
+| `HYPERDRIVE` | Worker binding | **Production / `wrangler dev` only.** Preview does not bind it |
+| `DATABASE_URL` | secret | **Required on preview.** Optional local fallback when Hyperdrive is set |
 | `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
-| `BETTER_AUTH_URL` | **prod/preview var** | Public origin, e.g. `https://nuvo-preview.<account>.workers.dev`. Unset outside local → JSON 500 |
+| `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | local `.dev.vars` only | `local` for `wrangler dev`. Must not be `local` on workers.dev |
 | `RESEND_API_KEY` | secret | OTP email. Unset → codes logged (dev only) |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
@@ -53,27 +53,28 @@ Client build-time:
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Keep until PostgREST is retired |
 | `VITE_API_BASE_URL` | Empty = today's path. Worker: `/api` (same origin) or `https://<worker>/api`. iOS TestFlight reads this from a **repo variable** — see below |
 
-Replace the placeholder Hyperdrive `id` in `wrangler.jsonc` before a real deploy.
+Replace the placeholder Hyperdrive `id` in the **top-level** `wrangler.jsonc`
+`hyperdrive` block before a production deploy. Preview does not use it.
 
 ---
 
 ## Preview on workers.dev (do not run until signed off)
 
 This repo's `wrangler.jsonc` has an `env.preview` named `nuvo-preview` with
-`workers_dev: true` and **no routes / custom domains**. Commands (for later):
+`workers_dev: true`, **no routes / custom domains**, and **no Hyperdrive**.
+`BETTER_AUTH_URL` is a committed preview var:
+`https://nuvo-preview.nq-morning-briefing.workers.dev`. Commands (for later):
 
 ```bash
-# One-time: Neon project (free), Hyperdrive config, secrets
-npx wrangler hyperdrive create nuvo-preview --connection-string="$NEON_DATABASE_URL"
-# paste the returned id into wrangler.jsonc env.preview.hyperdrive[0].id
-
 npx wrangler secret put BETTER_AUTH_SECRET --env preview
-npx wrangler secret put DATABASE_URL --env preview   # optional if Hyperdrive is set
-# then set BETTER_AUTH_URL as a Worker var to https://nuvo-preview.<account>.workers.dev
+npx wrangler secret put DATABASE_URL --env preview
 
 # Schema + synthetic seed (no prod data)
 DATABASE_URL="$NEON_DATABASE_URL" npm run db:neon:apply
 DATABASE_URL="$NEON_DATABASE_URL" npm run db:neon:seed
+
+# Config check (CI runs this; no deploy)
+npm run cf:preview:dry-run
 
 # Deploy ONLY the preview env (this PR does not run this)
 npx wrangler deploy --env preview
@@ -81,6 +82,24 @@ npx wrangler deploy --env preview
 
 Do **not** run `wrangler deploy` without `--env preview`. Do **not** attach a
 custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
+
+---
+
+## Crons stay off the Worker
+
+`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler** and
+does not read `CRON_SECRET`. Do not add either for this rehearsal.
+
+Every recurring job stays where it is today:
+
+| Where | What |
+|---|---|
+| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch, github-poll, SQL prune/purge |
+| **Vercel** | nothing scheduled. If a Vercel cron is added later, it stays on Vercel until a signed-off Workers port |
+
+A later cutover that wants Workers Cron Triggers would need a `scheduled`
+export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the
+matching `pg_cron` job — none of that is this PR.
 
 ---
 
@@ -143,6 +162,7 @@ npm run typecheck
 npm test
 npm run check:worker
 npm run check:isolation-mutation
+npm run cf:preview:dry-run
 ```
 
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and

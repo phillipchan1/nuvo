@@ -48,8 +48,10 @@ jobs:
             | xargs -0 -n1 npx esbuild --bundle=false --outfile=/dev/null
       - name: Worker typecheck
         run: npm run typecheck:worker
-      - name: Worker auth + isolation checks
+      - name: Worker auth + isolation + adapter checks
         run: npm run check:worker
+      - name: Wrangler preview dry-run
+        run: npm run cf:preview:dry-run
 
   isolation-mutation:
     name: isolation-mutation

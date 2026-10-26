@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
+import { authAccount, authSession, authUser, authVerification } from "./authSchema.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
 type AuthInstance = ReturnType<typeof createAuth>;
@@ -47,6 +48,10 @@ export function createAuth(env: Env) {
     baseURL,
     basePath: "/api/auth",
     database: new Pool({ connectionString: url, max: 5 }),
+    user: authUser,
+    session: authSession,
+    account: authAccount,
+    verification: authVerification,
     // App Review + the existing review login need a password. OTP is the
     // everyday path (same as today's GoTrue email code).
     emailAndPassword: { enabled: true, minPasswordLength: 8 },
