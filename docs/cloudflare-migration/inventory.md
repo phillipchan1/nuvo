@@ -144,7 +144,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `calendar_accounts` | `useCalendar.ts`, `SettingsModal.tsx` |
 | `external_events` | `useCalendar.ts`, `useAgentRecords.ts`, `lib/eventSearch.ts` |
 | `event_domain_routing` | `useEventRouting.ts`, `useEventRouter.ts` |
-| `subscriptions` | `useSubscription.ts` |
+| `subscriptions` | `useSubscription.ts` via `lib/entitlementRead.ts` — PostgREST today; `GET /api/entitlement` when `VITE_API_BASE_URL` is set |
 | `user_settings` | `useSettings.ts` |
 | `connections` | `AppsDevicesPane.tsx`, `useWatchSession.ts` |
 | `activity_*` | `useActivity.ts` |
@@ -224,7 +224,7 @@ No automated `supabase db push` or `functions deploy` in CI.
 - `/functions/v1/agent` and `/functions/v1/mcp` (session / connection scoped on Neon)
 - `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
 - Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune` (iterate `users`)
-- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay)
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Live check: [`billing-live-check.md`](./billing-live-check.md)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.
 
