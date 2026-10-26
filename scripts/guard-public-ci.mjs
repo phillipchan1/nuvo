@@ -3,9 +3,12 @@
  * never become Actions artifacts, and cutover logs must stay counts +
  * hashes. Run from checks.yml so a new workflow cannot sneak in an
  * upload-artifact of anything else. The cutover job also runs --job
- * immediately before the checksum-report upload.
+ * immediately before the checksum-report upload, and --check-log against
+ * teed step logs.
  *
- * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs).
+ * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs),
+ * plus quoted uses, upload-artifact/merge, gh release upload, and
+ * curl/wget upload flags.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -28,12 +31,17 @@ export const FORBIDDEN_WORKSPACE_BASENAMES = Object.freeze([
 
 const DATA_PATH_RE = /\.(dump|csv|sql|toc)$/i;
 
+const USES_UPLOAD_ARTIFACT_RE =
+  /uses:\s*(['"]?)actions\/upload-artifact(\/merge)?(?:@[^'"\s]+)?\1[^\n]*\n((?:[ \t]+[^\n]*\n)*)/g;
+
 export function extractUploadArtifactSteps(workflowText) {
   const steps = [];
-  const re = /uses:\s*actions\/upload-artifact[^\n]*\n((?:[ \t]+[^\n]*\n)*)/g;
+  const re = new RegExp(USES_UPLOAD_ARTIFACT_RE.source, "g");
   for (const match of String(workflowText).matchAll(re)) {
     const block = match[0];
-    const pathMatch = block.match(/^[ \t]+path:[ \t]*(\|[^\n]*\n(?:[ \t]+[^\n]+\n)*|.+)$/m);
+    const merge = Boolean(match[2]);
+    const withBlock = match[3] ?? "";
+    const pathMatch = withBlock.match(/^[ \t]+path:[ \t]*(\|[^\n]*\n(?:[ \t]+[^\n]+\n)*|.+)$/m);
     let path = "";
     if (pathMatch) {
       const raw = pathMatch[1].trim();
@@ -48,20 +56,52 @@ export function extractUploadArtifactSteps(workflowText) {
         path = raw.replace(/^['"]|['"]$/g, "");
       }
     }
-    const nameMatch = block.match(/^[ \t]+name:[ \t]*(.+)$/m);
+    const nameMatch = withBlock.match(/^[ \t]+name:[ \t]*(.+)$/m);
     steps.push({
       block,
       path,
+      merge,
       name: (nameMatch?.[1] ?? "").trim().replace(/^['"]|['"]$/g, ""),
     });
   }
   return steps;
 }
 
+/** curl -T is upload; wget -T is timeout — only treat -T as upload on curl. */
+export function lineLooksLikeHttpUpload(line) {
+  const t = String(line).replace(/^\s*#.*$/, "");
+  if (!/\b(curl|wget)\b/.test(t)) return false;
+  if (/\bcurl\b/.test(t) && /(?:\s|^)(-T|--upload-file)\b/.test(t)) return true;
+  if (/\bwget\b/.test(t) && /(?:\s|^)--upload-file\b/.test(t)) return true;
+  if (/(?:\s|^)(-F|--form|--data-binary)\s+@/.test(t)) return true;
+  return false;
+}
+
+export function findForbiddenUploadCommands(workflowText) {
+  const hits = [];
+  for (const [i, line] of String(workflowText).split("\n").entries()) {
+    const code = line.replace(/^\s*#.*$/, "");
+    if (/\bgh\s+release\s+upload\b/.test(code)) {
+      hits.push({ line: i + 1, kind: "gh release upload" });
+    }
+    if (lineLooksLikeHttpUpload(code)) {
+      hits.push({ line: i + 1, kind: "curl/wget upload" });
+    }
+  }
+  return hits;
+}
+
 export function assertWorkflowUploadAllowlist(workflowText, filename = "workflow") {
   const problems = [];
+  for (const hit of findForbiddenUploadCommands(workflowText)) {
+    problems.push(`${filename}:${hit.line}: forbidden upload (${hit.kind})`);
+  }
   const steps = extractUploadArtifactSteps(workflowText);
   for (const step of steps) {
+    if (step.merge) {
+      problems.push(`${filename}: actions/upload-artifact/merge is not allowlisted`);
+      continue;
+    }
     const paths = String(step.path)
       .split("\n")
       .map((p) => p.trim())
@@ -194,6 +234,18 @@ export function assertSafeMigrateLog(text, label = "log") {
   }
 }
 
+export function assertCutoverLogDir(logDir) {
+  if (!logDir || !existsSync(logDir)) {
+    console.log("public-ci-guard: no cutover logs (nothing to assert)");
+    return [];
+  }
+  const files = readdirSync(logDir).filter((n) => n.endsWith(".log"));
+  for (const name of files) {
+    assertSafeMigrateLog(readFileSync(join(logDir, name), "utf8"), name);
+  }
+  return files;
+}
+
 function parseBool(value) {
   const s = String(value ?? "").trim().toLowerCase();
   if (!s) return true;
@@ -204,18 +256,28 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const job = process.argv.includes("--job");
-  const dir = join(here, "..", ".github", "workflows");
-  const steps = assertWorkflowsUploadAllowlist(dir);
-  if (job) {
-    const staged = process.env.STAGED_UPLOAD || "artifacts/cutover-report.md";
-    const publicRepo = parseBool(process.env.REPO_IS_PUBLIC ?? "true");
-    assertStagedUpload(staged, { publicRepo, label: "cutover-job" });
-    const workspace = process.env.GITHUB_WORKSPACE || join(here, "..");
-    assertWorkspaceHasNoDataFiles(workspace);
-    console.log(
-      `public-ci-guard: job ok; ${steps.length} upload-artifact path(s); staged=${staged}; public=${publicRepo}`,
-    );
+  const checkLog = process.argv.includes("--check-log");
+  if (checkLog) {
+    const idx = process.argv.indexOf("--check-log");
+    const logDir = process.argv[idx + 1] || process.env.CUTOVER_LOG_DIR || "";
+    const files = assertCutoverLogDir(logDir);
+    if (files.length) {
+      console.log(`public-ci-guard: ${files.length} log file(s) have no row data`);
+    }
   } else {
-    console.log(`public-ci-guard: ${steps.length} upload-artifact path(s) allowlisted`);
+    const dir = join(here, "..", ".github", "workflows");
+    const steps = assertWorkflowsUploadAllowlist(dir);
+    if (job) {
+      const staged = process.env.STAGED_UPLOAD || "artifacts/cutover-report.md";
+      const publicRepo = parseBool(process.env.REPO_IS_PUBLIC ?? "true");
+      assertStagedUpload(staged, { publicRepo, label: "cutover-job" });
+      const workspace = process.env.GITHUB_WORKSPACE || join(here, "..");
+      assertWorkspaceHasNoDataFiles(workspace);
+      console.log(
+        `public-ci-guard: job ok; ${steps.length} upload-artifact path(s); staged=${staged}; public=${publicRepo}`,
+      );
+    } else {
+      console.log(`public-ci-guard: ${steps.length} upload-artifact path(s) allowlisted`);
+    }
   }
 }

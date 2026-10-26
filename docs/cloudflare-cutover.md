@@ -8,6 +8,7 @@ unless `VITE_API_BASE_URL` is set on a build.
 
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
+Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
 ---
@@ -86,33 +87,34 @@ webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
 
 ### `migration_tmp` (source-only auth readers)
 
+The apply script + runbook (who created it, verification queries, the
+post-cutover drop) is
+[`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
+It is **not** under `supabase/migrations` and must not be `db push`ed.
+
+**Already applied on Supabase prod** by Engineer 3 via the management API
+SQL editor. Verified 2026-10-26 (PT) from live `pg_get_functiondef` + the
+grant catalog: owner `postgres`, `SECURITY DEFINER`, `search_path=""`,
+`EXECUTE` for `migration_reader` only. PostgREST `db_schema` is
+`public,graphql_public`, so `migration_tmp` is not exposed.
+
 The cutover source role (`migration_reader`) is read-only and has **no
-`USAGE` on Supabase's `auth` schema** — `SELECT` / `COPY` from
-`auth.users` / `auth.identities` fails with `permission denied for schema
-auth`. Auth rows are therefore read through two `SECURITY DEFINER`
-functions created on the source only (same shape as leadwell):
+`USAGE` on `auth`** — `SELECT` / `COPY` from `auth.users` /
+`auth.identities` fails with `permission denied for schema auth`. The
+workflow therefore `COPY`s `migration_tmp.auth_users()` /
+`migration_tmp.auth_identities()`. Bodies project only `name` / `full_name`
+(and identity `sub` / `provider_id`) through `pg_catalog.jsonb_build_object`
++ `jsonb_strip_nulls`. Password hashes, recovery tokens, and other GoTrue
+secrets never leave `auth`.
 
-| Function | Role |
-|---|---|
-| `migration_tmp.auth_users()` | Projects the Better Auth / COPY columns from `auth.users` |
-| `migration_tmp.auth_identities()` | Projects provider rows from `auth.identities` |
-
-`EXECUTE` is granted to `migration_reader` only. `PUBLIC` / `anon` /
-`authenticated` / `service_role` are revoked. The functions do not grant
-`USAGE` on `auth`. Password hashes, recovery tokens, and other GoTrue
-secrets stay off the `RETURNS TABLE` list.
-
-`migration_tmp` is **not** dumped, not restored onto Neon, and not part of
-the Worker schema. After cutover is signed off and the reader path is no
-longer needed:
+After cutover is signed off and `SOURCE_DATABASE_URL` is deleted:
 
 ```sql
 DROP SCHEMA migration_tmp CASCADE;
 ```
 
 That drop is a source-side cleanup, not a rollback step. Supabase itself
-stays up (clear `VITE_API_BASE_URL`) until you decide otherwise. Do not
-leave the wrappers around once the migrate secrets are deleted.
+stays up (clear `VITE_API_BASE_URL`) until you decide otherwise.
 
 Client build-time:
 
