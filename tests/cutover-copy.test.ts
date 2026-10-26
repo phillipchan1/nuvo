@@ -67,19 +67,39 @@ describe("cutover_copy helpers", () => {
     expect(reserved).toMatch(/^SELECT setval\(pg_get_serial_sequence\('public\.sync_log','id'\), 1000006\)\n1000000$/);
     const txn = py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())");
     expect(txn).toMatch(/^BEGIN;/);
+    expect(txn).toMatch(/SET LOCAL lock_timeout = '10s'/);
     expect(txn).toMatch(/LOCK TABLE public\.sync_log IN SHARE ROW EXCLUSIVE MODE/);
+    expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\)/);
     expect(txn).toMatch(/incoming row\(s\) differ on Neon/);
     expect(txn).toMatch(/sync_log_setval=/);
     expect(txn).toMatch(/COMMIT;/);
     const begin = txn.indexOf("BEGIN;");
+    const lockTimeout = txn.indexOf("SET LOCAL lock_timeout = '10s'");
+    const lockTable = txn.indexOf("LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE");
     const insert = txn.indexOf("INSERT INTO public.sync_log");
     const setvalAt = txn.indexOf("setval(");
     const commit = txn.indexOf("COMMIT;");
     expect(begin).toBeGreaterThanOrEqual(0);
-    expect(insert).toBeGreaterThan(begin);
+    expect(lockTimeout).toBeGreaterThan(begin);
+    expect(lockTable).toBeGreaterThan(lockTimeout);
+    expect(insert).toBeGreaterThan(lockTable);
     expect(setvalAt).toBeGreaterThan(insert);
     expect(commit).toBeGreaterThan(setvalAt);
     expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
+  });
+
+  it("classifies a sync_log lock timeout as retryable", () => {
+    const out = py(
+      "from cutover_copy import is_retryable_lock_timeout, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
+      + "print(is_retryable_lock_timeout('ERROR:  canceling statement due to lock timeout')); "
+      + "print(is_retryable_lock_timeout(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)); "
+      + "print(is_retryable_lock_timeout('sync_log id collision: 1 incoming row(s) differ on Neon')); "
+      + "print(is_retryable_lock_timeout('canceling statement due to statement timeout')); "
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)",
+    );
+    expect(out).toBe(
+      "True\nTrue\nFalse\nFalse\nsync_log lock timed out after 10s — retry the resync (retryable)",
+    );
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
@@ -219,6 +239,8 @@ describe("cutover-migrate.yml", () => {
     expect(WORKFLOW).toMatch(/sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/sync_log_resync_txn_sql/);
+    expect(WORKFLOW).toMatch(/is_retryable_lock_timeout/);
+    expect(WORKFLOW).toMatch(/SYNC_LOG_LOCK_TIMEOUT_MESSAGE/);
     expect(WORKFLOW).not.toMatch(/psql\(target, sync_log_setval_sql/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
   });
@@ -263,6 +285,8 @@ describe("runbook", () => {
     expect(DOC).toMatch(/setval/);
     expect(DOC).toMatch(/last_value/);
     expect(DOC).toMatch(/never decreases/);
+    expect(DOC).toMatch(/SET LOCAL lock_timeout = '10s'/);
+    expect(DOC).toMatch(/retry the resync \(retryable\)/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
   });
