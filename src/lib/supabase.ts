@@ -49,6 +49,11 @@ function isMutatingMethod(method: string): boolean {
   return method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
 }
 
+/** PostgREST/Worker RPC reads travel as POST. Contacts must stay readable while frozen. */
+function isRpcRead(url: string): boolean {
+  return /\/(?:rest\/v1|api)\/rpc\/contacts(?:\?|$)/i.test(url);
+}
+
 const innerFetch: typeof fetch = import.meta.env.DEV
   ? async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
@@ -65,7 +70,7 @@ const innerFetch: typeof fetch = import.meta.env.DEV
 const guardedFetch: typeof fetch = async (input, init) => {
   const method = requestMethod(input, init);
   const url = requestUrl(input);
-  if (isMutatingMethod(method) && !isAuthUrl(url) && (await writeFrozen())) {
+  if (isMutatingMethod(method) && !isAuthUrl(url) && !isRpcRead(url) && (await writeFrozen())) {
     return new Response(JSON.stringify({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }), {
       status: 503,
       headers: { "Content-Type": "application/json" },

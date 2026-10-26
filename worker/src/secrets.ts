@@ -2,8 +2,9 @@
  * AES-256-GCM token seal for Neon columns.
  *
  * Replaces Vault `store_secret` / `read_secret` / `delete_secret` on the
- * Worker. AAD is `table:row_id:user_id` so a ciphertext cannot be moved
- * onto another row or user. Keys live in Worker secrets
+ * Worker. AAD is length-prefixed `table`, `row_id`, `user_id` (UUIDs
+ * validated) so a ciphertext cannot be moved onto another row or user.
+ * Keys live in Worker secrets
  * (`TOKEN_ENC_KEY_V1`, optional `TOKEN_ENC_KEY_V2`, `TOKEN_ENC_CURRENT`).
  *
  * Delete = null the enc/iv/version columns. Never log plaintext or key bytes.
@@ -83,12 +84,45 @@ export async function importAesKey(raw: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requireUuidField(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!UUID_RE.test(trimmed)) throw new TokenCryptoError(`${label} must be a uuid`);
+  return trimmed;
+}
+
+function lengthPrefixed(value: string): Uint8Array {
+  const bytes = new TextEncoder().encode(value);
+  if (bytes.length > 0xffff) throw new TokenCryptoError("AAD field too long");
+  const out = new Uint8Array(2 + bytes.length);
+  out[0] = (bytes.length >> 8) & 0xff;
+  out[1] = bytes.length & 0xff;
+  out.set(bytes, 2);
+  return out;
+}
+
 export function tokenAadString(aad: TokenAad): string {
-  return `${aad.table}:${aad.rowId}:${aad.userId}`;
+  const table = aad.table.trim();
+  if (!table) throw new TokenCryptoError("AAD table required");
+  const rowId = requireUuidField(aad.rowId, "AAD row");
+  const userId = requireUuidField(aad.userId, "AAD user");
+  return `${table}:${rowId}:${userId}`;
 }
 
 export function tokenAadBytes(aad: TokenAad): Uint8Array {
-  return new TextEncoder().encode(tokenAadString(aad));
+  const table = aad.table.trim();
+  if (!table) throw new TokenCryptoError("AAD table required");
+  const rowId = requireUuidField(aad.rowId, "AAD row");
+  const userId = requireUuidField(aad.userId, "AAD user");
+  const parts = [lengthPrefixed(table), lengthPrefixed(rowId), lengthPrefixed(userId)];
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 
 function parseVersion(raw: string | undefined, fallback: number): number {

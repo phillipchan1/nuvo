@@ -36,6 +36,11 @@
 # Cutover additionally requires the confirm input exactly `CUTOVER nuvo` and
 # runs in the `nuvo-cutover` environment (set required reviewers there).
 #
+# Billing tables stay on Supabase and are excluded from the dump, the
+# source-snapshot.json, and the parity proof: subscriptions,
+# stripe_webhook_events, apple_webhook_events, apple_notification_events.
+# freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
+#
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
 # AI Gateway — Nuvo stays on direct OpenAI. Does not deploy, change DNS,
 # or write production hosts.
@@ -223,6 +228,7 @@ jobs:
           from __future__ import annotations
 
           import hashlib
+          import json
           import os
           import re
           import subprocess
@@ -276,6 +282,14 @@ jobs:
           }
           TOC_RE = re.compile(r"^\d+;\s+\d+\s+\d+\s+(.+)$")
           BA_TABLES = {"user", "session", "account", "verification"}
+          # Billing stays on Supabase. Webhooks keep writing these; they are
+          # not frozen, not dumped, and not in the snapshot/parity proof.
+          BILLING_TABLES = {
+              "subscriptions",
+              "stripe_webhook_events",
+              "apple_webhook_events",
+              "apple_notification_events",
+          }
           EXTRA_MASKS: list[str] = []
           STUB_AUTH_SQL = """
           CREATE SCHEMA IF NOT EXISTS auth;
@@ -681,7 +695,7 @@ jobs:
                   source=source,
               )
 
-          def list_public_tables(url: str, *, source: bool) -> list[str]:
+          def list_public_tables(url: str, *, source: bool, include_billing: bool = False) -> list[str]:
               out = psql(
                   url,
                   """
@@ -703,12 +717,78 @@ jobs:
               tables = []
               for raw in out.splitlines():
                   name = raw.strip()
-                  if name and name not in BA_TABLES:
-                      tables.append(name)
+                  if not name or name in BA_TABLES:
+                      continue
+                  if not include_billing and name in BILLING_TABLES:
+                      continue
+                  tables.append(name)
               return tables
 
+          def dump_exclude_billing() -> list[str]:
+              args = []
+              for name in sorted(BILLING_TABLES):
+                  args.append(f"--exclude-table=public.{name}")
+              return args
+
+          def snapshot_path(work: Path) -> Path:
+              return work / "source-snapshot.json"
+
+          def write_source_snapshot(work: Path, hashes: dict[str, dict[str, object]]) -> None:
+              payload = {
+                  table: {"n": row.get("n"), "hash": row.get("hash")}
+                  for table, row in hashes.items()
+                  if table not in BILLING_TABLES
+              }
+              if not payload:
+                  die("source snapshot is empty — no frozen tables to prove")
+              snapshot_path(work).write_text(
+                  json.dumps({"tables": payload}, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+              print(f"recorded snapshot for {len(payload)} frozen tables (counts + md5 only)", flush=True)
+
+          def load_source_snapshot(work: Path) -> dict[str, dict[str, object]]:
+              path = snapshot_path(work)
+              if not path.exists():
+                  die("missing source-snapshot.json (dump must record frozen-table counts + md5)")
+              raw = json.loads(path.read_text(encoding="utf-8"))
+              tables = raw.get("tables") if isinstance(raw, dict) else None
+              if not isinstance(tables, dict) or not tables:
+                  die("source-snapshot.json has no frozen tables")
+              out: dict[str, dict[str, object]] = {}
+              for name, row in tables.items():
+                  if name in BILLING_TABLES:
+                      die(f"source-snapshot.json includes billing table {name}")
+                  if not isinstance(row, dict):
+                      die(f"source-snapshot.json row for {name} is not an object")
+                  out[name] = {"n": row.get("n"), "hash": row.get("hash")}
+              return out
+
+          def compare_to_snapshot(
+              label: str,
+              current: dict[str, dict[str, object]],
+              snapshot: dict[str, dict[str, object]],
+          ) -> list[str]:
+              problems: list[str] = []
+              for table, snap in snapshot.items():
+                  now = current.get(table) or {}
+                  snap_n, now_n = snap.get("n"), now.get("n")
+                  snap_h, now_h = snap.get("hash"), now.get("hash")
+                  print(
+                      f"  {label} {table}: snapshot={snap_n}/{snap_h} now={now_n}/{now_h}",
+                      flush=True,
+                  )
+                  if snap_n != now_n or not snap_h or not now_h or snap_h != now_h:
+                      problems.append(
+                          f"{label} {table}: snapshot={snap_n}/{snap_h} now={now_n}/{now_h}"
+                      )
+              extra = [t for t in current if t not in snapshot and t not in BILLING_TABLES]
+              for table in extra:
+                  problems.append(f"{label} {table}: present now, missing from snapshot")
+              return problems
+
           def refuse_nonempty_target(url: str) -> None:
-              tables = list_public_tables(url, source=False)
+              tables = list_public_tables(url, source=False, include_billing=True)
               if tables:
                   shown = ", ".join(tables[:20])
                   die(f"target public is not empty — abort, wrote nothing: {shown}")
@@ -839,7 +919,7 @@ jobs:
               dump_path = work / "nuvo-source.dump"
               users_path = work / "auth-users.csv"
               identities_path = work / "auth-identities.csv"
-              print("dumping public schema + data (no-owner, no-acl; runner only)…", flush=True)
+              print("dumping public schema + data (no-owner, no-acl; billing tables excluded; runner only)…", flush=True)
               run(
                   [
                       dump_bin,
@@ -847,6 +927,7 @@ jobs:
                       "--no-owner",
                       "--no-acl",
                       "--schema=public",
+                      *dump_exclude_billing(),
                       f"--file={dump_path}",
                       source,
                   ],
@@ -858,6 +939,9 @@ jobs:
               toc = run([restore_bin, "--list", str(dump_path)])
               if "TABLE" not in toc:
                   die("pg_restore --list did not list any TABLE entries")
+              for billing in sorted(BILLING_TABLES):
+                  if re.search(rf"\bTABLE\b.*\b{re.escape(billing)}\b", toc):
+                      die(f"dump TOC includes billing table {billing} — excluded from the copy set")
               (work / "nuvo-source.toc").write_text(toc, encoding="utf-8")
               digest = sha256_file(dump_path)
               (work / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
@@ -885,6 +969,14 @@ jobs:
                   f"exported {len(users)} auth.users and {len(identities)} auth.identities",
                   flush=True,
               )
+              tables = list_public_tables(source, source=True)
+              if not tables:
+                  die("source has no frozen public tables")
+              print(f"snapshotting {len(tables)} frozen tables (count + md5)…", flush=True)
+              snap_hashes = parse_hashes(
+                  psql(source, content_hash_sql(tables), source=True, extra=["-tA"])
+              )
+              write_source_snapshot(work, snap_hashes)
 
           def cmd_restore() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
@@ -1025,14 +1117,20 @@ jobs:
               target = os.environ["RESTORE_DATABASE_URL"]
               work = dump_dir()
               artifacts = report_dir()
+              snapshot = load_source_snapshot(work)
               tables = list_public_tables(source, source=True)
               if not tables:
-                  die("source has no public tables")
+                  die("source has no frozen public tables")
+              for billing in BILLING_TABLES:
+                  if billing in tables:
+                      die(f"billing table {billing} leaked into the copy set")
               sql = content_hash_sql(tables)
-              print(f"checksumming {len(tables)} public tables (count + md5)…", flush=True)
+              print(f"checksumming {len(tables)} frozen tables vs snapshot (count + md5)…", flush=True)
               src_hashes = parse_hashes(psql(source, sql, source=True, extra=["-tA"]))
               dst_hashes = parse_hashes(psql(target, sql, extra=["-tA"]))
               problems: list[str] = []
+              problems.extend(compare_to_snapshot("source", src_hashes, snapshot))
+              problems.extend(compare_to_snapshot("target", dst_hashes, snapshot))
               lines = [
                   "# Nuvo cutover checksum report",
                   "",
@@ -1101,7 +1199,7 @@ jobs:
                   with open(summary, "a", encoding="utf-8") as fh:
                       fh.write(report.read_text(encoding="utf-8"))
               if problems:
-                  die("row-count or content-hash mismatch — abort:\n  " + "\n  ".join(problems))
+                  die("snapshot/source/target count or md5 mismatch — abort:\n  " + "\n  ".join(problems))
               print("migration checksums ok", flush=True)
 
           def main() -> None:

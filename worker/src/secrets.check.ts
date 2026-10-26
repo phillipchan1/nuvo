@@ -7,6 +7,7 @@ import {
   parseRawKey,
   parseTokenKeyring,
   sealToken,
+  tokenAadBytes,
   tokenAadString,
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
@@ -81,7 +82,14 @@ ok(sealedV2.keyVersion === 2, "v2 seal records key_version 2");
 ok((await openToken(sealedV2, { table: "activity_sources", rowId: aad.rowId, userId: aad.userId }, ringBoth)) === "ghp_example", "v2 open roundtrips");
 ok((await openToken(sealed, aad, ringBoth)) === "1//google-refresh", "v2 ring still opens v1 ciphertext");
 
-ok(tokenAadString(aad) === `calendar_accounts:${aad.rowId}:${aad.userId}`, "AAD is table:row:user");
+ok(tokenAadString(aad) === `calendar_accounts:${aad.rowId}:${aad.userId}`, "AAD string is table:row:user");
+try {
+  tokenAadString({ ...aad, rowId: "not-a-uuid" });
+  ok(false, "AAD rejects a non-uuid row");
+} catch {
+  ok(true, "AAD rejects a non-uuid row");
+}
+ok(tokenAadBytes(aad)[0] === 0 && tokenAadBytes(aad)[1] === "calendar_accounts".length, "AAD bytes are length-prefixed");
 
 ok(writeFrozen("1"), "writeFrozen 1");
 ok(writeFrozen("true"), "writeFrozen true");
@@ -119,6 +127,25 @@ ok(/RETURNS TABLE/.test(vaultSql) && /table_name text/.test(vaultSql) && /secret
 const workflow = readFileSync(join(root, ".github/workflows/cutover-migrate.yml"), "utf8");
 ok(!/psql.*vault_tokens\.sql/.test(workflow), "cutover-migrate.yml does not apply vault_tokens.sql");
 ok(!/-f .*vault_tokens/.test(workflow), "cutover-migrate.yml does not -f vault_tokens.sql");
+ok(!/-f .*freeze\.sql/.test(workflow), "cutover-migrate.yml does not -f freeze.sql");
+ok(!/-f .*unfreeze\.sql/.test(workflow), "cutover-migrate.yml does not -f unfreeze.sql");
+ok(/BILLING_TABLES/.test(workflow), "cutover-migrate.yml names BILLING_TABLES");
+ok(/--exclude-table=public\.\$\{name\}/.test(workflow) || /exclude-table=public/.test(workflow), "cutover-migrate.yml excludes billing tables from the dump");
+ok(/source-snapshot\.json/.test(workflow), "cutover-migrate.yml records a frozen-table snapshot");
+ok(/subscriptions/.test(workflow) && /stripe_webhook_events/.test(workflow) && /apple_webhook_events/.test(workflow), "cutover-migrate.yml lists billing tables");
+
+const freezeSql = readFileSync(join(root, "docs/cloudflare-migration/freeze.sql"), "utf8");
+ok(/REVOKE INSERT, UPDATE, DELETE/.test(freezeSql), "freeze.sql revokes writes from browser roles");
+ok(/anon, authenticated/.test(freezeSql), "freeze.sql targets anon and authenticated");
+ok(/cron\.alter_job/.test(freezeSql) && /active := false/.test(freezeSql), "freeze.sql pauses pg_cron");
+ok(/freeze_cron/.test(freezeSql) && /was_active/.test(freezeSql), "freeze.sql records prior cron.active");
+ok(/subscriptions/.test(freezeSql) && /stripe_webhook_events/.test(freezeSql) && /apple_webhook_events/.test(freezeSql), "freeze.sql names billing exclusions");
+ok(!/REVOKE[^\n]+service_role/.test(freezeSql), "freeze.sql does not revoke service_role");
+
+const unfreezeSql = readFileSync(join(root, "docs/cloudflare-migration/unfreeze.sql"), "utf8");
+ok(/GRANT %s ON TABLE/.test(unfreezeSql), "unfreeze.sql restores recorded grants");
+ok(/was_granted/.test(unfreezeSql), "unfreeze.sql only re-grants what was granted");
+ok(/cron\.alter_job/.test(unfreezeSql) && /was_active/.test(unfreezeSql), "unfreeze.sql restores cron.active exactly");
 
 const neon = readFileSync(join(root, "worker/schema/neon.sql"), "utf8");
 ok(/CREATE TABLE IF NOT EXISTS public\.calendar_accounts/.test(neon), "neon.sql has calendar_accounts");

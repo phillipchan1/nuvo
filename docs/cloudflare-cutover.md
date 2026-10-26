@@ -198,10 +198,46 @@ Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 ## Write freeze
 
 `MAINTENANCE_WRITE_FREEZE=1` on the Worker makes `GET /api/maintenance`
-return `{ write_freeze: true }`. Mutating `/api/data` and `/api/rpc` then
-503. The SPA reads that flag (or `VITE_MAINTENANCE_URL` / `VITE_WRITE_FREEZE`)
-and the Supabase transport refuses writes so the outbox retries after the
-window. Auth refresh is not frozen.
+return `{ write_freeze: true, cutover_armed: … }`. Mutating `/api/data`
+and write RPCs then 503. RPC reads (`contacts`) stay open. The SPA reads
+that flag (or `VITE_MAINTENANCE_URL` / `VITE_WRITE_FREEZE`) and the
+Supabase transport refuses writes so the outbox retries after the window.
+Auth refresh is not frozen.
+
+Fail-open if the flag URL is unreachable — unless a cutover is **armed**
+(`CUTOVER_ARMED` on the Worker, `VITE_CUTOVER_ARMED=1` on a build, or
+`cutover_armed: true` on the last successful payload). Armed + unreachable
+is fail-closed.
+
+## Copy-window freeze (hand-applied, not CI)
+
+`docs/cloudflare-migration/freeze.sql` and `unfreeze.sql` are committed
+and reviewed. Do **not** apply them from CI, the Worker, or
+`cutover-migrate.yml`. Billing stays on Supabase: `subscriptions`,
+`stripe_webhook_events`, `apple_webhook_events`, and
+`apple_notification_events` are excluded from the freeze, from
+`pg_dump --exclude-table`, from `source-snapshot.json`, and from the
+parity proof. If a billing-written table ever has to be copied, it needs
+the freeze too.
+
+Order:
+
+1. **Arm** — set `CUTOVER_ARMED=1` on the Worker (and `VITE_CUTOVER_ARMED=1`
+   on a build if you want the SPA fail-closed without a round trip).
+2. **Freeze** — apply `freeze.sql` by hand. Revokes `INSERT`/`UPDATE`/`DELETE`
+   on public app tables from `anon` and `authenticated` (SELECT stays).
+   Pauses every `nuvo-*` `pg_cron` job via `cron.alter_job(..., active := false)`
+   after recording the prior `active` flag. `service_role` and the billing
+   tables are untouched.
+3. **Snapshot** — `cutover-migrate` `dump` records per-table counts + md5
+   for the frozen copy set only (`source-snapshot.json` in runner temp).
+4. **Copy** — restore + token seal into Neon. Billing tables are not in
+   the dump TOC.
+5. **Verify** — `verify` recomputes source and target hashes against the
+   snapshot and dies if either drifted (writes leaked, or the copy is short).
+6. **Switch** — flip `VITE_API_BASE_URL`. Or **unfreeze** — apply
+   `unfreeze.sql`, which restores the recorded grants and each job's prior
+   `active` exactly, then clear `CUTOVER_ARMED`.
 
 ---
 

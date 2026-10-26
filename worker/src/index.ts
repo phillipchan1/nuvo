@@ -119,6 +119,7 @@ app.get("/api/maintenance", (c) =>
   json(
     {
       write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
+      cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
       message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
     },
     200,
@@ -399,18 +400,23 @@ app.post("/api/rpc/claim_reminder", async (c) => {
   return json({ data: ok }, ok ? 200 : 404, OPEN_CORS);
 });
 
+function refuseIfFrozen(c: Context<AppEnv>): Response | null {
+  if (!writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) return null;
+  return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
+}
+
 app.all("/api/cron/:job", (c) => handleCron(c));
-app.all("/api/agent", (c) => handleAgent(c));
-app.all("/api/mcp", (c) => handleMcp(c));
+app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/api/day", (c) => handleDay(c));
-app.all("/api/capture", (c) => handleCapture(c));
+app.all("/api/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/api/inbound-email", (c) => handleInboundEmail(c));
 app.all("/api/route-events", (c) => handleRouteEvents(c));
 
-app.all("/functions/v1/agent", (c) => handleAgent(c));
-app.all("/functions/v1/mcp", (c) => handleMcp(c));
+app.all("/functions/v1/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/functions/v1/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/functions/v1/day", (c) => handleDay(c));
-app.all("/functions/v1/capture", (c) => handleCapture(c));
+app.all("/functions/v1/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
 app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
 app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
