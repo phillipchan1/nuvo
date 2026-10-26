@@ -30,14 +30,15 @@ export function postgresSsl(connectionString: string): false | "require" {
     const parsed = new URL(connectionString);
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
     if (isHyperdriveHostname(host)) return false;
-    const mode = (parsed.searchParams.get("sslmode") ?? "").toLowerCase();
-    if (mode === "disable" || mode === "prefer" || mode === "allow" || mode === "false") {
+    if (isLoopbackHostname(host)) {
+      const mode = (parsed.searchParams.get("sslmode") ?? "").toLowerCase();
+      if (mode === "require" || mode === "verify-ca" || mode === "verify-full") {
+        return "require";
+      }
       return false;
     }
-    if (mode === "require" || mode === "verify-ca" || mode === "verify-full") {
-      return "require";
-    }
-    if (isLoopbackHostname(host)) return false;
+    // Remote DATABASE_URL (Neon): always TLS. sslmode=prefer/allow/disable
+    // must not open a cleartext client to a public host.
     return "require";
   } catch {
     return "require";
@@ -76,7 +77,9 @@ export function clientConnection(
 ): { connectionString: string; ssl: false | "require" } {
   const ssl = clientSsl(env, connectionString);
   return {
-    connectionString: ssl === false ? stripSslMode(connectionString) : connectionString,
+    // Always drop sslmode so node-pg cannot override the explicit `ssl`
+    // (require on Hyperdrive, or disable on a remote Neon host).
+    connectionString: stripSslMode(connectionString),
     ssl,
   };
 }

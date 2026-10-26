@@ -99,13 +99,24 @@ app.get("/api/health", (c) =>
   }),
 );
 
+async function sqlUnavailable(sql: Sql): Promise<boolean> {
+  try {
+    await sql`SELECT 1`;
+    return false;
+  } catch {
+    // Probe failed — DB is unreachable. Do not classify by driver text.
+    return true;
+  }
+}
+
 app.all("/api/auth/*", async (c) => {
   const started = beginAuthCors(c.req.header("Origin"), c.env);
   if (!started.ok) return started.response;
   const cors = started.cors;
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  let io: RequestIo | undefined;
   try {
-    const io = await requestIo(c);
+    io = await requestIo(c);
     const res = await exposeSignedAuthToken(
       await io.auth.handler(c.req.raw),
       c.env.BETTER_AUTH_SECRET ?? "",
@@ -113,7 +124,10 @@ app.all("/api/auth/*", async (c) => {
     );
     return withAuthCors(await sanitizeAuthResponse(res, io.sql), cors);
   } catch (err) {
-    const unavailable = isDatabaseUnavailable(err);
+    // Better Auth often throws `{ message: "connection attempt failed" }`
+    // with no code — do not classify by text. Probe the request SQL client.
+    let unavailable = isDatabaseUnavailable(err);
+    if (!unavailable && io) unavailable = await sqlUnavailable(io.sql);
     return new Response(JSON.stringify({ error: unavailable ? "service unavailable" : "internal error" }), {
       status: unavailable ? 503 : 500,
       headers: { "Content-Type": "application/json", ...cors },
@@ -134,15 +148,6 @@ function withAuthCors(res: Response, cors: Record<string, string>): Response {
     headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
   }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-}
-
-async function sqlUnavailable(sql: Sql): Promise<boolean> {
-  try {
-    await sql`SELECT 1`;
-    return false;
-  } catch (err) {
-    return isDatabaseUnavailable(err);
-  }
 }
 
 /**

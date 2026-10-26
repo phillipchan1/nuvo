@@ -27,12 +27,14 @@ const loopbackRequire = `${loopback}?sslmode=require`;
 ok(postgresSsl(neon) === "require", "Neon host with no sslmode requires TLS");
 ok(postgresSsl(neonRequire) === "require", "sslmode=require is require");
 ok(postgresSsl(`${neon}?sslmode=verify-full`) === "require", "sslmode=verify-full is require");
-ok(postgresSsl(neonDisable) === false, "sslmode=disable turns TLS off");
-ok(postgresSsl(neonPrefer) === false, "sslmode=prefer turns TLS off");
-ok(postgresSsl(`${neon}?sslmode=allow`) === false, "sslmode=allow turns TLS off");
+ok(postgresSsl(neonDisable) === "require", "remote sslmode=disable still requires TLS");
+ok(postgresSsl(neonPrefer) === "require", "remote sslmode=prefer still requires TLS");
+ok(postgresSsl(`${neon}?sslmode=allow`) === "require", "remote sslmode=allow still requires TLS");
 ok(postgresSsl(loopback) === false, "localhost host with no sslmode is not TLS");
 ok(postgresSsl("postgresql://postgres@127.0.0.1:5432/nuvo") === false, "127.0.0.1 host is not TLS");
 ok(postgresSsl("postgresql://postgres@[::1]:5432/nuvo") === false, "[::1] host is not TLS");
+ok(postgresSsl(`${loopback}?sslmode=disable`) === false, "localhost + sslmode=disable is not TLS");
+ok(postgresSsl(`${loopback}?sslmode=prefer`) === false, "localhost + sslmode=prefer is not TLS");
 ok(postgresSsl(loopbackRequire) === "require", "localhost + sslmode=require still requires TLS");
 ok(postgresSsl(neonLocalQuery) === "require", "localhost in a query param does not disable TLS");
 ok(
@@ -75,7 +77,10 @@ ok(!/[?&]sslmode=/i.test(hyperCfg.connectionString), "clientConnection: sslmode 
 ok(stripSslMode(hyperdriveRequire) === hyperdrive || !/[?&]sslmode=/i.test(stripSslMode(hyperdriveRequire)), "stripSslMode removes sslmode=require");
 const neonCfg = clientConnection({}, neonRequire);
 ok(neonCfg.ssl === "require", "clientConnection: direct Neon + sslmode=require still requires TLS");
-ok(/sslmode=require/i.test(neonCfg.connectionString), "clientConnection: Neon URL keeps sslmode when TLS is on");
+ok(!/[?&]sslmode=/i.test(neonCfg.connectionString), "clientConnection: sslmode stripped; explicit ssl wins");
+const neonDisableCfg = clientConnection({}, neonDisable);
+ok(neonDisableCfg.ssl === "require", "clientConnection: remote sslmode=disable still requires TLS");
+ok(!/[?&]sslmode=/i.test(neonDisableCfg.connectionString), "clientConnection: remote disable stripped so pg cannot turn TLS off");
 const boundNeon = `postgresql://neondb@ep-bound.example/nuvo?sslmode=require`;
 const boundCfg = clientConnection({ HYPERDRIVE: { connectionString: boundNeon } }, boundNeon);
 ok(boundCfg.ssl === false, "clientConnection: HYPERDRIVE binding wins over sslmode=require on a non-hyperdrive host");
@@ -95,6 +100,11 @@ const pgNeon = new ConnectionParameters({
   ssl: neonCfg.ssl === "require",
 });
 ok(Boolean(pgNeon.ssl), "pg client: direct Neon still requires TLS");
+const pgNeonDisable = new ConnectionParameters({
+  connectionString: neonDisableCfg.connectionString,
+  ssl: neonDisableCfg.ssl === "require",
+});
+ok(Boolean(pgNeonDisable.ssl), "pg client: remote sslmode=disable still forces TLS");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "db.ts"), "utf8");

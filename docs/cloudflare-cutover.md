@@ -185,9 +185,9 @@ that concurrency (CI sequential tests are fine). Do not point preview at a
 **Hyperdrive TLS:** Cloudflare already TLS-terminates to the origin. Client
 TLS to `*.hyperdrive.local` hangs, so `postgresSsl` / `clientSsl` set
 `ssl: false` when the string comes from `env.HYPERDRIVE` or the hostname is
-`hyperdrive.local`. `?sslmode=require` on that URL is stripped so node-pg
-cannot re-enable client TLS. Direct remote `DATABASE_URL`s (Neon) still
-require TLS.
+`hyperdrive.local`. `sslmode` is stripped so node-pg cannot override the
+explicit `ssl` flag. Direct remote `DATABASE_URL`s (Neon) always require
+TLS, even when `sslmode` is `prefer`, `allow`, or `disable`.
 Connection errors stay generic — they never echo the internal host.
 
 Planner `users.auth_id` is the Better Auth user id. `bootstrapUser` looks that

@@ -58,11 +58,16 @@ ok(/clientConnection/.test(authSrc), "openAuth uses clientConnection (no client 
 ok(/sanitizeAuthResponse/.test(indexSrc), "auth 5xx bodies are sanitized (no internal host)");
 ok(/requireJsonObject/.test(indexSrc), "data POST/PATCH require a JSON object");
 ok(/sqlUnavailable|SELECT 1/.test(indexSrc), "auth 5xx probes SQL when Better Auth swallows the driver error");
+ok(
+  /catch[\s\S]*sqlUnavailable\(io\.sql\)/.test(indexSrc),
+  "auth outer catch probes SQL (Better Auth throws before sanitizeAuthResponse)",
+);
 ok(isUnavailableText("disconnected: Connection refused"), "isUnavailableText: Hyperdrive disconnected + refused");
 ok(isUnavailableText("disconnected"), "isUnavailableText: disconnected alone");
 ok(isUnavailableText("connect ECONNREFUSED 127.0.0.1:5432"), "isUnavailableText: ECONNREFUSED");
 ok(!isUnavailableText("internal error"), "isUnavailableText: generic 500 text is not unavailable");
 ok(!isUnavailableText("Failed to create verification"), "isUnavailableText: Better Auth 500 text is not unavailable");
+ok(!isUnavailableText("connection attempt failed"), "isUnavailableText: BA throw text is not classified (probe instead)");
 ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
 ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
 ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
@@ -623,31 +628,100 @@ ok(!otpSwallowedText.includes("disconnected"), "OTP swallowed DB down: no driver
 ok(!otpSwallowedText.includes("hyperdrive"), "OTP swallowed DB down: no internal host");
 restoreOtpSwallowed();
 
+const restoreThrown = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql: (async () => {
+      throw new Error("connection attempt failed");
+    }) as unknown as typeof sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () => {
+        throw new Error("connection attempt failed");
+      },
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const thrown = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+  }),
+  8000,
+  "OTP throw connection attempt failed",
+);
+const thrownText = await thrown.text();
+ok(thrown.status === 503, `OTP throw connection attempt failed: HTTP ${thrown.status} (outer catch probed)`);
+ok(thrownText.includes("service unavailable"), "OTP throw: generic unavailable");
+ok(!thrownText.includes("connection attempt failed"), "OTP throw: no driver text");
+restoreThrown();
+
+const restoreThrowHealthy = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () => {
+        throw new Error("connection attempt failed");
+      },
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const throwHealthy = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
+  }),
+  8000,
+  "OTP throw healthy DB",
+);
+ok(throwHealthy.status === 500, `OTP throw with healthy DB: HTTP ${throwHealthy.status} (probe keeps 500)`);
+ok((await throwHealthy.text()).includes("internal error"), "OTP throw healthy DB: generic internal error");
+restoreThrowHealthy();
+
 const deadEnv = {
   DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:1/nuvo",
   BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
   BETTER_AUTH_URL: env.BETTER_AUTH_URL,
 };
-const deadOtp = await withTimeout(
-  app.request(
-    "http://localhost:8787/api/auth/email-otp/send-verification-otp",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Origin: origin },
-      body: JSON.stringify({ email: "down@example.test", type: "sign-in" }),
-    },
-    deadEnv,
-  ),
-  8000,
-  "OTP send real BA DB down",
-);
-const deadText = await deadOtp.text();
-ok(deadOtp.status === 503, `OTP send real BA DB down: HTTP ${deadOtp.status} (not Better Auth 500)`);
-ok(deadText.includes("service unavailable"), "OTP send real BA DB down: generic unavailable");
-ok(!deadText.includes("ECONNREFUSED"), "OTP send real BA DB down: no driver error");
-ok(!deadText.includes("127.0.0.1"), "OTP send real BA DB down: no host");
-ok(!deadText.includes("disconnected"), "OTP send real BA DB down: no disconnected text");
-ok((deadOtp.headers.get("content-type") ?? "").includes("application/json"), "OTP send real BA DB down: JSON");
+const codeSendRoutes: { label: string; path: string; body: Record<string, unknown> }[] = [
+  { label: "send-verification-otp sign-in", path: "/api/auth/email-otp/send-verification-otp", body: { email: "down@example.test", type: "sign-in" } },
+  { label: "send-verification-otp email-verification", path: "/api/auth/email-otp/send-verification-otp", body: { email: "down@example.test", type: "email-verification" } },
+  { label: "send-verification-otp forget-password", path: "/api/auth/email-otp/send-verification-otp", body: { email: "down@example.test", type: "forget-password" } },
+  { label: "forget-password/email-otp", path: "/api/auth/forget-password/email-otp", body: { email: "down@example.test" } },
+  { label: "email-otp/request-password-reset", path: "/api/auth/email-otp/request-password-reset", body: { email: "down@example.test" } },
+];
+for (const route of codeSendRoutes) {
+  const res = await withTimeout(
+    app.request(
+      `http://localhost:8787${route.path}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: origin },
+        body: JSON.stringify(route.body),
+      },
+      deadEnv,
+    ),
+    8000,
+    `${route.label} DB down`,
+  );
+  const text = await res.text();
+  ok(res.status === 503, `${route.label} DB down: HTTP ${res.status} (not 500)`);
+  ok(text.includes("service unavailable"), `${route.label} DB down: generic unavailable`);
+  ok(!text.includes("ECONNREFUSED"), `${route.label} DB down: no driver error`);
+  ok(!text.includes("127.0.0.1"), `${route.label} DB down: no host`);
+  ok(!text.includes("connection attempt failed"), `${route.label} DB down: no connection text`);
+  ok((res.headers.get("content-type") ?? "").includes("application/json"), `${route.label} DB down: JSON`);
+}
 
 await kysely.destroy();
 await db.close();
