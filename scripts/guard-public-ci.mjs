@@ -8,19 +8,22 @@
  *
  * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs).
  * Generic rules (not one-off regexes per flag):
- *   1. Any @file argument to curl / wget / gh (curl -d @file, -d@file,
- *      --data-* @, gh api -F/-f x=@file, gh api --input, …).
- *   2. Any uses: matching /upload|release/ outside ALLOWED_UPLOAD_OR_RELEASE_USES
- *      (actions/upload-artifact is path-checked; merge and third-party
- *      release/upload actions are not).
- *   3. gh gist create, gh release upload, and gh release create <tag> <file>
- *      unless every asset is a desktop-publish token ($VAR / .dmg / .tar.gz /
- *      .sig / latest.json) — so release.yml stays green.
- *   4. actions/cache and actions/cache/save (restore-only is allowed).
+ *   1. Parse jobs/steps with a real YAML parser; read uses: from the tree
+ *      (flow-map steps and multi-line uses: values included).
+ *   2. Any @file / name=<file / --data-urlencode name@file argument to
+ *      curl / wget / gh. Tools are detected anywhere in a token
+ *      ($(which curl), `curl`, env/command curl, …).
+ *   3. Any uses: matching /upload|release/, plus ./ and docker://, outside
+ *      the allowlists. actions/upload-artifact is path-checked.
+ *   4. gh gist create, gh release upload, gh issue/pr --body-file/-F.
+ *      gh release create positional assets are allowed ONLY in release.yml
+ *      and ONLY $DMG $STABLE_DMG $APPTAR latest.json with --repo $RELEASES_REPO.
+ *   5. actions/cache and actions/cache/save (restore-only is allowed).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse as parseYaml } from "yaml";
 
 export const ALLOWED_UPLOAD_ARTIFACT_PATHS = Object.freeze(["artifacts/cutover-report.md"]);
 
@@ -42,9 +45,11 @@ const DATA_PATH_RE = /\.(dump|csv|sql|toc)$/i;
 /** uses: matching /upload|release/ that the four repo workflows may keep. */
 export const ALLOWED_UPLOAD_OR_RELEASE_USES = Object.freeze(["actions/upload-artifact"]);
 
-/** File operands `gh release create` may attach (desktop publish in release.yml). */
-const ALLOWED_RELEASE_CREATE_ASSET_RE =
-  /^(?:\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|Nuvo\.dmg|latest\.json|.+\.(?:dmg|app\.tar\.gz|tar\.gz|sig))$/i;
+/** Local ./ and docker:// uses: none of the four workflows ship one. */
+export const ALLOWED_LOCAL_OR_DOCKER_USES = Object.freeze([]);
+
+/** Positional assets `gh release create` may attach — only in release.yml. */
+export const RELEASE_YML_ALLOWED_ASSETS = Object.freeze(["$DMG", "$STABLE_DMG", "$APPTAR", "latest.json"]);
 
 const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--repo",
@@ -59,37 +64,92 @@ const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--discussion-category",
 ]);
 
-const USES_UPLOAD_ARTIFACT_RE =
-  /uses:\s*(['"]?)actions\/upload-artifact(\/merge)?(?:@[^'"\s]+)?\1[^\n]*\n((?:[ \t]+[^\n]*\n)*)/g;
+function tryParseYaml(text) {
+  try {
+    return parseYaml(String(text), { uniqueKeys: false });
+  } catch {
+    return null;
+  }
+}
+
+function withPath(value) {
+  if (value == null) return "";
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean).join("\n");
+  return String(value).trim();
+}
+
+export function normalizeUses(uses) {
+  if (uses == null) return null;
+  return String(uses).trim().replace(/\s+/g, " ").trim();
+}
+
+export function actionName(uses) {
+  const u = normalizeUses(uses);
+  if (!u) return null;
+  if (u.startsWith("docker://") || u.startsWith("./") || u.startsWith("../") || u.startsWith("/")) {
+    return u;
+  }
+  return u.replace(/@.*$/, "");
+}
+
+function normalizeStep(step, line = 1) {
+  if (step == null) return { uses: null, run: "", with: {}, name: "", line };
+  if (typeof step === "string") return { uses: null, run: step, with: {}, name: "", line };
+  const withBlock = step.with && typeof step.with === "object" ? step.with : {};
+  return {
+    uses: normalizeUses(step.uses),
+    run: step.run == null ? "" : String(step.run),
+    with: withBlock,
+    name: step.name == null ? "" : String(step.name),
+    line,
+  };
+}
+
+function walkJobSteps(doc) {
+  const steps = [];
+  if (!doc || typeof doc !== "object") return steps;
+  const jobs = doc.jobs;
+  if (!jobs || typeof jobs !== "object") return steps;
+  for (const job of Object.values(jobs)) {
+    if (!job || typeof job !== "object") continue;
+    if (job.uses) steps.push(normalizeStep({ uses: job.uses, with: job.with }));
+    if (Array.isArray(job.steps)) {
+      for (const step of job.steps) steps.push(normalizeStep(step));
+    }
+  }
+  return steps;
+}
+
+/**
+ * Read steps from the parsed YAML tree. Fragments (`uses: …`, `run: …`,
+ * `- { uses: … }`) parse as a mapping or sequence; raw shell is a run script.
+ */
+export function collectSteps(workflowText) {
+  const text = String(workflowText);
+  const doc = tryParseYaml(text);
+  if (doc && typeof doc === "object" && !Array.isArray(doc) && doc.jobs) {
+    return walkJobSteps(doc);
+  }
+  if (Array.isArray(doc)) {
+    return doc.map((step) => normalizeStep(step));
+  }
+  if (doc && typeof doc === "object" && (doc.uses != null || doc.run != null || Array.isArray(doc.steps))) {
+    if (Array.isArray(doc.steps)) return doc.steps.map((step) => normalizeStep(step));
+    return [normalizeStep(doc)];
+  }
+  return [normalizeStep({ run: text })];
+}
 
 export function extractUploadArtifactSteps(workflowText) {
   const steps = [];
-  const re = new RegExp(USES_UPLOAD_ARTIFACT_RE.source, "g");
-  for (const match of String(workflowText).matchAll(re)) {
-    const block = match[0];
-    const merge = Boolean(match[2]);
-    const withBlock = match[3] ?? "";
-    const pathMatch = withBlock.match(/^[ \t]+path:[ \t]*(\|[^\n]*\n(?:[ \t]+[^\n]+\n)*|.+)$/m);
-    let path = "";
-    if (pathMatch) {
-      const raw = pathMatch[1].trim();
-      if (raw.startsWith("|") || raw.startsWith(">")) {
-        path = raw
-          .split("\n")
-          .slice(1)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .join("\n");
-      } else {
-        path = raw.replace(/^['"]|['"]$/g, "");
-      }
-    }
-    const nameMatch = withBlock.match(/^[ \t]+name:[ \t]*(.+)$/m);
+  for (const step of collectSteps(workflowText)) {
+    const name = actionName(step.uses);
+    if (name !== "actions/upload-artifact" && name !== "actions/upload-artifact/merge") continue;
     steps.push({
-      block,
-      path,
-      merge,
-      name: (nameMatch?.[1] ?? "").trim().replace(/^['"]|['"]$/g, ""),
+      block: step.uses ?? "",
+      path: withPath(step.with.path),
+      merge: name.endsWith("/merge"),
+      name: String(step.with.name ?? step.name ?? "").trim(),
     });
   }
   return steps;
@@ -161,17 +221,40 @@ export function isAtFileToken(tok) {
   return eq > 0 && t[eq + 1] === "@";
 }
 
+/** curl -F "a=<file" / --form name=<file — file contents as a form field. */
+export function isLtFileToken(tok) {
+  const t = String(tok);
+  if (!t.includes("<")) return false;
+  if (t.startsWith("<") && t.length > 1) return true;
+  if (/^-[A-Za-z0-9]</.test(t)) return true;
+  if (/^--[A-Za-z0-9-]+=</.test(t)) return true;
+  const eq = t.indexOf("=");
+  return eq > 0 && t[eq + 1] === "<";
+}
+
+/**
+ * curl / wget / gh anywhere in a token: `curl`, $(which curl), `curl`,
+ * $(curl), env/command/exec wrappers, `curl)` after a split `$(which curl)`.
+ */
+export function tokenMentionsTool(tok, tool) {
+  return new RegExp(`(?:^|[^A-Za-z0-9_])${tool}(?:[^A-Za-z0-9_]|$)`).test(String(tok));
+}
+
 function toolKind(tokens) {
   for (const t of tokens) {
-    if (t === "curl" || /(?:^|\/)curl$/.test(t)) return "curl";
-    if (t === "wget" || /(?:^|\/)wget$/.test(t)) return "wget";
-    if (t === "gh" || /(?:^|\/)gh$/.test(t)) return "gh";
+    if (tokenMentionsTool(t, "curl")) return "curl";
+    if (tokenMentionsTool(t, "wget")) return "wget";
+    if (tokenMentionsTool(t, "gh")) return "gh";
   }
   return null;
 }
 
+function ghTokenIndex(tokens) {
+  return tokens.findIndex((t) => tokenMentionsTool(t, "gh"));
+}
+
 function isGhSubcommand(tokens, ...parts) {
-  const i = tokens.findIndex((t) => t === "gh" || /(?:^|\/)gh$/.test(t));
+  const i = ghTokenIndex(tokens);
   if (i < 0) return false;
   return parts.every((p, k) => tokens[i + 1 + k] === p);
 }
@@ -192,12 +275,45 @@ function hasHttpUploadFileFlag(tokens, kind) {
   return false;
 }
 
+/** --data-urlencode name@file (and @file / name=@file), not name=value. */
+export function isDataUrlencodeFileArg(arg) {
+  const a = String(arg);
+  if (isAtFileToken(a)) return true;
+  return a.includes("@") && !a.includes("=");
+}
+
+function hasDataUrlencodeFile(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === "--data-urlencode" && tokens[i + 1] && isDataUrlencodeFileArg(tokens[i + 1])) {
+      return true;
+    }
+    if (t.startsWith("--data-urlencode=") && isDataUrlencodeFileArg(t.slice("--data-urlencode=".length))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasFormLtFile(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const name = flagName(t);
+    const isForm = name === "-F" || name === "--form";
+    if (!isForm) continue;
+    if (isLtFileToken(t)) return true;
+    if (tokens[i + 1] && isLtFileToken(tokens[i + 1])) return true;
+  }
+  return false;
+}
+
 /** curl -T is upload; wget -T is timeout — only treat -T as upload on curl. */
 export function lineLooksLikeHttpUpload(line) {
   const tokens = tokenize(stripFullLineComment(line));
   const kind = toolKind(tokens);
   if (kind !== "curl" && kind !== "wget") return false;
   if (hasHttpUploadFileFlag(tokens, kind)) return true;
+  if (kind === "curl" && (hasDataUrlencodeFile(tokens) || hasFormLtFile(tokens))) return true;
   return tokens.some(isAtFileToken);
 }
 
@@ -208,35 +324,50 @@ export function lineLooksLikeGhApiInput(line) {
   return tokens.some(isAtFileToken);
 }
 
-export function parseUsesAction(line) {
-  const m = String(line).match(/^\s*(?:-\s+)?uses:\s*(['"]?)([^'"\s#]+)\1/);
-  if (!m) return null;
-  return m[2].replace(/@.*$/, "");
+export function isLocalOrDockerUses(action) {
+  if (!action) return false;
+  return /^(?:\.\/|\.\.\/|\/|docker:\/\/)/.test(action);
 }
 
 export function isForbiddenUse(action) {
   if (!action) return false;
-  if (action === "actions/cache/save" || action === "actions/cache") return true;
-  if (action === "actions/cache/restore") return false;
-  if (ALLOWED_UPLOAD_OR_RELEASE_USES.includes(action)) return false;
-  return /upload|release/i.test(action);
+  const a = String(action).trim();
+  if (isLocalOrDockerUses(a)) {
+    return !ALLOWED_LOCAL_OR_DOCKER_USES.includes(a);
+  }
+  const name = actionName(a);
+  if (!name) return false;
+  if (name === "actions/cache/save" || name === "actions/cache") return true;
+  if (name === "actions/cache/restore") return false;
+  if (ALLOWED_UPLOAD_OR_RELEASE_USES.includes(name)) return false;
+  return /upload|release/i.test(name);
 }
 
 export function lineLooksLikeCacheSave(line) {
-  const action = parseUsesAction(stripFullLineComment(line));
-  if (!action) return false;
-  if (action === "actions/cache/save") return true;
-  if (action === "actions/cache/restore") return false;
-  return action === "actions/cache";
+  for (const step of collectSteps(line)) {
+    const name = actionName(step.uses);
+    if (name === "actions/cache/save") return true;
+    if (name === "actions/cache/restore") return false;
+    if (name === "actions/cache") return true;
+  }
+  return false;
 }
 
-function isAllowedReleaseCreateAsset(tok) {
-  return ALLOWED_RELEASE_CREATE_ASSET_RE.test(String(tok));
+function hasReleaseRepoFlag(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const name = flagName(tokens[i]);
+    if (name !== "--repo" && name !== "-R") continue;
+    const val = tokens[i].includes("=")
+      ? tokens[i].slice(tokens[i].indexOf("=") + 1)
+      : tokens[i + 1];
+    if (val === "$RELEASES_REPO") return true;
+  }
+  return false;
 }
 
 /** Positional assets after `gh release create <tag>` (flags + tag skipped). */
 export function ghReleaseCreateFiles(tokens) {
-  const i = tokens.findIndex((t) => t === "gh" || /(?:^|\/)gh$/.test(t));
+  const i = ghTokenIndex(tokens);
   if (i < 0) return [];
   const rest = tokens.slice(i + 3);
   const files = [];
@@ -257,36 +388,41 @@ export function ghReleaseCreateFiles(tokens) {
   return files;
 }
 
-export function findForbiddenUploadCommands(workflowText) {
+function forbiddenReleaseCreateKind(tokens, filename) {
+  const files = ghReleaseCreateFiles(tokens);
+  if (!files.length) return null;
+  const allowed =
+    filename === "release.yml" &&
+    hasReleaseRepoFlag(tokens) &&
+    files.every((f) => RELEASE_YML_ALLOWED_ASSETS.includes(f));
+  return allowed ? null : "gh release create file";
+}
+
+function ghLooksLikeBodyFile(tokens) {
+  if (!isGhSubcommand(tokens, "issue") && !isGhSubcommand(tokens, "pr")) return false;
+  return tokens.some((t) => {
+    const name = flagName(t);
+    return name === "--body-file" || name === "-F";
+  });
+}
+
+function forbiddenUseKind(action) {
+  const name = actionName(action) ?? action;
+  if (isLocalOrDockerUses(name)) return name.startsWith("docker://") ? "docker:// uses" : "local uses";
+  if (name === "actions/cache") return "actions/cache save";
+  if (name === "actions/cache/save") return "actions/cache/save";
+  return name;
+}
+
+function scanRunScript(run, filename) {
   const hits = [];
-  for (const { line, text } of logicalLines(workflowText)) {
+  for (const { line, text } of logicalLines(run)) {
     const code = stripFullLineComment(text);
     if (!code.trim()) continue;
-
-    const action = parseUsesAction(code);
-    if (action && isForbiddenUse(action)) {
-      hits.push({
-        line,
-        kind:
-          action === "actions/cache"
-            ? "actions/cache save"
-            : action === "actions/cache/save"
-              ? "actions/cache/save"
-              : action,
-      });
-    } else if (lineLooksLikeCacheSave(code)) {
-      hits.push({
-        line,
-        kind: /cache\/save/.test(code) ? "actions/cache/save" : "actions/cache save",
-      });
-    }
-
     const tokens = tokenize(code);
     const kind = toolKind(tokens);
     if (kind === "curl" || kind === "wget") {
-      if (lineLooksLikeHttpUpload(code)) {
-        hits.push({ line, kind: "curl/wget upload" });
-      }
+      if (lineLooksLikeHttpUpload(code)) hits.push({ line, kind: "curl/wget upload" });
     }
     if (kind === "gh") {
       if (isGhSubcommand(tokens, "release", "upload")) {
@@ -294,8 +430,11 @@ export function findForbiddenUploadCommands(workflowText) {
       } else if (isGhSubcommand(tokens, "gist", "create")) {
         hits.push({ line, kind: "gh gist create" });
       } else if (isGhSubcommand(tokens, "release", "create")) {
-        const bad = ghReleaseCreateFiles(tokens).filter((f) => !isAllowedReleaseCreateAsset(f));
-        if (bad.length) hits.push({ line, kind: "gh release create file" });
+        const releaseKind = forbiddenReleaseCreateKind(tokens, filename);
+        if (releaseKind) hits.push({ line, kind: releaseKind });
+      }
+      if (ghLooksLikeBodyFile(tokens)) {
+        hits.push({ line, kind: "gh issue/pr --body-file" });
       }
       if (lineLooksLikeGhApiInput(code)) {
         hits.push({
@@ -310,9 +449,20 @@ export function findForbiddenUploadCommands(workflowText) {
   return hits;
 }
 
+export function findForbiddenUploadCommands(workflowText, filename = "workflow") {
+  const hits = [];
+  for (const step of collectSteps(workflowText)) {
+    if (step.uses && isForbiddenUse(step.uses)) {
+      hits.push({ line: step.line, kind: forbiddenUseKind(step.uses) });
+    }
+    if (step.run) hits.push(...scanRunScript(step.run, filename));
+  }
+  return hits;
+}
+
 export function assertWorkflowUploadAllowlist(workflowText, filename = "workflow") {
   const problems = [];
-  for (const hit of findForbiddenUploadCommands(workflowText)) {
+  for (const hit of findForbiddenUploadCommands(workflowText, filename)) {
     problems.push(`${filename}:${hit.line}: forbidden upload (${hit.kind})`);
   }
   const steps = extractUploadArtifactSteps(workflowText);
