@@ -9,6 +9,7 @@ unless `VITE_API_BASE_URL` is set on a build.
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
 Cutover-night route table: [`cloudflare-migration/route-inventory.md`](./cloudflare-migration/route-inventory.md).
+Pre-flip billing read: [`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
@@ -287,7 +288,11 @@ in the Neon rehearsal schema. The Worker entitlement check
 (`GET /api/entitlement`) reads that table by the preserved session user id
 (Better Auth `user.id` = `auth.users.id`). Stripe / StoreKit writers are
 unchanged. `scripts/check-entitlement-parity.ts` proves the 1:1 auth copy
-and that every subscription keeps the same tier.
+and that every subscription keeps the same tier. The SPA's paid gate
+(`useSubscription`) reads `GET /api/entitlement` when `VITE_API_BASE_URL`
+is set, and keeps today's PostgREST select when it is not. Live Stripe +
+StoreKit proof before a flip:
+[`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each

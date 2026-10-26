@@ -44,6 +44,13 @@ const stripeActive: SubscriptionColumns = {
   status: "active",
   trial_ends_at: "2026-08-01T00:00:00Z",
   plan_source: "stripe",
+  current_period_end: "2026-11-26T00:00:00Z",
+  cancel_at_period_end: true,
+  referral_code: "PHIL-TEST",
+  referral_uses: 2,
+  referral_last_use_at: "2026-10-01T00:00:00Z",
+  referral_credits_earned: 1,
+  referral_last_credit_at: "2026-10-02T00:00:00Z",
 };
 const appleActive: SubscriptionColumns = {
   user_id: B,
@@ -72,6 +79,17 @@ ok(!url.includes("email"), "query URL has no email");
 ok(!url.includes(B), "query URL does not include another user id");
 ok(url.includes("select=user_id"), "select is physical columns");
 ok(!url.includes("entitled") && !url.includes("plan,"), "select omits computed aliases");
+ok(url.includes("current_period_end") && url.includes("cancel_at_period_end"), "select includes period / cancel display fields");
+ok(url.includes("referral_code") && url.includes("referral_uses") && url.includes("referral_credits_earned"), "select includes referral display fields");
+ok(
+  !url.includes("stripe_customer") &&
+    !url.includes("stripe_subscription") &&
+    !url.includes("price_id") &&
+    !url.includes("stripe_promotion") &&
+    !url.includes("apple_original") &&
+    !url.includes("apple_product"),
+  "select omits Stripe / Apple identifiers",
+);
 
 const calls: string[] = [];
 const fakeFetch: typeof fetch = async (input) => {
@@ -102,7 +120,11 @@ ok(rejected === null, "a row for a different user_id is dropped (no cross-user l
 
 const body = entitlementResponseBody(entitlementOf(stripeActive, A, now));
 ok(body.entitled === true && body.plan === "active", "response body carries the tier");
-ok(!("stripe_customer_id" in body) && !("stripe_subscription_id" in body), "response omits Stripe identifiers");
+ok(body.current_period_end === "2026-11-26T00:00:00Z", "response body carries current_period_end");
+ok(body.cancel_at_period_end === true, "response body carries cancel_at_period_end");
+ok(body.referral_code === "PHIL-TEST" && body.referral_uses === 2 && body.referral_credits_earned === 1, "response body carries referral display fields");
+ok(!("stripe_customer_id" in body) && !("stripe_subscription_id" in body) && !("price_id" in body), "response omits Stripe identifiers");
+ok(!("stripe_promotion_code_id" in body), "response omits the Stripe promotion id");
 ok(!("apple_original_transaction_id" in body), "response omits Apple identifiers");
 
 const authOk = compareAuthIds([A, B], [A, B]);

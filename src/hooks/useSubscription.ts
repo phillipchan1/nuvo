@@ -2,11 +2,17 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { workersEnabled } from "../lib/backend";
+import {
+  AUTH_SESSION_CHANGED,
+  fetchPostgrestSubscription,
+  fetchWorkerEntitlement,
+} from "../lib/entitlementRead";
 import { supabase } from "../lib/supabase";
 import { isSpotlightWindow } from "../lib/platform";
 import type { LiveChange } from "../lib/sync/liveApply";
 import { liveTopic } from "../lib/sync/liveTopic";
-import { interpretSubscriptionRead, isEntitled, writeWasEntitled } from "../lib/subscription";
+import { isEntitled, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
 const KEY = ["subscription"];
@@ -30,6 +36,32 @@ export function useSubscription() {
       setHasSession(false);
       return;
     }
+    if (workersEnabled) {
+      let cancelled = false;
+      let unlisten = () => {};
+      void import("../lib/authClient").then(({ createNuvoAuthClient, signedBearerToken }) => {
+        if (cancelled) return;
+        const probe = async () => {
+          if (signedBearerToken()) {
+            if (!cancelled) setHasSession(true);
+            return;
+          }
+          try {
+            const { data } = await createNuvoAuthClient().getSession();
+            if (!cancelled) setHasSession(Boolean(data?.user));
+          } catch {
+            if (!cancelled) setHasSession(false);
+          }
+        };
+        void probe();
+        window.addEventListener(AUTH_SESSION_CHANGED, probe);
+        unlisten = () => window.removeEventListener(AUTH_SESSION_CHANGED, probe);
+      });
+      return () => {
+        cancelled = true;
+        unlisten();
+      };
+    }
     supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setHasSession(!!s));
     return () => sub.subscription.unsubscribe();
@@ -47,45 +79,14 @@ export function useSubscription() {
       // forever with nothing in the console. Failing after 8s routes into the
       // "Couldn't verify your subscription" card with its Try again button,
       // which is recoverable; an infinite splash is not.
-      const fetchOnce = async (): Promise<Subscription | null> => {
-        // `*` only — never the computed aliases (`entitled`, `plan`). They are
-        // SQL functions, not columns, so a migration that hasn't landed makes
-        // PostgREST 400 the whole select (42703) instead of omitting a field:
-        // this query is the gate in front of the entire shell, so a decorative
-        // alias took the app down on every device and re-toasted every 5s.
-        // App code never reads them anyway — `isEntitled` / `planOf` in
-        // _shared/planRules.ts both fall back to `status`, which IS a column.
-        // The SQL twins stay for SQL callers; the client asks for the rule.
-        const { data, error } = await supabase
-          .from("subscriptions")
-          .select("*")
-          .abortSignal(AbortSignal.timeout(8_000))
-          .maybeSingle();
-        if (error) throw error;
-        return data as Subscription | null;
-      };
-
-      const read = async (alreadyRetried: boolean): Promise<Subscription | null> => {
-        const row = await fetchOnce();
-        const { data: { session } } = await supabase.auth.getSession();
-        const verdict = interpretSubscriptionRead(row, {
-          hasSession: Boolean(session),
-          alreadyRetried,
-        });
-        if (verdict.action === "return") return verdict.row;
-        if (verdict.action === "fail") {
-          throw new Error("Couldn't verify your subscription");
-        }
-        // A live session with an empty read is usually a JWT that went stale
-        // while the tab slept — RLS then answers zero rows, not 401. Refresh
-        // and try once more before treating it as a failure. The ⌥Space panel
-        // never rotates tokens (two heaps, one refresh token).
-        if (isSpotlightWindow()) return row;
-        console.warn("[nuvo] subscription read null with a live session — refreshing and retrying");
-        await supabase.auth.refreshSession();
-        return read(true);
-      };
-      return read(false);
+      //
+      // Worker flag on → GET /api/entitlement with the Better Auth session.
+      // Flag off → today's PostgREST select. Same 8s bound, same verify-error.
+      if (workersEnabled) {
+        const { signedBearerToken } = await import("../lib/authClient");
+        return fetchWorkerEntitlement({ token: signedBearerToken() });
+      }
+      return fetchPostgrestSubscription(supabase, { skipRefresh: isSpotlightWindow() });
     },
     // Keep the last good row through a refetch blip so the shell doesn't
     // unmount the planner the moment the network hiccups.
@@ -133,7 +134,9 @@ export function useSubscription() {
 export function useSubscriptionLiveSync() {
   const qc = useQueryClient();
   useEffect(() => {
-    if (isSpotlightWindow()) return;
+    // Worker path has no GoTrue JWT for the subscriptions topic. Refetch
+    // on focus / the 5s error interval instead; do not open a dead channel.
+    if (workersEnabled || isSpotlightWindow()) return;
     const onRow = (payload: LiveChange) => {
       if (payload.eventType === "UPDATE") {
         // `rt_broadcast('with_old')` sends the previous row for this table.

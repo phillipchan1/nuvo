@@ -95,7 +95,7 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 
 | Route | Scope | Cross-user | Test |
 |---|---|---|---|
-| `GET /api/entitlement` | `readEntitlement(env, session.user.id)` — PostgREST `user_id=eq.<session>` | 200, B sees B's row only. Query / `X-User-Id` ignored | `accessHttp.check.ts` + `entitlement.check.ts` |
+| `GET /api/entitlement` | `readEntitlement(env, session.user.id)` — PostgREST `user_id=eq.<session>` | 200, B sees B's row only (tier + period / cancel / referral display; no Stripe ids). Query / `X-User-Id` ignored | `accessHttp.check.ts` + `entitlement.check.ts` |
 | `POST/PATCH/DELETE /api/entitlement` | No writes. Same 404 body whether the posted id exists | 404, no existence oracle | `accessHttp.check.ts` |
 
 ### Agent / MCP / day / capture / inbound / cron

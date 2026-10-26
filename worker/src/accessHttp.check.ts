@@ -956,6 +956,11 @@ const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
       status: "active",
       trial_ends_at: "2026-08-01T00:00:00Z",
       plan_source: "stripe",
+      current_period_end: "2026-11-26T00:00:00Z",
+      cancel_at_period_end: true,
+      referral_code: "ALPHA-CODE",
+      referral_uses: 3,
+      referral_credits_earned: 1,
     },
     [b.id]: {
       user_id: b.id,
@@ -969,9 +974,24 @@ const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
 
 const aEnt = await withTimeout(request("/api/entitlement", { headers: authHeaders(a.token) }), 8000, "A entitlement");
 ok(aEnt.status === 200, `A entitlement: HTTP ${aEnt.status}`);
-const aEntBody = (await aEnt.json()) as { entitled?: boolean; plan?: string; plan_source?: string };
+const aEntBody = (await aEnt.json()) as {
+  entitled?: boolean;
+  plan?: string;
+  plan_source?: string;
+  current_period_end?: string | null;
+  cancel_at_period_end?: boolean;
+  referral_code?: string | null;
+  referral_uses?: number;
+  stripe_customer_id?: unknown;
+  stripe_subscription_id?: unknown;
+  price_id?: unknown;
+};
 ok(aEntBody.entitled === true && aEntBody.plan === "active", "A entitlement: own Stripe-active row");
 ok(aEntBody.plan_source === "stripe", "A entitlement: stripe source");
+ok(aEntBody.current_period_end === "2026-11-26T00:00:00Z", "A entitlement: own current_period_end");
+ok(aEntBody.cancel_at_period_end === true, "A entitlement: own cancel_at_period_end");
+ok(aEntBody.referral_code === "ALPHA-CODE" && aEntBody.referral_uses === 3, "A entitlement: own referral display fields");
+ok(aEntBody.stripe_customer_id == null && aEntBody.stripe_subscription_id == null && aEntBody.price_id == null, "A entitlement: no Stripe ids");
 
 const bEnt = await withTimeout(
   request(`/api/entitlement?user_id=${a.id}`, { headers: authHeaders(b.token, { "X-User-Id": a.id }) }),
@@ -979,9 +999,19 @@ const bEnt = await withTimeout(
   "B entitlement spoof",
 );
 ok(bEnt.status === 200, `B entitlement: HTTP ${bEnt.status}`);
-const bEntBody = (await bEnt.json()) as { entitled?: boolean; plan?: string; plan_source?: string | null };
+const bEntBody = (await bEnt.json()) as {
+  entitled?: boolean;
+  plan?: string;
+  plan_source?: string | null;
+  current_period_end?: string | null;
+  cancel_at_period_end?: boolean;
+  referral_code?: string | null;
+  referral_uses?: number;
+};
 ok(bEntBody.plan === "trialing" && bEntBody.plan_source == null, "B entitlement: own trial, not A's paid row");
 ok(bEntBody.entitled === true, "B entitlement: live trial is entitled");
+ok(bEntBody.current_period_end == null && bEntBody.cancel_at_period_end !== true, "B entitlement: does not see A's period / cancel");
+ok(bEntBody.referral_code == null && (bEntBody.referral_uses ?? 0) === 0, "B entitlement: does not see A's referral fields");
 
 const postExisting = await withTimeout(
   request("/api/entitlement", {
