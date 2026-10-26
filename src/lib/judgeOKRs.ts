@@ -5,6 +5,7 @@
 // and returns a per-result verdict the wall renders inline. It only JUDGES — it
 // never mutates; the human reads the critique and sharpens the number themselves.
 
+import { assertWritable } from "./maintenance";
 import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
 import { domainById, type Initiative, type KeyResult, type VerticalData } from "./vertical";
 
@@ -19,6 +20,7 @@ export interface KRVerdict {
 }
 
 async function callAgentJSON(prompt: string): Promise<unknown> {
+  await assertWritable();
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token ?? supabaseAnonKey;
   const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {

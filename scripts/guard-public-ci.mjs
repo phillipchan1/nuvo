@@ -1598,9 +1598,19 @@ export function assertWorkspaceHasNoDataFiles(workspaceDir, { artifactsDir } = {
 
 /** True when log text looks like emails, CSV rows, or dumped secrets. */
 export function logLooksLikeRowData(text) {
-  const s = String(text);
+  let s = String(text);
+  // Dump / verify lines print sha256=<64 hex> and 32-char md5s. Strip those
+  // before the 40+ hex scan so a checksum report is not a false positive.
+  s = s.replace(/\bsha256=[0-9a-f]{64}\b/gi, "");
   if (/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(s)) return true;
   if (/\bencrypted_password\b|\brecovery_token\b|\bconfirmation_token\b/.test(s)) return true;
+  if (/1\/\/0[A-Za-z0-9_\-]+/.test(s)) return true;
+  if (/\bya29\.[A-Za-z0-9_\-]+/.test(s)) return true;
+  if (/\\x[0-9a-f]{8,}/i.test(s)) return true;
+  if (/<Buffer\s+[0-9a-f][0-9a-f ]*>/i.test(s)) return true;
+  if (/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(s)) return true;
+  if (/parameters:\s*\[/.test(s)) return true;
+  if (/(?<![0-9a-f])[0-9a-f]{40,}(?![0-9a-f])/i.test(s)) return true;
   return false;
 }
 

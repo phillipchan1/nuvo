@@ -48,7 +48,7 @@ ok(!/\bcache\b/.test(authSrc), "auth.ts has no module-scope auth cache");
 ok(/openSql/.test(dbSrc), "db.ts exports openSql (per-request)");
 ok(/openAuth/.test(authSrc), "auth.ts exports openAuth (per-request)");
 ok(/waitUntil/.test(ioSrc), "requestIo closes via waitUntil");
-ok(/openRequestIo/.test(indexSrc) && /scheduleClose/.test(indexSrc), "index.ts uses per-request IO + scheduleClose");
+ok(/requestIo/.test(indexSrc) && /scheduleClose/.test(indexSrc), "index.ts uses per-request IO + scheduleClose");
 ok(/requireSignature:\s*true/.test(authSrc), "createAuth requires signed bearer tokens");
 ok(/requireEmailVerification:\s*true/.test(authSrc), "createAuth requires email verification (no unverified password session)");
 ok(/exposeSignedAuthToken/.test(indexSrc), "auth responses rewrite the JSON token to the signed form");
@@ -463,9 +463,12 @@ const steal = await withTimeout(
   8000,
   "foreign id insert",
 );
-ok(steal.status >= 400 && steal.status < 500, `POST other owner's id: HTTP ${steal.status} (4xx, not 500)`);
+const stealText = await steal.clone().text();
+const stealBody = JSON.parse(stealText || "{}") as { data?: { id?: string; title?: string } };
+ok(steal.status === 200, `POST other owner's id: HTTP ${steal.status} (new owned row, not 500)`);
 ok((steal.headers.get("content-type") ?? "").includes("application/json"), "foreign id insert: JSON");
-ok((await steal.clone().text()).includes("hyperdrive.local") === false, "foreign id insert: no internal host");
+ok(stealText.includes("hyperdrive.local") === false, "foreign id insert: no internal host");
+ok(stealBody.data?.id !== foreignId, "foreign id insert: did not take B's id");
 ok(
   (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM tasks WHERE id = $1 AND title = $2", [foreignId, "steal"])).rows[0]?.n === 0,
   "foreign id insert: B's task title unchanged",

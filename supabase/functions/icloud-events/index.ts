@@ -34,6 +34,7 @@ import { materializeIcloudResource } from "../_shared/icloudExpand.ts";
 import { countRuleOccurrencesBefore } from "../_shared/ics.ts";
 import { isUsableTimeZone } from "../_shared/icalTz.ts";
 import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 type EventPatch = {
   title?: string;
@@ -89,6 +90,8 @@ function editSeries(
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const body = await req.json();

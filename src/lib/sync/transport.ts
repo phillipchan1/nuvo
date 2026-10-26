@@ -25,6 +25,7 @@
  * degraded, and `conflictResolutionAvailable()` reports which mode is live.
  */
 
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "../maintenance";
 import { supabase } from "../supabase";
 import { classifyError, type SendResult, type Transport } from "./engine";
 import type { Op, SyncTable } from "./ops";
@@ -149,6 +150,9 @@ export function createSupabaseTransport(
   return {
     async send(op: Op): Promise<SendResult> {
       try {
+        if (await writeFrozen()) {
+          return { ok: false, retriable: true, error: WRITE_FROZEN_MESSAGE };
+        }
         switch (op.kind) {
           case "insert":
             return await sendInsert(op, getUserId);

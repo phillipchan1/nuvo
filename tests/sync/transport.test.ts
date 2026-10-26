@@ -20,6 +20,14 @@ interface Call {
 
 const calls: Call[] = [];
 let nextUpsertError: { code: string; message: string } | null = null;
+let frozen = false;
+
+vi.mock("../../src/lib/maintenance", () => ({
+  writeFrozen: async () => frozen,
+  WRITE_FROZEN_MESSAGE: "Nuvo is briefly read-only during a maintenance window. Try again in a few minutes.",
+  resetMaintenanceCacheForTests: () => {},
+  maintenanceUrl: () => "",
+}));
 
 vi.mock("../../src/lib/supabase", () => ({
   supabase: {
@@ -88,6 +96,7 @@ function op(
 beforeEach(() => {
   calls.length = 0;
   nextUpsertError = null;
+  frozen = false;
   resetTransportProbeForTests();
 });
 
@@ -187,5 +196,14 @@ describe("idempotent inserts", () => {
     nextUpsertError = { code: "42501", message: "row-level security" };
     const res = await transport.send(op("tasks", "insert", "t1", { title: "denied" }));
     expect(res).toMatchObject({ ok: false, retriable: false });
+  });
+});
+
+describe("write freeze", () => {
+  it("does not send while frozen and stays retriable", async () => {
+    frozen = true;
+    const res = await transport.send(op("tasks", "insert", "t1", { title: "held" }));
+    expect(res).toMatchObject({ ok: false, retriable: true });
+    expect(calls).toEqual([]);
   });
 });

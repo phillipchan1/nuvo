@@ -4,6 +4,7 @@
 import { admin, json, logSync, signState, storeSecret, verifyState } from "../_shared/admin.ts";
 import { GOOGLE_TOKEN_URL, MIRROR_CALENDAR_NAME } from "../_shared/google.ts";
 import { MIRROR_CALENDAR_DESCRIPTION } from "../_shared/mirror.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 // The two contacts scopes are what make the guest picker search a real address
 // book instead of only people who happened to appear on a synced event.
@@ -29,6 +30,9 @@ function selfUrl(): string {
 }
 
 Deno.serve(async (req) => {
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
+
   const url = new URL(req.url);
 
   try {
