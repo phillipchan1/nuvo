@@ -1151,7 +1151,7 @@ jobs:
           python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
 
       - name: Assert cutover logs have no row data
-        if: ${{ always() }}
+        if: ${{ always() && (steps.dump.outcome == 'success' || steps.dump.outcome == 'failure') }}
         run: |
           set +x
           set -eu

@@ -6,10 +6,17 @@
  * immediately before the checksum-report upload, and --check-log against
  * teed step logs.
  *
- * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs),
- * plus quoted uses, upload-artifact/merge, gh release upload,
- * curl/wget upload flags, gh api --input, softprops/action-gh-release,
- * and actions/cache/save.
+ * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs).
+ * Generic rules (not one-off regexes per flag):
+ *   1. Any @file argument to curl / wget / gh (curl -d @file, -d@file,
+ *      --data-* @, gh api -F/-f x=@file, gh api --input, …).
+ *   2. Any uses: matching /upload|release/ outside ALLOWED_UPLOAD_OR_RELEASE_USES
+ *      (actions/upload-artifact is path-checked; merge and third-party
+ *      release/upload actions are not).
+ *   3. gh gist create, gh release upload, and gh release create <tag> <file>
+ *      unless every asset is a desktop-publish token ($VAR / .dmg / .tar.gz /
+ *      .sig / latest.json) — so release.yml stays green.
+ *   4. actions/cache and actions/cache/save (restore-only is allowed).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -31,6 +38,26 @@ export const FORBIDDEN_WORKSPACE_BASENAMES = Object.freeze([
 ]);
 
 const DATA_PATH_RE = /\.(dump|csv|sql|toc)$/i;
+
+/** uses: matching /upload|release/ that the four repo workflows may keep. */
+export const ALLOWED_UPLOAD_OR_RELEASE_USES = Object.freeze(["actions/upload-artifact"]);
+
+/** File operands `gh release create` may attach (desktop publish in release.yml). */
+const ALLOWED_RELEASE_CREATE_ASSET_RE =
+  /^(?:\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|Nuvo\.dmg|latest\.json|.+\.(?:dmg|app\.tar\.gz|tar\.gz|sig))$/i;
+
+const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
+  "--repo",
+  "-R",
+  "--title",
+  "-t",
+  "--notes",
+  "-n",
+  "--notes-file",
+  "-F",
+  "--target",
+  "--discussion-category",
+]);
 
 const USES_UPLOAD_ARTIFACT_RE =
   /uses:\s*(['"]?)actions\/upload-artifact(\/merge)?(?:@[^'"\s]+)?\1[^\n]*\n((?:[ \t]+[^\n]*\n)*)/g;
@@ -68,55 +95,216 @@ export function extractUploadArtifactSteps(workflowText) {
   return steps;
 }
 
-/** curl -T is upload; wget -T is timeout — only treat -T as upload on curl. */
-export function lineLooksLikeHttpUpload(line) {
-  const t = String(line).replace(/^\s*#.*$/, "");
-  if (!/\b(curl|wget)\b/.test(t)) return false;
-  if (/\bcurl\b/.test(t) && /(?:\s|^)(-T|--upload-file)\b/.test(t)) return true;
-  if (/\bwget\b/.test(t) && /(?:\s|^)--upload-file\b/.test(t)) return true;
-  // -F @file, -F f=@file, -F "f=@file", --form 'file=@…'
-  if (/(?:\s|^)(-F|--form)\b[^\n]*@/.test(t)) return true;
-  if (/(?:\s|^)(--data|--data-raw|--data-binary|--data-ascii|--data-urlencode)(?:=|\s+)@/.test(t)) {
-    return true;
+/** Drop a full-line `#` comment; keep inline code so `run: curl …` still scans. */
+function stripFullLineComment(line) {
+  return /^\s*#/.test(line) ? "" : String(line);
+}
+
+/** Join `\` continuations so `gh release create "$TAG" \` + assets is one command. */
+export function logicalLines(text) {
+  const raw = String(text).split("\n");
+  const out = [];
+  let buf = "";
+  let start = 1;
+  for (let i = 0; i < raw.length; i++) {
+    const physical = raw[i];
+    const cont = /\\$/.test(physical);
+    const trimmed = physical.replace(/\\$/, "");
+    if (!buf) start = i + 1;
+    buf += (buf ? " " : "") + trimmed;
+    if (!cont) {
+      out.push({ line: start, text: buf });
+      buf = "";
+    }
   }
-  if (/\bwget\b/.test(t) && /(?:\s|^)--(post-file|body-file)(?:=|\s)/.test(t)) return true;
+  if (buf) out.push({ line: start, text: buf });
+  return out;
+}
+
+/** Shell-ish tokens; quotes are dropped so `-d "@file"` and `-d @file` agree. */
+export function tokenize(line) {
+  const tokens = [];
+  let cur = "";
+  let quote = null;
+  for (const c of String(line)) {
+    if (quote) {
+      if (c === quote) quote = null;
+      else cur += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      if (cur) tokens.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
+/**
+ * Curl / gh @file: `@path`, `-d@path`, `--data=@path`, `name=@path`.
+ * Not `user@host`, `postgres@127.0.0.1`, or `email=a@b.com`.
+ */
+export function isAtFileToken(tok) {
+  const t = String(tok);
+  if (!t.includes("@")) return false;
+  if (t.startsWith("@")) return true;
+  if (/^-[A-Za-z0-9]@/.test(t)) return true;
+  if (/^--[A-Za-z0-9-]+=@/.test(t)) return true;
+  const eq = t.indexOf("=");
+  return eq > 0 && t[eq + 1] === "@";
+}
+
+function toolKind(tokens) {
+  for (const t of tokens) {
+    if (t === "curl" || /(?:^|\/)curl$/.test(t)) return "curl";
+    if (t === "wget" || /(?:^|\/)wget$/.test(t)) return "wget";
+    if (t === "gh" || /(?:^|\/)gh$/.test(t)) return "gh";
+  }
+  return null;
+}
+
+function isGhSubcommand(tokens, ...parts) {
+  const i = tokens.findIndex((t) => t === "gh" || /(?:^|\/)gh$/.test(t));
+  if (i < 0) return false;
+  return parts.every((p, k) => tokens[i + 1 + k] === p);
+}
+
+function flagName(tok) {
+  return String(tok).split("=")[0];
+}
+
+function hasHttpUploadFileFlag(tokens, kind) {
+  for (const t of tokens) {
+    if (t === "--upload-file" || t.startsWith("--upload-file=")) return true;
+    if (kind === "curl" && (t === "-T" || (/^-T./.test(t) && !t.startsWith("--")))) return true;
+    if (kind === "wget") {
+      if (t === "--post-file" || t.startsWith("--post-file=")) return true;
+      if (t === "--body-file" || t.startsWith("--body-file=")) return true;
+    }
+  }
   return false;
 }
 
+/** curl -T is upload; wget -T is timeout — only treat -T as upload on curl. */
+export function lineLooksLikeHttpUpload(line) {
+  const tokens = tokenize(stripFullLineComment(line));
+  const kind = toolKind(tokens);
+  if (kind !== "curl" && kind !== "wget") return false;
+  if (hasHttpUploadFileFlag(tokens, kind)) return true;
+  return tokens.some(isAtFileToken);
+}
+
 export function lineLooksLikeGhApiInput(line) {
-  const t = String(line).replace(/^\s*#.*$/, "");
-  return /\bgh\s+api\b/.test(t) && /(?:\s|^)--input\b/.test(t);
+  const tokens = tokenize(stripFullLineComment(line));
+  if (!isGhSubcommand(tokens, "api")) return false;
+  if (tokens.some((t) => flagName(t) === "--input")) return true;
+  return tokens.some(isAtFileToken);
+}
+
+export function parseUsesAction(line) {
+  const m = String(line).match(/^\s*(?:-\s+)?uses:\s*(['"]?)([^'"\s#]+)\1/);
+  if (!m) return null;
+  return m[2].replace(/@.*$/, "");
+}
+
+export function isForbiddenUse(action) {
+  if (!action) return false;
+  if (action === "actions/cache/save" || action === "actions/cache") return true;
+  if (action === "actions/cache/restore") return false;
+  if (ALLOWED_UPLOAD_OR_RELEASE_USES.includes(action)) return false;
+  return /upload|release/i.test(action);
 }
 
 export function lineLooksLikeCacheSave(line) {
-  const t = String(line).replace(/^\s*#.*$/, "");
-  if (/uses:\s*['"]?actions\/cache\/save\b/.test(t)) return true;
-  // Combined actions/cache always saves on a hit miss. Restore-only is allowed.
-  if (/uses:\s*['"]?actions\/cache\/restore\b/.test(t)) return false;
-  return /uses:\s*['"]?actions\/cache(?:@|['"]|\s|$)/.test(t);
+  const action = parseUsesAction(stripFullLineComment(line));
+  if (!action) return false;
+  if (action === "actions/cache/save") return true;
+  if (action === "actions/cache/restore") return false;
+  return action === "actions/cache";
+}
+
+function isAllowedReleaseCreateAsset(tok) {
+  return ALLOWED_RELEASE_CREATE_ASSET_RE.test(String(tok));
+}
+
+/** Positional assets after `gh release create <tag>` (flags + tag skipped). */
+export function ghReleaseCreateFiles(tokens) {
+  const i = tokens.findIndex((t) => t === "gh" || /(?:^|\/)gh$/.test(t));
+  if (i < 0) return [];
+  const rest = tokens.slice(i + 3);
+  const files = [];
+  let seenTag = false;
+  for (let j = 0; j < rest.length; j++) {
+    const t = rest[j];
+    if (t.startsWith("-")) {
+      const name = flagName(t);
+      if (!t.includes("=") && GH_RELEASE_CREATE_VALUE_FLAGS.has(name)) j += 1;
+      continue;
+    }
+    if (!seenTag) {
+      seenTag = true;
+      continue;
+    }
+    files.push(t);
+  }
+  return files;
 }
 
 export function findForbiddenUploadCommands(workflowText) {
   const hits = [];
-  for (const [i, line] of String(workflowText).split("\n").entries()) {
-    const code = line.replace(/^\s*#.*$/, "");
-    if (/\bgh\s+release\s+upload\b/.test(code)) {
-      hits.push({ line: i + 1, kind: "gh release upload" });
-    }
-    if (/uses:\s*['"]?softprops\/action-gh-release\b/.test(code)) {
-      hits.push({ line: i + 1, kind: "softprops/action-gh-release" });
-    }
-    if (lineLooksLikeGhApiInput(code)) {
-      hits.push({ line: i + 1, kind: "gh api --input" });
-    }
-    if (lineLooksLikeCacheSave(code)) {
+  for (const { line, text } of logicalLines(workflowText)) {
+    const code = stripFullLineComment(text);
+    if (!code.trim()) continue;
+
+    const action = parseUsesAction(code);
+    if (action && isForbiddenUse(action)) {
       hits.push({
-        line: i + 1,
+        line,
+        kind:
+          action === "actions/cache"
+            ? "actions/cache save"
+            : action === "actions/cache/save"
+              ? "actions/cache/save"
+              : action,
+      });
+    } else if (lineLooksLikeCacheSave(code)) {
+      hits.push({
+        line,
         kind: /cache\/save/.test(code) ? "actions/cache/save" : "actions/cache save",
       });
     }
-    if (lineLooksLikeHttpUpload(code)) {
-      hits.push({ line: i + 1, kind: "curl/wget upload" });
+
+    const tokens = tokenize(code);
+    const kind = toolKind(tokens);
+    if (kind === "curl" || kind === "wget") {
+      if (lineLooksLikeHttpUpload(code)) {
+        hits.push({ line, kind: "curl/wget upload" });
+      }
+    }
+    if (kind === "gh") {
+      if (isGhSubcommand(tokens, "release", "upload")) {
+        hits.push({ line, kind: "gh release upload" });
+      } else if (isGhSubcommand(tokens, "gist", "create")) {
+        hits.push({ line, kind: "gh gist create" });
+      } else if (isGhSubcommand(tokens, "release", "create")) {
+        const bad = ghReleaseCreateFiles(tokens).filter((f) => !isAllowedReleaseCreateAsset(f));
+        if (bad.length) hits.push({ line, kind: "gh release create file" });
+      }
+      if (lineLooksLikeGhApiInput(code)) {
+        hits.push({
+          line,
+          kind: tokens.some((t) => flagName(t) === "--input") ? "gh api --input" : "gh @file",
+        });
+      } else if (tokens.some(isAtFileToken)) {
+        hits.push({ line, kind: "gh @file" });
+      }
     }
   }
   return hits;

