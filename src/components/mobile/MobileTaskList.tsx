@@ -13,7 +13,7 @@ import {
   taskInitiativeId,
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
-import { acceptPatch, dismissPatch } from "../../lib/grooming";
+import { acceptPatch, dismissPatch, undoAutoPatch } from "../../lib/grooming";
 import { InboxAddressHint } from "../InboxAddress";
 import { SectionLabel } from "../ui";
 import SkeletonRows from "./Skeleton";
@@ -108,6 +108,7 @@ export default function MobileTaskList({
     // the phone showed it and offered neither.
     onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
     onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
+    onUndoAutoFile: () => mutations.patchTask(t.id, undoAutoPatch(t)),
     action,
   });
 

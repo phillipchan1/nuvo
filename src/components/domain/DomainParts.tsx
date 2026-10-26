@@ -317,7 +317,7 @@ export function DomainSymbolPicker({
 // depending on which screen you groomed it from is the drift this file exists to
 // stop.
 type Misfiled = { kind: "initiative" | "project" | "task"; id: string; name: string; suggestDomain: string; suggestDomainId: string | null };
-type Refinement = { context: DomainContext; misfiled: Misfiled[] };
+type Refinement = { context: DomainContext; misfiled: Misfiled[]; routingNote?: string };
 
 export function DomainGroom({ domain, phone = false, open: openProp }: { domain: Domain; phone?: boolean; open?: boolean }) {
   const { data, updateDomain, updateInitiative, updateProject, routeTask } = useVertical();
@@ -403,6 +403,8 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
             </button>
             {err && <span className="text-meta text-signal">{err}</span>}
           </div>
+
+          {prop?.routingNote && <div className="text-meta text-muted">{prop.routingNote}</div>}
 
           {shown && (
             <div className="rounded-md border border-dashed border-line bg-surface/40 px-2.5 py-2">

@@ -44,6 +44,9 @@ const ids = {
   evtLunch: "55555555-5555-4555-8555-555555555552",
   slotMorning: "66666666-6666-4666-8666-666666666661",
   seriesHvac: "88888888-8888-4888-8888-888888888881",
+  seriesLeadership: "88888888-8888-4888-8888-888888888882",
+  seriesLeadershipSlot: "88888888-8888-4888-8888-888888888883",
+  slotLeadershipNext: "66666666-6666-4666-8666-666666666662",
 } as const;
 
 export const ID = ids;
@@ -90,7 +93,23 @@ function loadedWorld(): AgentContext {
         projectId: null,
         domainId: ids.domHealth,
       },
+      // The 2026-10-22 screenshot: a weekly leadership session made as a
+      // repeating TASK, so nothing could be put inside it.
+      {
+        id: ids.seriesLeadership,
+        title: "Leadership Strategy Session",
+        cadence: "Every week on Thu",
+        freq: "weekly",
+        interval: 1,
+        nextDue: "2026-08-06",
+        until: null,
+        durationMinutes: 60,
+        priority: "none",
+        projectId: null,
+        domainId: ids.domWork,
+      },
     ],
+    recurringSlots: [],
     scheduled: [
       { id: ids.taskGym, title: "Gym", status: "planned", doDate: TODAY, startTime: "2026-07-31T15:00:00.000Z", durationMinutes: 75, rollCount: 0 },
     ],
@@ -183,6 +202,7 @@ function coldWorld(): AgentContext {
     inbox: [],
     todayTasks: [],
     recurringUpkeep: [],
+    recurringSlots: [],
     scheduled: [],
     weekSlate: [],
     needsASprint: [],
@@ -271,6 +291,41 @@ function holdingWorld(): AgentContext {
   };
 }
 
+/** The leadership session already converted: a repeating BLOCK, Thursdays
+ *  3–4pm, with next week's occurrence in view. The scenarios here are the ones
+ *  that only exist once a series holds work — edit every one, fill one. */
+function standingWorld(): AgentContext {
+  const w = loadedWorld();
+  return {
+    ...w,
+    recurringUpkeep: w.recurringUpkeep.filter((r) => r.id !== ids.seriesLeadership),
+    recurringSlots: [{
+      id: ids.seriesLeadershipSlot,
+      title: "Leadership strategy",
+      cadence: "Every week on Thu",
+      timeRange: "3:00 PM – 4:00 PM",
+      durationMinutes: 60,
+      nextDate: "2026-08-06",
+      until: null,
+      projectId: null,
+      domainId: ids.domWork,
+    }],
+    todaySlots: [{
+      id: ids.slotLeadershipNext,
+      title: "Leadership strategy",
+      timeRange: "3:00 PM – 4:00 PM",
+      startISO: "2026-08-06T22:00:00.000Z",
+      durationMinutes: 60,
+      localDate: "2026-08-06",
+      past: false,
+      projectId: null,
+      domainId: ids.domWork,
+      seriesId: ids.seriesLeadershipSlot,
+      tasks: [],
+    }],
+  };
+}
+
 /** Two projects with the SAME name, under two initiatives — the account state
  *  behind the 2026-08-01 "I need the exact one" conversation.
  *
@@ -301,7 +356,7 @@ function ambiguousWorld(): AgentContext {
   };
 }
 
-export type WorldName = "loaded" | "cold" | "traveling" | "overloaded" | "ambiguous" | "holding";
+export type WorldName = "loaded" | "cold" | "traveling" | "overloaded" | "ambiguous" | "holding" | "standing";
 
 const BUILDERS: Record<WorldName, () => AgentContext> = {
   loaded: loadedWorld,
@@ -310,6 +365,7 @@ const BUILDERS: Record<WorldName, () => AgentContext> = {
   overloaded: overloadedWorld,
   ambiguous: ambiguousWorld,
   holding: holdingWorld,
+  standing: standingWorld,
 };
 
 /** A fresh copy every time — a scenario that mutated a shared world would make

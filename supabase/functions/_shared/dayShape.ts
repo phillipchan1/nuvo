@@ -59,6 +59,9 @@ export interface SlotSummary {
   past: boolean;
   projectId: string | null;
   domainId: string | null;
+  /** Set when this block is one occurrence of a repeating block (its id in
+   *  `recurringSlots`). Absent or null = a one-off. */
+  seriesId?: string | null;
   /** What's in it, in order. */
   tasks: { id: string; title: string; status: string }[];
 }
@@ -345,6 +348,7 @@ export function buildSlotSummaries(
       past: endMs <= nowMs,
       projectId: (r.project_id as string | null) ?? null,
       domainId: (r.domain_id as string | null) ?? null,
+      seriesId: (r.recurrence_id as string | null) ?? null,
       tasks: slotChildren
         .filter((t) => t.slot_id === r.id)
         .map((t) => ({ id: t.id as string, title: t.title as string, status: t.status as string })),

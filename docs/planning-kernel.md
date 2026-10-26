@@ -86,7 +86,7 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Does this meeting get a video link | `shouldAddMeet` (`_shared/conferencing.ts`) | `DraftComposer` Meet toggle · Settings → Calendars | `create_calendar_event` (`add_meet`) |
 | Who is "Matt", and does mail go out | `pickRecipient` / `inviteConsentPrompt` (`_shared/invites.ts`) | `GuestsInput` + the composer's confirm step · **`AgentInviteCard`** (the send itself) | `propose_invite` — stages an `InviteDraft`, **never sends** (D-069) |
 | When a commitment speaks | `planReminders` / `buildReminderAnchors` (`reminderRules.ts` · `reminderAnchors.ts`) | `useReminders` · `ReminderSelect` | `set_reminder` · `push-dispatch` |
-| Which occurrences a series edit removes | `shouldClearOccurrence` / `mergeRecurrenceRule` (`_shared/recurrence.ts`) | `useRecurrence` — update, pause, stop, skip, this-and-following, delete · Recurring upkeep panel · task menu | `update_recurring_task` · `end_recurring_task` |
+| Which occurrences a series edit removes | `shouldClearOccurrence` / `mergeRecurrenceRule` (`_shared/recurrence.ts`) | `useRecurrence` — update, pause, stop, skip, this-and-following, delete · Recurring upkeep panel · task menu | `update_recurring_task` · `end_recurring_task` · `create_recurring_slot` · `update_recurring_slot` · `end_recurring_slot` |
 
 ## 4 · Rules for working on it
 
@@ -115,3 +115,7 @@ Named so nobody assumes the guarantee is wider than it is.
 - **Task-state rules** (`isOpenStatus`, rollover, `toBusyBlocks`) are client-only, and the
   agent reasons about them in prose from its prompt. That's a live drift surface; it hasn't
   bitten yet.
+
+> **Also a kernel:** `supabase/functions/_shared/domainRouting.ts` — which domain a loose capture
+> belongs to, and how sure we are — is the same one-definition-two-runtimes rule applied to
+> filing. See [`domain-routing.md`](./domain-routing.md).

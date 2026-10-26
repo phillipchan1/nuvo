@@ -121,7 +121,7 @@ describe("the snapshot the model reads", () => {
     // The rename that motivated this: the prompt said todayFreeSlots long after
     // the context had stopped emitting it, and nothing failed.
     for (const field of [
-      "todaySchedule", "todayOpenWindows", "todaySlots", "recurringUpkeep", "weekSlate",
+      "todaySchedule", "todayOpenWindows", "todaySlots", "recurringUpkeep", "recurringSlots", "weekSlate",
       "needsASprint", "nextWeekSlate", "unattachedPriorities", "weekPool",
       "writableCalendars", "vertical", "inbox",
     ]) {

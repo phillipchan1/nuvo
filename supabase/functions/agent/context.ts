@@ -33,6 +33,8 @@ import {
   FALLBACK_TZ,
   fmtEvent,
   fmtTask,
+  fmtTimeRange,
+  localToUtc,
   makeEventVisibility,
   todayIn,
   visibleEventRows,
@@ -120,16 +122,17 @@ export async function buildContext(
     // worse than one it can't create: it plans straight over held time.
     admin
       .from("slots")
-      .select("id, title, do_date, start_time, duration_minutes, project_id, domain_id")
+      .select("id, title, do_date, start_time, duration_minutes, project_id, domain_id, recurrence_id")
       .eq("user_id", userId)
       .gte("start_time", start)
       .lt("start_time", end)
       .order("start_time"),
     admin
       .from("recurrences")
-      .select("id, title, freq, interval, byweekday, bymonthday, bysetpos, bymonth, anchor_date, until_date, max_count, exdates, duration_minutes, priority, project_id, domain_id")
+      // Both kinds: repeating tasks are the upkeep catalog, repeating slots are
+      // standing time. Splitting them below keeps each list one thing.
+      .select("id, kind, title, freq, interval, byweekday, bymonthday, bysetpos, bymonth, anchor_date, until_date, max_count, exdates, duration_minutes, time_of_day_minutes, priority, project_id, domain_id")
       .eq("user_id", userId)
-      .eq("kind", "task")
       .eq("active", true)
       .order("title"),
   ]);
@@ -273,6 +276,17 @@ export async function buildContext(
       ).data ?? [])
     : [];
   const todaySlots: SlotSummary[] = buildSlotSummaries(slotRows, slotChildren, tz, nowMs);
+  const seriesRows = (upkeepRes.data ?? []) as Record<string, unknown>[];
+  const ruleOfRow = (row: Record<string, unknown>): RecurrenceRule => ({
+    freq: row.freq as RecurrenceRule["freq"],
+    interval: row.interval as number,
+    byweekday: (row.byweekday as number[] | null) ?? [],
+    bymonthday: row.bymonthday as number | null,
+    bysetpos: row.bysetpos as number | null,
+    bymonth: row.bymonth as number | null,
+    until: row.until_date as string | null,
+    count: row.max_count as number | null,
+  });
 
   const todaySchedule = buildDaySchedule(events, scheduled, todaySlots, today);
   const todayOpenWindows = computeOpenWindows(events, scheduled, todaySlots, today, nowMs, tz);
@@ -344,7 +358,7 @@ export async function buildContext(
     todaySlots,
     inbox,
     todayTasks,
-    recurringUpkeep: ((upkeepRes.data ?? []) as {
+    recurringUpkeep: (seriesRows.filter((r) => r.kind === "task") as {
       id: string;
       title: string;
       freq: RecurrenceRule["freq"];
@@ -384,6 +398,28 @@ export async function buildContext(
         priority: row.priority,
         projectId: row.project_id,
         domainId: row.domain_id,
+      };
+    }),
+    recurringSlots: seriesRows.filter((r) => r.kind === "slot").map((row) => {
+      const rule = ruleOfRow(row);
+      const nextDate = nextOccurrenceDate(rule, row.anchor_date as string, today, (row.exdates as string[] | null) ?? []);
+      const minutes = (row.time_of_day_minutes as number | null) ?? 9 * 60;
+      const duration = row.duration_minutes as number;
+      const day = nextDate ?? today;
+      const startISO = localToUtc(
+        `${day}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+        tz,
+      );
+      return {
+        id: row.id as string,
+        title: row.title as string,
+        cadence: describeRule(rule, row.anchor_date as string),
+        timeRange: fmtTimeRange(startISO, new Date(new Date(startISO).getTime() + duration * 60_000).toISOString(), tz),
+        durationMinutes: duration,
+        nextDate,
+        until: (row.until_date as string | null) ?? null,
+        projectId: (row.project_id as string | null) ?? null,
+        domainId: (row.domain_id as string | null) ?? null,
       };
     }),
     scheduled,

@@ -401,6 +401,269 @@ async function detachSeriesTasks(userId: string, recurrenceId: string): Promise<
   if (error) throw new Error(error.message);
 }
 
+/** "This date and every later one" — the panel's `deleteFollowing`. Clears the
+ *  occurrences, then truncates the rule (or drops it when nothing is left). */
+async function truncateSeries(
+  userId: string,
+  row: SeriesRow,
+  fromISO: string,
+  tz: string,
+): Promise<number> {
+  const cleared = row.kind === "slot"
+    ? (await clearSlotSeriesOccurrences(userId, row.id, fromISO, { includeOverridden: true })).removed
+    : await clearSeriesOccurrences(userId, row.id, fromISO, tz, { includeOverridden: true });
+  const until = addDaysISO(fromISO, -1);
+  if (until < row.anchor_date) {
+    if (row.kind === "slot") await detachSeriesSlots(userId, row.id);
+    else await detachSeriesTasks(userId, row.id);
+    const { error } = await admin.from("recurrences").delete().eq("id", row.id).eq("user_id", userId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await admin
+      .from("recurrences")
+      .update({ until_date: until, active: true })
+      .eq("id", row.id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+  }
+  return cleared;
+}
+
+// ── Slot series: a block of time that repeats and holds work ────────────────
+// The app has always had these (Schedule → a slot's Repeat picker, the capture
+// door's Slot face with a cadence). The chat didn't, so asked for "a repeating
+// slot I can put tasks in" it offered to hand-lay eight one-off copies. Each
+// occurrence is an ordinary `slots` row, so add_to_slot / reschedule_slot /
+// delete_slot work on one occurrence exactly as they do on any block.
+
+/** "HH:MM" (24h, the user's zone) or a local "YYYY-MM-DDTHH:MM" → minutes after
+ *  midnight. Null when it isn't a clock time. */
+function minutesOfLocal(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const m = raw.trim().match(/(?:^|T)(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** A UTC instant's clock time in `tz`, as minutes after midnight. */
+function minutesInTz(isoUtc: string, tz: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(isoUtc));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
+/** A NEW series' rule from the model's arguments. Weekly defaults to the
+ *  anchor's own weekday; positional ("the last Friday") and by-date stay
+ *  exclusive, the way the database insists. */
+function ruleFromArgs(args: Record<string, unknown>, anchorISO: string, parsed?: RecurrenceRule | null): RecurrenceRule {
+  const days = Array.isArray(args.byweekday)
+    ? (args.byweekday as unknown[]).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    : typeof args.byweekday === "number"
+      ? [args.byweekday]
+      : [];
+  const freq = (args.freq as RecurrenceFreq | undefined) ?? parsed?.freq ?? (days.length ? "weekly" : undefined);
+  if (!freq) throw new Error("Say how often it repeats — freq daily, weekly, monthly or yearly.");
+  const interval = Math.max(1, Number(args.interval ?? parsed?.interval ?? 1) || 1);
+  const anchorDow = new Date(dayMs(anchorISO)).getUTCDay();
+  const rule: RecurrenceRule = { freq, interval };
+
+  if (freq === "weekly") {
+    const fromParse = parsed?.freq === "weekly" ? parsed.byweekday ?? [] : [];
+    const chosen = days.length ? days : fromParse.length ? fromParse : [anchorDow];
+    rule.byweekday = [...new Set(chosen)].sort((a, b) => a - b);
+  }
+  const setpos = args.bysetpos as number | undefined;
+  if (setpos != null && (freq === "monthly" || freq === "yearly")) {
+    if (!SETPOS_OK.has(setpos)) throw new Error("bysetpos must be 1, 2, 3, 4, or -1 for last.");
+    rule.bysetpos = setpos;
+    rule.byweekday = [days[0] ?? anchorDow];
+  }
+  if (freq === "yearly") rule.bymonth = new Date(dayMs(anchorISO)).getUTCMonth() + 1;
+
+  if (typeof args.until === "string" && args.until) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.until)) throw new Error("until must be YYYY-MM-DD.");
+    rule.until = args.until;
+  }
+  if (args.count != null && Number(args.count) > 0) rule.count = Math.round(Number(args.count));
+  return rule;
+}
+
+/** Lay down the occurrences a slot series is missing between `fromISO` and the
+ *  horizon — the server twin of `useRecurrence.materializeSeries` for slots.
+ *  Not mirrored to the phone calendar, for the same reason the app doesn't:
+ *  one mirror write per occurrence races the shared OAuth refresh. */
+async function materializeSlotOccurrences(
+  userId: string,
+  recId: string,
+  opts: {
+    title: string;
+    rule: RecurrenceRule;
+    anchorISO: string;
+    fromISO: string;
+    exdates: string[];
+    projectId: string | null;
+    domainId: string | null;
+    duration: number;
+    timeOfDayMinutes: number;
+    tz: string;
+  },
+): Promise<{ id: string; date: string }[]> {
+  const toISO = addDaysISO(opts.fromISO, HORIZON_DAYS);
+  const dates = expandRule(opts.rule, opts.anchorISO, opts.fromISO, toISO, opts.exdates);
+  const { data: existing, error: existErr } = await admin
+    .from("slots")
+    .select("recurrence_date")
+    .eq("user_id", userId)
+    .eq("recurrence_id", recId);
+  if (existErr) throw new Error(existErr.message);
+  const have = new Set((existing ?? []).map((r) => r.recurrence_date as string));
+  const missing = dates.filter((d) => !have.has(d));
+  if (missing.length) {
+    const { error } = await admin.from("slots").insert(
+      missing.map((d) => ({
+        user_id: userId,
+        title: opts.title.trim(),
+        do_date: d,
+        start_time: occurrenceStart(d, opts.timeOfDayMinutes, opts.tz),
+        duration_minutes: opts.duration,
+        project_id: opts.projectId,
+        domain_id: opts.domainId,
+        recurrence_id: recId,
+        recurrence_date: d,
+      })),
+    );
+    if (error && error.code !== "23505") throw new Error(error.message);
+  }
+  await admin.from("recurrences").update({ last_materialized: toISO }).eq("id", recId).eq("user_id", userId);
+
+  const { data: rows, error } = await admin
+    .from("slots")
+    .select("id, do_date")
+    .eq("user_id", userId)
+    .eq("recurrence_id", recId)
+    .gte("do_date", opts.fromISO)
+    .order("do_date");
+  if (error) throw new Error(error.message);
+  return (rows ?? []).map((r) => ({ id: r.id as string, date: r.do_date as string }));
+}
+
+/** Tear down a slot series' occurrences from `fromISO` on. The work inside is
+ *  never deleted — the FK releases it onto its day, the same as dropping one
+ *  block in the app — and the count of released tasks is returned so the reply
+ *  can say so. */
+async function clearSlotSeriesOccurrences(
+  userId: string,
+  recurrenceId: string,
+  fromISO: string,
+  opts?: { includeOverridden?: boolean },
+): Promise<{ removed: number; releasedTasks: number }> {
+  const { data, error } = await admin
+    .from("slots")
+    .select("id, recurrence_id, recurrence_overridden, do_date, google_event_id")
+    .eq("user_id", userId)
+    .eq("recurrence_id", recurrenceId);
+  if (error) throw new Error(error.message);
+  const doomed = (data ?? []).filter((s) =>
+    shouldClearOccurrence(s, recurrenceId, fromISO, { includeOverridden: opts?.includeOverridden, kind: "slot" }),
+  );
+  if (!doomed.length) return { removed: 0, releasedTasks: 0 };
+  return { removed: doomed.length, releasedTasks: await deleteSlotRows(userId, doomed) };
+}
+
+/** Delete slot rows and drop the mirrors that exist. Sequential on purpose —
+ *  concurrent mirror calls race the OAuth refresh (see materialize above). */
+async function deleteSlotRows(
+  userId: string,
+  slots: { id: unknown; google_event_id?: unknown }[],
+): Promise<number> {
+  const ids = slots.map((s) => s.id as string);
+  const { count } = await admin
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .in("slot_id", ids);
+  const { error } = await admin.from("slots").delete().in("id", ids).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  for (const s of slots) {
+    if (s.google_event_id) {
+      await invokeFn("slot-mirror", { slotId: s.id, deleted: true, googleEventId: s.google_event_id });
+    }
+  }
+  return count ?? 0;
+}
+
+async function detachSeriesSlots(userId: string, recurrenceId: string): Promise<void> {
+  const { error } = await admin
+    .from("slots")
+    .update({ recurrence_id: null, recurrence_date: null })
+    .eq("user_id", userId)
+    .eq("recurrence_id", recurrenceId);
+  if (error) throw new Error(error.message);
+}
+
+/** The slot series the user named. An occurrence (slot_id, or a block's title)
+ *  resolves to its series — "my Thursday leadership block" is the series. */
+async function resolveSlotSeries(
+  userId: string,
+  args: { series_id?: string; series_title?: string; slot_id?: string; slot_title?: string },
+): Promise<SeriesRow> {
+  const asSlotSeries = (row: SeriesRow): SeriesRow => {
+    if (row.kind !== "slot") {
+      throw new Error(`"${row.title}" is a repeating task, not a block. Use update_recurring_task / end_recurring_task, or create_recurring_slot with from_series_id to turn it into a block.`);
+    }
+    return row;
+  };
+  if (args.series_id) return asSlotSeries(await loadSeries(userId, args.series_id));
+  if (args.slot_id) {
+    const { data, error } = await admin
+      .from("slots")
+      .select("title, recurrence_id")
+      .eq("id", args.slot_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error(`Slot not found: ${args.slot_id}`);
+    if (!data.recurrence_id) {
+      throw new Error(`"${data.title}" is a one-off block. Use create_recurring_slot with its slot_id to make it repeat.`);
+    }
+    return asSlotSeries(await loadSeries(userId, data.recurrence_id as string));
+  }
+
+  const title = (args.series_title || args.slot_title || "").trim();
+  if (!title) throw new Error("Name the series — series_id from recurringSlots, or its title.");
+  const { data, error } = await admin
+    .from("recurrences")
+    .select(SERIES_COLS)
+    .eq("user_id", userId)
+    .eq("kind", "slot")
+    .ilike("title", `%${title}%`);
+  if (error) throw new Error(error.message);
+  let rows = (data ?? []) as SeriesRow[];
+  const active = rows.filter((r) => r.active);
+  if (active.length === 1) rows = active;
+  if (rows.length === 0) throw new Error(`No repeating block matching "${title}". Check recurringSlots.`);
+  if (rows.length > 1) {
+    throw new Error(
+      `Several repeating blocks match "${title}": ${rows.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Use series_id.`,
+    );
+  }
+  return rows[0];
+}
+
+/** The occurrences the reply should name: the first few, by date. */
+function occurrenceList(occ: { id: string; date: string }[]): { id: string; date: string }[] {
+  return occ.slice(0, 8);
+}
+
 const SETPOS_OK = new Set([1, 2, 3, 4, -1]);
 
 function editedRule(row: SeriesRow, args: Record<string, unknown>): RecurrenceRule {
@@ -450,6 +713,7 @@ import { localToUtc } from "../_shared/dayShape.ts";
  *  dark, and neither would look wrong on its own. */
 import {
   buildSlotSummaries,
+  fmtTimeRange,
   busyIntervalsFor,
   dayLoad,
   fmtEvent,
@@ -1013,16 +1277,26 @@ interface SlotRow {
   start_time: string;
   duration_minutes: number;
   google_event_id: string | null;
+  project_id: string | null;
+  domain_id: string | null;
+  recurrence_id: string | null;
+  recurrence_date: string | null;
 }
 
 /** The block an action names. By id when the model read it out of context;
  *  otherwise by title, and an ambiguous title is an error rather than a guess —
- *  moving the wrong block silently rearranges someone's morning. */
+ *  moving the wrong block silently rearranges someone's morning.
+ *
+ *  A repeating block makes the title ambiguous by construction (every Thursday
+ *  is "Leadership strategy"), so `date` picks the occurrence, and the error for
+ *  a series names its upcoming dates — the question the model has to ask. */
 async function resolveSlot(
   userId: string,
-  args: { slot_id?: string; slot_title?: string },
+  args: { slot_id?: string; slot_title?: string; date?: string },
+  tz: string = FALLBACK_TZ,
 ): Promise<SlotRow> {
-  const cols = "id, title, do_date, start_time, duration_minutes, google_event_id";
+  const cols =
+    "id, title, do_date, start_time, duration_minutes, google_event_id, project_id, domain_id, recurrence_id, recurrence_date";
   if (args.slot_id) {
     const { data, error } = await admin
       .from("slots")
@@ -1034,20 +1308,29 @@ async function resolveSlot(
     return data as SlotRow;
   }
   if (args.slot_title) {
-    const { data } = await admin
+    let q = admin
       .from("slots")
       .select(cols)
       .eq("user_id", userId)
-      .ilike("title", `%${args.slot_title}%`)
-      .order("start_time")
-      .limit(5);
-    if (!data?.length) throw new Error(`No block matching "${args.slot_title}"`);
-    if (data.length > 1) {
+      .ilike("title", `%${args.slot_title}%`);
+    if (args.date) q = q.eq("do_date", args.date);
+    const { data } = await q.order("start_time").limit(60);
+    const rows = (data ?? []) as SlotRow[];
+    if (!rows.length) {
+      throw new Error(`No block matching "${args.slot_title}"${args.date ? ` on ${args.date}` : ""}`);
+    }
+    if (rows.length === 1) return rows[0];
+    const series = new Set(rows.map((r) => r.recurrence_id));
+    if (series.size === 1 && rows[0].recurrence_id) {
+      const today = todayIn(tz);
+      const upcoming = rows.filter((r) => r.do_date >= today).map((r) => r.do_date).slice(0, 6);
       throw new Error(
-        `Multiple blocks match "${args.slot_title}": ${data.map((s) => `"${s.title}"`).join(", ")}. Use slot_id.`,
+        `"${rows[0].title}" repeats — say which one: pass date (YYYY-MM-DD) or slot_id. Upcoming: ${upcoming.join(", ") || "none"}.`,
       );
     }
-    return data[0] as SlotRow;
+    throw new Error(
+      `Multiple blocks match "${args.slot_title}": ${rows.slice(0, 5).map((s) => `"${s.title}" (${s.do_date})`).join(", ")}. Use slot_id.`,
+    );
   }
   throw new Error("Provide slot_id or slot_title");
 }
@@ -1849,8 +2132,7 @@ export async function executeTool(
 
     case "create_recurring_task": {
       let title = args.title as string | undefined;
-      let freq = args.freq as RecurrenceRule["freq"] | undefined;
-      let interval = (args.interval as number | undefined) ?? 1;
+      let parsedRule: RecurrenceRule | null = null;
       let anchorISO = args.anchor_date as string | undefined;
       let duration = args.duration_minutes as number | null | undefined;
       let priority = (args.priority as string) ?? "none";
@@ -1858,10 +2140,9 @@ export async function executeTool(
       if (args.capture) {
         const parsed = parseCapture(args.capture as string);
         title = parsed.title || title;
-        if (parsed.recurrence) {
-          freq = parsed.recurrence.freq;
-          interval = parsed.recurrence.interval;
-        }
+        // The whole parsed rule, not just freq + interval — "every mon & thu"
+        // used to keep the cadence and drop the days.
+        parsedRule = parsed.recurrence;
         anchorISO = anchorISO ?? parsed.recurrenceAnchor ?? parsed.doDate ?? undefined;
         duration = duration ?? parsed.durationMinutes;
         if (parsed.priority !== "none") priority = parsed.priority;
@@ -1883,36 +2164,12 @@ export async function executeTool(
       }
 
       if (!title?.trim()) throw new Error("Task title is required");
-      if (!freq) throw new Error("Recurrence freq is required (daily, weekly, monthly or yearly)");
 
-      const today = new Intl.DateTimeFormat("en-CA", {
-        timeZone: tz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date());
+      const today = todayIn(tz);
       anchorISO = anchorISO ?? today;
-
-      const rule: RecurrenceRule = {
-        freq,
-        interval: Math.max(1, interval),
-      };
-      if (freq === "weekly") {
-        rule.byweekday = [new Date(dayMs(anchorISO)).getUTCDay()];
-      }
-      // "The last Friday of the month" — positional rather than by-date. The
-      // two are mutually exclusive (the DB enforces it), so setting one is
-      // enough; the weekday comes from the anchor unless the caller named one.
-      const setpos = args.bysetpos as number | undefined;
-      if (setpos && (freq === "monthly" || freq === "yearly")) {
-        rule.bysetpos = setpos;
-        rule.byweekday = [
-          typeof args.byweekday === "number"
-            ? (args.byweekday as number)
-            : new Date(dayMs(anchorISO)).getUTCDay(),
-        ];
-      }
-      if (freq === "yearly") rule.bymonth = new Date(dayMs(anchorISO)).getUTCMonth() + 1;
+      // "The last Friday of the month" is positional rather than by-date; the
+      // two are mutually exclusive (the DB enforces it) — see ruleFromArgs.
+      const rule = ruleFromArgs(args, anchorISO, parsedRule);
 
       let projectId = (args.project_id as string | undefined) ?? (adopt?.project_id as string | undefined);
       let initiativeId: string | undefined;
@@ -1930,19 +2187,13 @@ export async function executeTool(
         domainId = domainId ?? proj.domain_id ?? undefined;
       }
 
-      let timeOfDayMinutes: number | null = null;
-      const adoptStart = adopt?.start_time as string | null | undefined;
-      if (adoptStart) {
-        const parts = new Intl.DateTimeFormat("en-US", {
-          timeZone: tz,
-          hour: "2-digit",
-          minute: "2-digit",
-          hourCycle: "h23",
-        }).formatToParts(new Date(adoptStart));
-        const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
-        const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-        timeOfDayMinutes = hour * 60 + minute;
+      // A stated time wins; otherwise an adopted task keeps the clock it had.
+      let timeOfDayMinutes: number | null = minutesOfLocal(args.time);
+      if (args.time != null && args.time !== "" && timeOfDayMinutes == null) {
+        throw new Error("time must be HH:MM (24h, the user's zone).");
       }
+      const adoptStart = adopt?.start_time as string | null | undefined;
+      if (timeOfDayMinutes == null && adoptStart) timeOfDayMinutes = minutesInTz(adoptStart, tz);
 
       const created = await createRecurringTaskSeries(userId, {
         title,
@@ -1975,9 +2226,18 @@ export async function executeTool(
     case "update_recurring_task": {
       const row = await resolveSeries(userId, args as { series_id?: string; series_title?: string; task_id?: string; task_title?: string });
       assertTaskSeries(row);
-      const editKeys = ["title", "freq", "interval", "byweekday", "bysetpos", "until", "count", "duration_minutes", "priority", "project_id", "domain_id"];
+      const editKeys = ["title", "freq", "interval", "byweekday", "bysetpos", "until", "count", "duration_minutes", "priority", "project_id", "domain_id", "time"];
       if (!editKeys.some((k) => args[k] !== undefined)) {
-        throw new Error("Nothing to change — pass the new cadence, title, duration, or where it lives.");
+        throw new Error("Nothing to change — pass the new cadence, time, title, duration, or where it lives.");
+      }
+      // "" takes the clock off (a dated to-do); "HH:MM" sets it; absent leaves it.
+      let timeOfDay = row.time_of_day_minutes;
+      if (args.time !== undefined) {
+        if (args.time === "" || args.time === null) timeOfDay = null;
+        else {
+          timeOfDay = minutesOfLocal(args.time);
+          if (timeOfDay == null) throw new Error("time must be HH:MM (24h, the user's zone), or \"\" to clear it.");
+        }
       }
 
       const rule = editedRule(row, args);
@@ -2038,6 +2298,7 @@ export async function executeTool(
           max_count: rule.count ?? null,
           title,
           duration_minutes: duration,
+          time_of_day_minutes: timeOfDay,
           priority,
           project_id: projectId,
           domain_id: domainId,
@@ -2057,7 +2318,7 @@ export async function executeTool(
         domainId,
         duration,
         priority,
-        timeOfDayMinutes: row.time_of_day_minutes,
+        timeOfDayMinutes: timeOfDay,
         tz,
       });
       const cadence = describeRule(rule, row.anchor_date);
@@ -2184,20 +2445,7 @@ export async function executeTool(
 
       if (action === "following") {
         const from = dateOr(null);
-        const cleared = await clearSeriesOccurrences(userId, row.id, from, tz, { includeOverridden: true });
-        const until = addDaysISO(from, -1);
-        if (until < row.anchor_date) {
-          await detachSeriesTasks(userId, row.id);
-          const { error } = await admin.from("recurrences").delete().eq("id", row.id).eq("user_id", userId);
-          if (error) throw new Error(error.message);
-        } else {
-          const { error } = await admin
-            .from("recurrences")
-            .update({ until_date: until, active: true })
-            .eq("id", row.id)
-            .eq("user_id", userId);
-          if (error) throw new Error(error.message);
-        }
+        const cleared = await truncateSeries(userId, row, from, tz);
         return {
           result: JSON.stringify({ id: row.id, action, from, cleared }),
           action: {
@@ -2209,6 +2457,337 @@ export async function executeTool(
         };
       }
 
+      throw new Error(`Unknown action "${action}". Use pause, stop, delete, skip, or following.`);
+    }
+
+    // ── Slot series ────────────────────────────────────────────────────────
+    case "create_recurring_slot": {
+      const today = todayIn(tz);
+      let title = typeof args.title === "string" ? args.title.trim() : "";
+      let duration = args.duration_minutes != null ? Math.round(Number(args.duration_minutes)) : null;
+      if (duration != null && (!Number.isFinite(duration) || duration <= 0)) {
+        throw new Error("duration_minutes must be a positive number");
+      }
+      let projectId = (args.project_id as string | undefined) || null;
+      let domainId = (args.domain_id as string | undefined) || null;
+      const startLocal = typeof args.start_local === "string" ? args.start_local.trim() : "";
+      const startDate = /^\d{4}-\d{2}-\d{2}/.test(startLocal) ? startLocal.slice(0, 10) : null;
+      let timeOfDay = minutesOfLocal(startLocal);
+
+      let rule: RecurrenceRule;
+      let anchorISO: string;
+      let fromISO: string;
+      let adoptSlot: SlotRow | null = null;
+      let source: SeriesRow | null = null;
+      let replaced: { title: string; cleared: number } | null = null;
+
+      if (args.from_series_id || args.from_series_title) {
+        // Turning a repeating TASK into a repeating BLOCK — the request that
+        // started this. Same rule, same clock, same filing, unless overridden;
+        // the task series hands over at the cut-over date, so the week never
+        // shows both.
+        source = await resolveSeries(userId, {
+          series_id: args.from_series_id as string | undefined,
+          series_title: args.from_series_title as string | undefined,
+        });
+        if (source.kind !== "task") throw new Error(`"${source.title}" already repeats as a block — edit it with update_recurring_slot.`);
+        title = title || source.title;
+        duration = duration ?? source.duration_minutes;
+        timeOfDay = timeOfDay ?? source.time_of_day_minutes;
+        if (timeOfDay == null) {
+          throw new Error(`"${source.title}" has no time of day, and a block needs one. Ask what time, then pass start_local.`);
+        }
+        projectId = projectId ?? source.project_id;
+        domainId = domainId ?? source.domain_id;
+        anchorISO = source.anchor_date;
+        rule = editedRule(source, args);
+        fromISO = startDate && startDate > today ? startDate : today;
+      } else if (args.slot_id || args.slot_title) {
+        // "Make this block repeat" adopts the block, with whatever is in it.
+        adoptSlot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string; date?: string }, tz);
+        if (adoptSlot.recurrence_id) {
+          throw new Error(`"${adoptSlot.title}" already repeats. Use update_recurring_slot to change the series.`);
+        }
+        title = title || adoptSlot.title;
+        duration = duration ?? adoptSlot.duration_minutes;
+        timeOfDay = timeOfDay ?? minutesInTz(adoptSlot.start_time, tz);
+        projectId = projectId ?? adoptSlot.project_id;
+        domainId = domainId ?? adoptSlot.domain_id;
+        anchorISO = adoptSlot.do_date;
+        fromISO = anchorISO;
+        rule = ruleFromArgs(args, anchorISO);
+      } else {
+        if (!title) throw new Error("A repeating block needs a title — name the through-line of the work it holds.");
+        if (!startDate || timeOfDay == null) {
+          throw new Error("start_local is required: the FIRST occurrence, 'YYYY-MM-DDTHH:MM' in the user's zone.");
+        }
+        anchorISO = startDate;
+        fromISO = anchorISO;
+        rule = ruleFromArgs(args, anchorISO);
+      }
+      duration = duration ?? 60;
+
+      const { data: rec, error: recErr } = await admin
+        .from("recurrences")
+        .insert({
+          user_id: userId,
+          kind: "slot",
+          freq: rule.freq,
+          interval: rule.interval,
+          byweekday: rule.byweekday ?? [],
+          bymonthday: rule.bymonthday ?? null,
+          bysetpos: rule.bysetpos ?? null,
+          bymonth: rule.bymonth ?? null,
+          anchor_date: anchorISO,
+          until_date: rule.until ?? null,
+          max_count: rule.count ?? null,
+          // Dates already skipped on the task series stay skipped.
+          exdates: source?.exdates ?? [],
+          title,
+          duration_minutes: duration,
+          time_of_day_minutes: timeOfDay,
+          project_id: projectId,
+          domain_id: domainId,
+        })
+        .select("id")
+        .single();
+      if (recErr) throw new Error(recErr.message);
+
+      // Link the adopted block before materialising, or its date looks
+      // missing and a twin lands beside it.
+      if (adoptSlot) {
+        const { error } = await admin
+          .from("slots")
+          .update({ recurrence_id: rec.id, recurrence_date: adoptSlot.do_date })
+          .eq("id", adoptSlot.id)
+          .eq("user_id", userId);
+        if (error) throw new Error(error.message);
+      }
+
+      const occurrences = await materializeSlotOccurrences(userId, rec.id, {
+        title,
+        rule,
+        anchorISO,
+        fromISO,
+        exdates: source?.exdates ?? [],
+        projectId,
+        domainId,
+        duration,
+        timeOfDayMinutes: timeOfDay!,
+        tz,
+      });
+      // Retire the task series only once the block series exists: a failure
+      // in between leaves both on the calendar (visible, fixable), never neither.
+      if (source) replaced = { title: source.title, cleared: await truncateSeries(userId, source, fromISO, tz) };
+
+      const cadence = describeRule(rule, anchorISO);
+      const first = occurrences[0];
+      const clock = first ? fmtTimeRange(
+        occurrenceStart(first.date, timeOfDay, tz)!,
+        new Date(new Date(occurrenceStart(first.date, timeOfDay, tz)!).getTime() + duration * 60_000).toISOString(),
+        tz,
+      ) : "";
+      const handover = replaced
+        ? ` It replaces the repeating task "${replaced.title}" from ${fromISO} on${replaced.cleared ? ` (${replaced.cleared} upcoming task occurrence${replaced.cleared === 1 ? "" : "s"} removed)` : ""}.`
+        : "";
+      return {
+        result: JSON.stringify({
+          seriesId: rec.id,
+          title,
+          cadence,
+          time: clock,
+          durationMinutes: duration,
+          // Each one is an ordinary block — add_to_slot takes these ids.
+          occurrences: occurrenceList(occurrences),
+          replacedTaskSeries: replaced ? { title: replaced.title, from: fromISO, removedOccurrences: replaced.cleared } : undefined,
+        }),
+        action: {
+          tool: name,
+          summary: `Holding "${title}" — ${cadence}${clock ? `, ${clock}` : ""}${first ? `, from ${first.date}` : ""}.${handover}`,
+          verb: "slotted",
+          ...(first ? { ref: { kind: "slot" as const, id: first.id } } : {}),
+        },
+      };
+    }
+
+    case "update_recurring_slot": {
+      const row = await resolveSlotSeries(userId, args as { series_id?: string; series_title?: string; slot_id?: string; slot_title?: string });
+      const editKeys = ["title", "freq", "interval", "byweekday", "bysetpos", "until", "count", "duration_minutes", "time", "project_id", "domain_id"];
+      if (!editKeys.some((k) => args[k] !== undefined)) {
+        throw new Error("Nothing to change — pass the new cadence, time, length, title, or what it's for.");
+      }
+      const rule = editedRule(row, args);
+      const title = typeof args.title === "string" && args.title.trim() ? args.title.trim() : row.title;
+      let duration = row.duration_minutes;
+      if (args.duration_minutes !== undefined) {
+        const mins = Number(args.duration_minutes);
+        if (!Number.isFinite(mins) || mins <= 0) throw new Error("duration_minutes must be a positive number");
+        duration = Math.round(mins);
+      }
+      let timeOfDay = row.time_of_day_minutes ?? 9 * 60;
+      if (args.time !== undefined) {
+        const t = minutesOfLocal(args.time);
+        if (t == null) throw new Error("time must be HH:MM (24h, the user's zone) — a block always has a clock.");
+        timeOfDay = t;
+      }
+      const projectId = args.project_id !== undefined ? String(args.project_id || "") || null : row.project_id;
+      const domainId = args.domain_id !== undefined ? String(args.domain_id || "") || null : row.domain_id;
+
+      const { error } = await admin
+        .from("recurrences")
+        .update({
+          freq: rule.freq,
+          interval: rule.interval,
+          byweekday: rule.byweekday ?? [],
+          bymonthday: rule.bymonthday ?? null,
+          bysetpos: rule.bysetpos ?? null,
+          bymonth: rule.bymonth ?? null,
+          until_date: rule.until ?? null,
+          max_count: rule.count ?? null,
+          title,
+          duration_minutes: duration,
+          time_of_day_minutes: timeOfDay,
+          project_id: projectId,
+          domain_id: domainId,
+        })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+
+      // Unlike a task series, a block series holds work. Regenerating every
+      // future occurrence (what the panel does) would spill the tasks already
+      // put in next Thursday back onto the day. So an occurrence the new rule
+      // still lands on is edited IN PLACE, keeping its contents; only dates the
+      // rule gave up are removed. Per-occurrence edits stay pinned.
+      const today = todayIn(tz);
+      const { data: future, error: futErr } = await admin
+        .from("slots")
+        .select("id, do_date, recurrence_id, recurrence_overridden, google_event_id")
+        .eq("user_id", userId)
+        .eq("recurrence_id", row.id)
+        .gte("do_date", today);
+      if (futErr) throw new Error(futErr.message);
+      // Out to the furthest occurrence that exists, not just this horizon — a
+      // device that topped up yesterday may already hold one a day further.
+      const lastHeld = (future ?? []).reduce((m, s) => ((s.do_date as string) > m ? (s.do_date as string) : m), today);
+      const horizonEnd = addDaysISO(today, HORIZON_DAYS);
+      const keepDates = new Set(
+        expandRule(rule, row.anchor_date, today, lastHeld > horizonEnd ? lastHeld : horizonEnd, row.exdates ?? []),
+      );
+      const open = (future ?? []).filter((s) => !s.recurrence_overridden);
+      const dropped = open.filter((s) => !keepDates.has(s.do_date as string));
+      const kept = open.filter((s) => keepDates.has(s.do_date as string));
+      const released = dropped.length ? await deleteSlotRows(userId, dropped) : 0;
+      for (const s of kept) {
+        const { error: upErr } = await admin
+          .from("slots")
+          .update({
+            title,
+            start_time: occurrenceStart(s.do_date as string, timeOfDay, tz),
+            duration_minutes: duration,
+            project_id: projectId,
+            domain_id: domainId,
+          })
+          .eq("id", s.id)
+          .eq("user_id", userId);
+        if (upErr) throw new Error(upErr.message);
+        if (s.google_event_id) await invokeFn("slot-mirror", { slotId: s.id });
+      }
+
+      const occurrences = await materializeSlotOccurrences(userId, row.id, {
+        title,
+        rule,
+        anchorISO: row.anchor_date,
+        fromISO: today,
+        exdates: row.exdates ?? [],
+        projectId,
+        domainId,
+        duration,
+        timeOfDayMinutes: timeOfDay,
+        tz,
+      });
+      const cadence = describeRule(rule, row.anchor_date);
+      const spilled = released
+        ? ` ${released} task${released === 1 ? "" : "s"} sat in dates it no longer covers — kept on those days, un-blocked.`
+        : "";
+      return {
+        result: JSON.stringify({
+          seriesId: row.id,
+          title,
+          cadence,
+          durationMinutes: duration,
+          occurrences: occurrenceList(occurrences),
+          removedOccurrences: dropped.length,
+          releasedTasks: released,
+        }),
+        action: {
+          tool: name,
+          summary: `Updated "${title}" — ${cadence}.${spilled}`,
+          verb: "updated",
+          ...(occurrences[0] ? { ref: { kind: "slot" as const, id: occurrences[0].id } } : {}),
+        },
+      };
+    }
+
+    case "end_recurring_slot": {
+      const action = String(args.action ?? "");
+      const row = await resolveSlotSeries(userId, args as { series_id?: string; series_title?: string; slot_id?: string; slot_title?: string });
+      const today = todayIn(tz);
+      const dateOr = (fallback: string | null): string => {
+        if (args.from_date == null || args.from_date === "") {
+          if (fallback) return fallback;
+          throw new Error("from_date is required (YYYY-MM-DD) — which occurrence?");
+        }
+        const s = String(args.from_date).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("from_date must be YYYY-MM-DD.");
+        return s;
+      };
+      const kept = (n: number) => n ? ` ${n} task${n === 1 ? "" : "s"} inside stay on their day, un-blocked.` : "";
+      const done = (summary: string, extra: Record<string, unknown>, verb: AgentVerb = "deleted") => ({
+        result: JSON.stringify({ seriesId: row.id, action, ...extra }),
+        action: { tool: name, summary, verb },
+      });
+
+      if (action === "pause") {
+        const { error } = await admin.from("recurrences").update({ active: false }).eq("id", row.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return done(`Paused "${row.title}". The slots already on the calendar stay; no new ones.`, { active: false }, "updated");
+      }
+      if (action === "stop") {
+        const from = dateOr(today);
+        const { removed, releasedTasks } = await clearSlotSeriesOccurrences(userId, row.id, addDaysISO(from, 1));
+        await detachSeriesSlots(userId, row.id);
+        const { error } = await admin.from("recurrences").update({ active: false }).eq("id", row.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return done(`Stopped "${row.title}" repeating after ${from}; earlier ones stay as ordinary slots.${kept(releasedTasks)}`, { from, removed, releasedTasks }, "updated");
+      }
+      if (action === "delete") {
+        const { removed, releasedTasks } = await clearSlotSeriesOccurrences(userId, row.id, "1900-01-01", { includeOverridden: true });
+        const { error } = await admin.from("recurrences").delete().eq("id", row.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return done(`Deleted the "${row.title}" series and its ${removed} slot${removed === 1 ? "" : "s"}.${kept(releasedTasks)}`, { removed, releasedTasks });
+      }
+      if (action === "skip") {
+        const from = dateOr(null);
+        const ex = new Set(row.exdates ?? []);
+        ex.add(from);
+        const { error } = await admin.from("recurrences").update({ exdates: [...ex] }).eq("id", row.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        const { data: occ, error: occErr } = await admin
+          .from("slots")
+          .select("id, google_event_id")
+          .eq("user_id", userId)
+          .eq("recurrence_id", row.id)
+          .eq("recurrence_date", from);
+        if (occErr) throw new Error(occErr.message);
+        const releasedTasks = occ?.length ? await deleteSlotRows(userId, occ) : 0;
+        return done(`Skipped ${from} of "${row.title}". The series continues.${kept(releasedTasks)}`, { from, releasedTasks });
+      }
+      if (action === "following") {
+        const from = dateOr(null);
+        const removed = await truncateSeries(userId, row, from, tz);
+        return done(`Deleted "${row.title}" from ${from} on. Earlier ones stay.`, { from, removed });
+      }
       throw new Error(`Unknown action "${action}". Use pause, stop, delete, skip, or following.`);
     }
 
@@ -2331,7 +2910,7 @@ export async function executeTool(
     }
 
     case "add_to_slot": {
-      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string; date?: string }, tz);
       const newTasks = normalizeSlotTasks(args.tasks);
       const taskIds = (args.task_ids as string[] | undefined)?.filter(Boolean) ?? [];
       if (!newTasks.length && !taskIds.length) throw new Error("Nothing to add — pass tasks or task_ids");
@@ -2349,7 +2928,7 @@ export async function executeTool(
     }
 
     case "reschedule_slot": {
-      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string; date?: string }, tz);
       const startLocalRaw = args.start_local as string | undefined;
       const patch: Record<string, unknown> = {};
       if (startLocalRaw) {
@@ -2361,6 +2940,9 @@ export async function executeTool(
       }
       if (args.duration_minutes != null) patch.duration_minutes = args.duration_minutes;
       if (!Object.keys(patch).length) throw new Error("Nothing to change — pass start_local or duration_minutes");
+      // One occurrence of a repeating block, moved on its own: pin it, as the
+      // grid does, so a later edit to the whole series leaves it where it is.
+      if (slot.recurrence_id) patch.recurrence_overridden = true;
 
       const { error } = await admin.from("slots").update(patch).eq("id", slot.id).eq("user_id", userId);
       if (error) throw new Error(error.message);
@@ -2389,7 +2971,7 @@ export async function executeTool(
     }
 
     case "delete_slot": {
-      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string; date?: string }, tz);
       const { data: children } = await admin
         .from("tasks")
         .select("id")
@@ -2400,6 +2982,21 @@ export async function executeTool(
       const { error } = await admin.from("slots").delete().eq("id", slot.id).eq("user_id", userId);
       if (error) throw new Error(error.message);
       await invokeFn("slot-mirror", { slotId: slot.id, deleted: true, googleEventId: slot.google_event_id });
+      // One occurrence of a repeating block: record the skip on the series, or
+      // the next top-up sees the date missing and puts the block straight back.
+      if (slot.recurrence_id && slot.recurrence_date) {
+        const { data: rec } = await admin
+          .from("recurrences")
+          .select("exdates")
+          .eq("id", slot.recurrence_id)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (rec) {
+          const ex = new Set((rec.exdates as string[] | null) ?? []);
+          ex.add(slot.recurrence_date);
+          await admin.from("recurrences").update({ exdates: [...ex] }).eq("id", slot.recurrence_id).eq("user_id", userId);
+        }
+      }
 
       const kept = (children ?? []).length;
       return {

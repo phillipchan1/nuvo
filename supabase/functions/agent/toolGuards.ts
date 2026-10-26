@@ -43,6 +43,9 @@ export const REQUIRES_TARGET: Record<string, string[]> = {
   create_recurring_task: ["capture", "title", "task_id", "task_title"],
   update_recurring_task: ["series_id", "series_title", "task_id", "task_title"],
   end_recurring_task: ["series_id", "series_title", "task_id", "task_title"],
+  create_recurring_slot: ["title", "slot_id", "slot_title", "from_series_id", "from_series_title"],
+  update_recurring_slot: ["series_id", "series_title", "slot_id", "slot_title"],
+  end_recurring_slot: ["series_id", "series_title", "slot_id", "slot_title"],
   // schedule_task's schema requires only start_time — so "schedule something at
   // 2pm" with no subject passed validation and reached the handler.
   schedule_task: ["task_id", "task_title"],

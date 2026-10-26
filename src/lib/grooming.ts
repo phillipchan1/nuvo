@@ -30,10 +30,33 @@ export function liveSuggestion(t: Task): InboxSuggestion | null {
   if (t.status !== "inbox") return null;
   const s = t.suggestion;
   if (!s || s.dismissed) return null;
+  // An automatic filing is a FACT on the row (the domain is already written), not
+  // a proposal — it is read through `autoFiled`, never offered for Accept.
+  if (s.auto) return null;
   if (s.sig !== suggestionSig(t.title, t.notes)) return null; // stale: re-grooming
   const hasPlacement = s.level !== "none" && s.targetId;
   if (!hasPlacement && !s.durationMinutes && !s.energy) return null; // nothing to offer
   return s;
+}
+
+/** A domain the router wrote onto this capture and the person hasn't yet reviewed.
+ *  Null once they undo it, move it, or it goes stale because the text changed. It
+ *  is only ever the DOMAIN (never a project, never a date) — the lowest-stakes
+ *  field the router touches, and the one that keeps the week's read honest. */
+export function autoFiled(t: Task): InboxSuggestion | null {
+  const s = t.suggestion;
+  if (t.status !== "inbox" || !s?.auto || s.dismissed || s.outcome) return null;
+  if (s.sig !== suggestionSig(t.title, t.notes)) return null;
+  if (!s.targetId || t.domain_id !== s.targetId) return null; // moved by hand since
+  return s;
+}
+
+/** Undo an automatic filing: take the domain back off, spend the guess, and
+ *  record that the router was wrong — the signal a too-broad domain is told about. */
+export function undoAutoPatch(t: Task): Partial<Task> {
+  const s = t.suggestion;
+  if (!s) return { domain_id: null };
+  return { domain_id: null, suggestion: { ...s, dismissed: true, outcome: "undone" } };
 }
 
 /** Accepting the guess applies whatever it proposed — placement, duration,
@@ -42,7 +65,7 @@ export function liveSuggestion(t: Task): InboxSuggestion | null {
 export function acceptPatch(t: Task): Partial<Task> {
   const s = t.suggestion;
   if (!s) return {};
-  const patch: Partial<Task> = { suggestion: { ...s, dismissed: true } };
+  const patch: Partial<Task> = { suggestion: { ...s, dismissed: true, outcome: "accepted" } };
   if (s.level === "project") patch.project_id = s.targetId;
   else if (s.level === "initiative") patch.initiative_id = s.targetId;
   else if (s.level === "domain") patch.domain_id = s.targetId;
@@ -56,5 +79,5 @@ export function acceptPatch(t: Task): Partial<Task> {
 
 /** Dismissing keeps the capture untouched but spends the guess. */
 export function dismissPatch(t: Task): Partial<Task> {
-  return t.suggestion ? { suggestion: { ...t.suggestion, dismissed: true } } : {};
+  return t.suggestion ? { suggestion: { ...t.suggestion, dismissed: true, outcome: "rejected" } } : {};
 }

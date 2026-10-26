@@ -747,7 +747,15 @@ export function useTaskMutations() {
     if (!("suggestion" in patch) && REFILE_FIELDS.some((f) => f in patch)) {
       const current = findCachedTask(qc, id);
       if (current?.suggestion && !current.suggestion.dismissed) {
-        patch = { ...patch, suggestion: { ...current.suggestion, dismissed: true } };
+        // The refile is itself the verdict on the guess: the same domain agrees
+        // with it, anything else corrects it. That outcome is the router's only
+        // feedback, so it is recorded here rather than inferred later.
+        const s = current.suggestion;
+        const agrees = "domain_id" in patch ? patch.domain_id === s.domainId : false;
+        patch = {
+          ...patch,
+          suggestion: { ...s, dismissed: true, outcome: s.outcome ?? (agrees ? (s.auto ? "confirmed" : "accepted") : "corrected") },
+        };
       }
     }
 

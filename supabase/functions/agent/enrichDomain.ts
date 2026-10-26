@@ -12,6 +12,7 @@
 
 import { admin } from "../_shared/admin.ts";
 import { completeJSON } from "./llm.ts";
+import { routingReadout } from "./routingHistory.ts";
 
 // deno-lint-ignore no-control-regex
 const clean = (s: string): string => (s ?? "").replace(/[\x00-\x1F\x7F]/g, " ").trim();
@@ -37,6 +38,9 @@ export interface MisfiledItem {
 export interface DomainRefinement {
   context: DomainContext;
   misfiled: MisfiledItem[];
+  /** Plain-English, present only when the router's own track record says this
+   *  domain keeps absorbing work that gets moved out. A report, not an order (P4). */
+  routingNote?: string;
 }
 
 type Child = { ref: string; kind: MisfiledItem["kind"]; id: string; name: string; text: string };
@@ -75,6 +79,17 @@ export async function enrichDomain(
   const sibLine = siblings.map((s) => `- ${clean(s.name)}${s.charter || s.intention ? `: ${clean(s.charter || s.intention || "")}` : ""}`).join("\n") || "(none)";
   const childLine = children.map((c) => `[${c.ref}] ${c.kind}: ${c.text}`).join("\n") || "(nothing filed here yet)";
 
+  // What the router got wrong for THIS domain, from the person's own undos and
+  // moves. Pure counting happens in the kernel; this only turns it into prose.
+  const readout = await routingReadout(userId).catch(() => null);
+  const nameOf = (id: string | null) => (id === input.domainId ? clean(domain.name) : siblings.find((x) => x.id === id)?.name ?? "somewhere else");
+  const leaving = (readout?.pairs ?? []).filter((p) => p.fromId === input.domainId);
+  const arriving = (readout?.pairs ?? []).filter((p) => p.toId === input.domainId);
+  const feedbackLine = [
+    ...leaving.map((p) => `- Filed here by Nuvo, then moved to ${p.toId ? clean(nameOf(p.toId)) : "nowhere (undone)"}: ${p.titles.map((t) => `"${clean(t)}"`).join(", ")}`),
+    ...arriving.map((p) => `- Filed under ${clean(nameOf(p.fromId))} by Nuvo, then moved HERE: ${p.titles.map((t) => `"${clean(t)}"`).join(", ")}`),
+  ].join("\n");
+
   const prompt = `You are refining one "domain" (a life area) for a planning assistant. Do TWO things: (A) build machine-facing ROUTING CONTEXT so terse inbox captures can be filed here later, and (B) catch work currently filed here that clearly DOESN'T belong.
 
 CRITICAL: the CHARTER below is the source of truth for what this domain is. The work currently filed under it may be mis-tagged — do NOT let that work redefine the domain. Judge the work against the charter, not the other way around.
@@ -96,6 +111,7 @@ ${childLine}
 - boundary: one line distinguishing it from its most confusable sibling.
 - exemplars: 2–4 short capture-like phrases that clearly belong here.
 
+${feedbackLine ? `ROUTING FEEDBACK — the person corrected Nuvo's own filings. Use it ONLY to sharpen the boundary line (what separates this domain from the one it is confused with); never to widen the scope:\n${feedbackLine}\n` : ""}
 (B) misfiled: every listed item that contradicts the charter and clearly belongs to a different domain. Give its bracketed ref and the NAME of the sibling domain it should move to. Be decisive about obvious mismatches (e.g. trading or day-job work under "Family"); leave genuinely ambiguous items out. If everything fits, return [].
 
 Respond with JSON only:
@@ -136,5 +152,10 @@ Respond with JSON only:
     exemplars: cleanList(raw.exemplars, 4, 80),
   };
 
-  return { context, misfiled };
+  const h = readout?.health.get(input.domainId);
+  const routingNote = h?.broad
+    ? `${h.missed} of the last ${h.routed} things Nuvo filed here were moved or undone. The boundary below tries to separate it from its neighbours.`
+    : undefined;
+
+  return { context, misfiled, ...(routingNote ? { routingNote } : {}) };
 }

@@ -81,6 +81,22 @@ export interface AgentContext {
     projectId: string | null;
     domainId: string | null;
   }[];
+  /** Active REPEATING BLOCKS — slots that recur and hold work (standing time).
+   *  Each occurrence is an ordinary block in todaySlots carrying this seriesId.
+   *  Create one with create_recurring_slot; change every occurrence with
+   *  update_recurring_slot; pause/stop/skip/delete with end_recurring_slot. */
+  recurringSlots: {
+    id: string;
+    title: string;
+    cadence: string;
+    /** The block's clock, pre-formatted in the user's zone — use verbatim. */
+    timeRange: string;
+    durationMinutes: number;
+    nextDate: string | null;
+    until: string | null;
+    projectId: string | null;
+    domainId: string | null;
+  }[];
   scheduled: unknown[];
   /** Monday of the planning week (Sundays plan the week ahead). */
   weekStart: string;

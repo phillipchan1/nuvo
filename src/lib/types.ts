@@ -33,6 +33,14 @@ export interface InboxSuggestion {
   confidence: number;
   /** Set once the user has accepted or dismissed it — stops re-grooming until the capture changes. */
   dismissed?: boolean;
+  /** The domain was WRITTEN onto the capture (the router was ≥ ROUTE_AUTO sure), not
+   *  just proposed. It reads as filed, with an Undo — never as a proposal. */
+  auto?: boolean;
+  /** What the person did with it. This is the router's only feedback: accepted /
+   *  confirmed teach it, undone / corrected / rejected tell a domain it is too broad. */
+  outcome?: "confirmed" | "accepted" | "undone" | "corrected" | "rejected";
+  /** Which engine placed it. */
+  engine?: "decisions" | "llm";
 }
 
 export interface Task {

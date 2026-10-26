@@ -20,6 +20,7 @@ export const WRITE_TOOLS = [
   "create_task", "create_recurring_task", "update_recurring_task", "end_recurring_task", "plan_task", "schedule_task", "unschedule_task", "reschedule_task",
   "complete_task", "trash_task", "move_to_inbox", "update_task",
   "create_slot", "add_to_slot", "reschedule_slot", "delete_slot",
+  "create_recurring_slot", "update_recurring_slot", "end_recurring_slot",
   "create_calendar_event", "move_event", "reschedule_event", "cancel_event", "decline_event",
   // propose_invite STAGES — it writes no event and sends no mail. It is listed
   // as a write anyway so "propose, don't act" scenarios treat staging as an

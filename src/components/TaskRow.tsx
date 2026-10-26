@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Reac
 import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
-import { liveSuggestion } from "../lib/grooming";
+import { autoFiled, liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { carriedTitle, RecurMark } from "./ui";
 import { pressable } from "../lib/a11y";
@@ -233,6 +233,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   onAcceptSuggestion?: () => void;
   /** Spend the guess without applying it. */
   onDismissSuggestion?: () => void;
+  /** Take back a domain Nuvo filed on its own (the router was sure enough to
+   *  write it). Passed only where the row is an Inbox row. */
+  onUndoAutoFile?: () => void;
   /** The surface's ticking clock. Passed so a row can never disagree with the
    *  group it was sorted into — both sides must judge "overdue" off one now. */
   now?: Date;
@@ -270,6 +273,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     dragData,
     onAcceptSuggestion,
     onDismissSuggestion,
+    onUndoAutoFile,
     now,
     swipeActions,
     editing,
@@ -502,6 +506,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   // Passive grooming's guess — surfaced only where the row wired up accept/dismiss
   // (the inbox), and only when fresh and actionable.
   const groom = onAcceptSuggestion ? liveSuggestion(task) : null;
+  // A domain Nuvo already wrote. It is not a proposal: the place tag shows it as
+  // filed (the task really carries that domain), and the only act left is Undo.
+  const auto = !groom && onUndoAutoFile ? autoFiled(task) : null;
 
   // ── one line, one height, one order ─────────────────────────────────────────
   // Calm in a dense list comes from UNIFORMITY, not from showing less. Every row
@@ -530,7 +537,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     : durText;
   const showState = groom ? null : state;
   const hasPlace = Boolean(identity.placeName);
-  const hasMeta = Boolean(showState || showDur || task.recurrence_id || groom);
+  const hasMeta = Boolean(showState || showDur || task.recurrence_id || groom || auto);
 
   // Accept / dismiss — the one thing that genuinely distinguishes a guess from a
   // filed fact, so it's what marks the row instead of a taller silhouette.
@@ -556,6 +563,16 @@ const TaskRow = forwardRef<TaskRowHandle, {
         className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:min-w-6 md:px-1 md:py-px ${META} text-muted hover:text-ink`}
       >
         ✕
+      </button>
+    </span>
+  ) : auto ? (
+    <span className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+      <button
+        aria-label={`Undo: filed to ${auto.targetLabel}`}
+        onClick={(e) => { e.stopPropagation(); onUndoAutoFile?.(); }}
+        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:px-2 md:py-px ${META} font-medium text-muted hover:text-ink hover:bg-accent-soft`}
+      >
+        Undo
       </button>
     </span>
   ) : null;
@@ -594,7 +611,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
       ? "glass-lift-row"
       : "row-hover";
 
-  const rowHint = groom
+  const rowHint = auto
+    ? `Filed to ${auto.targetLabel} automatically${auto.rationale ? ` · ${auto.rationale}` : ""}`
+    : groom
     ? [groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : null, groom.rationale]
         .filter(Boolean)
         .join(" · ")

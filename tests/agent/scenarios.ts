@@ -497,15 +497,19 @@ export const SCENARIOS: Scenario[] = [
     id: "slot-move-carries-its-work",
     group: "slots",
     it: "moving a block moves the block, not each task inside it",
-    world: "loaded",
+    // `holding`, not `loaded`: the seeded reply says the block is held, so the
+    // world has to hold it. On `loaded` the chat could see no block, and either
+    // asked about it or quietly re-created it and moved the copy — which the
+    // old assertion counted as a pass. Same lesson as slot-add-to-existing.
+    world: "holding",
     turns: [
-      "hold 9 to 11 for the Stampede push — subdomains, the deploy, the ATC follow-up",
-      { assistant: "Held **Stampede push** — 9:00–11:00 AM, three items inside." },
+      "hold 9 to 11 for the Stampede push — the subdomains and the ATC follow-up",
+      { assistant: "Held **Stampede push** — 9:00–11:00 AM, two items inside." },
       "push that block to 1pm",
     ],
     expect: [
       called("reschedule_slot"),
-      notCalled("reschedule_task", "schedule_task"),
+      notCalled("reschedule_task", "schedule_task", "create_slot"),
     ],
   }),
 
@@ -538,6 +542,93 @@ export const SCENARIOS: Scenario[] = [
         describe: "sized to the 2 hours the user asked for",
         ok: (a) => a.duration_minutes === 120,
       }),
+    ],
+  }),
+
+  // Repeating blocks. 2026-10-22: asked for "a repeating SLOT vs event so i can
+  // put tasks in there", the chat said Nuvo "only lets me repeat tasks, not
+  // slots" and offered to hand-lay eight one-off copies — while the app had
+  // made slot series all along. The chat simply had no tool for one.
+
+  pin({
+    id: "slot-series-from-a-cadence",
+    group: "slots",
+    it: "a window that repeats and holds work is ONE repeating block, not a run of copies",
+    because: "the chat had no slot-series tool, so it offered eight one-off slots and a promise to add more",
+    world: "cold",
+    turns: ["hold every Tuesday 7 to 9am for deep work — I'll drop tasks into it each week"],
+    expect: [
+      calledTimes("create_recurring_slot", 1),
+      called("create_recurring_slot", {
+        describe: "on Tuesdays at 07:00",
+        ok: (a) => {
+          const start = String(a.start_local ?? "");
+          if (!isLocalTime(start) || !start.endsWith("T07:00")) return false;
+          const days = Array.isArray(a.byweekday) ? a.byweekday : [];
+          return days.includes(2) || new Date(`${start.slice(0, 10)}T12:00:00Z`).getUTCDay() === 2;
+        },
+      }),
+      called("create_recurring_slot", {
+        describe: "two hours long",
+        ok: (a) => a.duration_minutes === 120,
+      }),
+      notCalled("create_slot", "create_recurring_task", "create_calendar_event"),
+    ],
+  }),
+
+  pin({
+    id: "slot-series-converts-the-repeating-task",
+    group: "slots",
+    it: "a repeating task they want to put work in becomes a repeating block, in one call",
+    because:
+      "the 2026-10-22 screenshot, nearly verbatim: the series was a repeating task, and the chat " +
+      "told the user it couldn't repeat a slot",
+    world: "loaded",
+    turns: ["the leadership session every week in nuvo — any way you can make it a repeating SLOT instead of a task? so i can put tasks in there"],
+    expect: [
+      called("create_recurring_slot", {
+        describe: "converting the Leadership task series",
+        ok: (a) => a.from_series_id === ID.seriesLeadership || /leadership/i.test(String(a.from_series_title ?? "")),
+      }),
+      // The conversion retires the task series itself; a second end call
+      // would act on a series already handed over.
+      notCalled("create_slot", "create_recurring_task", "end_recurring_task", "trash_task"),
+      replyLacks(/only (?:lets|allows) me|can(?:'|’)?t (?:make|create|repeat)|not (?:able|possible)/i, "never says a repeating block is impossible"),
+    ],
+  }),
+
+  pin({
+    id: "slot-series-edit-is-the-series",
+    group: "slots",
+    it: "moving a repeating block 'from now on' edits the series, not one week",
+    because: "reschedule_slot on one occurrence would move this Thursday and leave every other one at 3",
+    world: "standing",
+    turns: ["move my leadership strategy block to 2pm from now on"],
+    expect: [
+      called("update_recurring_slot", {
+        describe: "time 14:00 on the leadership series",
+        ok: (a) =>
+          a.time === "14:00" &&
+          (a.series_id === ID.seriesLeadershipSlot || a.slot_id === ID.slotLeadershipNext ||
+            /leadership/i.test(String(a.series_title ?? a.slot_title ?? ""))),
+      }),
+      notCalled("reschedule_slot", "create_recurring_slot", "create_slot"),
+    ],
+  }),
+
+  pin({
+    id: "slot-series-fill-one-occurrence",
+    group: "slots",
+    it: "putting work in next week's repeating block goes inside THAT occurrence",
+    because: "every occurrence shares a title, so a bare title is ambiguous — the id or the date picks the week",
+    world: "standing",
+    turns: ["put 'review the hiring plan' in next week's leadership block"],
+    expect: [
+      called("add_to_slot", {
+        describe: "into the 2026-08-06 occurrence",
+        ok: (a) => a.slot_id === ID.slotLeadershipNext || a.date === "2026-08-06",
+      }),
+      notCalled("create_slot", "create_recurring_slot", "update_recurring_slot", "create_task"),
     ],
   }),
 

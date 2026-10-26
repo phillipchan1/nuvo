@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO } from "../lib/dates";
-import { acceptPatch, dismissPatch } from "../lib/grooming";
+import { acceptPatch, dismissPatch, undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
@@ -657,6 +657,7 @@ function LeftRail({
     onContextMenu: (e: React.MouseEvent) => openContextMenu(t, e),
     onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
     onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
+    onUndoAutoFile: () => mutations.patchTask(t.id, undoAutoPatch(t)),
   });
 
   const tabCount = (t: "inbox" | "today") =>

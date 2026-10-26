@@ -8,7 +8,7 @@ import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
 import { clusterInbox } from "./clusterInbox.ts";
 import { nameSlot } from "./nameSlot.ts";
-import { enrichInboxBatch } from "./enrichInbox.ts";
+import { enrichInboxBatch, routeProject } from "./enrichInbox.ts";
 import { enrichDomain } from "./enrichDomain.ts";
 import { verifyItem } from "./verify.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
@@ -137,6 +137,11 @@ Deno.serve(async (req) => {
     // keywords, boundary) grooming reads. Proposes only — the domain floor persists it.
     if (body.enrichDomain?.domainId) {
       return json(await enrichDomain(user.id, body.enrichDomain));
+    }
+    // Project → domain: the same classifier the Inbox uses. Null = no verdict,
+    // and the Groom wall falls back to its chat-model guess.
+    if (body.routeProject) {
+      return json({ route: await routeProject(user.id, body.routeProject) });
     }
     if (body.narrate) {
       return json(await narrate(body.narrate));

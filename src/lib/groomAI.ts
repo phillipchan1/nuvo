@@ -56,6 +56,18 @@ async function callAgentJSON(prompt: string): Promise<unknown> {
 
 // ── domain suggestion ────────────────────────────────────────────────────────
 
+async function routeProjectViaClassifier(
+  p: Project,
+  steps: string[],
+): Promise<{ domainId: string; probability: number } | null> {
+  const { data, error } = await supabase.functions.invoke("agent", {
+    body: { routeProject: { name: p.name, outcome: p.outcome, description: p.description, steps } },
+  });
+  if (error) return null;
+  const r = (data as { route?: { domainId?: string; probability?: number; tier?: string } | null } | null)?.route;
+  return r?.domainId && typeof r.probability === "number" ? { domainId: r.domainId, probability: r.probability } : null;
+}
+
 export interface DomainSuggestion {
   domain: Domain;
   confidence: number; // 0..1
@@ -76,6 +88,15 @@ export async function suggestDomain(d: VerticalData, p: Project): Promise<Domain
   const domains = d.domains;
   if (domains.length === 0) return null;
   const steps = tasksOf(d, p.id).filter((t) => t.status !== "done").map((t) => t.title).slice(0, 12);
+
+  // The classifier first — the same router the Inbox uses, so a project and a
+  // capture about the same thing land in the same domain. A thrown error or a
+  // null verdict (no key, beta not enabled, unsure) falls through to the chat guess.
+  const routed = await routeProjectViaClassifier(p, steps).catch(() => null);
+  if (routed) {
+    const domain = domains.find((x) => x.id === routed.domainId);
+    if (domain) return { domain, confidence: routed.probability, reason: "" };
+  }
 
   const areas = domains
     .map((x) => `- ${x.name}${x.charter ? `: ${x.charter}` : ""}${x.context?.scope ? ` (scope: ${x.context.scope})` : ""}`)
