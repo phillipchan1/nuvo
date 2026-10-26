@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { getAuth, sessionUser } from "./auth.ts";
-import { getSql } from "./db.ts";
+import { sessionUser } from "./auth.ts";
 import type { Env } from "./env.ts";
+import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
   bootstrapUser,
@@ -22,7 +22,9 @@ import {
   type PlannerTable,
 } from "./store.ts";
 
-const app = new Hono<{ Bindings: Env }>();
+type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
+
+const app = new Hono<AppEnv>();
 
 app.use("*", async (c, next) => {
   await next();
@@ -33,6 +35,16 @@ app.use("*", async (c, next) => {
     }
   }
 });
+
+async function withIo<T>(c: { env: Env; set: (k: "io", v: RequestIo) => void; executionCtx: unknown }, fn: (io: RequestIo) => Promise<T>): Promise<T> {
+  const io = openRequestIo(c.env);
+  c.set("io", io);
+  try {
+    return await fn(io);
+  } finally {
+    scheduleClose(c as Parameters<typeof scheduleClose>[0], io.close());
+  }
+}
 
 function missingAsset(): Response {
   return new Response("Not found", {
@@ -59,20 +71,21 @@ app.all("/api/auth/*", async (c) => {
   const cors = started.cors;
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const auth = getAuth(c.env);
-    const res = await auth.handler(c.req.raw);
-    const headers = new Headers(res.headers);
-    for (const [k, v] of Object.entries(cors)) {
-      if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
-    }
-    headers.delete("Access-Control-Allow-Credentials");
-    if (cors["Access-Control-Allow-Credentials"]) {
-      headers.set("Access-Control-Allow-Credentials", "true");
-    }
-    if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
-      headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
-    }
-    return new Response(res.body, { status: res.status, headers });
+    return await withIo(c, async (io) => {
+      const res = await io.auth.handler(c.req.raw);
+      const headers = new Headers(res.headers);
+      for (const [k, v] of Object.entries(cors)) {
+        if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
+      }
+      headers.delete("Access-Control-Allow-Credentials");
+      if (cors["Access-Control-Allow-Credentials"]) {
+        headers.set("Access-Control-Allow-Credentials", "true");
+      }
+      if (headers.get("Access-Control-Allow-Origin") === "*" && headers.get("Access-Control-Allow-Credentials") === "true") {
+        headers.set("Access-Control-Allow-Origin", cors["Access-Control-Allow-Origin"]);
+      }
+      return new Response(res.body, { status: res.status, headers });
+    });
   } catch {
     return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500,
@@ -81,13 +94,14 @@ app.all("/api/auth/*", async (c) => {
   }
 });
 
-async function requireStore(c: { env: Env; req: { raw: Request } }) {
-  const user = await sessionUser(c.env, c.req.raw);
-  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const sql = getSql(c.env);
-  const store = makeStore(sql, user.id);
-  await bootstrapUser(store, user.email ?? null);
-  return { store };
+async function requireStore(c: { env: Env; req: { raw: Request }; set: (k: "io", v: RequestIo) => void; executionCtx: unknown }) {
+  return withIo(c, async (io) => {
+    const user = await sessionUser(io.auth, c.req.raw);
+    if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
+    const store = makeStore(io.sql, user.id);
+    await bootstrapUser(store, user.email ?? null);
+    return { store };
+  });
 }
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));

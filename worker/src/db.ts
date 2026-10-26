@@ -5,8 +5,6 @@ import { databaseUrl } from "./env.ts";
 
 export type Sql = postgres.Sql;
 
-const cache = new WeakMap<object, Sql>();
-
 /**
  * TLS from the URL's sslmode, not a substring of the connection string.
  * `?application_name=localhost` on a Neon host must still require TLS.
@@ -29,18 +27,19 @@ export function postgresSsl(connectionString: string): false | "require" {
   }
 }
 
-export function getSql(env: Env): Sql {
-  const cached = cache.get(env);
-  if (cached) return cached;
+/** Fresh client per request. Workers cannot reuse TCP sockets across requests. */
+export function openSql(env: Env): Sql {
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");
-  const sql = postgres(url, {
-    max: 5,
+  return postgres(url, {
+    max: 1,
     prepare: false,
     ssl: postgresSsl(url),
   });
-  cache.set(env, sql);
-  return sql;
+}
+
+export function closeSql(sql: Sql): Promise<void> {
+  return sql.end({ timeout: 5 });
 }
 
 export function jsonParam(sql: Sql, value: unknown): ReturnType<Sql["json"]> {

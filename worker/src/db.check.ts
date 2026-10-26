@@ -44,6 +44,8 @@ const src = readFileSync(join(here, "db.ts"), "utf8");
 ok(!/fetch_types:\s*false/.test(src), "db.ts does not disable fetch_types");
 ok(src.includes("postgresSsl"), "db.ts uses postgresSsl");
 ok(!/url\.includes\("localhost"\)/.test(src), "db.ts does not substring-match localhost for TLS");
+ok(!/WeakMap/.test(src), "db.ts does not cache Sql in a WeakMap");
+ok(/export function openSql/.test(src), "db.ts opens a fresh client per call");
 
 const db = new PGlite();
 await db.exec("CREATE TABLE array_probe (id int, tags text[])");

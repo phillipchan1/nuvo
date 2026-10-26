@@ -4,9 +4,8 @@ import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, isLocalAuthRuntime, resolveAuthBaseURL } from "./authUrl.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
-type AuthInstance = ReturnType<typeof createAuth>;
-
-const cache = new WeakMap<object, AuthInstance>();
+export type AuthDatabase = Pool | { db: object; type: "postgres" };
+export type AuthInstance = ReturnType<typeof createAuth>;
 
 async function sendOtpEmail(env: Env, email: string, otp: string, type: string): Promise<void> {
   const subject = type === "forget-password"
@@ -38,9 +37,7 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
   }
 }
 
-export function createAuth(env: Env) {
-  const url = databaseUrl(env);
-  if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");
+export function createAuth(env: Env, database: AuthDatabase) {
   const secret = env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
   const baseURL = resolveAuthBaseURL(env);
@@ -48,7 +45,7 @@ export function createAuth(env: Env) {
     secret,
     baseURL,
     basePath: "/api/auth",
-    database: new Pool({ connectionString: url, max: 5 }),
+    database,
     // App Review + the existing review login need a password. OTP is the
     // everyday path (same as today's GoTrue email code).
     emailAndPassword: { enabled: true, minPasswordLength: 8 },
@@ -79,20 +76,25 @@ export function createAuth(env: Env) {
   });
 }
 
-export function getAuth(env: Env): AuthInstance {
-  const cached = cache.get(env);
-  if (cached) return cached;
-  const auth = createAuth(env);
-  cache.set(env, auth);
-  return auth;
+/** Fresh Pool + Better Auth per request. Workers cannot reuse I/O across requests. */
+export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<void> } {
+  const url = databaseUrl(env);
+  if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");
+  const pool = new Pool({ connectionString: url, max: 1 });
+  const auth = createAuth(env, pool);
+  return {
+    auth,
+    close: async () => {
+      await pool.end();
+    },
+  };
 }
 
 export async function sessionUser(
-  env: Env,
+  auth: AuthInstance,
   req: Request,
 ): Promise<{ id: string; email?: string | null } | null> {
   try {
-    const auth = getAuth(env);
     const session = await auth.api.getSession({ headers: req.headers });
     if (!session?.user?.id) return null;
     return { id: session.user.id, email: session.user.email };

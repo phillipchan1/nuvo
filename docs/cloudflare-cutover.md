@@ -165,6 +165,11 @@ npm run check:isolation-mutation
 npm run cf:preview:dry-run
 ```
 
+Postgres.js and the Better Auth `pg` Pool are **per-request**. Workers cannot
+reuse TCP sockets across requests; a `WeakMap` (or module-scope) cache hangs
+every request after the first on an isolate. `openSql` / `openAuth` create
+fresh clients; `ctx.waitUntil` closes them after the response.
+
 Better Auth tables in `worker/schema/better-auth.sql` use the 1.7.13 default
 camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case
 schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a

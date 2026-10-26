@@ -11,6 +11,6 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/index.ts", "src/auth.ts", "src/authUrl.ts", "src/cors.ts", "src/db.ts", "src/env.ts", "src/store.ts"],
+  "include": ["src/index.ts", "src/auth.ts", "src/authUrl.ts", "src/cors.ts", "src/db.ts", "src/env.ts", "src/requestIo.ts", "src/store.ts"],
   "exclude": ["src/*.check.ts", "src/isolationDb.ts", "src/pgliteSql.ts"]
 }
