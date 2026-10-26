@@ -204,6 +204,80 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
   name TEXT
 );
 
+-- Calendar accounts + sealed tokens (PR A columns; Vault secret_id unused on Neon).
+CREATE TABLE IF NOT EXISTS public.calendar_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  email TEXT NOT NULL,
+  refresh_token_secret_id UUID,
+  refresh_token_enc BYTEA,
+  refresh_token_iv BYTEA,
+  key_version SMALLINT,
+  access_token TEXT,
+  access_token_expires_at TIMESTAMPTZ,
+  sync_direction TEXT NOT NULL DEFAULT 'read_only',
+  calendars JSONB NOT NULL DEFAULT '[]'::jsonb,
+  webhook_channel_id TEXT,
+  webhook_resource_id TEXT,
+  webhook_expires_at TIMESTAMPTZ,
+  delta_link TEXT,
+  mirror_calendar_id TEXT,
+  needs_reconnect BOOLEAN NOT NULL DEFAULT false,
+  next_sync_at TIMESTAMPTZ,
+  sync_failures INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, provider, email)
+);
+
+CREATE INDEX IF NOT EXISTS calendar_accounts_user_idx ON public.calendar_accounts (user_id);
+CREATE INDEX IF NOT EXISTS calendar_accounts_due_idx
+  ON public.calendar_accounts (next_sync_at)
+  WHERE NOT needs_reconnect;
+
+CREATE TABLE IF NOT EXISTS public.external_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES public.calendar_accounts (id) ON DELETE CASCADE,
+  provider_event_id TEXT NOT NULL,
+  calendar_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '(no title)',
+  start_at TIMESTAMPTZ NOT NULL,
+  end_at TIMESTAMPTZ NOT NULL,
+  all_day BOOLEAN NOT NULL DEFAULT false,
+  location TEXT,
+  busy BOOLEAN NOT NULL DEFAULT true,
+  raw JSONB,
+  last_synced_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  content_hash TEXT,
+  self_rsvp TEXT,
+  recurring_event_id TEXT,
+  UNIQUE (account_id, calendar_id, provider_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS external_events_user_range_idx
+  ON public.external_events (user_id, start_at, end_at);
+
+CREATE TABLE IF NOT EXISTS public.sync_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.users (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.contacts_directory
+  ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES public.calendar_accounts (id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS source TEXT,
+  ADD COLUMN IF NOT EXISTS display_name TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_directory_account_email_uidx
+  ON public.contacts_directory (account_id, email);
+
 CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON public.tasks (user_id, status, do_date);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON public.domains (user_id);
 CREATE INDEX IF NOT EXISTS projects_user_idx ON public.projects (user_id);

@@ -96,7 +96,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
 | `apple-identity` | User JWT | no | Stay |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
-| `calendar-refresh` | User JWT | no | Stay |
+| `calendar-refresh` | User JWT | no | **Worker** (M365 / iCloud / ICS; Google stays on Supabase) |
 | `capture` | Connection bearer | no | Stay |
 | `day` | User JWT | no | Stay |
 | `delete-account` | User JWT + confirm | Stripe cancel | Stay |
@@ -107,10 +107,10 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `google-sync` | Service role | no | Stay |
 | `google-webhook` | Channel token | no | **Stay — do not touch** |
 | `iap-catalog` | Public | no | Stay |
-| `icloud-*` | JWT / service | no | Stay |
-| `ics-subscribe` / `ics-sync` | JWT / service | no | Stay |
+| `icloud-*` | JWT / service | no | **Worker** (`icloud-connect` / `sync` / `events` / `contacts`) |
+| `ics-subscribe` / `ics-sync` | JWT / service | no | **Worker** |
 | `inbound-email` | Svix + inbound token | no | Stay |
-| `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
+| `m365-oauth` / `m365-sync` | OAuth / service | no | **Worker** |
 | `mcp` | Connection bearer | no | Route alias only |
 | `push-dispatch` | Service role cron | no | Stay |
 | `referral-code` | User JWT | Stripe | Stay |
@@ -187,10 +187,11 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
-`scheduled` handler. `CRON_SECRET` is compared in constant time on
-`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
-§ Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker cron trigger
+(`* * * * *`) runs `calendar-dispatch` (M365 / iCloud / ICS only). Google
+and the other `nuvo-*` jobs stay on Supabase `pg_cron` until their PRs land.
+`CRON_SECRET` is compared in constant time on `/api/cron/:job` — see
+[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons.
 
 ---
 

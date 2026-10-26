@@ -14,6 +14,8 @@ import {
   requireJsonObject,
   requireUuid,
 } from "./http.ts";
+import { handleCalendarRoute, isCalendarRoute } from "./calendar/http.ts";
+import { isCalendarCronJob, runCalendarCron } from "./calendar/cron.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
@@ -60,7 +62,7 @@ app.use("*", async (c, next) => {
  * itself have finished. Starting `sql.end()` from requireStore used to
  * kill queries still running in the route (CONNECTION_ENDED).
  */
-app.use("/api/*", async (c, next) => {
+async function closeRequestIo(c: Context<AppEnv>, next: () => Promise<void>) {
   try {
     await next();
   } finally {
@@ -70,7 +72,10 @@ app.use("/api/*", async (c, next) => {
     scheduleClose(c, closing);
     await closing;
   }
-});
+}
+
+app.use("/api/*", closeRequestIo);
+app.use("/functions/v1/*", closeRequestIo);
 
 async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
   const existing = c.get("io");
@@ -332,19 +337,44 @@ function notPorted(name: string): Response {
   );
 }
 
-app.all("/api/cron/:job", (c) => {
+app.all("/api/cron/:job", async (c) => {
   const token = bearerToken(c.req.header("authorization"));
   if (!cronAuthorized(token, c.env.CRON_SECRET)) {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
-  return notPorted(c.req.param("job"));
+  const job = c.req.param("job");
+  if (!isCalendarCronJob(job)) return notPorted(job);
+  const io = await requestIo(c);
+  const calendar = await runCalendarCron(io.sql, c.env, job);
+  if (calendar) return json(calendar.body, calendar.status, OPEN_CORS);
+  return notPorted(job);
 });
 
 app.all("/api/agent", () => notPorted("agent"));
 app.all("/api/mcp", () => notPorted("mcp"));
+
+async function calendarOrStay(c: Context<AppEnv>, name: string): Promise<Response> {
+  if (!isCalendarRoute(name)) return notPorted(name);
+  return handleCalendarRoute(c, await requestIo(c), name);
+}
+
+for (const name of [
+  "m365-oauth",
+  "m365-sync",
+  "icloud-connect",
+  "icloud-sync",
+  "icloud-events",
+  "icloud-contacts",
+  "ics-subscribe",
+  "ics-sync",
+  "calendar-refresh",
+] as const) {
+  app.all(`/api/${name}`, (c) => calendarOrStay(c, name));
+}
+
 app.all("/functions/v1/agent", () => notPorted("agent"));
 app.all("/functions/v1/mcp", () => notPorted("mcp"));
-app.all("/functions/v1/:name", (c) => notPorted(c.req.param("name")));
+app.all("/functions/v1/:name", (c) => calendarOrStay(c, c.req.param("name")));
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);
@@ -365,4 +395,15 @@ async function fromAssets(c: { env: Env; req: { raw: Request; url: string } }): 
 app.all("/assets/*", (c) => fromAssets(c));
 app.all("*", (c) => fromAssets(c));
 
+async function scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  const io = openRequestIo(env);
+  try {
+    const { runCalendarDispatch } = await import("./calendar/cron.ts");
+    await runCalendarDispatch(io.sql, env);
+  } finally {
+    ctx.waitUntil(io.close());
+  }
+}
+
+Object.assign(app, { scheduled });
 export default app;

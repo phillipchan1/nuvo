@@ -14,6 +14,11 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** 32-byte AES-256-GCM key, base64. PR A secret; required to seal/open tokens. */
+  TOKEN_ENC_KEY_V1?: string;
+  MS_CLIENT_ID?: string;
+  MS_CLIENT_SECRET?: string;
+  APP_URL?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

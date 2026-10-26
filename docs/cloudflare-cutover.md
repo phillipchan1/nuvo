@@ -118,23 +118,20 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 ---
 
-## Crons stay off the Worker
+## Crons
 
-`vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
-or wrong; 501 stay-on-Supabase if it matches). Do not add Workers Cron
-Triggers in this rehearsal.
+or wrong). Ported calendar poll jobs (`m365-sync`, `icloud-sync`, `ics-sync`,
+`calendar-dispatch`) run on the Worker. Other jobs stay 501. The Worker
+`scheduled` handler runs `calendar-dispatch` once a minute (Workers Paid CPU;
+Queue fan-out is the scale path if a tick exceeds budget). Supabase `pg_cron`
+definitions stay in place until flip.
 
-Every recurring job stays where it is today:
-
-| Where | What |
-|---|---|
-| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch, github-poll, SQL prune/purge |
-| **Vercel** | nothing scheduled. If a Vercel cron is added later, it stays on Vercel until a signed-off Workers port |
-
-A later cutover that wants Workers Cron Triggers would need a `scheduled`
-export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the
-matching `pg_cron` job — none of that is this PR.
+Until flip, Supabase `pg_cron` still owns the existing jobs (inventory §6).
+The Worker cron is additive: same poll, different runtime. Unschedule the
+matching `nuvo-*` jobs on Supabase only at flip (reversible via the cron
+migration). Other jobs (`push-dispatch`, `google-renew`, `github-poll`,
+SQL prune/purge, rollover) stay 501 on the Worker until their PRs land.
 
 ---
 

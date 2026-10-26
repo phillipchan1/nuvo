@@ -34,6 +34,11 @@
   "observability": {
     "enabled": true
   },
+  // M365 / iCloud / ICS poll. One tick claims due accounts and syncs in-process.
+  // Queue fan-out is the scale path if CPU exceeds Workers Paid; not enabled here.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   // workers.dev only. No routes, no custom domain. Do not deploy without
   // `--env preview`. See docs/cloudflare-cutover.md.
   "env": {
