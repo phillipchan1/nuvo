@@ -33,6 +33,7 @@ import {
   entitlementResponseBody,
   readEntitlement,
 } from "./entitlement.ts";
+import { handleDay } from "./dayHttp.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";

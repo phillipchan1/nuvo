@@ -160,7 +160,7 @@ describe("public-repo CI guard", () => {
     expect(logLooksLikeRowData("access ya29.a0AfH6SMCexampletokenvalue")).toBe(true);
   });
 
-  it("flags \x hex bytea", () => {
+  it("flags hex bytea (\\\\x...)", () => {
     expect(logLooksLikeRowData("enc \\x1f8b080000000000")).toBe(true);
   });
 
