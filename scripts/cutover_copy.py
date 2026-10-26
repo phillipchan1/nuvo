@@ -303,11 +303,37 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
+SYNC_LOG_LOCK_TIMEOUT = "10s"
+SYNC_LOG_LOCK_TIMEOUT_MESSAGE = (
+    "sync_log lock timed out after 10s — retry the resync (retryable)"
+)
+
+
+def is_retryable_lock_timeout(text: str) -> bool:
+    lower = (text or "").lower()
+    return "lock timeout" in lower or "lock timed out" in lower
+
+
 def sync_log_lock_sql() -> str:
     # SHARE ROW EXCLUSIVE waits for in-flight INSERTs and blocks new ones
     # (INSERT takes ROW EXCLUSIVE). nextval is only reached through INSERT
-    # on this table. PGlite cannot LOCK a sequence relation.
-    return "LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE"
+    # on this table. lock_timeout so a stuck writer cannot hang the job;
+    # query_canceled from lock timeout is rewritten as a retryable error.
+    return (
+        f"SET LOCAL lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}';\n"
+        "DO $cutover_sync_log_lock$\n"
+        "BEGIN\n"
+        "  LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE;\n"
+        "EXCEPTION\n"
+        "  WHEN query_canceled THEN\n"
+        "    IF SQLERRM ILIKE '%lock timeout%' THEN\n"
+        f"      RAISE EXCEPTION '{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}'\n"
+        "        USING ERRCODE = 'lock_not_available';\n"
+        "    END IF;\n"
+        "    RAISE;\n"
+        "END\n"
+        "$cutover_sync_log_lock$"
+    )
 
 
 def sync_log_resync_txn_sql() -> str:

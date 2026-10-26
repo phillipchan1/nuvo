@@ -302,6 +302,8 @@ jobs:
               skipped_from_copy,
               SYNC_LOG_SEQUENCE_MARGIN,
               parse_labeled_count,
+              is_retryable_lock_timeout,
+              SYNC_LOG_LOCK_TIMEOUT_MESSAGE,
               sync_log_anti_join_insert_sql,
               sync_log_copy_sql,
               sync_log_load_sql,
@@ -563,6 +565,8 @@ jobs:
               )
               if res.returncode != 0:
                   err = redact((res.stderr or res.stdout or "").strip())
+                  if is_retryable_lock_timeout(err):
+                      die(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)
                   die(f"{cmd[0]} failed ({res.returncode}): {err}")
               return res.stdout
 
