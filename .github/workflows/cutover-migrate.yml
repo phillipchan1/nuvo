@@ -1,0 +1,982 @@
+# Manual Supabase → Neon data cutover. workflow_dispatch only — not a deploy.
+# Modeled on phillipchan1/leadwell/.github/workflows/cutover-migrate.yml and
+# phillipchan1/zeroed/.github/workflows/migrate-supabase-to-neon.yml.
+#
+# Source is the Supabase project `nuvo` on PostgreSQL 17.6. This job installs
+# postgresql-client-17 and refuses to run unless pg_dump/pg_restore match that
+# source major. The source connection is read-only (PGOPTIONS + dump/COPY only).
+# Nothing in Supabase is modified or dropped; it stays up for rollback
+# (clear VITE_API_BASE_URL).
+#
+# Temporary repository secrets (names only — never print values):
+#   SOURCE_DATABASE_URL   Supabase session-pooler or direct URI (read-only)
+#   SCRATCH_DATABASE_URL  empty Neon branch used when mode=dry-run
+#   TARGET_DATABASE_URL   Neon URI used when mode=cutover (Hyperdrive later)
+# Delete them after the run:
+#   gh secret delete SOURCE_DATABASE_URL
+#   gh secret delete SCRATCH_DATABASE_URL
+#   gh secret delete TARGET_DATABASE_URL
+#
+# Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
+# AI Gateway — Nuvo stays on direct OpenAI. Does not deploy, change DNS,
+# or write production hosts.
+name: cutover-migrate
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: >
+          dry-run restores into SCRATCH_DATABASE_URL (empty Neon branch).
+          cutover restores into TARGET_DATABASE_URL. Source is never written.
+        type: choice
+        options:
+          - dry-run
+          - cutover
+        default: dry-run
+
+concurrency:
+  group: cutover-migrate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+      TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+      SCRATCH_DATABASE_URL: ${{ secrets.SCRATCH_DATABASE_URL }}
+      MODE: ${{ inputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Mask secrets and resolve target
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          python3 - <<'PY'
+          import os, sys, time
+          from urllib.parse import unquote, urlparse, urlunparse, parse_qsl, urlencode
+
+          def mask(value: str) -> None:
+              if not value:
+                  return
+              print(f"::add-mask::{value}", flush=True)
+              try:
+                  parsed = urlparse(value)
+              except Exception:
+                  return
+              if parsed.password:
+                  print(f"::add-mask::{parsed.password}", flush=True)
+                  print(f"::add-mask::{unquote(parsed.password)}", flush=True)
+              # Do not mask the username — roles like "user" / "postgres"
+              # would redact "auth.users" and "postgresql" in the logs.
+
+          def ensure_ssl(url: str) -> str:
+              parsed = urlparse(url)
+              host = (parsed.hostname or "").lower()
+              if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+                  return url
+              pairs = parse_qsl(parsed.query, keep_blank_values=True)
+              if any(k.lower() == "sslmode" for k, _ in pairs):
+                  return url
+              pairs.append(("sslmode", "require"))
+              return urlunparse(parsed._replace(query=urlencode(pairs)))
+
+          def host_of(url: str) -> str:
+              return (urlparse(url).hostname or "").lower()
+
+          def dbname_of(url: str) -> str:
+              return (urlparse(url).path or "").lstrip("/").split("/")[0]
+
+          def is_supabase(url: str) -> bool:
+              host = host_of(url)
+              return "supabase.co" in host or "supabase.com" in host
+
+          def same_db(a: str, b: str) -> bool:
+              return bool(a) and bool(b) and host_of(a) == host_of(b) and dbname_of(a) == dbname_of(b)
+
+          mode = (os.environ.get("MODE") or "").strip().lower()
+          source = (os.environ.get("SOURCE_DATABASE_URL") or "").strip()
+          neon = (os.environ.get("TARGET_DATABASE_URL") or "").strip()
+          scratch = (os.environ.get("SCRATCH_DATABASE_URL") or "").strip()
+          for value in (source, neon, scratch):
+              mask(value)
+          if mode not in {"dry-run", "cutover"}:
+              print("::error::mode must be dry-run or cutover", file=sys.stderr)
+              sys.exit(1)
+          if not source:
+              print("::error::Missing repo secret SOURCE_DATABASE_URL", file=sys.stderr)
+              sys.exit(1)
+          source = ensure_ssl(source)
+          mask(source)
+          if mode == "dry-run":
+              if not scratch:
+                  print("::error::Missing repo secret SCRATCH_DATABASE_URL (required for dry-run)", file=sys.stderr)
+                  sys.exit(1)
+              target = ensure_ssl(scratch)
+              kind = "scratch"
+          else:
+              if not neon:
+                  print("::error::Missing repo secret TARGET_DATABASE_URL (required for cutover)", file=sys.stderr)
+                  sys.exit(1)
+              target = ensure_ssl(neon)
+              kind = "neon"
+          mask(target)
+          if same_db(source, target):
+              print("::error::Source and target URLs must be different. Source is read-only.", file=sys.stderr)
+              sys.exit(1)
+          if is_supabase(target):
+              print("::error::Refusing a Supabase target. Source stays intact for rollback.", file=sys.stderr)
+              sys.exit(1)
+          delim = f"CUTOVER_{os.getpid()}_{int(time.time())}"
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+              for key, value in (
+                  ("SOURCE_DATABASE_URL", source),
+                  ("RESTORE_DATABASE_URL", target),
+                  ("RESTORE_KIND", kind),
+                  ("CUTOVER_MODE", mode),
+              ):
+                  fh.write(f"{key}<<{delim}\n{value}\n{delim}\n")
+          print(f"mode={mode} target={kind}", flush=True)
+          PY
+
+      - name: Install postgresql-client-17
+        run: |
+          set +x
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/psql --version
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          /usr/lib/postgresql/17/bin/pg_restore --version
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Write cutover helper
+        run: |
+          set +x
+          set -eu
+          cat > "${RUNNER_TEMP}/cutover.py" <<'PY'
+          #!/usr/bin/env python3
+          """Read-only Supabase dump → Neon restore + auth map + checksums.
+
+          Never prints connection strings, passwords, or emails.
+          """
+          from __future__ import annotations
+
+          import hashlib
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+          from typing import Iterable
+          from urllib.parse import unquote, urlparse
+
+          DROP_ENV = (
+              "PGHOST",
+              "PGHOSTADDR",
+              "PGSERVICE",
+              "PGSERVICEFILE",
+              "PGSYSCONFDIR",
+              "PGDATABASE",
+              "PGUSER",
+              "PGPASSWORD",
+              "PGPASSFILE",
+          )
+          SKIP_TOC_HEAD = {
+              "EXTENSION",
+              "SCHEMA",
+              "FUNCTION",
+              "PROCEDURE",
+              "AGGREGATE",
+              "TRIGGER",
+              "POLICY",
+              "EVENT",
+              "PUBLICATION",
+              "SUBSCRIPTION",
+              "VIEW",
+              "MATERIALIZED",
+              "FOREIGN",
+              "SERVER",
+              "USER",
+              "ACCESS",
+              "STATISTICS",
+              "ROW",
+              "ACL",
+              "DEFAULT",
+              "OPERATOR",
+              "CAST",
+              "COLLATION",
+              "CONVERSION",
+              "LANGUAGE",
+              "TRANSFORM",
+              "TSCONFIGURATION",
+              "TSPARSER",
+              "TSTEMPLATE",
+              "TSDICTIONARY",
+          }
+          TOC_RE = re.compile(r"^\d+;\s+\d+\s+\d+\s+(.+)$")
+          BA_TABLES = {"user", "session", "account", "verification"}
+          EXTRA_MASKS: list[str] = []
+          STUB_AUTH_SQL = """
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id UUID PRIMARY KEY,
+            email TEXT,
+            raw_user_meta_data JSONB,
+            email_confirmed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ
+          );
+          CREATE TABLE IF NOT EXISTS auth.identities (
+            id TEXT PRIMARY KEY,
+            user_id UUID REFERENCES auth.users(id),
+            provider TEXT,
+            provider_id TEXT,
+            identity_data JSONB,
+            created_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ
+          );
+          CREATE OR REPLACE FUNCTION auth.uid()
+          RETURNS UUID LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+          """
+          USERS_COPY = """
+          COPY (
+            SELECT id::text,
+                   COALESCE(
+                     raw_user_meta_data->>'name',
+                     raw_user_meta_data->>'full_name',
+                     split_part(email, '@', 1),
+                     ''
+                   ),
+                   email,
+                   COALESCE(email_confirmed_at IS NOT NULL, false),
+                   created_at,
+                   updated_at
+            FROM auth.users
+          ) TO STDOUT WITH CSV
+          """
+          IDENTITIES_COPY = """
+          COPY (
+            SELECT id::text,
+                   user_id::text,
+                   provider,
+                   COALESCE(
+                     identity_data->>'sub',
+                     identity_data->>'provider_id',
+                     provider_id::text,
+                     ''
+                   ),
+                   created_at,
+                   updated_at
+            FROM auth.identities
+          ) TO STDOUT WITH CSV
+          """
+          PUBLIC_USERS_SQL = """
+          CREATE TABLE IF NOT EXISTS public.users (
+            id UUID PRIMARY KEY,
+            email TEXT UNIQUE,
+            auth_id UUID UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
+          ALTER TABLE public.users ADD COLUMN IF NOT EXISTS auth_id UUID UNIQUE;
+          INSERT INTO public.users (id, email, auth_id, created_at)
+          SELECT id, email, id, COALESCE(created_at, now())
+          FROM auth.users
+          ON CONFLICT (id) DO UPDATE SET
+            email = EXCLUDED.email,
+            auth_id = EXCLUDED.auth_id;
+          """
+
+          def remember(value: str) -> None:
+              text = (value or "").strip()
+              if not text or text in EXTRA_MASKS:
+                  return
+              EXTRA_MASKS.append(text)
+              print(f"::add-mask::{text}", flush=True)
+
+          def secrets() -> list[str]:
+              out: list[str] = []
+              for key in (
+                  "SOURCE_DATABASE_URL",
+                  "RESTORE_DATABASE_URL",
+                  "TARGET_DATABASE_URL",
+                  "SCRATCH_DATABASE_URL",
+              ):
+                  value = (os.environ.get(key) or "").strip()
+                  if not value:
+                      continue
+                  out.append(value)
+                  try:
+                      parsed = urlparse(value)
+                  except Exception:
+                      continue
+                  if parsed.password:
+                      out.append(parsed.password)
+                      out.append(unquote(parsed.password))
+              out.extend(EXTRA_MASKS)
+              return [item for item in out if item]
+
+          def redact(text: str) -> str:
+              redacted = text or ""
+              for secret in sorted(secrets(), key=len, reverse=True):
+                  if secret:
+                      redacted = redacted.replace(secret, "***")
+              return redacted
+
+          def die(message: str, code: int = 1) -> None:
+              print(f"::error::{redact(message)}", file=sys.stderr)
+              raise SystemExit(code)
+
+          def clean_env(*, source: bool = False) -> dict[str, str]:
+              env = {k: v for k, v in os.environ.items() if k not in DROP_ENV}
+              if source:
+                  env["PGOPTIONS"] = "-c default_transaction_read_only=on"
+              return env
+
+          def run(
+              cmd: list[str],
+              *,
+              source: bool = False,
+              cwd: str | None = None,
+              stdin: str | None = None,
+          ) -> str:
+              res = subprocess.run(
+                  cmd,
+                  input=stdin,
+                  capture_output=True,
+                  text=True,
+                  cwd=cwd,
+                  env=clean_env(source=source),
+              )
+              if res.returncode != 0:
+                  err = redact((res.stderr or res.stdout or "").strip())
+                  die(f"{cmd[0]} failed ({res.returncode}): {err}")
+              return res.stdout
+
+          def run_to_file(cmd: list[str], dest: Path, *, source: bool = False) -> None:
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              with dest.open("w", encoding="utf-8") as fh:
+                  res = subprocess.run(
+                      cmd,
+                      stdout=fh,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      env=clean_env(source=source),
+                  )
+              if res.returncode != 0:
+                  die(f"{cmd[0]} failed ({res.returncode}): {redact((res.stderr or '').strip())}")
+
+          def tool_major(bin_path: str) -> int | None:
+              res = subprocess.run(
+                  [bin_path, "--version"],
+                  capture_output=True,
+                  text=True,
+                  env=clean_env(),
+              )
+              if res.returncode != 0:
+                  return None
+              match = re.search(r"(\d+)\.", f"{res.stdout}\n{res.stderr}")
+              return int(match.group(1)) if match else None
+
+          def server_major(url: str, *, source: bool) -> tuple[int, str]:
+              out = run(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-tA", "-d", url, "-c", "SHOW server_version_num"],
+                  source=source,
+              ).strip()
+              pretty = run(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-tA", "-d", url, "-c", "SHOW server_version"],
+                  source=source,
+              ).strip()
+              number = int(out)
+              if number < 10000:
+                  die(f"unparsable server_version_num: {out}")
+              return number // 10000, pretty
+
+          def resolve_bin(name: str, major: int) -> str:
+              candidates = [
+                  str(Path(os.environ["PG_BIN"]) / name) if os.environ.get("PG_BIN") else "",
+                  f"/usr/lib/postgresql/{major}/bin/{name}",
+                  f"/usr/pgsql-{major}/bin/{name}",
+                  name,
+              ]
+              for bin_path in candidates:
+                  if not bin_path:
+                      continue
+                  if bin_path != name and not Path(bin_path).exists():
+                      continue
+                  if tool_major(bin_path) == major:
+                      return bin_path
+              die(
+                  f"{name} matching Postgres {major} not found. "
+                  f"Install postgresql-client-{major} (source is PostgreSQL 17.6)."
+              )
+              raise AssertionError
+
+          def parse_csv_line(line: str) -> list[str]:
+              out: list[str] = []
+              cur = ""
+              quoted = False
+              i = 0
+              while i < len(line):
+                  ch = line[i]
+                  if quoted:
+                      if ch == '"' and i + 1 < len(line) and line[i + 1] == '"':
+                          cur += '"'
+                          i += 2
+                          continue
+                      if ch == '"':
+                          quoted = False
+                          i += 1
+                          continue
+                      cur += ch
+                      i += 1
+                      continue
+                  if ch == '"':
+                      quoted = True
+                      i += 1
+                      continue
+                  if ch == ",":
+                      out.append(cur)
+                      cur = ""
+                      i += 1
+                      continue
+                  cur += ch
+                  i += 1
+              out.append(cur)
+              return out
+
+          def load_users(path: Path) -> list[dict[str, str]]:
+              users = []
+              for raw in path.read_text(encoding="utf-8").splitlines():
+                  if not raw.strip():
+                      continue
+                  cols = parse_csv_line(raw)
+                  if not cols or not cols[0]:
+                      continue
+                  users.append(
+                      {
+                          "id": cols[0],
+                          "name": cols[1] if len(cols) > 1 else "",
+                          "email": cols[2] if len(cols) > 2 else "",
+                          "email_verified": cols[3] if len(cols) > 3 else "",
+                          "created_at": cols[4] if len(cols) > 4 else "",
+                          "updated_at": cols[5] if len(cols) > 5 else "",
+                      }
+                  )
+              return users
+
+          def load_identities(path: Path) -> list[dict[str, str]]:
+              rows = []
+              for raw in path.read_text(encoding="utf-8").splitlines():
+                  if not raw.strip():
+                      continue
+                  cols = parse_csv_line(raw)
+                  if not cols or not cols[0]:
+                      continue
+                  rows.append(
+                      {
+                          "id": cols[0],
+                          "user_id": cols[1] if len(cols) > 1 else "",
+                          "provider": cols[2] if len(cols) > 2 else "",
+                          "provider_id": cols[3] if len(cols) > 3 else "",
+                          "created_at": cols[4] if len(cols) > 4 else "",
+                          "updated_at": cols[5] if len(cols) > 5 else "",
+                      }
+                  )
+              return rows
+
+          def mask_rows(users: list[dict[str, str]], identities: list[dict[str, str]]) -> None:
+              for user in users:
+                  remember(user.get("email") or "")
+              for row in identities:
+                  remember(row.get("provider_id") or "")
+
+          def assert_users_ready(users: list[dict[str, str]]) -> None:
+              problems: list[str] = []
+              if not users:
+                  problems.append("source has no auth.users rows")
+              seen: dict[str, str] = {}
+              for user in users:
+                  email = (user.get("email") or "").strip()
+                  if not email:
+                      problems.append(f"blank email for auth user {user['id']}")
+                      continue
+                  key = email.lower()
+                  other = seen.get(key)
+                  if other:
+                      problems.append(f"case-insensitive email duplicate: {other} and {user['id']}")
+                  else:
+                      seen[key] = user["id"]
+              if problems:
+                  die("source users invalid — abort, wrote nothing:\n  " + "\n  ".join(problems))
+
+          def sql_literal(value: str) -> str:
+              return "'" + value.replace("'", "''") + "'"
+
+          def sql_timestamp(value: str) -> str:
+              return "NULL" if not value else sql_literal(value)
+
+          def sql_bool(value: str) -> str:
+              return "TRUE" if value in {"t", "true", "1", "TRUE"} else "FALSE"
+
+          def quote_ident(ident: str) -> str:
+              return '"' + ident.replace('"', '""') + '"'
+
+          def filter_toc(text: str) -> str:
+              kept: list[str] = []
+              for line in text.splitlines():
+                  if not line.strip() or line.lstrip().startswith(";"):
+                      kept.append(line)
+                      continue
+                  match = TOC_RE.match(line.strip())
+                  desc = match.group(1) if match else ""
+                  head = desc.split()
+                  if head and head[0] in SKIP_TOC_HEAD:
+                      continue
+                  if head and head[0] == "COMMENT":
+                      rest = " ".join(head[1:]).upper()
+                      if any(token in rest for token in ("EXTENSION", "SCHEMA", "FUNCTION", "POLICY", "TRIGGER")):
+                          continue
+                  kept.append(line)
+              return "\n".join(kept) + ("\n" if kept else "")
+
+          def psql(url: str, sql: str, *, source: bool = False, extra: Iterable[str] = ()) -> str:
+              return run(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", url, *extra, "-c", sql],
+                  source=source,
+              )
+
+          def list_public_tables(url: str, *, source: bool) -> list[str]:
+              out = psql(
+                  url,
+                  """
+                  SELECT relname
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public'
+                    AND c.relkind = 'r'
+                    AND NOT EXISTS (
+                      SELECT 1 FROM pg_depend d
+                      JOIN pg_extension e ON e.oid = d.refobjid
+                      WHERE d.objid = c.oid AND d.deptype = 'e'
+                    )
+                  ORDER BY 1
+                  """,
+                  source=source,
+                  extra=["-tA"],
+              )
+              tables = []
+              for raw in out.splitlines():
+                  name = raw.strip()
+                  if name and name not in BA_TABLES:
+                      tables.append(name)
+              return tables
+
+          def refuse_nonempty_target(url: str) -> None:
+              tables = list_public_tables(url, source=False)
+              if tables:
+                  shown = ", ".join(tables[:20])
+                  die(f"target public is not empty — abort, wrote nothing: {shown}")
+              exists = psql(
+                  url,
+                  """
+                  SELECT to_regclass('auth.users') IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM auth.users)
+                  """,
+                  extra=["-tA"],
+              ).strip()
+              if exists == "t":
+                  die("target auth.users already has rows — abort, wrote nothing")
+
+          def content_hash_sql(tables: list[str]) -> str:
+              parts = []
+              for i, table in enumerate(tables):
+                  ident = quote_ident(table)
+                  piece = f"""
+                  SELECT {sql_literal(table)} AS t,
+                         COUNT(*)::bigint AS n,
+                         md5(COALESCE(string_agg(md5((t.*)::text), '' ORDER BY (t.*)::text COLLATE "C"), '')) AS h
+                  FROM public.{ident} t
+                  """
+                  parts.append(piece if i == 0 else "UNION ALL" + piece)
+              return "\n".join(parts) + "\nORDER BY 1"
+
+          def parse_hashes(text: str) -> dict[str, dict[str, object]]:
+              out: dict[str, dict[str, object]] = {}
+              for raw in text.splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("-") or line.startswith("("):
+                      continue
+                  match = re.match(r"^(\w+)\|(-?\d+)\|([0-9a-f]{32})$", line, re.I)
+                  if not match:
+                      match = re.match(
+                          r"^(\w+)\s*\|\s*(-?\d+)\s*\|\s*([0-9a-f]{32})\s*$",
+                          line,
+                          re.I,
+                      )
+                  if not match or match.group(1) == "t":
+                      continue
+                  out[match.group(1)] = {
+                      "n": int(match.group(2)),
+                      "hash": match.group(3).lower(),
+                  }
+              return out
+
+          def sha256_file(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as fh:
+                  for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def cmd_resolve() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              major, pretty = server_major(source, source=True)
+              dump = resolve_bin("pg_dump", major)
+              restore = resolve_bin("pg_restore", major)
+              psql_bin = resolve_bin("psql", major)
+              print(f"source postgres {pretty}; using matching {dump}", flush=True)
+              delim = "CUTOVER_PG"
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+                  fh.write(f"PG_DUMP<<{delim}\n{dump}\n{delim}\n")
+                  fh.write(f"PG_RESTORE<<{delim}\n{restore}\n{delim}\n")
+                  fh.write(f"PG_PSQL<<{delim}\n{psql_bin}\n{delim}\n")
+                  fh.write(f"SOURCE_PG_MAJOR={major}\n")
+                  fh.write(f"SOURCE_PG_VERSION={pretty}\n")
+
+          def cmd_dump() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              dump_bin = os.environ["PG_DUMP"]
+              restore_bin = os.environ["PG_RESTORE"]
+              artifacts = Path("artifacts")
+              artifacts.mkdir(parents=True, exist_ok=True)
+              dump_path = artifacts / "nuvo-source.dump"
+              users_path = artifacts / "auth-users.csv"
+              identities_path = artifacts / "auth-identities.csv"
+              print("dumping public schema + data (no-owner, no-acl)…", flush=True)
+              run(
+                  [
+                      dump_bin,
+                      "--format=custom",
+                      "--no-owner",
+                      "--no-acl",
+                      "--schema=public",
+                      f"--file={dump_path}",
+                      source,
+                  ],
+                  source=True,
+              )
+              bytes_ = dump_path.stat().st_size
+              if not bytes_:
+                  die("custom-format dump is empty")
+              toc = run([restore_bin, "--list", str(dump_path)])
+              if "TABLE" not in toc:
+                  die("pg_restore --list did not list any TABLE entries")
+              (artifacts / "nuvo-source.toc").write_text(toc, encoding="utf-8")
+              digest = sha256_file(dump_path)
+              (artifacts / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
+              print(f"verified backup: {bytes_} bytes sha256={digest}", flush=True)
+              print("exporting auth.users (read-only COPY)…", flush=True)
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", USERS_COPY],
+                  users_path,
+                  source=True,
+              )
+              print("exporting auth.identities (read-only COPY)…", flush=True)
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", IDENTITIES_COPY],
+                  identities_path,
+                  source=True,
+              )
+              users = load_users(users_path)
+              identities = load_identities(identities_path)
+              mask_rows(users, identities)
+              assert_users_ready(users)
+              print(
+                  f"exported {len(users)} auth.users and {len(identities)} auth.identities",
+                  flush=True,
+              )
+
+          def cmd_restore() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              target = os.environ["RESTORE_DATABASE_URL"]
+              restore_bin = os.environ["PG_RESTORE"]
+              artifacts = Path("artifacts")
+              dump_path = artifacts / "nuvo-source.dump"
+              users_path = artifacts / "auth-users.csv"
+              identities_path = artifacts / "auth-identities.csv"
+              better_auth = Path("worker/schema/better-auth.sql")
+              if not dump_path.exists() or not dump_path.stat().st_size:
+                  die("missing verified dump artifacts/nuvo-source.dump")
+              if not better_auth.exists():
+                  die("missing worker/schema/better-auth.sql")
+              users = load_users(users_path)
+              identities = load_identities(identities_path)
+              mask_rows(users, identities)
+              assert_users_ready(users)
+              print("checking target is empty…", flush=True)
+              refuse_nonempty_target(target)
+              print("ensuring pgcrypto on target only…", flush=True)
+              psql(target, "CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+              print("creating stub auth.users + auth.identities on target only…", flush=True)
+              psql(target, STUB_AUTH_SQL)
+              print(f"loading {len(users)} stub auth.users…", flush=True)
+              user_sql = ["BEGIN;"]
+              for user in users:
+                  user_sql.append(
+                      "INSERT INTO auth.users (id, email, email_confirmed_at, created_at, updated_at) VALUES ("
+                      f"{sql_literal(user['id'])}::uuid, {sql_literal(user['email'])}, "
+                      f"{'now()' if user['email_verified'] in {'t', 'true', '1', 'TRUE'} else 'NULL'}, "
+                      f"{sql_timestamp(user['created_at'])}, {sql_timestamp(user['updated_at'] or user['created_at'])}"
+                      ") ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;"
+                  )
+              user_sql.append("COMMIT;")
+              psql(target, "\n".join(user_sql))
+              if identities:
+                  print(f"loading {len(identities)} stub auth.identities…", flush=True)
+                  ident_sql = ["BEGIN;"]
+                  for row in identities:
+                      ident_id = row["id"] or hashlib.md5(
+                          f"{row['user_id']}:{row['provider']}:{row['provider_id']}".encode()
+                      ).hexdigest()
+                      provider_id = row["provider_id"] or row["user_id"]
+                      ident_sql.append(
+                          "INSERT INTO auth.identities (id, user_id, provider, provider_id, created_at, updated_at) VALUES ("
+                          f"{sql_literal(ident_id)}, {sql_literal(row['user_id'])}::uuid, "
+                          f"{sql_literal(row['provider'])}, {sql_literal(provider_id)}, "
+                          f"{sql_timestamp(row['created_at'])}, {sql_timestamp(row['updated_at'] or row['created_at'])}"
+                          ") ON CONFLICT (id) DO NOTHING;"
+                      )
+                  ident_sql.append("COMMIT;")
+                  psql(target, "\n".join(ident_sql))
+              print("restoring public tables into target…", flush=True)
+              toc = run([restore_bin, "--list", str(dump_path)])
+              filtered = Path(os.environ["RUNNER_TEMP"]) / "restore.filtered.toc"
+              filtered.write_text(filter_toc(toc), encoding="utf-8")
+              run(
+                  [
+                      restore_bin,
+                      "--no-owner",
+                      "--no-acl",
+                      "--exit-on-error",
+                      "-L",
+                      str(filtered),
+                      "--dbname",
+                      target,
+                      str(dump_path),
+                  ]
+              )
+              print("applying Better Auth tables…", flush=True)
+              run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(better_auth)])
+              print('mapping auth.users → "user" (same ids)…', flush=True)
+              ba_sql = ["BEGIN;"]
+              for user in users:
+                  name = user["name"] or ""
+                  ba_sql.append(
+                      'INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ('
+                      f"{sql_literal(user['id'])}, {sql_literal(name)}, {sql_literal(user['email'].lower())}, "
+                      f"{sql_bool(user['email_verified'])}, {sql_timestamp(user['created_at'])}, "
+                      f"{sql_timestamp(user['updated_at'] or user['created_at'])}"
+                      ") ON CONFLICT (id) DO UPDATE SET "
+                      'email = lower(EXCLUDED.email), name = EXCLUDED.name, "emailVerified" = EXCLUDED."emailVerified";'
+                  )
+              ba_sql.append("COMMIT;")
+              psql(target, "\n".join(ba_sql))
+              print("mapping auth.identities → account (google / apple / email)…", flush=True)
+              acc_sql = ["BEGIN;"]
+              mapped = 0
+              for row in identities:
+                  provider = (row["provider"] or "").lower()
+                  provider_id = row["provider_id"] or row["user_id"]
+                  if not row["user_id"] or not provider_id:
+                      continue
+                  if provider == "email":
+                      ba_provider = "credential"
+                  elif provider in {"google", "apple"}:
+                      ba_provider = provider
+                  else:
+                      ba_provider = provider or "credential"
+                  acc_id = hashlib.md5(
+                      f"{row['user_id']}:{ba_provider}:{provider_id}".encode()
+                  ).hexdigest()
+                  acc_sql.append(
+                      'INSERT INTO account (id, "accountId", "providerId", "userId", "createdAt", "updatedAt") VALUES ('
+                      f"{sql_literal(acc_id)}, {sql_literal(provider_id)}, {sql_literal(ba_provider)}, "
+                      f"{sql_literal(row['user_id'])}, {sql_timestamp(row['created_at'])}, "
+                      f"{sql_timestamp(row['updated_at'] or row['created_at'])}"
+                      ") ON CONFLICT (id) DO NOTHING;"
+                  )
+                  mapped += 1
+              acc_sql.append("COMMIT;")
+              if mapped:
+                  psql(target, "\n".join(acc_sql))
+              print("upserting public.users from auth.users (auth_id = id)…", flush=True)
+              psql(target, PUBLIC_USERS_SQL)
+              src_users = int(
+                  psql(source, "SELECT COUNT(*) FROM auth.users", source=True, extra=["-tA"]).strip()
+              )
+              dst_users = int(psql(target, 'SELECT COUNT(*) FROM "user"', extra=["-tA"]).strip())
+              src_ident = int(
+                  psql(source, "SELECT COUNT(*) FROM auth.identities", source=True, extra=["-tA"]).strip()
+              )
+              dst_acct = int(psql(target, "SELECT COUNT(*) FROM account", extra=["-tA"]).strip())
+              print(
+                  f"auth map: users {src_users}→{dst_users} identities {src_ident}→{dst_acct} accounts",
+                  flush=True,
+              )
+              if src_users != dst_users:
+                  die(f"auth user count mismatch: source={src_users} target={dst_users}")
+              if src_ident != dst_acct:
+                  die(f"auth identity/account count mismatch: source={src_ident} target={dst_acct}")
+              print(f"restored into {os.environ.get('RESTORE_KIND', 'target')}", flush=True)
+
+          def cmd_verify() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              target = os.environ["RESTORE_DATABASE_URL"]
+              artifacts = Path("artifacts")
+              tables = list_public_tables(source, source=True)
+              if not tables:
+                  die("source has no public tables")
+              sql = content_hash_sql(tables)
+              print(f"checksumming {len(tables)} public tables (count + md5)…", flush=True)
+              src_hashes = parse_hashes(psql(source, sql, source=True, extra=["-tA"]))
+              dst_hashes = parse_hashes(psql(target, sql, extra=["-tA"]))
+              problems: list[str] = []
+              lines = [
+                  "# Nuvo cutover checksum report",
+                  "",
+                  f"- mode: {os.environ.get('CUTOVER_MODE', '')}",
+                  f"- target: {os.environ.get('RESTORE_KIND', '')}",
+                  f"- source postgres: {os.environ.get('SOURCE_PG_VERSION', '')}",
+                  f"- dump sha256: {(artifacts / 'nuvo-source.sha256').read_text(encoding='utf-8').split()[0] if (artifacts / 'nuvo-source.sha256').exists() else '?'}",
+                  "",
+                  "| table | source_count | target_count | source_md5 | target_md5 | ok |",
+                  "| --- | ---: | ---: | --- | --- | --- |",
+              ]
+              for table in tables:
+                  src = src_hashes.get(table)
+                  dst = dst_hashes.get(table)
+                  src_n = src["n"] if src else None
+                  dst_n = dst["n"] if dst else None
+                  src_h = src["hash"] if src else None
+                  dst_h = dst["hash"] if dst else None
+                  ok = (
+                      isinstance(src_n, int)
+                      and isinstance(dst_n, int)
+                      and src_n == dst_n
+                      and bool(src_h)
+                      and bool(dst_h)
+                      and src_h == dst_h
+                  )
+                  if not ok:
+                      problems.append(
+                          f"{table}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      )
+                  lines.append(
+                      f"| {table} | {src_n if src_n is not None else '?'} | {dst_n if dst_n is not None else '?'} | {src_h or '?'} | {dst_h or '?'} | {'yes' if ok else 'NO'} |"
+                  )
+                  print(
+                      f"  {table}: source={src_n} target={dst_n} hash {src_h} → {dst_h}",
+                      flush=True,
+                  )
+              lines.extend(["", f"tables compared: {len(tables)}", f"mismatches: {len(problems)}", ""])
+              report = artifacts / "cutover-report.md"
+              report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as fh:
+                      fh.write(report.read_text(encoding="utf-8"))
+              if problems:
+                  die("row-count or content-hash mismatch — abort:\n  " + "\n  ".join(problems))
+              print("migration checksums ok", flush=True)
+
+          def main() -> None:
+              if len(sys.argv) < 2:
+                  die("usage: cutover.py resolve|dump|restore|verify")
+              action = sys.argv[1]
+              if action == "resolve":
+                  cmd_resolve()
+              elif action == "dump":
+                  cmd_dump()
+              elif action == "restore":
+                  cmd_restore()
+              elif action == "verify":
+                  cmd_verify()
+              else:
+                  die(f"unknown action {action}")
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Pick pg_dump matching source major
+        env:
+          PGOPTIONS: "-c default_transaction_read_only=on"
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          python3 "${RUNNER_TEMP}/cutover.py" resolve
+
+      - name: pg_dump source + export auth (read-only)
+        env:
+          PGOPTIONS: "-c default_transaction_read_only=on"
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          python3 "${RUNNER_TEMP}/cutover.py" dump
+
+      - name: Upload verified source dump
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: nuvo-source-dump
+          path: |
+            artifacts/nuvo-source.dump
+            artifacts/nuvo-source.sha256
+            artifacts/nuvo-source.toc
+            artifacts/auth-users.csv
+            artifacts/auth-identities.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          python3 "${RUNNER_TEMP}/cutover.py" restore
+
+      - name: Per-table row count + content hash
+        env:
+          PGOPTIONS: "-c default_transaction_read_only=on"
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          python3 "${RUNNER_TEMP}/cutover.py" verify
+
+      - name: Upload checksum report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: cutover-report
+          path: artifacts/cutover-report.md
+          retention-days: 7
+          if-no-files-found: ignore
