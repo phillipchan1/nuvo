@@ -18,9 +18,23 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nuvo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nuvo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           # 22, not 20: @supabase/supabase-js and @testing-library/jest-dom both
           # declare `node >= 22`, and 20 logged EBADENGINE on every run.
@@ -30,6 +44,11 @@ jobs:
       - name: Typecheck (SPA)
         run: npm run typecheck
       - name: Conformance suite (app ↔ agent must agree)
+        env:
+          # APP_TZ is America/Los_Angeles. Capture "Tomorrow" labels only
+          # match startOfDay(new Date()) when the runner's zone agrees;
+          # ubuntu-latest is UTC, which splits the calendar day 00:00–07:00.
+          TZ: America/Los_Angeles
         run: npm test
       # The chat's behavioral battery is deliberately NOT here: it calls a live
       # model, so it costs money and its result is sampled. `npm test` already
@@ -41,3 +60,24 @@ jobs:
           set -e
           find supabase/functions -name '*.ts' -print0 \
             | xargs -0 -n1 npx esbuild --bundle=false --outfile=/dev/null
+      - name: Worker typecheck
+        run: npm run typecheck:worker
+      - name: Worker auth + isolation + adapter checks
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nuvo
+        run: npm run check:worker
+      - name: Wrangler preview dry-run
+        run: npm run cf:preview:dry-run
+
+  isolation-mutation:
+    name: isolation-mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Isolation mutation proof
+        run: npm run check:isolation-mutation

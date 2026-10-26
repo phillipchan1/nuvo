@@ -1,3 +1,4 @@
+import { signOut } from "./authActions";
 import { supabase } from "./supabase";
 import { writeWasEntitled } from "./subscription";
 import { clearPersistedCache } from "./sync/persist";
@@ -28,6 +29,5 @@ export async function wipeLocalAccountData(): Promise<void> {
 
 export async function signOutAfterDeletion(): Promise<void> {
   await wipeLocalAccountData();
-  const { error } = await supabase.auth.signOut();
-  if (error) await supabase.auth.signOut({ scope: "local" });
+  await signOut();
 }
