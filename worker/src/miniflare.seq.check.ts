@@ -115,27 +115,94 @@ try {
   ok(health.status === 200, `health: HTTP ${health.status}`);
   ok(health.headers.get("x-content-type-options") === "nosniff", "health: cloned security headers");
 
-  async function signUp(email: string, name: string): Promise<{ token: string; id: string }> {
-    const res = await withTimeout(
-      request("/api/auth/sign-up/email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: "password12", name }),
-      }),
-      15000,
-      `sign-up ${email}`,
-    );
-    const text = await res.text();
-    ok(res.status === 200, `sign-up ${email}: HTTP ${res.status} ${text.slice(0, 160)}`);
-    const body = JSON.parse(text || "{}") as { token?: string; user?: { id?: string } };
-    ok(typeof body.token === "string" && body.token.length > 8, `sign-up ${email}: token`);
-    ok(typeof body.user?.id === "string", `sign-up ${email}: user id`);
-    return { token: body.token ?? "", id: body.user?.id ?? "" };
+  function cookieHeader(res: Response): string {
+    const getSetCookie = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+    const parts = typeof getSetCookie === "function" ? getSetCookie.call(res.headers) : [];
+    if (parts.length) {
+      return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+    }
+    const single = res.headers.get("set-cookie");
+    return single ? single.split(";")[0] : "";
   }
 
-  const a = await signUp("seq-a@example.test", "Seq A");
-  const b = await signUp("seq-b@example.test", "Seq B");
-  ok(a.token.includes("."), "sign-up A: JSON token is signed");
+  async function readOtp(email: string): Promise<string> {
+    const inspect = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
+    try {
+      const rows = await inspect<{ value: string }[]>`
+        SELECT value FROM verification
+        WHERE identifier = ${`sign-in-otp-${email}`}
+        ORDER BY "expiresAt" DESC
+        LIMIT 1
+      `;
+      return (rows[0]?.value ?? "").split(":")[0];
+    } finally {
+      await inspect.end({ timeout: 5 });
+    }
+  }
+
+  async function signInOtp(email: string): Promise<{ token: string; id: string; cookie: string }> {
+    const send = await withTimeout(
+      request("/api/auth/email-otp/send-verification-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, type: "sign-in" }),
+      }),
+      15000,
+      `OTP send ${email}`,
+    );
+    ok(send.status === 200, `OTP send ${email}: HTTP ${send.status}`);
+    const otp = await readOtp(email);
+    ok(/^\d{6}$/.test(otp), `OTP send ${email}: captured a 6-digit code`);
+    const res = await withTimeout(
+      request("/api/auth/sign-in/email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+      }),
+      15000,
+      `OTP sign-in ${email}`,
+    );
+    const text = await res.text();
+    ok(res.status === 200, `OTP sign-in ${email}: HTTP ${res.status} ${text.slice(0, 160)}`);
+    const body = JSON.parse(text || "{}") as { token?: string; user?: { id?: string } };
+    ok(typeof body.token === "string" && body.token.length > 8, `OTP sign-in ${email}: token`);
+    ok(typeof body.user?.id === "string", `OTP sign-in ${email}: user id`);
+    return { token: body.token ?? "", id: body.user?.id ?? "", cookie: cookieHeader(res) };
+  }
+
+  const seedEmail = "seq-seed@example.test";
+  const SEED = "44444444-4444-4444-4444-444444444444";
+  const SEED_DOMAIN = "44444444-0000-4000-8000-000000000001";
+  const seedSql = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
+  try {
+    await seedSql`
+      INSERT INTO users (id, email) VALUES (${SEED}, ${seedEmail})
+    `;
+    await seedSql`
+      INSERT INTO domains (id, user_id, name, color)
+      VALUES (${SEED_DOMAIN}, ${SEED}, 'Seed Work', '#2563EB')
+    `;
+  } finally {
+    await seedSql.end({ timeout: 5 });
+  }
+
+  const takeover = await withTimeout(
+    request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: seedEmail, password: "password12", name: "Takeover" }),
+    }),
+    15000,
+    "unverified sign-up",
+  );
+  const takeoverText = await takeover.text();
+  ok(takeover.status === 200, `unverified sign-up: HTTP ${takeover.status} ${takeoverText.slice(0, 160)}`);
+  const takeoverBody = JSON.parse(takeoverText || "{}") as { token?: string | null };
+  ok(takeoverBody.token == null, "unverified sign-up: no session (cannot adopt seed data)");
+
+  const a = await signInOtp("seq-a@example.test");
+  const b = await signInOtp("seq-b@example.test");
+  ok(a.token.includes("."), "OTP A: JSON token is signed");
 
   const inspect = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
   let rawDbToken = "";
@@ -265,6 +332,86 @@ try {
   );
   const after = await aReadAfter.json() as { data?: { title?: string } };
   ok(aReadAfter.status === 200 && after.data?.title === "seq patched", "isolation: A title unchanged after B patch");
+
+  const adopted = await signInOtp(seedEmail);
+  const adoptedDomains = await withTimeout(
+    request("/api/data/domains", {
+      headers: { Authorization: `Bearer ${adopted.token}` },
+    }),
+    15000,
+    "OTP adopt",
+  );
+  const adoptedBody = await adoptedDomains.json() as { data?: { id?: string; name?: string }[] };
+  ok(adoptedDomains.status === 200, `OTP adopt: HTTP ${adoptedDomains.status}`);
+  ok(
+    Array.isArray(adoptedBody.data) && adoptedBody.data.some((row) => row.id === SEED_DOMAIN),
+    "verified OTP user adopts the seeded planner row",
+  );
+
+  const renameSql = postgres(pgUrl, { max: 1, ssl: postgresSsl(pgUrl) });
+  try {
+    await renameSql`UPDATE "user" SET email = ${"renamed-seq-seed@example.test"} WHERE id = ${adopted.id}`;
+  } finally {
+    await renameSql.end({ timeout: 5 });
+  }
+  const afterRename = await withTimeout(
+    request("/api/data/domains", {
+      headers: { Authorization: `Bearer ${adopted.token}` },
+    }),
+    15000,
+    "email-change",
+  );
+  const afterRenameBody = await afterRename.json() as { data?: { id?: string }[] };
+  ok(afterRename.status === 200, `email-change: HTTP ${afterRename.status}`);
+  ok(
+    Array.isArray(afterRenameBody.data) && afterRenameBody.data.some((row) => row.id === SEED_DOMAIN),
+    "auth_id link survives an email change",
+  );
+
+  ok(a.cookie.length > 0, "OTP A set a session cookie");
+  const cookieSession = await withTimeout(
+    request("/api/auth/get-session", {
+      headers: { Cookie: a.cookie },
+    }),
+    15000,
+    "cookie-only get-session",
+  );
+  const cookieText = await cookieSession.text();
+  ok(cookieSession.status === 200, `cookie-only get-session: HTTP ${cookieSession.status}`);
+  const cookieBody = JSON.parse(cookieText || "null") as { session?: { token?: string } } | null;
+  ok(cookieBody?.session?.token?.includes(".") === true, "cookie-only get-session: token is signed");
+  ok(cookieBody?.session?.token !== rawDbToken, "cookie-only get-session: not the raw DB token");
+  const cookieList = await withTimeout(
+    request("/api/data/tasks", {
+      headers: { Authorization: `Bearer ${cookieBody?.session?.token}` },
+    }),
+    15000,
+    "get-session bearer",
+  );
+  ok(cookieList.status === 200, `cookie-only get-session token as Bearer: HTTP ${cookieList.status}`);
+
+  const badJson = await withTimeout(
+    request("/api/data/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${a.token}`,
+      },
+      body: "{",
+    }),
+    15000,
+    "bad JSON",
+  );
+  ok(badJson.status === 400, `bad JSON: HTTP ${badJson.status}`);
+
+  const badId = await withTimeout(
+    request(`/api/data/tasks/not-a-uuid`, {
+      headers: { Authorization: `Bearer ${a.token}` },
+    }),
+    15000,
+    "malformed id",
+  );
+  ok(badId.status === 400, `malformed id: HTTP ${badId.status}`);
 
   const cron = await withTimeout(
     request("/api/cron/push-dispatch", {

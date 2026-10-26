@@ -27,7 +27,11 @@ export function postgresSsl(connectionString: string): false | "require" {
   }
 }
 
-/** Fresh client per request. Workers cannot reuse TCP sockets across requests. */
+/**
+ * Fresh client per request. Workers cannot reuse TCP sockets across requests.
+ * `max: 1` — this is one of two sockets a data request opens (see openAuth).
+ * Production multiplexes both through Hyperdrive (docs/cloudflare-cutover.md).
+ */
 export function openSql(env: Env): Sql {
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured (HYPERDRIVE or DATABASE_URL)");

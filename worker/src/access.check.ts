@@ -293,17 +293,33 @@ ok((await count("domains", "user_id = $1", [B])) === 1, "bootstrap: B domain cou
 
 const SEED = "44444444-4444-4444-4444-444444444444";
 const AUTH_NEW = "55555555-5555-5555-5555-555555555555";
+const AUTH_UNVER = "88888888-8888-8888-8888-888888888888";
+const SEED_DOMAIN = "44444444-0000-4000-8000-000000000001";
 await db.exec(`
   INSERT INTO users (id, email) VALUES ('${SEED}', 'seed@example.test');
   INSERT INTO domains (id, user_id, name, color) VALUES
-    ('44444444-0000-4000-8000-000000000001', '${SEED}', 'Seed Work', '#2563EB');
+    ('${SEED_DOMAIN}', '${SEED}', 'Seed Work', '#2563EB');
 `);
-const adopted = await bootstrapUser(makeStore(sql, AUTH_NEW), "seed@example.test");
-ok(adopted.userId === SEED, "bootstrap: new auth id adopts the existing email row");
+
+const unverified = await bootstrapUser(makeStore(sql, AUTH_UNVER), "seed@example.test", { emailVerified: false });
+ok(unverified.userId !== SEED, "bootstrap: unverified sign-up does not adopt the seeded email");
+ok((await getOwned(unverified, "domains", SEED_DOMAIN)) === null, "bootstrap: unverified session cannot read seed data");
+ok((await count("domains", "user_id = $1 AND name = $2", [SEED, "Seed Work"])) === 1, "bootstrap: seed domain still on the seed row");
+ok((await scalar<string>("SELECT auth_id::text FROM users WHERE id = $1", [SEED])) == null, "bootstrap: unverified does not write auth_id on the seed row");
+
+const adopted = await bootstrapUser(makeStore(sql, AUTH_NEW), "seed@example.test", { emailVerified: true });
+ok(adopted.userId === SEED, "bootstrap: verified OTP user adopts the existing email row");
 ok((await count("users", "lower(email) = $1", ["seed@example.test"])) === 1, "bootstrap: email stays unique");
 ok((await count("users", "id = $1", [AUTH_NEW])) === 0, "bootstrap: does not insert a colliding auth id");
+ok((await scalar<string>("SELECT auth_id::text FROM users WHERE id = $1", [SEED])) === AUTH_NEW, "bootstrap: persists BA user id on the users row");
 ok((await count("domains", "user_id = $1 AND name = $2", [SEED, "Seed Work"])) === 1, "bootstrap: adopted row keeps its domain");
-ok((await getOwned(adopted, "domains", "44444444-0000-4000-8000-000000000001")) != null, "bootstrap: adopted store can read the row");
+ok((await getOwned(adopted, "domains", SEED_DOMAIN)) != null, "bootstrap: adopted store can read the row");
+
+const renamed = await bootstrapUser(makeStore(sql, AUTH_NEW), "renamed-seed@example.test", { emailVerified: true });
+ok(renamed.userId === SEED, "bootstrap: auth_id link survives an email change");
+ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [SEED])) === "renamed-seed@example.test", "bootstrap: linked row takes the new email");
+ok((await count("users", "id = $1", [AUTH_NEW])) === 0, "bootstrap: email change does not insert a new empty users row");
+ok((await getOwned(renamed, "domains", SEED_DOMAIN)) != null, "bootstrap: renamed session still sees seed data");
 
 const stayC = await bootstrapUser(storeC, "b@example.test");
 ok(stayC.userId === C, "bootstrap: existing user cannot take over another email's row");
@@ -311,8 +327,8 @@ ok((await getOwned(stayC, "domains", DOMAIN_B)) === null, "bootstrap: C still ca
 ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [C])) === "c@example.test", "bootstrap: C email unchanged when target email is taken");
 ok((await scalar<string>("SELECT email FROM users WHERE id = $1", [B])) === "b@example.test", "bootstrap: B email unchanged");
 
-const reB = await bootstrapUser(makeStore(sql, "66666666-6666-6666-6666-666666666666"), "b@example.test");
-ok(reB.userId === B, "bootstrap: re-signup of B's email adopts B");
+const reB = await bootstrapUser(makeStore(sql, "66666666-6666-6666-6666-666666666666"), "b@example.test", { emailVerified: true });
+ok(reB.userId === B, "bootstrap: verified re-signup of B's email adopts B");
 ok((await getOwned(reB, "domains", DOMAIN_B)) != null, "bootstrap: adopted B session sees B's domain");
 ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B still cannot read A");
 

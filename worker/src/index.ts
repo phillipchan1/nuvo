@@ -1,9 +1,10 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { exposeSignedAuthToken, sessionUser } from "./auth.ts";
+import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
+import { BadRequestError, postgresInputError, readJson, requireUuid } from "./http.ts";
 import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
 import {
   applyPatch,
@@ -96,7 +97,11 @@ app.all("/api/auth/*", async (c) => {
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const io = await requestIo(c);
-    const res = await exposeSignedAuthToken(await io.auth.handler(c.req.raw));
+    const res = await exposeSignedAuthToken(
+      await io.auth.handler(c.req.raw),
+      c.env.BETTER_AUTH_SECRET ?? "",
+      c.req.header("cookie"),
+    );
     const headers = new Headers(res.headers);
     for (const [k, v] of Object.entries(cors)) {
       if (k === "Access-Control-Allow-Origin" || !headers.has(k)) headers.set(k, v);
@@ -119,11 +124,28 @@ app.all("/api/auth/*", async (c) => {
 
 async function requireStore(c: Context<AppEnv>) {
   const io = await requestIo(c);
-  const user = await sessionUser(io.auth, c.req.raw);
+  let user;
+  try {
+    user = await sessionUser(io.auth, c.req.raw);
+  } catch (err) {
+    if (err instanceof SessionLookupError) {
+      return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };
+    }
+    throw err;
+  }
   if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null);
+  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
+    emailVerified: user.emailVerified,
+  });
   return { store };
 }
+
+app.onError((err, c) => {
+  if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
+  if (err instanceof SessionLookupError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+  if (postgresInputError(err)) return json({ error: "bad request" }, 400, OPEN_CORS);
+  return json({ error: "internal error" }, 500, OPEN_CORS);
+});
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
@@ -133,6 +155,7 @@ app.get("/api/data/task_labels", async (c) => {
   if ("error" in got) return got.error;
   const taskId = c.req.query("task_id");
   if (!taskId) return json({ error: "task_id required" }, 400, OPEN_CORS);
+  requireUuid(taskId, "task_id");
   const rows = await listTaskLabels(got.store, taskId);
   return json({ data: rows }, 200, OPEN_CORS);
 });
@@ -140,8 +163,10 @@ app.get("/api/data/task_labels", async (c) => {
 app.post("/api/data/task_labels", async (c) => {
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<{ task_id?: string; label_id?: string }>();
+  const body = await readJson<{ task_id?: string; label_id?: string }>(c);
   if (!body.task_id || !body.label_id) return json({ error: "task_id and label_id required" }, 400, OPEN_CORS);
+  requireUuid(body.task_id, "task_id");
+  requireUuid(body.label_id, "label_id");
   const ok = await insertTaskLabel(got.store, body.task_id, body.label_id);
   return json({ data: ok ? body : null }, ok ? 200 : 404, OPEN_CORS);
 });
@@ -152,6 +177,8 @@ app.delete("/api/data/task_labels", async (c) => {
   const taskId = c.req.query("task_id");
   const labelId = c.req.query("label_id");
   if (!taskId || !labelId) return json({ error: "task_id and label_id required" }, 400, OPEN_CORS);
+  requireUuid(taskId, "task_id");
+  requireUuid(labelId, "label_id");
   const n = await deleteTaskLabel(got.store, taskId, labelId);
   return json({ deleted: n }, 200, OPEN_CORS);
 });
@@ -170,7 +197,7 @@ app.get("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const row = await getOwned(got.store, table, c.req.param("id"));
+  const row = await getOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
@@ -180,7 +207,7 @@ app.post("/api/data/:table", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<Record<string, unknown>>();
+  const body = await readJson<Record<string, unknown>>(c);
   const row = await upsertOwned(got.store, table as PlannerTable, body);
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
@@ -191,8 +218,8 @@ app.patch("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<Record<string, unknown>>();
-  const row = await updateOwned(got.store, table, c.req.param("id"), body);
+  const body = await readJson<Record<string, unknown>>(c);
+  const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
@@ -202,7 +229,7 @@ app.delete("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const n = await deleteOwned(got.store, table, c.req.param("id"));
+  const n = await deleteOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!n) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ deleted: n }, 200, OPEN_CORS);
 });
@@ -210,7 +237,7 @@ app.delete("/api/data/:table/:id", async (c) => {
 app.post("/api/rpc/apply_patch", async (c) => {
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<{ p_table?: string; p_match?: Record<string, unknown>; p_patch?: Record<string, unknown> }>();
+  const body = await readJson<{ p_table?: string; p_match?: Record<string, unknown>; p_patch?: Record<string, unknown> }>(c);
   if (!body.p_table || !body.p_match || !body.p_patch) {
     return json({ error: "p_table, p_match, p_patch required" }, 400, OPEN_CORS);
   }
@@ -225,7 +252,7 @@ app.post("/api/rpc/apply_patch", async (c) => {
 app.post("/api/rpc/contacts", async (c) => {
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<{ search?: string }>().catch(() => ({ search: "" }));
+  const body = await readJson<{ search?: string }>(c);
   const rows = await contacts(got.store, body.search ?? "");
   return json({ data: rows }, 200, OPEN_CORS);
 });
@@ -240,7 +267,7 @@ app.post("/api/rpc/rotate_inbound_token", async (c) => {
 app.post("/api/rpc/claim_reminder", async (c) => {
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const body = await c.req.json<{ reminder_key?: string; fire_at?: string }>();
+  const body = await readJson<{ reminder_key?: string; fire_at?: string }>(c);
   if (!body.reminder_key || !body.fire_at) {
     return json({ error: "reminder_key and fire_at required" }, 400, OPEN_CORS);
   }

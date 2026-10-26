@@ -761,59 +761,90 @@ export async function contacts(
   `;
 }
 
+export type BootstrapIdentity = {
+  /** Only a verified Better Auth email may adopt an existing `users` row. */
+  emailVerified?: boolean;
+};
+
 /**
  * Link the Better Auth session to a planner `users` row.
- * New auth ids collide on `users_email_key` if we only upsert by id — adopt
- * the existing row for that verified email, or insert when the email is free.
- * An already-linked id never takes over another row.
+ *
+ * Lookup order: `users.auth_id` (the BA user id) → legacy `users.id` →
+ * verified email. Unverified sessions never adopt another row (that is
+ * the email+password takeover). Persist `auth_id` so a later email
+ * change finds the same row instead of inserting an empty one.
  */
-export async function bootstrapUser(store: Store, email: string | null): Promise<Store> {
+export async function bootstrapUser(
+  store: Store,
+  email: string | null,
+  identity: BootstrapIdentity = {},
+): Promise<Store> {
   const sql = store.sql;
-  const sessionId = store.userId;
+  const authId = store.userId;
   const normalized = email?.trim().toLowerCase() || null;
+  const verified = identity.emailVerified === true;
 
-  const byId = (await sql`
-    SELECT id, email FROM users WHERE id = ${sessionId} LIMIT 1
+  const byAuth = (await sql`
+    SELECT id, email FROM users WHERE auth_id = ${authId} LIMIT 1
   `) as { id: string; email: string | null }[];
-  if (byId[0]) {
-    const row = byId[0];
-    if (normalized && (row.email ?? "").toLowerCase() !== normalized) {
-      const taken = (await sql`
-        SELECT id FROM users
-        WHERE lower(email) = ${normalized} AND id <> ${sessionId}
-        LIMIT 1
-      `) as { id: string }[];
-      if (!taken[0]) {
-        await sql`UPDATE users SET email = ${normalized} WHERE id = ${sessionId}`;
-      }
-    }
-    await ensureSettingsAndDomains(store);
-    return store;
+  if (byAuth[0]) {
+    return finishLinked(store, byAuth[0], authId, normalized);
   }
 
-  if (normalized) {
+  const byId = (await sql`
+    SELECT id, email FROM users WHERE id = ${authId} LIMIT 1
+  `) as { id: string; email: string | null }[];
+  if (byId[0]) {
+    return finishLinked(store, byId[0], authId, normalized);
+  }
+
+  if (verified && normalized) {
     const byEmail = (await sql`
-      SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
-    `) as { id: string }[];
-    if (byEmail[0]) {
-      const adopted = makeStore(sql, byEmail[0].id);
+      SELECT id, auth_id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+    `) as { id: string; auth_id: string | null }[];
+    const existing = byEmail[0];
+    if (existing && (existing.auth_id == null || existing.auth_id === authId)) {
+      await sql`
+        UPDATE users
+        SET auth_id = ${authId}
+        WHERE id = ${existing.id}
+          AND (auth_id IS NULL OR auth_id = ${authId})
+      `;
+      const adopted = makeStore(sql, existing.id);
       await ensureSettingsAndDomains(adopted);
       return adopted;
     }
   }
 
+  const insertEmail = await emailForInsert(sql, normalized, verified);
+
   try {
     await sql`
-      INSERT INTO users (id, email)
-      VALUES (${sessionId}, ${normalized})
+      INSERT INTO users (id, email, auth_id)
+      VALUES (${authId}, ${insertEmail}, ${authId})
     `;
   } catch {
-    if (normalized) {
-      const raced = (await sql`
-        SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
-      `) as { id: string }[];
-      if (raced[0]) {
-        const adopted = makeStore(sql, raced[0].id);
+    const racedAuth = (await sql`
+      SELECT id FROM users WHERE auth_id = ${authId} LIMIT 1
+    `) as { id: string }[];
+    if (racedAuth[0]) {
+      const adopted = makeStore(sql, racedAuth[0].id);
+      await ensureSettingsAndDomains(adopted);
+      return adopted;
+    }
+    if (verified && normalized) {
+      const racedEmail = (await sql`
+        SELECT id, auth_id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+      `) as { id: string; auth_id: string | null }[];
+      const raced = racedEmail[0];
+      if (raced && (raced.auth_id == null || raced.auth_id === authId)) {
+        await sql`
+          UPDATE users
+          SET auth_id = ${authId}
+          WHERE id = ${raced.id}
+            AND (auth_id IS NULL OR auth_id = ${authId})
+        `;
+        const adopted = makeStore(sql, raced.id);
         await ensureSettingsAndDomains(adopted);
         return adopted;
       }
@@ -823,6 +854,47 @@ export async function bootstrapUser(store: Store, email: string | null): Promise
 
   await ensureSettingsAndDomains(store);
   return store;
+}
+
+async function emailForInsert(
+  sql: Sql,
+  normalized: string | null,
+  verified: boolean,
+): Promise<string | null> {
+  if (!normalized) return null;
+  if (verified) return normalized;
+  const taken = (await sql`
+    SELECT id FROM users WHERE lower(email) = ${normalized} LIMIT 1
+  `) as { id: string }[];
+  return taken[0] ? null : normalized;
+}
+
+async function finishLinked(
+  store: Store,
+  row: { id: string; email: string | null },
+  authId: string,
+  normalized: string | null,
+): Promise<Store> {
+  const sql = store.sql;
+  const linked = row.id === store.userId ? store : makeStore(sql, row.id);
+  await sql`
+    UPDATE users
+    SET auth_id = ${authId}
+    WHERE id = ${row.id}
+      AND auth_id IS NULL
+  `;
+  if (normalized && (row.email ?? "").toLowerCase() !== normalized) {
+    const taken = (await sql`
+      SELECT id FROM users
+      WHERE lower(email) = ${normalized} AND id <> ${row.id}
+      LIMIT 1
+    `) as { id: string }[];
+    if (!taken[0]) {
+      await sql`UPDATE users SET email = ${normalized} WHERE id = ${row.id}`;
+    }
+  }
+  await ensureSettingsAndDomains(linked);
+  return linked;
 }
 
 async function ensureSettingsAndDomains(store: Store): Promise<void> {

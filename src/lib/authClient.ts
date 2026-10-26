@@ -25,6 +25,11 @@ function rememberSignedBearer(token: string) {
   }
 }
 
+/** Persist a signed `token.hmac` so a new tab can reuse get-session's JSON. */
+export function persistSignedBearer(token: string) {
+  if (token.includes(".")) rememberSignedBearer(token);
+}
+
 export function createNuvoAuthClient() {
   const base = authBaseUrl();
   if (!base) throw new Error("VITE_API_BASE_URL is not set");

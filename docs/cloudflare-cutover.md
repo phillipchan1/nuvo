@@ -17,7 +17,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 |---|---|---|---|
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
 | Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
-| Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + password; signed bearer only) | Same flag flip |
+| Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (aliases; handlers not ported yet) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
 | Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
@@ -171,7 +171,22 @@ npm run cf:preview:dry-run
 Postgres.js and the Better Auth `pg` Pool are **per-request**. Workers cannot
 reuse TCP sockets across requests; a `WeakMap` (or module-scope) cache hangs
 every request after the first on an isolate. `openSql` / `openAuth` create
-fresh clients; `ctx.waitUntil` closes them after the response.
+fresh clients (`max: 1` each → **two sockets per request**);
+`ctx.waitUntil` closes them after the response.
+
+**Connection cap (chosen):** production uses **Hyperdrive**. The Worker still
+opens those two sockets, but they land on Hyperdrive's edge pool, which holds
+a small origin pool to Neon — 150–200 parallel requests do not open 300–400
+Postgres connections (PG's default `max_connections` is 100). Preview has no
+Hyperdrive binding and talks to `DATABASE_URL` directly; it is not sized for
+that concurrency (CI sequential tests are fine). Do not point preview at a
+100-connection Neon without Hyperdrive and then hammer it.
+
+Planner `users.auth_id` is the Better Auth user id. `bootstrapUser` looks that
+up first, adopts a row **only when the BA email is verified**, and never
+auto-signs-in an unverified email+password account
+(`requireEmailVerification`). Cookie-only `get-session` always returns a
+signed bearer (`token.hmac`), not the raw `session.token`.
 
 Better Auth tables in `worker/schema/better-auth.sql` use the 1.7.13 default
 camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case

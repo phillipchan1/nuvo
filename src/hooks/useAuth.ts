@@ -71,7 +71,7 @@ export function useAuth() {
   useEffect(() => {
     if (workersEnabled) {
       let cancelled = false;
-      void import("../lib/authClient").then(async ({ createNuvoAuthClient, signedBearerToken }) => {
+      void import("../lib/authClient").then(async ({ createNuvoAuthClient, persistSignedBearer, signedBearerToken }) => {
         if (cancelled) return;
         const client = createNuvoAuthClient();
         const applyBa = (data: {
@@ -80,7 +80,12 @@ export function useAuth() {
           token?: string;
         } | null) => {
           if (cancelled) return;
-          const token = signedBearerToken() ?? data?.session?.token ?? data?.token;
+          const fromBody = data?.session?.token ?? data?.token;
+          // Never send the raw DB session.token — requireSignature rejects it
+          // and a new tab with empty sessionStorage would 401 everywhere.
+          const signed = typeof fromBody === "string" && fromBody.includes(".") ? fromBody : null;
+          const token = signedBearerToken() ?? signed;
+          if (token) persistSignedBearer(token);
           if (!data?.user || !token) {
             setSession(null);
             return;

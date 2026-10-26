@@ -37,6 +37,7 @@ ok(!/email_verified/.test(schema), "schema: no snake_case email_verified");
 ok(!/authSchema/.test(authSrc), "createAuth: no snake_case field map");
 ok(!/emailVerified:\s*"email_verified"/.test(authSrc), "createAuth: no emailVerified remap");
 ok(/requireSignature:\s*true/.test(authSrc), "createAuth: bearer requires a signed token");
+ok(/requireEmailVerification:\s*true/.test(authSrc), "createAuth: email+password requires verification");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;

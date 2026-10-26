@@ -46,6 +46,10 @@ ok(src.includes("postgresSsl"), "db.ts uses postgresSsl");
 ok(!/url\.includes\("localhost"\)/.test(src), "db.ts does not substring-match localhost for TLS");
 ok(!/WeakMap/.test(src), "db.ts does not cache Sql in a WeakMap");
 ok(/export function openSql/.test(src), "db.ts opens a fresh client per call");
+ok(/max:\s*1/.test(src), "db.ts caps postgres.js at 1 socket per request");
+const cutover = readFileSync(join(here, "../../docs/cloudflare-cutover.md"), "utf8");
+ok(/Hyperdrive/.test(cutover), "cutover docs name Hyperdrive as the production connection pool");
+ok(/two sockets per request/.test(cutover), "cutover docs state the per-request socket count");
 
 const db = new PGlite();
 await db.exec("CREATE TABLE array_probe (id int, tags text[])");

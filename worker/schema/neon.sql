@@ -8,8 +8,15 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY,
   email TEXT UNIQUE,
+  -- Better Auth user id. Lookup this first so an email change does not
+  -- insert a second empty planner row. Unique: one BA user ↔ one users row.
+  auth_id UUID UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Fresh CREATE above already has auth_id. Re-applying on an older rehearsal
+-- DB still picks the column up.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS auth_id UUID UNIQUE;
 
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS trigger LANGUAGE plpgsql AS $$

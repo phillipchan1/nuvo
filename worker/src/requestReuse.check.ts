@@ -47,7 +47,10 @@ ok(/openAuth/.test(authSrc), "auth.ts exports openAuth (per-request)");
 ok(/waitUntil/.test(ioSrc), "requestIo closes via waitUntil");
 ok(/openRequestIo/.test(indexSrc) && /scheduleClose/.test(indexSrc), "index.ts uses per-request IO + scheduleClose");
 ok(/requireSignature:\s*true/.test(authSrc), "createAuth requires signed bearer tokens");
+ok(/requireEmailVerification:\s*true/.test(authSrc), "createAuth requires email verification (no unverified password session)");
 ok(/exposeSignedAuthToken/.test(indexSrc), "auth responses rewrite the JSON token to the signed form");
+ok(/signBearerToken/.test(authSrc), "auth.ts can HMAC a raw session token for cookie-only get-session");
+ok(/SessionLookupError/.test(authSrc), "session lookup failures are not treated as no session");
 ok(/await next\(\)/.test(indexSrc) && /await closing/.test(indexSrc), "index.ts awaits next() then the close");
 ok(!/c\.res\.headers\.set/.test(indexSrc), "index.ts does not mutate immutable response headers");
 ok(!/withIo\(c,/.test(indexSrc), "index.ts does not close IO inside requireStore");
@@ -125,6 +128,14 @@ const restore = installRequestIoForTests(() => {
 
 const origin = "http://localhost:8787";
 const email = "reuse@example.test";
+const seedEmail = "seed-reuse@example.test";
+const SEED = "44444444-4444-4444-4444-444444444444";
+const SEED_DOMAIN = "44444444-0000-4000-8000-000000000001";
+await db.exec(`
+  INSERT INTO users (id, email) VALUES ('${SEED}', '${seedEmail}');
+  INSERT INTO domains (id, user_id, name, color) VALUES
+    ('${SEED_DOMAIN}', '${SEED}', 'Seed Work', '#2563EB');
+`);
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -148,6 +159,53 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function cookieHeader(res: Response): string {
+  const getSetCookie = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const parts = typeof getSetCookie === "function" ? getSetCookie.call(res.headers) : [];
+  if (parts.length) {
+    return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  }
+  const single = res.headers.get("set-cookie");
+  return single ? single.split(";")[0] : "";
+}
+
+async function readOtp(forEmail: string): Promise<string> {
+  const rows = await db.query<{ value: string }>(
+    `SELECT value FROM verification WHERE identifier = $1 ORDER BY "expiresAt" DESC LIMIT 1`,
+    [`sign-in-otp-${forEmail}`],
+  );
+  return (rows.rows[0]?.value ?? "").split(":")[0];
+}
+
+async function signInOtp(forEmail: string): Promise<{ token: string; id: string; cookie: string }> {
+  const send = await withTimeout(
+    request("/api/auth/email-otp/send-verification-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: forEmail, type: "sign-in" }),
+    }),
+    8000,
+    `OTP send ${forEmail}`,
+  );
+  ok(send.status === 200, `OTP send ${forEmail}: HTTP ${send.status} ${await send.clone().text().then((t) => t.slice(0, 160))}`);
+  const otp = await readOtp(forEmail);
+  ok(/^\d{6}$/.test(otp), `OTP send ${forEmail}: captured a 6-digit code`);
+  const res = await withTimeout(
+    request("/api/auth/sign-in/email-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: forEmail, otp }),
+    }),
+    8000,
+    `OTP sign-in ${forEmail}`,
+  );
+  const text = await res.text();
+  ok(res.status === 200, `OTP sign-in ${forEmail}: HTTP ${res.status} ${text.slice(0, 160)}`);
+  const body = JSON.parse(text || "{}") as { token?: string; user?: { id?: string } };
+  ok(typeof body.token === "string" && body.token.includes("."), `OTP sign-in ${forEmail}: signed token`);
+  return { token: body.token ?? "", id: body.user?.id ?? "", cookie: cookieHeader(res) };
+}
+
 const otpRes = await withTimeout(
   request("/api/auth/email-otp/send-verification-otp", {
     method: "POST",
@@ -160,20 +218,23 @@ const otpRes = await withTimeout(
 ok(otpRes.status === 200, `OTP send: HTTP ${otpRes.status} ${await otpRes.clone().text().then((t) => t.slice(0, 160))}`);
 ok(opens === 1 && closes === 1, `OTP send: opened and closed once (opens=${opens} closes=${closes})`);
 
-const signUpRes = await withTimeout(
+const takeoverSignUp = await withTimeout(
   request("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "password12", name: "Reuse" }),
+    body: JSON.stringify({ email: seedEmail, password: "password12", name: "Takeover" }),
   }),
   8000,
-  "sign-up",
+  "unverified sign-up",
 );
-const signUpText = await signUpRes.text();
-ok(signUpRes.status === 200, `sign-up: HTTP ${signUpRes.status} ${signUpText.slice(0, 160)}`);
-const signed = JSON.parse(signUpText || "{}") as { token?: string; user?: { id?: string } };
-ok(typeof signed.token === "string" && signed.token.length > 8, "sign-up: session token");
-ok(signed.token.includes("."), "sign-up: token is signed (token.signature), not the raw DB value");
+const takeoverText = await takeoverSignUp.text();
+ok(takeoverSignUp.status === 200, `unverified sign-up: HTTP ${takeoverSignUp.status} ${takeoverText.slice(0, 160)}`);
+const takeover = JSON.parse(takeoverText || "{}") as { token?: string | null; user?: { id?: string } };
+ok(takeover.token == null, "unverified sign-up: no session token (cannot adopt)");
+ok((await db.query<{ n: number }>("SELECT count(*)::int AS n FROM users WHERE id = $1 AND email = $2", [SEED, seedEmail])).rows[0]?.n === 1, "unverified sign-up: seed users row untouched");
+ok((await db.query<{ n: number }>("SELECT count(*)::int AS n FROM domains WHERE user_id = $1 AND name = $2", [SEED, "Seed Work"])).rows[0]?.n === 1, "unverified sign-up: seed domain still private");
+
+const signed = await signInOtp(email);
 
 const writeRes = await withTimeout(
   request("/api/data/tasks", {
@@ -191,11 +252,11 @@ const writeText = await writeRes.text();
 ok(writeRes.status === 200, `authed write: HTTP ${writeRes.status} ${writeText.slice(0, 160)}`);
 const written = JSON.parse(writeText || "{}") as { data?: { title?: string; user_id?: string } };
 ok(written.data?.title === "sequential write", "authed write: task title stored");
-ok(written.data?.user_id === signed.user?.id, "authed write: task belongs to the signed-up user");
+ok(written.data?.user_id === signed.id, "authed write: task belongs to the signed-in user");
 
 const rawRows = await db.query<{ token: string }>(
   'SELECT token FROM session WHERE "userId" = $1',
-  [signed.user?.id],
+  [signed.id],
 );
 const rawDbToken = rawRows.rows[0]?.token ?? "";
 ok(rawDbToken.length > 8, "session table has a raw token");
@@ -227,7 +288,134 @@ ok(unauthBody.error === "unauthorized", "invalid bearer: generic unauthorized");
 ok(opens >= 4, `one instance opened a client per request (opens=${opens})`);
 ok(closes === opens, `every request closed its client (opens=${opens} closes=${closes})`);
 
+const adopted = await signInOtp(seedEmail);
+ok(adopted.id.length > 0, "verified OTP: Better Auth user id");
+const adoptedDomains = await withTimeout(
+  request("/api/data/domains", {
+    headers: { Authorization: `Bearer ${adopted.token}` },
+  }),
+  8000,
+  "OTP adopt list",
+);
+ok(adoptedDomains.status === 200, `OTP adopt list: HTTP ${adoptedDomains.status}`);
+const adoptedBody = await adoptedDomains.json() as { data?: { id?: string; name?: string }[] };
+ok(
+  Array.isArray(adoptedBody.data) && adoptedBody.data.some((row) => row.id === SEED_DOMAIN && row.name === "Seed Work"),
+  "verified OTP user adopts the seeded planner row",
+);
+const seedAuth = await db.query<{ auth_id: string }>("SELECT auth_id::text AS auth_id FROM users WHERE id = $1", [SEED]);
+ok(seedAuth.rows[0]?.auth_id === adopted.id, "verified OTP: users.auth_id stores the BA user id");
+
+await db.query('UPDATE "user" SET email = $1 WHERE id = $2', ["renamed-seed-reuse@example.test", adopted.id]);
+const afterRename = await withTimeout(
+  request("/api/data/domains", {
+    headers: { Authorization: `Bearer ${adopted.token}` },
+  }),
+  8000,
+  "email-change list",
+);
+const afterRenameBody = await afterRename.json() as { data?: { id?: string }[] };
+ok(afterRename.status === 200, `email-change list: HTTP ${afterRename.status}`);
+ok(
+  Array.isArray(afterRenameBody.data) && afterRenameBody.data.some((row) => row.id === SEED_DOMAIN),
+  "auth_id link survives an email change",
+);
+ok(
+  (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM users WHERE id = $1", [adopted.id])).rows[0]?.n === 0,
+  "email change does not insert a new empty users row for the BA id",
+);
+
+ok(signed.cookie.length > 0, "OTP sign-in set a session cookie");
+const cookieSession = await withTimeout(
+  request("/api/auth/get-session", {
+    headers: { Cookie: signed.cookie },
+  }),
+  8000,
+  "cookie-only get-session",
+);
+const cookieText = await cookieSession.text();
+ok(cookieSession.status === 200, `cookie-only get-session: HTTP ${cookieSession.status} ${cookieText.slice(0, 160)}`);
+const cookieBody = JSON.parse(cookieText || "null") as { session?: { token?: string }; user?: { id?: string } } | null;
+ok(typeof cookieBody?.session?.token === "string", "cookie-only get-session: has session.token");
+ok(cookieBody?.session?.token?.includes(".") === true, "cookie-only get-session: token is signed, not the raw DB value");
+ok(cookieBody.session?.token !== rawDbToken, "cookie-only get-session: token is not the raw DB session token");
+const cookieBearer = await withTimeout(
+  request("/api/data/tasks", {
+    headers: { Authorization: `Bearer ${cookieBody.session?.token}` },
+  }),
+  8000,
+  "get-session signed bearer",
+);
+ok(cookieBearer.status === 200, `cookie-only get-session token as Bearer: HTTP ${cookieBearer.status}`);
+
+const badJson = await withTimeout(
+  request("/api/data/tasks", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${signed.token}`,
+    },
+    body: "{",
+  }),
+  8000,
+  "bad JSON",
+);
+ok(badJson.status === 400, `bad JSON: HTTP ${badJson.status}`);
+ok((badJson.headers.get("content-type") ?? "").includes("application/json"), "bad JSON: JSON body");
+
+const nulJson = await withTimeout(
+  request("/api/data/tasks", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${signed.token}`,
+    },
+    body: JSON.stringify({ title: "nul\u0000title" }),
+  }),
+  8000,
+  "NUL body",
+);
+ok(nulJson.status === 400, `NUL body: HTTP ${nulJson.status}`);
+
+const badId = await withTimeout(
+  request("/api/data/tasks/not-a-uuid", {
+    headers: { Authorization: `Bearer ${signed.token}` },
+  }),
+  8000,
+  "malformed id",
+);
+ok(badId.status === 400, `malformed id: HTTP ${badId.status}`);
+
 restore();
+
+const restoreFail = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql,
+    auth: {
+      api: {
+        getSession: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      },
+      handler: async () => new Response("no", { status: 500 }),
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const lookupFail = await withTimeout(
+  request("/api/data/tasks", {
+    headers: { Authorization: `Bearer ${signed.token}` },
+  }),
+  8000,
+  "session lookup error",
+);
+ok(lookupFail.status === 503, `session lookup DB error: HTTP ${lookupFail.status} (not 401)`);
+const lookupBody = await lookupFail.json() as { error?: string };
+ok(lookupBody.error === "service unavailable", "session lookup DB error: service unavailable");
+restoreFail();
 await kysely.destroy();
 await db.close();
 
