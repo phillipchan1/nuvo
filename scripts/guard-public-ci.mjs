@@ -24,8 +24,18 @@
  *      is denied when a body/notes value (--notes/-n/--body/-b/-F/
  *      --body-file/--notes-file, including glued -Fdump.sql / -bX) contains
  *      $, a backtick, or $(. gh gist create is always denied.
- *   5. actions/cache and actions/cache/save (restore-only is allowed).
- *   6. YAML is fail-closed: parse errors, doc.errors, more than one
+ *   5. gh api -f/-F/--field/--raw-field values (glued/= forms included)
+ *      get the same $ / backtick / $( check. -F/--input @file is denied.
+ *      release.yml may keep $CONTENT / $FILE_SHA and ${{ }} expressions.
+ *   6. bash -c, sh -c, any shell -c, and eval: reject a script that
+ *      contains gh; scan recursively; fail closed if unparseable.
+ *   7. Command-position names with \, quotes, or $ / ${} / $(...) are
+ *      denied (fail closed). gh alias set and gh alias import are denied.
+ *   8. In the release.yml step that runs `gh release create`, each of
+ *      DMG / STABLE_DMG / APPTAR / NOTES has exactly one pinned assignment
+ *      from the known build paths; any reassignment fails.
+ *   9. actions/cache and actions/cache/save (restore-only is allowed).
+ *  10. YAML is fail-closed: parse errors, doc.errors, more than one
  *      document, a non-mapping root, duplicate keys, or << merge keys
  *      throw. There is no raw-text fallback.
  *
@@ -33,6 +43,7 @@
  *
  * This deny-list does not cover `actions/github-script` or upload code
  * written in Python or Node (or any other runtime) inside a `run:` step.
+ * `nc`, `python`, and other non-`gh` exfil channels are out of scope.
  * Reviewers must check those paths by hand.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -86,6 +97,41 @@ const ALLOWED_NOTES_ASSIGNMENTS = new Set([
   '"$(cat RELEASE_NOTES.md)"',
   "'$(cat RELEASE_NOTES.md)'",
 ]);
+
+/** Exactly one assignment each, in the release.yml publish step. */
+export const PINNED_RELEASE_ASSIGNMENTS = Object.freeze({
+  DMG: Object.freeze(['$(ls "$BUNDLE"/dmg/*.dmg | head -1)']),
+  APPTAR: Object.freeze(['$(ls "$BUNDLE"/macos/*.app.tar.gz | head -1)']),
+  STABLE_DMG: Object.freeze(['"Nuvo.dmg"']),
+  NOTES: Object.freeze([...ALLOWED_NOTES_ASSIGNMENTS]),
+});
+
+const GH_API_FIELD_FLAGS = new Set(["-f", "-F", "--field", "--raw-field"]);
+const ALLOWED_RELEASE_API_VARS = Object.freeze(["$CONTENT", "$FILE_SHA"]);
+const SHELL_NAMES = new Set(["bash", "sh", "zsh", "dash", "ksh", "ash", "busybox"]);
+const COMMAND_PREFIXES = new Set([
+  "!",
+  "time",
+  "exec",
+  "command",
+  "builtin",
+  "env",
+  "then",
+  "else",
+  "elif",
+  "if",
+  "while",
+  "until",
+  "do",
+  "fi",
+  "done",
+  "esac",
+  "{",
+  "}",
+]);
+const OPAQUE_INTERPOLATION_RE =
+  /^(?:\$[A-Za-z_][A-Za-z0-9_]*|\$\{[^}]+\}|\$\([\s\S]*\)|`[\s\S]*`)$/;
+const MAX_SHELL_DEPTH = 8;
 
 const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--repo",
@@ -359,6 +405,341 @@ export function looksInterpolated(val) {
   return /\$|`/.test(String(val));
 }
 
+function stripActionsExpressions(val) {
+  return String(val).replace(/\$\{\{[\s\S]*?\}\}/g, "");
+}
+
+function stripWrappingQuotes(tok) {
+  const s = String(tok);
+  if (s.length >= 2 && ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function isAtFileValue(val) {
+  const s = String(val);
+  if (s.startsWith("@")) return true;
+  const eq = s.indexOf("=");
+  return eq >= 0 && s.slice(eq + 1).startsWith("@");
+}
+
+/** After stripping ${{ }}, only $CONTENT / $FILE_SHA may remain in release.yml. */
+export function ghApiFieldValueAllowed(val, filename = "workflow") {
+  if (isAtFileValue(val)) return false;
+  const stripped = stripActionsExpressions(val);
+  if (!looksInterpolated(stripped)) return true;
+  if (filename !== "release.yml") return false;
+  let rest = stripped;
+  for (const name of ALLOWED_RELEASE_API_VARS) {
+    rest = rest.split(name).join("");
+  }
+  return !looksInterpolated(rest);
+}
+
+function isOpaqueInterpolation(val) {
+  const s = String(val).trim();
+  if (!s) return true;
+  return OPAQUE_INTERPOLATION_RE.test(s);
+}
+
+function scriptMentionsGh(script) {
+  return /(?:^|[^A-Za-z0-9_])gh(?:[^A-Za-z0-9_]|$)/.test(String(script));
+}
+
+function commandBase(tok) {
+  return stripWrappingQuotes(tok).split("/").pop();
+}
+
+/** Tokenize without dropping quotes, so `"gh"` and `\gh` stay dirty. */
+export function tokenizeKeepQuotes(line) {
+  const tokens = [];
+  let cur = "";
+  let quote = null;
+  for (const c of String(line)) {
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      if (cur) tokens.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
+/**
+ * Split on ; && || | & outside quotes and $(...). Fail closed on
+ * unclosed quotes / command substitutions.
+ */
+export function splitShellSegments(line) {
+  const parts = [];
+  let cur = "";
+  let quote = null;
+  let depth = 0;
+  const s = String(line);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    if (c === "`") {
+      cur += c;
+      const end = s.indexOf("`", i + 1);
+      if (end < 0) return { error: "unclosed backtick", parts };
+      cur += s.slice(i + 1, end + 1);
+      i = end;
+      continue;
+    }
+    if (c === "$" && s[i + 1] === "(") {
+      depth += 1;
+      cur += "$(";
+      i += 1;
+      continue;
+    }
+    if (c === "(" && depth > 0) {
+      depth += 1;
+      cur += c;
+      continue;
+    }
+    if (c === ")" && depth > 0) {
+      depth -= 1;
+      cur += c;
+      continue;
+    }
+    if (depth === 0) {
+      if (c === ";" || (c === "&" && s[i + 1] !== "&")) {
+        if (cur.trim()) parts.push(cur.trim());
+        cur = "";
+        continue;
+      }
+      if ((c === "&" && s[i + 1] === "&") || (c === "|" && s[i + 1] === "|")) {
+        if (cur.trim()) parts.push(cur.trim());
+        cur = "";
+        i += 1;
+        continue;
+      }
+      if (c === "|") {
+        if (cur.trim()) parts.push(cur.trim());
+        cur = "";
+        continue;
+      }
+    }
+    cur += c;
+  }
+  if (quote) return { error: "unclosed quote", parts };
+  if (depth !== 0) return { error: "unclosed $(", parts };
+  if (cur.trim()) parts.push(cur.trim());
+  return { error: null, parts };
+}
+
+export function extractCommandSubs(text) {
+  const parts = [];
+  const s = String(text);
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "`") {
+      const end = s.indexOf("`", i + 1);
+      if (end < 0) return { error: "unclosed backtick", parts };
+      parts.push(s.slice(i + 1, end));
+      i = end + 1;
+      continue;
+    }
+    if (s[i] === "$" && s[i + 1] === "(") {
+      let depth = 1;
+      let j = i + 2;
+      let quote = null;
+      while (j < s.length && depth > 0) {
+        const c = s[j];
+        if (quote) {
+          if (c === quote) quote = null;
+        } else if (c === '"' || c === "'") {
+          quote = c;
+        } else if (c === "$" && s[j + 1] === "(") {
+          depth += 1;
+          j += 1;
+        } else if (c === "(") {
+          depth += 1;
+        } else if (c === ")") {
+          depth -= 1;
+        }
+        j += 1;
+      }
+      if (depth !== 0) return { error: "unclosed $(", parts };
+      parts.push(s.slice(i + 2, j - 1));
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+  return { error: null, parts };
+}
+
+function consumeShellWord(s) {
+  let i = 0;
+  let quote = null;
+  let depth = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      i += 1;
+      continue;
+    }
+    if (c === "$" && s[i + 1] === "(") {
+      depth += 1;
+      i += 2;
+      continue;
+    }
+    if (depth > 0) {
+      if (c === "(") depth += 1;
+      else if (c === ")") depth -= 1;
+      i += 1;
+      continue;
+    }
+    if (c === "`") {
+      const end = s.indexOf("`", i + 1);
+      if (end < 0) return { error: "unclosed backtick", length: s.length, word: s };
+      i = end + 1;
+      continue;
+    }
+    if (/\s/.test(c) || /[;|&]/.test(c)) break;
+    i += 1;
+  }
+  if (quote) return { error: "unclosed quote", length: i, word: s.slice(0, i) };
+  if (depth) return { error: "unclosed $(", length: i, word: s.slice(0, i) };
+  return { error: null, length: i, word: s.slice(0, i) };
+}
+
+function firstCommandWord(segment) {
+  let i = 0;
+  const s = String(segment);
+  while (i < s.length) {
+    while (i < s.length && /\s/.test(s[i])) i += 1;
+    if (i >= s.length) return null;
+    const assign = s.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*=/);
+    if (assign) {
+      i += assign[0].length;
+      const word = consumeShellWord(s.slice(i));
+      if (word.error) return { error: word.error, cmd: null, rest: [] };
+      i += word.length;
+      continue;
+    }
+    const word = consumeShellWord(s.slice(i));
+    if (word.error) return { error: word.error, cmd: null, rest: [] };
+    const cmd = word.word;
+    const bare = stripWrappingQuotes(cmd);
+    if (COMMAND_PREFIXES.has(bare)) {
+      i += word.length;
+      continue;
+    }
+    return {
+      error: null,
+      cmd,
+      rest: tokenizeKeepQuotes(s.slice(i + word.length)),
+    };
+  }
+  return null;
+}
+
+function isDirtyCommandName(cmd) {
+  const s = String(cmd);
+  if (!s) return false;
+  // Quotes / $ / \ that wrap or substitute the name (`$G`, `"gh"`, `\gh`).
+  // A later quoted arg glued onto a clean name (`print(f"…")`) is not this.
+  if (/^[\\'"`$]/.test(s)) return true;
+  if (/\$\(|\$\{/.test(s)) return true;
+  if (s.includes("\\")) return true;
+  return false;
+}
+
+/** True when a command-position token is dirty, or the line is unparseable. */
+export function hasDirtyCommand(line, depth = 0) {
+  if (depth > MAX_SHELL_DEPTH) return true;
+  const segs = splitShellSegments(line);
+  if (segs.error) return true;
+  for (const seg of segs.parts) {
+    const found = firstCommandWord(seg);
+    if (found?.error) return true;
+    if (found?.cmd && isDirtyCommandName(found.cmd)) return true;
+  }
+  const subs = extractCommandSubs(line);
+  if (subs.error) return true;
+  for (const part of subs.parts) {
+    if (hasDirtyCommand(part, depth + 1)) return true;
+  }
+  return false;
+}
+
+function dashCScript(rest) {
+  for (let i = 0; i < rest.length; i++) {
+    const raw = rest[i];
+    const t = stripWrappingQuotes(raw);
+    if (t === "-c") {
+      return rest[i + 1] == null ? { missing: true } : { value: stripWrappingQuotes(rest[i + 1]) };
+    }
+    if (/^-[A-Za-z]*c$/.test(t) && !t.startsWith("--")) {
+      return rest[i + 1] == null ? { missing: true } : { value: stripWrappingQuotes(rest[i + 1]) };
+    }
+    if (t.startsWith("-c") && !t.startsWith("--") && t.length > 2) {
+      return { value: t.startsWith("-c=") ? t.slice(3) : t.slice(2) };
+    }
+  }
+  return null;
+}
+
+function shellWrapperScripts(line) {
+  const scripts = [];
+  const segs = splitShellSegments(line);
+  if (segs.error) return { error: segs.error, scripts };
+  for (const seg of segs.parts) {
+    const found = firstCommandWord(seg);
+    if (found?.error) return { error: found.error, scripts };
+    if (!found) continue;
+    const base = commandBase(found.cmd);
+    if (base === "eval") {
+      const script = found.rest.map(stripWrappingQuotes).join(" ");
+      scripts.push({ kind: "eval", script, opaque: isOpaqueInterpolation(script) });
+      continue;
+    }
+    if (!SHELL_NAMES.has(base) || isDirtyCommandName(found.cmd)) continue;
+    const dash = dashCScript(found.rest);
+    if (!dash) continue;
+    if (dash.missing) {
+      scripts.push({ kind: "shell -c", script: "", opaque: true });
+      continue;
+    }
+    scripts.push({
+      kind: "shell -c",
+      script: dash.value,
+      opaque: isOpaqueInterpolation(dash.value),
+    });
+  }
+  return { error: null, scripts };
+}
+
 function hasHttpUploadFileFlag(tokens, kind) {
   for (const t of tokens) {
     if (t === "--upload-file" || t.startsWith("--upload-file=")) return true;
@@ -484,16 +865,21 @@ function ghForbiddenFileFlags(tokens) {
   return ghFileFlagValues(tokens).filter((v) => !ALLOWED_GH_FILE_FLAG_VALUES.includes(v));
 }
 
-export function notesAssignments(run) {
+export function varAssignments(run, name) {
   const found = [];
+  const re = new RegExp(`^${name}=(.*)$`);
   for (const { text } of logicalLines(run)) {
     const stripped = stripFullLineComment(text);
     for (const part of stripped.split(";")) {
-      const m = part.trim().match(/^NOTES=(.*)$/);
+      const m = part.trim().match(re);
       if (m) found.push(m[1].trim());
     }
   }
   return found;
+}
+
+export function notesAssignments(run) {
+  return varAssignments(run, "NOTES");
 }
 
 function isIssuePrGistWrite(tokens) {
@@ -520,9 +906,11 @@ export function releaseCreateShapeHits(tokens, run) {
   if (notes.length !== 1 || notes[0].name !== "--notes" || notes[0].value !== "$NOTES") {
     hits.push("gh release notes");
   }
-  const assigns = notesAssignments(run);
-  if (!assigns.length || assigns.some((a) => !ALLOWED_NOTES_ASSIGNMENTS.has(a))) {
-    hits.push("NOTES assignment");
+  for (const [name, allowed] of Object.entries(PINNED_RELEASE_ASSIGNMENTS)) {
+    const found = varAssignments(run, name);
+    if (found.length !== 1 || !allowed.includes(found[0])) {
+      hits.push(`${name} assignment`);
+    }
   }
   const files = ghReleaseCreateFiles(tokens);
   if (!files.length || files.some((f) => !RELEASE_YML_ALLOWED_ASSETS.includes(f))) {
@@ -539,17 +927,67 @@ function forbiddenUseKind(action) {
   return name;
 }
 
-function scanRunScript(run, filename) {
+function pushHit(hits, line, kind) {
+  if (!hits.some((h) => h.line === line && h.kind === kind)) {
+    hits.push({ line, kind });
+  }
+}
+
+/** Blank `<<'TAG'` / `<<"TAG"` / `<<TAG` bodies so Python/Node in a run: is not scanned as shell. */
+export function stripHeredocBodies(run) {
+  const lines = String(run).split("\n");
+  const out = [];
+  let ending = null;
+  for (const physical of lines) {
+    if (ending) {
+      out.push(physical.trim() === ending ? physical : "");
+      if (physical.trim() === ending) ending = null;
+      continue;
+    }
+    out.push(physical);
+    const m = physical.match(/<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?(\S+))\s*$/);
+    if (m) ending = m[1] || m[2] || m[3];
+  }
+  return out.join("\n");
+}
+
+function scanRunScript(run, filename, depth = 0) {
+  if (depth > MAX_SHELL_DEPTH) return [{ line: 1, kind: "unparseable shell" }];
   const hits = [];
-  for (const { line, text } of logicalLines(run)) {
+  const source = depth === 0 ? stripHeredocBodies(run) : run;
+  for (const { line, text } of logicalLines(source)) {
     const code = stripFullLineComment(text);
     if (!code.trim()) continue;
     const tokens = tokenize(code);
+
+    if (hasDirtyCommand(code)) pushHit(hits, line, "dirty command");
+
+    const wrappers = shellWrapperScripts(code);
+    if (wrappers.error) {
+      pushHit(hits, line, "unparseable shell");
+    } else {
+      for (const wrap of wrappers.scripts) {
+        if (wrap.opaque) {
+          pushHit(hits, line, wrap.kind);
+          continue;
+        }
+        if (scriptMentionsGh(wrap.script)) {
+          pushHit(hits, line, wrap.kind);
+        }
+        for (const inner of scanRunScript(wrap.script, filename, depth + 1)) {
+          pushHit(hits, line, inner.kind);
+        }
+      }
+    }
+
     const kind = toolKind(tokens);
     if (kind === "curl" || kind === "wget") {
-      if (lineLooksLikeHttpUpload(code)) hits.push({ line, kind: "curl/wget upload" });
+      if (lineLooksLikeHttpUpload(code)) pushHit(hits, line, "curl/wget upload");
     }
     if (kind === "gh") {
+      if (isGhSubcommand(tokens, "alias", "set") || isGhSubcommand(tokens, "alias", "import")) {
+        pushHit(hits, line, "gh alias");
+      }
       const releaseWrite =
         isGhSubcommand(tokens, "release", "create") ||
         isGhSubcommand(tokens, "release", "edit") ||
@@ -557,30 +995,37 @@ function scanRunScript(run, filename) {
       if (releaseWrite) {
         const sub = tokens[ghTokenIndex(tokens) + 2];
         if (filename !== "release.yml" || sub !== "create") {
-          hits.push({ line, kind: `gh release ${sub}` });
+          pushHit(hits, line, `gh release ${sub}`);
         } else {
           for (const shapeKind of releaseCreateShapeHits(tokens, run)) {
-            hits.push({ line, kind: shapeKind });
+            pushHit(hits, line, shapeKind);
           }
         }
       } else {
         if (isGhSubcommand(tokens, "gist", "create")) {
-          hits.push({ line, kind: "gh gist create" });
+          pushHit(hits, line, "gh gist create");
         }
         if (interpolatedNotesBody(tokens).length) {
-          hits.push({ line, kind: "gh interpolated notes" });
+          pushHit(hits, line, "gh interpolated notes");
         }
         if (ghForbiddenFileFlags(tokens).length) {
-          hits.push({ line, kind: "gh file flag" });
+          pushHit(hits, line, "gh file flag");
+        }
+      }
+      if (isGhSubcommand(tokens, "api")) {
+        const fields = flagValuePairs(tokens, GH_API_FIELD_FLAGS);
+        if (fields.some((p) => !ghApiFieldValueAllowed(p.value, filename))) {
+          pushHit(hits, line, "gh api field");
         }
       }
       if (lineLooksLikeGhApiInput(code)) {
-        hits.push({
+        pushHit(
+          hits,
           line,
-          kind: tokens.some((t) => flagName(t) === "--input") ? "gh api --input" : "gh @file",
-        });
+          tokens.some((t) => flagName(t) === "--input") ? "gh api --input" : "gh @file",
+        );
       } else if (tokens.some(isAtFileToken)) {
-        hits.push({ line, kind: "gh @file" });
+        pushHit(hits, line, "gh @file");
       }
     }
   }

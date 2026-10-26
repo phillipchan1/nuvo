@@ -87,6 +87,7 @@ else.
 The guard is a deny-list of workflow `uses:` and of `curl` / `wget` / `gh`
 file uploads. It does **not** cover `actions/github-script` or upload code
 written in Python or Node (or any other runtime) inside a `run:` step.
+`nc`, `python`, and other non-`gh` exfil channels are out of scope.
 Reviewers must check those paths by hand.
 
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
