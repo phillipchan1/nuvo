@@ -292,13 +292,13 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
       return json({ ok: true, job: name, enqueued, stay_on_supabase: false }, 200, OPEN_CORS);
     }
     const result = await runCalendarDispatch(io.sql, c.env, c.req.url);
-    return json({ ok: true, job: name, stay_on_supabase: false, ...result }, 200, OPEN_CORS);
+    return json({ ...result, ok: true, job: name, stay_on_supabase: false }, 200, OPEN_CORS);
   }
 
   if (name === "google-renew" || name === "google-resubscribe") {
     const io = await requestIo(c);
     const result = await runGoogleCronJob(io.sql, c.env, name, c.req.url);
-    return json({ ok: true, job: name, stay_on_supabase: false, ...result }, 200, OPEN_CORS);
+    return json({ ...result, ok: true, job: name, stay_on_supabase: false }, 200, OPEN_CORS);
   }
 
   if (BLOCKED_CRON_JOBS.has(job) || BLOCKED_CRON_JOBS.has(name)) {
