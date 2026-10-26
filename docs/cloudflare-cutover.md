@@ -8,6 +8,7 @@ unless `VITE_API_BASE_URL` is set on a build.
 
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
+Cutover-night route table: [`cloudflare-migration/route-inventory.md`](./cloudflare-migration/route-inventory.md).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
 ---
@@ -19,7 +20,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
 | Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
-| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (aliases; handlers not ported yet) | Point the flag at `/functions/v1` |
+| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
 | Billing / calendar / push | Supabase edge + pg_cron | **Still Supabase** | n/a |
 
@@ -42,9 +43,11 @@ None of these belong in the Vite bundle.
 | `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
-| `RESEND_API_KEY` | secret | OTP email. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
+| `RESEND_API_KEY` | secret | OTP email + inbound-email body fetch. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Jobs are not ported (501) |
+| `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
+| `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune. Push / calendar / github stay 501 |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
@@ -123,15 +126,15 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 `vercel.json` has **no `crons`**. The Worker has **no `scheduled` handler**.
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
-or wrong; 501 stay-on-Supabase if it matches). Do not add Workers Cron
-Triggers in this rehearsal.
-
-Every recurring job stays where it is today:
+or wrong). Ported jobs (`rollover`, `purge-trash`, `reminder-deliveries-prune`)
+iterate `users` then scope by `user_id`. Push / calendar / github still 501.
+Do not add Workers Cron Triggers in this rehearsal.
 
 | Where | What |
 |---|---|
-| **Supabase `pg_cron`** (inventory §6) | rollover, google-renew, calendar-dispatch, push-dispatch, github-poll, SQL prune/purge |
-| **Vercel** | nothing scheduled. If a Vercel cron is added later, it stays on Vercel until a signed-off Workers port |
+| **Worker `/api/cron/:job`** | rollover, purge-trash, reminder-deliveries-prune |
+| **Supabase `pg_cron`** (until cutover) | google-renew, calendar-dispatch, push-dispatch, github-poll |
+| **Vercel** | nothing scheduled |
 
 A later cutover that wants Workers Cron Triggers would need a `scheduled`
 export, a `CRON_SECRET` (or equivalent) check, and a decision to stop the

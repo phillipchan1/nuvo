@@ -1,0 +1,169 @@
+# Worker route inventory — cutover night
+
+**Status:** living · 2026-10-26  
+**Thesis:** Neon has no RLS. After cutover, every user-data read/write goes
+through the Worker and is scoped by the verified session (or a hashed
+connection token, or an inbound-mail token, or a cron job that iterates
+`users` explicitly). This table is the checklist.
+
+Sisters: [`access-audit.md`](./access-audit.md), [`inventory.md`](./inventory.md),
+[`cloudflare-cutover.md`](../cloudflare-cutover.md).
+
+Hard gate: nothing that reads or writes user-data tables may stay on
+Supabase. Billing / Stripe / StoreKit code is **not** rewritten — those
+routes are **blocked** and called out below when they also touch user
+data that is moving to Neon.
+
+---
+
+## Status key
+
+| Status | Meaning |
+|---|---|
+| **ported+tested** | Worker handler + `accessHttp.check.ts` A/B (and unauth 401) |
+| **no-DB stays** | No user-data SQL. Same response as today. |
+| **blocked** | Not ported. Reason in the notes. User-data tables it would have touched are listed. |
+
+---
+
+## 1 · Already on the Worker (planner REST / RPC)
+
+| Route | Tables | Status | Tests |
+|---|---|---|---|
+| `GET/POST /api/data/:table` | planner set below | ported+tested | `accessHttp` list / POST-id leak / forged `user_id` |
+| `GET/PATCH/DELETE /api/data/:table/:id` | planner set | ported+tested | `accessHttp` 403/404 + FK plant on PATCH |
+| `GET/POST/DELETE /api/data/task_labels` | `task_labels` via `tasks`/`labels` | ported+tested | `accessHttp` |
+| `POST /api/rpc/apply_patch` | `tasks`, `domains`, `projects`, `user_settings` | ported+tested | `accessHttp` `matched: 0` |
+| `POST /api/rpc/contacts` | `contacts_directory` | ported+tested | `accessHttp` |
+| `POST /api/rpc/rotate_inbound_token` | `user_settings` | ported+tested | `accessHttp` |
+| `POST /api/rpc/claim_reminder` | `reminders`, `reminder_deliveries` | ported+tested | `accessHttp` |
+| `GET /api/health` | — | no-DB stays | `miniflare.seq.check.ts` |
+| `ALL /api/auth/*` | Better Auth identity only | no-DB stays | `authAdapter.check.ts` |
+| `OPTIONS /api/data/*`, `/api/rpc/*` | — | no-DB stays | — |
+
+Planner tables: `tasks`, `domains`, `projects`, `initiatives`, `key_results`,
+`slots`, `labels`, `recurrences`, `record_comments`, `week_reviews`, `sprints`,
+`reminders`, `event_domain_routing`, `user_settings`.
+
+POST with someone else's existing row id now inserts a **new** owned row (or
+400) — never 23505 vs 200 as an existence oracle, and never updates the
+foreign row. PATCH of a foreign key on your own row onto someone else's
+parent is rejected (`assertOwnedFks`).
+
+---
+
+## 2 · Agent / MCP
+
+| Route | Tables | Status | Tests |
+|---|---|---|---|
+| `POST/GET /api/agent` · `/functions/v1/agent` | `tasks`, `domains`, `projects`, `initiatives`, `key_results`, `slots`, `labels`, `user_settings`, `reminders`, `external_events` (read) | ported+tested | unauth 401; B snapshot omits A; B `update_task` A's id = random id (`not found`); B FK plant rejected; B `prepare` A's id = random 404 |
+| `POST /api/mcp` · `/functions/v1/mcp` | same + `connections` (hash lookup) | ported+tested | unauth 401; B connection snapshot omits A; B `update_task` + `user_id: A` does not write A |
+
+Agent chat still talks to **OpenAI directly** (`OPENAI_API_KEY`). No AI
+Gateway. One-shot LLM bodies (`scaffold`, `assess`, …) 404 if the id is
+not owned (same as a random id) and 503 if the key is unset.
+
+Calendar **writes** (`create_calendar_event`, `move_event`, …) return
+`stay_on_supabase` — see blocked calendar functions. Reads of
+`external_events` are scoped by `user_id`.
+
+---
+
+## 3 · Other functions
+
+| Route | Tables | Status | Tests |
+|---|---|---|---|
+| `GET /api/day` · `/functions/v1/day` | `external_events`, `tasks`, `slots`, `user_settings` | ported+tested | unauth 401; B schedule omits A's titles |
+| `GET/POST /api/capture` · `/functions/v1/capture` | `connections`, `tasks` | ported+tested | unauth 401; B token omits A's tasks; B POST with A's id / `user_id` does not overwrite A |
+| `POST /api/inbound-email` · `/functions/v1/inbound-email` | `user_settings` (token), `inbound_emails`, `tasks` | ported+tested | bad sig 401; unknown token 200 ignored + no row; valid sig + A's token writes **A only** |
+| `POST /api/route-events` · `/functions/v1/route-events` | `domains`, `event_domain_routing` | ported+tested | unauth 401; empty batch 200 `{ routed: [] }` (no LLM) |
+| `POST /api/rollover` · `/functions/v1/rollover` | `tasks`, `user_settings` | ported+tested | unauth 401; B session rolls **B only** |
+
+`iap-catalog` has **no user-data SQL** (product ids from env). It stays
+blocked with the billing group so we do not retarget StoreKit config.
+
+---
+
+## 4 · Cron
+
+`/api/cron/:job` still requires `CRON_SECRET` (constant-time). Unset or
+wrong → 401. No Workers Cron Triggers.
+
+| Job | Tables | Status | Tests |
+|---|---|---|---|
+| `rollover` / `nuvo-rollover-pst` / `pdt` | `users`, `tasks`, `user_settings` | ported+tested | unauth 401; authorized 200; iterates `SELECT id FROM users` then `WHERE user_id = $id` |
+| `purge-trash` / `nuvo-purge-trash` | `users`, `tasks` | ported+tested | same cron auth path (implementation covered; isolation is per-user `DELETE`) |
+| `reminder-deliveries-prune` / `nuvo-reminder-deliveries-prune` | `users`, `reminder_deliveries` | ported+tested | same |
+| `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | **blocked** | `accessHttp` + `miniflare.seq` expect 501 |
+| `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
+| `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
+| `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | **blocked** | 501 |
+| `nuvo-trim-sync-log` | `sync_log` | **blocked** | SQL-on-Supabase today; no Worker job |
+
+Calendar mirror teardown during rollover is **skipped** (Vault + Google /
+iCloud). The Neon row still loses `start_time` / `do_date` as the
+rollover rule requires.
+
+---
+
+## 5 · Blocked — billing (do not rewrite Stripe / StoreKit)
+
+These stay on Supabase. **They also read/write user-data rows that are
+moving to Neon.** After cutover they will write the old database unless
+a follow-up ports only the DB access (without touching Stripe/StoreKit
+code). Flagged, not changed.
+
+| Route | User-data tables on Neon path | Why blocked |
+|---|---|---|
+| `stripe-checkout` / `stripe-portal` | `subscriptions` | Stripe; do not touch billing code |
+| `stripe-webhook` | `subscriptions`, `stripe_webhook_events` | Stripe signature + webhooks |
+| `apple-iap` | `subscriptions` | StoreKit / IAP write |
+| `apple-webhook` | `apple_webhook_events`, `subscriptions` | Apple signed payload |
+| `referral-code` | `subscriptions` | Stripe referral |
+| `iap-catalog` | — (no user data) | StoreKit product ids; left with billing |
+
+`subscriptions` was **never** in the Neon rehearsal schema. Billing
+rows staying on Supabase is the existing cutover decision.
+
+---
+
+## 6 · Blocked — calendar / identity / push (user data + Vault)
+
+These read/write user-data tables that **are** moving (`tasks`,
+`external_events`, `calendar_accounts`, `user_settings`, …) and cannot
+run correctly against Neon without the Worker owning the query. They
+are blocked because they need Vault secrets, provider OAuth, or
+web-push — not because they are allowed to keep writing Supabase after
+cutover.
+
+| Route | User-data tables | Blocker |
+|---|---|---|
+| `google-oauth` / `google-sync` / `google-events` / `google-webhook` / `google-contacts` | `calendar_accounts`, `external_events`, `user_settings`, `contacts_directory` | Vault refresh tokens + Google APIs |
+| `m365-oauth` / `m365-sync` | `calendar_accounts`, `external_events` | Vault + Microsoft |
+| `icloud-connect` / `icloud-sync` / `icloud-events` / `icloud-contacts` | `calendar_accounts`, `external_events`, `user_settings` | Vault + CalDAV/CardDAV |
+| `ics-subscribe` / `ics-sync` | `calendar_accounts`, `external_events` | feed pull + account rows |
+| `calendar-refresh` | `calendar_accounts` | token refresh via Vault |
+| `slot-mirror` / `task-mirror` | `slots` / `tasks` (`google_event_id`) | provider write-back |
+| `push-dispatch` | `push_subscriptions`, `reminders`, `tasks`, `slots`, `external_events`, `user_settings` | VAPID / web-push |
+| `github-activity` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | Vault GitHub tokens |
+| `apple-identity` | `apple_identities` | GoTrue identity link |
+| `delete-account` | almost every user table + Stripe cancel | Stripe + auth wipe |
+
+---
+
+## 7 · Test counts
+
+`npm run check:worker` (already in `.github/workflows/checks.yml`):
+
+| File | What |
+|---|---|
+| `access.check.ts` | Store-layer isolation + FK plant |
+| `accessHttp.check.ts` | HTTP A/B + unauth 401 + POST-id leak + PATCH FK + every ported route above |
+| `authAdapter.check.ts` / `authUrl.check.ts` / `db.check.ts` / `requestReuse.check.ts` | auth / db |
+| `miniflare.seq.check.ts` | workerd + Postgres; authorized cron `push-dispatch` still 501 |
+
+`npm run check:isolation-mutation` still mutates every
+`user_id = ${store.userId}` in `store.ts`.
+
+Run `node --experimental-strip-types worker/src/accessHttp.check.ts`
+and read the printed `N checks, 0 failed` line for the live count.

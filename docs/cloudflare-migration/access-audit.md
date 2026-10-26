@@ -89,12 +89,21 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
-### Stubs / cron (no planner SQL)
+### Agent / MCP / day / capture / inbound / cron
 
-| Route | Scope | Test |
-|---|---|---|
-| `ALL /api/cron/:job` | `CRON_SECRET` constant-time bearer. Unset or wrong → 401. Match → 501 (not ported) | `miniflare.seq.check.ts` |
-| `ALL /api/agent`, `/api/mcp`, `/functions/v1/*` | 501 stay-on-Supabase. No DB | — |
+Owner is still the session (or the connection / inbound token → that user).
+Full table: [`route-inventory.md`](./route-inventory.md).
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST/GET /api/agent` | Session store. Snapshot + tools filter `user_id = store.userId` | B snapshot omits A; B tool on A's id = random id | `accessHttp.check.ts` |
+| `POST /api/mcp` | `connections.token_hash`; tools run as `conn.user_id` | B token omits A | same |
+| `GET /api/day` | Session; events/tasks/slots `user_id = store.userId` | B schedule omits A | same |
+| `GET/POST /api/capture` | Connection hash; tasks `user_id` + `connection_id` | B omits A's tasks | same |
+| `POST /api/inbound-email` | Svix + `user_settings.inbound_token` | unknown token writes nothing; A's token writes A | same |
+| `POST /api/route-events` | Session; domains + routing owned | unauth 401 | same |
+| `POST /api/rollover` | Session user only | B does not roll A | same |
+| `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar/github 501 | unauth 401 | `accessHttp` + `miniflare.seq.check.ts` |
 
 `subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
 are **not** on this Worker.
