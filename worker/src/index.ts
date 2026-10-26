@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { handleAgent } from "./agentHttp.ts";
-import { exposeSignedAuthToken, SessionLookupError } from "./auth.ts";
+import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
@@ -20,6 +20,11 @@ import {
   requireJsonObject,
   requireUuid,
 } from "./http.ts";
+import {
+  EntitlementUnavailableError,
+  entitlementResponseBody,
+  readEntitlement,
+} from "./entitlement.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
@@ -40,6 +45,7 @@ import {
   updateOwned,
   upsertOwned,
   type PlannerTable,
+  type Store,
 } from "./store.ts";
 
 const app = new Hono<AppEnv>();
@@ -168,9 +174,28 @@ async function sanitizeAuthResponse(res: Response, sql?: Sql): Promise<Response>
   });
 }
 
+async function requireSession(
+  c: Context<AppEnv>,
+): Promise<{ error: Response } | { user: { id: string; email?: string | null; emailVerified: boolean }; io: RequestIo }> {
+  const io = await requestIo(c);
+  let user;
+  try {
+    user = await sessionUser(io.auth, c.req.raw);
+  } catch (err) {
+    if (err instanceof SessionLookupError) {
+      return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };
+    }
+    throw err;
+  }
+  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
+  return { user, io };
+}
+
+
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
   if (err instanceof SessionLookupError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+  if (err instanceof EntitlementUnavailableError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (isDatabaseUnavailable(err)) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (postgresInputError(err)) return json({ error: "bad request" }, 400, OPEN_CORS);
   return json({ error: "internal error" }, 500, OPEN_CORS);
@@ -178,6 +203,45 @@ app.onError((err, c) => {
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
+
+/**
+ * Billing stays on Supabase. The session id is the preserved auth.users
+ * id — never a client-supplied owner, never an email remap.
+ */
+app.get("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  try {
+    const entitlement = await readEntitlement(c.env, got.user.id);
+    return json(entitlementResponseBody(entitlement), 200, OPEN_CORS);
+  } catch (err) {
+    if (err instanceof EntitlementUnavailableError) {
+      return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    }
+    throw err;
+  }
+});
+
+function entitlementWriteDenied(): Response {
+  return json({ error: "not found" }, 404, OPEN_CORS);
+}
+
+app.post("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.patch("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.delete("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
 
 app.get("/api/data/task_labels", async (c) => {
   const got = await requireStore(c);

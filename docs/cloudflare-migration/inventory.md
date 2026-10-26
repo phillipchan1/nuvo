@@ -224,6 +224,7 @@ No automated `supabase db push` or `functions deploy` in CI.
 - `/functions/v1/agent` and `/functions/v1/mcp` (session / connection scoped on Neon)
 - `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
 - Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune` (iterate `users`)
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.
 

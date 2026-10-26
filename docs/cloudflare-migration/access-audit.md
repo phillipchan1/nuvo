@@ -9,8 +9,10 @@ that fail if that wall is cut.
 Sister docs: [`inventory.md`](./inventory.md) (what Supabase does today),
 [`cloudflare-cutover.md`](../cloudflare-cutover.md) (the rehearsal).
 
-Billing, Stripe, StoreKit, and calendar/push stay on Supabase. They are
-out of this matrix.
+Billing **writers** (Stripe, StoreKit, webhooks) stay on Supabase and are
+out of this matrix. The Worker **reads** `subscriptions` for
+`GET /api/entitlement` by the verified session user id — never a client
+id, never an email remap.
 
 ---
 
@@ -89,6 +91,13 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
+### Billing read (Supabase `subscriptions`, not Neon)
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `GET /api/entitlement` | `readEntitlement(env, session.user.id)` — PostgREST `user_id=eq.<session>` | 200, B sees B's row only. Query / `X-User-Id` ignored | `accessHttp.check.ts` + `entitlement.check.ts` |
+| `POST/PATCH/DELETE /api/entitlement` | No writes. Same 404 body whether the posted id exists | 404, no existence oracle | `accessHttp.check.ts` |
+
 ### Agent / MCP / day / capture / inbound / cron
 
 Owner is still the session (or the connection / inbound token → that user).
@@ -105,8 +114,8 @@ Full table: [`route-inventory.md`](./route-inventory.md).
 | `POST /api/rollover` | Session user only | B does not roll A | same |
 | `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar/github 501 | unauth 401; purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `miniflare.seq.check.ts` |
 
-`subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
-are **not** on this Worker.
+`stripe_*`, `apple_*` writers, calendar tokens, and push tables are
+**not** on this Worker. `subscriptions` is read-only via `/api/entitlement`.
 
 ---
 
@@ -155,7 +164,9 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. |
+| `worker/src/entitlement.check.ts` | Lookup URL is `user_id=eq.<session>`; Stripe/Apple rows share `isEntitled`; a remapped auth id fails the parity proof |
+| `scripts/check-entitlement-parity.ts` | 1:1 auth copy + per-user tier match. Counts only |
 | `scripts/prove-isolation-mutation.mjs` | Deleting any `user_id = ${store.userId}` clause turns `access.check.ts` red |
 | `worker/src/miniflare.seq.check.ts` | Real workerd + Postgres: task create/read/patch + B 404 + unauthenticated-style raw token 401 |
 | `worker/src/requestReuse.check.ts` | Invalid bearer 401; client-supplied foreign id does not overwrite |

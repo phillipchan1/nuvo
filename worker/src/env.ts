@@ -18,6 +18,10 @@ export interface Env {
   OPENAI_API_KEY?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
+  /** Supabase origin for the billing read. Subscriptions stay there. */
+  SUPABASE_URL?: string;
+  /** Service-role key used only to SELECT subscriptions by session user_id. Never a Stripe secret. */
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
 export function databaseUrl(env: Env): string | null {
