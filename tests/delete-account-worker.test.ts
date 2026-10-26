@@ -9,21 +9,45 @@ import {
 } from "../worker/src/lib/billingRead.ts";
 
 describe("Worker delete-account Stripe gate", () => {
-  it("refuses only an active Stripe subscription id", () => {
+  it.each(["active", "trialing", "past_due", "unpaid", "incomplete"] as const)(
+    "refuses a Stripe subscription in %s",
+    (status) => {
+      expect(
+        stripeSubscriptionBlocksDelete({
+          status,
+          plan_source: "stripe",
+          stripe_subscription_id: "sub_live",
+          trial_ends_at: status === "trialing" ? "2099-01-01T00:00:00Z" : null,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it("refuses a lapsed Stripe trial that still has a subscription id", () => {
     expect(
       stripeSubscriptionBlocksDelete({
-        status: "active",
+        status: "trialing",
         plan_source: "stripe",
-        stripe_subscription_id: "sub_live",
+        stripe_subscription_id: "sub_trial",
+        trial_ends_at: "2020-01-01T00:00:00Z",
       }),
     ).toBe(true);
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "cancelled",
-        plan_source: "stripe",
-        stripe_subscription_id: "sub_old",
-      }),
-    ).toBe(false);
+  });
+
+  it.each(["cancelled", "canceled", "incomplete_expired"] as const)(
+    "allows delete after Stripe %s",
+    (status) => {
+      expect(
+        stripeSubscriptionBlocksDelete({
+          status,
+          plan_source: "stripe",
+          stripe_subscription_id: "sub_old",
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("does not block Apple-only or trial-only rows (no Stripe id)", () => {
     expect(
       stripeSubscriptionBlocksDelete({
         status: "active",
@@ -35,9 +59,17 @@ describe("Worker delete-account Stripe gate", () => {
       stripeSubscriptionBlocksDelete({
         status: "trialing",
         stripe_subscription_id: null,
+        trial_ends_at: "2099-01-01T00:00:00Z",
       }),
     ).toBe(false);
     expect(stripeSubscriptionBlocksDelete(null)).toBe(false);
+  });
+
+  it("reuses planRules isEntitled / stripeStatusToPlan", () => {
+    const src = readFileSync("worker/src/lib/billingRead.ts", "utf8");
+    expect(src).toContain("isEntitled");
+    expect(src).toContain("stripeStatusToPlan");
+    expect(src).toContain('from "../../../supabase/functions/_shared/planRules.ts"');
   });
 
   it("tells the user to cancel in Billing first", () => {

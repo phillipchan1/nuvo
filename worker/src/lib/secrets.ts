@@ -2,9 +2,16 @@
  * Token seal/open stub (PR A owns the production version).
  *
  * AAD binds a ciphertext to `table:row_id:user_id` so it cannot be moved.
- * Unset `TOKEN_ENC_KEY_V1` → null (caller stores on the Better Auth account
- * row instead). Never logs plaintext.
+ * Unset or invalid `TOKEN_ENC_KEY_V1` → fail closed (`TokenSealError`).
+ * Never logs plaintext.
  */
+
+export class TokenSealError extends Error {
+  override name = "TokenSealError";
+  constructor() {
+    super("token seal key is not configured");
+  }
+}
 
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
@@ -23,6 +30,16 @@ function decodeKey(raw: string): Uint8Array | null {
 
 async function importAes(key: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", key, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+export async function sealTokenOrThrow(
+  keyB64: string | undefined,
+  plaintext: string,
+  aad: string,
+): Promise<{ enc: Uint8Array; iv: Uint8Array; keyVersion: number }> {
+  const sealed = await sealToken(keyB64, plaintext, aad);
+  if (!sealed) throw new TokenSealError();
+  return sealed;
 }
 
 export async function sealToken(

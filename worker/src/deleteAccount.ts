@@ -4,7 +4,8 @@
  * Body: `{ confirm: "DELETE" }`. Owner is the verified session — a client
  * `user_id` is ignored. While a Stripe subscription is still active (read
  * from Supabase `subscriptions`, never via the Stripe API) the wipe is
- * refused. Apple revoke is best-effort (guideline 5.1.1(v)).
+ * refused while that Stripe subscription would still bill (active, trialing,
+ * past_due, unpaid, incomplete). Apple revoke is best-effort (guideline 5.1.1(v)).
  */
 import {
   isAccountDeleteConfirm,

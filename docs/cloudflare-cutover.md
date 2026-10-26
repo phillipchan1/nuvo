@@ -52,7 +52,7 @@ None of these belong in the Vite bundle.
 | `APPLE_SIWA_TEAM_ID` / `APPLE_SIWA_KEY_ID` / `APPLE_SIWA_PRIVATE_KEY` / `APPLE_SIWA_CLIENT_ID` | secrets | Authorization-code exchange + Apple `/auth/revoke` (guideline 5.1.1(v)) |
 | `SUPABASE_URL` | secret | Read-only PostgREST for `subscriptions` (delete-account Stripe gate). Never a Stripe secret; no Stripe API calls |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same. `SELECT` only. Unset → delete-account 502 (fail closed) |
-| `TOKEN_ENC_KEY_V1` | secret (PR A) | AES-GCM seal for Apple refresh tokens. Unset → token lives on the Better Auth `account.refreshToken` |
+| `TOKEN_ENC_KEY_V1` | secret (PR A) | AES-GCM seal for Apple refresh tokens. Unset or invalid → fail closed (token is not stored; 503, no plaintext) |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 

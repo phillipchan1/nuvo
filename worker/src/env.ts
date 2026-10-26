@@ -25,7 +25,7 @@ export interface Env {
   /** Read-only Supabase PostgREST for `subscriptions`. Never a Stripe secret. */
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
-  /** PR A seal key. Unset → Apple refresh token lives on the BA account row. */
+  /** PR A seal key. Unset → Apple refresh token is not stored (fail closed). */
   TOKEN_ENC_KEY_V1?: string;
 }
 

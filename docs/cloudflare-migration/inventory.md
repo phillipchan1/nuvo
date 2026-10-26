@@ -102,7 +102,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `calendar-refresh` | User JWT | no | Stay |
 | `capture` | Connection bearer | no | Stay |
 | `day` | User JWT | no | Stay |
-| `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if active) | Dual-path |
+| `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if it still bills) | Dual-path |
 | `github-activity` | JWT or service role | no | Stay |
 | `google-contacts` | JWT / service | no | Stay |
 | `google-events` | JWT | no | Stay |

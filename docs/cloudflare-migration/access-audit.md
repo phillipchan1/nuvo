@@ -94,7 +94,7 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | Route | Scope | Cross-user | Test |
 |---|---|---|---|
 | `POST /api/apple-identity` (and `/functions/v1/apple-identity`) | Session owner. Merges name/email (`mergeAppleProfile`), links Better Auth `account` (`providerId=apple`, `accountId` = Apple `sub`). Client `user_id` ignored. A foreign Apple sub is dropped with the same `{ ok: true }` — no existence oracle. | 200, A's row unchanged | `accessHttp.check.ts` + `access.check.ts` |
-| `POST /api/delete-account` (and `/functions/v1/delete-account`) | Session owner. Confirm word `DELETE`. Active Stripe sub (Supabase `subscriptions` read-only — **no Stripe secret, no Stripe API**) → **409** with a cancel-in-Billing message. Else wipe Neon `users` (cascade) + Better Auth `"user"` (cascade). | B posting A's id wipes **B**, not A. Unauth → 401 | `accessHttp.check.ts` + `tests/delete-account-worker.test.ts` |
+| `POST /api/delete-account` (and `/functions/v1/delete-account`) | Session owner. Confirm word `DELETE`. Stripe sub that still bills — `active` / `trialing` / `past_due` / `unpaid` / `incomplete` (Supabase `subscriptions` read-only — **no Stripe secret, no Stripe API**) → **409** with a cancel-in-Billing message. Else wipe Neon `users` (cascade) + Better Auth `"user"` (cascade). | B posting A's id wipes **B**, not A. Unauth → 401 | `accessHttp.check.ts` + `tests/delete-account-worker.test.ts` |
 
 ### Stubs / cron (no planner SQL)
 

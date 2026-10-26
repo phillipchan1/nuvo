@@ -3,8 +3,13 @@
  *
  * Billing rows stay on Supabase. The Worker never holds a Stripe secret and
  * never calls the Stripe API — it SELECTs `subscriptions` (or a test double)
- * and refuses the wipe while a Stripe subscription is still active.
+ * and refuses the wipe while a Stripe subscription would still bill.
  */
+import {
+  isEntitled,
+  stripeStatusToPlan,
+  type EntitlementRow,
+} from "../../../supabase/functions/_shared/planRules.ts";
 import type { Env } from "../env.ts";
 
 export type SubscriptionRead = {
@@ -18,15 +23,27 @@ export type SubscriptionRead = {
 export const ACTIVE_STRIPE_DELETE_MESSAGE =
   "Cancel your Stripe subscription in Settings → Billing first, then delete your account.";
 
-/** A live Stripe subscription we must not orphan. Apple / trial-only rows do not block. */
+const STRIPE_ENDED = new Set(["cancelled", "canceled", "incomplete_expired"]);
+const STRIPE_STILL_BILLS = new Set(["active", "trialing", "past_due", "unpaid", "incomplete"]);
+
+function stripePlanKeepsBilling(row: SubscriptionRead): boolean {
+  if (isEntitled(row as EntitlementRow)) return true;
+  const raw = (row.plan ?? row.status ?? "").trim();
+  if (!raw) return true;
+  const lower = raw.toLowerCase();
+  if (STRIPE_ENDED.has(lower)) return false;
+  if (STRIPE_STILL_BILLS.has(lower)) return true;
+  return stripeStatusToPlan(raw) !== "cancelled";
+}
+
+/** A Stripe subscription we must not orphan. Apple-only rows (no Stripe id) do not block. */
 export function stripeSubscriptionBlocksDelete(
   row: SubscriptionRead | null | undefined,
 ): boolean {
   if (!row) return false;
   const stripeId = typeof row.stripe_subscription_id === "string" ? row.stripe_subscription_id.trim() : "";
   if (!stripeId) return false;
-  const plan = row.plan ?? row.status ?? null;
-  return plan === "active";
+  return stripePlanKeepsBilling(row);
 }
 
 export type BillingReader = (

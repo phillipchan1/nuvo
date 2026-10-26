@@ -1050,7 +1050,6 @@ export async function linkOwnedAppleAccount(
   sql: Store["sql"],
   authUserId: string,
   appleUserId: string,
-  refreshToken: string | null,
 ): Promise<void> {
   const existing = await sql`
     SELECT id FROM account
@@ -1059,17 +1058,7 @@ export async function linkOwnedAppleAccount(
       AND "accountId" = ${appleUserId}
     LIMIT 1
   `;
-  const id = (existing[0] as { id?: string } | undefined)?.id;
-  if (id) {
-    if (refreshToken) {
-      await sql`
-        UPDATE account
-        SET "refreshToken" = ${refreshToken}, "updatedAt" = now()
-        WHERE id = ${id} AND "userId" = ${authUserId}
-      `;
-    }
-    return;
-  }
+  if ((existing[0] as { id?: string } | undefined)?.id) return;
   const taken = await sql`
     SELECT id FROM account
     WHERE "providerId" = 'apple' AND "accountId" = ${appleUserId}
@@ -1077,8 +1066,8 @@ export async function linkOwnedAppleAccount(
   `;
   if (taken[0]) return;
   await sql`
-    INSERT INTO account (id, "accountId", "providerId", "userId", "refreshToken", "createdAt", "updatedAt")
-    VALUES (${crypto.randomUUID()}, ${appleUserId}, 'apple', ${authUserId}, ${refreshToken}, now(), now())
+    INSERT INTO account (id, "accountId", "providerId", "userId", "createdAt", "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${appleUserId}, 'apple', ${authUserId}, now(), now())
   `;
 }
 

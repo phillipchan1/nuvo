@@ -15,7 +15,7 @@ import {
   readAppleAuthConfig,
   type AppleProfile,
 } from "../../supabase/functions/_shared/appleIdentity.ts";
-import { openToken, sealToken } from "./lib/secrets.ts";
+import { openToken, sealTokenOrThrow, TokenSealError } from "./lib/secrets.ts";
 import {
   appleUserIdTakenByOther,
   getOwnedAppleIdentity,
@@ -26,6 +26,10 @@ import {
 } from "./store.ts";
 
 export type SessionUser = { id: string; email?: string | null };
+
+export const APPLE_TOKEN_SEAL_ERROR = "Could not store Apple credential.";
+const APPLE_TOKEN_SEAL_LOG =
+  "apple-identity: TOKEN_ENC_KEY_V1 missing or invalid; Apple refresh token was not stored";
 
 function asRecord(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return {};
@@ -70,21 +74,55 @@ export async function persistAppleIdentity(
     refreshToken = await exchangeAppleAuthorizationCode(config, code).catch(() => null);
   }
 
+  return persistAppleProfileAndToken(store, user, env, profile, refreshToken);
+}
+
+/**
+ * Write the merged profile. A refresh token is sealed or not stored —
+ * never written in plaintext (not on `apple_identities`, not on `account`).
+ */
+export async function persistAppleProfileAndToken(
+  store: Store,
+  user: SessionUser,
+  env: Env,
+  profile: AppleProfile,
+  refreshToken: string | null,
+): Promise<Response> {
   let sealed: { enc: Uint8Array; iv: Uint8Array; keyVersion: number } | null = null;
   if (refreshToken) {
-    sealed = await sealToken(
-      env.TOKEN_ENC_KEY_V1,
-      refreshToken,
-      `apple_identities:${store.userId}:${store.userId}`,
-    );
+    try {
+      sealed = await sealTokenOrThrow(
+        env.TOKEN_ENC_KEY_V1,
+        refreshToken,
+        `apple_identities:${store.userId}:${store.userId}`,
+      );
+    } catch (err) {
+      if (err instanceof TokenSealError) {
+        console.error(APPLE_TOKEN_SEAL_LOG);
+        await writeAppleProfile(store, user, profile, null);
+        return json({ error: APPLE_TOKEN_SEAL_ERROR }, 503, OPEN_CORS);
+      }
+      throw err;
+    }
   }
 
+  await writeAppleProfile(store, user, profile, sealed);
+  const revocable = Boolean(sealed) || Boolean(
+    profile.apple_user_id && (await ownedAppleRefreshToken(store.sql, user.id, profile.apple_user_id)),
+  );
+  return json({ ok: true, revocable }, 200, OPEN_CORS);
+}
+
+async function writeAppleProfile(
+  store: Store,
+  user: SessionUser,
+  profile: AppleProfile,
+  sealed: { enc: Uint8Array; iv: Uint8Array; keyVersion: number } | null,
+): Promise<void> {
   await upsertOwnedAppleIdentity(store, profile, sealed);
-
   if (profile.apple_user_id) {
-    await linkOwnedAppleAccount(store.sql, user.id, profile.apple_user_id, refreshToken);
+    await linkOwnedAppleAccount(store.sql, user.id, profile.apple_user_id);
   }
-
   const name = appleDisplayName(profile);
   if (name) {
     await store.sql`
@@ -94,11 +132,6 @@ export async function persistAppleIdentity(
         AND (name IS NULL OR name = '')
     `;
   }
-
-  const revocable = Boolean(refreshToken) || Boolean(
-    profile.apple_user_id && (await ownedAppleRefreshToken(store.sql, user.id, profile.apple_user_id)),
-  );
-  return json({ ok: true, revocable }, 200, OPEN_CORS);
 }
 
 export async function loadOwnedAppleRefreshToken(
