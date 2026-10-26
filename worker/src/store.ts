@@ -975,6 +975,7 @@ export async function getOwnedAppleIdentity(store: Store): Promise<AppleIdentity
            refresh_token_enc, refresh_token_iv
     FROM apple_identities
     WHERE user_id = ${store.userId}
+    ORDER BY apple_user_id DESC NULLS LAST
     LIMIT 1
   `;
   return (rows[0] as AppleIdentityRow | undefined) ?? null;
@@ -1024,7 +1025,6 @@ export async function upsertOwnedAppleIdentity(
         refresh_token_iv = EXCLUDED.refresh_token_iv,
         key_version = EXCLUDED.key_version,
         updated_at = now()
-      WHERE apple_identities.user_id = ${store.userId}
     `;
     return;
   }
@@ -1043,7 +1043,6 @@ export async function upsertOwnedAppleIdentity(
       family_name = EXCLUDED.family_name,
       is_private_relay = EXCLUDED.is_private_relay,
       updated_at = now()
-    WHERE apple_identities.user_id = ${store.userId}
   `;
 }
 

@@ -356,6 +356,7 @@ ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B st
 
 const appleA = await getOwnedAppleIdentity(storeA);
 ok(appleA?.apple_user_id === "apple-sub-a.001", "apple identity: A reads own sub");
+ok(appleA?.email === "a@example.test", "apple identity: A reads own email");
 ok((await getOwnedAppleIdentity(storeA))?.email !== "b@example.test", "apple identity: A does not see B email");
 ok(await appleUserIdTakenByOther(storeA, "apple-sub-b.002"), "apple identity: B's sub is taken from A's view");
 ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a.001")), "apple identity: own sub is not taken-by-other");
