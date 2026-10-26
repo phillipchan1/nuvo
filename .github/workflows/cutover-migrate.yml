@@ -8,6 +8,10 @@
 # Nothing in Supabase is modified or dropped; it stays up for rollback
 # (clear VITE_API_BASE_URL).
 #
+# Auth rows are read through migration_tmp.auth_users() / auth_identities()
+# (SECURITY DEFINER, EXECUTE granted to migration_reader only), because the
+# read-only role has no USAGE on Supabase's auth schema (same as leadwell).
+#
 # Temporary repository secrets (names only — never print values):
 #   SOURCE_DATABASE_URL   Supabase session-pooler or direct URI (read-only)
 #   SCRATCH_DATABASE_URL  empty Neon branch used when mode=dry-run
@@ -280,7 +284,7 @@ jobs:
                    created_at,
                    updated_at,
                    email_confirmed_at
-            FROM auth.users
+            FROM migration_tmp.auth_users()
           ) TO STDOUT WITH CSV
           """
           IDENTITIES_COPY = """
@@ -296,7 +300,7 @@ jobs:
                    ),
                    created_at,
                    updated_at
-            FROM auth.identities
+            FROM migration_tmp.auth_identities()
           ) TO STDOUT WITH CSV
           """
           PUBLIC_USERS_SQL = """
@@ -859,11 +863,11 @@ jobs:
               print("upserting public.users from auth.users (auth_id = id)…", flush=True)
               psql(target, PUBLIC_USERS_SQL)
               src_users = int(
-                  psql(source, "SELECT COUNT(*) FROM auth.users", source=True, extra=["-tA"]).strip()
+                  psql(source, "SELECT COUNT(*) FROM migration_tmp.auth_users()", source=True, extra=["-tA"]).strip()
               )
               dst_users = int(psql(target, 'SELECT COUNT(*) FROM "user"', extra=["-tA"]).strip())
               src_ident = int(
-                  psql(source, "SELECT COUNT(*) FROM auth.identities", source=True, extra=["-tA"]).strip()
+                  psql(source, "SELECT COUNT(*) FROM migration_tmp.auth_identities()", source=True, extra=["-tA"]).strip()
               )
               dst_acct = int(psql(target, "SELECT COUNT(*) FROM account", extra=["-tA"]).strip())
               print(
