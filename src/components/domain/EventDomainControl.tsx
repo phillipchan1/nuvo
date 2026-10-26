@@ -5,7 +5,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useEventRouting, useEventRoutingMutations } from "../../hooks/useEventRouting";
 import { eventDomainAttribution, eventKey } from "../../lib/eventActuals";
 import { DomainPicker } from "../floors/parts";
-import Sheet from "../mobile/Sheet";
+import { FactRow, PickSheet } from "../mobile/sheetKit";
 import DomainSymbol from "./DomainSymbol";
 
 type RoutableEvent = Pick<
@@ -59,53 +59,34 @@ export default function EventDomainControl({
   const color = current?.color ?? "var(--muted)";
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="tap fast flex w-full items-center gap-3 rounded-xl border border-line bg-surface px-3 text-left active:bg-surface-2"
-        aria-label={`Counts toward ${current?.name ?? "an unattributed domain"}`}
-      >
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-          style={{
-            color,
-            background: `color-mix(in srgb, ${color} 14%, var(--surface))`,
-          }}
-        >
-          <DomainSymbol value={current?.icon} size={17} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="section-label block !p-0">Counts toward</span>
-          <span className="block truncate text-body font-medium" style={{ color }}>
-            {current?.name ?? "Unattributed"}
+      {/* A settings row like Repeat and Remind beside it — it was a bordered
+          tile of its own, the only enclosed thing in a list of hairline rows. */}
+      <FactRow
+        lead={
+          <span style={{ color }}>
+            <DomainSymbol value={current?.icon} size={16} />
           </span>
-        </span>
-        <span className="text-muted" aria-hidden>›</span>
-      </button>
+        }
+        label="Counts toward"
+        value={current?.name ?? "Unattributed"}
+        valueColor={current ? color : null}
+        onClick={() => setOpen(true)}
+      />
 
       {open && (
-        <Sheet title="Counts toward" onClose={() => setOpen(false)}>
-          <div className="px-3 pb-safe">
-            <p className="px-1 pb-2 text-caption text-muted">
-              Where this event’s time appears in your domains.
-            </p>
-            {domains.map((domain) => (
-              <button
-                key={domain.id}
-                type="button"
-                onClick={() => choose(domain.id)}
-                className="tap fast flex w-full items-center gap-3 rounded-xl px-3 text-left active:bg-accent-soft"
-                style={{ color: domain.id === attribution.domainId ? domain.color : "var(--ink)" }}
-              >
-                <span style={{ color: domain.color }}>
-                  <DomainSymbol value={domain.icon} size={18} />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-body">{domain.name}</span>
-                {domain.id === attribution.domainId && <span aria-hidden>✓</span>}
-              </button>
-            ))}
-          </div>
-        </Sheet>
+        <PickSheet
+          title="Counts toward"
+          note="Where this event’s time appears in your domains."
+          rows={domains.map((domain) => ({
+            id: domain.id,
+            name: domain.name,
+            color: domain.color,
+            lead: <DomainSymbol value={domain.icon} size={18} />,
+          }))}
+          value={attribution.domainId ?? null}
+          onPick={choose}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );

@@ -23,8 +23,11 @@ describe("event domain control wiring", () => {
 
   it("uses a nested mobile Sheet with full tap rows", () => {
     const control = read("src/components/domain/EventDomainControl.tsx");
-    expect(control).toMatch(/<Sheet title="Counts toward"/);
-    expect(control).toMatch(/className="tap fast flex w-full/);
+    const kit = read("src/components/mobile/sheetKit.tsx");
+    // The phone's row opens the shared picker Sheet — never a floating menu.
+    expect(control).toMatch(/<PickSheet\s+title="Counts toward"/);
     expect(control).toMatch(/eventDomainAttribution/);
+    expect(kit).toMatch(/<Sheet title=\{title\}/);
+    expect(kit).toMatch(/className="tap fast flex w-full/);
   });
 });

@@ -4,16 +4,34 @@ import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../../lib/ty
 import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
-import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
+import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO } from "../../lib/dates";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../../lib/vertical";
-import { DomainPicker } from "../floors/parts";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import TaskSteps from "../TaskSteps";
 import Sheet from "./Sheet";
+import { at, span } from "./dayPlan";
 import { useSettings } from "../../hooks/useSettings";
 import DomainSymbol from "../domain/DomainSymbol";
+import { Icon } from "../Icon";
+import {
+  ActionRow,
+  AutoText,
+  Chip,
+  ChipGrid,
+  DestructiveRow,
+  FactRow,
+  MetaDot,
+  PickSheet,
+  RowList,
+  SHEET_BODY,
+  SHEET_SCROLL,
+  SheetMast,
+  SheetSection,
+  dayWord,
+  useSheetTitle,
+} from "./sheetKit";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
@@ -21,9 +39,17 @@ type Vertical = ReturnType<typeof useVertical>["data"];
 /** Explicit triage on phone — toast is the only undo path (no ⌘Z). */
 const TRIAGE_UNDO = { undo: "toast" as const };
 
-// Tapping a task on a list opens this — the mobile stand-in for the desktop's
-// anchored task popover. The handful of actions a thumb actually needs: rename,
-// reschedule, set priority, label, complete, trash.
+// The ONE phone surface for a task — the mobile stand-in for the desktop's
+// anchored task popover. A Today row, a project's work, a slot's child, a block
+// on the Day canvas: every tap on a task opens THIS (D-111, "one grammar per
+// noun"). A block on the calendar used to open a second, thinner "Task block"
+// sheet with an "Edit task" door into this one; the only thing it had that this
+// lacked — taking the task back off the calendar — is a row here now.
+//
+// Order is what a thumb does in the first five seconds: finish it, move it, read
+// or add the words (steps, notes) — and only then the properties, as hairline
+// rows. The words used to sit two screens down, under eight duration chips, a
+// Remind box and a chip for every project in the account.
 export default function MobileTaskSheet({
   task,
   labels,
@@ -31,6 +57,7 @@ export default function MobileTaskSheet({
   mutations,
   accent,
   onClose,
+  onAskNuvo,
 }: {
   task: Task;
   labels: Label[];
@@ -38,12 +65,14 @@ export default function MobileTaskSheet({
   mutations: Mutations;
   accent?: string | null;
   onClose: () => void;
+  onAskNuvo?: (seed: string, say?: string) => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
+  const [picker, setPicker] = useState<"project" | "domain" | null>(null);
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const { data: recurrences = [] } = useRecurrences();
@@ -77,49 +106,50 @@ export default function MobileTaskSheet({
     }
   };
 
-  const titleRef = useRef<HTMLTextAreaElement>(null);
+  // What we last SENT, not what the prop says: the prop lags the write by a
+  // render, so two commits in one tick (the field's blur, then the sheet
+  // closing) would otherwise both see "changed" and write twice.
+  const sent = useRef({ title: task.title, notes: task.notes });
   const commitRef = useRef<() => void>(() => {});
 
   const commitTitle = () => {
     const next = title.trim();
-    if (next && next !== task.title) mutations.patchTask(task.id, { title: next });
+    // An emptied title isn't a rename — put the old one back rather than leave
+    // a blank hero that was never saved.
+    if (!next) {
+      setTitle(sent.current.title);
+      return;
+    }
+    if (next === sent.current.title) return;
+    sent.current.title = next;
+    mutations.patchTask(task.id, { title: next });
   };
   const commitNotes = () => {
-    if (notes !== task.notes) mutations.patchTask(task.id, { notes });
+    if (notes === sent.current.notes) return;
+    sent.current.notes = notes;
+    mutations.patchTask(task.id, { notes });
   };
   commitRef.current = () => {
     commitTitle();
     commitNotes();
   };
 
-  // A long title grows the box instead of scrolling inside one hidden line.
-  useEffect(() => {
-    const el = titleRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [title]);
+  // iOS fires no blur when the sheet closes, when the app is backgrounded or
+  // when a tap lands on ✕ — a button never takes focus in Safari — so an edit
+  // typed and then dismissed was lost. Every way out of the sheet flushes first.
+  const close = () => {
+    commitRef.current();
+    onClose();
+  };
 
   // Backgrounding the app mid-edit (home swipe, app switch) never fires blur on
   // iOS — commit on the way out so the edit isn't lost.
-  useEffect(() => {
-    const commit = () => commitRef.current();
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") commit();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", commit);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", commit);
-    };
-  }, []);
+  useVisibilityFlush(() => commitRef.current());
 
   const planChips: { label: string; run: () => void; active?: boolean }[] = [
     { label: "Today", run: () => mutations.planFor(task, todayISO(), TRIAGE_UNDO), active: task.do_date === todayISO() },
     { label: "Tomorrow", run: () => mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO), active: task.do_date === tomorrowISO() },
     { label: "Next week", run: () => mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO) },
-    { label: "Inbox", run: () => mutations.backToInbox(task, TRIAGE_UNDO), active: task.status === "inbox" },
   ];
 
   // the domain the task actually counts toward — its parent's, not its own stale
@@ -128,6 +158,9 @@ export default function MobileTaskSheet({
   const domain = domainById(vertical, effectiveDomainId);
   const project = projectById(vertical, task.project_id);
   const initiative = initiativeById(vertical, taskInitiativeId(vertical, task));
+  // Parented by a project OR straight by an initiative: the domain is inherited,
+  // so it is a read in the mast, never a control (setting it would do nothing).
+  const parented = Boolean(project || initiative);
 
   const setDomain = (domainId: string) => {
     mutations.patchTask(task.id, { domain_id: domainId || null });
@@ -155,246 +188,336 @@ export default function MobileTaskSheet({
     { value: "none", label: "None", color: "var(--line-strong)" },
   ];
 
+  // The ONE muted line under the name: when it is, and how long it is.
+  const start = task.start_time ? new Date(task.start_time) : null;
+  const end = start && task.duration_minutes ? new Date(start.getTime() + task.duration_minutes * 60_000) : null;
+  const when = start
+    ? `${dayWord(start)} · ${end ? span(start, end) : at(start)}`
+    : task.do_date
+      ? dayWord(parseDateISO(task.do_date))
+      : task.status === "inbox"
+        ? "Inbox"
+        : "No date";
+  const length = start && end ? null : task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
+
+  const { title: sheetTitle, onContentScroll } = useSheetTitle("Task", title);
+
+  const askNuvo = () => {
+    if (!onAskNuvo) return;
+    const seed = start
+      ? `I have a task block: "${task.title}" at ${span(start, end ?? new Date(start.getTime() + 30 * 60_000))}. Help me think about it.`
+      : `I have a task: "${task.title}". Help me think about it.`;
+    onAskNuvo(seed, `Help me with “${task.title}”`);
+    close();
+  };
+
+  const openProjects = vertical.projects.filter((p) => !isProjectComplete(p.status) || p.id === task.project_id);
+
   return (
-    <Sheet onClose={onClose} title="Task">
-      <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
-        <div className="rounded-xl border border-line bg-surface-2 p-3" style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}>
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-meta">
-            {project || initiative ? (
-              // Parented — inherited from the project, so it's a read, not a
-              // control (setting it here would silently do nothing).
-              <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
-                <span className="flex items-center gap-1" style={{ color: domain?.color }}>
-                  <DomainSymbol value={domain?.icon} size={13} />
-                  {domain?.name ?? "Domain"}
-                </span>
-                {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
-                {project && <><span>›</span><span className="truncate">{project.name}</span></>}
-              </span>
-            ) : (
-              // Loose — the same live DomainPicker Project/Initiative use, in
-              // the same top-of-card spot.
-              <DomainPicker domains={vertical.domains} value={domain?.id ?? ""} onChange={setDomain} size="lg" allowClear />
-            )}
-          </div>
-          <textarea
-            ref={titleRef}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
-            rows={1}
-            aria-label="Task title"
-            autoCapitalize="sentences"
-            autoCorrect="on"
-            spellCheck
-            className="w-full resize-none bg-transparent font-medium outline-none"
-          />
-          {(task.duration_minutes || task.start_time) && (
-            <div className="mono mt-1 text-caption text-muted">
-              {task.duration_minutes ? fmtDuration(task.duration_minutes) : null}
-              {task.start_time ? ` · ${new Date(task.start_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : null}
-            </div>
-          )}
-        </div>
+    <>
+      <Sheet onClose={close} title={sheetTitle} onContentScroll={onContentScroll} contentClassName={SHEET_SCROLL}>
+        <div className={SHEET_BODY}>
+          <SheetMast
+            color={accent ?? domain?.color}
+            crumb={
+              parented ? (
+                <>
+                  <span className="flex shrink-0 items-center gap-1" style={{ color: domain?.color }}>
+                    <DomainSymbol value={domain?.icon} size={13} />
+                    {domain?.name ?? "Domain"}
+                  </span>
+                  {initiative && (
+                    <>
+                      <span aria-hidden>›</span>
+                      <span className="truncate">{initiative.name}</span>
+                    </>
+                  )}
+                  {project && (
+                    <>
+                      <span aria-hidden>›</span>
+                      <span className="truncate">{project.name}</span>
+                    </>
+                  )}
+                </>
+              ) : undefined
+            }
+            meta={
+              <>
+                {done && (
+                  <>
+                    <span className="inline-flex items-center gap-1 text-ink">
+                      <Icon name="check" size={12} />
+                      Done
+                    </span>
+                    <MetaDot />
+                  </>
+                )}
+                <span>{when}</span>
+                {length && (
+                  <>
+                    <MetaDot />
+                    <span>{length}</span>
+                  </>
+                )}
+              </>
+            }
+          >
+            <AutoText
+              value={title}
+              onChange={setTitle}
+              onBlur={commitTitle}
+              label="Task title"
+              single
+              className={`bg-transparent text-lead font-semibold leading-snug tracking-tight ${
+                done ? "text-muted line-through decoration-muted/50" : "text-ink"
+              }`}
+            />
+          </SheetMast>
 
-        <button
-          onClick={() => {
-            done ? mutations.uncomplete(task) : mutations.complete(task);
-            onClose();
-          }}
-          className={`tap fast mt-3 w-full rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
-            done
-              ? "border-line text-muted"
-              : "border-accent bg-accent text-on-accent"
-          }`}
-        >
-          {done ? "↩ Reopen" : "✓ Mark done"}
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              done ? mutations.uncomplete(task) : mutations.complete(task);
+              close();
+            }}
+            className={`tap fast mt-4 flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
+              done ? "border-line text-muted" : "border-accent bg-accent text-on-accent"
+            }`}
+          >
+            <Icon name={done ? "refresh" : "check"} size={16} />
+            {done ? "Reopen" : "Mark done"}
+          </button>
 
-        <Section label="Plan">
-          <div className="flex flex-wrap gap-1.5">
-            {planChips.map((c) => (
-              <Chip key={c.label} on={c.active} onClick={() => { c.run(); onClose(); }}>
-                {c.label}
-              </Chip>
-            ))}
-            <Chip onClick={() => setShowDatePick((v) => !v)} on={showDatePick}>
-              Pick date…
-            </Chip>
-          </div>
-          {showDatePick && (
-            <DateTimePicker task={task} mutations={mutations} onDone={onClose} />
-          )}
-        </Section>
-
-        <Section label="Duration">
-          <div className="flex flex-wrap gap-1.5">
-            {DURATION_PRESETS.map((m) => (
-              <Chip
-                key={m}
-                on={(task.duration_minutes ?? defaultDurationMins) === m}
-                onClick={() => mutations.patchTask(task.id, { duration_minutes: m })}
-              >
-                {fmtDuration(m)}
-              </Chip>
-            ))}
-          </div>
-        </Section>
-
-        {/* Remind — a block, a day, or a deadline. Untimed days have no default. */}
-        {(task.start_time || task.do_date || task.deadline) && (
-          <Section label="Remind">
-            <div className="flex flex-col gap-1.5">
-              {(task.start_time || task.do_date) && (
-                <div className="tap-h flex items-center rounded-xl border border-line bg-surface px-3">
-                  <ReminderSelect
-                    block
-                    target={{
-                      targetKind: "task",
-                      targetId: task.id,
-                      anchor: "start",
-                      allDay: !task.start_time,
-                    }}
-                  />
-                </div>
-              )}
-              {task.deadline && (
-                <div className="tap-h flex items-center gap-2 rounded-xl border border-line bg-surface px-3">
-                  <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
-                  <span className="shrink-0 text-micro text-muted/70">deadline</span>
-                </div>
-              )}
-            </div>
-          </Section>
-        )}
-
-        <Section label="Repeat">
-          <RepeatControl
-            anchorISO={anchorISO}
-            value={repeatRule}
-            onChange={(r) => void onRepeatChange(r)}
-            variant="block"
-          />
-        </Section>
-
-        <Section label="Project">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip on={!task.project_id} onClick={() => setProject("")}>
-              None
-            </Chip>
-            {vertical.projects
-              .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
-              .map((p) => (
-                <Chip key={p.id} on={task.project_id === p.id} onClick={() => setProject(p.id)}>
-                  {p.name}
+          <SheetSection label="Plan">
+            <ChipGrid cols={3}>
+              {planChips.map((c) => (
+                <Chip key={c.label} on={c.active} onClick={() => { c.run(); close(); }}>
+                  {c.label}
                 </Chip>
               ))}
-          </div>
-        </Section>
-
-        <Section label="Steps">
-          <TaskSteps task={task} mutations={mutations} touch />
-        </Section>
-
-        <Section label="Notes">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={commitNotes}
-            placeholder="Add notes"
-            rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
-            className="w-full min-h-[9rem] max-h-[min(50vh,22rem)] resize-y overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2.5 text-body leading-relaxed outline-none placeholder:text-muted/60 focus:border-accent"
-          />
-        </Section>
-
-        <Section label="Priority">
-          <div className="flex flex-wrap gap-1.5">
-            {priorities.map((p) => (
-              <Chip
-                key={p.value}
-                on={task.priority === p.value}
-                onClick={() => mutations.patchTask(task.id, { priority: p.value })}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.color }} />
-                  {p.label}
-                </span>
+              <Chip on={task.status === "inbox"} onClick={() => { mutations.backToInbox(task, TRIAGE_UNDO); close(); }}>
+                Inbox
               </Chip>
-            ))}
-          </div>
-        </Section>
+              <Chip span={2} onClick={() => setShowDatePick((v) => !v)} on={showDatePick}>
+                Pick date…
+              </Chip>
+            </ChipGrid>
+            {showDatePick && <DateTimePicker task={task} mutations={mutations} onDone={close} />}
+          </SheetSection>
 
-        {labels.length > 0 && (
-          <Section label="Labels">
-            <div className="flex flex-wrap gap-1.5">
-              {labels.map((l) => {
-                const on = currentLabels.has(l.id);
-                return (
-                  <button
-                    key={l.id}
+          <SheetSection label="Duration">
+            <ChipGrid cols={4}>
+              {DURATION_PRESETS.map((m) => (
+                <Chip
+                  key={m}
+                  on={(task.duration_minutes ?? defaultDurationMins) === m}
+                  onClick={() => mutations.patchTask(task.id, { duration_minutes: m })}
+                >
+                  {fmtDuration(m)}
+                </Chip>
+              ))}
+            </ChipGrid>
+          </SheetSection>
+
+          <SheetSection label="Steps">
+            <TaskSteps task={task} mutations={mutations} touch />
+          </SheetSection>
+
+          <SheetSection label="Notes">
+            <AutoText
+              value={notes}
+              onChange={setNotes}
+              onBlur={commitNotes}
+              label="Notes"
+              placeholder="Add notes"
+              minRows={3}
+              className="field leading-relaxed"
+            />
+          </SheetSection>
+
+          <SheetSection>
+            <RowList>
+              <FactRow
+                icon="package"
+                label="Project"
+                value={project?.name ?? "None"}
+                valueColor={project ? "var(--ink)" : null}
+                onClick={() => setPicker("project")}
+              />
+              {/* Loose only — see `parented`. */}
+              {!parented && (
+                <FactRow
+                  lead={
+                    <span style={{ color: domain?.color }}>
+                      <DomainSymbol value={domain?.icon} size={16} />
+                    </span>
+                  }
+                  label="Domain"
+                  value={domain?.name ?? "None"}
+                  valueColor={domain ? domain.color : null}
+                  onClick={() => setPicker("domain")}
+                />
+              )}
+              <RepeatControl anchorISO={anchorISO} value={repeatRule} onChange={(r) => void onRepeatChange(r)} variant="row" />
+              {/* Remind — a block, a day, or a deadline. Untimed days have no default. */}
+              {(task.start_time || task.do_date) && (
+                <RemindRow caption={task.deadline ? "When it starts" : undefined}>
+                  <ReminderSelect
+                    block
+                    chevron
+                    target={{ targetKind: "task", targetId: task.id, anchor: "start", allDay: !task.start_time }}
+                  />
+                </RemindRow>
+              )}
+              {task.deadline && (
+                <RemindRow caption="When it’s due">
+                  <ReminderSelect block chevron target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
+                </RemindRow>
+              )}
+            </RowList>
+          </SheetSection>
+
+          <SheetSection label="Priority">
+            <ChipGrid cols={4}>
+              {priorities.map((p) => (
+                <Chip key={p.value} on={task.priority === p.value} onClick={() => mutations.patchTask(task.id, { priority: p.value })}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: task.priority === p.value ? "currentColor" : p.color }} />
+                    {p.label}
+                  </span>
+                </Chip>
+              ))}
+            </ChipGrid>
+          </SheetSection>
+
+          {labels.length > 0 && (
+            <SheetSection label="Labels">
+              <div className="flex flex-wrap gap-1.5">
+                {labels.map((l) => {
+                  const on = currentLabels.has(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        const next = new Set(currentLabels);
+                        on ? next.delete(l.id) : next.add(l.id);
+                        mutations.setLabels(task.id, [...next]);
+                      }}
+                      className="tap fast rounded-full border px-3.5 text-body font-medium"
+                      style={{
+                        borderColor: on ? l.color : "var(--line)",
+                        background: on ? `color-mix(in srgb, ${l.color} 15%, var(--surface))` : "transparent",
+                        color: on ? l.color : "var(--muted)",
+                      }}
+                    >
+                      {l.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </SheetSection>
+          )}
+
+          {(task.start_time || onAskNuvo) && (
+            <SheetSection>
+              <RowList>
+                {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={askNuvo} />}
+                {task.start_time && (
+                  <ActionRow
+                    quiet
+                    icon="calendar"
+                    label="Remove from calendar"
                     onClick={() => {
-                      const next = new Set(currentLabels);
-                      on ? next.delete(l.id) : next.add(l.id);
-                      mutations.setLabels(task.id, [...next]);
+                      mutations.unblock(task);
+                      close();
                     }}
-                    className="tap fast rounded-full border px-3 py-2 text-body font-medium"
-                    style={{
-                      borderColor: on ? l.color : "var(--line)",
-                      background: on ? `color-mix(in srgb, ${l.color} 15%, var(--surface))` : "transparent",
-                      color: on ? l.color : "var(--muted)",
-                    }}
-                  >
-                    {l.name}
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        )}
+                  />
+                )}
+              </RowList>
+            </SheetSection>
+          )}
 
-        <button
-          onClick={() => {
-            mutations.trash(task);
-            onClose();
-          }}
-          className="tap fast mt-5 w-full rounded-xl border border-signal/30 py-3 text-head font-medium text-signal active:translate-y-px"
-        >
-          Trash
-        </button>
+          <div className="mt-6">
+            <DestructiveRow
+              label="Trash"
+              confirm={false}
+              onConfirm={() => {
+                mutations.trash(task);
+                onClose();
+              }}
+            />
+          </div>
+        </div>
+      </Sheet>
+
+      {picker === "project" && (
+        <PickSheet
+          title="Project"
+          rows={openProjects.map((p) => {
+            const d = domainById(vertical, p.domainId);
+            return { id: p.id, name: p.name, sub: d?.name, color: d?.color };
+          })}
+          value={task.project_id}
+          noneLabel="No project"
+          onPick={setProject}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {picker === "domain" && (
+        <PickSheet
+          title="Domain"
+          note="Where this task’s time counts, when it isn’t part of a project."
+          rows={vertical.domains.map((d) => ({
+            id: d.id,
+            name: d.name,
+            color: d.color,
+            lead: <DomainSymbol value={d.icon} size={18} />,
+          }))}
+          value={domain?.id ?? null}
+          noneLabel="No domain"
+          onPick={setDomain}
+          onClose={() => setPicker(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/** Backgrounding the app never fires a blur on iOS; flush on the way out. */
+function useVisibilityFlush(flush: () => void) {
+  const ref = useRef(flush);
+  ref.current = flush;
+  useEffect(() => {
+    const run = () => ref.current();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") run();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", run);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", run);
+    };
+  }, []);
+}
+
+/** A reminder row in the hairline list: the bell hangs in the same gutter as
+ *  every other row's glyph, the wheel fills the rest. `caption` says WHICH
+ *  reminder it is when there are two (a start and a deadline) — it was a tag
+ *  stranded after the chevron, at the far edge, where nothing read it. */
+function RemindRow({ children, caption }: { children: React.ReactNode; caption?: string }) {
+  return (
+    <div>
+      {caption && <div className="pt-2.5 text-micro font-medium text-muted" style={{ paddingLeft: 32 }}>{caption}</div>}
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-5 shrink-0 items-center justify-center text-muted">
+          <Icon name="bell" size={16} />
+        </span>
+        <div className="min-w-0 flex-1">{children}</div>
       </div>
-    </Sheet>
-  );
-}
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-4">
-      <div className="section-label mb-1.5 !p-0">{label}</div>
-      {children}
     </div>
-  );
-}
-
-function Chip({
-  children,
-  on,
-  onClick,
-}: {
-  children: React.ReactNode;
-  on?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
-        on
-          ? "border-accent bg-accent text-on-accent"
-          : "border-line text-muted hover:border-accent hover:text-accent"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -425,30 +548,29 @@ function DateTimePicker({
   // covers the lower half of this bottom sheet, so a trailing button could
   // never be reached while a wheel was open.
   return (
-    <div className="mt-2 flex flex-col gap-2">
+    <div className="mt-2 grid grid-cols-2 gap-2">
       <button
+        type="button"
         onClick={apply}
-        className="tap fast w-full rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
+        className="tap fast col-span-2 rounded-xl border border-accent bg-accent text-head font-semibold text-on-accent active:translate-y-px"
       >
         Set date{time ? " & time" : ""}
       </button>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="date"
-          value={date}
-          aria-label="Date"
-          onChange={(e) => setDate(e.target.value)}
-          className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
-        />
-        <input
-          type="time"
-          value={time}
-          step={900}
-          aria-label="Time"
-          onChange={(e) => setTime(e.target.value)}
-          className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
-        />
-      </div>
+      <input
+        type="date"
+        value={date}
+        aria-label="Date"
+        onChange={(e) => setDate(e.target.value)}
+        className="field mono w-full min-w-0"
+      />
+      <input
+        type="time"
+        value={time}
+        step={900}
+        aria-label="Time"
+        onChange={(e) => setTime(e.target.value)}
+        className="field mono w-full min-w-0"
+      />
     </div>
   );
 }

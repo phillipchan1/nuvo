@@ -6026,3 +6026,94 @@ and both builds green. **Not driven against a real account** — this container 
 compared byte-for-byte against the live source. A series Nuvo already wrote in
 UTC is repaired when its repeat or the whole series is next edited. Moving a repeating event
 *between* Apple and Google is refused by the chat rather than half-done.*
+
+**D-162 · 2026-10-26 · The phone's detail sheets are one kit, one order, and one Task sheet —
+and the Repeat picker is a bottom sheet on a phone.**
+
+A UX review of what opens when you tap an event, a task or a standing block on the phone
+(driven in the running app at 375 and 320px, then against fixtures for every state). The sheets
+had been built three times over, and each copy had drifted:
+
+- **Repeat was a desktop popover on a phone.** `RepeatControl` — in both the event and the task
+  sheet — opened a 288px cursor-anchored card with 28px rows, 28px weekday dots and a
+  Day/Week/Month/Year control wider than its own card. That is the exact thing the phone's golden
+  rule 3 bans. A loose task's **Domain** was the same (`FloatingMenu`), and a task's **Project**
+  was a chip for every project in the account — fine at five (the builder's), a screen of chips at
+  thirty (**P16**).
+- **A task on the calendar opened a second, thinner Task sheet** ("Task block": no notes, no
+  steps, no domain, no done mark) with an *Edit task* door into the real one. Two sheets for one
+  noun, and a name — **"Task block"** — that overlapped *Task* (**P11**); D-111's "one grammar per
+  noun" says it is one component.
+- **Hierarchy.** Every control was the same weight: the event's name was one input among six,
+  the task's domain pill outshouted its title, RSVP was three 60px blocks (one solid accent —
+  the loudest thing on the sheet), Join sat *below* Remind, and the body — Steps, Notes — started
+  two screens down under eight duration chips and a chip per project. The generic title row
+  ("Event") was a second headline over the real one, and the identity scrolled away so a
+  destructive button was ever left holding nobody's name.
+- **Spacing and form.** Hand-rolled 39px inputs (the field primitives retired that recipe), three
+  radii, an emoji 🗑, a 15px checkbox glyph, `green-600`/`yellow-600` guest marks (colour is a
+  token, always), chips wrapping to an orphan ("Pick time…" alone on a line, "2h 3h 4h" on a
+  ragged third), and Delete 8px under "Copy details" at equal weight (**P14**).
+- **Correctness found on the way.** Renaming an event "A"→"B"→"A" dropped the second write
+  (compared against the *open-time snapshot*); a Block's Reschedule left the sheet saying the old
+  day beside a block that had moved; a Block's title field painted the calendar's name as a
+  *placeholder* so the hero looked disabled; and on iOS an edit typed but never blurred (tap ✕,
+  the scrim, swipe down) was lost, because Safari doesn't focus a button.
+
+**What is now true.** `mobile/sheetKit.tsx` is the one set of parts: the **mast** (the name IS
+the hero, with ONE muted line — when, and whether it repeats), the **strip** (Join · Going?, at
+most two acts), sections on one rhythm, hairline **rows** with a glyph gutter (every row that
+opens something wears a chevron), and a **footer** where the destructive act stands alone as
+text and goes `--signal` only when it asks. It is D-101's popover grammar in a single column, and
+it takes the desktop's words ("Going? Yes · Maybe · No", verdict tokens as *marks*). The title row
+says what *kind* of thing it is at rest and takes the item's name once the hero scrolls away.
+The scroller is the Sheet's own body (`min-h-0 flex-1`), not a `78vh` guess that disagreed with
+the Sheet's `88dvh` cap and ignored the keyboard.
+
+- **One Task sheet.** A task block opens `MobileTaskSheet` (routed in `MobileShell.openTap`).
+  What the old block sheet had and this lacked — *Remove from calendar*, *Ask Nuvo* — are rows
+  here. Order is the first five seconds: mast → Mark done → Plan → Duration → Steps → Notes, then
+  properties as rows (Project · Domain · Repeat · Remind), Priority, Labels. 2.16 screens → 1.94,
+  and the words are on the first one.
+- **Choosing one of many is a Sheet** (`PickSheet`): Project, a loose task's Domain, an event's
+  *Counts toward*. A task under an initiative with no project is *parented* — its Domain is a
+  read, never a control (a write would silently do nothing).
+- **Repeat is a bottom sheet on a phone** (`RecurrencePicker` → `RepeatSheet`, behind
+  `useIsMobile`): 44px rows, a four-up Day/Week/Month/Year, seven 44px weekday circles. Desktop
+  keeps its anchored popover, byte-for-byte; both wear one `useRepeatDraft`, so "what is a custom
+  repeat" is defined once.
+- **A Block's work is the same `TaskRow`** as every list (D-111) — it had a reduced one.
+- **Steps are thumb-sized on a phone** (`TaskSteps`, touch mode only — desktop is untouched): the
+  checkbox was a bare 14px box, the title field 27px inside a 44px row, and each row ended in an
+  *invisible* 44px remove button, so a stray tap near the right edge deleted a step. The box now
+  blooms to 44px, the field fills the row, and ✕ is inert until the step is focused.
+- **Edits survive leaving**: every way out of the sheet flushes the field first, and a repeating
+  event finishes its this-or-all question before the sheet goes. Writes compare against *what was
+  last sent*, not the open-time snapshot.
+
+**Anchor.** No Question Ledger row asks this — it is **P13 (mobile-ready by default)** and
+**P14 (dissolve, don't frame)** applied to the two surfaces a thumb reaches most, plus
+**P11** (one name per thing). It *removes* a surface (the Task-block sheet) rather than adding
+one. The four no's: no pool, no new name (it deletes one), works with
+thirty projects and a three-line title (the fixtures are exactly those), nothing builder-specific.
+
+**Verify** at `?sheets` (`mobile/SheetsHarness.tsx`) — fourteen fixtures: event (basic · Meet +
+pending invite + 8 guests · all-day · read-only · offline · repeating · three-line title), task
+(loose · in a project with steps/notes/labels/deadline · done · timed · three-line title), block
+(project · empty). `?sheets=<state>` opens one; resize the preview for 320 / 375 / 430.
+`tests/mobile-sheet-kit.test.tsx` pins the phone/desktop branch of the picker, the destructive
+row's confirm contract, the RSVP control and the picker sheet; `sheet-scroll`, `domain-picker`
+and `event-domain-control` now assert the same invariants against the kit.
+
+*Status: built — typecheck of every file this touches (the tree also holds another session's
+in-flight `compose.ts` errors, not part of this), the full suite (`mobile-sheet-kit` new; three
+convention tests re-pointed at the kit; the new picker guard was replayed against the old
+behaviour and fails), the web bundle, **all fourteen fixtures at 320px** (no horizontal overflow,
+no off-screen element), and the live app at 375px and desktop (the desktop event card and its
+anchored Repeat popover are unchanged). Targets under 44px that remain are the Sheet's ✕ (a 32px
+mark with its own 44px bloom), `TaskRow`'s checkbox (shared, bloomed) and the `TaskComposer`'s
+field (shared; its line is 44px). **Not driven on iOS WebKit** — native `date`/`time` inputs, the
+home-indicator inset and the keyboard inset are unseen on a real engine; the Simulator was booted
+but its access prompt was not granted. **Open question:** the date/time inputs commit on every
+`change`, which on an iOS wheel may fire per tick (and ask the this-or-all question per tick on a
+repeating event) — check on a device before leaving it.*

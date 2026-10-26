@@ -265,7 +265,9 @@ function StepRow({
         aria-checked={done}
         aria-label={done ? `Undo ${step.title}` : `Complete ${step.title}`}
         onClick={onToggle}
-        className={`fast grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border ${
+        // `tap-bloom`: a 14px box is the whole act on a phone (ticking a step), so
+        // its hit area grows to 44px without the drawn box growing.
+        className={`tap-bloom fast grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border ${
           done ? "border-accent bg-accent text-on-accent" : "border-line-strong hover:border-accent"
         }`}
       >
@@ -329,8 +331,8 @@ function StepRow({
         }}
         aria-label="Step"
         className={`fast min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-body outline-none hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg ${
-          done ? "text-muted line-through" : "text-ink"
-        }`}
+          rowH === "tap-h" ? "tap-h" : ""
+        } ${done ? "text-muted line-through" : "text-ink"}`}
       />
 
       <button
@@ -339,7 +341,12 @@ function StepRow({
         aria-label={`Remove ${step.title}`}
         // Visible on focus as well as hover — a hidden gesture must never be
         // the only path to an act.
-        className="fast tap shrink-0 rounded px-1 text-label text-muted opacity-0 hover:text-signal focus-visible:opacity-100 group-hover:opacity-100"
+        // On a phone the ✕ is a 44px target that is also invisible at rest, so a
+        // stray tap near the row's right edge removed a step. Touch rows keep it
+        // inert until the step is focused (tap the title), when it appears.
+        className={`fast tap shrink-0 rounded px-1 text-label text-muted opacity-0 hover:text-signal focus-visible:opacity-100 group-hover:opacity-100 ${
+          rowH === "tap-h" ? "pointer-events-none group-focus-within:pointer-events-auto group-focus-within:opacity-100" : ""
+        }`}
       >
         ✕
       </button>

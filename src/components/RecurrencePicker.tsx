@@ -18,7 +18,10 @@ const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 import { parseDateISO } from "../lib/dates";
 import { Btn, Modal } from "./ui";
 import { useEscape } from "../hooks/useEscape";
+import { useIsMobile } from "../hooks/useIsMobile";
 import type { RecurrenceScope } from "../lib/types";
+import Sheet from "./mobile/Sheet";
+import { FactRow, SHEET_SCROLL } from "./mobile/sheetKit";
 
 /** edit/move/delete offer all three scopes. `answer` (RSVP, guests, Meet)
  *  has no "following" — that would split the series to answer an invite.
@@ -371,12 +374,17 @@ export function RepeatControl({
   onChange,
   disabled,
   variant = "chip",
+  emptyLabel,
 }: {
   anchorISO: string;
   value: RecurrenceRule | null;
   onChange: (rule: RecurrenceRule | null) => void;
   disabled?: boolean;
-  variant?: "chip" | "block";
+  /** `row` is the phone sheets' hairline settings row (label · value · ›). */
+  variant?: "chip" | "block" | "row";
+  /** What the `row` says when there is no rule to describe. An event flagged as
+   *  repeating whose rule hasn't arrived yet is NOT "Does not repeat". */
+  emptyLabel?: string;
 }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const on = Boolean(value);
@@ -385,7 +393,15 @@ export function RepeatControl({
   const label = value ? describeRule(value, anchorISO) : "Repeat";
   return (
     <>
-      {variant === "block" ? (
+      {variant === "row" ? (
+        <FactRow
+          icon="repeat"
+          label="Repeat"
+          value={value ? describeRule(value, anchorISO) : (emptyLabel ?? "Does not repeat")}
+          valueColor={on ? "var(--accent)" : null}
+          onClick={open}
+        />
+      ) : variant === "block" ? (
         <button
           disabled={disabled}
           onClick={open}
@@ -447,23 +463,12 @@ function Dot({ on }: { on: boolean }) {
 type EndMode = "never" | "on" | "after";
 
 /**
- * The repeat editor: contextual presets up top, an expandable custom builder
- * below. Anchored beside the control that opened it. Returns a RecurrenceRule
- * (or null for "does not repeat") via onPick.
+ * The repeat editor's draft: the presets, the custom builder's fields, and the
+ * rule they build. Both faces of the picker wear it — the desktop popover and
+ * the phone's bottom sheet — so "what is a custom repeat" is defined once and
+ * the two can only differ in how they LOOK.
  */
-export default function RecurrencePicker({
-  anchorISO,
-  current,
-  anchor,
-  onPick,
-  onClose,
-}: {
-  anchorISO: string;
-  current: RecurrenceRule | null;
-  anchor: DOMRect;
-  onPick: (rule: RecurrenceRule | null) => void;
-  onClose: () => void;
-}) {
+function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
   const presets = useMemo(() => presetsFor(anchorISO), [anchorISO]);
   const anchorWeekday = parseDateISO(anchorISO).getDay();
   const anchorMonth = parseDateISO(anchorISO).getMonth() + 1;
@@ -490,6 +495,70 @@ export default function RecurrencePicker({
   const [dayRule, setDayRule] = useState<"date" | "position">(current?.bysetpos ? "position" : "date");
   const [setpos, setSetpos] = useState<number>(current?.bysetpos ?? setposOf(anchorISO));
 
+  const buildCustom = (): RecurrenceRule => {
+    const rule: RecurrenceRule = { freq, interval: Math.max(1, interval) };
+    if (freq === "weekly") rule.byweekday = weekdays.length ? [...weekdays].sort((a, b) => a - b) : [anchorWeekday];
+    if (freq === "monthly" || freq === "yearly") {
+      if (dayRule === "position") {
+        rule.bysetpos = setpos;
+        rule.byweekday = [anchorWeekday];
+      } else {
+        rule.bymonthday = anchorDay;
+      }
+      if (freq === "yearly") rule.bymonth = anchorMonth;
+    }
+    if (endMode === "on" && untilDate) rule.until = untilDate;
+    if (endMode === "after") rule.count = Math.max(1, count);
+    return rule;
+  };
+
+  const toggleWeekday = (d: number) =>
+    setWeekdays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
+
+  return {
+    presets, anchorWeekday, anchorMonth, anchorDay,
+    custom, setCustom,
+    freq, setFreq, interval, setInterval, weekdays,
+    endMode, setEndMode, untilDate, setUntilDate, count, setCount,
+    dayRule, setDayRule, setpos, setSetpos,
+    buildCustom, toggleWeekday,
+  };
+}
+
+type RepeatPickerProps = {
+  anchorISO: string;
+  current: RecurrenceRule | null;
+  anchor: DOMRect;
+  onPick: (rule: RecurrenceRule | null) => void;
+  onClose: () => void;
+};
+
+/**
+ * The repeat editor. On a desktop it is a popover anchored beside the control
+ * that opened it; on a phone it is a bottom sheet — a 288px floating card with
+ * 28px rows and a custom builder wider than itself is exactly the cursor-
+ * anchored popover the phone's golden rule bans. Returns a RecurrenceRule (or
+ * null for "does not repeat") via onPick.
+ */
+export default function RecurrencePicker(props: RepeatPickerProps) {
+  const mobile = useIsMobile();
+  return mobile ? <RepeatSheet {...props} /> : <RecurrencePopover {...props} />;
+}
+
+/**
+ * The desktop face: contextual presets up top, an expandable custom builder
+ * below, anchored beside the control that opened it.
+ */
+function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: RepeatPickerProps) {
+  const {
+    presets, anchorWeekday, anchorMonth, anchorDay,
+    custom, setCustom,
+    freq, setFreq, interval, setInterval, weekdays,
+    endMode, setEndMode, untilDate, setUntilDate, count, setCount,
+    dayRule, setDayRule, setpos, setSetpos,
+    buildCustom, toggleWeekday,
+  } = useRepeatDraft(anchorISO, current);
+
   const popRef = useRef<HTMLDivElement>(null);
   // The popover is only mounted while open, so it is always active here.
   useEscape(true, onClose);
@@ -512,26 +581,6 @@ export default function RecurrencePicker({
     if (top + h > vh - 8) top = Math.max(8, anchor.top - 6 - h);
     setPos({ top, left, side: "right" });
   }, [anchor]);
-
-  const buildCustom = (): RecurrenceRule => {
-    const rule: RecurrenceRule = { freq, interval: Math.max(1, interval) };
-    if (freq === "weekly") rule.byweekday = weekdays.length ? [...weekdays].sort((a, b) => a - b) : [anchorWeekday];
-    if (freq === "monthly" || freq === "yearly") {
-      if (dayRule === "position") {
-        rule.bysetpos = setpos;
-        rule.byweekday = [anchorWeekday];
-      } else {
-        rule.bymonthday = anchorDay;
-      }
-      if (freq === "yearly") rule.bymonth = anchorMonth;
-    }
-    if (endMode === "on" && untilDate) rule.until = untilDate;
-    if (endMode === "after") rule.count = Math.max(1, count);
-    return rule;
-  };
-
-  const toggleWeekday = (d: number) =>
-    setWeekdays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
   const seg = (active: boolean) =>
     `fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-label font-medium transition-colors ${
@@ -693,6 +742,196 @@ export default function RecurrencePicker({
       </div>
     </>,
     document.body,
+  );
+}
+
+/** A full-width exclusive choice, n-up, at thumb size. */
+function Seg({ items, active, onPick }: { items: { key: string; label: string }[]; active: string; onPick: (k: string) => void }) {
+  return (
+    <div
+      className="grid gap-0.5 rounded-[var(--radius)] border border-line bg-surface-2 p-0.5"
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          aria-pressed={active === it.key}
+          onClick={() => onPick(it.key)}
+          className={`tap fast flex items-center justify-center rounded-[calc(var(--radius)-3px)] px-1 text-body font-medium ${
+            active === it.key ? "bg-accent text-on-accent" : "text-muted active:bg-accent-soft"
+          }`}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The phone face: the same presets and the same custom builder, as a bottom
+ * sheet. Rows are 44px, the Day/Week/Month/Year control is a full-width four-up
+ * of 44px targets (the popover's overflowed its own card), and the weekday strip
+ * is seven 44px circles where the popover's were 28px.
+ */
+function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps) {
+  const {
+    presets, anchorWeekday, anchorMonth, anchorDay,
+    custom, setCustom,
+    freq, setFreq, interval, setInterval, weekdays,
+    endMode, setEndMode, untilDate, setUntilDate, count, setCount,
+    dayRule, setDayRule, setpos, setSetpos,
+    buildCustom, toggleWeekday,
+  } = useRepeatDraft(anchorISO, current);
+
+  return (
+    <Sheet title="Repeat" onClose={onClose} contentClassName={SHEET_SCROLL}>
+      <div className="px-4 pb-6">
+        <div className="divide-y divide-line border-y border-line">
+          {presets.map((p) => {
+            const on = !custom && rulesEqual(p.rule, current);
+            return (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => onPick(p.rule)}
+                className="tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft"
+              >
+                <Dot on={on} />
+                <span className={`text-body text-ink ${on ? "font-medium" : ""}`}>{p.label}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setCustom((c) => !c)}
+            className="tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft"
+          >
+            <Dot on={custom} />
+            <span className={`text-body text-ink ${custom ? "font-medium" : ""}`}>Custom…</span>
+          </button>
+        </div>
+
+        {custom && (
+          <div className="mt-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-body text-muted">Every</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                value={interval}
+                onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
+                aria-label="Repeat every"
+                className="field mono w-16 text-center"
+              />
+              <div className="min-w-0 flex-1">
+                <Seg
+                  items={[
+                    { key: "daily", label: "Day" },
+                    { key: "weekly", label: "Week" },
+                    { key: "monthly", label: "Month" },
+                    { key: "yearly", label: "Year" },
+                  ]}
+                  active={freq}
+                  onPick={(k) => setFreq(k as RecurrenceFreq)}
+                />
+              </div>
+            </div>
+
+            {freq === "weekly" && (
+              <div className="grid grid-cols-7 gap-1" role="group" aria-label="Repeat on">
+                {WEEKDAY_LABELS.map((lbl, i) => {
+                  const on = weekdays.includes(i);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-pressed={on}
+                      // "Wed" read aloud is a fragment; the circle shows one letter.
+                      aria-label={new Date(2023, 0, 1 + i).toLocaleDateString([], { weekday: "long" })}
+                      onClick={() => toggleWeekday(i)}
+                      className={`tap fast grid aspect-square place-items-center rounded-full text-body font-semibold ${
+                        on ? "bg-accent text-on-accent" : "bg-surface-2 text-muted active:bg-accent-soft"
+                      }`}
+                    >
+                      {lbl[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {(freq === "monthly" || freq === "yearly") && (
+              <div className="space-y-2">
+                <Seg
+                  items={[
+                    { key: "date", label: freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}` },
+                    { key: "position", label: `On the ${SETPOS_SHORT[setpos] ?? setpos} ${WEEKDAY_LABELS[anchorWeekday]}` },
+                  ]}
+                  active={dayRule}
+                  onPick={(k) => setDayRule(k as "date" | "position")}
+                />
+                {dayRule === "position" && (
+                  <Seg
+                    items={SETPOS_VALUES.map((p) => ({ key: String(p), label: SETPOS_SHORT[p] }))}
+                    active={String(setpos)}
+                    onPick={(k) => setSetpos(Number(k))}
+                  />
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="section-label !p-0">Ends</div>
+              <Seg
+                items={[
+                  { key: "never", label: "Never" },
+                  { key: "on", label: "On date" },
+                  { key: "after", label: "After" },
+                ]}
+                active={endMode}
+                onPick={(k) => setEndMode(k as EndMode)}
+              />
+              {endMode === "on" && (
+                <input
+                  type="date"
+                  value={untilDate}
+                  min={anchorISO}
+                  onChange={(e) => setUntilDate(e.target.value)}
+                  aria-label="Ends on"
+                  className="field mono w-full"
+                />
+              )}
+              {endMode === "after" && (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={count}
+                    onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                    aria-label="Number of occurrences"
+                    className="field mono w-20 text-center"
+                  />
+                  <span className="text-body text-muted">occurrences</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-caption text-muted">{describeRule(buildCustom(), anchorISO)}</p>
+            <button
+              type="button"
+              onClick={() => onPick(buildCustom())}
+              className="tap fast w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent active:translate-y-px"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </Sheet>
   );
 }
 

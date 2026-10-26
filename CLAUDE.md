@@ -208,6 +208,22 @@ it needs to work on a phone.
   (`RecordContextMenu`), the phone by long-press *and* the record sheet's visible ⋯
   (`mobile/MobileRecordActions`). **Never build a second menu** — that copy is how Delete
   ended up desktop-only. A hidden gesture is never the only path to an act.
+- **The phone's detail sheets are one kit, and a task has ONE sheet** (D-162) —
+  `mobile/sheetKit.tsx`. The event, the task and the standing block are D-101's popover grammar in
+  a single column: **mast** (the name IS the hero, plus one muted line) → **strip** (Join ·
+  Going?, at most two acts) → sections → hairline **rows** (a chevron on anything that opens) → a
+  footer where the destructive act stands alone as text and goes `--signal` only when it asks.
+  Build the next one out of it, not a fourth stack. A tap on a task on the calendar opens
+  `MobileTaskSheet` (`MobileShell.openTap`) — **never a second, thinner sheet**. Choosing one of
+  many is `PickSheet` (never a chip per item, never a `FloatingMenu`), and Repeat is a bottom
+  sheet on a phone (`RecurrencePicker` branches on `useIsMobile`). The scroller is the Sheet's own
+  body — `contentClassName={SHEET_SCROLL}` — never a `max-h-[78vh]` guess that ignores the keyboard
+  and the home bar. **Three CSS traps that each cost a real bug here:** the unlayered `.tap`
+  (`min-height: 44px`) beats a `min-h-[48px]` utility; `.tap-icon` sets `position: relative` and
+  beats `absolute`; `.field`'s padding beats `pr-*` / `pl-*` — size those inline. Sheets flush their
+  fields on every way out (iOS never blurs a field when ✕ is tapped) and compare writes against
+  *what was last sent*, not the open-time snapshot. Verify at `?sheets=<state>`
+  (`mobile/SheetsHarness.tsx`, fourteen fixtures), then resize to 320.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
   *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses the **mobile Calendar** instead.

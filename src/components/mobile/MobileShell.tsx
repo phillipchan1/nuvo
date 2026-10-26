@@ -282,6 +282,13 @@ export default function MobileShell() {
   useMobileOverlayHistory(Boolean(capture), () => setCapture(null), "capture");
   useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
   useMobileOverlayHistory(Boolean(calendarTap), () => setCalendarTap(null), "event");
+  // A task on the calendar opens the SAME sheet a task opens anywhere (D-111,
+  // D-162) — it had its own thinner "Task block" sheet with an "Edit task" door
+  // into the real one. Events and standing blocks keep theirs.
+  const openTap = (tap: CalendarTap) => {
+    if (tap.kind === "block") setTaskId(tap.taskId);
+    else setCalendarTap(tap);
+  };
   useMobileOverlayHistory(settingsOpen, () => setSettingsOpen(false), "settings");
   useMobileOverlayHistory(upkeepOpen, () => setUpkeepOpen(false), "upkeep");
   useMobileOverlayHistory(searchOpen, () => setSearchOpen(false), "search");
@@ -663,7 +670,7 @@ export default function MobileShell() {
         {tab === "calendar" ? (
           <MobileCalendar
             now={now}
-            onTapEvent={setCalendarTap}
+            onTapEvent={openTap}
             onTapTask={(id) => setTaskId(id)}
             onTapEmpty={(start) =>
               setCapture({
@@ -894,13 +901,14 @@ export default function MobileShell() {
           mutations={mutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
+          onAskNuvo={openChat}
         />
       )}
       {calendarTap && (
         <MobileEventSheet
           tap={calendarTap}
-          task={calendarTap.kind === "block" ? (taskById.get(calendarTap.taskId) ?? null) : null}
           slotChildren={calendarTap.kind === "slot" ? slotChildTasks : undefined}
+          labels={labels}
           mutations={mutations}
           onClose={() => setCalendarTap(null)}
           onAskNuvo={openChat}

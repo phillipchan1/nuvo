@@ -46,6 +46,17 @@ describe("sheet scrolling — the background lock must not freeze the sheet", ()
   it("keeps every sheet's own scroller matching what the unlock keys on", () => {
     // A sheet body that carries `.mobile-scroll` but loses `overflow-y-auto`
     // would be frozen again with no test failing anywhere else.
+    //
+    // The phone's detail sheets (event, task, block, and every picker inside
+    // them) take their scroller from ONE constant in the shared kit rather than
+    // each spelling the classes out — so the constant is what is held to the
+    // contract, and a surface passes by using it.
+    const kit = readFileSync(join(root, "src/components/mobile/sheetKit.tsx"), "utf8");
+    const shared = kit.match(/export const SHEET_SCROLL = "([^"]*)"/)?.[1] ?? "";
+    expect(shared, "sheetKit must export SHEET_SCROLL").not.toBe("");
+    expect(shared).toContain("mobile-scroll");
+    expect(shared).toContain("overflow-y-auto");
+
     const surfaces = [
       "src/components/mobile/detail/MobileDetailSheet.tsx",
       "src/components/mobile/MobileTaskSheet.tsx",
@@ -55,7 +66,8 @@ describe("sheet scrolling — the background lock must not freeze the sheet", ()
     for (const rel of surfaces) {
       const src = readFileSync(join(root, rel), "utf8");
       const scrollers = src.match(/mobile-scroll[^"`]*/g) ?? [];
-      expect(scrollers.length, `${rel} has no .mobile-scroll scroller`).toBeGreaterThan(0);
+      const viaKit = /contentClassName=\{SHEET_SCROLL\}/.test(src);
+      expect(scrollers.length > 0 || viaKit, `${rel} has no .mobile-scroll scroller`).toBe(true);
       // Every vertical one must declare the class the unlock matches.
       for (const cls of scrollers) {
         if (!cls.includes("overflow-y-auto") && !cls.includes("overflow-x-auto")) {

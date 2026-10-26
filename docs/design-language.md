@@ -645,6 +645,15 @@ hand-roll a fifth stack of `border-t` sections.
   the tint, border and dot; the label stays `--ink`. They're ~3.3:1 on the light paper grounds
   — a legible *mark* (1.4.11 wants 3:1), illegible 11px *text*. This is why the control needs
   no per-skin exception.
+- **On a phone it is one column, from the same parts (D-162).** `mobile/sheetKit.tsx` renders the
+  mast / strip / sections / footer as a single scroll: the name is a borderless, auto-growing
+  field at `text-lead` weight 600 with ONE muted `mono` line under it (*Today · 2–3:30pm · ↻ Weekly
+  on Wed*); the Sheet's own title row says what KIND it is at rest and takes the name once the hero
+  scrolls away; "Going?" is `Yes · Maybe · No` at 44px with verdict tokens as marks; rows that open
+  something wear a chevron (Remind used to look like text beside a Repeat row that had one); an
+  act on the **footer** is text, and the destructive one swaps for Cancel / Delete **at the same
+  height**, so nothing under it jumps. Many-of-many is a Sheet (`PickSheet`), never a chip per item
+  and never a cursor-anchored menu.
 
 ---
 

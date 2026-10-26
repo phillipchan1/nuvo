@@ -115,6 +115,7 @@ export function ReminderList({
   source,
   enabled,
   block = false,
+  chevron = false,
   prefsMode = false,
   onChange,
 }: {
@@ -123,6 +124,9 @@ export function ReminderList({
   source: "override" | "default";
   enabled: boolean;
   block?: boolean;
+  /** A trailing ⌄ on the rows that open a wheel — the phone sheets' affordance,
+   *  so the row doesn't read as static text beside a Repeat row that has one. */
+  chevron?: boolean;
   /** Settings defaults: no "Default" option, empty = never. */
   prefsMode?: boolean;
   /** `default` deletes the override; a list writes it (`[]` = silence). */
@@ -193,12 +197,13 @@ export function ReminderList({
         <span className={`mono text-micro text-muted ${enabled ? "" : "opacity-60"}`}>{text}</span>
       )}
       {(silenced || defaultOff) ? (
-        <label className={`relative inline-flex cursor-pointer items-center ${block ? "w-full" : ""}`}>
+        <label className={`relative inline-flex cursor-pointer items-center ${block ? "min-h-[44px] w-full" : ""}`}>
           {block && (
             <span className={`text-body text-ink ${enabled ? "" : "opacity-60"}`}>
               {prefsMode ? "Never" : silenced ? "No reminder" : "Default (off)"}
             </span>
           )}
+          {block && chevron && <Icon name="chevron-down" size={14} className="pointer-events-none ml-auto shrink-0 text-muted/70" />}
           <select
             value={silenced || prefsMode ? OFF_VALUE : DEFAULT_VALUE}
             aria-label="Reminder"
@@ -226,6 +231,7 @@ export function ReminderList({
               <span className={`${block ? "text-body text-ink" : "mono text-micro text-muted"} ${enabled ? "" : "opacity-60"}`}>
                 {i === 0 && source === "default" ? `${describeLead(lead)} · default` : describeLead(lead)}
               </span>
+              {block && chevron && <Icon name="chevron-down" size={14} className="pointer-events-none ml-auto shrink-0 text-muted/70" />}
               <select
                 value={String(lead)}
                 aria-label={i === 0 ? "Reminder" : `Reminder ${i + 1}`}
@@ -300,10 +306,12 @@ export default function ReminderSelect({
   target,
   className = "",
   block = false,
+  chevron = false,
 }: {
   target: ReminderTargetRef;
   className?: string;
   block?: boolean;
+  chevron?: boolean;
 }) {
   const { leads, defaultLeads, source, enabled } = useReminderFor(target);
   const { setReminder, clearReminder } = useReminderMutations();
@@ -326,6 +334,7 @@ export default function ReminderSelect({
         source={source}
         enabled={enabled}
         block={block}
+        chevron={chevron}
         onChange={(next) => void onChange(next)}
       />
     </div>

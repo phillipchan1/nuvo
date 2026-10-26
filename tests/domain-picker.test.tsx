@@ -157,24 +157,26 @@ describe("loose-task surfaces wire DomainPicker; parented is a read", () => {
     expect(parented).toMatch(/project\.name/);
   });
 
-  it("MobileTaskSheet — picker on loose, inherited chain on parented", () => {
+  it("MobileTaskSheet — a Domain row on loose, inherited chain on parented", () => {
     const src = read("components/mobile/MobileTaskSheet.tsx");
-    expect(src, `${rel("components/mobile/MobileTaskSheet.tsx")} must import DomainPicker`).toMatch(
-      /import\s*\{\s*DomainPicker\s*\}\s*from\s*"\.\.\/floors\/parts"/,
-    );
 
-    expect(src, "loose branch must mount DomainPicker with allowClear").toMatch(
-      /<DomainPicker domains=\{vertical\.domains\} value=\{domain\?\.id \?\? ""\} onChange=\{setDomain\} size="lg" allowClear/,
-    );
+    // A phone never gets the cursor-anchored FloatingMenu (golden rule 3): the
+    // loose task's domain is a row that opens a bottom Sheet, with a "no domain".
+    expect(src, "must not mount the floating DomainPicker on a phone").not.toMatch(/<DomainPicker/);
+    expect(src).toMatch(/<PickSheet\s+title="Domain"/);
+    expect(src).toMatch(/noneLabel="No domain"/);
+    expect(src).toMatch(/onPick=\{setDomain\}/);
 
-    const parented = src.slice(src.indexOf("project || initiative"), src.indexOf("<DomainPicker"));
-    expect(parented, "parented branch must be a span, not a picker").toMatch(
-      /<span className="mono flex min-w-0 items-center gap-1 truncate text-muted"/,
-    );
-    expect(parented, "parented branch must not nest a DomainPicker").not.toMatch(/<DomainPicker/);
-    expect(parented).toMatch(/<DomainSymbol value=\{domain\?\.icon\}/);
-    expect(parented).toMatch(/initiative\.name/);
-    expect(parented).toMatch(/project\.name/);
+    // …and the row exists only when nothing parents the task (a project OR an
+    // initiative — either way the domain is inherited and a write would no-op).
+    expect(src).toMatch(/const parented = Boolean\(project \|\| initiative\)/);
+    expect(src).toMatch(/\{!parented && \(\s*<FactRow/);
+
+    const crumb = sliceBetween(src, "parented ? (", ") : undefined", "MobileTaskSheet crumb");
+    expect(crumb, "parented branch must not nest a picker").not.toMatch(/PickSheet|FactRow/);
+    expect(crumb).toMatch(/<DomainSymbol value=\{domain\?\.icon\}/);
+    expect(crumb).toMatch(/initiative\.name/);
+    expect(crumb).toMatch(/project\.name/);
   });
 
   it("P/I RecordModal still files through DomainPicker", () => {
