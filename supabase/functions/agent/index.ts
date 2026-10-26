@@ -22,6 +22,7 @@ import { buildTurnMessages } from "./turn.ts";
 import { readPromptVariant } from "./prompt.ts";
 import { buildTurnTrace, traceIsNoteworthy } from "./trace.ts";
 import { createChatClient, runAgentTurn, type ContentPart } from "./loop.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 // AGENT_MODEL overrides just the conversational agent (passive functions use OPENAI_MODEL).
 // Useful for picking a faster model for chat without changing enrichment quality.
@@ -54,6 +55,8 @@ function resolveTz(raw: unknown): string {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

@@ -9,11 +9,16 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
 # RESEND_FROM=Nuvo <noreply@localhost>
 # Optional. /api/cron/* compares this bearer in constant time.
 # CRON_SECRET=
+# AES-256-GCM token keyring (32-byte hex or base64). Never log these.
+# TOKEN_ENC_KEY_V1=
+# TOKEN_ENC_KEY_V2=
+# TOKEN_ENC_CURRENT=1
 # Same VAPID pair as Supabase — a new pair breaks every existing subscription.
 # VAPID_PUBLIC_KEY=
 # VAPID_PRIVATE_KEY=
 # VAPID_SUBJECT=mailto:support@nuvo.app
-# TOKEN_ENC_KEY_V1=
 # Google token refresh when a mirror access token has expired (PR B owns connect).
 # GOOGLE_CLIENT_ID=
 # GOOGLE_CLIENT_SECRET=
+# MAINTENANCE_WRITE_FREEZE=
+# CUTOVER_ARMED=

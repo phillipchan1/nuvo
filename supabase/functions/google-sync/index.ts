@@ -18,6 +18,7 @@ import {
   SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
   SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
 } from "../_shared/syncWindow.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const CHANNEL_RENEW_AHEAD_MS = 48 * 3600_000;
 // Poll catches up any calendar not synced within this window. Just under the
@@ -195,6 +196,8 @@ async function watchCalendar(account: GoogleAccount, cal: CalendarEntry): Promis
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   const { mode = "poll", accountId, calendarId } = await req.json().catch(() => ({}));
 

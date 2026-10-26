@@ -195,8 +195,9 @@ if (localOk.ok) {
 
 const health = await app.request("http://localhost/api/health");
 ok(health.status === 200, "GET /api/health is 200");
-const healthBody = await health.json() as { ok?: boolean; service?: string };
+const healthBody = await health.json() as { ok?: boolean; service?: string; write_freeze?: boolean };
 ok(healthBody.ok === true && healthBody.service === "nuvo", "health body names nuvo");
+ok(healthBody.write_freeze === false, "health write_freeze defaults off");
 ok(health.headers.get("x-content-type-options") === "nosniff", "health: cloned security headers");
 
 const cronDenied = await app.request("http://localhost/api/cron/push-dispatch", {

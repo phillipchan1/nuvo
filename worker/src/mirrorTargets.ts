@@ -6,7 +6,7 @@
  */
 import type { Sql } from "./db.ts";
 import type { Env } from "./env.ts";
-import { openToken } from "./lib/secrets.ts";
+import { openToken, parseTokenKeyring, TokenCryptoError } from "./secrets.ts";
 import {
   MIRROR_CALENDAR_DESCRIPTION,
   MIRROR_CALENDAR_NAME,
@@ -55,6 +55,28 @@ export interface MirrorDeps {
   sql: Sql;
   env: Env;
   fetchImpl?: FetchLike;
+}
+
+function asBytes(value: Uint8Array | ArrayBuffer | null | undefined): Uint8Array | null {
+  if (!value) return null;
+  return value instanceof Uint8Array ? value : new Uint8Array(value);
+}
+
+async function openAccountToken(env: Env, account: CalendarAccountRow): Promise<string | null> {
+  const enc = asBytes(account.refresh_token_enc);
+  const iv = asBytes(account.refresh_token_iv);
+  if (!enc || !iv || account.key_version == null) return null;
+  try {
+    const keyring = await parseTokenKeyring(env);
+    return await openToken(
+      { ciphertext: enc, iv, keyVersion: account.key_version },
+      { table: "calendar_accounts", rowId: account.id, userId: account.user_id },
+      keyring,
+    );
+  } catch (err) {
+    if (err instanceof TokenCryptoError) return null;
+    throw err;
+  }
 }
 
 async function logSync(
@@ -110,15 +132,7 @@ export async function resolveMirrorTarget(
   const i = icloud[0];
   if (!i) return null;
 
-  const password = await openToken(
-    deps.env.TOKEN_ENC_KEY_V1,
-    "calendar_accounts",
-    i.id,
-    userId,
-    i.refresh_token_enc,
-    i.refresh_token_iv,
-    i.key_version,
-  );
+  const password = await openAccountToken(deps.env, i);
   if (!password) return null;
 
   let calendarUrl = i.mirror_calendar_id;
@@ -144,15 +158,7 @@ async function googleAccessToken(deps: MirrorDeps, account: CalendarAccountRow):
     : 0;
   if (account.access_token && expiresAt > Date.now() + 60_000) return account.access_token;
 
-  const refresh = await openToken(
-    deps.env.TOKEN_ENC_KEY_V1,
-    "calendar_accounts",
-    account.id,
-    account.user_id,
-    account.refresh_token_enc,
-    account.refresh_token_iv,
-    account.key_version,
-  );
+  const refresh = await openAccountToken(deps.env, account);
   if (!refresh || !deps.env.GOOGLE_CLIENT_ID || !deps.env.GOOGLE_CLIENT_SECRET) return null;
 
   const fetchImpl = deps.fetchImpl ?? fetch;

@@ -6,6 +6,14 @@
 import { createAuthClient } from "better-auth/client";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { authBaseUrl } from "./backend";
+import { AUTH_SESSION_CHANGED } from "./entitlementRead";
+
+export { AUTH_SESSION_CHANGED };
+
+function emitAuthSessionChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_SESSION_CHANGED));
+}
 
 const SIGNED_BEARER_KEY = "nuvo.ba.signed-bearer";
 
@@ -23,6 +31,18 @@ function rememberSignedBearer(token: string) {
   } catch {
     /* private mode / SSR */
   }
+  emitAuthSessionChanged();
+}
+
+/** Drop the signed bearer on Better Auth sign-out so the next account
+ *  on this device cannot reuse it, and so the entitlement probe re-runs. */
+export function clearSignedBearer() {
+  try {
+    sessionStorage.removeItem(SIGNED_BEARER_KEY);
+  } catch {
+    /* private mode / SSR */
+  }
+  emitAuthSessionChanged();
 }
 
 /** Persist a signed `token.hmac` so a new tab can reuse get-session's JSON. */

@@ -4,6 +4,7 @@ import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import { GRAPH, type MsAccount, getMsAccessToken } from "../_shared/ms.ts";
 import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
@@ -91,6 +92,8 @@ async function syncAccount(account: MsAccount): Promise<void> {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   const { accountId } = await req.json().catch(() => ({}));
 

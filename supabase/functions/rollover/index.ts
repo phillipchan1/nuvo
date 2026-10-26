@@ -9,6 +9,7 @@
 // app open of a new day. Idempotent: a second run on the same day is a no-op.
 import { admin, handleOptions, json, logSync, readSecret, todayLA } from "../_shared/admin.ts";
 import { deleteMirror, resolveMirrorTarget, type MirrorTarget } from "../_shared/mirrorTargets.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 type MirrorRow = { id: string; user_id: string; google_event_id?: string | null };
 
@@ -48,6 +49,8 @@ async function teardownMirrors(rows: MirrorRow[]) {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const today = todayLA();

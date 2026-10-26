@@ -27,6 +27,20 @@ import {
 const DISPATCH_LAG_MS = 30_000;
 const WINDOW_MS = REMINDER_WINDOW_MS;
 
+let testFetch: FetchLike | undefined;
+
+/** Test-only: mock the web-push / Google / CalDAV endpoint. */
+export function installPushFetchForTests(fn?: FetchLike): () => void {
+  testFetch = fn;
+  return () => {
+    testFetch = undefined;
+  };
+}
+
+export function workerTestFetch(): FetchLike | undefined {
+  return testFetch;
+}
+
 export interface PushDispatchOpts {
   nowMs?: number;
   fetchImpl?: FetchLike;
@@ -172,7 +186,7 @@ export async function runPushDispatch(
     for (const reminder of due) {
       const won = await claim(sql, userId, reminder);
       if (!won) continue;
-      await push(sql, env, userId, subs, reminder, opts.fetchImpl);
+      await push(sql, env, userId, subs, reminder, opts.fetchImpl ?? testFetch);
       notified += 1;
     }
   }
