@@ -1,5 +1,8 @@
 # The cheap gate: typecheck, the conformance suite, and a parse of the edge
 # functions (which `tsc` can't see — they're Deno, with remote imports).
+# Never upload pg_dump, CSV, or row-data artifacts. scripts/guard-public-ci.mjs
+# fails the job if any workflow uploads anything other than
+# artifacts/cutover-report.md (counts + md5 only).
 #
 # Deliberately small (~1 min). The desktop release (release.yml) and iOS TestFlight
 # upload (ios-release.yml) run in parallel on every push to master — see
@@ -41,6 +44,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Public-repo artifact allowlist
+        run: node scripts/guard-public-ci.mjs
       - name: Typecheck (SPA)
         run: npm run typecheck
       - name: Conformance suite (app ↔ agent must agree)
