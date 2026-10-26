@@ -31,6 +31,29 @@ import {
   updateSettingsTheme,
   updateTaskTitle,
   upsertOwned,
+  deleteOwnedCalendarAccount,
+  getOwnedActivitySource,
+  getOwnedAppleIdentity,
+  getOwnedCalendarAccount,
+  getOwnedExternalEvent,
+  insertActivityBinding,
+  insertActivitySource,
+  insertActivityUnit,
+  insertCalendarAccount,
+  insertConnection,
+  insertExternalEvent,
+  insertInboundEmail,
+  insertPushSubscription,
+  listOwnedActivityBindings,
+  listOwnedActivitySources,
+  listOwnedActivityUnits,
+  listOwnedCalendarAccounts,
+  listOwnedConnections,
+  listOwnedExternalEvents,
+  listOwnedInboundEmails,
+  listOwnedPushSubscriptions,
+  listOwnedSyncLog,
+  upsertAppleIdentity,
   type PlannerTable,
 } from "./store.ts";
 
@@ -453,6 +476,117 @@ const reB = await bootstrapUser(makeStore(sql, "66666666-6666-6666-6666-66666666
 ok(reB.userId === B, "bootstrap: verified re-signup of B's email adopts B");
 ok((await getOwned(reB, "domains", DOMAIN_B)) != null, "bootstrap: adopted B session sees B's domain");
 ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B still cannot read A");
+
+const ACCT_A = "aaaaaaaa-eeee-4000-8000-000000000001";
+const ACCT_B = "bbbbbbbb-eeee-4000-8000-000000000001";
+const EVT_A = "aaaaaaaa-ffff-4000-8000-000000000001";
+const EVT_B = "bbbbbbbb-ffff-4000-8000-000000000001";
+const PUSH_B = "bbbbbbbb-0101-4000-8000-000000000001";
+const SRC_A = "aaaaaaaa-0202-4000-8000-000000000001";
+const SRC_B = "bbbbbbbb-0202-4000-8000-000000000001";
+const BIND_B = "bbbbbbbb-0303-4000-8000-000000000001";
+const UNIT_B = "bbbbbbbb-0404-4000-8000-000000000001";
+const CONN_B = "bbbbbbbb-0505-4000-8000-000000000001";
+
+ok(
+  (await listOwnedCalendarAccounts(storeA)).every((row) => row.user_id === A),
+  "list calendar_accounts: A only own",
+);
+ok((await getOwnedCalendarAccount(storeA, ACCT_B)) === null, "get calendar_accounts: A cannot read B");
+ok((await getOwnedCalendarAccount(storeA, ACCT_A))?.id === ACCT_A, "get calendar_accounts: A can read own");
+ok((await deleteOwnedCalendarAccount(storeA, ACCT_B)) === 0, "delete calendar_accounts: A cannot delete B");
+ok((await count("calendar_accounts", "id = $1", [ACCT_B])) === 1, "delete calendar_accounts: B row still present");
+const plantedAcct = await insertCalendarAccount(storeA, {
+  id: "cccccccc-eeee-4000-8000-000000000099",
+  provider: "ics",
+  email: "planted@example.test",
+});
+ok(plantedAcct?.user_id === A, "insert calendar_accounts: client cannot set B as owner");
+
+ok((await listOwnedExternalEvents(storeA)).every((row) => row.user_id === A), "list external_events: A only own");
+ok((await getOwnedExternalEvent(storeA, EVT_B)) === null, "get external_events: A cannot read B");
+ok(
+  (await insertExternalEvent(storeA, {
+    account_id: ACCT_B,
+    title: "steal",
+    start_at: "2026-10-26T19:00:00Z",
+    end_at: "2026-10-26T20:00:00Z",
+  })) === null,
+  "insert external_events: A cannot attach B account_id",
+);
+ok((await count("external_events", "user_id = $1", [B])) === 1, "insert external_events: B count unchanged");
+ok((await getOwnedExternalEvent(storeA, EVT_A))?.id === EVT_A, "get external_events: A can read own");
+
+ok(
+  (await listOwnedPushSubscriptions(storeA)).every((row) => row.user_id === A),
+  "list push_subscriptions: A only own",
+);
+ok(
+  !(await listOwnedPushSubscriptions(storeA)).some((row) => row.id === PUSH_B),
+  "list push_subscriptions: A cannot list B",
+);
+ok(
+  (await insertPushSubscription(storeA, {
+    endpoint: "https://push.example/a2",
+    p256dh: "x",
+    auth: "y",
+  }))?.user_id === A,
+  "insert push_subscriptions: row is A's",
+);
+
+ok((await getOwnedActivitySource(storeA, SRC_B)) === null, "get activity_sources: A cannot read B");
+ok((await listOwnedActivitySources(storeA)).every((row) => row.user_id === A), "list activity_sources: A only own");
+ok(
+  (await insertActivityBinding(storeA, {
+    source_id: SRC_B,
+    project_id: PROJECT_A,
+    selector: "steal/b",
+  })) === null,
+  "insert activity_bindings: A cannot attach B source",
+);
+ok(
+  (await insertActivityBinding(storeA, {
+    source_id: SRC_A,
+    project_id: PROJECT_B,
+    selector: "steal/a",
+  })) === null,
+  "insert activity_bindings: A cannot attach B project",
+);
+ok((await count("activity_bindings", "id = $1", [BIND_B])) === 1, "insert activity_bindings: B row still present");
+ok(
+  !(await listOwnedActivityBindings(storeA)).some((row) => row.id === BIND_B),
+  "list activity_bindings: A cannot list B",
+);
+ok(
+  (await insertActivityUnit(storeA, {
+    source_id: SRC_B,
+    external_id: "PR_STEAL",
+    title: "nope",
+    occurred_at: "2026-10-26T13:00:00Z",
+  })) === null,
+  "insert activity_units: A cannot attach B source",
+);
+ok(!(await listOwnedActivityUnits(storeA)).some((row) => row.id === UNIT_B), "list activity_units: A cannot list B");
+ok((await insertActivitySource(storeA, { login: "user-a-2" }))?.user_id === A, "insert activity_sources: row is A's");
+
+ok((await getOwnedAppleIdentity(storeA))?.user_id === A, "get apple_identities: A sees own");
+ok((await getOwnedAppleIdentity(storeA))?.apple_user_id === "apple-sub-a", "get apple_identities: A sub");
+ok((await getOwnedAppleIdentity(storeB))?.apple_user_id === "apple-sub-b", "get apple_identities: B sub");
+const plantedApple = await upsertAppleIdentity(storeA, { apple_user_id: "apple-sub-a-2", email: "take@example.test" });
+ok(plantedApple?.user_id === A, "upsert apple_identities: writes A's row only");
+ok(
+  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [B])) === "apple-sub-b",
+  "upsert apple_identities: B sub unchanged",
+);
+
+ok(!(await listOwnedConnections(storeA)).some((row) => row.id === CONN_B), "list connections: A cannot list B");
+ok((await insertConnection(storeA, { app: "x", name: "A2", token_hash: "hash-a2" }))?.user_id === A, "insert connections: row is A's");
+ok(
+  (await listOwnedInboundEmails(storeA)).every((row) => row.user_id === A),
+  "list inbound_emails: A only own",
+);
+ok((await insertInboundEmail(storeA, { email_id: "email-a-2" }))?.user_id === A, "insert inbound_emails: row is A's");
+ok((await listOwnedSyncLog(storeA)).every((row) => row.user_id === A), "list sync_log: A only own");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

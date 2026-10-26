@@ -151,6 +151,44 @@ describe("public-repo CI guard", () => {
     );
   });
 
+  it("flags Google refresh tokens (1//0...)", () => {
+    expect(logLooksLikeRowData("refresh 1//0gK1aBcDeFgHiJkLmNoPqRs")).toBe(true);
+    expect(() => assertSafeMigrateLog("1//0gK1aBcDeFgHiJkLmNoPqRs", "refresh")).toThrow(/row data/);
+  });
+
+  it("flags Google access tokens (ya29.)", () => {
+    expect(logLooksLikeRowData("access ya29.a0AfH6SMCexampletokenvalue")).toBe(true);
+  });
+
+  it("flags hex bytea (\\\\x...)", () => {
+    expect(logLooksLikeRowData("enc \\x1f8b080000000000")).toBe(true);
+  });
+
+  it("flags <Buffer ...>", () => {
+    expect(logLooksLikeRowData("iv <Buffer 1f 8b 08 00 00 00>")).toBe(true);
+  });
+
+  it("flags JWTs", () => {
+    expect(
+      logLooksLikeRowData(
+        "bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.sigpayload",
+      ),
+    ).toBe(true);
+  });
+
+  it("flags 40+ char hex and keeps dump sha256= lines safe", () => {
+    expect(logLooksLikeRowData("token " + "ab".repeat(20))).toBe(true);
+    expect(
+      logLooksLikeRowData(
+        "verified backup: 12 bytes sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (runner only, not uploaded)",
+      ),
+    ).toBe(false);
+  });
+
+  it("flags pg parameters: [ dumps", () => {
+    expect(logLooksLikeRowData("DETAIL:  parameters: [$1, $2]")).toBe(true);
+  });
+
   it("asserts teed cutover logs and fails on row data", () => {
     const dir = tmp();
     expect(assertCutoverLogDir(join(dir, "missing"))).toEqual([]);
@@ -203,6 +241,13 @@ describe("public-repo CI guard", () => {
     expect(doc).not.toMatch(/dump is uploaded/);
     expect(doc).toMatch(/never uploaded/);
     expect(doc).toMatch(/cutover-report\.md/);
+    expect(doc).toMatch(/freeze\.sql/);
+    expect(doc).toMatch(/unfreeze\.sql/);
+    expect(doc).toMatch(/source-snapshot\.json/);
+    expect(doc).toMatch(/VITE_MAINTENANCE_URL/);
+    expect(doc).toMatch(/WRITE_FREEZE/);
+    expect(doc).toMatch(/sync_log/);
+    expect(doc).toMatch(/anti-join/);
   });
 
   it("commits the live prod function bodies outside supabase/migrations", () => {

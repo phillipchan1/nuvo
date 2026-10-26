@@ -34,6 +34,34 @@
   "observability": {
     "enabled": true
   },
+  // Workers Paid. UTC, matching today's pg_cron. Same `* * * * *` tick runs
+  // calendar-dispatch (Queue fan-out) and push-dispatch (501 until PR D).
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "5 7 * * *",
+      "5 8 * * *",
+      "15 9 * * *",
+      "20 9 * * *",
+      "0 10 * * 0",
+      "30 4 * * *",
+      "0 4 * * *"
+    ]
+  },
+  // Calendar-dispatch fan-out. Included Queue ops on Workers Paid; see
+  // worker/src/cronJobs.ts for the per-account projection.
+  "queues": {
+    "producers": [
+      { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
+    ],
+    "consumers": [
+      {
+        "queue": "nuvo-calendar-sync",
+        "max_batch_size": 10,
+        "max_retries": 3
+      }
+    ]
+  },
   // workers.dev only. No routes, no custom domain. Do not deploy without
   // `--env preview`. See docs/cloudflare-cutover.md.
   "env": {
@@ -47,6 +75,19 @@
         "RESEND_FROM": "Nuvo <noreply@localhost>",
         "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
         "ENVIRONMENT": "preview"
+      },
+      // Same Queue as top-level — preview does not inherit producers/consumers.
+      "queues": {
+        "producers": [
+          { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
+        ],
+        "consumers": [
+          {
+            "queue": "nuvo-calendar-sync",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
+        ]
       }
     }
   }

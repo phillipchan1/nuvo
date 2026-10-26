@@ -23,6 +23,7 @@ import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
+import { WRITE_FROZEN_MESSAGE } from "./maintenance.ts";
 import app from "./index.ts";
 
 const fails: string[] = [];
@@ -55,6 +56,16 @@ ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
 ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
 ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
+
+const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
+ok(/export function refuseFrozenWrite/.test(writeFreezeSrc), "writeFreeze: refuseFrozenWrite is the shared helper");
+ok(
+  /writeFreezeOn\(getEnv\("WRITE_FREEZE"\)\) \|\| writeFreezeOn\(getEnv\("MAINTENANCE_WRITE_FREEZE"\)\)/.test(writeFreezeSrc),
+  "writeFreeze: WRITE_FREEZE OR MAINTENANCE_WRITE_FREEZE, not ??",
+);
+ok(!/\buser_id\b/.test(writeFreezeSrc), "writeFreeze: no user_id — freeze is global, not an owner bypass");
+ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/stripe-webhook/index.ts"), "utf8")), "writeFreeze: stripe-webhook is not frozen");
+ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/apple-webhook/index.ts"), "utf8")), "writeFreeze: apple-webhook is not frozen");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
@@ -1051,6 +1062,79 @@ ok(patchEnt.status === 404, `B PATCH entitlement: HTTP ${patchEnt.status}`);
 const aEntAgain = await withTimeout(request("/api/entitlement", { headers: authHeaders(a.token) }), 8000, "A entitlement after B write");
 const aEntAgainBody = (await aEntAgain.json()) as { plan?: string };
 ok(aEntAgain.status === 200 && aEntAgainBody.plan === "active", "B write attempt did not change A's entitlement");
+
+const maint = await withTimeout(request("/api/maintenance"), 8000, "GET maintenance");
+ok(maint.status === 200, `GET /api/maintenance unauth: HTTP ${maint.status}`);
+const maintBody = (await maint.json()) as { write_freeze?: boolean; cutover_armed?: boolean };
+ok(maintBody.write_freeze === false, "maintenance default is off");
+ok(maintBody.cutover_armed === false, "maintenance default is not armed");
+
+const frozenFlag = await withTimeout(
+  app.request("http://localhost:8787/api/maintenance", {}, { ...env, MAINTENANCE_WRITE_FREEZE: "1" }),
+  8000,
+  "GET maintenance frozen",
+);
+ok(frozenFlag.status === 200, "maintenance on is still 200");
+const frozenBody = (await frozenFlag.json()) as { write_freeze?: boolean; message?: string };
+ok(frozenBody.write_freeze === true, "maintenance reports write_freeze");
+ok(frozenBody.message === WRITE_FROZEN_MESSAGE, "maintenance names the freeze");
+
+const healthFrozen = await withTimeout(
+  app.request("http://localhost:8787/api/health", {}, { ...env, MAINTENANCE_WRITE_FREEZE: "true" }),
+  8000,
+  "GET health frozen",
+);
+const healthBody = (await healthFrozen.json()) as { write_freeze?: boolean };
+ok(healthBody.write_freeze === true, "health includes write_freeze");
+
+const unauthFrozen = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/data/tasks",
+    { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ title: "x" }) },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "POST tasks unauth frozen",
+);
+ok(unauthFrozen.status === 401, "POST unauth while frozen is still 401 (no existence oracle)");
+
+const blockedTables = [
+  "calendar_accounts",
+  "external_events",
+  "push_subscriptions",
+  "activity_sources",
+  "activity_bindings",
+  "activity_units",
+  "apple_identities",
+  "sync_log",
+  "connections",
+  "inbound_emails",
+];
+for (const table of blockedTables) {
+  const get = await withTimeout(request(`/api/data/${table}`), 8000, `GET ${table}`);
+  ok(get.status === 404, `GET /api/data/${table}: HTTP ${get.status} (not on planner REST)`);
+  const post = await withTimeout(
+    request(`/api/data/${table}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "11111111-1111-1111-1111-111111111111" }),
+    }),
+    8000,
+    `POST ${table}`,
+  );
+  ok(post.status === 404, `POST /api/data/${table} with an id: HTTP ${post.status} (no existence oracle)`);
+}
+
+const cronFrozen = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/cron/calendar-dispatch",
+    { headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "cron frozen",
+);
+ok(cronFrozen.status === 503, `authorized cron while frozen: HTTP ${cronFrozen.status}`);
 
 restoreSubs();
 restore();

@@ -5,10 +5,18 @@ import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.t
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { handleCron, handleUserRollover } from "./cronJobs.ts";
-import { handleDay } from "./dayHttp.ts";
-import { CONNECT_TIMEOUT_MS, raceTimeout, type Sql } from "./db.ts";
+import {
+  consumeCalendarSyncBatch,
+  handleCron,
+  handleScheduled,
+  handleUserRollover,
+  runCronJob,
+  type CalendarSyncMessage,
+  type QueueBatch,
+} from "./cronJobs.ts";
+import { closeSql, CONNECT_TIMEOUT_MS, openSql, raceTimeout, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import type { RequestIo } from "./requestIo.ts";
 import type { AppEnv } from "./session.ts";
 import {
@@ -25,6 +33,7 @@ import {
   entitlementResponseBody,
   readEntitlement,
 } from "./entitlement.ts";
+import { handleDay } from "./dayHttp.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
@@ -103,8 +112,22 @@ app.get("/api/health", (c) =>
     ok: true,
     service: "nuvo",
     runtime: "cloudflare-workers",
+    write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
   }),
 );
+
+app.get("/api/maintenance", (c) =>
+  json(
+    {
+      write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
+      cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
+      message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
+    },
+    200,
+    OPEN_CORS,
+  ),
+);
+app.options("/api/maintenance", () => new Response("ok", { headers: OPEN_CORS }));
 
 async function sqlUnavailable(sql: Sql): Promise<boolean> {
   try {
@@ -191,6 +214,16 @@ async function requireSession(
   return { user, io };
 }
 
+async function requireWritableStore(c: Context<AppEnv>) {
+  const got = await requireStore(c);
+  if ("error" in got) return got;
+  if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
+    return {
+      error: json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS),
+    };
+  }
+  return got;
+}
 
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
@@ -254,7 +287,7 @@ app.get("/api/data/task_labels", async (c) => {
 });
 
 app.post("/api/data/task_labels", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ task_id?: string; label_id?: string }>(c);
   if (!body.task_id || !body.label_id) return json({ error: "task_id and label_id required" }, 400, OPEN_CORS);
@@ -265,7 +298,7 @@ app.post("/api/data/task_labels", async (c) => {
 });
 
 app.delete("/api/data/task_labels", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const taskId = c.req.query("task_id");
   const labelId = c.req.query("label_id");
@@ -277,29 +310,29 @@ app.delete("/api/data/task_labels", async (c) => {
 });
 
 app.get("/api/data/:table", async (c) => {
-  const got = await requireStore(c);
-  if ("error" in got) return got.error;
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
   const rows = await listOwned(got.store, table);
   return json({ data: rows }, 200, OPEN_CORS);
 });
 
 app.get("/api/data/:table/:id", async (c) => {
-  const got = await requireStore(c);
-  if ("error" in got) return got.error;
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
+  const got = await requireStore(c);
+  if ("error" in got) return got.error;
   const row = await getOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
 
 app.post("/api/data/:table", async (c) => {
-  const got = await requireStore(c);
-  if ("error" in got) return got.error;
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await upsertOwned(got.store, table as PlannerTable, body);
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
@@ -307,10 +340,10 @@ app.post("/api/data/:table", async (c) => {
 });
 
 app.patch("/api/data/:table/:id", async (c) => {
-  const got = await requireStore(c);
-  if ("error" in got) return got.error;
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
@@ -318,17 +351,17 @@ app.patch("/api/data/:table/:id", async (c) => {
 });
 
 app.delete("/api/data/:table/:id", async (c) => {
-  const got = await requireStore(c);
-  if ("error" in got) return got.error;
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
   const n = await deleteOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!n) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ deleted: n }, 200, OPEN_CORS);
 });
 
 app.post("/api/rpc/apply_patch", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ p_table?: string; p_match?: Record<string, unknown>; p_patch?: Record<string, unknown> }>(c);
   if (!body.p_table || !body.p_match || !body.p_patch) {
@@ -351,14 +384,14 @@ app.post("/api/rpc/contacts", async (c) => {
 });
 
 app.post("/api/rpc/rotate_inbound_token", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const token = await rotateInboundToken(got.store);
   return json({ data: token }, 200, OPEN_CORS);
 });
 
 app.post("/api/rpc/claim_reminder", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ reminder_key?: string; fire_at?: string }>(c);
   if (!body.reminder_key || !body.fire_at) {
@@ -368,18 +401,23 @@ app.post("/api/rpc/claim_reminder", async (c) => {
   return json({ data: ok }, ok ? 200 : 404, OPEN_CORS);
 });
 
+function refuseIfFrozen(c: Context<AppEnv>): Response | null {
+  if (!writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) return null;
+  return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
+}
+
 app.all("/api/cron/:job", (c) => handleCron(c));
-app.all("/api/agent", (c) => handleAgent(c));
-app.all("/api/mcp", (c) => handleMcp(c));
+app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/api/day", (c) => handleDay(c));
-app.all("/api/capture", (c) => handleCapture(c));
+app.all("/api/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/api/inbound-email", (c) => handleInboundEmail(c));
 app.all("/api/route-events", (c) => handleRouteEvents(c));
 
-app.all("/functions/v1/agent", (c) => handleAgent(c));
-app.all("/functions/v1/mcp", (c) => handleMcp(c));
+app.all("/functions/v1/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/functions/v1/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/functions/v1/day", (c) => handleDay(c));
-app.all("/functions/v1/capture", (c) => handleCapture(c));
+app.all("/functions/v1/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
 app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
 app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
@@ -404,5 +442,30 @@ async function fromAssets(c: { env: Env; req: { raw: Request; url: string } }): 
 
 app.all("/assets/*", (c) => fromAssets(c));
 app.all("*", (c) => fromAssets(c));
+
+async function scheduled(
+  event: { cron: string },
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): Promise<void> {
+  if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
+  let sql: Sql | null = null;
+  try {
+    try {
+      sql = openSql(env);
+    } catch {
+      sql = null;
+    }
+    await handleScheduled(event, env, (job) => runCronJob(job, env, sql));
+  } finally {
+    if (sql) ctx.waitUntil(closeSql(sql));
+  }
+}
+
+function queue(batch: QueueBatch<CalendarSyncMessage>): void {
+  consumeCalendarSyncBatch(batch);
+}
+
+Object.assign(app, { scheduled, queue });
 
 export default app;
