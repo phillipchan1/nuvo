@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
-import { clientConnection } from "./db.ts";
+import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
@@ -99,12 +99,17 @@ export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<v
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured");
   const { connectionString, ssl } = clientConnection(env, url);
-  const pool = new Pool({ connectionString, max: 1, ssl: ssl === "require" });
+  const pool = new Pool({
+    connectionString,
+    max: 1,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    ssl: ssl === "require",
+  });
   const auth = createAuth(env, pool);
   return {
     auth,
     close: async () => {
-      await pool.end();
+      await raceTimeout(pool.end(), CONNECT_TIMEOUT_MS).catch(() => undefined);
     },
   };
 }

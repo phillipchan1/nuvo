@@ -5,7 +5,28 @@ import { databaseUrl } from "./env.ts";
 
 export type Sql = postgres.Sql;
 
+/** Fail a hung TCP handshake instead of waiting for the Worker/OS timeout. */
+export const CONNECT_TIMEOUT_SECONDS = 5;
+export const CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_SECONDS * 1000;
+
 const PLACEHOLDER_HYPERDRIVE = "00000000000000000000000000000000";
+
+/** Reject when `promise` has not settled. Used by the DB-availability probe. */
+export function raceTimeout<T>(promise: PromiseLike<T>, ms: number, message = "connect timeout"): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 /** True when the Worker will use the Hyperdrive binding (not the preview placeholder). */
 export function usesHyperdrive(env: Pick<Env, "HYPERDRIVE">): boolean {
@@ -96,12 +117,16 @@ export function openSql(env: Env): Sql {
   return postgres(connectionString, {
     max: 1,
     prepare: false,
+    connect_timeout: CONNECT_TIMEOUT_SECONDS,
     ssl,
   });
 }
 
 export function closeSql(sql: Sql): Promise<void> {
-  return sql.end({ timeout: 5 });
+  return raceTimeout(sql.end({ timeout: CONNECT_TIMEOUT_SECONDS }), CONNECT_TIMEOUT_MS).then(
+    () => undefined,
+    () => undefined,
+  );
 }
 
 export function jsonParam(sql: Sql, value: unknown): ReturnType<Sql["json"]> {

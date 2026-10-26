@@ -19,7 +19,9 @@ import {
   type Driver,
   type QueryResult,
 } from "kysely";
+import { createServer, type Socket } from "node:net";
 import { createAuth } from "./auth.ts";
+import { CONNECT_TIMEOUT_MS } from "./db.ts";
 import { isUnavailableText } from "./http.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
@@ -62,9 +64,15 @@ ok(
   /catch[\s\S]*sqlUnavailable\(io\.sql\)/.test(indexSrc),
   "auth outer catch probes SQL (Better Auth throws before sanitizeAuthResponse)",
 );
+ok(/raceTimeout\(Promise\.resolve\(sql`SELECT 1`\), CONNECT_TIMEOUT_MS\)/.test(indexSrc), "auth probe is time-limited");
+ok(/connect_timeout:\s*CONNECT_TIMEOUT_SECONDS/.test(dbSrc), "openSql sets postgres.js connect_timeout");
+ok(/connectionTimeoutMillis:\s*CONNECT_TIMEOUT_MS/.test(authSrc), "openAuth sets pg connectionTimeoutMillis");
 ok(isUnavailableText("disconnected: Connection refused"), "isUnavailableText: Hyperdrive disconnected + refused");
 ok(isUnavailableText("disconnected"), "isUnavailableText: disconnected alone");
 ok(isUnavailableText("connect ECONNREFUSED 127.0.0.1:5432"), "isUnavailableText: ECONNREFUSED");
+ok(isUnavailableText("write CONNECT_TIMEOUT"), "isUnavailableText: postgres.js CONNECT_TIMEOUT");
+ok(isUnavailableText("Connection terminated due to connection timeout"), "isUnavailableText: pg connection timeout");
+ok(isUnavailableText("timeout expired"), "isUnavailableText: pg timeout expired");
 ok(!isUnavailableText("internal error"), "isUnavailableText: generic 500 text is not unavailable");
 ok(!isUnavailableText("Failed to create verification"), "isUnavailableText: Better Auth 500 text is not unavailable");
 ok(!isUnavailableText("connection attempt failed"), "isUnavailableText: BA throw text is not classified (probe instead)");
@@ -721,6 +729,95 @@ for (const route of codeSendRoutes) {
   ok(!text.includes("127.0.0.1"), `${route.label} DB down: no host`);
   ok(!text.includes("connection attempt failed"), `${route.label} DB down: no connection text`);
   ok((res.headers.get("content-type") ?? "").includes("application/json"), `${route.label} DB down: JSON`);
+}
+
+const hangSql = (() => new Promise(() => {})) as unknown as typeof sql;
+const restoreHangProbe = installRequestIoForTests(() => {
+  opens++;
+  return {
+    sql: hangSql,
+    auth: {
+      api: { getSession: async () => null },
+      handler: async () => {
+        throw new Error("connection attempt failed");
+      },
+    } as unknown as ReturnType<typeof createAuth>,
+    close: async () => {
+      closes++;
+    },
+  };
+});
+const hangProbeStarted = Date.now();
+const hangProbe = await withTimeout(
+  request("/api/auth/email-otp/send-verification-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "hang@example.test", type: "sign-in" }),
+  }),
+  CONNECT_TIMEOUT_MS + 2000,
+  "OTP send hanging probe",
+);
+const hangProbeMs = Date.now() - hangProbeStarted;
+const hangProbeText = await hangProbe.text();
+ok(hangProbe.status === 503, `OTP send hanging probe: HTTP ${hangProbe.status} (not hung)`);
+ok(hangProbeText.includes("service unavailable"), "OTP send hanging probe: generic unavailable");
+ok(hangProbeMs < CONNECT_TIMEOUT_MS + 1500, `OTP send hanging probe: 503 in ${hangProbeMs}ms (limit ${CONNECT_TIMEOUT_MS}ms)`);
+restoreHangProbe();
+
+async function hangingPostgres(): Promise<{ url: string; close: () => Promise<void> }> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("hanging server: no port");
+  return {
+    url: `postgresql://postgres:postgres@127.0.0.1:${addr.port}/nuvo`,
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    },
+  };
+}
+
+const hang = await hangingPostgres();
+try {
+  const hangLimit = CONNECT_TIMEOUT_MS * 2 + 6000;
+  const hangStarted = Date.now();
+  const hangRes = await withTimeout(
+    app.request(
+      "http://localhost:8787/api/auth/email-otp/send-verification-otp",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: origin },
+        body: JSON.stringify({ email: "hang@example.test", type: "sign-in" }),
+      },
+      {
+        DATABASE_URL: hang.url,
+        BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+        BETTER_AUTH_URL: env.BETTER_AUTH_URL,
+      },
+    ),
+    hangLimit + 2000,
+    "OTP send hanging DB",
+  );
+  const hangMs = Date.now() - hangStarted;
+  const hangText = await hangRes.text();
+  ok(hangRes.status === 503, `OTP send hanging DB: HTTP ${hangRes.status} (not hung)`);
+  ok(hangText.includes("service unavailable"), "OTP send hanging DB: generic unavailable");
+  ok(!hangText.includes("127.0.0.1"), "OTP send hanging DB: no host");
+  ok(!hangText.includes("connect timeout") && !hangText.includes("timeout expired"), "OTP send hanging DB: no driver leak");
+  ok((hangRes.headers.get("content-type") ?? "").includes("application/json"), "OTP send hanging DB: JSON");
+  ok(hangMs < hangLimit, `OTP send hanging DB: 503 in ${hangMs}ms (limit ${hangLimit}ms)`);
+} finally {
+  await hang.close();
 }
 
 await kysely.destroy();

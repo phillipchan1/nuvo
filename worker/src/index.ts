@@ -4,7 +4,7 @@ import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Env } from "./env.ts";
-import type { Sql } from "./db.ts";
+import { CONNECT_TIMEOUT_MS, raceTimeout, type Sql } from "./db.ts";
 import {
   BadRequestError,
   isDatabaseUnavailable,
@@ -101,10 +101,10 @@ app.get("/api/health", (c) =>
 
 async function sqlUnavailable(sql: Sql): Promise<boolean> {
   try {
-    await sql`SELECT 1`;
+    await raceTimeout(Promise.resolve(sql`SELECT 1`), CONNECT_TIMEOUT_MS);
     return false;
   } catch {
-    // Probe failed — DB is unreachable. Do not classify by driver text.
+    // Probe failed or hung past CONNECT_TIMEOUT_MS. Do not classify by driver text.
     return true;
   }
 }

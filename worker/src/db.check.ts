@@ -6,7 +6,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import ConnectionParameters from "pg/lib/connection-parameters.js";
-import { clientConnection, clientSsl, postgresSsl, stripSslMode, usesHyperdrive } from "./db.ts";
+import {
+  clientConnection,
+  clientSsl,
+  CONNECT_TIMEOUT_MS,
+  CONNECT_TIMEOUT_SECONDS,
+  postgresSsl,
+  raceTimeout,
+  stripSslMode,
+  usesHyperdrive,
+} from "./db.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 
 const fails: string[] = [];
@@ -116,9 +125,22 @@ ok(!/includes\("hyperdrive"\)/.test(src), "db.ts does not substring-match hyperd
 ok(!/WeakMap/.test(src), "db.ts does not cache Sql in a WeakMap");
 ok(/export function openSql/.test(src), "db.ts opens a fresh client per call");
 ok(/max:\s*1/.test(src), "db.ts caps postgres.js at 1 socket per request");
+ok(CONNECT_TIMEOUT_SECONDS === 5 && CONNECT_TIMEOUT_MS === 5000, "connect timeout is 5s");
+ok(/connect_timeout:\s*CONNECT_TIMEOUT_SECONDS/.test(src), "openSql sets postgres.js connect_timeout");
+ok(/export function raceTimeout/.test(src), "db.ts exports raceTimeout for the availability probe");
 const cutover = readFileSync(join(here, "../../docs/cloudflare-cutover.md"), "utf8");
 ok(/Hyperdrive/.test(cutover), "cutover docs name Hyperdrive as the production connection pool");
 ok(/two sockets per request/.test(cutover), "cutover docs state the per-request socket count");
+
+const hangStarted = Date.now();
+try {
+  await raceTimeout(new Promise(() => {}), 80, "connect timeout");
+  ok(false, "raceTimeout: hanging promise must reject");
+} catch (err) {
+  const elapsed = Date.now() - hangStarted;
+  ok(err instanceof Error && err.message === "connect timeout", "raceTimeout: connect timeout message");
+  ok(elapsed < 500, `raceTimeout: rejected in ${elapsed}ms (not hung)`);
+}
 
 const db = new PGlite();
 await db.exec("CREATE TABLE array_probe (id int, tags text[])");

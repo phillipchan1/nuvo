@@ -61,6 +61,7 @@ const UNAVAILABLE_CODES = new Set([
   "ETIMEDOUT",
   "ECONNRESET",
   "EAI_AGAIN",
+  "CONNECT_TIMEOUT",
   "57P01",
   "57P03",
   "08000",
@@ -99,7 +100,9 @@ export function isUnavailableText(text: string): boolean {
     // Hyperdrive / pg when origin is down: "disconnected: Connection refused"
     lower.includes("disconnected") ||
     lower.includes("connect timeout") ||
+    lower.includes("connection timeout") ||
     lower.includes("connect_timeout") ||
+    lower.includes("timeout expired") ||
     lower.includes("connection terminated") ||
     lower.includes("connection ended") ||
     lower.includes("connection_ended") ||
