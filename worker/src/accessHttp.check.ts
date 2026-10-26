@@ -188,6 +188,16 @@ function jsonHeaders(token: string): HeadersInit {
   return authHeaders(token, { "Content-Type": "application/json" });
 }
 
+/** Status + error/data shape only — never row contents. */
+function postIdLeakView(status: number, body: { error?: unknown; data?: { user_id?: string } }): string {
+  return JSON.stringify({
+    status,
+    error: body.error == null ? null : typeof body.error,
+    hasData: body.data != null,
+    user_id: body.data?.user_id ?? null,
+  });
+}
+
 const A_ROW: Record<PlannerTable, string> = {
   tasks: "c0a11e00-2222-4000-8000-000000000001",
   domains: "c0a11e00-0000-4000-8000-000000000001",
@@ -248,7 +258,7 @@ await db.query(
   [A_ROW.key_results, a.id, A_ROW.initiatives],
 );
 await db.query(
-  `INSERT INTO tasks (id, user_id, title, notes, status, project_id) VALUES ($1, $2, 'A secret task', 'private', 'inbox', $3)`,
+  `INSERT INTO tasks (id, user_id, title, notes, status, project_id, do_date, start_time) VALUES ($1, $2, 'A secret task', 'private', 'planned', $3, '2026-10-26', '2026-10-26T10:00:00Z')`,
   [A_ROW.tasks, a.id, A_ROW.projects],
 );
 await db.query(
@@ -584,8 +594,16 @@ for (const table of PLANNER_TABLES) {
     8000,
     `B POST ${table} with random id`,
   );
+  const foreignText = await foreign.text();
+  const randomText = await random.text();
+  const foreignBody = JSON.parse(foreignText || "{}") as { error?: unknown; data?: { id?: string; user_id?: string } };
+  const randomBody = JSON.parse(randomText || "{}") as { error?: unknown; data?: { id?: string; user_id?: string } };
   ok(foreign.status === random.status, `B POST ${table} A's id vs random: ${foreign.status} vs ${random.status}`);
-  ok(foreign.status !== 200 || ((await foreign.json()) as { data?: { id?: string } }).data?.id !== A_ROW[table], `B POST ${table}: did not take A's id`);
+  ok(
+    postIdLeakView(foreign.status, foreignBody) === postIdLeakView(random.status, randomBody),
+    `B POST ${table}: A's id and random id same body`,
+  );
+  ok(foreignBody.data?.id !== A_ROW[table], `B POST ${table}: did not take A's id`);
   const stillA = table === "user_settings"
     ? await count("user_settings", "user_id = $1", [a.id])
     : await count(table, "id = $1 AND user_id = $2", [A_ROW[table], a.id]);
@@ -869,6 +887,54 @@ const cronOk = await withTimeout(
   "cron rollover",
 );
 ok(cronOk.status === 200, `cron rollover: HTTP ${cronOk.status}`);
+
+const A_OLD_TRASH = "c0a11e00-2222-4000-8000-0000000000a1";
+const A_NEW_TRASH = "c0a11e00-2222-4000-8000-0000000000a2";
+const B_OLD_TRASH = "c0a11e00-2222-4000-8000-0000000000b1";
+const B_NEW_TRASH = "c0a11e00-2222-4000-8000-0000000000b2";
+await db.query(
+  `INSERT INTO tasks (id, user_id, title, status, trashed_at, updated_at) VALUES
+    ($1, $2, 'A stale trash', 'trashed', now() - interval '40 days', now() - interval '40 days'),
+    ($3, $2, 'A recent trash', 'trashed', now() - interval '1 day', now() - interval '1 day'),
+    ($4, $5, 'B stale trash', 'trashed', now() - interval '40 days', now() - interval '40 days'),
+    ($6, $5, 'B recent trash', 'trashed', now() - interval '1 day', now() - interval '1 day')`,
+  [A_OLD_TRASH, a.id, A_NEW_TRASH, B_OLD_TRASH, b.id, B_NEW_TRASH],
+);
+const cronPurgeNo = await withTimeout(request("/api/cron/purge-trash", { method: "POST" }), 8000, "cron purge unauth");
+ok(cronPurgeNo.status === 401, `cron purge-trash unauth: HTTP ${cronPurgeNo.status}`);
+const cronPurge = await withTimeout(
+  request("/api/cron/purge-trash", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
+  8000,
+  "cron purge",
+);
+ok(cronPurge.status === 200, `cron purge-trash: HTTP ${cronPurge.status}`);
+ok((await count("tasks", "id = $1", [A_OLD_TRASH])) === 0, "cron purge: A's stale trash gone");
+ok((await count("tasks", "id = $1", [A_NEW_TRASH])) === 1, "cron purge: A's recent trash kept");
+ok((await count("tasks", "id = $1", [B_OLD_TRASH])) === 0, "cron purge: B's stale trash gone");
+ok((await count("tasks", "id = $1", [B_NEW_TRASH])) === 1, "cron purge: B's recent trash kept");
+ok((await count("tasks", "id = $1 AND user_id = $2", [A_ROW.tasks, a.id])) === 1, "cron purge: A's live task kept");
+
+await db.query(
+  `INSERT INTO reminder_deliveries (user_id, reminder_key, fire_at) VALUES
+    ($1, 'a-old', now() - interval '3 days'),
+    ($1, 'a-new', now() - interval '1 hour'),
+    ($2, 'b-old', now() - interval '3 days'),
+    ($2, 'b-new', now() - interval '1 hour')`,
+  [a.id, b.id],
+);
+const cronPruneNo = await withTimeout(request("/api/cron/reminder-deliveries-prune", { method: "POST" }), 8000, "cron prune unauth");
+ok(cronPruneNo.status === 401, `cron reminder-deliveries-prune unauth: HTTP ${cronPruneNo.status}`);
+const cronPrune = await withTimeout(
+  request("/api/cron/reminder-deliveries-prune", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
+  8000,
+  "cron prune",
+);
+ok(cronPrune.status === 200, `cron reminder-deliveries-prune: HTTP ${cronPrune.status}`);
+ok((await count("reminder_deliveries", "user_id = $1 AND reminder_key = $2", [a.id, "a-old"])) === 0, "cron prune: A's stale delivery gone");
+ok((await count("reminder_deliveries", "user_id = $1 AND reminder_key = $2", [a.id, "a-new"])) === 1, "cron prune: A's recent delivery kept");
+ok((await count("reminder_deliveries", "user_id = $1 AND reminder_key = $2", [b.id, "b-old"])) === 0, "cron prune: B's stale delivery gone");
+ok((await count("reminder_deliveries", "user_id = $1 AND reminder_key = $2", [b.id, "b-new"])) === 1, "cron prune: B's recent delivery kept");
+
 const cronPush = await withTimeout(
   request("/api/cron/push-dispatch", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
   8000,

@@ -15,6 +15,7 @@ import {
   zonedInstant,
 } from "../../supabase/functions/_shared/dayShape.ts";
 import { OPEN_CORS, json } from "./cors.ts";
+import { listDayScheduledTasks, listDaySlots } from "./store.ts";
 import { requireStore, type AppEnv } from "./session.ts";
 
 const DEFAULT_WORK_START = 480;
@@ -59,23 +60,8 @@ export async function handleDay(c: Context<AppEnv>): Promise<Response> {
         AND start_at < ${endISO}
         AND end_at > ${startISO}
     ` as Promise<Record<string, unknown>[]>,
-    store.sql`
-      SELECT id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count
-      FROM tasks
-      WHERE user_id = ${store.userId}
-        AND start_time IS NOT NULL
-        AND status IN ('planned', 'done')
-        AND start_time >= ${startISO}
-        AND start_time < ${endISO}
-    ` as Promise<Record<string, unknown>[]>,
-    store.sql`
-      SELECT id, title, do_date, start_time, duration_minutes, project_id, domain_id
-      FROM slots
-      WHERE user_id = ${store.userId}
-        AND start_time >= ${startISO}
-        AND start_time < ${endISO}
-      ORDER BY start_time
-    ` as Promise<Record<string, unknown>[]>,
+    listDayScheduledTasks(store, startISO, endISO),
+    listDaySlots(store, startISO, endISO),
     store.sql`
       SELECT work_start_minutes, work_end_minutes, hidden_calendar_ids, hidden_events
       FROM user_settings

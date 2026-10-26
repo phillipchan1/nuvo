@@ -60,8 +60,31 @@ const OWNED_FKS: Partial<Record<PlannerTable, { field: string; table: PlannerTab
     { field: "initiative_id", table: "initiatives" },
   ],
   event_domain_routing: [{ field: "domain_id", table: "domains" }],
-  reminders: [{ field: "target_id", table: "tasks" }],
 };
+
+function reminderTargetTable(kind: unknown): PlannerTable | null {
+  if (kind === "task") return "tasks";
+  if (kind === "slot") return "slots";
+  return null;
+}
+
+async function assertOwnedReminderTarget(
+  store: Store,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  const kind = typeof row.target_kind === "string" ? row.target_kind : undefined;
+  if (kind === "event") {
+    const value = row.target_id;
+    return value == null || value === "";
+  }
+  if (!("target_id" in row)) return kind == null || kind === "task" || kind === "slot";
+  const value = row.target_id;
+  if (value == null || value === "") return true;
+  if (typeof value !== "string") return false;
+  const parent = reminderTargetTable(kind ?? "task");
+  if (!parent) return false;
+  return (await getOwned(store, parent, value)) != null;
+}
 
 function optId(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -73,6 +96,7 @@ export async function assertOwnedFks(
   table: PlannerTable,
   row: Record<string, unknown>,
 ): Promise<boolean> {
+  if (table === "reminders") return assertOwnedReminderTarget(store, row);
   for (const { field, table: parent } of OWNED_FKS[table] ?? []) {
     if (!(field in row)) continue;
     const value = row[field];
@@ -118,6 +142,39 @@ export async function listOwned(
     case "user_settings":
       return sql`SELECT * FROM user_settings WHERE user_id = ${store.userId}`;
   }
+}
+
+export async function listDayScheduledTasks(
+  store: Store,
+  startISO: string,
+  endISO: string,
+): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count
+    FROM tasks
+    WHERE user_id = ${store.userId}
+      AND start_time IS NOT NULL
+      AND status IN ('planned', 'done')
+      AND start_time >= ${startISO}
+      AND start_time < ${endISO}
+  `;
+}
+
+export async function listDaySlots(
+  store: Store,
+  startISO: string,
+  endISO: string,
+): Promise<Record<string, unknown>[]> {
+  const sql = store.sql;
+  return sql`
+    SELECT id, title, do_date, start_time, duration_minutes, project_id, domain_id
+    FROM slots
+    WHERE user_id = ${store.userId}
+      AND start_time >= ${startISO}
+      AND start_time < ${endISO}
+    ORDER BY start_time
+  `;
 }
 
 export async function getOwned(
@@ -831,7 +888,13 @@ export async function updateReminder(
   id: string,
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
-  if (!(await assertOwnedFks(store, "reminders", patch))) return null;
+  const next = { ...patch };
+  if ("target_id" in next && !("target_kind" in next)) {
+    const existing = await getOwned(store, "reminders", id);
+    if (!existing) return null;
+    next.target_kind = existing.target_kind;
+  }
+  if (!(await assertOwnedFks(store, "reminders", next))) return null;
   const hasAnchor = typeof patch.anchor === "string";
   const hasTarget = "target_id" in patch;
   if (!hasAnchor && !hasTarget) return null;

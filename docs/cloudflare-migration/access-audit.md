@@ -103,7 +103,7 @@ Full table: [`route-inventory.md`](./route-inventory.md).
 | `POST /api/inbound-email` | Svix + `user_settings.inbound_token` | unknown token writes nothing; A's token writes A | same |
 | `POST /api/route-events` | Session; domains + routing owned | unauth 401 | same |
 | `POST /api/rollover` | Session user only | B does not roll A | same |
-| `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar/github 501 | unauth 401 | `accessHttp` + `miniflare.seq.check.ts` |
+| `ALL /api/cron/:job` | `CRON_SECRET`. Ported jobs iterate `users` then `user_id = $id`. Push/calendar/github 501 | unauth 401; purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `miniflare.seq.check.ts` |
 
 `subscriptions`, `stripe_*`, `apple_*`, calendar tokens, and push tables
 are **not** on this Worker.
@@ -119,7 +119,8 @@ deletes each clause in turn and expects `access.check.ts` to fail.
 | Function | Filter |
 |---|---|
 | `listOwned` / `getOwned` / `deleteOwned` | per-table `user_id = store.userId` (`user_settings` also requires path id = session) |
-| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids |
+| `listDayScheduledTasks` / `listDaySlots` | windowed `user_id = store.userId` (A's in-window `start_time` is seeded so dropping the filter fails) |
+| `insert*` / `upsertOwned` | `user_id` column set to `store.userId`; `assertOwnedFks` for parent ids (reminders: `target_id` is checked on the table that matches `target_kind`) |
 | `updateTaskTitle` / `updateDomainName` / `updateProject` / `updateTaskFks` | `WHERE id = $id AND user_id = store.userId` |
 | `updateSettingsTheme` / `rotateInboundToken` / `upsertSettings` | `WHERE user_id = store.userId` |
 | `listTaskLabels` / `insertTaskLabel` / `deleteTaskLabel` | task (and label, on insert) owned |

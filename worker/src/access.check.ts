@@ -18,6 +18,8 @@ import {
   insertProject,
   insertTask,
   insertTaskLabel,
+  listDayScheduledTasks,
+  listDaySlots,
   listOwned,
   listTaskLabels,
   makeStore,
@@ -93,6 +95,19 @@ const tasksB = await listOwned(storeB, "tasks");
 ok(tasksA.length === 1 && tasksA[0]?.id === TASK_A, "listOwned tasks: A sees only own");
 ok(!tasksA.some((t) => t.id === TASK_B), "listOwned tasks: A cannot list B");
 ok(tasksB.length === 1 && tasksB[0]?.id === TASK_B, "listOwned tasks: B sees only own");
+
+const DAY_START = "2026-10-25T00:00:00.000Z";
+const DAY_END = "2026-10-28T00:00:00.000Z";
+const SLOT_A = "aaaaaaaa-9999-4000-8000-000000000001";
+const dayTasksA = await listDayScheduledTasks(storeA, DAY_START, DAY_END);
+ok(dayTasksA.length === 1 && dayTasksA[0]?.id === TASK_A, "listDayScheduledTasks: A sees only own in-window task");
+ok(!dayTasksA.some((t) => t.id === TASK_B), "listDayScheduledTasks: A cannot see B");
+const dayTasksB = await listDayScheduledTasks(storeB, DAY_START, DAY_END);
+ok(dayTasksB.length === 1 && dayTasksB[0]?.id === TASK_B, "listDayScheduledTasks: B sees only own in-window task");
+ok(!dayTasksB.some((t) => t.id === TASK_A), "listDayScheduledTasks: B cannot see A");
+const daySlotsA = await listDaySlots(storeA, DAY_START, DAY_END);
+ok(daySlotsA.length === 1 && daySlotsA[0]?.id === SLOT_A, "listDaySlots: A sees only own");
+ok(!daySlotsA.some((s) => s.id === B_ROW.slots), "listDaySlots: A cannot see B");
 
 ok((await getOwned(storeA, "tasks", TASK_A))?.id === TASK_A, "getOwned: A can read own task");
 ok((await getOwned(storeA, "tasks", TASK_B)) === null, "getOwned: A asking for B task is null");
@@ -215,6 +230,26 @@ ok(
 ok(
   (await insertOwned(storeA, "event_domain_routing", { event_key: "evt-steal", domain_id: DOMAIN_B })) === null,
   "insertOwned routing: A cannot attach B domain_id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: SLOT_A })) != null,
+  "insertOwned reminder: A can target own slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: TASK_A })) === null,
+  "insertOwned reminder: slot kind rejects a task id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "task", target_id: SLOT_A })) === null,
+  "insertOwned reminder: task kind rejects a slot id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: B_ROW.slots })) === null,
+  "insertOwned reminder: A cannot target B slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "event", target_id: TASK_A })) === null,
+  "insertOwned reminder: event kind rejects target_id",
 );
 ok(
   (await upsertOwned(storeA, "event_domain_routing", { event_key: "evt-a", domain_id: DOMAIN_B })) === null,
