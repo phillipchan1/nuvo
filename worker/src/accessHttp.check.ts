@@ -21,6 +21,7 @@ import { createAuth } from "./auth.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
+import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import { WRITE_FROZEN_MESSAGE } from "./maintenance.ts";
@@ -125,6 +126,10 @@ const env = {
   CRON_SECRET: "access-http-cron-secret",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
+  TOKEN_ENC_KEY_V1: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),
+  GOOGLE_CLIENT_ID: "test-google-client",
+  GOOGLE_CLIENT_SECRET: "test-google-secret",
+  APP_URL: "http://localhost:5717",
 };
 
 const restore = installRequestIoForTests(() => {
@@ -1135,6 +1140,110 @@ const cronFrozen = await withTimeout(
   "cron frozen",
 );
 ok(cronFrozen.status === 503, `authorized cron while frozen: HTTP ${cronFrozen.status}`);
+
+const ACCOUNT_A = "c0a11e00-eeee-4000-8000-000000000001";
+const ACCOUNT_B = "c0b11e00-eeee-4000-8000-000000000001";
+const EVENT_A = "c0a11e00-ffff-4000-8000-000000000001";
+const UNKNOWN_EVENT = "c0c11e00-0000-4000-8000-00000000ffff";
+
+await db.query(
+  `INSERT INTO calendar_accounts (id, user_id, provider, email, access_token, access_token_expires_at, sync_direction, calendars, needs_reconnect)
+   VALUES ($1, $2, 'google', 'iso-a-cal@example.test', 'ya29.a', '2099-01-01T00:00:00Z', 'two_way',
+     '[{"id":"cal-a@group.calendar.google.com","summary":"A Cal","color":null,"visible":true,"channel_id":"ch-a","resource_id":"res-a"}]'::jsonb, false),
+          ($3, $4, 'google', 'iso-b-cal@example.test', 'ya29.b', '2099-01-01T00:00:00Z', 'two_way',
+     '[{"id":"cal-b@group.calendar.google.com","summary":"B Cal","color":null,"visible":true,"channel_id":"ch-b","resource_id":"res-b"}]'::jsonb, false)`,
+  [ACCOUNT_A, a.id, ACCOUNT_B, b.id],
+);
+await db.query(
+  `INSERT INTO external_events (id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, busy)
+   VALUES ($1, $2, $3, 'evt-a-http', 'cal-a@group.calendar.google.com', 'A private event', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z', false, true)`,
+  [EVENT_A, a.id, ACCOUNT_A],
+);
+
+const restoreFetch = installOutboundFetchForTests(async (input) => {
+  const url = String(input);
+  if (url.includes("oauth2.googleapis.com/token")) {
+    return new Response(JSON.stringify({ access_token: "ya29.refreshed", expires_in: 3600 }), { status: 200 });
+  }
+  if (url.includes("/calendars/") && url.includes("/events") && !url.includes("/watch")) {
+    return new Response(JSON.stringify({ items: [], nextSyncToken: "sync-1" }), { status: 200 });
+  }
+  if (url.includes("/events/watch") || url.includes("/channels/stop") || url.includes("people.googleapis.com")) {
+    return new Response(JSON.stringify({}), { status: 200 });
+  }
+  return new Response("not mocked", { status: 404 });
+});
+
+const unauthGoogle = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventId: EVENT_A, action: "delete" }),
+  }),
+  8000,
+  "anon google-events",
+);
+ok(unauthGoogle.status === 401, `unauthenticated google-events: HTTP ${unauthGoogle.status}`);
+
+const bDeleteAEvent = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ eventId: EVENT_A, action: "delete" }),
+  }),
+  8000,
+  "B delete A event",
+);
+const bDeleteUnknownEvent = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ eventId: UNKNOWN_EVENT, action: "delete" }),
+  }),
+  8000,
+  "B delete unknown event",
+);
+ok(bDeleteAEvent.status === 404, `B delete A's event: HTTP ${bDeleteAEvent.status}`);
+ok(
+  bDeleteAEvent.status === bDeleteUnknownEvent.status &&
+    (await bDeleteAEvent.text()) === (await bDeleteUnknownEvent.text()),
+  "B delete A vs unknown event: same body (no existence oracle)",
+);
+ok((await scalar<string>("SELECT title FROM external_events WHERE id = $1", [EVENT_A])) === "A private event", "B delete: A event unchanged");
+
+const bSyncAAccount = await withTimeout(
+  request("/functions/v1/google-sync", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ mode: "incremental", accountId: ACCOUNT_A }),
+  }),
+  8000,
+  "B sync A account",
+);
+ok(bSyncAAccount.status === 404, `B sync A's account: HTTP ${bSyncAAccount.status}`);
+
+const bCreateOnAAccount = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({
+      action: "create",
+      accountId: ACCOUNT_A,
+      title: "planted",
+      start_at: "2026-10-26T19:00:00Z",
+      end_at: "2026-10-26T20:00:00Z",
+    }),
+  }),
+  8000,
+  "B create on A account",
+);
+ok(
+  bCreateOnAAccount.status === 400 || denied(bCreateOnAAccount.status),
+  `B create on A's account: HTTP ${bCreateOnAAccount.status}`,
+);
+ok((await count("external_events", "user_id = $1 AND title = $2", [a.id, "planted"])) === 0, "B create: no row planted on A");
+
+restoreFetch();
 
 restoreSubs();
 restore();
