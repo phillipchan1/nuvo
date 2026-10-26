@@ -59,11 +59,27 @@ describe("cutover_copy helpers", () => {
 
   it("setvals the sync_log identity after resync and reserves past source max after restore", () => {
     const setval = py("from cutover_copy import sync_log_setval_sql; print(sync_log_setval_sql())");
-    expect(setval).toBe(
-      "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), GREATEST((SELECT max(id) FROM public.sync_log),1))",
-    );
+    expect(setval).toMatch(/GREATEST\(/);
+    expect(setval).toMatch(/SELECT max\(id\) FROM public\.sync_log/);
+    expect(setval).toMatch(/SELECT last_value FROM public\.sync_log_id_seq/);
+    expect(setval).not.toMatch(/GREATEST\(\(SELECT max\(id\) FROM public\.sync_log\), ?1\)\s*$/);
     const reserved = py("from cutover_copy import sync_log_reserve_sequence_sql, SYNC_LOG_SEQUENCE_MARGIN; print(sync_log_reserve_sequence_sql(6)); print(SYNC_LOG_SEQUENCE_MARGIN)");
     expect(reserved).toMatch(/^SELECT setval\(pg_get_serial_sequence\('public\.sync_log','id'\), 1000006\)\n1000000$/);
+    const txn = py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())");
+    expect(txn).toMatch(/^BEGIN;/);
+    expect(txn).toMatch(/LOCK TABLE public\.sync_log IN SHARE ROW EXCLUSIVE MODE/);
+    expect(txn).toMatch(/incoming row\(s\) differ on Neon/);
+    expect(txn).toMatch(/sync_log_setval=/);
+    expect(txn).toMatch(/COMMIT;/);
+    const begin = txn.indexOf("BEGIN;");
+    const insert = txn.indexOf("INSERT INTO public.sync_log");
+    const setvalAt = txn.indexOf("setval(");
+    const commit = txn.indexOf("COMMIT;");
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(insert).toBeGreaterThan(begin);
+    expect(setvalAt).toBeGreaterThan(insert);
+    expect(commit).toBeGreaterThan(setvalAt);
+    expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
@@ -202,6 +218,8 @@ describe("cutover-migrate.yml", () => {
     expect(WORKFLOW).toMatch(/push_subscriptions deleted on target \(anti-join\)/);
     expect(WORKFLOW).toMatch(/sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
+    expect(WORKFLOW).toMatch(/sync_log_resync_txn_sql/);
+    expect(WORKFLOW).not.toMatch(/psql\(target, sync_log_setval_sql/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
   });
 });
@@ -243,6 +261,8 @@ describe("runbook", () => {
     expect(DOC).toMatch(/late-committed/);
     expect(DOC).toMatch(/ON CONFLICT \(id\) DO UPDATE/);
     expect(DOC).toMatch(/setval/);
+    expect(DOC).toMatch(/last_value/);
+    expect(DOC).toMatch(/never decreases/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
   });

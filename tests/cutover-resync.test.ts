@@ -51,6 +51,32 @@ async function idsOf(db: PGlite): Promise<number[]> {
   return rows.map((r) => Number(r.id));
 }
 
+async function lastValue(db: PGlite): Promise<number> {
+  const sql = py("from cutover_copy import sync_log_last_value_sql; print(sync_log_last_value_sql())");
+  const { rows } = await db.query<{ last_value: string }>(sql);
+  return Number(rows[0]?.last_value);
+}
+
+async function loadSrc(target: PGlite, source: PGlite, ids: number[]): Promise<void> {
+  for (const id of ids) {
+    const row = await source.query<{
+      id: string;
+      user_id: string | null;
+      provider: string;
+      operation: string;
+      status: string;
+      error: string | null;
+      created_at: string;
+    }>("SELECT id, user_id, provider, operation, status, error, created_at FROM public.sync_log WHERE id = $1", [id]);
+    const r = row.rows[0];
+    await target.query(
+      `INSERT INTO cutover_sync_log_src (id, user_id, provider, operation, status, error, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [r.id, r.user_id, r.provider, r.operation, r.status, r.error, r.created_at],
+    );
+  }
+}
+
 describe("sync_log late commit", () => {
   it("id anti-join copies a row allocated before the snapshot and committed after it", async () => {
     const source = new PGlite();
@@ -170,23 +196,158 @@ describe("sync_log late commit", () => {
         [r.id, r.user_id, r.provider, r.operation, r.status, r.error, r.created_at],
       );
     }
-    const insertSql = py("from cutover_copy import sync_log_anti_join_insert_sql; print(sync_log_anti_join_insert_sql())");
-    const inserted = await target.query<{ count: string }>(insertSql);
-    expect(Number(inserted.rows[0]?.count)).toBe(3);
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
     const afterResync = await idsOf(target);
     expect(afterResync).toEqual([1, 2, 3, neonPreId]);
-
-    const setval = py("from cutover_copy import sync_log_setval_sql; print(sync_log_setval_sql())");
-    const parked = await target.query<{ setval: string }>(setval);
-    expect(Number(parked.rows[0]?.setval)).toBe(neonPreId);
+    expect(await lastValue(target)).toBeGreaterThanOrEqual(neonPreId);
 
     const post = await target.query<{ id: string }>(
       `INSERT INTO public.sync_log (provider, operation, status)
        VALUES ('neon', 'post-resync', 'ok') RETURNING id`,
     );
     const postId = Number(post.rows[0]?.id);
-    expect(postId).toBe(neonPreId + 1);
+    expect(postId).toBeGreaterThan(neonPreId);
     expect(await idsOf(target)).toEqual([1, 2, 3, neonPreId, postId]);
+
+    await source.close();
+    await target.close();
+  });
+
+  it("resync before any Neon write keeps the sequence at or above the park", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    for (const id of [1, 2, 3]) {
+      await source.query(
+        `INSERT INTO public.sync_log (id, provider, operation, status)
+         OVERRIDING SYSTEM VALUE VALUES ($1, 'google', 'sync', 'ok')`,
+        [id],
+      );
+    }
+    await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))"));
+    const park = await lastValue(target);
+    expect(park).toBe(1_000_003);
+
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await loadSrc(target, source, [1, 2, 3]);
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+
+    expect(await idsOf(target)).toEqual([1, 2, 3]);
+    expect(await lastValue(target)).toBeGreaterThanOrEqual(park);
+    const post = await target.query<{ id: string }>(
+      `INSERT INTO public.sync_log (provider, operation, status)
+       VALUES ('neon', 'after-park', 'ok') RETURNING id`,
+    );
+    expect(Number(post.rows[0]?.id)).toBeGreaterThan(park);
+
+    await source.close();
+    await target.close();
+  });
+
+  it("repeated resyncs never lower the sequence", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    for (const id of [1, 2, 3]) {
+      await source.query(
+        `INSERT INTO public.sync_log (id, provider, operation, status)
+         OVERRIDING SYSTEM VALUE VALUES ($1, 'google', 'sync', 'ok')`,
+        [id],
+      );
+    }
+    await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))"));
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await loadSrc(target, source, [1, 2, 3]);
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+    const afterFirst = await lastValue(target);
+    expect(afterFirst).toBeGreaterThanOrEqual(1_000_003);
+
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+    expect(await lastValue(target)).toBeGreaterThanOrEqual(afterFirst);
+
+    await source.close();
+    await target.close();
+  });
+
+  it("an in-flight Neon nextval is not undercut by resync setval", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    for (const id of [1, 2, 3]) {
+      await source.query(
+        `INSERT INTO public.sync_log (id, provider, operation, status)
+         OVERRIDING SYSTEM VALUE VALUES ($1, 'google', 'sync', 'ok')`,
+        [id],
+      );
+    }
+    await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))"));
+    const allocated = await target.query<{ n: string }>(
+      "SELECT nextval(pg_get_serial_sequence('public.sync_log','id'))::text AS n",
+    );
+    const inFlight = Number(allocated.rows[0]?.n);
+    expect(inFlight).toBeGreaterThan(1_000_003);
+    expect(await lastValue(target)).toBe(inFlight);
+
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await loadSrc(target, source, [1, 2, 3]);
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+
+    expect(await lastValue(target)).toBeGreaterThanOrEqual(inFlight);
+    const post = await target.query<{ id: string }>(
+      `INSERT INTO public.sync_log (provider, operation, status)
+       VALUES ('neon', 'after-inflight', 'ok') RETURNING id`,
+    );
+    expect(Number(post.rows[0]?.id)).toBeGreaterThan(inFlight);
+
+    await source.close();
+    await target.close();
+  });
+
+  it("aborts when an incoming id exists on Neon with different content", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status)
+       OVERRIDING SYSTEM VALUE VALUES (1, 'google', 'sync', 'ok')`,
+    );
+    await target.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status)
+       OVERRIDING SYSTEM VALUE VALUES (1, 'neon', 'other', 'err')`,
+    );
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await loadSrc(target, source, [1]);
+
+    const counted = await target.query<{ count: string }>(
+      py("from cutover_copy import sync_log_collision_count_sql; print(sync_log_collision_count_sql())"),
+    );
+    expect(Number(counted.rows[0]?.count)).toBe(1);
+
+    const guard = py("from cutover_copy import sync_log_collision_guard_sql; print(sync_log_collision_guard_sql())");
+    let message = "";
+    try {
+      await target.exec(guard + ";");
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toMatch(/sync_log id collision: 1 incoming row\(s\) differ on Neon/);
+    expect(message).not.toMatch(/google/);
+    expect(message).not.toMatch(/'neon'/);
+    try {
+      await target.exec("ROLLBACK;");
+    } catch {
+      /* autocommit RAISE */
+    }
+    expect(await idsOf(target)).toEqual([1]);
+    const stayed = await target.query<{ provider: string; operation: string }>(
+      "SELECT provider, operation FROM public.sync_log WHERE id = 1",
+    );
+    expect(stayed.rows[0]?.provider).toBe("neon");
+    expect(stayed.rows[0]?.operation).toBe("other");
 
     await source.close();
     await target.close();

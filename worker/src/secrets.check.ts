@@ -141,7 +141,10 @@ ok(/source-snapshot\.json/.test(workflow), "cutover-migrate.yml records a frozen
 ok(/subscriptions/.test(workflow) && /stripe_webhook_events/.test(workflow) && /apple_webhook_events/.test(workflow), "cutover-migrate.yml lists billing tables");
 ok(/require_cutover_armed/.test(workflow) && /MAINTENANCE_URL/.test(workflow), "cutover-migrate.yml refuses dump unless maintenance is armed");
 ok(/cmd_resync/.test(workflow) && /id anti-join/.test(workflow), "cutover-migrate.yml resyncs sync_log by missing id");
-ok(/sync_log_setval_sql/.test(workflow) && /GREATEST\(\(SELECT max\(id\) FROM public\.sync_log\),1\)/.test(copyPy), "cutover_copy.py setvals sync_log identity after resync");
+ok(/sync_log_resync_txn_sql/.test(workflow), "cutover-migrate.yml setvals sync_log in the anti-join transaction");
+ok(/last_value FROM/.test(copyPy) && /GREATEST\(/.test(copyPy), "cutover_copy.py setval is GREATEST(max(id), last_value, 1)");
+ok(/LOCK TABLE public\.sync_log/.test(copyPy), "cutover_copy.py locks sync_log for the resync transaction");
+ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");
 ok(/sync_log_reserve_sequence_sql/.test(workflow) && /SYNC_LOG_SEQUENCE_MARGIN/.test(copyPy), "cutover-migrate.yml reserves sync_log identity past source max after restore");
 ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(workflow), "cutover-migrate.yml deletes missing push rows before upsert");
 ok(/push_subscriptions upserted/.test(workflow), "cutover-migrate.yml upserts push_subscriptions");

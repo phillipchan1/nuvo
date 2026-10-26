@@ -209,8 +209,11 @@ def sync_log_load_sql() -> str:
     )
 
 
-def sync_log_anti_join_insert_sql() -> str:
+def sync_log_anti_join_insert_sql(*, labeled: bool = False) -> str:
     cols = ", ".join(SYNC_LOG_COLUMNS)
+    result = (
+        "'sync_log_inserted=' || CAST(COUNT(*) AS text)" if labeled else "COUNT(*)"
+    )
     return (
         "WITH ins AS (\n"
         f"  INSERT INTO public.sync_log ({cols})\n"
@@ -221,23 +224,38 @@ def sync_log_anti_join_insert_sql() -> str:
         "  ON CONFLICT (id) DO NOTHING\n"
         "  RETURNING 1\n"
         ")\n"
-        "SELECT COUNT(*) FROM ins"
+        f"SELECT {result} FROM ins"
     )
 
 
 # --exclude-table-data drops sequence data; OVERRIDING SYSTEM VALUE does
-# not advance the identity. After resync, park last_value at max(id).
-# After restore (empty table), park past source max + margin so a
-# pre-resync Neon insert cannot take a Supabase id and silently drop it
-# (ON CONFLICT DO NOTHING).
+# not advance the identity. After restore (empty table), park past source
+# max + margin so Neon ids stay above Supabase ids for the switch window.
+# Resync setval is monotonic: GREATEST(max(id), last_value, 1) never
+# lowers the park. Same transaction as the anti-join (table + sequence
+# locked) so an in-flight nextval cannot be undercut.
 SYNC_LOG_SEQUENCE_MARGIN = 1_000_000
+
+SYNC_LOG_SEQ = "pg_get_serial_sequence('public.sync_log','id')"
+SYNC_LOG_SEQ_NAME = "public.sync_log_id_seq"
+
+
+def sync_log_last_value_sql() -> str:
+    return f"SELECT last_value FROM {SYNC_LOG_SEQ_NAME}"
+
+
+def sync_log_setval_expr() -> str:
+    return (
+        f"setval({SYNC_LOG_SEQ}, "
+        "GREATEST("
+        "(SELECT max(id) FROM public.sync_log), "
+        f"(SELECT last_value FROM {SYNC_LOG_SEQ_NAME}), "
+        "1))"
+    )
 
 
 def sync_log_setval_sql() -> str:
-    return (
-        "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), "
-        "GREATEST((SELECT max(id) FROM public.sync_log),1))"
-    )
+    return "SELECT " + sync_log_setval_expr()
 
 
 def sync_log_reserve_sequence_sql(
@@ -248,10 +266,74 @@ def sync_log_reserve_sequence_sql(
     parked = max(int(source_max_id), 0) + int(margin)
     if parked < 1:
         parked = 1
+    return f"SELECT setval({SYNC_LOG_SEQ}, {parked})"
+
+
+def sync_log_collision_count_sql() -> str:
     return (
-        "SELECT setval(pg_get_serial_sequence('public.sync_log','id'), "
-        f"{parked})"
+        "SELECT COUNT(*) FROM cutover_sync_log_src s\n"
+        "JOIN public.sync_log t ON t.id = s.id\n"
+        "WHERE s.user_id IS DISTINCT FROM t.user_id\n"
+        "   OR s.provider IS DISTINCT FROM t.provider\n"
+        "   OR s.operation IS DISTINCT FROM t.operation\n"
+        "   OR s.status IS DISTINCT FROM t.status\n"
+        "   OR s.error IS DISTINCT FROM t.error\n"
+        "   OR s.created_at IS DISTINCT FROM t.created_at"
     )
+
+
+def sync_log_collision_guard_sql() -> str:
+    return (
+        "DO $cutover_sync_log_collision$\n"
+        "DECLARE n bigint;\n"
+        "BEGIN\n"
+        "  SELECT COUNT(*) INTO n FROM cutover_sync_log_src s\n"
+        "  JOIN public.sync_log t ON t.id = s.id\n"
+        "  WHERE s.user_id IS DISTINCT FROM t.user_id\n"
+        "     OR s.provider IS DISTINCT FROM t.provider\n"
+        "     OR s.operation IS DISTINCT FROM t.operation\n"
+        "     OR s.status IS DISTINCT FROM t.status\n"
+        "     OR s.error IS DISTINCT FROM t.error\n"
+        "     OR s.created_at IS DISTINCT FROM t.created_at;\n"
+        "  IF n > 0 THEN\n"
+        "    RAISE EXCEPTION 'sync_log id collision: % incoming row(s) differ on Neon', n;\n"
+        "  END IF;\n"
+        "END\n"
+        "$cutover_sync_log_collision$"
+    )
+
+
+def sync_log_lock_sql() -> str:
+    # SHARE ROW EXCLUSIVE waits for in-flight INSERTs and blocks new ones
+    # (INSERT takes ROW EXCLUSIVE). nextval is only reached through INSERT
+    # on this table. PGlite cannot LOCK a sequence relation.
+    return "LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE"
+
+
+def sync_log_resync_txn_sql() -> str:
+    """Lock, abort on content collision, anti-join insert, monotonic setval."""
+    return "\n".join(
+        [
+            "BEGIN;",
+            sync_log_lock_sql() + ";",
+            sync_log_collision_guard_sql() + ";",
+            sync_log_anti_join_insert_sql(labeled=True) + ";",
+            "SELECT 'sync_log_setval=' || CAST(" + sync_log_setval_expr() + " AS text);",
+            "COMMIT;",
+        ]
+    )
+
+
+def parse_labeled_count(text: str, key: str) -> int | None:
+    prefix = f"{key}="
+    for raw in (text or "").splitlines():
+        line = raw.strip().strip("'\"")
+        if line.startswith(prefix):
+            try:
+                return int(line[len(prefix) :])
+            except ValueError:
+                return None
+    return None
 
 
 def watermark_filter_ids(source_ids: list[int], watermark_id: int) -> list[int]:

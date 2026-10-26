@@ -241,21 +241,24 @@ and reviewed. Do **not** apply them from CI, the Worker, or
 parity proof. `sync_log` **structure** is dumped (`--exclude-table-data`);
 its rows stay out of snapshot/parity (billing webhooks insert via
 `logSync`). After the switch, `phase=resync` copies **every** source
-row whose `id` is missing on the target (`ON CONFLICT DO NOTHING`), then
-`setval`s the identity to `GREATEST(max(id), 1)` — `--exclude-table-data`
-drops sequence data and `OVERRIDING SYSTEM VALUE` does not advance it,
-so a later plain insert would otherwise hit `sync_log_pkey`. After
-restore (empty `sync_log`), the job `setval`s to source `max(id)` plus
-a 1e6 margin so a pre-resync Neon write cannot take a Supabase id and
-silently drop that row. A dump-time watermark (`max(id)`,
-`max(created_at)`) is reported only — a late-committed lower id must
-still land. `push_subscriptions` stays in the copy; resync **deletes
-missing ids first**, then upserts full source rows (`ON CONFLICT (id) DO UPDATE`
-all columns, counts only), so a row re-created with the same
-`(user_id, endpoint)` under a new id does not hit the UNIQUE
-constraint. Webhook deletes **and** `last_seen_at` / `failure_count`
-edits during the window land. If a billing-written table ever has to
-be copied *and* stay frozen, it needs the freeze too.
+row whose `id` is missing on the target. An incoming id that already
+exists on Neon with **different content** aborts (count only — no row
+data). Then, in the **same transaction** (table + sequence locked),
+`setval`s `GREATEST(max(id), last_value, 1)` so the parked identity
+never decreases — `--exclude-table-data` drops sequence data and
+`OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
+`sync_log`), the job `setval`s to source `max(id)` plus a 1e6 margin
+and keeps Neon ids in that parked range for the whole switch window,
+so they cannot overlap Supabase ids below the park. A dump-time
+watermark (`max(id)`, `max(created_at)`) is reported only — a
+late-committed lower id must still land. `push_subscriptions` stays in
+the copy; resync **deletes missing ids first**, then upserts full
+source rows (`ON CONFLICT (id) DO UPDATE` all columns, counts only),
+so a row re-created with the same `(user_id, endpoint)` under a new
+id does not hit the UNIQUE constraint. Webhook deletes **and**
+`last_seen_at` / `failure_count` edits during the window land. If a
+billing-written table ever has to be copied *and* stay frozen, it
+needs the freeze too.
 
 Grants are recorded from `aclexplode(relacl)`, including `PUBLIC`, and
 `unfreeze.sql` restores those exact ACL entries — no new direct grants
@@ -293,8 +296,10 @@ Order:
    snapshot and dies if either drifted (writes leaked, or the copy is short).
    Parity covers only the frozen tables (`sync_log` excluded).
 6. **First resync** — the same job copies every `sync_log` id missing
-   on Neon, `setval`s the identity to `GREATEST(max(id), 1)`, then
-   deletes missing `push_subscriptions` ids and upserts the rest.
+   on Neon (aborts on a content collision), `setval`s
+   `GREATEST(max(id), last_value, 1)` in that transaction so the park
+   never drops, then deletes missing `push_subscriptions` ids and
+   upserts the rest.
 7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
    `cutover-migrate` with `phase=resync` so post-switch billing
    inserts/updates/deletes land (id anti-join + setval + delete-then-upsert). Or
