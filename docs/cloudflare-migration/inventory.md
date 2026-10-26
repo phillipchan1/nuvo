@@ -204,6 +204,7 @@ External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Ca
 | `.github/workflows/release.yml` | Bakes `VITE_SUPABASE_*` |
 | `.github/workflows/ios-release.yml` | Same + signing secrets |
 | `.github/workflows/checks.yml` | No deploy; parses `supabase/functions` |
+| `.github/workflows/cutover-migrate.yml` | Manual `workflow_dispatch` only. Read-only Supabase dump → Neon scratch/target. Does not deploy. Temporary secrets are deleted after the run |
 
 No automated `supabase db push` or `functions deploy` in CI.
 

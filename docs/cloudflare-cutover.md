@@ -47,6 +47,38 @@ None of these belong in the Vite bundle.
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
 
+### Temporary migrate secrets (delete after the run)
+
+`.github/workflows/cutover-migrate.yml` is **manual `workflow_dispatch` only**. It
+never runs on push/PR, never deploys, and never writes Supabase. Source is
+PostgreSQL 17.6 (`nuvo`); the job installs `postgresql-client-17` and fails
+unless `pg_dump` / `pg_restore` match that major. The job uses the
+`nuvo-cutover` GitHub Environment (set required reviewers there). `mode=cutover`
+also requires the confirm input exactly `CUTOVER nuvo`.
+
+| Secret | Used when | Role |
+|---|---|---|
+| `SOURCE_DATABASE_URL` | always | Read-only Supabase URI. `PGOPTIONS=default_transaction_read_only=on`. Dump + `COPY … TO STDOUT` only |
+| `SCRATCH_DATABASE_URL` | `mode=dry-run` | Empty Neon branch the restore lands in |
+| `TARGET_DATABASE_URL` | `mode=cutover` | Neon URI. Hyperdrive is later; this job talks to Neon directly |
+
+Set them for the run, then **delete them**:
+
+```bash
+gh secret delete SOURCE_DATABASE_URL
+gh secret delete SCRATCH_DATABASE_URL
+gh secret delete TARGET_DATABASE_URL
+```
+
+Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
+redacted before it is printed. The custom-format dump is uploaded as a verified
+backup (`pg_restore --list`, size, sha256; hash is re-checked before restore).
+Auth CSVs stay on the runner and are not uploaded (PII). Per-table row counts
+and ordered md5 hashes must match on every public table or the job fails.
+
+Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
+webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
+
 Client build-time:
 
 | Name | Notes |
