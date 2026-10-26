@@ -21,6 +21,7 @@ import { createAuth } from "./auth.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
+import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import app from "./index.ts";
 
@@ -44,6 +45,8 @@ ok(!/c\.req\.query\(["']user_id["']\)/.test(indexSrc), "routes: no user_id query
 ok(!/c\.req\.header\(["'](?:x-user-id|user-id)["']\)/i.test(indexSrc), "routes: no client user-id header");
 ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
+ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
+ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
@@ -312,6 +315,10 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/api/rpc/contacts", body: { search: "secret" } },
   { method: "POST", path: "/api/rpc/rotate_inbound_token" },
   { method: "POST", path: "/api/rpc/claim_reminder", body: { reminder_key: A_ROW.reminders, fire_at: "2026-10-26T09:00:00Z" } },
+  { method: "GET", path: "/api/entitlement" },
+  { method: "POST", path: "/api/entitlement", body: { name: "no" } },
+  { method: "PATCH", path: "/api/entitlement", body: { name: "no" } },
+  { method: "DELETE", path: "/api/entitlement" },
 ];
 
 for (const route of unauth) {
@@ -519,6 +526,80 @@ ok(aOwn.status === 200, `A still reads own task: HTTP ${aOwn.status}`);
 const aOwnBody = (await aOwn.json()) as { data?: { title?: string } };
 ok(aOwnBody.data?.title === "A secret task", "A still reads own task title");
 
+const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
+  const rows: Record<string, SubscriptionColumns> = {
+    [a.id]: {
+      user_id: a.id,
+      status: "active",
+      trial_ends_at: "2026-08-01T00:00:00Z",
+      plan_source: "stripe",
+    },
+    [b.id]: {
+      user_id: b.id,
+      status: "trialing",
+      trial_ends_at: "2026-11-01T00:00:00Z",
+      plan_source: null,
+    },
+  };
+  return rows[userId] ?? null;
+});
+
+const aEnt = await withTimeout(request("/api/entitlement", { headers: authHeaders(a.token) }), 8000, "A entitlement");
+ok(aEnt.status === 200, `A entitlement: HTTP ${aEnt.status}`);
+const aEntBody = (await aEnt.json()) as { entitled?: boolean; plan?: string; plan_source?: string };
+ok(aEntBody.entitled === true && aEntBody.plan === "active", "A entitlement: own Stripe-active row");
+ok(aEntBody.plan_source === "stripe", "A entitlement: stripe source");
+
+const bEnt = await withTimeout(
+  request(`/api/entitlement?user_id=${a.id}`, { headers: authHeaders(b.token, { "X-User-Id": a.id }) }),
+  8000,
+  "B entitlement spoof",
+);
+ok(bEnt.status === 200, `B entitlement: HTTP ${bEnt.status}`);
+const bEntBody = (await bEnt.json()) as { entitled?: boolean; plan?: string; plan_source?: string | null };
+ok(bEntBody.plan === "trialing" && bEntBody.plan_source == null, "B entitlement: own trial, not A's paid row");
+ok(bEntBody.entitled === true, "B entitlement: live trial is entitled");
+
+const postExisting = await withTimeout(
+  request("/api/entitlement", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ user_id: a.id, entitled: true }),
+  }),
+  8000,
+  "B POST entitlement with A's id",
+);
+const postMissing = await withTimeout(
+  request("/api/entitlement", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ user_id: "00000000-0000-4000-8000-000000000099", entitled: true }),
+  }),
+  8000,
+  "B POST entitlement with unknown id",
+);
+ok(postExisting.status === 404, `B POST entitlement A's id: HTTP ${postExisting.status}`);
+ok(postMissing.status === 404, `B POST entitlement unknown id: HTTP ${postMissing.status}`);
+const postExistingText = await postExisting.text();
+const postMissingText = await postMissing.text();
+ok(postExistingText === postMissingText, "B POST entitlement: same body — no existence oracle");
+
+const patchEnt = await withTimeout(
+  request("/api/entitlement", {
+    method: "PATCH",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ user_id: a.id, status: "cancelled" }),
+  }),
+  8000,
+  "B PATCH entitlement",
+);
+ok(patchEnt.status === 404, `B PATCH entitlement: HTTP ${patchEnt.status}`);
+
+const aEntAgain = await withTimeout(request("/api/entitlement", { headers: authHeaders(a.token) }), 8000, "A entitlement after B write");
+const aEntAgainBody = (await aEntAgain.json()) as { plan?: string };
+ok(aEntAgain.status === 200 && aEntAgainBody.plan === "active", "B write attempt did not change A's entitlement");
+
+restoreSubs();
 restore();
 await kysely.destroy();
 await db.close();
