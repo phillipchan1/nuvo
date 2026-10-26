@@ -11,9 +11,10 @@ import { shiftGoogleDateResource, googleStartEnd, masterToAllDay, masterToTimed 
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
 import { isGoogleSeriesMaster } from "../_shared/google.ts";
-import { googleSeriesOrFilter, materializeGoogleResource } from "../_shared/googleSeries.ts";
+import { countGoogleInstancesBefore, googleSeriesOrFilter, materializeGoogleResource } from "../_shared/googleSeries.ts";
+import { planGoogleSplit } from "../_shared/googleSplit.ts";
 import { isUsableTimeZone, toIcalLocal } from "../_shared/icalTz.ts";
-import { shiftRRuleDays } from "../_shared/recurrence.ts";
+import { rruleCount, shiftRRuleDays } from "../_shared/recurrence.ts";
 
 /** Master series id: generated column, then raw, then the Google instance suffix. */
 function seriesMasterId(evt: {
@@ -122,7 +123,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
-    const { eventId, action, patch, scope = "THIS" } = body;
+    const { eventId, action, patch } = body;
+    let scope = (body.scope as string | undefined) ?? "THIS";
     // The client's IANA zone. Google REQUIRES a timeZone on a recurring event
     // ("Missing time zone definition") and expands BYDAY in it — without one a
     // weekly create failed outright, and converting a Nuvo-made event to
@@ -482,6 +484,75 @@ Deno.serve(async (req) => {
 
       await logSync("google", "event-rsvp", "ok", undefined, user.id);
       return json({ ok: true });
+    }
+
+    // ── This and following: end the series here, start a new one ─────────
+    // What Google's own UI does — there is no API verb for it. From the
+    // series' first occurrence nothing precedes it, so it is "all".
+    const followingMaster = scope === "FOLLOWING" ? seriesMasterId(evt) : undefined;
+    if (followingMaster && (action === "delete" || (!action && patch))) {
+      const cal = encodeURIComponent(evt.calendar_id);
+      const masterRes = await gFetch(account, `/calendars/${cal}/events/${encodeURIComponent(followingMaster)}`);
+      if (!masterRes.ok) throw new Error(`fetch master: ${masterRes.status} ${await masterRes.text()}`);
+      const master = await masterRes.json();
+      if (master.organizer && master.organizer.self !== true) {
+        const who = master.organizer.displayName || master.organizer.email || "the organizer";
+        return json({
+          error: `Only ${who} can change this and following events — change just this one, or all of them.`,
+        }, 400);
+      }
+      const instance = (evt.raw ?? {}) as Record<string, unknown>;
+      const current = { start_at: evt.start_at as string, end_at: evt.end_at as string };
+      const probe = planGoogleSplit(master, instance, current, null, { timeZone });
+      if (probe) {
+        const count = rruleCount(master.recurrence ?? []);
+        const remaining = count != null
+          ? count - await countGoogleInstancesBefore(account, evt.calendar_id, followingMaster, probe.originalStartISO)
+          : null;
+        const plan = planGoogleSplit(master, instance, current, action === "delete" ? null : patch, { timeZone, remaining });
+        if (!plan) throw new Error("couldn't split the series");
+
+        let created: Record<string, unknown> | null = null;
+        if (plan.tail) {
+          const createRes = await gFetch(
+            account,
+            `/calendars/${cal}/events?sendUpdates=none${plan.tail.conferenceData ? "&conferenceDataVersion=1" : ""}`,
+            { method: "POST", body: JSON.stringify(plan.tail) },
+          );
+          if (!createRes.ok) throw new Error(`create following: ${createRes.status} ${await createRes.text()}`);
+          created = await createRes.json();
+        }
+        const headRes = await gFetch(account, `/calendars/${cal}/events/${encodeURIComponent(followingMaster)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ recurrence: plan.headRecurrence }),
+        });
+        if (!headRes.ok) {
+          // Take the new half back down rather than leave the following weeks twice.
+          if (created?.id) {
+            await gFetch(account, `/calendars/${cal}/events/${encodeURIComponent(String(created.id))}?sendUpdates=none`, {
+              method: "DELETE",
+            }).catch(() => {});
+          }
+          throw new Error(`end series: ${headRes.status} ${await headRes.text()}`);
+        }
+        const head = await headRes.json().catch(() => null);
+
+        // New series first, keeping the open row; then the old one, whose
+        // sweep takes the occurrences it no longer has.
+        let event = null;
+        if (created) {
+          const startDelta = patch?.start_at ? Date.parse(patch.start_at) - Date.parse(evt.start_at) : 0;
+          event = await materializeGoogleResource(account, evt.calendar_id, created, {
+            rowId: eventId,
+            anchorMs: Date.parse(plan.originalStartISO) + startDelta,
+          });
+        }
+        if (head) await materializeGoogleResource(account, evt.calendar_id, head);
+        await kickGoogleSync(account, evt.calendar_id, user.id, "event-following-sync");
+        await logSync("google", action === "delete" ? "event-delete-following" : "event-writeback-following", "ok", undefined, user.id);
+        return json({ ok: true, event });
+      }
+      scope = "ALL";
     }
 
     // ── Delete / cancel: remove from Google + local mirror ───────────────

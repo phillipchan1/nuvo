@@ -6,7 +6,7 @@
 // google.ts says must never be stored (an incremental sync never removes it).
 // That painted the first occurrence twice, and when it replaced the open row a
 // THIS edit hit the whole series.
-import { type GoogleAccount, fetchGoogleSeriesInstances, isGoogleSeriesMaster, mapGoogleEvent } from "./google.ts";
+import { type GoogleAccount, fetchGoogleSeriesInstances, gFetch, isGoogleSeriesMaster, mapGoogleEvent } from "./google.ts";
 import type { EventRow } from "./eventSync.ts";
 import { writeSeriesRows } from "./seriesRows.ts";
 import { syncWindow } from "./syncWindow.ts";
@@ -44,4 +44,32 @@ export async function materializeGoogleResource(
     rows,
     keep,
   );
+}
+
+/** How many instances series `masterId` generates before `beforeISO`,
+ *  cancelled ones included (COUNT counts them) — for splitting a COUNT series. */
+export async function countGoogleInstancesBefore(
+  account: GoogleAccount,
+  calendarId: string,
+  masterId: string,
+  beforeISO: string,
+): Promise<number> {
+  let n = 0;
+  let pageToken: string | null = null;
+  do {
+    const params = new URLSearchParams({ timeMax: beforeISO, showDeleted: "true", maxResults: "2500" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await gFetch(
+      account,
+      `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(masterId)}/instances?${params}`,
+    );
+    if (!res.ok) throw new Error(`instances ${masterId}: ${res.status} ${await res.text()}`);
+    const body = await res.json();
+    for (const inst of body.items ?? []) {
+      const orig = inst.originalStartTime?.dateTime ?? inst.originalStartTime?.date;
+      if (orig && Date.parse(orig.length === 10 ? `${orig}T00:00:00Z` : orig) < Date.parse(beforeISO)) n++;
+    }
+    pageToken = body.nextPageToken ?? null;
+  } while (pageToken);
+  return n;
 }

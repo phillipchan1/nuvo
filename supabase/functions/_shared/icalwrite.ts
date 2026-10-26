@@ -9,7 +9,7 @@
 // that is what a CalDAV server and ical.js match an override against.
 // Recurrence edits follow the same THIS/ALL model the Google write-back uses.
 import { buildVtimezone, isUsableTimeZone, localIcalToMs, toIcalLocal } from "./icalTz.ts";
-import { shiftRRuleDays } from "./recurrence.ts";
+import { capRRule, recountRRule, rruleCount, shiftRRuleDays } from "./recurrence.ts";
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -495,6 +495,120 @@ export function cloneAsOverride(ics: string, occurrence: string): string {
   if (de) ve = setDateTimeProp(ve, "DTEND", endISO, allDay, allDay ? null : zone);
   ve = ve.replace(/^(UID:.*)$/im, `$1\r\nRECURRENCE-ID${ref.params}:${ref.value}`);
   return header + [...events, ve].join("\r\n") + footer;
+}
+
+/** `YYYYMMDD[THHMMSS]` (no zone) for a UTC-epoch instant's fields. */
+function stampOf(ms: number, dateOnly: boolean): string {
+  const d = new Date(ms);
+  const date = `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
+  return dateOnly ? date : `${date}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+}
+
+/** The ORGANIZER of a series, when it is somebody other than `ownEmail`.
+ *  Splitting someone else's meeting would make the user organizer of a copy. */
+export function foreignOrganizer(ics: string, ownEmail: string): string | null {
+  const { events } = splitEvents(ics);
+  const master = events.find(isMaster);
+  const m = master?.match(/^ORGANIZER[;:].*?mailto:([^;:\s]+)/im);
+  if (!m) return null;
+  return m[1].trim().toLowerCase() === ownEmail.trim().toLowerCase() ? null : m[1].trim();
+}
+
+/** The RRULE's COUNT, so the caller can count what the old series keeps. */
+export function seriesCount(ics: string): number | null {
+  const { events } = splitEvents(ics);
+  const master = events.find(isMaster);
+  return master ? rruleCount(master.match(/^RRULE:.*$/gim) ?? []) : null;
+}
+
+/**
+ * "This and following": cut a series in two at `occurrence` (the row's
+ * RECURRENCE-ID suffix or an ISO instant).
+ *
+ *   head — the original resource, its rule ended just before the occurrence,
+ *          its overrides from the occurrence on dropped (they move to the tail);
+ *   tail — a new resource (`newUid`) whose first occurrence IS that one: same
+ *          rule (a COUNT carries only what the head didn't use), same zone,
+ *          same fields, the later overrides re-homed under the new UID.
+ *
+ * The caller then edits the tail as a whole series (shiftMaster / patchMaster),
+ * exactly as an ALL edit edits a series. Returns null when the occurrence is
+ * the series' first — "this and following" from the start IS "all".
+ * `countBefore` is required when the rule has a COUNT: how many occurrences
+ * the rule generates before the split (EXDATEd ones included, per RFC 5545).
+ */
+export function splitSeries(
+  ics: string,
+  occurrence: string,
+  opts: { newUid: string; countBefore?: number },
+): { head: string; tail: string; occurrenceISO: string } | null {
+  const { header, events, footer } = splitEvents(ics);
+  const master = events.find(isMaster);
+  if (!master || !/^RRULE:/im.test(master)) return null;
+  const ds = readProp(master, "DTSTART");
+  if (!ds) return null;
+  const ref = occurrenceRef(master, occurrence);
+  if (ref.ms <= propToMs(ds.params, ds.value)) return null;
+
+  const allDay = /VALUE=DATE(?!-)/i.test(ds.params);
+  const floating = !allDay && !tzidOf(ds.params) && !/Z$/i.test(ds.value);
+  // UNTIL is inclusive, so end one tick before the split: the day before for a
+  // DATE series, one second before otherwise — in UTC unless DTSTART floats.
+  const until = allDay
+    ? stampOf(icalToDate(ref.value).getTime() - 86_400_000, true)
+    : floating
+    ? stampOf(icalToDate(ref.value).getTime() - 1000, false)
+    : toIcalUtc(new Date(ref.ms - 1000).toISOString());
+
+  const startsAtOrAfter = (ve: string) => {
+    const rid = readProp(ve, "RECURRENCE-ID");
+    return Boolean(rid) && propToMs(rid!.params, rid!.value) >= ref.ms;
+  };
+  const rules = (ve: string) => ve.match(/^RRULE:.*$/gim) ?? [];
+  const swapRules = (ve: string, next: string[]) => {
+    const lines = rules(ve);
+    let i = 0;
+    return ve.replace(/^RRULE:.*$/gim, () => next[i++] ?? lines[i - 1]);
+  };
+
+  // ── head ──
+  const headMaster = swapRules(master, capRRule(rules(master), until));
+  const headEvents = events.filter((ve) => !isMaster(ve) && !startsAtOrAfter(ve));
+  const head = header + [headMaster, ...headEvents].join("\r\n") + footer;
+
+  // ── tail ──
+  const reUid = (ve: string) => ve.replace(/^UID:.*$/im, `UID:${opts.newUid}`);
+  let tailMaster = reUid(master);
+  const count = rruleCount(rules(master));
+  if (count != null) {
+    tailMaster = swapRules(tailMaster, recountRRule(rules(master), count - (opts.countBefore ?? 0)));
+  }
+  // Re-base the series on the occurrence, in the master's own form.
+  const de = readProp(master, "DTEND");
+  const durMs = de ? propToMs(de.params, de.value) - propToMs(ds.params, ds.value) : 0;
+  tailMaster = tailMaster.replace(/^DTSTART(;[^:\r\n]*)?:.*$/im, `DTSTART${ref.params}:${ref.value}`);
+  if (de) {
+    const zone = masterZone(master);
+    const endValue = allDay
+      ? stampOf(icalToDate(ref.value).getTime() + durMs, true)
+      : zone
+      ? toIcalLocal(new Date(ref.ms + durMs).toISOString(), zone)
+      : floating
+      ? stampOf(icalToDate(ref.value).getTime() + durMs, false)
+      : toIcalUtc(new Date(ref.ms + durMs).toISOString());
+    tailMaster = tailMaster.replace(/^DTEND(;[^:\r\n]*)?:.*$/im, `DTEND${de.params}:${endValue}`);
+  }
+  const tailOverrides = events.filter((ve) => !isMaster(ve) && startsAtOrAfter(ve)).map(reUid);
+  const tail = header + [tailMaster, ...tailOverrides].join("\r\n") + footer;
+
+  return { head, tail, occurrenceISO: new Date(ref.ms).toISOString() };
+}
+
+/** Drop every per-occurrence override — a series whose RULE changed has no
+ *  stable occurrence ids for them to hang on. */
+export function withoutOverrides(ics: string): string {
+  const { header, events, footer } = splitEvents(ics);
+  return header + events.filter(isMaster).join("\r\n") + footer;
 }
 
 function rewriteAttendeeLines(text: string, email: string, partstat: string): string {

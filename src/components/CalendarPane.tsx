@@ -154,6 +154,9 @@ function googleEventUrl(eventId: string, calendarId: string): string {
   return `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(eid)}`;
 }
 
+/** The delete menu's rows, in the order ↑↓ walks them. */
+const DELETE_SCOPES: RecurrenceScope[] = ["THIS", "FOLLOWING", "ALL"];
+
 // ── Recurrence scope dialog ────────────────────────────────────────────────
 function RecurrenceDialog({
   onConfirm,
@@ -166,6 +169,7 @@ function RecurrenceDialog({
 
   const options: { value: RecurrenceScope; label: string; sub: string }[] = [
     { value: "THIS", label: "Just this event", sub: "Only this occurrence changes" },
+    { value: "FOLLOWING", label: "This and following events", sub: "Earlier occurrences stay as they were" },
     { value: "ALL", label: "All events in series", sub: "Every occurrence shifts by the same amount" },
   ];
 
@@ -178,7 +182,11 @@ function RecurrenceDialog({
       const { scope, onConfirm, onCancel } = live.current;
       if (e.key === "Escape") onCancel();
       else if (e.key === "Enter") onConfirm(scope);
-      else if (e.key === "ArrowUp" || e.key === "ArrowDown") setScope((s) => (s === "THIS" ? "ALL" : "THIS"));
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const order: RecurrenceScope[] = ["THIS", "FOLLOWING", "ALL"];
+        const step = e.key === "ArrowDown" ? 1 : order.length - 1;
+        setScope((s) => order[(order.indexOf(s) + step) % order.length]);
+      }
       else return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -1978,7 +1986,7 @@ function CalendarPane({
   );
   // ⌫ on a one-off event opens straight on its confirm — the step that says
   // who gets told. A series opens on its scope (rendered below).
-  const [eventDeleteLit, setEventDeleteLit] = useState<0 | 1>(0);
+  const [eventDeleteLit, setEventDeleteLit] = useState<0 | 1 | 2>(0);
   useEffect(() => {
     setEventDeleteConfirm(
       eventMenu?.intent === "delete" && !eventSeriesKey(eventMenu.event) ? "THIS" : null,
@@ -2002,7 +2010,8 @@ function CalendarPane({
       } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && k.pick) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        setEventDeleteLit((l) => (l === 0 ? 1 : 0));
+        const step = e.key === "ArrowDown" ? 1 : 2;
+        setEventDeleteLit((l) => ((l + step) % 3) as 0 | 1 | 2);
       }
     };
     window.addEventListener("keydown", onKey, true);
@@ -4059,7 +4068,7 @@ function CalendarPane({
         eventDeleteKeysRef.current = eventDeleteConfirm
           ? { confirm: () => deleteEventNow(ev, eventDeleteConfirm) }
           : scopeOnly
-            ? { confirm: () => requestDelete(eventDeleteLit === 0 ? "THIS" : "ALL"), pick: true }
+            ? { confirm: () => requestDelete(DELETE_SCOPES[eventDeleteLit]), pick: true }
             : {};
         if (scopeOnly) {
           return (
@@ -4080,7 +4089,10 @@ function CalendarPane({
               <EventMenuItem lit={eventDeleteLit === 0} onClick={() => requestDelete("THIS")}>
                 This event
               </EventMenuItem>
-              <EventMenuItem lit={eventDeleteLit === 1} onClick={() => requestDelete("ALL")}>
+              <EventMenuItem lit={eventDeleteLit === 1} onClick={() => requestDelete("FOLLOWING")}>
+                This and following events
+              </EventMenuItem>
+              <EventMenuItem lit={eventDeleteLit === 2} onClick={() => requestDelete("ALL")}>
                 All events in series
               </EventMenuItem>
             </div>
@@ -4231,7 +4243,13 @@ function CalendarPane({
                         ? series
                           ? `Cancel — ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest is" : "guests are"} told…`
                           : `Cancel for ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest" : "guests"}?`
-                        : `Delete ${eventDeleteConfirm === "ALL" ? "all events in this series" : "this event"}?`}
+                        : `Delete ${
+                          eventDeleteConfirm === "ALL"
+                            ? "all events in this series"
+                            : eventDeleteConfirm === "FOLLOWING"
+                              ? "this and following events"
+                              : "this event"
+                        }?`}
                     </p>
                     {/* The copy has to track what's true. A single occurrence
                         now records an undo (useCalendar's `del`), so saying
@@ -4239,7 +4257,7 @@ function CalendarPane({
                         A whole series still can't be put back from one row, and
                         a guest who has already been mailed stays mailed. */}
                     <p className="mt-0.5 text-meta text-muted">
-                      {eventDeleteConfirm === "ALL"
+                      {eventDeleteConfirm !== "THIS"
                         ? "This can't be undone."
                         : eventMenuCancelNotifies
                           ? "Undoable — but the cancellation notice can't be recalled."

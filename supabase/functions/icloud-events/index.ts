@@ -5,7 +5,8 @@
 //   action=delete               → remove the event (or one occurrence)
 //
 // scope="THIS" (default) edits/deletes a single occurrence of a recurring series;
-// scope="ALL" edits/deletes the whole series. An occurrence is named by its row's
+// scope="FOLLOWING" splits the series there (icalwrite.splitSeries) and edits or
+// ends the new half; scope="ALL" edits/deletes the whole series. An occurrence is named by its row's
 // own RECURRENCE-ID suffix, written in the master's form (TZID wall clock, DATE
 // or UTC) — see icalwrite.ts. `timeZone` (the client's IANA zone) anchors a
 // series that has none yet, so BYDAY means the local weekday across DST.
@@ -17,6 +18,10 @@ import { admin, handleOptions, json, logSync, readSecret, requireActor } from ".
 import {
   addExdate,
   buildEvent,
+  foreignOrganizer,
+  seriesCount,
+  splitSeries,
+  withoutOverrides,
   partstatFor,
   patchMaster,
   setPartstat,
@@ -26,8 +31,60 @@ import {
 import { deleteEvent, getEvent, putEvent } from "../_shared/caldav.ts";
 import { icloudSeriesOrFilter } from "../_shared/icloudSeries.ts";
 import { materializeIcloudResource } from "../_shared/icloudExpand.ts";
+import { countRuleOccurrencesBefore } from "../_shared/ics.ts";
 import { isUsableTimeZone } from "../_shared/icalTz.ts";
 import { type MirrorRowTable, parseRowAt, rewriteMirrorRow } from "../_shared/eventWriteback.ts";
+
+type EventPatch = {
+  title?: string;
+  start_at?: string;
+  end_at?: string;
+  all_day?: boolean;
+  location?: string | null;
+  description?: string | null;
+  recurrence?: string[] | null;
+};
+
+/**
+ * Apply an edit to a series as a whole: the ALL edit, and the edit to the new
+ * half of a "this and following" split. `evt` is the occurrence the user
+ * touched — its times give the delta every occurrence moves by.
+ */
+function editSeries(
+  ics: string,
+  p: EventPatch,
+  evt: { start_at: string; end_at: string },
+  timeZone: string | null,
+): string {
+  if (p.recurrence !== undefined) {
+    // A new rule renames every occurrence; overrides keyed to the old ones
+    // would orphan into duplicates.
+    const ruled = patchMaster(ics, {
+      recurrence: p.recurrence?.length ? p.recurrence : null,
+      title: p.title,
+      location: p.location,
+      description: p.description,
+      timeZone,
+    });
+    return withoutOverrides(ruled);
+  }
+  if (p.all_day !== undefined) {
+    // Timed ↔ all-day is a type change on the master, not a millisecond shift.
+    return patchMaster(ics, { title: p.title, allDay: p.all_day, location: p.location, description: p.description });
+  }
+  if (p.start_at || p.end_at) {
+    // Shift the whole series by the instance's time delta (+ retitle).
+    const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+    const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
+    let next = shiftMaster(ics, startDelta, p.title, endDelta, timeZone);
+    if (p.location !== undefined || p.description !== undefined) {
+      next = patchMaster(next, { location: p.location, description: p.description });
+    }
+    return next;
+  }
+  // Title / place / notes only — don't invent a time shift.
+  return patchMaster(ics, { title: p.title, location: p.location, description: p.description });
+}
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -36,7 +93,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
-    const { eventId, action, patch, scope = "THIS" } = body;
+    const { eventId, action, patch } = body;
+    let scope = (body.scope as string | undefined) ?? "THIS";
     const timeZone = isUsableTimeZone(body.timeZone) ? (body.timeZone as string) : null;
 
     // ── Create a new event on an iCloud calendar ─────────────────────────
@@ -203,6 +261,59 @@ Deno.serve(async (req) => {
       href,
     };
 
+    // ── This and following: split the series at this occurrence ─────────
+    // The old resource ends just before it; a new one starts at it and takes
+    // the edit (or, for a delete, simply isn't made). From the series' first
+    // occurrence there is nothing before it to keep, so it IS "all".
+    if (scope === "FOLLOWING" && isOccurrence && occurrence && (action === "delete" || (!action && patch))) {
+      const { ics, etag } = await getEvent(href, account.email, password);
+      const foreign = foreignOrganizer(ics, account.email);
+      if (foreign) {
+        return json({
+          error: `Only the organizer (${foreign}) can change this and following events — change just this one, or all of them.`,
+        }, 400);
+      }
+      const newUid = `nuvo-${crypto.randomUUID()}`;
+      let split = splitSeries(ics, occurrence, { newUid });
+      if (split && seriesCount(ics) != null) {
+        const countBefore = countRuleOccurrencesBefore(ics, Date.parse(split.occurrenceISO));
+        split = splitSeries(ics, occurrence, { newUid, countBefore });
+      }
+      if (split) {
+        if (action === "delete") {
+          const headEtag = await putEvent(href, split.head, account.email, password, etag);
+          await materializeIcloudResource({ ...series, etag: headEtag }, split.head);
+          await logSync("icloud", "event-delete-following", "ok", undefined, user.id);
+          return json({ ok: true });
+        }
+        const p = patch as EventPatch;
+        const tail = editSeries(split.tail, p, evt, timeZone);
+        const newHref = `${String(evt.calendar_id).replace(/\/$/, "")}/${newUid}.ics`;
+        // New half first: if ending the old half then fails, take the new one
+        // back down rather than leave the following weeks on the calendar twice.
+        const tailEtag = await putEvent(newHref, tail, account.email, password);
+        let headEtag: string | null;
+        try {
+          headEtag = await putEvent(href, split.head, account.email, password, etag);
+        } catch (e) {
+          await deleteEvent(newHref, account.email, password).catch(() => {});
+          throw e;
+        }
+        const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
+        // The open row moves to the new series first, so the old series'
+        // sweep below doesn't take it.
+        const event = await materializeIcloudResource(
+          { ...series, uid: newUid, href: newHref, etag: tailEtag },
+          tail,
+          { rowId: eventId, anchorMs: Date.parse(split.occurrenceISO) + startDelta },
+        );
+        await materializeIcloudResource({ ...series, etag: headEtag }, split.head);
+        await logSync("icloud", "event-writeback-following", "ok", undefined, user.id);
+        return json({ ok: true, event });
+      }
+      scope = "ALL";
+    }
+
     // ── Delete / cancel ──────────────────────────────────────────────────
     if (action === "delete") {
       if (isOccurrence && scope !== "ALL" && occurrence) {
@@ -319,25 +430,12 @@ Deno.serve(async (req) => {
     }
 
     // ── Move / resize / retitle / relocate / re-note / re-rule ───────────
-    const p = patch as {
-      title?: string;
-      start_at?: string;
-      end_at?: string;
-      all_day?: boolean;
-      location?: string | null;
-      description?: string | null;
-      recurrence?: string[] | null;
-    };
+    const p = patch as EventPatch;
     const { ics, etag } = await getEvent(href, account.email, password);
 
     // Recurrence always edits the master VEVENT — never a per-occurrence override.
     if (p.recurrence !== undefined) {
-      const next = patchMaster(ics, {
-        recurrence: p.recurrence === null || (Array.isArray(p.recurrence) && p.recurrence.length === 0)
-          ? null
-          : p.recurrence,
-        timeZone,
-      });
+      const next = editSeries(ics, { recurrence: p.recurrence }, evt, timeZone);
       const newEtag = await putEvent(href, next, account.email, password, etag);
       // Materialize here rather than kicking icloud-sync: the sweep there
       // deleted the row the sheet had open (a single event's bare UID becomes
@@ -352,30 +450,7 @@ Deno.serve(async (req) => {
 
     let next: string;
     if (isOccurrence && scope === "ALL") {
-      if (p.all_day !== undefined) {
-        // Timed ↔ all-day is a type change on the master, not a millisecond shift.
-        next = patchMaster(ics, {
-          title: p.title,
-          allDay: p.all_day,
-          location: p.location,
-          description: p.description,
-        });
-      } else if (p.start_at || p.end_at) {
-        // Shift the whole series by the instance's time delta (+ retitle).
-        const startDelta = p.start_at ? new Date(p.start_at).getTime() - new Date(evt.start_at).getTime() : 0;
-        const endDelta = p.end_at ? new Date(p.end_at).getTime() - new Date(evt.end_at).getTime() : startDelta;
-        next = shiftMaster(ics, startDelta, p.title, endDelta, timeZone);
-        if (p.location !== undefined || p.description !== undefined) {
-          next = patchMaster(next, { location: p.location, description: p.description });
-        }
-      } else {
-        // Title / place / notes only — don't invent a time shift.
-        next = patchMaster(ics, {
-          title: p.title,
-          location: p.location,
-          description: p.description,
-        });
-      }
+      next = editSeries(ics, p, evt, timeZone);
     } else if (isOccurrence && occurrence) {
       // Edit just this occurrence via a RECURRENCE-ID override.
       next = upsertOverride(ics, occurrence, {

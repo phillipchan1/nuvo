@@ -492,6 +492,38 @@ export function shiftRRuleDays(lines: string[], dayDelta: number): string[] {
   });
 }
 
+/**
+ * "This and following": the old series' RRULE lines, ended just before the
+ * split. COUNT and UNTIL both go — a capped series ends at `until`, the value
+ * already in the right form for its DTSTART (a DATE for an all-day series,
+ * UTC otherwise; RFC 5545 §3.3.10). Non-RRULE lines pass through.
+ */
+export function capRRule(lines: string[], until: string): string[] {
+  return lines.map((line) => {
+    if (!/^RRULE:/i.test(line)) return line;
+    const body = line.replace(/^RRULE:/i, "").split(";").filter((p) => p && !/^(COUNT|UNTIL)=/i.test(p));
+    return `RRULE:${[...body, `UNTIL=${until}`].join(";")}`;
+  });
+}
+
+/** The COUNT a series' RRULE carries, or null when it has none. */
+export function rruleCount(lines: string[]): number | null {
+  for (const line of lines) {
+    if (!/^RRULE:/i.test(line)) continue;
+    const m = line.match(/[;:]COUNT=(\d+)/i);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** The new series' RRULE lines when a COUNT series is split: what's left of
+ *  the count after the occurrences the old series kept (never below one). */
+export function recountRRule(lines: string[], remaining: number): string[] {
+  return lines.map((line) =>
+    /^RRULE:/i.test(line) ? line.replace(/([;:]COUNT=)\d+/i, `$1${Math.max(1, remaining)}`) : line
+  );
+}
+
 const RRULE_WD: Record<string, number> = {
   SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
 };

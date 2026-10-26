@@ -18,7 +18,7 @@ import {
   type RecurrenceScope,
   type UserSettings,
 } from "../lib/types";
-import { applySeriesPatch, eventKey, eventSeriesKey, isEventHidden } from "../lib/eventActuals";
+import { applySeriesPatch, eventKey, eventSeriesKey, isEventHidden, seriesScopeIds } from "../lib/eventActuals";
 import { assertCalendarWritable, createDefaults, eventsFunctionFor, pickCreateTarget } from "../lib/calendarWrite";
 import {
   beginEventCreate,
@@ -342,7 +342,7 @@ export function useExternalEventMutations() {
     }) => {
       guardOffline();
       const awaitProvider =
-        patch.recurrence !== undefined || scope === "ALL" || patch.all_day !== undefined;
+        patch.recurrence !== undefined || scope !== "THIS" || patch.all_day !== undefined;
       const fn = eventsFunctionFor(providerForEvent(id));
       // Every edit to one event goes through its lane (lib/eventWriteback):
       // one row write + provider PATCH at a time, in order, with edits that
@@ -418,9 +418,10 @@ export function useExternalEventMutations() {
         { revert: false },
       );
       const { description, recurrence: _recurrence, ...columns } = patch;
-      if (scope === "ALL") {
+      if (scope !== "THIS") {
+        // FOLLOWING moves this occurrence and every later one; earlier ones stay.
         qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-          old ? applySeriesPatch(old, id, columns) : old,
+          old ? applySeriesPatch(old, id, columns, { following: scope === "FOLLOWING" }) : old,
         );
       } else if (Object.keys(columns).length) {
         qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
@@ -466,7 +467,7 @@ export function useExternalEventMutations() {
       // a location, an all-day flip, a note.
       const before = ctx?.before ?? {};
       const fields = Object.keys(before).filter((k) => k !== "start_at" && k !== "end_at");
-      if (!fields.length || vars.scope === "ALL") return;
+      if (!fields.length || (vars.scope ?? "THIS") !== "THIS") return;
       const inverse: Record<string, unknown> = {};
       const forward: Record<string, unknown> = {};
       for (const k of fields) {
@@ -493,7 +494,7 @@ export function useExternalEventMutations() {
       // range. Refetching all ranges here both rebuilds a lived-in grid and can
       // race the provider write-back. Series edits still need a refetch because
       // they change instances that were not part of the gesture.
-      if (vars?.patch.recurrence !== undefined || vars?.scope === "ALL" || vars?.patch.all_day !== undefined) {
+      if (vars?.patch.recurrence !== undefined || (vars?.scope ?? "THIS") !== "THIS" || vars?.patch.all_day !== undefined) {
         qc.invalidateQueries({ queryKey: ["external_events"] });
       }
     },
@@ -667,7 +668,7 @@ export function useExternalEventMutations() {
       });
       await throwIfInvokeFailed(data, error);
     },
-    onMutate: async ({ id }) => {
+    onMutate: async ({ id, scope = "THIS" }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       // The row as it was, so the delete can be put back rather than merely
@@ -675,9 +676,11 @@ export function useExternalEventMutations() {
       // to read it from.
       const deleted = snapshot.flatMap(([, data]) => data ?? []).find((e) => e.id === id);
       const description = qc.getQueryData<GoogleRawEvent | null>(["event_details", id])?.description;
-      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-        old?.filter((e) => e.id !== id),
-      );
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) => {
+        if (!old) return old;
+        const gone = seriesScopeIds(old, id, scope);
+        return old.filter((e) => !gone.has(e.id));
+      });
       return { snapshot, deleted, description };
     },
     onError: (err, _vars, ctx) => {
@@ -691,7 +694,7 @@ export function useExternalEventMutations() {
       // A whole-series delete is not restorable from one instance's row, and a
       // half-restored series is worse than an honest "no". Single occurrences
       // — which is nearly every delete — are.
-      if (!gone || vars.scope === "ALL") return;
+      if (!gone || (vars.scope ?? "THIS") !== "THIS") return;
       recordUndo({
         label: `Deleted "${gone.title || "event"}"`,
         shortLabel: "Deleted event",

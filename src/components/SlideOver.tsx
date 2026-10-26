@@ -1593,6 +1593,7 @@ export function EventPopover({
         }
       },
       () => setPendingRsvp(prev),
+      "answer",
     );
   };
 
@@ -1732,15 +1733,27 @@ export function EventPopover({
   const applyRepeat = (rule: RecurrenceRule | null) => {
     if (rulesEqual(repeatRule, rule)) return;
     if (!rule && !recurring) return;
-    setPickedRule(rule);
-    const revert = { onError: () => setPickedRule(undefined) };
-    if (rule && !recurring) {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: eventRRule(rule, allDay) } }, revert);
-    } else if (rule && recurring) {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: eventRRule(rule, allDay) }, scope: "ALL" }, revert);
-    } else {
-      eventMutations.updateEvent({ id: event.id, patch: { recurrence: null }, scope: "ALL" }, revert);
+    const recurrence = rule ? eventRRule(rule, allDay) : null;
+    if (!recurring) {
+      setPickedRule(rule);
+      eventMutations.updateEvent(
+        { id: event.id, patch: { recurrence } },
+        { onError: () => setPickedRule(undefined) },
+      );
+      return;
     }
+    // A series asks: from this occurrence on, or the whole thing?
+    commitScoped(
+      (scope) => {
+        setPickedRule(rule);
+        eventMutations.updateEvent(
+          { id: event.id, patch: { recurrence }, scope },
+          { onError: () => setPickedRule(undefined) },
+        );
+      },
+      () => {},
+      "rule",
+    );
   };
 
   const sendInvite = (notifyGuests: boolean) => {
@@ -1760,7 +1773,7 @@ export function EventPopover({
       } finally {
         setInviting(false);
       }
-    });
+    }, undefined, "answer");
   };
 
   return createPortal(
@@ -1895,7 +1908,7 @@ export function EventPopover({
                     } finally {
                       setAddingMeet(false);
                     }
-                  });
+                  }, undefined, "answer");
                 }}
                 disabled={addingMeet}
                 className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"

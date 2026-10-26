@@ -20,7 +20,11 @@ import { Btn, Modal } from "./ui";
 import { useEscape } from "../hooks/useEscape";
 import type { RecurrenceScope } from "../lib/types";
 
-export type RecurrenceScopeMode = "edit" | "move" | "delete";
+/** edit/move/delete offer all three scopes. `answer` (RSVP, guests, Meet)
+ *  has no "following" — that would split the series to answer an invite.
+ *  `rule` (the repeat picker) has no "just this" — one occurrence can't
+ *  repeat differently from its own series. */
+export type RecurrenceScopeMode = "edit" | "move" | "delete" | "answer" | "rule";
 
 /**
  * The this-vs-series prompt. Every write on a repeating event uses this one
@@ -38,12 +42,22 @@ export function RecurrenceScopeDialog({
   /** Drag/resize talks about shifting; delete talks about removing. */
   mode?: RecurrenceScopeMode;
 }) {
-  const [scope, setScope] = useState<RecurrenceScope>("THIS");
-  const options: { value: RecurrenceScope; label: string; sub: string }[] = [
+  const [scope, setScope] = useState<RecurrenceScope>(mode === "rule" ? "FOLLOWING" : "THIS");
+  const all: { value: RecurrenceScope; label: string; sub: string }[] = [
     {
       value: "THIS",
       label: "Just this event",
       sub: mode === "delete" ? "Only this occurrence is removed" : "Only this occurrence changes",
+    },
+    {
+      value: "FOLLOWING",
+      label: "This and following events",
+      sub:
+        mode === "delete"
+          ? "This one and every later one are removed"
+          : mode === "rule"
+            ? "The new repeat starts here; earlier ones stay"
+            : "Earlier occurrences stay as they were",
     },
     {
       value: "ALL",
@@ -56,6 +70,9 @@ export function RecurrenceScopeDialog({
             : "Every occurrence in the series changes",
     },
   ];
+  const options = all.filter(
+    (o) => !(mode === "answer" && o.value === "FOLLOWING") && !(mode === "rule" && o.value === "THIS"),
+  );
 
   return (
     <Modal onClose={onCancel} width="max-w-[320px]" align="center">
@@ -66,7 +83,9 @@ export function RecurrenceScopeDialog({
         <h2 className="mb-4 text-head font-semibold leading-snug text-text">
           {mode === "delete"
             ? "Delete this event or the whole series?"
-            : "Edit this event or the whole series?"}
+            : mode === "rule"
+              ? "Change the repeat from here, or for the whole series?"
+              : "Edit this event or the whole series?"}
         </h2>
 
         <div className="mb-5 flex flex-col gap-1.5">

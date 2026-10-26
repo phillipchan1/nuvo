@@ -213,7 +213,7 @@ export default function MobileEventSheet({
           setRsvping(false);
           onClose();
         }
-      });
+      }, undefined, "answer");
     };
 
     const toDateInput = (iso: string) => {
@@ -286,15 +286,21 @@ export default function MobileEventSheet({
     const applyRepeat = (rule: RecurrenceRule | null) => {
       if (rulesEqual(repeatRule, rule)) return;
       if (!rule && !recurring) return;
-      setPickedRule(rule);
-      const revert = { onError: () => setPickedRule(undefined) };
-      if (rule && !recurring) {
-        updateEvent({ id: tap.id, patch: { recurrence: eventRRule(rule, allDay) } }, revert);
-      } else if (rule && recurring) {
-        updateEvent({ id: tap.id, patch: { recurrence: eventRRule(rule, allDay) }, scope: "ALL" }, revert);
-      } else {
-        updateEvent({ id: tap.id, patch: { recurrence: null }, scope: "ALL" }, revert);
+      const recurrence = rule ? eventRRule(rule, allDay) : null;
+      if (!recurring) {
+        setPickedRule(rule);
+        updateEvent({ id: tap.id, patch: { recurrence } }, { onError: () => setPickedRule(undefined) });
+        return;
       }
+      // A series asks: from this occurrence on, or the whole thing?
+      commitScoped(
+        (scope) => {
+          setPickedRule(rule);
+          updateEvent({ id: tap.id, patch: { recurrence }, scope }, { onError: () => setPickedRule(undefined) });
+        },
+        () => {},
+        "rule",
+      );
     };
 
     const commitTitle = () => {
