@@ -78,7 +78,8 @@ jobs:
       CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
       CUTOVER_LOG_DIR: ${{ runner.temp }}/nuvo-cutover-logs
     steps:
-      - name: Checkout
+      - id: checkout
+        name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - id: mask
@@ -1106,7 +1107,8 @@ jobs:
               main()
           PY
 
-      - name: Pick pg_dump matching source major
+      - id: pick-dump
+        name: Pick pg_dump matching source major
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1153,8 +1155,9 @@ jobs:
           mkdir -p "$CUTOVER_LOG_DIR"
           python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
 
-      - name: Assert cutover logs have no row data
-        if: ${{ always() && (steps.dump.outcome == 'success' || steps.dump.outcome == 'failure') }}
+      - id: assert-logs
+        name: Assert cutover logs have no row data
+        if: ${{ always() }}
         run: |
           set +x
           set -eu
@@ -1175,7 +1178,8 @@ jobs:
           set -eu
           node scripts/guard-public-ci.mjs --job
 
-      - name: Upload checksum report
+      - id: upload
+        name: Upload checksum report
         if: ${{ always() && steps.guard.outcome == 'success' }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:

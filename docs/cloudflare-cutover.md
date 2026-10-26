@@ -84,17 +84,28 @@ else.
 
 ### Limits
 
-The guard is a deny-list of workflow `uses:` and of `curl` / `wget` / `gh`
-file uploads, plus a fail-closed allowlist (`scripts/guard-public-ci.allowlist.json`)
-of `run:` blocks that use a here-doc, a pipe into a shell/interpreter,
-`source` / `./` / `sh` / `bash` / `zsh` of a file, a function, `-c` on a
-shell / `su` / `xargs` / `sudo`, `eval`, or `gh extension` / `gh alias`.
-Those shapes are rejected unless the step `id` and a sha256 of the exact
-run text are committed. It does **not** cover `actions/github-script` or
-upload code written in Python or Node (or any other runtime) inside a
-`run:` step. `nc`, `python`, and other non-`gh` exfil channels are out of
-scope. Reviewers must check those paths by hand — including inside an
-allowlisted here-doc whose hash they approved.
+Every public workflow step (`run` and `uses`, including
+`actions/github-script` and reusable-workflow `jobs.<id>.uses`) is
+default-deny: rejected unless listed in
+`scripts/guard-public-ci.allowlist.json` by file + job + step id with a
+sha256 of the canonicalized step (`run`, `uses`, `with`, `shell`, `env`,
+`working-directory`, `if`, `continue-on-error`) plus the job's
+`env` / `defaults` / `runs-on` / `needs` and the workflow's `on:` /
+top-level `env` / `defaults` / `permissions`. A new job, step, trigger
+(e.g. `pull_request_target`), or env change fails.
+
+Always denied, even on an allowlisted step: `BASH_ENV` / `ENV` keys.
+Writes to `$GITHUB_ENV` / `$GITHUB_PATH` and to `RELEASE_NOTES.md` or
+release paths are denied outside allowlisted steps. `curl` / `wget` /
+`gh` value checks stay as defense in depth.
+
+`nc` and other non-`gh` exfil inside an already-allowlisted run are out
+of scope for the value deny-list. Reviewers must read the hashed step
+before bumping its sha256. Regenerating hashes:
+
+```bash
+node scripts/regen-public-ci-allowlist.mjs
+```
 
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.

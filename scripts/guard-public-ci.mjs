@@ -34,14 +34,16 @@
  *   8. In the release.yml step that runs `gh release create`, each of
  *      DMG / STABLE_DMG / APPTAR / NOTES has exactly one pinned assignment
  *      from the known build paths; any reassignment fails.
- *   9. Fail-closed run-block allowlist: a here-doc, a pipe into a
- *      shell/interpreter, source/./sh/bash/zsh of a file, a function
- *      definition, -c on any shell/su/xargs/sudo, eval, or gh
- *      extension/alias is denied unless that exact run is listed by
- *      step id + sha256 in guard-public-ci.allowlist.json.
- *  10. In release.yml, mv/cp/redirect/tee/install writes whose target is
- *      $DMG / $STABLE_DMG / $APPTAR / latest.json / $BUNDLE/dmg are
- *      denied unless that step is allowlisted by hash.
+ *   9. Default-deny allowlist: every step (run and uses, including
+ *      actions/github-script) and every reusable-workflow job uses is
+ *      rejected unless listed by file+job+step id with a sha256 of the
+ *      canonicalized step (run, uses, with, shell, env, working-directory,
+ *      if, continue-on-error) plus the job's env/defaults/runs-on/needs
+ *      and the workflow's on:/env/defaults/permissions. A new job, step,
+ *      trigger, or env change fails. Regen: scripts/regen-public-ci-allowlist.mjs.
+ *  10. Always, even on an allowlisted step: BASH_ENV / ENV keys.
+ *      Outside an allowlisted step: writes to $GITHUB_ENV / $GITHUB_PATH,
+ *      and writes to RELEASE_NOTES.md or release paths.
  *  11. actions/cache and actions/cache/save (restore-only is allowed).
  *  12. YAML is fail-closed: parse errors, doc.errors, more than one
  *      document, a non-mapping root, duplicate keys, or << merge keys
@@ -49,14 +51,15 @@
  *
  * ## Limits
  *
- * This deny-list does not cover `actions/github-script` or upload code
- * written in Python or Node (or any other runtime) inside a `run:` step.
- * `nc`, `python`, and other non-`gh` exfil channels are out of scope.
- * Reviewers must check those paths by hand — including inside an
- * allowlisted here-doc whose hash they approved.
+ * `actions/github-script` and reusable-workflow `jobs.<id>.uses` are
+ * covered by the default-deny allowlist. `nc` and other non-`gh` exfil
+ * inside an already-allowlisted run are out of scope for the value
+ * deny-list. Reviewers must read the hashed step before bumping its
+ * sha256. Regenerating hashes is
+ * `node scripts/regen-public-ci-allowlist.mjs`.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isScalar, parseAllDocuments, visit } from "yaml";
@@ -216,8 +219,24 @@ export function actionName(uses) {
 }
 
 function normalizeStep(step, line = 1) {
-  if (step == null) return { uses: null, run: "", with: {}, name: "", id: "", line };
-  if (typeof step === "string") return { uses: null, run: step, with: {}, name: "", id: "", line };
+  if (step == null) {
+    return {
+      uses: null,
+      run: "",
+      with: {},
+      name: "",
+      id: "",
+      line,
+      shell: null,
+      env: null,
+      workingDirectory: null,
+      if: null,
+      continueOnError: null,
+    };
+  }
+  if (typeof step === "string") {
+    return { ...normalizeStep(null, line), run: step };
+  }
   const withBlock = step.with && typeof step.with === "object" ? step.with : {};
   return {
     uses: normalizeUses(step.uses),
@@ -226,22 +245,72 @@ function normalizeStep(step, line = 1) {
     name: step.name == null ? "" : String(step.name),
     id: step.id == null ? "" : String(step.id),
     line,
+    shell: step.shell == null ? null : String(step.shell),
+    env: step.env && typeof step.env === "object" && !Array.isArray(step.env) ? step.env : null,
+    workingDirectory: step["working-directory"] == null ? null : String(step["working-directory"]),
+    if: step.if == null ? null : String(step.if),
+    continueOnError: step["continue-on-error"] ?? null,
   };
 }
 
-function walkJobSteps(doc) {
-  const steps = [];
-  if (!doc || typeof doc !== "object") return steps;
-  const jobs = doc.jobs;
-  if (!jobs || typeof jobs !== "object") return steps;
-  for (const job of Object.values(jobs)) {
-    if (!job || typeof job !== "object") continue;
-    if (job.uses) steps.push(normalizeStep({ uses: job.uses, with: job.with }));
-    if (Array.isArray(job.steps)) {
-      for (const step of job.steps) steps.push(normalizeStep(step));
-    }
+function workflowContext(doc) {
+  return {
+    on: doc?.on ?? null,
+    env: doc?.env ?? null,
+    defaults: doc?.defaults ?? null,
+    permissions: doc?.permissions ?? null,
+  };
+}
+
+function jobContext(job) {
+  if (!job || typeof job !== "object") {
+    return { env: null, defaults: null, "runs-on": null, needs: null, uses: null };
   }
-  return steps;
+  return {
+    env: job.env ?? null,
+    defaults: job.defaults ?? null,
+    "runs-on": job["runs-on"] ?? null,
+    needs: job.needs ?? null,
+    uses: job.uses ?? null,
+  };
+}
+
+function unitFromStep(step, jobName, wfCtx, jobCtx, kind = "step") {
+  const n = normalizeStep(step);
+  return { ...n, job: jobName, kind, wfCtx, jobCtx };
+}
+
+/**
+ * Every run/uses step and reusable-workflow job.uses, with the workflow
+ * and job fields that go into the allowlist hash.
+ */
+export function collectWorkflowUnits(workflowText) {
+  const doc = parseWorkflowDocument(workflowText);
+  const wfCtx = workflowContext(doc);
+  const units = [];
+  if (doc.jobs && typeof doc.jobs === "object") {
+    for (const [jobName, job] of Object.entries(doc.jobs)) {
+      if (!job || typeof job !== "object") continue;
+      const jobCtx = jobContext(job);
+      if (job.uses) {
+        units.push(
+          unitFromStep({ uses: job.uses, with: job.with, id: "" }, jobName, wfCtx, jobCtx, "job-uses"),
+        );
+      }
+      if (Array.isArray(job.steps)) {
+        for (const step of job.steps) {
+          units.push(unitFromStep(step, jobName, wfCtx, jobCtx, "step"));
+        }
+      }
+    }
+    return { doc, full: true, units };
+  }
+  if (Array.isArray(doc.steps)) {
+    for (const step of doc.steps) units.push(unitFromStep(step, "", wfCtx, jobContext(null)));
+  } else if (doc.uses != null || doc.run != null) {
+    units.push(unitFromStep(doc, "", wfCtx, jobContext(null)));
+  }
+  return { doc, full: false, units };
 }
 
 /**
@@ -249,11 +318,7 @@ function walkJobSteps(doc) {
  * (`uses: …`, `run: …`, `jobs:`). Sequences and raw shell throw.
  */
 export function collectSteps(workflowText) {
-  const doc = parseWorkflowDocument(workflowText);
-  if (doc.jobs) return walkJobSteps(doc);
-  if (Array.isArray(doc.steps)) return doc.steps.map((step) => normalizeStep(step));
-  if (doc.uses != null || doc.run != null) return [normalizeStep(doc)];
-  return [];
+  return collectWorkflowUnits(workflowText).units;
 }
 
 export function extractUploadArtifactSteps(workflowText) {
@@ -983,12 +1048,59 @@ const INTERPRETERS = new Set([
   "powershell",
 ]);
 const DASH_C_HOSTS = new Set([...SHELL_NAMES, "su", "sudo", "xargs"]);
-const PROTECTED_WRITE_CMDS = new Set(["cp", "mv", "install", "tee"]);
+const PROTECTED_WRITE_CMDS = new Set(["cp", "mv", "install", "tee", "dd", "rsync", "ln"]);
+const FORBIDDEN_ENV_KEYS = new Set(["BASH_ENV", "ENV"]);
+const RELEASE_PATH_RE = /RELEASE_NOTES\.md|latest\.json|\$\{?DMG\}?|\$\{?STABLE_DMG\}?|\$\{?APPTAR\}?|\$\{?BUNDLE\}?\/dmg/;
 
 export const RUN_ALLOWLIST_PATH = join(dirname(fileURLToPath(import.meta.url)), "guard-public-ci.allowlist.json");
 
-export function runContentHash(run) {
-  return createHash("sha256").update(String(run), "utf8").digest("hex");
+export function runContentHash(value) {
+  return createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value), "utf8").digest("hex");
+}
+
+export function stableValue(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value).sort()) out[k] = stableValue(value[k]);
+    return out;
+  }
+  return String(value);
+}
+
+export function canonicalizeUnit(unit) {
+  const withBlock = unit.with && typeof unit.with === "object" && Object.keys(unit.with).length ? unit.with : null;
+  return stableValue({
+    on: unit.wfCtx?.on ?? null,
+    env: unit.wfCtx?.env ?? null,
+    defaults: unit.wfCtx?.defaults ?? null,
+    permissions: unit.wfCtx?.permissions ?? null,
+    job: {
+      env: unit.jobCtx?.env ?? null,
+      defaults: unit.jobCtx?.defaults ?? null,
+      "runs-on": unit.jobCtx?.["runs-on"] ?? null,
+      needs: unit.jobCtx?.needs ?? null,
+      uses: unit.jobCtx?.uses ?? null,
+    },
+    step: {
+      id: unit.id || "",
+      run: unit.run || null,
+      uses: unit.uses || null,
+      with: withBlock,
+      shell: unit.shell ?? null,
+      env: unit.env ?? null,
+      "working-directory": unit.workingDirectory ?? null,
+      if: unit.if ?? null,
+      "continue-on-error": unit.continueOnError ?? null,
+    },
+  });
+}
+
+export function unitHash(unit) {
+  return runContentHash(canonicalizeUnit(unit));
 }
 
 export function loadRunAllowlist(path = RUN_ALLOWLIST_PATH) {
@@ -998,15 +1110,30 @@ export function loadRunAllowlist(path = RUN_ALLOWLIST_PATH) {
   if (!Array.isArray(steps)) return [];
   return steps.map((s) => ({
     file: String(s.file ?? ""),
+    job: String(s.job ?? ""),
     id: String(s.id ?? ""),
     sha256: String(s.sha256 ?? ""),
   }));
 }
 
-export function isStepAllowlisted(filename, id, run, allowlist) {
-  if (!id) return false;
-  const hash = runContentHash(run);
-  return allowlist.some((e) => e.file === filename && e.id === id && e.sha256 === hash);
+export function isUnitAllowlisted(filename, unit, allowlist) {
+  const hash = unitHash(unit);
+  return allowlist.some(
+    (e) => e.file === filename && e.job === (unit.job || "") && e.id === (unit.id || "") && e.sha256 === hash,
+  );
+}
+
+export function neededStepAllowlist(workflowsDir) {
+  const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
+  const needed = [];
+  for (const name of names.sort()) {
+    const text = readFileSync(join(workflowsDir, name), "utf8");
+    const { units } = collectWorkflowUnits(text);
+    for (const unit of units) {
+      needed.push({ file: name, job: unit.job || "", id: unit.id || "", sha256: unitHash(unit) });
+    }
+  }
+  return needed;
 }
 
 export function hasHeredoc(run) {
@@ -1142,59 +1269,99 @@ export function hasGhExtensionOrAlias(run) {
 export function isProtectedReleaseTarget(tok) {
   const t = String(tok).replace(/['"]/g, "");
   if (t === "$DMG" || t === "$STABLE_DMG" || t === "$APPTAR") return true;
-  if (t === "latest.json" || t === "./latest.json") return true;
+  if (t === "latest.json" || t === "./latest.json" || t === "RELEASE_NOTES.md") return true;
+  if (/RELEASE_NOTES\.md/.test(t)) return true;
   if (/\$\{?BUNDLE\}?\/dmg/.test(t)) return true;
   return false;
 }
 
-export function hasProtectedReleaseWrite(run) {
-  for (const { text } of logicalLines(stripHeredocBodies(run))) {
-    const code = stripFullLineComment(text);
-    if (!code.trim()) continue;
-    const redir = code.match(/(?:^|[\s;|&])(?:>>?)\s*(\S+)/);
-    if (redir && isProtectedReleaseTarget(redir[1])) return true;
-    const segs = splitShellSegments(code);
-    if (segs.error) return true;
-    for (const seg of segs.parts) {
-      const found = firstCommandWord(seg);
-      if (found?.error) return true;
-      if (!found?.cmd) continue;
-      if (!PROTECTED_WRITE_CMDS.has(commandBase(found.cmd))) continue;
-      if (found.rest.some((t) => isProtectedReleaseTarget(t))) return true;
-    }
+export function hasReleasePathWrite(run) {
+  const s = String(run).replace(/['"]/g, "");
+  if (!RELEASE_PATH_RE.test(s)) return false;
+  if (/(?:^|[\s;|&])(?:>>?)\s*\S*(?:RELEASE_NOTES\.md|latest\.json|\$\{?DMG|\$\{?STABLE_DMG|\$\{?APPTAR|\$\{?BUNDLE)/m.test(s)) {
+    return true;
   }
+  if (/\b(?:cp|mv|install|tee|dd|rsync|ln)\b/.test(s)) return true;
+  if (/sed\s+[^\n]*-i/.test(s)) return true;
+  if (/\b(?:python3?|node)\b/.test(s)) return true;
   return false;
 }
 
-/** Shapes that require a committed step-id + hash, independent of filename. */
-export function runShapeReasons(run) {
-  const reasons = [];
-  if (hasHeredoc(run)) reasons.push("here-doc");
-  if (hasPipeToInterpreter(run)) reasons.push("pipe-to-interpreter");
-  if (hasShellFileInvocation(run)) reasons.push("shell-file");
-  if (hasFunctionDef(run)) reasons.push("function");
-  if (hasDashCInvocation(run)) reasons.push("shell -c");
-  if (hasEvalInvocation(run)) reasons.push("eval");
-  if (hasGhExtensionOrAlias(run)) reasons.push("gh extension/alias");
-  return reasons;
+export function hasProtectedReleaseWrite(run) {
+  return hasReleasePathWrite(run);
 }
 
-export function runNeedsAllowlist(run, filename = "workflow") {
-  if (runShapeReasons(run).length) return true;
-  return filename === "release.yml" && hasProtectedReleaseWrite(run);
+function writesGithubFile(run, name) {
+  const s = String(run);
+  if (new RegExp(`(?:>>?|tee(?:\\s+-a)?)\\s*["']?\\$?\\{?${name}\\}?`).test(s)) return true;
+  if (new RegExp(`os\\.environ(?:\\[["']${name}["']\\]|\\.get\\(\\s*["']${name})`).test(s)) return true;
+  if (new RegExp(`process\\.env(?:\\.${name}|\\[["']${name}["']\\])`).test(s)) return true;
+  return false;
 }
 
-export function neededRunAllowlist(workflowsDir) {
-  const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
-  const needed = [];
-  for (const name of names.sort()) {
-    const text = readFileSync(join(workflowsDir, name), "utf8");
-    for (const step of collectSteps(text)) {
-      if (!step.run || !runNeedsAllowlist(step.run, name)) continue;
-      needed.push({ file: name, id: step.id, sha256: runContentHash(step.run) });
+export function writesGithubEnv(run) {
+  return writesGithubFile(run, "GITHUB_ENV");
+}
+
+export function writesGithubPath(run) {
+  return writesGithubFile(run, "GITHUB_PATH");
+}
+
+/** `BASH_ENV=` / `ENV=` in a script, including `export` and `env KEY=`. */
+export function hasForbiddenEnvAssignment(run) {
+  const s = String(run);
+  return /(?:^|[\s;|&])(?:export\s+)?(?:BASH_ENV|ENV)=/.test(s) || /\benv\b[^\n]*\b(?:BASH_ENV|ENV)=/.test(s);
+}
+
+function forbiddenEnvAssignmentHits(text, line = 1) {
+  const hits = [];
+  const s = String(text);
+  if (/(?:^|[\s;|&])(?:export\s+)?BASH_ENV=/.test(s) || /\benv\b[^\n]*\bBASH_ENV=/.test(s)) {
+    hits.push({ line, kind: "BASH_ENV" });
+  }
+  if (/(?:^|[\s;|&])(?:export\s+)?ENV=/.test(s) || /\benv\b[^\n]*\bENV=/.test(s)) {
+    hits.push({ line, kind: "ENV key" });
+  }
+  return hits;
+}
+
+/** run: plus uses `with:` strings (github-script `script:` included). */
+function unitScanTexts(unit) {
+  const texts = [];
+  if (unit.run) texts.push(unit.run);
+  const w = unit.with;
+  if (w && typeof w === "object") {
+    for (const v of Object.values(w)) {
+      if (typeof v === "string" && v.trim()) texts.push(v);
     }
   }
-  return needed;
+  return texts;
+}
+
+function envMapHits(env, line = 1) {
+  if (!env || typeof env !== "object" || Array.isArray(env)) return [];
+  const hits = [];
+  for (const key of Object.keys(env)) {
+    if (key === "BASH_ENV") hits.push({ line, kind: "BASH_ENV" });
+    if (key === "ENV") hits.push({ line, kind: "ENV key" });
+  }
+  return hits;
+}
+
+export function forbiddenEnvKeyHits(doc, units) {
+  const hits = [];
+  hits.push(...envMapHits(doc?.env));
+  hits.push(...envMapHits(doc?.defaults?.run?.env));
+  const seenJobs = new Set();
+  for (const unit of units) {
+    if (unit.job && !seenJobs.has(unit.job)) {
+      seenJobs.add(unit.job);
+      hits.push(...envMapHits(unit.jobCtx?.env, unit.line));
+      hits.push(...envMapHits(unit.jobCtx?.defaults?.run?.env, unit.line));
+    }
+    hits.push(...envMapHits(unit.env, unit.line));
+  }
+  return hits;
 }
 
 function scanRunScript(run, filename, depth = 0) {
@@ -1281,14 +1448,20 @@ function scanRunScript(run, filename, depth = 0) {
 export function findForbiddenUploadCommands(workflowText, filename = "workflow", options = {}) {
   const hits = [];
   const allowlist = options.allowlist ?? loadRunAllowlist();
-  for (const step of collectSteps(workflowText)) {
-    if (step.uses && isForbiddenUse(step.uses)) {
-      hits.push({ line: step.line, kind: forbiddenUseKind(step.uses) });
+  const { doc, full, units } = collectWorkflowUnits(workflowText);
+  for (const hit of forbiddenEnvKeyHits(doc, units)) hits.push(hit);
+  for (const unit of units) {
+    if (unit.uses && isForbiddenUse(unit.uses)) {
+      hits.push({ line: unit.line, kind: forbiddenUseKind(unit.uses) });
     }
-    if (!step.run) continue;
-    hits.push(...scanRunScript(step.run, filename));
-    if (runNeedsAllowlist(step.run, filename) && !isStepAllowlisted(filename, step.id, step.run, allowlist)) {
-      pushHit(hits, step.line, "run allowlist");
+    const allowlisted = isUnitAllowlisted(filename, unit, allowlist);
+    if (full && !allowlisted) pushHit(hits, unit.line, "step allowlist");
+    for (const text of unitScanTexts(unit)) {
+      hits.push(...scanRunScript(text, filename));
+      hits.push(...forbiddenEnvAssignmentHits(text, unit.line));
+      if (writesGithubEnv(text) && !allowlisted) pushHit(hits, unit.line, "GITHUB_ENV");
+      if (writesGithubPath(text) && !allowlisted) pushHit(hits, unit.line, "GITHUB_PATH");
+      if (hasReleasePathWrite(text) && !allowlisted) pushHit(hits, unit.line, "release write");
     }
   }
   return hits;
@@ -1459,7 +1632,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const job = process.argv.includes("--job");
   const checkLog = process.argv.includes("--check-log");
-  if (checkLog) {
+  const writeAllowlist = process.argv.includes("--write-allowlist");
+  if (writeAllowlist) {
+    const dir = join(here, "..", ".github", "workflows");
+    const steps = neededStepAllowlist(dir);
+    writeFileSync(RUN_ALLOWLIST_PATH, `${JSON.stringify({ algorithm: "sha256", steps }, null, 2)}\n`);
+    console.log(`public-ci-guard: wrote ${steps.length} step hash(es) to ${RUN_ALLOWLIST_PATH}`);
+  } else if (checkLog) {
     const idx = process.argv.indexOf("--check-log");
     const logDir = process.argv[idx + 1] || process.env.CUTOVER_LOG_DIR || "";
     const files = assertCutoverLogDir(logDir);

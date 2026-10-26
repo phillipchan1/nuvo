@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,14 +12,17 @@ import {
   assertWorkflowsUploadAllowlist,
   assertWorkspaceHasNoDataFiles,
   collectSteps,
+  collectWorkflowUnits,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
-  isStepAllowlisted,
+  isUnitAllowlisted,
   loadRunAllowlist,
-  neededRunAllowlist,
-  runContentHash,
-  runNeedsAllowlist,
-  runShapeReasons,
+  neededStepAllowlist,
+  unitHash,
+  writesGithubEnv,
+  writesGithubPath,
+  hasReleasePathWrite,
+  hasForbiddenEnvAssignment,
   isAtFileToken,
   isDataUrlencodeFileArg,
   isLtFileToken,
@@ -49,6 +52,34 @@ function tmp() {
 
 function runYaml(cmd: string) {
   return `run: ${JSON.stringify(cmd)}\n`;
+}
+
+/** Mini public workflow so default-deny (full:true) applies. */
+function wf(
+  steps: string,
+  extra: { on?: string; job?: string; jobEnv?: Record<string, string>; runsOn?: string } = {},
+) {
+  const job = extra.job ?? "t";
+  const on = extra.on ?? "push";
+  const env = extra.jobEnv
+    ? `    env:\n${Object.entries(extra.jobEnv)
+        .map(([k, v]) => `      ${k}: ${JSON.stringify(v)}`)
+        .join("\n")}\n`
+    : "";
+  const indented = steps
+    .replace(/^\n/, "")
+    .split("\n")
+    .map((line) => (line.length ? `      ${line}` : line))
+    .join("\n");
+  return [
+    `on: ${on}`,
+    "jobs:",
+    `  ${job}:`,
+    `    runs-on: ${extra.runsOn ?? "ubuntu-latest"}`,
+    `${env}    steps:`,
+    indented,
+    "",
+  ].join("\n");
 }
 
 const PINNED_PUBLISH = [
@@ -509,7 +540,9 @@ describe("public-repo CI guard", () => {
     );
     expect(findForbiddenUploadCommands(runYaml('eval "gh gist create dump.sql"')).map((h) => h.kind)).toContain("eval");
     expect(findForbiddenUploadCommands(runYaml('bash -c "$CMD"')).map((h) => h.kind)).toContain("shell -c");
-    expect(findForbiddenUploadCommands(runYaml("bash -c 'echo ok'")).map((h) => h.kind)).toContain("run allowlist");
+    expect(findForbiddenUploadCommands(runYaml("bash -c 'echo ok'")).map((h) => h.kind)).not.toContain(
+      "step allowlist",
+    );
   });
 
   it("rejects backslashes, quotes, and $ / ${} / $(...) in command position", () => {
@@ -532,10 +565,10 @@ describe("public-repo CI guard", () => {
 
   it("denies gh alias set and gh alias import everywhere", () => {
     expect(findForbiddenUploadCommands(runYaml("gh alias set leak 'pr create --title t'")).map((h) => h.kind)).toEqual(
-      expect.arrayContaining(["gh alias", "run allowlist"]),
+      expect.arrayContaining(["gh alias"]),
     );
     expect(findForbiddenUploadCommands(runYaml("gh alias import aliases.yml"), "release.yml").map((h) => h.kind)).toEqual(
-      expect.arrayContaining(["gh alias", "run allowlist"]),
+      expect.arrayContaining(["gh alias"]),
     );
     expect(() => assertWorkflowUploadAllowlist(runYaml("gh alias set x 'pr create'"), "alias.yml")).toThrow(
       /gh alias/,
@@ -578,89 +611,273 @@ describe("public-repo CI guard", () => {
     expect(pkg.devDependencies.yaml).toBe("2.9.1");
   });
 
-  it("documents Limits: github-script and python/node uploads are out of scope", () => {
+  it("documents Limits: default-deny allowlist and regen script", () => {
     const src = readFileSync(join(ROOT, "scripts/guard-public-ci.mjs"), "utf8");
     expect(src).toMatch(/## Limits/);
     expect(src).toMatch(/actions\/github-script/);
-    expect(src).toMatch(/Python or Node/);
+    expect(src).toMatch(/default-deny/);
     expect(src).toMatch(/non-`gh` exfil/);
     expect(src).toMatch(/`nc`/);
-    expect(src).toMatch(/Reviewers must check those paths by hand/);
+    expect(src).toMatch(/Reviewers must read the hashed step/);
+    expect(src).toMatch(/regen-public-ci-allowlist/);
+    expect(src).toMatch(/guard-public-ci\.allowlist\.json/);
     const doc = readFileSync(join(ROOT, "docs/cloudflare-cutover.md"), "utf8");
     expect(doc).toMatch(/### Limits/);
     expect(doc).toMatch(/actions\/github-script/);
-    expect(doc).toMatch(/Python or Node/);
+    expect(doc).toMatch(/default-deny/);
     expect(doc).toMatch(/non-`gh` exfil/);
     expect(doc).toMatch(/`nc`/);
     expect(doc).toMatch(/guard-public-ci\.allowlist\.json/);
-    expect(src).toMatch(/guard-public-ci\.allowlist\.json/);
+    expect(doc).toMatch(/regen-public-ci-allowlist/);
+    expect(doc).toMatch(/pull_request_target/);
+    expect(existsSync(join(ROOT, "scripts/regen-public-ci-allowlist.mjs"))).toBe(true);
   });
 
-  it("rejects su -c, xargs sh -c, here-docs, sourced scripts, pipes into bash, functions, and gh extension", () => {
-    const bypasses: Array<[string, string]> = [
-      ["su -c 'gh gist create dump.sql'", "shell -c"],
-      ["xargs sh -c 'gh api -f body=@dump.sql'", "shell -c"],
-      ["cat <<'EOF'\ngh gist create dump.sql\nEOF", "here-doc"],
-      ["echo 'gh gist create dump.sql' > x.sh; source x.sh", "shell-file"],
-      ["echo 'gh gist create dump.sql' > x.sh; . x.sh", "shell-file"],
-      ["echo 'gh gist create dump.sql' > x.sh; bash x.sh", "shell-file"],
-      ["./leak.sh", "shell-file"],
-      ["echo 'gh gist create dump.sql' | bash", "pipe-to-interpreter"],
-      ["leak(){ gh gist create dump.sql; }; leak", "function"],
-      ["function leak { gh gist create dump.sql; }", "function"],
-      ["gh extension install owner/leak", "gh extension/alias"],
-    ];
-    for (const [cmd, shape] of bypasses) {
-      expect(runShapeReasons(cmd), cmd).toContain(shape);
-      expect(findForbiddenUploadCommands(runYaml(cmd)).map((h) => h.kind), cmd).toContain("run allowlist");
-    }
-  });
-
-  it("accepts a dangerous run only when step id + hash match the allowlist", () => {
-    const text = ["id: pinned", "run: |", "  cat <<'EOF'", "  hello", "  EOF", ""].join("\n");
-    const step = collectSteps(text)[0];
-    expect(step?.id).toBe("pinned");
-    expect(runNeedsAllowlist(step?.run ?? "")).toBe(true);
-    const hash = runContentHash(step?.run ?? "");
-    expect(
-      findForbiddenUploadCommands(text, "t.yml", { allowlist: [] }).map((h) => h.kind),
-    ).toContain("run allowlist");
+  it("accepts a step only when file + job + id + whole-unit hash match", () => {
+    const text = wf("- id: pinned\n  run: echo hi");
+    const unit = collectWorkflowUnits(text).units[0];
+    expect(unit?.id).toBe("pinned");
+    expect(unit?.job).toBe("t");
+    const entry = { file: "t.yml", job: "t", id: "pinned", sha256: unitHash(unit) };
+    expect(findForbiddenUploadCommands(text, "t.yml", { allowlist: [entry] })).toEqual([]);
+    expect(findForbiddenUploadCommands(text, "t.yml", { allowlist: [] }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
     expect(
       findForbiddenUploadCommands(text, "t.yml", {
-        allowlist: [{ file: "t.yml", id: "pinned", sha256: hash }],
-      }),
-    ).toEqual([]);
-    expect(
-      findForbiddenUploadCommands(text, "t.yml", {
-        allowlist: [{ file: "t.yml", id: "pinned", sha256: "0".repeat(64) }],
+        allowlist: [{ ...entry, sha256: "0".repeat(64) }],
       }).map((h) => h.kind),
-    ).toContain("run allowlist");
-    expect(isStepAllowlisted("t.yml", "pinned", step?.run ?? "", [{ file: "t.yml", id: "pinned", sha256: hash }])).toBe(
-      true,
+    ).toContain("step allowlist");
+    expect(
+      findForbiddenUploadCommands(text, "t.yml", { allowlist: [{ ...entry, job: "other" }] }).map((h) => h.kind),
+    ).toContain("step allowlist");
+    expect(isUnitAllowlisted("t.yml", unit, [entry])).toBe(true);
+  });
+
+  it("committed allowlist hashes match every workflow unit", () => {
+    const needed = neededStepAllowlist(join(ROOT, ".github/workflows"));
+    const committed = loadRunAllowlist();
+    expect(needed.length).toBeGreaterThan(10);
+    expect(needed.every((s) => s.file && s.job && s.id && s.sha256)).toBe(true);
+    expect(committed).toEqual(needed);
+  });
+
+  it("100e: env/shell/working-directory edits, copied job BUNDLE override, pull_request_target", () => {
+    const release = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
+    const allowlist = loadRunAllowlist();
+    const publish = collectWorkflowUnits(release).units.find((u) => u.job === "release" && u.id === "publish");
+    if (!publish) throw new Error("release.yml publish step missing");
+    expect(isUnitAllowlisted("release.yml", publish, allowlist)).toBe(true);
+
+    expect(
+      isUnitAllowlisted(
+        "release.yml",
+        { ...publish, env: { ...(publish.env ?? {}), LEAK: "1" } },
+        allowlist,
+      ),
+    ).toBe(false);
+    expect(isUnitAllowlisted("release.yml", { ...publish, shell: "bash" }, allowlist)).toBe(false);
+    expect(
+      isUnitAllowlisted("release.yml", { ...publish, workingDirectory: "/tmp" }, allowlist),
+    ).toBe(false);
+    expect(
+      isUnitAllowlisted(
+        "release.yml",
+        { ...publish, wfCtx: { ...publish.wfCtx, on: { pull_request_target: {} } } },
+        allowlist,
+      ),
+    ).toBe(false);
+    expect(
+      isUnitAllowlisted(
+        "release.yml",
+        {
+          ...publish,
+          job: "leak",
+          jobCtx: { ...publish.jobCtx, env: { ...(publish.jobCtx?.env ?? {}), BUNDLE: "/tmp/leak" } },
+        },
+        allowlist,
+      ),
+    ).toBe(false);
+
+    const envEdit = wf("- id: s\n  run: echo hi\n  env:\n    FOO: bar");
+    const envUnit = collectWorkflowUnits(envEdit).units[0];
+    const envEntry = { file: "t.yml", job: "t", id: "s", sha256: unitHash({ ...envUnit, env: null }) };
+    expect(findForbiddenUploadCommands(envEdit, "t.yml", { allowlist: [envEntry] }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
+
+    const shellEdit = wf("- id: s\n  shell: bash\n  run: echo hi");
+    const shellUnit = collectWorkflowUnits(shellEdit).units[0];
+    const shellEntry = { file: "t.yml", job: "t", id: "s", sha256: unitHash({ ...shellUnit, shell: null }) };
+    expect(findForbiddenUploadCommands(shellEdit, "t.yml", { allowlist: [shellEntry] }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
+
+    const wdEdit = wf("- id: s\n  working-directory: /tmp\n  run: echo hi");
+    const wdUnit = collectWorkflowUnits(wdEdit).units[0];
+    const wdEntry = {
+      file: "t.yml",
+      job: "t",
+      id: "s",
+      sha256: unitHash({ ...wdUnit, workingDirectory: null }),
+    };
+    expect(findForbiddenUploadCommands(wdEdit, "t.yml", { allowlist: [wdEntry] }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
+
+    const copied = [
+      "on: push",
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    env:",
+      "      BUNDLE: src-tauri/target/universal-apple-darwin/release/bundle",
+      "    steps:",
+      "      - id: p",
+      "        run: echo ok",
+      "  leak:",
+      "    runs-on: ubuntu-latest",
+      "    env:",
+      "      BUNDLE: /tmp/leak",
+      "    steps:",
+      "      - id: p",
+      "        run: echo ok",
+      "",
+    ].join("\n");
+    const copiedUnits = collectWorkflowUnits(copied).units;
+    const honest = copiedUnits.find((u) => u.job === "a");
+    const leak = copiedUnits.find((u) => u.job === "leak");
+    if (!honest || !leak) throw new Error("copied BUNDLE jobs missing");
+    const honestEntry = { file: "t.yml", job: "a", id: "p", sha256: unitHash(honest) };
+    expect(findForbiddenUploadCommands(copied, "t.yml", { allowlist: [honestEntry] }).map((h) => h.kind)).toContain(
+      "step allowlist",
+    );
+    expect(isUnitAllowlisted("t.yml", leak, [honestEntry])).toBe(false);
+    expect(unitHash(leak)).not.toBe(unitHash(honest));
+
+    const prt = wf("- id: s\n  run: echo hi", { on: "pull_request_target" });
+    expect(findForbiddenUploadCommands(prt, "t.yml").map((h) => h.kind)).toContain("step allowlist");
+    const pushUnit = collectWorkflowUnits(wf("- id: s\n  run: echo hi")).units[0];
+    const pushEntry = { file: "t.yml", job: "t", id: "s", sha256: unitHash(pushUnit) };
+    expect(findForbiddenUploadCommands(prt, "t.yml", { allowlist: [pushEntry] }).map((h) => h.kind)).toContain(
+      "step allowlist",
     );
   });
 
-  it("denies release.yml writes to DMG/STABLE_DMG/APPTAR/latest.json/$BUNDLE/dmg unless allowlisted", () => {
-    const writes = [
-      'cp "$DMG" /tmp/out.dmg',
-      'mv "$STABLE_DMG" /tmp/x',
-      "tee latest.json",
-      'install -m 644 dump "$BUNDLE"/dmg/leak.dmg',
-      "jq -n '{}' > latest.json",
+  it("100f: GITHUB_ENV/PATH, interpreters, github-script, reusable workflow, BASH_ENV/ENV", () => {
+    expect(writesGithubEnv('echo x >> "$GITHUB_ENV"')).toBe(true);
+    expect(writesGithubPath("echo /opt >> $GITHUB_PATH")).toBe(true);
+    expect(writesGithubEnv('fs.appendFileSync(process.env.GITHUB_ENV, "x=1")')).toBe(true);
+    expect(hasForbiddenEnvAssignment("export BASH_ENV=/tmp/x")).toBe(true);
+
+    const envWrites = [
+      'echo LEAK=1 >> "$GITHUB_ENV"',
+      "echo /tmp >> $GITHUB_PATH",
+      'python3 -c \'open(os.environ["GITHUB_ENV"],"a").write("x=1")\'',
+      "node -e 'require(\"fs\").appendFileSync(process.env.GITHUB_ENV,\"x=1\")'",
     ];
-    for (const cmd of writes) {
-      expect(findForbiddenUploadCommands(runYaml(cmd), "release.yml").map((h) => h.kind), cmd).toContain(
-        "run allowlist",
+    for (const cmd of envWrites) {
+      const kinds = findForbiddenUploadCommands(wf(`- id: s\n  run: ${JSON.stringify(cmd)}`), "t.yml").map(
+        (h) => h.kind,
       );
-      expect(findForbiddenUploadCommands(runYaml(cmd), "cutover-migrate.yml")).toEqual([]);
+      expect(kinds, cmd).toEqual(expect.arrayContaining(["step allowlist"]));
+      expect(kinds, cmd).toEqual(
+        expect.arrayContaining([expect.stringMatching(/GITHUB_ENV|GITHUB_PATH/)]),
+      );
     }
+
+    const interpreters = [
+      "python3 -c 'open(\"dump.sql\",\"w\").write(\"x\")'",
+      "node -e 'require(\"fs\").writeFileSync(\"dump.sql\",\"x\")'",
+      "perl -e 'open F,\">dump.sql\"'",
+      "awk 'BEGIN{system(\"gh gist create dump.sql\")}'",
+      "make upload",
+      "git -c filter.leak.smudge=cat dump.sql",
+      "npm run leak",
+    ];
+    for (const cmd of interpreters) {
+      expect(
+        findForbiddenUploadCommands(wf(`- id: s\n  run: ${JSON.stringify(cmd)}`), "t.yml").map((h) => h.kind),
+        cmd,
+      ).toContain("step allowlist");
+    }
+
+    const script = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - id: s",
+      "        uses: actions/github-script@v7",
+      "        with:",
+      "          script: |",
+      "            require('fs').appendFileSync(process.env.GITHUB_ENV, 'x=1')",
+      "",
+    ].join("\n");
+    expect(findForbiddenUploadCommands(script, "t.yml").map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["step allowlist", "GITHUB_ENV"]),
+    );
+
+    const reusable = [
+      "on: push",
+      "jobs:",
+      "  leak:",
+      "    uses: owner/repo/.github/workflows/upload.yml@main",
+      "",
+    ].join("\n");
+    const reusableUnit = collectWorkflowUnits(reusable).units[0];
+    expect(reusableUnit?.kind).toBe("job-uses");
+    expect(reusableUnit?.uses).toMatch(/upload\.yml/);
+    expect(findForbiddenUploadCommands(reusable, "t.yml").map((h) => h.kind)).toContain("step allowlist");
+
+    const bashEnv = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    runs-on: ubuntu-latest",
+      "    env:",
+      "      BASH_ENV: /tmp/leak.sh",
+      "    steps:",
+      "      - id: s",
+      "        run: echo hi",
+      "        env:",
+      "          ENV: /tmp/posix.sh",
+      "",
+    ].join("\n");
+    const unit = collectWorkflowUnits(bashEnv).units[0];
+    const entry = { file: "t.yml", job: "t", id: "s", sha256: unitHash(unit) };
+    expect(findForbiddenUploadCommands(bashEnv, "t.yml", { allowlist: [entry] }).map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["BASH_ENV", "ENV key"]),
+    );
+    expect(
+      findForbiddenUploadCommands(wf("- id: s\n  run: export BASH_ENV=/tmp/x"), "t.yml").map((h) => h.kind),
+    ).toEqual(expect.arrayContaining(["step allowlist", "BASH_ENV"]));
   });
 
-  it("committed allowlist hashes match every dangerous run block", () => {
-    const needed = neededRunAllowlist(join(ROOT, ".github/workflows"));
-    const committed = loadRunAllowlist();
-    expect(needed.map((s) => s.id).every(Boolean)).toBe(true);
-    expect(committed).toEqual(needed);
+  it("100g: release-path writes via mv/install/dd/rsync/ln/sed/python/cp-to-var", () => {
+    const writes = [
+      'mv dump.sql "$DMG"',
+      'install -m 644 dump "$BUNDLE"/dmg/leak.dmg',
+      "dd if=dump.sql of=latest.json",
+      "rsync dump.sql latest.json",
+      "ln -s dump.sql RELEASE_NOTES.md",
+      "sed -i s/x/y/ RELEASE_NOTES.md",
+      "python3 -c 'open(\"RELEASE_NOTES.md\",\"w\").write(\"x\")'",
+      'OUT=RELEASE_NOTES.md; cp dump.sql "$OUT"',
+      'cp dump.sql "$STABLE_DMG"',
+    ];
+    for (const cmd of writes) {
+      expect(hasReleasePathWrite(cmd), cmd).toBe(true);
+      const kinds = findForbiddenUploadCommands(wf(`- id: s\n  run: ${JSON.stringify(cmd)}`), "release.yml").map(
+        (h) => h.kind,
+      );
+      expect(kinds, cmd).toEqual(expect.arrayContaining(["step allowlist", "release write"]));
+      expect(
+        findForbiddenUploadCommands(runYaml(cmd), "cutover-migrate.yml").map((h) => h.kind),
+        cmd,
+      ).toContain("release write");
+    }
   });
 
   it("rejects a multi-path dump + hash upload", () => {
@@ -749,11 +966,11 @@ describe("public-repo CI guard", () => {
     expect(workflow.match(/COALESCE\(updated_at, created_at\)/g)?.length).toBe(2);
     expect(workflow).toMatch(/name: Shred dumps/);
     expect(workflow).toMatch(/id: guard/);
+    expect(workflow).toMatch(/id: assert-logs/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);
     expect(workflow).toMatch(/--check-log/);
-    expect(workflow).toMatch(
-      /always\(\) && \(steps\.dump\.outcome == 'success' \|\| steps\.dump\.outcome == 'failure'\)/,
-    );
+    expect(workflow).toContain("name: Assert cutover logs have no row data\n        if: ${{ always() }}");
+    expect(workflow).not.toMatch(/steps\.dump\.outcome/);
     expect(workflow).toMatch(/\|\s*tee "/);
     expect(workflow).toMatch(/shred/);
     expect(workflow).toMatch(/scripts\/guard-public-ci\.mjs --job/);
