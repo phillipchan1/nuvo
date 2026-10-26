@@ -44,7 +44,7 @@ export function defaultWriteFreezeEnvGet(name: string): string | undefined {
 
 /** True when WRITE_FREEZE or MAINTENANCE_WRITE_FREEZE is on. */
 export function readWriteFreezeFlag(getEnv: EnvGet = defaultWriteFreezeEnvGet): boolean {
-  return writeFreezeOn(getEnv("WRITE_FREEZE") ?? getEnv("MAINTENANCE_WRITE_FREEZE"));
+  return writeFreezeOn(getEnv("WRITE_FREEZE")) || writeFreezeOn(getEnv("MAINTENANCE_WRITE_FREEZE"));
 }
 
 export type FrozenWriteOptions = {

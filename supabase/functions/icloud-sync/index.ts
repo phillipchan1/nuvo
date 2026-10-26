@@ -10,10 +10,10 @@ import { isMirrorUid, withoutMirrorCalendar } from "../_shared/mirror.ts";
 import { reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 import {
-import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
   SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
 } from "../_shared/syncWindow.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 interface IcloudAccount {
   id: string;

@@ -65,14 +65,14 @@ describe("writeFreezeOn", () => {
 });
 
 describe("readWriteFreezeFlag", () => {
-  it("reads WRITE_FREEZE then MAINTENANCE_WRITE_FREEZE", () => {
-    const env: Record<string, string> = { WRITE_FREEZE: "1" };
-    expect(readWriteFreezeFlag((name) => env[name])).toBe(true);
-    delete env.WRITE_FREEZE;
-    env.MAINTENANCE_WRITE_FREEZE = "yes";
-    expect(readWriteFreezeFlag((name) => env[name])).toBe(true);
-    delete env.MAINTENANCE_WRITE_FREEZE;
-    expect(readWriteFreezeFlag((name) => env[name])).toBe(false);
+  it("ORs WRITE_FREEZE and MAINTENANCE_WRITE_FREEZE (empty/false does not hide the other)", () => {
+    expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "1" : undefined))).toBe(true);
+    expect(readWriteFreezeFlag((name) => (name === "MAINTENANCE_WRITE_FREEZE" ? "yes" : undefined))).toBe(true);
+    expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "" : "true"))).toBe(true);
+    expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "0" : "1"))).toBe(true);
+    expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "false" : "on"))).toBe(true);
+    expect(readWriteFreezeFlag(() => "0")).toBe(false);
+    expect(readWriteFreezeFlag(() => undefined)).toBe(false);
   });
 });
 
@@ -117,10 +117,42 @@ describe("edge function wiring", () => {
     expect(names).toEqual(expected);
   });
 
-  it.each(WRITE_FUNCTIONS)("%s imports refuseFrozenWrite", (name) => {
+  it.each(WRITE_FUNCTIONS)("%s imports refuseFrozenWrite on its own line", (name) => {
     const src = readFileSync(join(FUNCTIONS, name, "index.ts"), "utf8");
     expect(src).toContain('from "../_shared/writeFreeze.ts"');
     expect(src).toContain("refuseFrozenWrite(req");
+    expect(src).not.toMatch(/import \{\s*import \{ refuseFrozenWrite/);
+  });
+
+  it("no edge-function file nests an import inside another import {…}", () => {
+    const files = readdirSync(FUNCTIONS, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && d.name !== "_shared")
+      .map((d) => join(FUNCTIONS, d.name, "index.ts"));
+    for (const file of files) {
+      const src = readFileSync(file, "utf8");
+      let depth = 0;
+      let inImportBrace = false;
+      for (const line of src.split("\n")) {
+        if (!inImportBrace && /^\s*import\s*\{/.test(line)) {
+          inImportBrace = true;
+          depth = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          if (depth <= 0) inImportBrace = false;
+          continue;
+        }
+        if (inImportBrace) {
+          expect(line, file).not.toMatch(/^\s*import\s/);
+          depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          if (depth <= 0) inImportBrace = false;
+        }
+      }
+    }
+  });
+
+  it("CI Parse the edge functions step is the esbuild --bundle=false walk", () => {
+    const ci = readFileSync(join(ROOT, ".github/workflows/checks.yml"), "utf8");
+    expect(ci).toMatch(/name: Parse the edge functions/);
+    expect(ci).toMatch(/npx esbuild --bundle=false --outfile=\/dev\/null/);
+    expect(ci).toMatch(/find supabase\/functions -name '\*\.ts'/);
   });
 
   it("capture freezes POST only (GET is a poll)", () => {

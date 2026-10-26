@@ -19,12 +19,12 @@
 // a fresh code and retries.
 import { admin, deleteSecret, handleOptions, json, requireUser, storeSecret } from "../_shared/admin.ts";
 import {
-import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   appleDisplayName,
   exchangeAppleAuthorizationCode,
   mergeAppleProfile,
   readAppleAuthConfig,
 } from "../_shared/appleIdentity.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);

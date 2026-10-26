@@ -8,7 +8,6 @@
 
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
-import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   notesFromMail,
   pickInboundToken,
   receivedBody,
@@ -16,6 +15,7 @@ import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   titleFromSubject,
   verifySvixSignature,
 } from "../_shared/inboundEmail.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const RATE_LIMIT_PER_MIN = 30;
 

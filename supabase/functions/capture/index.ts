@@ -22,7 +22,6 @@ import { admin } from "../_shared/admin.ts";
 import { createTaskCore, mirrorTask, FALLBACK_TZ } from "../_shared/createTask.ts";
 import type { TaskPriority } from "../_shared/nlp.ts";
 import {
-import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   hasScope,
   resolveConnection,
   SCOPE_INBOX,
@@ -30,6 +29,7 @@ import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   touchConnection,
   type Connection,
 } from "../_shared/connections.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 // A chatty external app is the same unbounded-loop risk we've been burned by,
 // pointed inward — cap writes per connection per minute.

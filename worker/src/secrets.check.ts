@@ -132,12 +132,16 @@ ok(!/-f .*unfreeze\.sql/.test(workflow), "cutover-migrate.yml does not -f unfree
 ok(/BILLING_TABLES/.test(workflow), "cutover-migrate.yml names BILLING_TABLES");
 ok(/COPY_SKIP_TABLES/.test(workflow) && /sync_log/.test(workflow), "cutover-migrate.yml skips sync_log from the frozen copy");
 const copyPy = readFileSync(join(root, "scripts/cutover_copy.py"), "utf8");
-ok(/--exclude-table=public\.\{name\}/.test(copyPy) || /exclude-table=public/.test(copyPy), "cutover_copy.py excludes billing + sync_log from the dump");
+ok(/--exclude-table=public\.\{name\}/.test(copyPy), "cutover_copy.py excludes billing tables from the dump");
+ok(/--exclude-table-data=public\.sync_log/.test(copyPy), "cutover_copy.py keeps sync_log structure (--exclude-table-data)");
 ok(/dump_exclude_args/.test(workflow), "cutover-migrate.yml uses dump_exclude_args for the frozen copy");
+ok(/require_write_freeze_preflight/.test(workflow) && /edge preflight expected 503/.test(workflow), "cutover-migrate.yml preflights a gated edge 503");
+ok(/anon INSERT on public\.sync_log/.test(workflow), "cutover-migrate.yml aborts if anon insert is still granted");
 ok(/source-snapshot\.json/.test(workflow), "cutover-migrate.yml records a frozen-table snapshot");
 ok(/subscriptions/.test(workflow) && /stripe_webhook_events/.test(workflow) && /apple_webhook_events/.test(workflow), "cutover-migrate.yml lists billing tables");
 ok(/require_cutover_armed/.test(workflow) && /MAINTENANCE_URL/.test(workflow), "cutover-migrate.yml refuses dump unless maintenance is armed");
-ok(/cmd_resync/.test(workflow) && /anti-join/.test(workflow), "cutover-migrate.yml resyncs sync_log tail and push deletes");
+ok(/cmd_resync/.test(workflow) && /id anti-join/.test(workflow), "cutover-migrate.yml resyncs sync_log by missing id");
+ok(/push_subscriptions upserted/.test(workflow), "cutover-migrate.yml upserts push_subscriptions");
 ok(/sync_log_watermark/.test(workflow), "cutover-migrate.yml records a sync_log watermark");
 
 const freezeSql = readFileSync(join(root, "docs/cloudflare-migration/freeze.sql"), "utf8");

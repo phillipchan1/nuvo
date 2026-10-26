@@ -59,6 +59,10 @@ ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe se
 
 const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
 ok(/export function refuseFrozenWrite/.test(writeFreezeSrc), "writeFreeze: refuseFrozenWrite is the shared helper");
+ok(
+  /writeFreezeOn\(getEnv\("WRITE_FREEZE"\)\) \|\| writeFreezeOn\(getEnv\("MAINTENANCE_WRITE_FREEZE"\)\)/.test(writeFreezeSrc),
+  "writeFreeze: WRITE_FREEZE OR MAINTENANCE_WRITE_FREEZE, not ??",
+);
 ok(!/\buser_id\b/.test(writeFreezeSrc), "writeFreeze: no user_id — freeze is global, not an owner bypass");
 ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/stripe-webhook/index.ts"), "utf8")), "writeFreeze: stripe-webhook is not frozen");
 ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/apple-webhook/index.ts"), "utf8")), "writeFreeze: apple-webhook is not frozen");

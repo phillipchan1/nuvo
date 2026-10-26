@@ -23,16 +23,17 @@ function py(code: string): string {
 }
 
 describe("cutover_copy helpers", () => {
-  it("excludes billing tables and sync_log from the frozen copy", () => {
+  it("excludes billing tables from the dump and skips sync_log data from parity", () => {
     expect(py("from cutover_copy import skipped_from_copy, COPY_SKIP_TABLES, BILLING_TABLES; print(sorted(COPY_SKIP_TABLES)); print(sorted(BILLING_TABLES)); print(skipped_from_copy('sync_log'), skipped_from_copy('tasks'))")).toBe(
       "['apple_notification_events', 'apple_webhook_events', 'stripe_webhook_events', 'subscriptions', 'sync_log']\n['apple_notification_events', 'apple_webhook_events', 'stripe_webhook_events', 'subscriptions']\nTrue False",
     );
   });
 
-  it("dump exclude args cover billing + sync_log", () => {
+  it("keeps sync_log structure and excludes billing tables", () => {
     const out = py("from cutover_copy import dump_exclude_args; print('\\n'.join(dump_exclude_args()))");
-    expect(out).toContain("--exclude-table=public.sync_log");
+    expect(out).toContain("--exclude-table-data=public.sync_log");
     expect(out).toContain("--exclude-table=public.subscriptions");
+    expect(out).not.toContain("--exclude-table=public.sync_log");
     expect(out).not.toContain("push_subscriptions");
   });
 
@@ -42,25 +43,123 @@ describe("cutover_copy helpers", () => {
     );
   });
 
-  it("parses the sync_log watermark line", () => {
+  it("parses the sync_log watermark line (report only)", () => {
     expect(py("from cutover_copy import parse_watermark_line; import json; print(json.dumps(parse_watermark_line('42|2026-10-26 12:00:00+00')))")).toBe(
       '{"id": 42, "created_at": "2026-10-26 12:00:00+00"}',
     );
   });
 
-  it("builds a tail SELECT greater than the watermark", () => {
-    const sql = py("from cutover_copy import sync_log_tail_copy_sql; print(sync_log_tail_copy_sql({'id': 9, 'created_at': \"2026-10-26 00:00:00+00\"}))");
-    expect(sql).toMatch(/id > 9/);
-    expect(sql).toMatch(/created_at > '2026-10-26 00:00:00\+00'::timestamptz/);
+  it("copies all sync_log rows (no watermark filter)", () => {
+    const sql = py("from cutover_copy import sync_log_copy_sql, sync_log_anti_join_insert_sql; print(sync_log_copy_sql()); print('---'); print(sync_log_anti_join_insert_sql())");
     expect(sql).toMatch(/FROM public\.sync_log/);
+    expect(sql).not.toMatch(/id >/);
+    expect(sql).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM public\.sync_log t WHERE t\.id = s\.id\)/);
+    expect(sql).toMatch(/ON CONFLICT \(id\) DO NOTHING/);
   });
 
-  it("push reconcile is an anti-join delete by id (counts only)", () => {
-    const sql = py("from cutover_copy import push_anti_join_delete_sql; print(push_anti_join_delete_sql())");
+  it("push resync upserts every column then deletes missing ids", () => {
+    const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql())");
+    expect(sql).toMatch(/FROM public\.push_subscriptions/);
+    expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE SET/);
+    expect(sql).toMatch(/last_seen_at = EXCLUDED\.last_seen_at/);
+    expect(sql).toMatch(/failure_count = EXCLUDED\.failure_count/);
     expect(sql).toMatch(/DELETE FROM public\.push_subscriptions/);
-    expect(sql).toMatch(/NOT EXISTS \(SELECT 1 FROM cutover_push_ids/);
     expect(sql).toMatch(/SELECT COUNT\(\*\) FROM gone/);
     expect(sql).not.toMatch(/RETURNING \*/);
+  });
+});
+
+describe("not-armed refusal actually runs", () => {
+  // Live HTTP in the same Python process (http.server + urllib). A Node
+  // createServer + spawnSync deadlocks: the event loop is blocked and the
+  // GET never completes. This still hits fetch_maintenance, not a stub.
+  const liveAssert = (armed: boolean) => `
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from cutover_copy import assert_cutover_armed, CutoverArmedError
+
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"write_freeze": true, "cutover_armed": ${armed ? "true" : "false"}}')
+    def log_message(self, *args):
+        pass
+
+httpd = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+url = f"http://127.0.0.1:{httpd.server_address[1]}/api/maintenance"
+try:
+    print(assert_cutover_armed(url)["cutover_armed"])
+except CutoverArmedError as e:
+    print(e.code)
+    print(str(e))
+finally:
+    httpd.shutdown()
+`;
+
+  it("refuses when the live maintenance endpoint reports cutover_armed false", () => {
+    const out = py(liveAssert(false));
+    expect(out).toMatch(/^not_armed\n/);
+    expect(out).toMatch(/refuse to start copy/);
+  });
+
+  it("passes when the live maintenance endpoint reports armed", () => {
+    expect(py(liveAssert(true))).toBe("True");
+  });
+
+  it("refuses a missing maintenance URL", () => {
+    const out = py(`
+from cutover_copy import assert_cutover_armed, CutoverArmedError
+try:
+    assert_cutover_armed("")
+    print("ARMED")
+except CutoverArmedError as e:
+    print(e.code)
+`);
+    expect(out).toBe("missing_url");
+  });
+});
+
+describe("edge preflight helpers", () => {
+  it("only accepts 503 as frozen", () => {
+    expect(py("from cutover_copy import edge_preflight_frozen; print(edge_preflight_frozen(503), edge_preflight_frozen(401), edge_preflight_frozen(200))")).toBe(
+      "True False False",
+    );
+  });
+
+  it("POSTs a live gated function and treats 503 as frozen", () => {
+    const out = py(`
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from cutover_copy import post_status, edge_preflight_frozen
+
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.send_response(503)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"write_freeze": true}')
+    def log_message(self, *args):
+        pass
+
+httpd = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+url = f"http://127.0.0.1:{httpd.server_address[1]}/functions/v1/calendar-refresh"
+try:
+    status = post_status(url)
+    print(status, edge_preflight_frozen(status))
+finally:
+    httpd.shutdown()
+`);
+    expect(out).toBe("503 True");
+  });
+
+  it("treats has_table_privilege f as anon insert denied", () => {
+    expect(py("from cutover_copy import anon_insert_denied; print(anon_insert_denied('f'), anon_insert_denied('t'), anon_insert_denied('true'))")).toBe(
+      "True False False",
+    );
   });
 });
 
@@ -68,28 +167,27 @@ describe("cutover-migrate.yml", () => {
   it("imports the shared copy helpers", () => {
     expect(WORKFLOW).toMatch(/from cutover_copy import/);
     expect(WORKFLOW).toMatch(/require_cutover_armed/);
+    expect(WORKFLOW).toMatch(/require_write_freeze_preflight/);
     expect(WORKFLOW).toMatch(/cmd_resync/);
   });
 
   it("refuses to start dump unless maintenance reports armed", () => {
     expect(WORKFLOW).toMatch(/MAINTENANCE_URL/);
-    expect(WORKFLOW).toMatch(/refuse to start copy/);
-    expect(WORKFLOW).toMatch(/cutover_armed is not true/);
-    expect(COPY_PY).toMatch(/def maintenance_is_armed/);
+    expect(WORKFLOW).toMatch(/assert_cutover_armed/);
+    expect(COPY_PY).toMatch(/def assert_cutover_armed/);
   });
 
-  it("excludes sync_log from dump, snapshot, and parity", () => {
+  it("keeps sync_log structure and excludes its data from parity", () => {
     expect(WORKFLOW).toMatch(/COPY_SKIP_TABLES/);
-    expect(WORKFLOW).toMatch(/skipped_from_copy/);
+    expect(WORKFLOW).toMatch(/exclude-table-data/);
     expect(WORKFLOW).toMatch(/sync_log_watermark/);
-    expect(WORKFLOW).not.toMatch(/BILLING_TABLES = \{/);
+    expect(WORKFLOW).toMatch(/structure must be kept/);
   });
 
-  it("keeps push_subscriptions in the copy and reconciles deletes after switch", () => {
+  it("keeps push_subscriptions in the copy and upserts after switch", () => {
+    expect(WORKFLOW).toMatch(/push_subscriptions upserted/);
     expect(WORKFLOW).toMatch(/push_subscriptions deleted on target \(anti-join\)/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
-    expect(COPY_PY).toMatch(/DELETE FROM public\.push_subscriptions/);
-    expect(COPY_PY).not.toMatch(/COPY_SKIP_TABLES = frozenset\(BILLING_TABLES \| \{"push_subscriptions"\}\)/);
   });
 });
 
@@ -124,10 +222,11 @@ describe("runbook", () => {
     expect(DOC).toMatch(/refuses to start dump/);
   });
 
-  it("documents sync_log tail and push_subscriptions anti-join", () => {
-    expect(DOC).toMatch(/`sync_log` is also excluded/);
+  it("documents sync_log id anti-join and push upsert", () => {
+    expect(DOC).toMatch(/--exclude-table-data/);
     expect(DOC).toMatch(/watermark/);
-    expect(DOC).toMatch(/anti-join/);
+    expect(DOC).toMatch(/late-committed/);
+    expect(DOC).toMatch(/ON CONFLICT \(id\) DO UPDATE/);
     expect(DOC).toMatch(/phase=resync/);
   });
 

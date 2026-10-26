@@ -218,10 +218,11 @@ Actions variable) and **refuses to start dump** unless the payload reports
 window; the job will not copy against that.
 
 Non-billing Supabase edge functions that write with `service_role` also
-read a `WRITE_FREEZE` secret (`supabase/functions/_shared/writeFreeze.ts`)
-and 503. Set `WRITE_FREEZE=1` (or `MAINTENANCE_WRITE_FREEZE=1`) as an
-edge-function secret when you arm. Covered: agent, capture (POST only;
-GET is a poll), mcp, inbound-email, google-webhook, delete-account,
+read `WRITE_FREEZE` **or** `MAINTENANCE_WRITE_FREEZE`
+(`supabase/functions/_shared/writeFreeze.ts`) and 503 if either is
+truthy. Set one of them as an edge-function secret when you arm.
+Covered: agent, capture (POST only; GET is a poll), mcp, inbound-email,
+google-webhook, delete-account,
 google-sync / oauth / events / contacts, m365-oauth / sync, ics-sync /
 subscribe, icloud-connect / sync / events / contacts, calendar-refresh,
 slot-mirror, task-mirror, route-events, rollover, push-dispatch,
@@ -237,14 +238,17 @@ and reviewed. Do **not** apply them from CI, the Worker, or
 `stripe_webhook_events`, `apple_webhook_events`, and
 `apple_notification_events` are excluded from the freeze, from
 `pg_dump --exclude-table`, from `source-snapshot.json`, and from the
-parity proof. `sync_log` is also excluded from the frozen copy and
-parity (billing webhooks insert via `logSync`); the dump records a
-watermark (`max(id)`, `max(created_at)`) and `phase=resync` copies
-rows greater than that watermark after the switch. `push_subscriptions`
-stays in the copy; resync then deletes Neon rows whose id is gone on
-Supabase (anti-join, counts only) so webhook deletes during the window
-land. If a billing-written table ever has to be copied *and* stay
-frozen, it needs the freeze too.
+parity proof. `sync_log` **structure** is dumped (`--exclude-table-data`);
+its rows stay out of snapshot/parity (billing webhooks insert via
+`logSync`). After the switch, `phase=resync` copies **every** source
+row whose `id` is missing on the target (`ON CONFLICT DO NOTHING`). A
+dump-time watermark (`max(id)`, `max(created_at)`) is reported only — a
+late-committed lower id must still land. `push_subscriptions` stays in
+the copy; resync upserts full source rows (`ON CONFLICT (id) DO UPDATE`
+all columns) then deletes Neon rows whose id is gone on Supabase
+(counts only), so webhook deletes **and** `last_seen_at` /
+`failure_count` edits during the window land. If a billing-written
+table ever has to be copied *and* stay frozen, it needs the freeze too.
 
 Grants are recorded from `aclexplode(relacl)`, including `PUBLIC`, and
 `unfreeze.sql` restores those exact ACL entries — no new direct grants
@@ -268,24 +272,25 @@ Order:
    `cron.alter_job(..., active := false)` after recording the prior
    `active` flag. `service_role` and the billing tables are untouched.
 3. **Snapshot** — `cutover-migrate` `dump` first GETs the maintenance
-   endpoint and dies unless `cutover_armed` is true. Then records
-   per-table counts + md5 for the frozen copy set only
+   endpoint and dies unless `cutover_armed` is true, POSTs one gated
+   edge function (`calendar-refresh`) and dies unless it 503s, and
+   checks `has_table_privilege(anon, sync_log, INSERT)` is false.
+   Then records per-table counts + md5 for the frozen copy set only
    (`source-snapshot.json` in runner temp) plus the `sync_log`
-   watermark (also printed on `cutover-report.md`).
-4. **Copy** — restore + token seal into Neon. Billing tables and
-   `sync_log` are not in the dump TOC.
+   watermark (report only, on `cutover-report.md`).
+4. **Copy** — restore + token seal into Neon. Billing tables are not in
+   the dump TOC. `sync_log` is: structure only, no rows.
 5. **Verify** — `verify` recomputes source and target hashes against the
    snapshot and dies if either drifted (writes leaked, or the copy is short).
-   Parity covers only the frozen tables.
-6. **First tail** — the same job runs `resync`: copies `sync_log` rows
-   with `id` / `created_at` greater than the snapshot watermark, and
-   applies `push_subscriptions` deletes via anti-join (counts only).
+   Parity covers only the frozen tables (`sync_log` excluded).
+6. **First resync** — the same job copies every `sync_log` id missing
+   on Neon and upserts `push_subscriptions` (then deletes missing ids).
 7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
-   `cutover-migrate` with `phase=resync` and the watermark from the
-   report so post-switch billing writes/deletes land. Or **unfreeze**
-   — apply `unfreeze.sql`, which restores the recorded ACLs and each
-   job's prior `active` exactly (idempotent), then clear `CUTOVER_ARMED`
-   and `WRITE_FREEZE`.
+   `cutover-migrate` with `phase=resync` so post-switch billing
+   inserts/updates/deletes land (id anti-join + full-row upsert). Or
+   **unfreeze** — apply `unfreeze.sql`, which restores the recorded
+   ACLs and each job's prior `active` exactly (idempotent), then clear
+   `CUTOVER_ARMED` and `WRITE_FREEZE`.
 
 ---
 

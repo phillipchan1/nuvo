@@ -39,11 +39,14 @@
 # Billing tables stay on Supabase and are excluded from the dump, the
 # source-snapshot.json, and the parity proof: subscriptions,
 # stripe_webhook_events, apple_webhook_events, apple_notification_events.
-# sync_log is also excluded (billing webhooks write it via logSync); the
-# job records a watermark at dump and re-syncs the tail after switch.
-# push_subscriptions stays in the copy; a post-switch anti-join applies
-# deletes made on Supabase after the snapshot (counts only).
-# Dump refuses to start unless GET MAINTENANCE_URL reports cutover_armed.
+# sync_log structure is dumped (--exclude-table-data); its rows stay out
+# of snapshot/parity. After switch, resync inserts every source row whose
+# id is missing on the target (ON CONFLICT DO NOTHING). The dump-time
+# watermark is reported only — a late-committed lower id must still land.
+# push_subscriptions stays in the copy; resync upserts full source rows
+# (ON CONFLICT (id) DO UPDATE) then deletes missing ids (counts only).
+# Dump refuses unless GET MAINTENANCE_URL reports cutover_armed, a gated
+# edge POST returns 503, and anon INSERT on a frozen table is denied.
 # freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
 #
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
@@ -116,6 +119,8 @@ jobs:
       CONFIRM: ${{ inputs.confirm }}
       PHASE: ${{ inputs.phase || 'copy' }}
       MAINTENANCE_URL: ${{ vars.MAINTENANCE_URL || vars.VITE_MAINTENANCE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+      WRITE_FREEZE_PREFLIGHT_URL: ${{ vars.WRITE_FREEZE_PREFLIGHT_URL }}
       CUTOVER_SYNC_LOG_WATERMARK_ID: ${{ inputs.sync_log_watermark_id }}
       CUTOVER_SYNC_LOG_WATERMARK_AT: ${{ inputs.sync_log_watermark_at }}
       CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
@@ -273,18 +278,26 @@ jobs:
           from cutover_copy import (
               BILLING_TABLES,
               COPY_SKIP_TABLES,
+              SYNC_LOG_COLUMNS,
+              PUSH_COLUMNS,
+              CutoverArmedError,
+              anon_insert_denied,
+              anon_insert_privilege_sql,
+              assert_cutover_armed,
               dump_exclude_args,
-              fetch_maintenance,
-              maintenance_is_armed,
+              edge_preflight_frozen,
               parse_watermark,
               parse_watermark_line,
+              post_status,
               push_anti_join_delete_sql,
-              push_ids_copy_sql,
-              push_load_ids_sql,
+              push_full_copy_sql,
+              push_load_rows_sql,
+              push_upsert_sql,
+              resolve_edge_preflight_url,
               skipped_from_copy,
-              sync_log_tail_copy_sql,
-              sync_log_tail_insert_sql,
-              sync_log_tail_load_sql,
+              sync_log_anti_join_insert_sql,
+              sync_log_copy_sql,
+              sync_log_load_sql,
               sync_log_watermark_sql,
           )
 
@@ -971,24 +984,35 @@ jobs:
 
           def require_cutover_armed() -> None:
               url = (os.environ.get("MAINTENANCE_URL") or "").strip()
-              if not url:
-                  die(
-                      "MAINTENANCE_URL is required — ship a build with "
-                      "VITE_MAINTENANCE_URL and VITE_CUTOVER_ARMED=1 before arming"
-                  )
               try:
-                  payload = fetch_maintenance(url)
+                  assert_cutover_armed(url)
+              except CutoverArmedError as exc:
+                  die(str(exc))
+              print("maintenance endpoint reports cutover_armed", flush=True)
+
+          def require_write_freeze_preflight() -> None:
+              try:
+                  url = resolve_edge_preflight_url(
+                      os.environ.get("WRITE_FREEZE_PREFLIGHT_URL") or "",
+                      os.environ.get("SUPABASE_URL") or "",
+                  )
+              except ValueError as exc:
+                  die(str(exc))
+              try:
+                  status = post_status(url)
               except Exception as exc:
                   die(
-                      f"maintenance endpoint unreachable — refuse to start copy "
+                      f"edge preflight unreachable — refuse to start copy "
                       f"({type(exc).__name__})"
                   )
-              if not maintenance_is_armed(payload):
-                  die(
-                      "maintenance endpoint is not armed (cutover_armed is not true) "
-                      "— refuse to start copy"
-                  )
-              print("maintenance endpoint reports cutover_armed", flush=True)
+              if not edge_preflight_frozen(status):
+                  die(f"edge preflight expected 503, got {status} — WRITE_FREEZE is not on")
+              print("edge preflight 503 (WRITE_FREEZE)", flush=True)
+              source = os.environ["SOURCE_DATABASE_URL"]
+              out = psql(source, anon_insert_privilege_sql(), source=True, extra=["-tA"]).strip()
+              if not anon_insert_denied(out):
+                  die("anon INSERT on public.sync_log is still granted — freeze.sql was not applied")
+              print("anon insert denied", flush=True)
 
           def load_sync_log_watermark(work: Path) -> dict[str, object]:
               env_id = (os.environ.get("CUTOVER_SYNC_LOG_WATERMARK_ID") or "").strip()
@@ -1014,6 +1038,7 @@ jobs:
 
           def cmd_dump() -> None:
               require_cutover_armed()
+              require_write_freeze_preflight()
               source = os.environ["SOURCE_DATABASE_URL"]
               dump_bin = os.environ["PG_DUMP"]
               restore_bin = os.environ["PG_RESTORE"]
@@ -1021,7 +1046,7 @@ jobs:
               dump_path = work / "nuvo-source.dump"
               users_path = work / "auth-users.csv"
               identities_path = work / "auth-identities.csv"
-              print("dumping public schema + data (no-owner, no-acl; billing + sync_log excluded; runner only)…", flush=True)
+              print("dumping public schema + data (no-owner, no-acl; billing excluded; sync_log data excluded; runner only)…", flush=True)
               run(
                   [
                       dump_bin,
@@ -1041,9 +1066,11 @@ jobs:
               toc = run([restore_bin, "--list", str(dump_path)])
               if "TABLE" not in toc:
                   die("pg_restore --list did not list any TABLE entries")
-              for skipped in sorted(COPY_SKIP_TABLES):
-                  if re.search(rf"\bTABLE\b.*\b{re.escape(skipped)}\b", toc):
-                      die(f"dump TOC includes skipped table {skipped} — excluded from the copy set")
+              for billing in sorted(BILLING_TABLES):
+                  if re.search(rf"\bTABLE\b.*\b{re.escape(billing)}\b", toc):
+                      die(f"dump TOC includes billing table {billing} — excluded from the copy set")
+              if not re.search(r"\bTABLE\b.*\bsync_log\b", toc):
+                  die("dump TOC is missing sync_log — structure must be kept (--exclude-table-data)")
               (work / "nuvo-source.toc").write_text(toc, encoding="utf-8")
               digest = sha256_file(dump_path)
               (work / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
@@ -1302,8 +1329,8 @@ jobs:
                           "",
                           f"- sync_log watermark id: {mark.get('id')}",
                           f"- sync_log watermark created_at: {mark.get('created_at')}",
-                          "- sync_log: excluded from copy/parity; re-sync tail after switch",
-                          "- push_subscriptions: in copy; post-switch anti-join deletes (counts only)",
+                          "- sync_log: structure dumped, data excluded from parity; resync is id anti-join",
+                          "- push_subscriptions: in copy; post-switch full-row upsert + delete-missing",
                       ]
                   )
               except SystemExit:
@@ -1319,44 +1346,51 @@ jobs:
                   die("snapshot/source/target count or md5 mismatch — abort:\n  " + "\n  ".join(problems))
               print("migration checksums ok", flush=True)
               if mark:
-                  print(f"sync_log watermark id={mark.get('id')} (tail re-sync is a separate step)", flush=True)
+                  print(f"sync_log watermark id={mark.get('id')} (report only; resync is id anti-join)", flush=True)
 
           def cmd_resync() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
               target = os.environ["RESTORE_DATABASE_URL"]
               work = dump_dir()
-              watermark = load_sync_log_watermark(work)
-              print(
-                  f"re-syncing sync_log tail after watermark id={watermark.get('id')} "
-                  "(counts only)",
-                  flush=True,
-              )
-              tail_path = work / "sync-log-tail.csv"
-              ids_path = work / "push-ids.csv"
+              try:
+                  mark = load_sync_log_watermark(work)
+                  print(
+                      f"sync_log snapshot watermark id={mark.get('id')} "
+                      "(report only; copy is every missing id)",
+                      flush=True,
+                  )
+              except SystemExit:
+                  print("sync_log watermark unavailable (report only)", flush=True)
+              sync_path = work / "sync-log-all.csv"
+              push_path = work / "push-rows.csv"
               run_to_file(
-                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", sync_log_tail_copy_sql(watermark)],
-                  tail_path,
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", sync_log_copy_sql()],
+                  sync_path,
                   source=True,
               )
-              tail_n = sum(1 for line in tail_path.read_text(encoding="utf-8").splitlines() if line.strip())
-              print(f"sync_log tail rows from source: {tail_n}", flush=True)
+              sync_n = sum(1 for line in sync_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"sync_log rows from source: {sync_n}", flush=True)
               run_to_file(
-                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", push_ids_copy_sql()],
-                  ids_path,
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", push_full_copy_sql()],
+                  push_path,
                   source=True,
               )
-              id_n = sum(1 for line in ids_path.read_text(encoding="utf-8").splitlines() if line.strip())
-              print(f"push_subscriptions ids on source: {id_n}", flush=True)
+              push_n = sum(1 for line in push_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"push_subscriptions rows from source: {push_n}", flush=True)
+              sync_cols = ", ".join(SYNC_LOG_COLUMNS)
+              push_cols = ", ".join(PUSH_COLUMNS)
               script = work / "resync.sql"
               script.write_text(
                   "\n".join(
                       [
-                          sync_log_tail_load_sql() + ";",
-                          "\\copy cutover_sync_log_tail (id, user_id, provider, operation, status, error, created_at) "
-                          f"FROM {sql_literal(str(tail_path))} WITH CSV",
-                          sync_log_tail_insert_sql() + ";",
-                          push_load_ids_sql() + ";",
-                          f"\\copy cutover_push_ids (id) FROM {sql_literal(str(ids_path))} WITH CSV",
+                          sync_log_load_sql() + ";",
+                          f"\\copy cutover_sync_log_src ({sync_cols}) "
+                          f"FROM {sql_literal(str(sync_path))} WITH CSV",
+                          sync_log_anti_join_insert_sql() + ";",
+                          push_load_rows_sql() + ";",
+                          f"\\copy cutover_push_rows ({push_cols}) "
+                          f"FROM {sql_literal(str(push_path))} WITH CSV",
+                          push_upsert_sql() + ";",
                           push_anti_join_delete_sql() + ";",
                           "",
                       ]
@@ -1370,10 +1404,12 @@ jobs:
                   if line.strip().isdigit()
               ]
               inserted = counts[0] if counts else "?"
-              deleted = counts[1] if len(counts) > 1 else "?"
-              print(f"sync_log tail inserted: {inserted}", flush=True)
+              upserted = counts[1] if len(counts) > 1 else "?"
+              deleted = counts[2] if len(counts) > 2 else "?"
+              print(f"sync_log inserted (id anti-join): {inserted}", flush=True)
+              print(f"push_subscriptions upserted: {upserted}", flush=True)
               print(f"push_subscriptions deleted on target (anti-join): {deleted}", flush=True)
-              for path in (tail_path, ids_path, script):
+              for path in (sync_path, push_path, script):
                   try:
                       path.unlink()
                   except OSError:

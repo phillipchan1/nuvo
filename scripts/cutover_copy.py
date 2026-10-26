@@ -6,8 +6,8 @@ Never prints row data. Counts, hashes, and watermarks only.
 from __future__ import annotations
 
 import json
-from typing import Any
-from urllib.error import URLError
+from typing import Any, Callable
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 # Billing stays on Supabase. Webhooks keep writing these; they are not
@@ -22,9 +22,35 @@ BILLING_TABLES = frozenset(
 )
 
 # sync_log is written by billing webhooks via logSync during the window.
-# Excluded from the frozen dump and parity; its tail is re-synced after
-# the switch using the snapshot watermark.
+# Structure is dumped (--exclude-table-data); rows stay out of the frozen
+# snapshot/parity and are copied after switch by id anti-join.
 COPY_SKIP_TABLES = frozenset(BILLING_TABLES | {"sync_log"})
+
+SYNC_LOG_COLUMNS = (
+    "id",
+    "user_id",
+    "provider",
+    "operation",
+    "status",
+    "error",
+    "created_at",
+)
+
+PUSH_COLUMNS = (
+    "id",
+    "user_id",
+    "created_at",
+    "updated_at",
+    "endpoint",
+    "p256dh",
+    "auth",
+    "label",
+    "time_zone",
+    "last_seen_at",
+    "failure_count",
+)
+
+FetchJson = Callable[[str], dict[str, Any]]
 
 
 def skipped_from_copy(name: str) -> bool:
@@ -32,7 +58,9 @@ def skipped_from_copy(name: str) -> bool:
 
 
 def dump_exclude_args() -> list[str]:
-    return [f"--exclude-table=public.{name}" for name in sorted(COPY_SKIP_TABLES)]
+    args = [f"--exclude-table=public.{name}" for name in sorted(BILLING_TABLES)]
+    args.append("--exclude-table-data=public.sync_log")
+    return args
 
 
 def maintenance_is_armed(payload: Any) -> bool:
@@ -56,6 +84,77 @@ def fetch_maintenance(url: str, *, timeout: float = 10.0) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("maintenance payload is not an object")
     return payload
+
+
+class CutoverArmedError(Exception):
+    def __init__(self, message: str, *, code: str = "not_armed"):
+        super().__init__(message)
+        self.code = code
+
+
+def assert_cutover_armed(url: str, *, fetch: FetchJson = fetch_maintenance) -> dict[str, Any]:
+    if not (url or "").strip():
+        raise CutoverArmedError(
+            "MAINTENANCE_URL is required — ship a build with "
+            "VITE_MAINTENANCE_URL and VITE_CUTOVER_ARMED=1 before arming",
+            code="missing_url",
+        )
+    try:
+        payload = fetch(url.strip())
+    except CutoverArmedError:
+        raise
+    except Exception as exc:
+        raise CutoverArmedError(
+            f"maintenance endpoint unreachable — refuse to start copy "
+            f"({type(exc).__name__})",
+            code="unreachable",
+        ) from exc
+    if not maintenance_is_armed(payload):
+        raise CutoverArmedError(
+            "maintenance endpoint is not armed (cutover_armed is not true) "
+            "— refuse to start copy",
+            code="not_armed",
+        )
+    return payload
+
+
+def post_status(url: str, *, timeout: float = 10.0) -> int:
+    req = Request(
+        url,
+        method="POST",
+        data=b"{}",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            return int(resp.status)
+    except HTTPError as exc:
+        return int(exc.code)
+
+
+def edge_preflight_frozen(status: int) -> bool:
+    return status == 503
+
+
+def resolve_edge_preflight_url(preflight: str, supabase_url: str) -> str:
+    explicit = (preflight or "").strip()
+    if explicit:
+        return explicit
+    base = (supabase_url or "").strip().rstrip("/")
+    if not base:
+        raise ValueError(
+            "WRITE_FREEZE_PREFLIGHT_URL or SUPABASE_URL is required for the freeze preflight"
+        )
+    return f"{base}/functions/v1/calendar-refresh"
+
+
+def anon_insert_privilege_sql() -> str:
+    return "SELECT has_table_privilege('anon', 'public.sync_log', 'INSERT')"
+
+
+def anon_insert_denied(result: str) -> bool:
+    text = (result or "").strip().lower()
+    return text in {"f", "false", "0"}
 
 
 def parse_watermark(id_value: Any, created_at: Any) -> dict[str, Any]:
@@ -91,20 +190,14 @@ def sync_log_watermark_sql() -> str:
     )
 
 
-def sync_log_tail_copy_sql(watermark: dict[str, Any]) -> str:
-    parsed = parse_watermark(watermark.get("id"), watermark.get("created_at"))
-    return (
-        "COPY (\n"
-        "  SELECT id, user_id, provider, operation, status, error, created_at\n"
-        "  FROM public.sync_log\n"
-        f"  WHERE id > {parsed['id']} OR created_at > {sql_literal(parsed['created_at'])}::timestamptz\n"
-        ") TO STDOUT WITH CSV"
-    )
+def sync_log_copy_sql() -> str:
+    cols = ", ".join(SYNC_LOG_COLUMNS)
+    return f"COPY (SELECT {cols} FROM public.sync_log) TO STDOUT WITH CSV"
 
 
-def sync_log_tail_load_sql() -> str:
+def sync_log_load_sql() -> str:
     return (
-        "CREATE TEMP TABLE cutover_sync_log_tail (\n"
+        "CREATE TEMP TABLE cutover_sync_log_src (\n"
         "  id bigint PRIMARY KEY,\n"
         "  user_id uuid,\n"
         "  provider text,\n"
@@ -116,13 +209,15 @@ def sync_log_tail_load_sql() -> str:
     )
 
 
-def sync_log_tail_insert_sql() -> str:
+def sync_log_anti_join_insert_sql() -> str:
+    cols = ", ".join(SYNC_LOG_COLUMNS)
     return (
         "WITH ins AS (\n"
-        "  INSERT INTO public.sync_log (id, user_id, provider, operation, status, error, created_at)\n"
+        f"  INSERT INTO public.sync_log ({cols})\n"
         "  OVERRIDING SYSTEM VALUE\n"
-        "  SELECT id, user_id, provider, operation, status, error, created_at\n"
-        "  FROM cutover_sync_log_tail\n"
+        f"  SELECT {cols}\n"
+        "  FROM cutover_sync_log_src s\n"
+        "  WHERE NOT EXISTS (SELECT 1 FROM public.sync_log t WHERE t.id = s.id)\n"
         "  ON CONFLICT (id) DO NOTHING\n"
         "  RETURNING 1\n"
         ")\n"
@@ -130,19 +225,59 @@ def sync_log_tail_insert_sql() -> str:
     )
 
 
-def push_ids_copy_sql() -> str:
-    return "COPY (SELECT id::text FROM public.push_subscriptions) TO STDOUT WITH CSV"
+def watermark_filter_ids(source_ids: list[int], watermark_id: int) -> list[int]:
+    """What a max(id) tail would copy — misses late-committed lower ids."""
+    return [i for i in source_ids if i > watermark_id]
 
 
-def push_load_ids_sql() -> str:
-    return "CREATE TEMP TABLE cutover_push_ids (id uuid PRIMARY KEY)"
+def anti_join_ids(source_ids: list[int], target_ids: list[int]) -> list[int]:
+    present = set(target_ids)
+    return [i for i in source_ids if i not in present]
+
+
+def push_full_copy_sql() -> str:
+    cols = ", ".join(PUSH_COLUMNS)
+    return f"COPY (SELECT {cols} FROM public.push_subscriptions) TO STDOUT WITH CSV"
+
+
+def push_load_rows_sql() -> str:
+    return (
+        "CREATE TEMP TABLE cutover_push_rows (\n"
+        "  id uuid PRIMARY KEY,\n"
+        "  user_id uuid,\n"
+        "  created_at timestamptz,\n"
+        "  updated_at timestamptz,\n"
+        "  endpoint text,\n"
+        "  p256dh text,\n"
+        "  auth text,\n"
+        "  label text,\n"
+        "  time_zone text,\n"
+        "  last_seen_at timestamptz,\n"
+        "  failure_count integer\n"
+        ")"
+    )
+
+
+def push_upsert_sql() -> str:
+    cols = ", ".join(PUSH_COLUMNS)
+    assignments = ",\n    ".join(f"{c} = EXCLUDED.{c}" for c in PUSH_COLUMNS if c != "id")
+    return (
+        "WITH upserted AS (\n"
+        f"  INSERT INTO public.push_subscriptions ({cols})\n"
+        f"  SELECT {cols} FROM cutover_push_rows\n"
+        "  ON CONFLICT (id) DO UPDATE SET\n"
+        f"    {assignments}\n"
+        "  RETURNING 1\n"
+        ")\n"
+        "SELECT COUNT(*) FROM upserted"
+    )
 
 
 def push_anti_join_delete_sql() -> str:
     return (
         "WITH gone AS (\n"
         "  DELETE FROM public.push_subscriptions t\n"
-        "  WHERE NOT EXISTS (SELECT 1 FROM cutover_push_ids s WHERE s.id = t.id)\n"
+        "  WHERE NOT EXISTS (SELECT 1 FROM cutover_push_rows s WHERE s.id = t.id)\n"
         "  RETURNING 1\n"
         ")\n"
         "SELECT COUNT(*) FROM gone"
