@@ -6180,3 +6180,57 @@ holds in the builder's account.
 *Status: standing — rehearsal only. Inventory:
 [`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).
 Cutover / rollback: [`cloudflare-cutover.md`](../cloudflare-cutover.md).*
+
+**D-165 · 2026-10-26 · A phone number, an email or a link in a task's notes is tappable —
+recognised when read, never stored. The notes stay plain text.**
+
+"Call Frontier Loyalty" had the number and the script in the task's notes, and the only way to
+dial it was to select it, copy it and switch apps. Notes were a bare `<textarea>` on both shells,
+which cannot hold a link — while an event's description had drawn URLs as links for months
+(`DescriptionHtml`), URLs only. One idea, two surfaces, drifted.
+
+**What shipped.** `lib/recognize.ts` is the one answer to "what in this text can you act on?" —
+URL, email, phone — and `DescriptionHtml` and the new `TaskNotes` field (both shells) draw it
+through one renderer, `renderRecognized`. `TaskNotes` has two faces. Notes that hold something
+actionable read as text with links: a tap on a link acts, a tap anywhere else swaps the textarea in
+under the finger, caret at the end, inside the same gesture so iOS raises the keyboard. Notes with
+nothing to tap — and empty notes — are the textarea they always were, so a fresh account pays
+nothing. Focus holds the editor in place: typing a number into plain notes never swaps it out from
+under the caret; it turns into a link when you leave the field.
+
+**Recognition, not formatting.** Phil asked for notes to "support formatting". We built the part
+that pays — act on what is already there — and not the part that doesn't. Bold, headings and
+markdown need an editor (a contenteditable or a toolbar breaks iOS dictation, P5); `notes` is a
+plain string that travels to the agent's prompt, the inbound-email body and the calendar record,
+none of which render markup; and a formatted notes field is the "notes app" `overview.md` §2
+refuses. Also deliberately **not** built: `- [ ]` checklists inside notes (a second subtask list
+beside Steps — P11, P10); addresses parsed out of prose (the least reliable shape of the lot, and
+a wrong guess is a wrong tap — P7, P16); a date in a note becoming "put it on the calendar" (a path
+to a day that skips the Week — P2). *These are candidates for §2 and are not entered there yet.*
+
+**The rule behind every pattern: a missed link costs nothing, a wrong one dials a stranger.** So
+phones are narrow on purpose — `+<country> …` anywhere in the world, and the North-American
+shapes — and a bare run of digits is never a phone, nor is a date, an IP address, a price or a
+card number. A national number from elsewhere with no `+` ("020 7946 0958") stays plain text
+rather than being guessed at: the honest P16 limit of doing this without a phone-number library
+or a known region. A number is dialled as typed; no country code is invented.
+
+**Anchor.** No Question Ledger row closes this cleanly — the nearest is D2, and the question a
+human asks is "I'm at the block; is what I need one tap away?" (proposed as a row, ◐; **not added
+to the ledger**). Altitude: Day. Story step: land (`brandscript.md` §7, "the prep is already
+written"). Failure prevented: none of §6's five — a convenience in the sense of §9.1, and ranked as
+one. Strains: P5 (mitigated — read-first only when there is something to tap), P13 (links get a
+44px hit area on touch), P16 (above). The four no's: no pool, no new name, degrades to plain text
+on empty or messy notes, and P16 is the live one.
+
+*Status: built — `tests/recognize.test.ts` (what it must link and, mostly, what it must never; each
+guard replayed by breaking it), `tests/task-notes.test.tsx` (both faces and the handoff), full
+suite, typecheck, build. Driven at `?sheets=task-block` at 375 and 320 with touch emulation: a tap
+on the words opens the textarea focused with the caret at the end, a tap away restores the read
+face, no horizontal overflow, link targets 44px, and the two faces break lines at the same points
+(0.2px apart in height). **Not driven:** a real tap-to-call on an iPhone, in the PWA or the Tauri
+shell — links are `<a target="_blank">`, which the opener plugin intercepts for http, https, mailto
+and tel (read from the pinned 2.5.5 source), but no device was in the loop; and the desktop task
+popover (`SlideOver`), which needs a signed-in app, so it has unit tests and a typecheck only.
+Open: the first number as a 44px **Call** act in the sheet's strip beside Mark done (the Join
+pattern); the same recognition for Nuvo's pre-work, which renders as markdown.*

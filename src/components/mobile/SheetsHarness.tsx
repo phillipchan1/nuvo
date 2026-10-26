@@ -148,7 +148,10 @@ function scenarios(): Record<string, Scenario> {
 
   const blockTask = mkTask({
     id: "t-block", title: "Draft the launch email", status: "backlog", do_date: toDateISO(at(9)), start_time: at(9, 30).toISOString(),
-    duration_minutes: 45, project_id: "p1", domain_id: "d1", priority: "high", notes: "Lead with the pricing change.\n\nAsk Maya about the screenshot.",
+    duration_minutes: 45, project_id: "p1", domain_id: "d1", priority: "high",
+    // A number, an email and a link — the note reads with them tappable (TaskNotes). The
+    // other task fixtures keep plain notes, so both faces of the field are on this page.
+    notes: "Lead with the pricing change.\n\nAsk Maya about the screenshot — maya@example.com, or call her on (626) 555-0142.\nDraft: https://docs.example.com/launch.",
     task_labels: [{ label_id: "l1" }],
   });
   const slotChildren = [
@@ -215,7 +218,7 @@ function scenarios(): Record<string, Scenario> {
       label: "done", group: "Task",
       task: mkTask({ id: "t-done", title: "Send the invoice", status: "done", do_date: toDateISO(at(9)), duration_minutes: 20, domain_id: "d1", completed_at: new Date().toISOString() }),
     },
-    "task-block": { label: "on the calendar (timed block)", group: "Task", task: blockTask },
+    "task-block": { label: "on the calendar (timed block) · notes with a number, email, link", group: "Task", task: blockTask },
     "task-long": {
       label: "three-line title", group: "Task",
       task: mkTask({
