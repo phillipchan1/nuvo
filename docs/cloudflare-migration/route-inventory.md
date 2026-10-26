@@ -30,7 +30,7 @@ data that is moving to Neon.
 
 | Route | Tables | Status | Tests |
 |---|---|---|---|
-| `GET/POST /api/data/:table` | planner set below | ported+tested | `accessHttp` list / POST-id leak / forged `user_id` |
+| `GET/POST /api/data/:table` | planner set below | ported+tested | `accessHttp` list / POST-id body leak / forged `user_id` |
 | `GET/PATCH/DELETE /api/data/:table/:id` | planner set | ported+tested | `accessHttp` 403/404 + FK plant on PATCH |
 | `GET/POST/DELETE /api/data/task_labels` | `task_labels` via `tasks`/`labels` | ported+tested | `accessHttp` |
 | `POST /api/rpc/apply_patch` | `tasks`, `domains`, `projects`, `user_settings` | ported+tested | `accessHttp` `matched: 0` |
@@ -92,8 +92,8 @@ wrong → 401. No Workers Cron Triggers.
 | Job | Tables | Status | Tests |
 |---|---|---|---|
 | `rollover` / `nuvo-rollover-pst` / `pdt` | `users`, `tasks`, `user_settings` | ported+tested | unauth 401; authorized 200; iterates `SELECT id FROM users` then `WHERE user_id = $id` |
-| `purge-trash` / `nuvo-purge-trash` | `users`, `tasks` | ported+tested | same cron auth path (implementation covered; isolation is per-user `DELETE`) |
-| `reminder-deliveries-prune` / `nuvo-reminder-deliveries-prune` | `users`, `reminder_deliveries` | ported+tested | same |
+| `purge-trash` / `nuvo-purge-trash` | `users`, `tasks` | ported+tested | unauth 401; A/B stale trash gone, recent trash + live task kept |
+| `reminder-deliveries-prune` / `nuvo-reminder-deliveries-prune` | `users`, `reminder_deliveries` | ported+tested | unauth 401; A/B stale deliveries gone, recent kept |
 | `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | **blocked** | `accessHttp` + `miniflare.seq` expect 501 |
 | `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
 | `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
@@ -157,14 +157,14 @@ cutover.
 
 | File | Count | What |
 |---|---|---|
-| `access.check.ts` | 186 | Store-layer isolation + FK plant |
-| `accessHttp.check.ts` | 307 | HTTP A/B + unauth 401 + POST-id leak + PATCH FK + every ported route above |
+| `access.check.ts` | 197 | Store-layer isolation + FK plant + day window + reminder target table |
+| `accessHttp.check.ts` | 333 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune crons + every ported route above |
 | `authUrl.check.ts` | 98 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
 
-`npm run check:isolation-mutation`: **64/64** owner filters in `store.ts`.
+`npm run check:isolation-mutation`: **66/66** owner filters in `store.ts`.
 
-SPA: `npm run typecheck` clean · `npm test` **2088** passed (159 files).
+SPA: `npm run typecheck` clean · `npm test` **2103** passed (160 files).
