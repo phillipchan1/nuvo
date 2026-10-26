@@ -82,6 +82,13 @@ those counts and hashes — never emails or row data. `checks.yml` runs
 `scripts/guard-public-ci.mjs`, which fails if any workflow uploads anything
 else.
 
+### Limits
+
+The guard is a deny-list of workflow `uses:` and of `curl` / `wget` / `gh`
+file uploads. It does **not** cover `actions/github-script` or upload code
+written in Python or Node (or any other runtime) inside a `run:` step.
+Reviewers must check those paths by hand.
+
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
 

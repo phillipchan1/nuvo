@@ -15,15 +15,27 @@
  *      ($(which curl), `curl`, env/command curl, …).
  *   3. Any uses: matching /upload|release/, plus ./ and docker://, outside
  *      the allowlists. actions/upload-artifact is path-checked.
- *   4. gh gist create, gh release upload, gh issue/pr --body-file/-F.
+ *   4. gh gist create, gh release upload. File-valued flags on gh release /
+ *      issue / pr / gist (--notes-file, --body-file, -F) are denied unless
+ *      the value is on ALLOWED_GH_FILE_FLAG_VALUES (empty by default).
  *      gh release create positional assets are allowed ONLY in release.yml
- *      and ONLY $DMG $STABLE_DMG $APPTAR latest.json with --repo $RELEASES_REPO.
+ *      and ONLY $DMG $STABLE_DMG $APPTAR latest.json, and that file must
+ *      contain exactly one --repo $RELEASES_REPO.
  *   5. actions/cache and actions/cache/save (restore-only is allowed).
+ *   6. YAML is fail-closed: parse errors, doc.errors, more than one
+ *      document, a non-mapping root, duplicate keys, or << merge keys
+ *      throw. There is no raw-text fallback.
+ *
+ * ## Limits
+ *
+ * This deny-list does not cover `actions/github-script` or upload code
+ * written in Python or Node (or any other runtime) inside a `run:` step.
+ * Reviewers must check those paths by hand.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parse as parseYaml } from "yaml";
+import { isScalar, parseAllDocuments, visit } from "yaml";
 
 export const ALLOWED_UPLOAD_ARTIFACT_PATHS = Object.freeze(["artifacts/cutover-report.md"]);
 
@@ -51,6 +63,12 @@ export const ALLOWED_LOCAL_OR_DOCKER_USES = Object.freeze([]);
 /** Positional assets `gh release create` may attach — only in release.yml. */
 export const RELEASE_YML_ALLOWED_ASSETS = Object.freeze(["$DMG", "$STABLE_DMG", "$APPTAR", "latest.json"]);
 
+/** File-valued gh flags (--notes-file, --body-file, -F). Empty: nothing is allowed. */
+export const ALLOWED_GH_FILE_FLAG_VALUES = Object.freeze([]);
+
+const GH_FILE_VALUE_FLAGS = new Set(["--notes-file", "--body-file", "-F"]);
+const GH_FILE_FLAG_COMMANDS = new Set(["release", "issue", "pr", "gist"]);
+
 const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--repo",
   "-R",
@@ -64,12 +82,40 @@ const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--discussion-category",
 ]);
 
-function tryParseYaml(text) {
+function rejectMergeKeys(doc) {
+  visit(doc, {
+    Pair(_, pair) {
+      if (isScalar(pair.key) && String(pair.key.value) === "<<") {
+        throw new Error("workflow YAML merge keys (<<) are not allowed");
+      }
+    },
+  });
+}
+
+/**
+ * Fail-closed workflow parse: exactly one document, mapping root, no
+ * parse errors, unique keys, no << merges. Never returns a partial tree.
+ */
+export function parseWorkflowDocument(text) {
+  let docs;
   try {
-    return parseYaml(String(text), { uniqueKeys: false });
-  } catch {
-    return null;
+    docs = parseAllDocuments(String(text), { uniqueKeys: true });
+  } catch (err) {
+    throw new Error(`workflow YAML parse error: ${err instanceof Error ? err.message : err}`);
   }
+  if (docs.length !== 1) {
+    throw new Error(`workflow YAML must be exactly one document (got ${docs.length})`);
+  }
+  const doc = docs[0];
+  if (doc.errors?.length) {
+    throw new Error(`workflow YAML parse error: ${doc.errors.map((e) => e.message).join("; ")}`);
+  }
+  rejectMergeKeys(doc);
+  const js = doc.toJS({ maxAliasCount: -1 });
+  if (js == null || typeof js !== "object" || Array.isArray(js)) {
+    throw new Error("workflow YAML root must be a mapping");
+  }
+  return js;
 }
 
 function withPath(value) {
@@ -121,23 +167,15 @@ function walkJobSteps(doc) {
 }
 
 /**
- * Read steps from the parsed YAML tree. Fragments (`uses: …`, `run: …`,
- * `- { uses: … }`) parse as a mapping or sequence; raw shell is a run script.
+ * Read steps from the parsed YAML tree. Fragments must still be a mapping
+ * (`uses: …`, `run: …`, `jobs:`). Sequences and raw shell throw.
  */
 export function collectSteps(workflowText) {
-  const text = String(workflowText);
-  const doc = tryParseYaml(text);
-  if (doc && typeof doc === "object" && !Array.isArray(doc) && doc.jobs) {
-    return walkJobSteps(doc);
-  }
-  if (Array.isArray(doc)) {
-    return doc.map((step) => normalizeStep(step));
-  }
-  if (doc && typeof doc === "object" && (doc.uses != null || doc.run != null || Array.isArray(doc.steps))) {
-    if (Array.isArray(doc.steps)) return doc.steps.map((step) => normalizeStep(step));
-    return [normalizeStep(doc)];
-  }
-  return [normalizeStep({ run: text })];
+  const doc = parseWorkflowDocument(workflowText);
+  if (doc.jobs) return walkJobSteps(doc);
+  if (Array.isArray(doc.steps)) return doc.steps.map((step) => normalizeStep(step));
+  if (doc.uses != null || doc.run != null) return [normalizeStep(doc)];
+  return [];
 }
 
 export function extractUploadArtifactSteps(workflowText) {
@@ -398,12 +436,49 @@ function forbiddenReleaseCreateKind(tokens, filename) {
   return allowed ? null : "gh release create file";
 }
 
-function ghLooksLikeBodyFile(tokens) {
-  if (!isGhSubcommand(tokens, "issue") && !isGhSubcommand(tokens, "pr")) return false;
-  return tokens.some((t) => {
+/** File-valued flags on gh release / issue / pr / gist, unless allowlisted. */
+export function ghFileFlagValues(tokens) {
+  const i = ghTokenIndex(tokens);
+  if (i < 0) return [];
+  if (!GH_FILE_FLAG_COMMANDS.has(tokens[i + 1])) return [];
+  const values = [];
+  for (let j = i + 1; j < tokens.length; j++) {
+    const t = tokens[j];
     const name = flagName(t);
-    return name === "--body-file" || name === "-F";
-  });
+    if (!GH_FILE_VALUE_FLAGS.has(name)) continue;
+    const val = t.includes("=") ? t.slice(t.indexOf("=") + 1) : tokens[++j];
+    if (val != null) values.push(val);
+  }
+  return values;
+}
+
+function ghForbiddenFileFlags(tokens) {
+  return ghFileFlagValues(tokens).filter((v) => !ALLOWED_GH_FILE_FLAG_VALUES.includes(v));
+}
+
+export function countReleaseRepoFlags(workflowText) {
+  let n = 0;
+  for (const step of collectSteps(workflowText)) {
+    if (!step.run) continue;
+    for (const { text } of logicalLines(step.run)) {
+      const tokens = tokenize(stripFullLineComment(text));
+      n += countRepoReleaseRepo(tokens);
+    }
+  }
+  return n;
+}
+
+function countRepoReleaseRepo(tokens) {
+  let n = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const name = flagName(tokens[i]);
+    if (name !== "--repo" && name !== "-R") continue;
+    const val = tokens[i].includes("=")
+      ? tokens[i].slice(tokens[i].indexOf("=") + 1)
+      : tokens[i + 1];
+    if (val === "$RELEASES_REPO") n += 1;
+  }
+  return n;
 }
 
 function forbiddenUseKind(action) {
@@ -433,8 +508,8 @@ function scanRunScript(run, filename) {
         const releaseKind = forbiddenReleaseCreateKind(tokens, filename);
         if (releaseKind) hits.push({ line, kind: releaseKind });
       }
-      if (ghLooksLikeBodyFile(tokens)) {
-        hits.push({ line, kind: "gh issue/pr --body-file" });
+      if (ghForbiddenFileFlags(tokens).length) {
+        hits.push({ line, kind: "gh file flag" });
       }
       if (lineLooksLikeGhApiInput(code)) {
         hits.push({
@@ -464,6 +539,12 @@ export function assertWorkflowUploadAllowlist(workflowText, filename = "workflow
   const problems = [];
   for (const hit of findForbiddenUploadCommands(workflowText, filename)) {
     problems.push(`${filename}:${hit.line}: forbidden upload (${hit.kind})`);
+  }
+  if (filename === "release.yml") {
+    const repos = countReleaseRepoFlags(workflowText);
+    if (repos !== 1) {
+      problems.push(`${filename}: must have exactly one --repo $RELEASES_REPO (found ${repos})`);
+    }
   }
   const steps = extractUploadArtifactSteps(workflowText);
   for (const step of steps) {

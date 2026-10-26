@@ -235,10 +235,11 @@ jobs:
           echo "Generated latest.json:"; cat latest.json
 
           # --latest serves latest.json + Nuvo.dmg at releases/latest/download/…
+          NOTES=$(cat RELEASE_NOTES.md)
           gh release create "$TAG" \
             --repo "$RELEASES_REPO" \
             --title "Nuvo v${APP_VERSION}" \
-            --notes-file RELEASE_NOTES.md \
+            --notes "$NOTES" \
             --latest \
             "$DMG" "$STABLE_DMG" "$APPTAR" latest.json
 

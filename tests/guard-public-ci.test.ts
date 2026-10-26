@@ -12,11 +12,13 @@ import {
   assertWorkflowsUploadAllowlist,
   assertWorkspaceHasNoDataFiles,
   collectSteps,
+  countReleaseRepoFlags,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
   isAtFileToken,
   isDataUrlencodeFileArg,
   isLtFileToken,
+  parseWorkflowDocument,
   lineLooksLikeCacheSave,
   lineLooksLikeGhApiInput,
   lineLooksLikeHttpUpload,
@@ -38,6 +40,10 @@ function tmp() {
   const dir = mkdtempSync(join(tmpdir(), "nuvo-guard-"));
   temps.push(dir);
   return dir;
+}
+
+function runYaml(cmd: string) {
+  return `run: ${JSON.stringify(cmd)}\n`;
 }
 
 describe("public-repo CI guard", () => {
@@ -88,7 +94,7 @@ describe("public-repo CI guard", () => {
   });
 
   it("rejects gh release upload and curl/wget upload flags", () => {
-    expect(findForbiddenUploadCommands("gh release upload v1 secret.dump\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh release upload v1 secret.dump"))).toEqual([
       { line: 1, kind: "gh release upload" },
     ]);
     expect(lineLooksLikeHttpUpload("curl -T secret.dump https://example.com")).toBe(true);
@@ -154,19 +160,19 @@ describe("public-repo CI guard", () => {
   });
 
   it("rejects gh release create files, gist, api @file, and third-party release actions", () => {
-    expect(findForbiddenUploadCommands("gh release create v1 secret.dump\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh release create v1 secret.dump"))).toEqual([
       { line: 1, kind: "gh release create file" },
     ]);
-    expect(findForbiddenUploadCommands("gh gist create secret.dump\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh gist create secret.dump"))).toEqual([
       { line: 1, kind: "gh gist create" },
     ]);
-    expect(findForbiddenUploadCommands("gh api -F x=@file repos/o/r\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh api -F x=@file repos/o/r"))).toEqual([
       { line: 1, kind: "gh @file" },
     ]);
-    expect(findForbiddenUploadCommands("gh api -f x=@file repos/o/r\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh api -f x=@file repos/o/r"))).toEqual([
       { line: 1, kind: "gh @file" },
     ]);
-    expect(findForbiddenUploadCommands('gh api -F "x=@file" repos/o/r\n')).toEqual([
+    expect(findForbiddenUploadCommands(runYaml('gh api -F "x=@file" repos/o/r'))).toEqual([
       { line: 1, kind: "gh @file" },
     ]);
     expect(() =>
@@ -191,19 +197,21 @@ describe("public-repo CI guard", () => {
       assertWorkflowUploadAllowlist("run: gh api -F x=@file repos/o/r\n", "field.yml"),
     ).toThrow(/gh @file/);
     // Desktop publish: exact tokens, only in release.yml, only with --repo $RELEASES_REPO.
+    // --notes-file is a file-valued flag and is denied even here (allowlist empty).
     const desktopPublish = [
-      'gh release create "$TAG" \\',
-      '  --repo "$RELEASES_REPO" \\',
-      '  --notes-file RELEASE_NOTES.md \\',
-      "  --latest \\",
-      '  "$DMG" "$STABLE_DMG" "$APPTAR" latest.json',
+      "run: |",
+      '  gh release create "$TAG" \\',
+      '    --repo "$RELEASES_REPO" \\',
+      '    --notes "$NOTES" \\',
+      "    --latest \\",
+      '    "$DMG" "$STABLE_DMG" "$APPTAR" latest.json',
       "",
     ].join("\n");
     expect(findForbiddenUploadCommands(desktopPublish, "release.yml")).toEqual([]);
     expect(findForbiddenUploadCommands(desktopPublish, "cutover-migrate.yml")).toEqual([
       { line: 1, kind: "gh release create file" },
     ]);
-    expect(findForbiddenUploadCommands("gh api repos/o/r --method PUT --field content=$CONTENT\n")).toEqual(
+    expect(findForbiddenUploadCommands(runYaml("gh api repos/o/r --method PUT --field content=$CONTENT"))).toEqual(
       [],
     );
   });
@@ -298,31 +306,31 @@ describe("public-repo CI guard", () => {
     expect(lineLooksLikeHttpUpload("`curl` -d @f https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("env curl -d @f https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("command curl -d @f https://example.com")).toBe(true);
-    expect(findForbiddenUploadCommands("$(which curl) -d @f https://example.com\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("$(which curl) -d @f https://example.com"))).toEqual([
       { line: 1, kind: "curl/wget upload" },
     ]);
-    expect(findForbiddenUploadCommands("command gh gist create secret.dump\n")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("command gh gist create secret.dump"))).toEqual([
       { line: 1, kind: "gh gist create" },
     ]);
   });
 
   it("allows gh release create assets only in release.yml with the exact desktop tokens", () => {
-    const sneak = "tar czf d.tar.gz dump; gh release create x d.tar.gz\n";
-    expect(findForbiddenUploadCommands(sneak, "cutover-migrate.yml")).toEqual([
+    const sneak = "tar czf d.tar.gz dump; gh release create x d.tar.gz";
+    expect(findForbiddenUploadCommands(runYaml(sneak), "cutover-migrate.yml")).toEqual([
       { line: 1, kind: "gh release create file" },
     ]);
-    expect(() => assertWorkflowUploadAllowlist(`run: ${sneak}`, "cutover-migrate.yml")).toThrow(
+    expect(() => assertWorkflowUploadAllowlist(runYaml(sneak), "cutover-migrate.yml")).toThrow(
       /gh release create file/,
     );
-    expect(findForbiddenUploadCommands("gh release create x $DUMP\n", "release.yml")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh release create x $DUMP"), "release.yml")).toEqual([
       { line: 1, kind: "gh release create file" },
     ]);
-    expect(findForbiddenUploadCommands("gh release create x secret.dump\n", "other.yml")).toEqual([
+    expect(findForbiddenUploadCommands(runYaml("gh release create x secret.dump"), "other.yml")).toEqual([
       { line: 1, kind: "gh release create file" },
     ]);
     expect(
       findForbiddenUploadCommands(
-        'gh release create "$TAG" --latest "$DMG" "$STABLE_DMG" "$APPTAR" latest.json\n',
+        runYaml('gh release create "$TAG" --latest "$DMG" "$STABLE_DMG" "$APPTAR" latest.json'),
         "release.yml",
       ),
     ).toEqual([{ line: 1, kind: "gh release create file" }]);
@@ -342,19 +350,111 @@ describe("public-repo CI guard", () => {
   });
 
   it("rejects gh issue/pr --body-file and -F", () => {
-    expect(findForbiddenUploadCommands("gh issue create --body-file secret.dump\n")).toEqual([
-      { line: 1, kind: "gh issue/pr --body-file" },
+    expect(findForbiddenUploadCommands(runYaml("gh issue create --body-file secret.dump"))).toEqual([
+      { line: 1, kind: "gh file flag" },
     ]);
-    expect(findForbiddenUploadCommands("gh pr create -F secret.dump\n")).toEqual([
-      { line: 1, kind: "gh issue/pr --body-file" },
+    expect(findForbiddenUploadCommands(runYaml("gh pr create -F secret.dump"))).toEqual([
+      { line: 1, kind: "gh file flag" },
     ]);
-    expect(findForbiddenUploadCommands("gh issue comment 1 --body-file notes.md\n")).toEqual([
-      { line: 1, kind: "gh issue/pr --body-file" },
+    expect(findForbiddenUploadCommands(runYaml("gh issue comment 1 --body-file notes.md"))).toEqual([
+      { line: 1, kind: "gh file flag" },
     ]);
     expect(() =>
-      assertWorkflowUploadAllowlist("run: gh pr create --body-file dump.csv\n", "pr.yml"),
-    ).toThrow(/gh issue\/pr --body-file/);
-    expect(findForbiddenUploadCommands("gh pr list\n")).toEqual([]);
+      assertWorkflowUploadAllowlist(runYaml("gh pr create --body-file dump.csv"), "pr.yml"),
+    ).toThrow(/gh file flag/);
+    expect(findForbiddenUploadCommands(runYaml("gh pr list"))).toEqual([]);
+  });
+
+  it("denies gh release --notes-file / -F in any workflow, including release.yml", () => {
+    expect(findForbiddenUploadCommands(runYaml("gh release create v1 --notes-file secret.dump"), "leak.yml")).toEqual(
+      [{ line: 1, kind: "gh file flag" }],
+    );
+    expect(findForbiddenUploadCommands(runYaml("gh release edit v1 --notes-file dump.csv"), "release.yml")).toEqual([
+      { line: 1, kind: "gh file flag" },
+    ]);
+    expect(findForbiddenUploadCommands(runYaml("gh release create v1 -F RELEASE_NOTES.md"), "release.yml")).toEqual([
+      { line: 1, kind: "gh file flag" },
+    ]);
+    expect(findForbiddenUploadCommands(runYaml("gh gist edit id --body-file secret.dump"))).toEqual([
+      { line: 1, kind: "gh file flag" },
+    ]);
+    expect(() =>
+      assertWorkflowUploadAllowlist(runYaml("gh release create v1 --notes-file notes.md"), "any.yml"),
+    ).toThrow(/gh file flag/);
+  });
+
+  it("throws on YAML parse errors, multiple documents, and a non-mapping root", () => {
+    expect(() => parseWorkflowDocument("uses: [\n")).toThrow(/parse error/);
+    expect(() => findForbiddenUploadCommands("uses: [\n")).toThrow(/parse error/);
+    expect(() => assertWorkflowUploadAllowlist("---\na: 1\n---\nb: 2\n", "multi.yml")).toThrow(
+      /exactly one document/,
+    );
+    expect(() => parseWorkflowDocument("- uses: softprops/action-gh-release@v2\n")).toThrow(
+      /root must be a mapping/,
+    );
+    expect(() => findForbiddenUploadCommands("gh release upload v1 secret.dump\n")).toThrow(
+      /root must be a mapping/,
+    );
+  });
+
+  it("fails on duplicate keys and << merge keys", () => {
+    expect(() => parseWorkflowDocument("on: push\non: pull_request\njobs: {}\n")).toThrow(/parse error|unique/);
+    expect(() =>
+      assertWorkflowUploadAllowlist(
+        ["x: &a", "  uses: softprops/action-gh-release@v2", "jobs:", "  t:", "    steps:", "      - <<: *a", ""].join(
+          "\n",
+        ),
+        "merge.yml",
+      ),
+    ).toThrow(/merge keys/);
+  });
+
+  it("requires exactly one --repo $RELEASES_REPO in release.yml", () => {
+    const one = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    steps:",
+      "      - run: gh release create v1 --repo $RELEASES_REPO --notes n $DMG $STABLE_DMG $APPTAR latest.json",
+      "",
+    ].join("\n");
+    expect(countReleaseRepoFlags(one)).toBe(1);
+    assertWorkflowUploadAllowlist(one, "release.yml");
+
+    const none = "on: push\njobs:\n  t:\n    steps:\n      - run: echo hi\n";
+    expect(countReleaseRepoFlags(none)).toBe(0);
+    expect(() => assertWorkflowUploadAllowlist(none, "release.yml")).toThrow(/exactly one --repo/);
+
+    const two = [
+      "on: push",
+      "jobs:",
+      "  t:",
+      "    steps:",
+      "      - run: gh release create a --repo $RELEASES_REPO --notes n $DMG $STABLE_DMG $APPTAR latest.json",
+      "      - run: gh release create b --repo $RELEASES_REPO --notes n $DMG $STABLE_DMG $APPTAR latest.json",
+      "",
+    ].join("\n");
+    expect(countReleaseRepoFlags(two)).toBe(2);
+    expect(() => assertWorkflowUploadAllowlist(two, "release.yml")).toThrow(/exactly one --repo/);
+
+    expect(countReleaseRepoFlags(readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8"))).toBe(1);
+  });
+
+  it("pins yaml at exactly 2.9.1", () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+    expect(pkg.devDependencies.yaml).toBe("2.9.1");
+  });
+
+  it("documents Limits: github-script and python/node uploads are out of scope", () => {
+    const src = readFileSync(join(ROOT, "scripts/guard-public-ci.mjs"), "utf8");
+    expect(src).toMatch(/## Limits/);
+    expect(src).toMatch(/actions\/github-script/);
+    expect(src).toMatch(/Python or Node/);
+    expect(src).toMatch(/Reviewers must check those paths by hand/);
+    const doc = readFileSync(join(ROOT, "docs/cloudflare-cutover.md"), "utf8");
+    expect(doc).toMatch(/### Limits/);
+    expect(doc).toMatch(/actions\/github-script/);
+    expect(doc).toMatch(/Python or Node/);
   });
 
   it("rejects a multi-path dump + hash upload", () => {
