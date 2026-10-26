@@ -7,9 +7,10 @@
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune)
  * iterate `users` then scope by `user_id`. Calendar-dispatch fans out one
  * Queue message per due account so a single isolate does not loop every
- * tenant against Google/Graph/CalDAV (Workers Paid CPU). Push / github /
- * google-renew stay 501. Queue consume is a no-op scaffold — later PRs
- * sync one account per message.
+ * tenant against Google/Graph/CalDAV (Workers Paid CPU). The consumer runs
+ * Google poll (other providers ack for PR C). `google-renew` re-watches
+ * channels. Push / github stay 501. Without a queue binding, HTTP
+ * calendar-dispatch claims Google in-process (PGlite / tests).
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -20,8 +21,10 @@ import type { Context } from "hono";
 import { BLOCKED_CRON_JOBS, stayOnSupabase } from "./blocked.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
-import type { Sql } from "./db.ts";
+import { closeSql, openSql, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
+import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 
@@ -67,6 +70,7 @@ const JOB_ALIASES: Record<string, string> = {
   "nuvo-calendar-dispatch": "calendar-dispatch",
   "nuvo-push-dispatch": "push-dispatch",
   "nuvo-google-renew": "google-renew",
+  "nuvo-google-resubscribe": "google-resubscribe",
   "nuvo-github-poll": "github-poll",
   "nuvo-trim-sync-log": "trim-sync-log",
   "nuvo-reminder-deliveries-prune": "reminder-deliveries-prune",
@@ -187,9 +191,18 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
   if (name === "calendar-dispatch") {
-    if (!sql || !env.CALENDAR_SYNC_QUEUE) return blocked(name);
-    const enqueued = await enqueueDueCalendarAccounts(sql, env);
-    return { job: name, status: 200, stay_on_supabase: true, enqueued };
+    if (!sql) return blocked(name);
+    if (env.CALENDAR_SYNC_QUEUE) {
+      const enqueued = await enqueueDueCalendarAccounts(sql, env);
+      return { job: name, status: 200, stay_on_supabase: false, enqueued };
+    }
+    const result = await runCalendarDispatch(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false, enqueued: result.ran };
+  }
+  if (name === "google-renew" || name === "google-resubscribe") {
+    if (!sql) return blocked(name);
+    await runGoogleCronJob(sql, env, name);
+    return { job: name, status: 200, stay_on_supabase: false };
   }
   if (name === "rollover") {
     if (!sql) return blocked(name);
@@ -221,14 +234,42 @@ export async function handleScheduled(
 }
 
 /**
- * Scaffold consumer. Acks every message. Later PRs open the token and
- * sync that one account. Counts only — never log ids or row data.
+ * One message = one calendar account. Google runs poll here. Other
+ * providers ack for PR C. Counts only — never log ids, tokens, or row data.
  */
-export function consumeCalendarSyncBatch(batch: QueueBatch<CalendarSyncMessage>): number {
+export async function consumeCalendarSyncBatch(
+  batch: QueueBatch<CalendarSyncMessage>,
+  env: Env,
+): Promise<number> {
   let n = 0;
-  for (const msg of batch.messages) {
-    n += 1;
-    msg.ack();
+  let sql: Sql | null = null;
+  try {
+    for (const msg of batch.messages) {
+      n += 1;
+      if (msg.body.provider === "google") {
+        if (!sql) {
+          try {
+            sql = openSql(env);
+          } catch {
+            sql = null;
+          }
+        }
+        if (sql) {
+          try {
+            await runGoogleSync(sql, env, {
+              mode: "poll",
+              accountId: msg.body.account_id,
+              userId: msg.body.user_id,
+            });
+          } catch {
+            continue;
+          }
+        }
+      }
+      msg.ack();
+    }
+  } finally {
+    if (sql) await closeSql(sql);
   }
   return n;
 }
@@ -246,8 +287,18 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
 
   if (name === "calendar-dispatch") {
     const io = await requestIo(c);
-    const enqueued = await enqueueDueCalendarAccounts(io.sql, c.env);
-    return json({ ok: true, job: name, enqueued, stay_on_supabase: true }, 200, OPEN_CORS);
+    if (c.env.CALENDAR_SYNC_QUEUE) {
+      const enqueued = await enqueueDueCalendarAccounts(io.sql, c.env);
+      return json({ ok: true, job: name, enqueued, stay_on_supabase: false }, 200, OPEN_CORS);
+    }
+    const result = await runCalendarDispatch(io.sql, c.env, c.req.url);
+    return json({ ok: true, job: name, stay_on_supabase: false, ...result }, 200, OPEN_CORS);
+  }
+
+  if (name === "google-renew" || name === "google-resubscribe") {
+    const io = await requestIo(c);
+    const result = await runGoogleCronJob(io.sql, c.env, name, c.req.url);
+    return json({ ok: true, job: name, stay_on_supabase: false, ...result }, 200, OPEN_CORS);
   }
 
   if (BLOCKED_CRON_JOBS.has(job) || BLOCKED_CRON_JOBS.has(name)) {

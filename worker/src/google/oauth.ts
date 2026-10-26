@@ -3,7 +3,7 @@ import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
 import { outboundFetch } from "../lib/outboundFetch.ts";
 import { signState, verifyState } from "../lib/oauthState.ts";
-import { sealToken } from "../lib/secrets.ts";
+import { parseTokenKeyring, sealToken } from "../secrets.ts";
 import {
   MIRROR_CALENDAR_DESCRIPTION,
   MIRROR_CALENDAR_NAME,
@@ -90,14 +90,13 @@ export async function handleGoogleOauthCallback(
   let iv: Uint8Array | null = null;
   let keyVersion: number | null = null;
   if (tok.refresh_token) {
-    const key = env.TOKEN_ENC_KEY_V1;
-    if (!key) throw new Error("TOKEN_ENC_KEY_V1 is not set");
-    const sealed = await sealToken(key, tok.refresh_token, {
+    const ring = await parseTokenKeyring(env);
+    const sealed = await sealToken(tok.refresh_token, {
       table: "calendar_accounts",
       rowId: accountId,
       userId,
-    });
-    enc = sealed.enc;
+    }, ring);
+    enc = sealed.ciphertext;
     iv = sealed.iv;
     keyVersion = sealed.keyVersion;
   }

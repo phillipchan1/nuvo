@@ -1,7 +1,7 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
 import { outboundFetch } from "../lib/outboundFetch.ts";
-import { openToken } from "../lib/secrets.ts";
+import { openToken, parseTokenKeyring } from "../secrets.ts";
 import { GOOGLE_API, GOOGLE_TOKEN_URL, type GoogleAccount } from "./types.ts";
 import { logSync, markReconnect, saveAccessToken } from "./owned.ts";
 
@@ -11,18 +11,26 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
     : 0;
   if (account.access_token && expiresAt > Date.now() + 60_000) return account.access_token;
 
-  const key = env.TOKEN_ENC_KEY_V1;
-  if (!key || !account.refresh_token_enc || !account.refresh_token_iv) {
+  if (!account.refresh_token_enc || !account.refresh_token_iv || account.key_version == null) {
     await markReconnect(sql, account.id, account.user_id);
     await logSync(sql, "google", "token-refresh", "error", "no refresh token stored", account.user_id);
     throw new Error("no refresh token");
   }
 
-  const refreshToken = await openToken(key, account.refresh_token_enc, account.refresh_token_iv, {
-    table: "calendar_accounts",
-    rowId: account.id,
-    userId: account.user_id,
-  });
+  const ring = await parseTokenKeyring(env);
+  const refreshToken = await openToken(
+    {
+      ciphertext: account.refresh_token_enc,
+      iv: account.refresh_token_iv,
+      keyVersion: account.key_version,
+    },
+    {
+      table: "calendar_accounts",
+      rowId: account.id,
+      userId: account.user_id,
+    },
+    ring,
+  );
 
   const res = await outboundFetch(GOOGLE_TOKEN_URL, {
     method: "POST",

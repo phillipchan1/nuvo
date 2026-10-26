@@ -5,8 +5,27 @@
  */
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
-import { bytesFromUnknown } from "../lib/secrets.ts";
 import type { CalendarEntry, GoogleAccount } from "./types.ts";
+
+/** postgres.js / PGlite may return BYTEA as Uint8Array, Buffer, or \\x hex. */
+function bytesFromUnknown(value: unknown): Uint8Array | null {
+  if (value == null) return null;
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    const view = value as ArrayBufferView;
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  }
+  if (typeof value === "string") {
+    const hex = value.startsWith("\\x") ? value.slice(2) : value;
+    if (/^[0-9a-fA-F]+$/.test(hex) && hex.length % 2 === 0) {
+      const out = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      return out;
+    }
+  }
+  return null;
+}
 
 export interface CalendarStore {
   sql: Sql;

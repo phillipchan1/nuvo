@@ -419,6 +419,7 @@ async function requirePlanner(
 registerGoogleRoutes(app, {
   requireUser: requirePlanner,
   requestIo,
+  refuseIfFrozen,
 });
 
 app.all("/api/cron/:job", (c) => handleCron(c));
@@ -477,8 +478,16 @@ async function scheduled(
   }
 }
 
-function queue(batch: QueueBatch<CalendarSyncMessage>): void {
-  consumeCalendarSyncBatch(batch);
+function queue(
+  batch: QueueBatch<CalendarSyncMessage>,
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): void {
+  if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) {
+    for (const msg of batch.messages) msg.ack();
+    return;
+  }
+  ctx.waitUntil(consumeCalendarSyncBatch(batch, env));
 }
 
 Object.assign(app, { scheduled, queue });

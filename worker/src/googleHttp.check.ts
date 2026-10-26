@@ -6,6 +6,9 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
+import { openToken, parseTokenKeyring, sealToken } from "./secrets.ts";
+import { getAccessToken } from "./google/tokens.ts";
+import { loadGoogleAccountById } from "./google/owned.ts";
 import app from "./index.ts";
 import type { Env } from "./env.ts";
 
@@ -276,6 +279,37 @@ const resub = await call("/api/cron/google-resubscribe", {
   headers: { authorization: "Bearer cron-secret" },
 });
 ok(resub.status === 200, "cron google-resubscribe (flip tooling) is 200");
+
+const ring = await parseTokenKeyring(env);
+const refresh = "1//mock-google-refresh-token";
+const aad = { table: "calendar_accounts" as const, rowId: ACCOUNT_A, userId: A };
+const sealed = await sealToken(refresh, aad, ring);
+const opened = await openToken(sealed, aad, ring);
+ok(opened === refresh && opened.startsWith("1//"), "sealed google refresh opens with row AAD");
+let moved = false;
+try {
+  await openToken(sealed, { ...aad, userId: B }, ring);
+  moved = true;
+} catch {
+  moved = false;
+}
+ok(!moved, "openToken refuses a moved AAD (other user)");
+await sql`
+  UPDATE calendar_accounts
+  SET refresh_token_enc = ${sealed.ciphertext},
+      refresh_token_iv = ${sealed.iv},
+      key_version = ${sealed.keyVersion},
+      access_token = NULL,
+      access_token_expires_at = ${"2000-01-01T00:00:00Z"}
+  WHERE id = ${ACCOUNT_A}
+    AND user_id = ${A}
+`;
+const account = await loadGoogleAccountById(sql, ACCOUNT_A);
+ok(Boolean(account), "seed google account loads for decrypt+refresh");
+if (account) {
+  const access = await getAccessToken(sql, env, account);
+  ok(access === "ya29.refreshed", "mocked google refresh returns a new access token");
+}
 
 restoreFetch();
 

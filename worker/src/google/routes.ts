@@ -19,6 +19,7 @@ export type GoogleRouteDeps = {
   /** Bootstrapped planner user id (not the raw Better Auth id). */
   requireUser: (c: Context<AppEnv>, raw?: Request) => Promise<{ userId: string } | { error: Response }>;
   requestIo: (c: Context<AppEnv>) => Promise<RequestIo>;
+  refuseIfFrozen?: (c: Context<AppEnv>) => Response | null;
 };
 
 function preflight(): Response {
@@ -32,10 +33,13 @@ function isSyncMode(value: unknown): value is SyncMode {
 
 export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): void {
   const paths = (suffix: string) => [`/functions/v1/${suffix}`, `/api/${suffix}`] as const;
+  const frozen = (c: Context<AppEnv>) => deps.refuseIfFrozen?.(c) ?? null;
 
   for (const path of paths("google-oauth")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const url = new URL(c.req.url);
       if (url.searchParams.get("action") === "start") {
         const token = url.searchParams.get("token");
@@ -60,6 +64,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
   for (const path of paths("google-sync")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const body = await readJson<{ mode?: string; accountId?: string; calendarId?: string }>(c).catch(
         (): { mode?: string; accountId?: string; calendarId?: string } => ({}),
       );
@@ -95,6 +101,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
   for (const path of paths("google-events")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const body = await readJson<Record<string, unknown>>(c).catch(() => ({} as Record<string, unknown>));
       const cronOk = cronAuthorized(bearerToken(c.req.header("authorization")), c.env.CRON_SECRET);
       const acting = typeof body.actingUserId === "string" ? body.actingUserId : "";
@@ -123,6 +131,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
   for (const path of paths("google-webhook")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const io = await deps.requestIo(c);
       return handleGoogleWebhook(io.sql, c.env, c.req.raw);
     });
@@ -131,6 +141,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
   for (const path of paths("google-contacts")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const body = await readJson<{ accountId?: string }>(c).catch(
         (): { accountId?: string } => ({}),
       );
@@ -158,6 +170,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
   for (const path of paths("calendar-refresh")) {
     app.options(path, preflight);
     app.all(path, async (c) => {
+      const blocked = frozen(c);
+      if (blocked) return blocked;
       const got = await deps.requireUser(c);
       if ("error" in got) return got.error;
       const body = await readJson<{ fullSync?: boolean; accountId?: string }>(c).catch(

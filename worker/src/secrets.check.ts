@@ -105,13 +105,16 @@ ok(jobsForSchedule("15 9 * * *").includes("google-renew"), "09:15 UTC is google-
 ok(jobsForSchedule("0 4 * * *").includes("purge-trash"), "04:00 UTC is purge-trash");
 
 let acked = 0;
-const consumed = consumeCalendarSyncBatch({
-  messages: [
-    { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; } },
-    { body: { account_id: "x2", user_id: "y2", provider: "ics" }, ack: () => { acked += 1; } },
-  ],
-});
-ok(consumed === 2 && acked === 2, "queue scaffold acks every message");
+const consumed = await consumeCalendarSyncBatch(
+  {
+    messages: [
+      { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; } },
+      { body: { account_id: "x2", user_id: "y2", provider: "ics" }, ack: () => { acked += 1; } },
+    ],
+  },
+  {},
+);
+ok(consumed === 2 && acked === 2, "queue consumer acks Google (no sql) and other providers");
 
 const vaultSql = readFileSync(join(root, "docs/cloudflare-migration/vault_tokens.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(vaultSql), "vault_tokens.sql is SECURITY DEFINER");
