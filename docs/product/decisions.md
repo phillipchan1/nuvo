@@ -5919,8 +5919,10 @@ verb). Spec: [`../domain-routing.md`](../domain-routing.md).
 
 *Status: built — typecheck, `npm test` (1931) green; the Inbox row's auto / proposed / undo /
 accept states driven in the dev app on the local dummy account at 375px and desktop, outcomes
-read back from the database. **Not deployed**, edge path parse-checked only, and the case that
-started this (gym + lunch) not yet seen on real captures.*
+read back from the database. **Deployed** in `agent` (first live in v113, 2026-10-22; v114 on
+2026-10-26). Edge path parse-checked only, production's OpenAI key not checked (without it the
+router falls back to the chat-model path), and the case that started this (gym + lunch) not
+yet seen on real captures.*
 
 **D-160 · 2026-10-22 · The chat can make, convert, edit and end a repeating slot — the
 same series the app has always made.**
@@ -5968,9 +5970,10 @@ is glossed as *a Slot with a cadence*, distinct from **Block**), works on an unt
 series by asking for a time, nothing account-specific.
 
 *Status: built — `npm test` (1931) and typecheck green, edge functions parse-checked; four
-new `slots` scenarios (`slot-series-*`) and a `standing` world. **Not deployed**, and the
-behavioural battery has not been run against a live model for these scenarios yet
-(`npm run eval -- --group slots --repeat 5` is the gate).*
+new `slots` scenarios (`slot-series-*`) and a `standing` world. **Deployed** — first live on
+2026-10-22 from an uncommitted tree, then from the merged commit as `agent` v114 and `mcp`
+v11 on 2026-10-26. The behavioural battery has still not been run against a live model for
+these scenarios (`npm run eval -- --group slots --repeat 5` is the gate).*
 
 **D-161 · 2026-10-26 · Repeating calendar events behave like a mature calendar's —
 the right weekday in your zone, and "this and following events" on both providers.**
@@ -6018,7 +6021,8 @@ data including native Apple and Google series, nothing builder-specific.
 *Status: built and merged — typecheck, the suite (new: `icloud-recurrence`, `series-split`,
 `event-rrule-zone`, `recurrence-scope-dialog`), a Deno type check of every function touched,
 and both builds green. **Not driven against a real account** — this container has no
-`.env.local`, so no dev auto-login. **Not deployed:** needs `supabase functions deploy
-icloud-events google-events agent icloud-sync google-sync`. A series Nuvo already wrote in
+`.env.local`, so no dev auto-login. **Deployed 2026-10-26:** `icloud-events` v23,
+`google-events` v49, `icloud-sync` v21, `google-sync` v38, `agent` v114, `mcp` v11 — each
+compared byte-for-byte against the live source. A series Nuvo already wrote in
 UTC is repaired when its repeat or the whole series is next edited. Moving a repeating event
 *between* Apple and Google is refused by the chat rather than half-done.*
