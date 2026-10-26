@@ -7,8 +7,9 @@
  * teed step logs.
  *
  * Mirror of phillipchan1/leadwell PR #16 (scripts/guard-public-ci.mjs),
- * plus quoted uses, upload-artifact/merge, gh release upload, and
- * curl/wget upload flags.
+ * plus quoted uses, upload-artifact/merge, gh release upload,
+ * curl/wget upload flags, gh api --input, softprops/action-gh-release,
+ * and actions/cache/save.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -73,8 +74,26 @@ export function lineLooksLikeHttpUpload(line) {
   if (!/\b(curl|wget)\b/.test(t)) return false;
   if (/\bcurl\b/.test(t) && /(?:\s|^)(-T|--upload-file)\b/.test(t)) return true;
   if (/\bwget\b/.test(t) && /(?:\s|^)--upload-file\b/.test(t)) return true;
-  if (/(?:\s|^)(-F|--form|--data-binary)\s+@/.test(t)) return true;
+  // -F @file, -F f=@file, -F "f=@file", --form 'file=@…'
+  if (/(?:\s|^)(-F|--form)\b[^\n]*@/.test(t)) return true;
+  if (/(?:\s|^)(--data|--data-raw|--data-binary|--data-ascii|--data-urlencode)(?:=|\s+)@/.test(t)) {
+    return true;
+  }
+  if (/\bwget\b/.test(t) && /(?:\s|^)--(post-file|body-file)(?:=|\s)/.test(t)) return true;
   return false;
+}
+
+export function lineLooksLikeGhApiInput(line) {
+  const t = String(line).replace(/^\s*#.*$/, "");
+  return /\bgh\s+api\b/.test(t) && /(?:\s|^)--input\b/.test(t);
+}
+
+export function lineLooksLikeCacheSave(line) {
+  const t = String(line).replace(/^\s*#.*$/, "");
+  if (/uses:\s*['"]?actions\/cache\/save\b/.test(t)) return true;
+  // Combined actions/cache always saves on a hit miss. Restore-only is allowed.
+  if (/uses:\s*['"]?actions\/cache\/restore\b/.test(t)) return false;
+  return /uses:\s*['"]?actions\/cache(?:@|['"]|\s|$)/.test(t);
 }
 
 export function findForbiddenUploadCommands(workflowText) {
@@ -83,6 +102,18 @@ export function findForbiddenUploadCommands(workflowText) {
     const code = line.replace(/^\s*#.*$/, "");
     if (/\bgh\s+release\s+upload\b/.test(code)) {
       hits.push({ line: i + 1, kind: "gh release upload" });
+    }
+    if (/uses:\s*['"]?softprops\/action-gh-release\b/.test(code)) {
+      hits.push({ line: i + 1, kind: "softprops/action-gh-release" });
+    }
+    if (lineLooksLikeGhApiInput(code)) {
+      hits.push({ line: i + 1, kind: "gh api --input" });
+    }
+    if (lineLooksLikeCacheSave(code)) {
+      hits.push({
+        line: i + 1,
+        kind: /cache\/save/.test(code) ? "actions/cache/save" : "actions/cache save",
+      });
     }
     if (lineLooksLikeHttpUpload(code)) {
       hits.push({ line: i + 1, kind: "curl/wget upload" });
@@ -236,8 +267,7 @@ export function assertSafeMigrateLog(text, label = "log") {
 
 export function assertCutoverLogDir(logDir) {
   if (!logDir || !existsSync(logDir)) {
-    console.log("public-ci-guard: no cutover logs (nothing to assert)");
-    return [];
+    throw new Error(`cutover log dir missing: ${logDir || "(unset)"}`);
   }
   const files = readdirSync(logDir).filter((n) => n.endsWith(".log"));
   for (const name of files) {

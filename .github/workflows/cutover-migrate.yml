@@ -343,7 +343,7 @@ jobs:
                    lower(COALESCE(email, '')) || '|' ||
                    CASE WHEN email_confirmed_at IS NOT NULL THEN 't' ELSE 'f' END || '|' ||
                    COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
-                   COALESCE(to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
                  )), '' ORDER BY id::text COLLATE "C"), '')) AS h
           FROM migration_tmp.auth_users()
           """
@@ -375,7 +375,7 @@ jobs:
                      user_id::text
                    ) || '|' ||
                    COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
-                   COALESCE(to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
                  )), '' ORDER BY
                    user_id::text COLLATE "C",
                    provider COLLATE "C",
