@@ -285,7 +285,8 @@ describe("deleting the account revokes Apple's grant (guideline 5.1.1(v))", () =
     expect(fn).toContain("linkOwnedAppleAccount");
     const auth = read("worker/src/auth.ts");
     expect(auth).toContain("socialProviders");
-    expect(auth).toMatch(/apple:/);
+    expect(auth).toContain("appleSocialProvider");
+    expect(auth).toContain("{ apple }");
     const spa = read("src/lib/appleAuth.ts");
     expect(spa).toContain("workersEnabled");
     expect(spa).toContain("signIn.social");

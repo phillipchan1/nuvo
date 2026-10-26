@@ -38,7 +38,7 @@ ok(!/authSchema/.test(authSrc), "createAuth: no snake_case field map");
 ok(!/emailVerified:\s*"email_verified"/.test(authSrc), "createAuth: no emailVerified remap");
 ok(/requireSignature:\s*true/.test(authSrc), "createAuth: bearer requires a signed token");
 ok(/requireEmailVerification:\s*true/.test(authSrc), "createAuth: email+password requires verification");
-ok(/socialProviders/.test(authSrc) && /apple:/.test(authSrc), "createAuth: Apple social provider is wired");
+ok(/socialProviders/.test(authSrc) && /appleSocialProvider/.test(authSrc), "createAuth: Apple social provider is wired");
 
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;

@@ -49,7 +49,7 @@ ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
 ok(/persistAppleIdentity/.test(indexSrc) && /deleteOwnedAccount/.test(indexSrc), "routes: apple-identity and delete-account are mounted");
 ok(!/STRIPE_SECRET|stripe\.subscriptions|api\.stripe\.com/.test(readFileSync(join(here, "deleteAccount.ts"), "utf8")), "delete-account: no Stripe secret or API");
-ok(/socialProviders/.test(readFileSync(join(here, "auth.ts"), "utf8")) && /apple:/.test(readFileSync(join(here, "auth.ts"), "utf8")), "createAuth: Better Auth Apple provider is wired");
+ok(/socialProviders/.test(readFileSync(join(here, "auth.ts"), "utf8")) && /appleSocialProvider/.test(readFileSync(join(here, "auth.ts"), "utf8")), "createAuth: Better Auth Apple provider is wired");
 
 const appleMap = mapAuthIdentityToAccount({
   user_id: "11111111-1111-1111-1111-111111111111",
