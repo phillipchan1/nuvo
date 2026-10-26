@@ -108,6 +108,7 @@ const keysB = await subscriberKeys();
 
 // Seed reminder rows are empty-lead overrides and would silence the default.
 await db.query(`DELETE FROM reminders WHERE user_id IN ($1, $2)`, [A, B]);
+await db.query(`DELETE FROM push_subscriptions WHERE user_id IN ($1, $2)`, [A, B]);
 await db.query(
   `UPDATE user_settings
    SET reminder_prefs = $2::jsonb, time_zone = 'UTC'

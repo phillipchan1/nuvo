@@ -990,7 +990,6 @@ const cronPush = await withTimeout(
 ok(cronPush.status === 200, `cron push-dispatch: HTTP ${cronPush.status}`);
 ok((await cronPush.json() as { ok?: boolean }).ok === true, "cron push-dispatch: ok");
 
-const RANDOM_ID = "b0b0b0b0-0000-4000-8000-00000000ffff";
 const beforeGoogle = googleCalls.length;
 const bSlotA = await withTimeout(
   request("/api/slot-mirror", {
