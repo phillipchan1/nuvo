@@ -9,6 +9,7 @@ unless `VITE_API_BASE_URL` is set on a build.
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
 Cutover-night route table: [`cloudflare-migration/route-inventory.md`](./cloudflare-migration/route-inventory.md).
+Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
 ---
@@ -75,13 +76,48 @@ gh secret delete TARGET_DATABASE_URL
 ```
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
-redacted before it is printed. The custom-format dump is uploaded as a verified
-backup (`pg_restore --list`, size, sha256; hash is re-checked before restore).
-Auth CSVs stay on the runner and are not uploaded (PII). Per-table row counts
-and ordered md5 hashes must match on every public table or the job fails.
+redacted before it is printed. The custom-format dump is verified on the
+runner (`pg_restore --list`, size, sha256; hash is re-checked before restore)
+and **never uploaded** — this repo is public. Auth COPY CSVs stay in
+`$RUNNER_TEMP` and are shredded in an `always()` step. The only artifact is
+`artifacts/cutover-report.md` (per-table counts + content md5). Logs are
+those counts and hashes — never emails or row data. `checks.yml` runs
+`scripts/guard-public-ci.mjs`, which fails if any workflow uploads anything
+else.
 
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
+
+### `migration_tmp` (source-only auth readers)
+
+The apply script + runbook (who created it, verification queries, the
+post-cutover drop) is
+[`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
+It is **not** under `supabase/migrations` and must not be `db push`ed.
+
+**Already applied on Supabase prod** by Engineer 3 via the management API
+SQL editor. Verified 2026-10-26 (PT) from live `pg_get_functiondef` + the
+grant catalog: owner `postgres`, `SECURITY DEFINER`, `search_path=""`,
+`EXECUTE` for `migration_reader` only. PostgREST `db_schema` is
+`public,graphql_public`, so `migration_tmp` is not exposed.
+
+The cutover source role (`migration_reader`) is read-only and has **no
+`USAGE` on `auth`** — `SELECT` / `COPY` from `auth.users` /
+`auth.identities` fails with `permission denied for schema auth`. The
+workflow therefore `COPY`s `migration_tmp.auth_users()` /
+`migration_tmp.auth_identities()`. Bodies project only `name` / `full_name`
+(and identity `sub` / `provider_id`) through `pg_catalog.jsonb_build_object`
++ `jsonb_strip_nulls`. Password hashes, recovery tokens, and other GoTrue
+secrets never leave `auth`.
+
+After cutover is signed off and `SOURCE_DATABASE_URL` is deleted:
+
+```sql
+DROP SCHEMA migration_tmp CASCADE;
+```
+
+That drop is a source-side cleanup, not a rollback step. Supabase itself
+stays up (clear `VITE_API_BASE_URL`) until you decide otherwise.
 
 Client build-time:
 

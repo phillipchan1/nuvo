@@ -207,7 +207,8 @@ External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Ca
 | `.github/workflows/release.yml` | Bakes `VITE_SUPABASE_*` |
 | `.github/workflows/ios-release.yml` | Same + signing secrets |
 | `.github/workflows/checks.yml` | No deploy; parses `supabase/functions` |
-| `.github/workflows/cutover-migrate.yml` | Manual `workflow_dispatch` only. Read-only Supabase dump → Neon scratch/target. Does not deploy. Temporary secrets are deleted after the run |
+| `.github/workflows/cutover-migrate.yml` | Manual `workflow_dispatch` only. Read-only Supabase dump → Neon scratch/target. Auth via `migration_tmp` reader functions. Dump stays on the runner (public repo). Does not deploy. Temporary secrets are deleted after the run |
+| `docs/cloudflare-migration/migration_tmp.sql` | Source-only `SECURITY DEFINER` readers. Already on prod (Engineer 3, mgmt API). **Not** a `supabase/migrations` file. Drop after cutover |
 
 No automated `supabase db push` or `functions deploy` in CI.
 
