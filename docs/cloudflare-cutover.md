@@ -72,13 +72,47 @@ gh secret delete TARGET_DATABASE_URL
 ```
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
-redacted before it is printed. The custom-format dump is uploaded as a verified
-backup (`pg_restore --list`, size, sha256; hash is re-checked before restore).
-Auth CSVs stay on the runner and are not uploaded (PII). Per-table row counts
-and ordered md5 hashes must match on every public table or the job fails.
+redacted before it is printed. The custom-format dump is verified on the
+runner (`pg_restore --list`, size, sha256; hash is re-checked before restore)
+and **never uploaded** — this repo is public. Auth COPY CSVs stay in
+`$RUNNER_TEMP` and are shredded in an `always()` step. The only artifact is
+`artifacts/cutover-report.md` (per-table counts + content md5). Logs are
+those counts and hashes — never emails or row data. `checks.yml` runs
+`scripts/guard-public-ci.mjs`, which fails if any workflow uploads anything
+else.
 
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
+
+### `migration_tmp` (source-only auth readers)
+
+The cutover source role (`migration_reader`) is read-only and has **no
+`USAGE` on Supabase's `auth` schema** — `SELECT` / `COPY` from
+`auth.users` / `auth.identities` fails with `permission denied for schema
+auth`. Auth rows are therefore read through two `SECURITY DEFINER`
+functions created on the source only (same shape as leadwell):
+
+| Function | Role |
+|---|---|
+| `migration_tmp.auth_users()` | Projects the Better Auth / COPY columns from `auth.users` |
+| `migration_tmp.auth_identities()` | Projects provider rows from `auth.identities` |
+
+`EXECUTE` is granted to `migration_reader` only. `PUBLIC` / `anon` /
+`authenticated` / `service_role` are revoked. The functions do not grant
+`USAGE` on `auth`. Password hashes, recovery tokens, and other GoTrue
+secrets stay off the `RETURNS TABLE` list.
+
+`migration_tmp` is **not** dumped, not restored onto Neon, and not part of
+the Worker schema. After cutover is signed off and the reader path is no
+longer needed:
+
+```sql
+DROP SCHEMA migration_tmp CASCADE;
+```
+
+That drop is a source-side cleanup, not a rollback step. Supabase itself
+stays up (clear `VITE_API_BASE_URL`) until you decide otherwise. Do not
+leave the wrappers around once the migrate secrets are deleted.
 
 Client build-time:
 

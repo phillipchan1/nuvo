@@ -12,6 +12,14 @@
 # (SECURITY DEFINER, EXECUTE granted to migration_reader only), because the
 # read-only role has no USAGE on Supabase's auth schema (same as leadwell).
 #
+# Artifacts: NEVER upload pg_dump, CSV, or any row-data file. This repo is
+# public. Dumps stay in $RUNNER_TEMP / the runner workspace; sha256 is
+# recorded and re-checked before restore, then an always() step shreds the
+# files. The only allowed artifact is the checksum report (per-table counts
+# + content md5). No emails, no password hashes, no dump files. Logs are
+# counts and hashes only. scripts/guard-public-ci.mjs fails checks + this
+# job if any other upload-artifact path is staged.
+#
 # Temporary repository secrets (names only — never print values):
 #   SOURCE_DATABASE_URL   Supabase session-pooler or direct URI (read-only)
 #   SCRATCH_DATABASE_URL  empty Neon branch used when mode=dry-run
@@ -67,6 +75,7 @@ jobs:
       SCRATCH_DATABASE_URL: ${{ secrets.SCRATCH_DATABASE_URL }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
+      CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -189,7 +198,8 @@ jobs:
           #!/usr/bin/env python3
           """Read-only Supabase dump → Neon restore + auth map + checksums.
 
-          Never prints connection strings, passwords, or emails.
+          Never prints connection strings, passwords, emails, or row data.
+          Dump / COPY files stay under CUTOVER_DUMP_DIR (runner temp).
           """
           from __future__ import annotations
 
@@ -668,9 +678,28 @@ jobs:
                       digest.update(chunk)
               return digest.hexdigest()
 
+          def dump_dir() -> Path:
+              raw = (os.environ.get("CUTOVER_DUMP_DIR") or "").strip()
+              if not raw:
+                  die("CUTOVER_DUMP_DIR is required (runner temp, never artifacts)")
+              path = Path(raw)
+              runner_temp = Path(os.environ.get("RUNNER_TEMP") or "").resolve()
+              resolved = path.resolve()
+              if runner_temp.parts and runner_temp not in resolved.parents and resolved != runner_temp:
+                  die("CUTOVER_DUMP_DIR must live under RUNNER_TEMP")
+              if "artifacts" in resolved.parts:
+                  die("CUTOVER_DUMP_DIR must not be the artifacts upload folder")
+              path.mkdir(parents=True, exist_ok=True)
+              return path
+
+          def report_dir() -> Path:
+              path = Path("artifacts")
+              path.mkdir(parents=True, exist_ok=True)
+              return path
+
           def assert_dump_checksum(dump_path: Path, sha_path: Path) -> str:
               if not sha_path.exists():
-                  die("missing artifacts/nuvo-source.sha256")
+                  die("missing dump sha256 (runner temp only)")
               expected = sha_path.read_text(encoding="utf-8").split()[0].lower()
               actual = sha256_file(dump_path)
               if actual != expected:
@@ -696,12 +725,11 @@ jobs:
               source = os.environ["SOURCE_DATABASE_URL"]
               dump_bin = os.environ["PG_DUMP"]
               restore_bin = os.environ["PG_RESTORE"]
-              artifacts = Path("artifacts")
-              artifacts.mkdir(parents=True, exist_ok=True)
-              dump_path = artifacts / "nuvo-source.dump"
-              users_path = artifacts / "auth-users.csv"
-              identities_path = artifacts / "auth-identities.csv"
-              print("dumping public schema + data (no-owner, no-acl)…", flush=True)
+              work = dump_dir()
+              dump_path = work / "nuvo-source.dump"
+              users_path = work / "auth-users.csv"
+              identities_path = work / "auth-identities.csv"
+              print("dumping public schema + data (no-owner, no-acl; runner only)…", flush=True)
               run(
                   [
                       dump_bin,
@@ -720,10 +748,13 @@ jobs:
               toc = run([restore_bin, "--list", str(dump_path)])
               if "TABLE" not in toc:
                   die("pg_restore --list did not list any TABLE entries")
-              (artifacts / "nuvo-source.toc").write_text(toc, encoding="utf-8")
+              (work / "nuvo-source.toc").write_text(toc, encoding="utf-8")
               digest = sha256_file(dump_path)
-              (artifacts / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
-              print(f"verified backup: {bytes_} bytes sha256={digest}", flush=True)
+              (work / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
+              print(
+                  f"verified backup: {bytes_} bytes sha256={digest} (runner only, not uploaded)",
+                  flush=True,
+              )
               print("exporting auth.users (read-only COPY)…", flush=True)
               run_to_file(
                   ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", USERS_COPY],
@@ -749,14 +780,14 @@ jobs:
               source = os.environ["SOURCE_DATABASE_URL"]
               target = os.environ["RESTORE_DATABASE_URL"]
               restore_bin = os.environ["PG_RESTORE"]
-              artifacts = Path("artifacts")
-              dump_path = artifacts / "nuvo-source.dump"
-              users_path = artifacts / "auth-users.csv"
-              identities_path = artifacts / "auth-identities.csv"
+              work = dump_dir()
+              dump_path = work / "nuvo-source.dump"
+              users_path = work / "auth-users.csv"
+              identities_path = work / "auth-identities.csv"
               better_auth = Path("worker/schema/better-auth.sql")
               if not dump_path.exists() or not dump_path.stat().st_size:
-                  die("missing verified dump artifacts/nuvo-source.dump")
-              digest = assert_dump_checksum(dump_path, artifacts / "nuvo-source.sha256")
+                  die("missing verified dump (runner temp)")
+              digest = assert_dump_checksum(dump_path, work / "nuvo-source.sha256")
               print(f"re-verified dump sha256={digest} before restore", flush=True)
               if not better_auth.exists():
                   die("missing worker/schema/better-auth.sql")
@@ -883,7 +914,8 @@ jobs:
           def cmd_verify() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
               target = os.environ["RESTORE_DATABASE_URL"]
-              artifacts = Path("artifacts")
+              work = dump_dir()
+              artifacts = report_dir()
               tables = list_public_tables(source, source=True)
               if not tables:
                   die("source has no public tables")
@@ -898,7 +930,7 @@ jobs:
                   f"- mode: {os.environ.get('CUTOVER_MODE', '')}",
                   f"- target: {os.environ.get('RESTORE_KIND', '')}",
                   f"- source postgres: {os.environ.get('SOURCE_PG_VERSION', '')}",
-                  f"- dump sha256: {(artifacts / 'nuvo-source.sha256').read_text(encoding='utf-8').split()[0] if (artifacts / 'nuvo-source.sha256').exists() else '?'}",
+                  f"- dump sha256: {(work / 'nuvo-source.sha256').read_text(encoding='utf-8').split()[0] if (work / 'nuvo-source.sha256').exists() else '?'}",
                   "",
                   "| table | source_count | target_count | source_md5 | target_md5 | ok |",
                   "| --- | ---: | ---: | --- | --- | --- |",
@@ -979,17 +1011,6 @@ jobs:
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           python3 "${RUNNER_TEMP}/cutover.py" dump
 
-      - name: Upload verified source dump
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: nuvo-source-dump
-          path: |
-            artifacts/nuvo-source.dump
-            artifacts/nuvo-source.sha256
-            artifacts/nuvo-source.toc
-          retention-days: 7
-          if-no-files-found: error
-
       - name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
         run: |
           set +x
@@ -1008,6 +1029,20 @@ jobs:
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           python3 "${RUNNER_TEMP}/cutover.py" verify
 
+      # Guard: this is the only upload-artifact. Path must stay a markdown
+      # checksum table (counts + md5). Never point it at a dump or CSV.
+      # Fails if anything else is staged, or if this public repo attempts a
+      # data upload. Mirror of leadwell PR #16 / scripts/guard-public-ci.mjs.
+      - name: Guard public-repo artifacts
+        if: ${{ always() }}
+        env:
+          REPO_IS_PUBLIC: ${{ github.event.repository.private == false }}
+          STAGED_UPLOAD: artifacts/cutover-report.md
+        run: |
+          set +x
+          set -eu
+          node scripts/guard-public-ci.mjs --job
+
       - name: Upload checksum report
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -1016,3 +1051,35 @@ jobs:
           path: artifacts/cutover-report.md
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Shred dumps
+        if: ${{ always() }}
+        run: |
+          set +x
+          set -eu
+          # Dumps and COPY CSVs stay on the runner only. Never upload them.
+          shred_tree() {
+            local root="$1"
+            if [ -d "$root" ]; then
+              if command -v shred >/dev/null 2>&1; then
+                find "$root" -type f -exec shred -u {} + 2>/dev/null || true
+              fi
+              rm -rf "$root"
+            fi
+          }
+          shred_tree "${CUTOVER_DUMP_DIR:-${RUNNER_TEMP}/nuvo-cutover}"
+          find "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}" -type f \( \
+            -name '*.dump' -o \
+            -name 'auth-users.csv' -o \
+            -name 'auth-identities.csv' -o \
+            -name 'auth_users.csv' -o \
+            -name 'auth_identities.csv' -o \
+            -name 'nuvo-source.toc' -o \
+            -name 'nuvo-source.sha256' \
+          \) -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            if command -v shred >/dev/null 2>&1; then
+              shred -u "$f" || rm -f "$f"
+            else
+              rm -f "$f"
+            fi
+          done || true
