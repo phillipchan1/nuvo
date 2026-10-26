@@ -4,12 +4,14 @@
 -- Do NOT run from CI, the Worker, or cutover-migrate.yml.
 --
 -- What this does:
---   1. Records current INSERT/UPDATE/DELETE grants on public app tables
---      for anon and authenticated into migration_tmp.freeze_grants
---      (first apply only — a second run must not overwrite the prior state
---      with the already-revoked grants).
---   2. REVOKE INSERT, UPDATE, DELETE on those tables from anon and
---      authenticated. SELECT stays so RPC reads (contacts) and GETs work.
+--   1. Records INSERT/UPDATE/DELETE ACLs from aclexplode(relacl) on public
+--      app tables, including PUBLIC (grantee oid 0), into
+--      migration_tmp.freeze_grants. First apply only — a second run must
+--      not overwrite the prior state with the already-revoked grants.
+--   2. REVOKE INSERT, UPDATE, DELETE on those tables from PUBLIC, anon
+--      and authenticated. SELECT stays so RPC reads (contacts) and GETs
+--      work. service_role is never revoked. No new direct grants are
+--      created here.
 --   3. Records cron.job.active for every nuvo-* job into
 --      migration_tmp.freeze_cron, then cron.alter_job(..., active := false).
 --
@@ -17,20 +19,27 @@
 --   Billing stays on Supabase. subscriptions, stripe_webhook_events,
 --   apple_webhook_events, and apple_notification_events keep their
 --   current grants so Stripe / StoreKit / Apple webhooks (service_role)
---   and the entitlement read keep working. service_role is never revoked.
+--   and the entitlement read keep working.
+--
+-- Out of scope (Nuvo public app tables are ordinary relations):
+--   partitioned tables (relkind = 'p' / relispartition), views
+--   (relkind = 'v'), and column-level grants (attacl). This script
+--   only records and revokes relation-level INSERT/UPDATE/DELETE on
+--   relkind = 'r' tables that are not partitions.
 --
 -- Pair: docs/cloudflare-migration/unfreeze.sql restores the recorded
--- grants and cron.active exactly. Order: freeze → snapshot → copy →
--- verify → switch or unfreeze. See docs/cloudflare-cutover.md.
+-- ACLs exactly (no new direct grants) and is idempotent. Order:
+-- ship armed build → arm → freeze → snapshot → copy → verify →
+-- switch + tail/reconcile, or unfreeze. See docs/cloudflare-cutover.md.
 
 CREATE SCHEMA IF NOT EXISTS migration_tmp;
 
 CREATE TABLE IF NOT EXISTS migration_tmp.freeze_grants (
   table_name text NOT NULL,
-  role_name text NOT NULL,
+  grantee text NOT NULL,
   privilege text NOT NULL,
-  was_granted boolean NOT NULL,
-  PRIMARY KEY (table_name, role_name, privilege)
+  is_grantable boolean NOT NULL,
+  PRIMARY KEY (table_name, grantee, privilege)
 );
 
 CREATE TABLE IF NOT EXISTS migration_tmp.freeze_cron (
@@ -42,18 +51,21 @@ CREATE TABLE IF NOT EXISTS migration_tmp.freeze_cron (
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM migration_tmp.freeze_grants) THEN
-    INSERT INTO migration_tmp.freeze_grants (table_name, role_name, privilege, was_granted)
+    INSERT INTO migration_tmp.freeze_grants (table_name, grantee, privilege, is_grantable)
     SELECT
       c.relname,
-      r.rolname,
-      p.priv,
-      has_table_privilege(r.rolname, format('%I.%I', n.nspname, c.relname), p.priv)
+      CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE r.rolname END,
+      acl.privilege_type,
+      acl.is_grantable
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    CROSS JOIN (VALUES ('anon'), ('authenticated')) AS r(rolname)
-    CROSS JOIN (VALUES ('INSERT'), ('UPDATE'), ('DELETE')) AS p(priv)
+    CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+    LEFT JOIN pg_roles r ON r.oid = acl.grantee
     WHERE n.nspname = 'public'
       AND c.relkind = 'r'
+      AND NOT c.relispartition
+      AND acl.privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
+      AND (acl.grantee = 0 OR r.rolname IS NOT NULL)
       AND c.relname NOT IN (
         'subscriptions',
         'stripe_webhook_events',
@@ -75,10 +87,27 @@ DECLARE
   rec record;
 BEGIN
   FOR rec IN
-    SELECT DISTINCT table_name FROM migration_tmp.freeze_grants
+    SELECT c.relname AS table_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'r'
+      AND NOT c.relispartition
+      AND c.relname NOT IN (
+        'subscriptions',
+        'stripe_webhook_events',
+        'apple_webhook_events',
+        'apple_notification_events'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_depend d
+        JOIN pg_extension e ON e.oid = d.refobjid
+        WHERE d.objid = c.oid AND d.deptype = 'e'
+      )
   LOOP
     EXECUTE format(
-      'REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM anon, authenticated',
+      'REVOKE INSERT, UPDATE, DELETE ON TABLE public.%I FROM PUBLIC, anon, authenticated',
       rec.table_name
     );
   END LOOP;
@@ -103,6 +132,6 @@ END
 $$;
 
 COMMENT ON TABLE migration_tmp.freeze_grants IS
-  'Copy-window: prior INSERT/UPDATE/DELETE grants for anon/authenticated. Billing tables excluded.';
+  'Copy-window: aclexplode(relacl) INSERT/UPDATE/DELETE including PUBLIC. Billing tables excluded.';
 COMMENT ON TABLE migration_tmp.freeze_cron IS
   'Copy-window: prior cron.job.active for nuvo-* jobs. unfreeze.sql restores exactly.';

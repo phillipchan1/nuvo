@@ -57,6 +57,12 @@ ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store
 ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
 ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
 
+const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
+ok(/export function refuseFrozenWrite/.test(writeFreezeSrc), "writeFreeze: refuseFrozenWrite is the shared helper");
+ok(!/\buser_id\b/.test(writeFreezeSrc), "writeFreeze: no user_id — freeze is global, not an owner bypass");
+ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/stripe-webhook/index.ts"), "utf8")), "writeFreeze: stripe-webhook is not frozen");
+ok(!/WRITE_FREEZE/.test(readFileSync(join(here, "../../supabase/functions/apple-webhook/index.ts"), "utf8")), "writeFreeze: apple-webhook is not frozen");
+
 class PGliteConnection implements DatabaseConnection {
   client: PGlite;
   constructor(client: PGlite) {

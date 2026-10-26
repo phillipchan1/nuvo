@@ -2,8 +2,12 @@
 // watched calendar changes; we validate the channel against our records and
 // trigger an incremental sync for just that calendar.
 import { admin, json, logSync } from "../_shared/admin.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
+
   const channelId = req.headers.get("X-Goog-Channel-ID");
   const resourceState = req.headers.get("X-Goog-Resource-State");
   const channelToken = req.headers.get("X-Goog-Channel-Token") ?? "";

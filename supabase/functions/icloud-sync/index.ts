@@ -10,6 +10,7 @@ import { isMirrorUid, withoutMirrorCalendar } from "../_shared/mirror.ts";
 import { reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 import {
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
   SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
 } from "../_shared/syncWindow.ts";
@@ -124,6 +125,8 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   const { accountId } = await req.json().catch(() => ({}));
 

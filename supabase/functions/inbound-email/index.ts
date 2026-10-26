@@ -8,6 +8,7 @@
 
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   notesFromMail,
   pickInboundToken,
   receivedBody,
@@ -52,6 +53,8 @@ async function fetchReceivedMail(apiKey: string, emailId: string): Promise<Recei
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {

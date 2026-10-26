@@ -244,6 +244,10 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/freeze\.sql/);
     expect(doc).toMatch(/unfreeze\.sql/);
     expect(doc).toMatch(/source-snapshot\.json/);
+    expect(doc).toMatch(/VITE_MAINTENANCE_URL/);
+    expect(doc).toMatch(/WRITE_FREEZE/);
+    expect(doc).toMatch(/sync_log/);
+    expect(doc).toMatch(/anti-join/);
   });
 
   it("commits the live prod function bodies outside supabase/migrations", () => {

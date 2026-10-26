@@ -130,22 +130,33 @@ ok(!/-f .*vault_tokens/.test(workflow), "cutover-migrate.yml does not -f vault_t
 ok(!/-f .*freeze\.sql/.test(workflow), "cutover-migrate.yml does not -f freeze.sql");
 ok(!/-f .*unfreeze\.sql/.test(workflow), "cutover-migrate.yml does not -f unfreeze.sql");
 ok(/BILLING_TABLES/.test(workflow), "cutover-migrate.yml names BILLING_TABLES");
+ok(/COPY_SKIP_TABLES/.test(workflow) && /sync_log/.test(workflow), "cutover-migrate.yml skips sync_log from the frozen copy");
 ok(/--exclude-table=public\.\$\{name\}/.test(workflow) || /exclude-table=public/.test(workflow), "cutover-migrate.yml excludes billing tables from the dump");
 ok(/source-snapshot\.json/.test(workflow), "cutover-migrate.yml records a frozen-table snapshot");
 ok(/subscriptions/.test(workflow) && /stripe_webhook_events/.test(workflow) && /apple_webhook_events/.test(workflow), "cutover-migrate.yml lists billing tables");
+ok(/require_cutover_armed/.test(workflow) && /MAINTENANCE_URL/.test(workflow), "cutover-migrate.yml refuses dump unless maintenance is armed");
+ok(/cmd_resync/.test(workflow) && /anti-join/.test(workflow), "cutover-migrate.yml resyncs sync_log tail and push deletes");
+ok(/sync_log_watermark/.test(workflow), "cutover-migrate.yml records a sync_log watermark");
 
 const freezeSql = readFileSync(join(root, "docs/cloudflare-migration/freeze.sql"), "utf8");
+ok(/aclexplode\(c\.relacl\)/.test(freezeSql), "freeze.sql records grants from aclexplode(relacl)");
+ok(/PUBLIC/.test(freezeSql), "freeze.sql records PUBLIC grants");
+ok(!/has_table_privilege/.test(freezeSql), "freeze.sql does not invent grants from has_table_privilege");
 ok(/REVOKE INSERT, UPDATE, DELETE/.test(freezeSql), "freeze.sql revokes writes from browser roles");
-ok(/anon, authenticated/.test(freezeSql), "freeze.sql targets anon and authenticated");
+ok(/PUBLIC, anon, authenticated/.test(freezeSql), "freeze.sql revokes PUBLIC, anon, and authenticated");
 ok(/cron\.alter_job/.test(freezeSql) && /active := false/.test(freezeSql), "freeze.sql pauses pg_cron");
 ok(/freeze_cron/.test(freezeSql) && /was_active/.test(freezeSql), "freeze.sql records prior cron.active");
 ok(/subscriptions/.test(freezeSql) && /stripe_webhook_events/.test(freezeSql) && /apple_webhook_events/.test(freezeSql), "freeze.sql names billing exclusions");
 ok(!/REVOKE[^\n]+service_role/.test(freezeSql), "freeze.sql does not revoke service_role");
+ok(/relkind = 'r'/.test(freezeSql) && /attacl/.test(freezeSql), "freeze.sql documents partitions/views/column grants out of scope");
 
 const unfreezeSql = readFileSync(join(root, "docs/cloudflare-migration/unfreeze.sql"), "utf8");
 ok(/GRANT %s ON TABLE/.test(unfreezeSql), "unfreeze.sql restores recorded grants");
-ok(/was_granted/.test(unfreezeSql), "unfreeze.sql only re-grants what was granted");
+ok(/FROM migration_tmp\.freeze_grants/.test(unfreezeSql), "unfreeze.sql only re-grants recorded ACL rows");
+ok(/already unfrozen/.test(unfreezeSql), "unfreeze.sql is idempotent");
+ok(!/RAISE EXCEPTION/.test(unfreezeSql), "unfreeze.sql does not fail when already unfrozen");
 ok(/cron\.alter_job/.test(unfreezeSql) && /was_active/.test(unfreezeSql), "unfreeze.sql restores cron.active exactly");
+ok(!/GRANT[^\n]+anon, authenticated/.test(unfreezeSql), "unfreeze.sql does not invent direct grants to anon/authenticated");
 
 const neon = readFileSync(join(root, "worker/schema/neon.sql"), "utf8");
 ok(/CREATE TABLE IF NOT EXISTS public\.calendar_accounts/.test(neon), "neon.sql has calendar_accounts");

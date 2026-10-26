@@ -15,6 +15,7 @@
 
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { llmBaseUrl, llmHeaders, llmKey, llmModel } from "../agent/llm.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 // deno-lint-ignore no-control-regex
 const clean = (s: unknown): string => (typeof s === "string" ? s : "").replace(/[\x00-\x1F\x7F]/g, " ").trim();
@@ -53,6 +54,8 @@ type DomainRow = {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
   try {
     const user = await requireUser(req);
     const body = await req.json().catch(() => ({}));

@@ -22,6 +22,7 @@ import { admin } from "../_shared/admin.ts";
 import { createTaskCore, mirrorTask, FALLBACK_TZ } from "../_shared/createTask.ts";
 import type { TaskPriority } from "../_shared/nlp.ts";
 import {
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   hasScope,
   resolveConnection,
   SCOPE_INBOX,
@@ -240,6 +241,8 @@ async function handlePost(req: Request, conn: Connection): Promise<Response> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const frozen = refuseFrozenWrite(req, { allowReads: true });
+  if (frozen) return frozen;
 
   try {
     const conn = await authenticate(req);

@@ -19,6 +19,7 @@
 // a fresh code and retries.
 import { admin, deleteSecret, handleOptions, json, requireUser, storeSecret } from "../_shared/admin.ts";
 import {
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   appleDisplayName,
   exchangeAppleAuthorizationCode,
   mergeAppleProfile,
@@ -28,6 +29,8 @@ import {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

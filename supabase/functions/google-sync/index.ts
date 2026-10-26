@@ -15,6 +15,7 @@ import {
 import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
 import { markSyncResult } from "../_shared/syncSchedule.ts";
 import {
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
   SYNC_WINDOW_FUTURE_DAYS as WINDOW_FUTURE_DAYS,
   SYNC_WINDOW_PAST_DAYS as WINDOW_PAST_DAYS,
 } from "../_shared/syncWindow.ts";
@@ -195,6 +196,8 @@ async function watchCalendar(account: GoogleAccount, cal: CalendarEntry): Promis
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   const { mode = "poll", accountId, calendarId } = await req.json().catch(() => ({}));
 

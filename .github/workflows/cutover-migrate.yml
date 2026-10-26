@@ -39,6 +39,11 @@
 # Billing tables stay on Supabase and are excluded from the dump, the
 # source-snapshot.json, and the parity proof: subscriptions,
 # stripe_webhook_events, apple_webhook_events, apple_notification_events.
+# sync_log is also excluded (billing webhooks write it via logSync); the
+# job records a watermark at dump and re-syncs the tail after switch.
+# push_subscriptions stays in the copy; a post-switch anti-join applies
+# deletes made on Supabase after the snapshot (counts only).
+# Dump refuses to start unless GET MAINTENANCE_URL reports cutover_armed.
 # freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
 #
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
@@ -65,6 +70,28 @@ on:
         type: string
         required: false
         default: ""
+      phase:
+        description: >
+          copy = dump + restore + verify + seal + first tail/reconcile.
+          resync = post-switch sync_log tail + push_subscriptions
+          anti-join only (pass the watermark from the copy report).
+        type: choice
+        options:
+          - copy
+          - resync
+        default: copy
+      sync_log_watermark_id:
+        description: >
+          Snapshot sync_log max(id) from the copy report. Required for
+          phase=resync when source-snapshot.json is gone.
+        type: string
+        required: false
+        default: ""
+      sync_log_watermark_at:
+        description: Snapshot sync_log max(created_at) from the copy report.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: cutover-migrate
@@ -87,6 +114,10 @@ jobs:
       TOKEN_ENC_CURRENT: ${{ vars.TOKEN_ENC_CURRENT }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
+      PHASE: ${{ inputs.phase || 'copy' }}
+      MAINTENANCE_URL: ${{ vars.MAINTENANCE_URL || vars.VITE_MAINTENANCE_URL }}
+      CUTOVER_SYNC_LOG_WATERMARK_ID: ${{ inputs.sync_log_watermark_id }}
+      CUTOVER_SYNC_LOG_WATERMARK_AT: ${{ inputs.sync_log_watermark_at }}
       CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
       CUTOVER_LOG_DIR: ${{ runner.temp }}/nuvo-cutover-logs
     steps:
@@ -237,6 +268,26 @@ jobs:
           from typing import Iterable
           from urllib.parse import unquote, urlparse
 
+          ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".")
+          sys.path.insert(0, str(ROOT / "scripts"))
+          from cutover_copy import (
+              BILLING_TABLES,
+              COPY_SKIP_TABLES,
+              dump_exclude_args,
+              fetch_maintenance,
+              maintenance_is_armed,
+              parse_watermark,
+              parse_watermark_line,
+              push_anti_join_delete_sql,
+              push_ids_copy_sql,
+              push_load_ids_sql,
+              skipped_from_copy,
+              sync_log_tail_copy_sql,
+              sync_log_tail_insert_sql,
+              sync_log_tail_load_sql,
+              sync_log_watermark_sql,
+          )
+
           DROP_ENV = (
               "PGHOST",
               "PGHOSTADDR",
@@ -282,14 +333,6 @@ jobs:
           }
           TOC_RE = re.compile(r"^\d+;\s+\d+\s+\d+\s+(.+)$")
           BA_TABLES = {"user", "session", "account", "verification"}
-          # Billing stays on Supabase. Webhooks keep writing these; they are
-          # not frozen, not dumped, and not in the snapshot/parity proof.
-          BILLING_TABLES = {
-              "subscriptions",
-              "stripe_webhook_events",
-              "apple_webhook_events",
-              "apple_notification_events",
-          }
           EXTRA_MASKS: list[str] = []
           STUB_AUTH_SQL = """
           CREATE SCHEMA IF NOT EXISTS auth;
@@ -719,33 +762,48 @@ jobs:
                   name = raw.strip()
                   if not name or name in BA_TABLES:
                       continue
-                  if not include_billing and name in BILLING_TABLES:
+                  if not include_billing and skipped_from_copy(name):
                       continue
                   tables.append(name)
               return tables
 
           def dump_exclude_billing() -> list[str]:
-              args = []
-              for name in sorted(BILLING_TABLES):
-                  args.append(f"--exclude-table=public.{name}")
-              return args
+              return dump_exclude_args()
 
           def snapshot_path(work: Path) -> Path:
               return work / "source-snapshot.json"
 
-          def write_source_snapshot(work: Path, hashes: dict[str, dict[str, object]]) -> None:
+          def write_source_snapshot(
+              work: Path,
+              hashes: dict[str, dict[str, object]],
+              watermark: dict[str, object] | None = None,
+          ) -> None:
               payload = {
                   table: {"n": row.get("n"), "hash": row.get("hash")}
                   for table, row in hashes.items()
-                  if table not in BILLING_TABLES
+                  if not skipped_from_copy(table)
               }
               if not payload:
                   die("source snapshot is empty — no frozen tables to prove")
+              mark = watermark or {"id": 0, "created_at": "-infinity"}
               snapshot_path(work).write_text(
-                  json.dumps({"tables": payload}, indent=2, sort_keys=True) + "\n",
+                  json.dumps(
+                      {"tables": payload, "sync_log_watermark": mark},
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n",
                   encoding="utf-8",
               )
-              print(f"recorded snapshot for {len(payload)} frozen tables (counts + md5 only)", flush=True)
+              (work / "sync-log-watermark.json").write_text(
+                  json.dumps(mark, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+              print(
+                  f"recorded snapshot for {len(payload)} frozen tables (counts + md5 only); "
+                  f"sync_log watermark id={mark.get('id')}",
+                  flush=True,
+              )
 
           def load_source_snapshot(work: Path) -> dict[str, dict[str, object]]:
               path = snapshot_path(work)
@@ -757,8 +815,8 @@ jobs:
                   die("source-snapshot.json has no frozen tables")
               out: dict[str, dict[str, object]] = {}
               for name, row in tables.items():
-                  if name in BILLING_TABLES:
-                      die(f"source-snapshot.json includes billing table {name}")
+                  if skipped_from_copy(name):
+                      die(f"source-snapshot.json includes skipped table {name}")
                   if not isinstance(row, dict):
                       die(f"source-snapshot.json row for {name} is not an object")
                   out[name] = {"n": row.get("n"), "hash": row.get("hash")}
@@ -782,7 +840,7 @@ jobs:
                       problems.append(
                           f"{label} {table}: snapshot={snap_n}/{snap_h} now={now_n}/{now_h}"
                       )
-              extra = [t for t in current if t not in snapshot and t not in BILLING_TABLES]
+              extra = [t for t in current if t not in snapshot and not skipped_from_copy(t)]
               for table in extra:
                   problems.append(f"{label} {table}: present now, missing from snapshot")
               return problems
@@ -911,7 +969,51 @@ jobs:
                   fh.write(f"SOURCE_PG_MAJOR={major}\n")
                   fh.write(f"SOURCE_PG_VERSION={pretty}\n")
 
+          def require_cutover_armed() -> None:
+              url = (os.environ.get("MAINTENANCE_URL") or "").strip()
+              if not url:
+                  die(
+                      "MAINTENANCE_URL is required — ship a build with "
+                      "VITE_MAINTENANCE_URL and VITE_CUTOVER_ARMED=1 before arming"
+                  )
+              try:
+                  payload = fetch_maintenance(url)
+              except Exception as exc:
+                  die(
+                      f"maintenance endpoint unreachable — refuse to start copy "
+                      f"({type(exc).__name__})"
+                  )
+              if not maintenance_is_armed(payload):
+                  die(
+                      "maintenance endpoint is not armed (cutover_armed is not true) "
+                      "— refuse to start copy"
+                  )
+              print("maintenance endpoint reports cutover_armed", flush=True)
+
+          def load_sync_log_watermark(work: Path) -> dict[str, object]:
+              env_id = (os.environ.get("CUTOVER_SYNC_LOG_WATERMARK_ID") or "").strip()
+              env_at = (os.environ.get("CUTOVER_SYNC_LOG_WATERMARK_AT") or "").strip()
+              if env_id:
+                  return parse_watermark(env_id, env_at or "-infinity")
+              for path in (work / "sync-log-watermark.json", snapshot_path(work)):
+                  if not path.exists():
+                      continue
+                  raw = json.loads(path.read_text(encoding="utf-8"))
+                  mark = raw.get("sync_log_watermark") if path.name == "source-snapshot.json" else raw
+                  if isinstance(mark, dict) and mark.get("id") is not None:
+                      return parse_watermark(mark.get("id"), mark.get("created_at"))
+              die(
+                  "missing sync_log watermark — pass CUTOVER_SYNC_LOG_WATERMARK_ID "
+                  "/ CUTOVER_SYNC_LOG_WATERMARK_AT from the copy report"
+              )
+              raise AssertionError
+
+          def record_sync_log_watermark(source: str) -> dict[str, object]:
+              line = psql(source, sync_log_watermark_sql(), source=True, extra=["-tA"]).strip()
+              return parse_watermark_line(line)
+
           def cmd_dump() -> None:
+              require_cutover_armed()
               source = os.environ["SOURCE_DATABASE_URL"]
               dump_bin = os.environ["PG_DUMP"]
               restore_bin = os.environ["PG_RESTORE"]
@@ -919,7 +1021,7 @@ jobs:
               dump_path = work / "nuvo-source.dump"
               users_path = work / "auth-users.csv"
               identities_path = work / "auth-identities.csv"
-              print("dumping public schema + data (no-owner, no-acl; billing tables excluded; runner only)…", flush=True)
+              print("dumping public schema + data (no-owner, no-acl; billing + sync_log excluded; runner only)…", flush=True)
               run(
                   [
                       dump_bin,
@@ -939,9 +1041,9 @@ jobs:
               toc = run([restore_bin, "--list", str(dump_path)])
               if "TABLE" not in toc:
                   die("pg_restore --list did not list any TABLE entries")
-              for billing in sorted(BILLING_TABLES):
-                  if re.search(rf"\bTABLE\b.*\b{re.escape(billing)}\b", toc):
-                      die(f"dump TOC includes billing table {billing} — excluded from the copy set")
+              for skipped in sorted(COPY_SKIP_TABLES):
+                  if re.search(rf"\bTABLE\b.*\b{re.escape(skipped)}\b", toc):
+                      die(f"dump TOC includes skipped table {skipped} — excluded from the copy set")
               (work / "nuvo-source.toc").write_text(toc, encoding="utf-8")
               digest = sha256_file(dump_path)
               (work / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
@@ -976,7 +1078,8 @@ jobs:
               snap_hashes = parse_hashes(
                   psql(source, content_hash_sql(tables), source=True, extra=["-tA"])
               )
-              write_source_snapshot(work, snap_hashes)
+              watermark = record_sync_log_watermark(source)
+              write_source_snapshot(work, snap_hashes, watermark)
 
           def cmd_restore() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
@@ -1121,9 +1224,9 @@ jobs:
               tables = list_public_tables(source, source=True)
               if not tables:
                   die("source has no frozen public tables")
-              for billing in BILLING_TABLES:
-                  if billing in tables:
-                      die(f"billing table {billing} leaked into the copy set")
+              for skipped in COPY_SKIP_TABLES:
+                  if skipped in tables:
+                      die(f"skipped table {skipped} leaked into the copy set")
               sql = content_hash_sql(tables)
               print(f"checksumming {len(tables)} frozen tables vs snapshot (count + md5)…", flush=True)
               src_hashes = parse_hashes(psql(source, sql, source=True, extra=["-tA"]))
@@ -1191,6 +1294,20 @@ jobs:
                       f"  {name}: source={src_n} target={dst_n} hash {src_h} → {dst_h}",
                       flush=True,
                   )
+              mark = None
+              try:
+                  mark = load_sync_log_watermark(work)
+                  lines.extend(
+                      [
+                          "",
+                          f"- sync_log watermark id: {mark.get('id')}",
+                          f"- sync_log watermark created_at: {mark.get('created_at')}",
+                          "- sync_log: excluded from copy/parity; re-sync tail after switch",
+                          "- push_subscriptions: in copy; post-switch anti-join deletes (counts only)",
+                      ]
+                  )
+              except SystemExit:
+                  mark = None
               lines.extend(["", f"tables compared: {len(tables)}", f"mismatches: {len(problems)}", ""])
               report = artifacts / "cutover-report.md"
               report.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1201,10 +1318,70 @@ jobs:
               if problems:
                   die("snapshot/source/target count or md5 mismatch — abort:\n  " + "\n  ".join(problems))
               print("migration checksums ok", flush=True)
+              if mark:
+                  print(f"sync_log watermark id={mark.get('id')} (tail re-sync is a separate step)", flush=True)
+
+          def cmd_resync() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              target = os.environ["RESTORE_DATABASE_URL"]
+              work = dump_dir()
+              watermark = load_sync_log_watermark(work)
+              print(
+                  f"re-syncing sync_log tail after watermark id={watermark.get('id')} "
+                  "(counts only)",
+                  flush=True,
+              )
+              tail_path = work / "sync-log-tail.csv"
+              ids_path = work / "push-ids.csv"
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", sync_log_tail_copy_sql(watermark)],
+                  tail_path,
+                  source=True,
+              )
+              tail_n = sum(1 for line in tail_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"sync_log tail rows from source: {tail_n}", flush=True)
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", push_ids_copy_sql()],
+                  ids_path,
+                  source=True,
+              )
+              id_n = sum(1 for line in ids_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"push_subscriptions ids on source: {id_n}", flush=True)
+              script = work / "resync.sql"
+              script.write_text(
+                  "\n".join(
+                      [
+                          sync_log_tail_load_sql() + ";",
+                          "\\copy cutover_sync_log_tail (id, user_id, provider, operation, status, error, created_at) "
+                          f"FROM {sql_literal(str(tail_path))} WITH CSV",
+                          sync_log_tail_insert_sql() + ";",
+                          push_load_ids_sql() + ";",
+                          f"\\copy cutover_push_ids (id) FROM {sql_literal(str(ids_path))} WITH CSV",
+                          push_anti_join_delete_sql() + ";",
+                          "",
+                      ]
+                  ),
+                  encoding="utf-8",
+              )
+              out = run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(script)])
+              counts = [
+                  line.strip()
+                  for line in out.splitlines()
+                  if line.strip().isdigit()
+              ]
+              inserted = counts[0] if counts else "?"
+              deleted = counts[1] if len(counts) > 1 else "?"
+              print(f"sync_log tail inserted: {inserted}", flush=True)
+              print(f"push_subscriptions deleted on target (anti-join): {deleted}", flush=True)
+              for path in (tail_path, ids_path, script):
+                  try:
+                      path.unlink()
+                  except OSError:
+                      pass
 
           def main() -> None:
               if len(sys.argv) < 2:
-                  die("usage: cutover.py resolve|dump|restore|verify")
+                  die("usage: cutover.py resolve|dump|restore|verify|resync")
               action = sys.argv[1]
               if action == "resolve":
                   cmd_resolve()
@@ -1214,6 +1391,8 @@ jobs:
                   cmd_restore()
               elif action == "verify":
                   cmd_verify()
+              elif action == "resync":
+                  cmd_resync()
               else:
                   die(f"unknown action {action}")
 
@@ -1222,6 +1401,7 @@ jobs:
           PY
 
       - name: Pick pg_dump matching source major
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1233,6 +1413,7 @@ jobs:
 
       - id: dump
         name: pg_dump source + export auth (read-only)
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1246,6 +1427,7 @@ jobs:
 
       - id: restore
         name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
+        if: ${{ inputs.phase != 'resync' }}
         run: |
           set +x
           set -eu
@@ -1257,6 +1439,7 @@ jobs:
 
       - id: verify
         name: Per-table row count + content hash
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1291,6 +1474,7 @@ jobs:
           node scripts/guard-public-ci.mjs --job
 
       - name: Re-encrypt vault tokens in-runner
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1299,6 +1483,17 @@ jobs:
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           node --experimental-strip-types scripts/cutover-seal-tokens.mjs
+
+      - name: Re-sync sync_log tail + reconcile push deletes
+        if: ${{ inputs.phase == 'resync' || steps.verify.outcome == 'success' }}
+        run: |
+          set +x
+          set -eu
+          set -o pipefail
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          mkdir -p "$CUTOVER_LOG_DIR"
+          python3 "${RUNNER_TEMP}/cutover.py" resync 2>&1 | tee "${CUTOVER_LOG_DIR}/resync.log"
 
       - name: Upload checksum report
         if: ${{ always() && steps.guard.outcome == 'success' }}

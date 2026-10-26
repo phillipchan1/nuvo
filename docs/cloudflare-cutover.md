@@ -209,6 +209,26 @@ Fail-open if the flag URL is unreachable — unless a cutover is **armed**
 `cutover_armed: true` on the last successful payload). Armed + unreachable
 is fail-closed.
 
+**Ship the armed build first.** Before you flip `CUTOVER_ARMED` on the
+Worker, ship a build with `VITE_MAINTENANCE_URL` (the Worker
+`GET /api/maintenance` URL) and `VITE_CUTOVER_ARMED=1` baked in. The
+copy job reads that same endpoint (`MAINTENANCE_URL` / `VITE_MAINTENANCE_URL`
+Actions variable) and **refuses to start dump** unless the payload reports
+`cutover_armed: true`. An unarmed SPA would keep writing through the
+window; the job will not copy against that.
+
+Non-billing Supabase edge functions that write with `service_role` also
+read a `WRITE_FREEZE` secret (`supabase/functions/_shared/writeFreeze.ts`)
+and 503. Set `WRITE_FREEZE=1` (or `MAINTENANCE_WRITE_FREEZE=1`) as an
+edge-function secret when you arm. Covered: agent, capture (POST only;
+GET is a poll), mcp, inbound-email, google-webhook, delete-account,
+google-sync / oauth / events / contacts, m365-oauth / sync, ics-sync /
+subscribe, icloud-connect / sync / events / contacts, calendar-refresh,
+slot-mirror, task-mirror, route-events, rollover, push-dispatch,
+github-activity, apple-identity. **Not** covered — do not add it:
+`stripe-webhook`, `apple-webhook`, stripe-checkout / portal, apple-iap,
+iap-catalog, referral-code. Those keep writing billing tables.
+
 ## Copy-window freeze (hand-applied, not CI)
 
 `docs/cloudflare-migration/freeze.sql` and `unfreeze.sql` are committed
@@ -217,27 +237,55 @@ and reviewed. Do **not** apply them from CI, the Worker, or
 `stripe_webhook_events`, `apple_webhook_events`, and
 `apple_notification_events` are excluded from the freeze, from
 `pg_dump --exclude-table`, from `source-snapshot.json`, and from the
-parity proof. If a billing-written table ever has to be copied, it needs
-the freeze too.
+parity proof. `sync_log` is also excluded from the frozen copy and
+parity (billing webhooks insert via `logSync`); the dump records a
+watermark (`max(id)`, `max(created_at)`) and `phase=resync` copies
+rows greater than that watermark after the switch. `push_subscriptions`
+stays in the copy; resync then deletes Neon rows whose id is gone on
+Supabase (anti-join, counts only) so webhook deletes during the window
+land. If a billing-written table ever has to be copied *and* stay
+frozen, it needs the freeze too.
+
+Grants are recorded from `aclexplode(relacl)`, including `PUBLIC`, and
+`unfreeze.sql` restores those exact ACL entries — no new direct grants
+to `anon` / `authenticated` that were only inherited via `PUBLIC`.
+`unfreeze.sql` is idempotent (NOTICE no-op if the recording tables are
+already gone). Partitioned tables, views, and column-level grants
+(`attacl`) are out of scope: Nuvo public app tables are ordinary
+relations.
 
 Order:
 
-1. **Arm** — set `CUTOVER_ARMED=1` on the Worker (and `VITE_CUTOVER_ARMED=1`
-   on a build if you want the SPA fail-closed without a round trip).
-2. **Freeze** — apply `freeze.sql` by hand. Revokes `INSERT`/`UPDATE`/`DELETE`
-   on public app tables from `anon` and `authenticated` (SELECT stays).
-   Pauses every `nuvo-*` `pg_cron` job via `cron.alter_job(..., active := false)`
-   after recording the prior `active` flag. `service_role` and the billing
-   tables are untouched.
-3. **Snapshot** — `cutover-migrate` `dump` records per-table counts + md5
-   for the frozen copy set only (`source-snapshot.json` in runner temp).
-4. **Copy** — restore + token seal into Neon. Billing tables are not in
-   the dump TOC.
+0. **Ship the armed build** — `VITE_MAINTENANCE_URL` + `VITE_CUTOVER_ARMED=1`.
+   The copy job will refuse to start until that endpoint reports armed.
+1. **Arm** — set `CUTOVER_ARMED=1` on the Worker, `WRITE_FREEZE=1` on
+   the non-billing edge functions, and `MAINTENANCE_WRITE_FREEZE=1` if
+   you want Worker writes frozen too.
+2. **Freeze** — apply `freeze.sql` by hand. Records `aclexplode` write
+   ACLs (including `PUBLIC`), then revokes `INSERT`/`UPDATE`/`DELETE`
+   on public app tables from `PUBLIC`, `anon`, and `authenticated`
+   (SELECT stays). Pauses every `nuvo-*` `pg_cron` job via
+   `cron.alter_job(..., active := false)` after recording the prior
+   `active` flag. `service_role` and the billing tables are untouched.
+3. **Snapshot** — `cutover-migrate` `dump` first GETs the maintenance
+   endpoint and dies unless `cutover_armed` is true. Then records
+   per-table counts + md5 for the frozen copy set only
+   (`source-snapshot.json` in runner temp) plus the `sync_log`
+   watermark (also printed on `cutover-report.md`).
+4. **Copy** — restore + token seal into Neon. Billing tables and
+   `sync_log` are not in the dump TOC.
 5. **Verify** — `verify` recomputes source and target hashes against the
    snapshot and dies if either drifted (writes leaked, or the copy is short).
-6. **Switch** — flip `VITE_API_BASE_URL`. Or **unfreeze** — apply
-   `unfreeze.sql`, which restores the recorded grants and each job's prior
-   `active` exactly, then clear `CUTOVER_ARMED`.
+   Parity covers only the frozen tables.
+6. **First tail** — the same job runs `resync`: copies `sync_log` rows
+   with `id` / `created_at` greater than the snapshot watermark, and
+   applies `push_subscriptions` deletes via anti-join (counts only).
+7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
+   `cutover-migrate` with `phase=resync` and the watermark from the
+   report so post-switch billing writes/deletes land. Or **unfreeze**
+   — apply `unfreeze.sql`, which restores the recorded ACLs and each
+   job's prior `active` exactly (idempotent), then clear `CUTOVER_ARMED`
+   and `WRITE_FREEZE`.
 
 ---
 
