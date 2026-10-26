@@ -144,9 +144,11 @@ ok(/cmd_resync/.test(workflow) && /id anti-join/.test(workflow), "cutover-migrat
 ok(/sync_log_resync_txn_sql/.test(workflow), "cutover-migrate.yml setvals sync_log in the anti-join transaction");
 ok(/last_value FROM/.test(copyPy) && /GREATEST\(/.test(copyPy), "cutover_copy.py setval is GREATEST(max(id), last_value, 1)");
 ok(/LOCK TABLE public\.sync_log/.test(copyPy), "cutover_copy.py locks sync_log for the resync transaction");
-ok(/SET LOCAL lock_timeout = /.test(copyPy) && /SYNC_LOG_LOCK_TIMEOUT = "10s"/.test(copyPy) && copyPy.indexOf("SET LOCAL lock_timeout") < copyPy.indexOf("LOCK TABLE public.sync_log"), "cutover_copy.py sets lock_timeout before LOCK TABLE");
+ok(/SYNC_LOG_LOCK_TIMEOUT = "10s"/.test(copyPy) && /sync_log_set_lock_timeout_sql\(local=True\)/.test(copyPy) && copyPy.indexOf("sync_log_set_lock_timeout_sql(local=True)") < copyPy.indexOf("LOCK TABLE public.sync_log"), "cutover_copy.py sets lock_timeout before LOCK TABLE");
+ok(/sync_log_set_lock_timeout_sql\(\)/.test(copyPy) && copyPy.indexOf("sync_log_set_lock_timeout_sql()") < copyPy.indexOf("CREATE TEMP TABLE cutover_sync_log_src"), "cutover_copy.py sets session lock_timeout before the temp-table load");
+ok(/WHEN lock_not_available/.test(copyPy) && !/WHEN query_canceled/.test(copyPy), "cutover_copy.py catches lock_not_available (55P03), not query_canceled");
 ok(/retry the resync \(retryable\)/.test(copyPy), "cutover_copy.py lock timeout is retryable");
-ok(/is_retryable_lock_timeout/.test(workflow) && /SYNC_LOG_LOCK_TIMEOUT_MESSAGE/.test(workflow), "cutover-migrate.yml classifies lock timeout as retryable");
+ok(/retryable_lock_timeout_stop\(err\)/.test(workflow), "cutover-migrate.yml includes the redacted psql error on lock timeout");
 ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");
 ok(/sync_log_reserve_sequence_sql/.test(workflow) && /SYNC_LOG_SEQUENCE_MARGIN/.test(copyPy), "cutover-migrate.yml reserves sync_log identity past source max after restore");
 ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(workflow), "cutover-migrate.yml deletes missing push rows before upsert");

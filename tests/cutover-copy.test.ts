@@ -69,6 +69,8 @@ describe("cutover_copy helpers", () => {
     expect(txn).toMatch(/^BEGIN;/);
     expect(txn).toMatch(/SET LOCAL lock_timeout = '10s'/);
     expect(txn).toMatch(/LOCK TABLE public\.sync_log IN SHARE ROW EXCLUSIVE MODE/);
+    expect(txn).toMatch(/WHEN lock_not_available/);
+    expect(txn).not.toMatch(/WHEN query_canceled/);
     expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\)/);
     expect(txn).toMatch(/incoming row\(s\) differ on Neon/);
     expect(txn).toMatch(/sync_log_setval=/);
@@ -85,6 +87,14 @@ describe("cutover_copy helpers", () => {
     expect(insert).toBeGreaterThan(lockTable);
     expect(setvalAt).toBeGreaterThan(insert);
     expect(commit).toBeGreaterThan(setvalAt);
+    const load = py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())");
+    expect(load).toMatch(/^SET lock_timeout = '10s';/);
+    expect(load).not.toMatch(/^SET LOCAL lock_timeout/);
+    expect(load.indexOf("SET lock_timeout = '10s'")).toBeLessThan(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
+    expect(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeGreaterThanOrEqual(0);
+    const script = `${load};\n${txn}`;
+    expect(script.indexOf("SET lock_timeout = '10s'")).toBeLessThan(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
+    expect(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeLessThan(script.indexOf("BEGIN;"));
     expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
   });
 
@@ -100,6 +110,20 @@ describe("cutover_copy helpers", () => {
     expect(out).toBe(
       "True\nTrue\nFalse\nFalse\nsync_log lock timed out after 10s — retry the resync (retryable)",
     );
+  });
+
+  it("retryable lock-timeout stop includes the redacted psql error", () => {
+    const out = py(
+      "from cutover_copy import retryable_lock_timeout_stop, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
+      + "print(retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE\"')); "
+      + "print('---'); "
+      + "print(retryable_lock_timeout_stop('')); "
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout'))",
+    );
+    expect(out).toContain("sync_log lock timed out after 10s — retry the resync (retryable): ERROR:  canceling statement due to lock timeout");
+    expect(out).toContain("LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE");
+    expect(out).not.toMatch(/user_id|provider|operation|RETURNING \*/);
+    expect(out).toContain("---\nsync_log lock timed out after 10s — retry the resync (retryable)\nTrue");
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
@@ -240,7 +264,8 @@ describe("cutover-migrate.yml", () => {
     expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/sync_log_resync_txn_sql/);
     expect(WORKFLOW).toMatch(/is_retryable_lock_timeout/);
-    expect(WORKFLOW).toMatch(/SYNC_LOG_LOCK_TIMEOUT_MESSAGE/);
+    expect(WORKFLOW).toMatch(/retryable_lock_timeout_stop\(err\)/);
+    expect(WORKFLOW).not.toMatch(/die\(SYNC_LOG_LOCK_TIMEOUT_MESSAGE\)/);
     expect(WORKFLOW).not.toMatch(/psql\(target, sync_log_setval_sql/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
   });
@@ -287,6 +312,9 @@ describe("runbook", () => {
     expect(DOC).toMatch(/never decreases/);
     expect(DOC).toMatch(/SET LOCAL lock_timeout = '10s'/);
     expect(DOC).toMatch(/retry the resync \(retryable\)/);
+    expect(DOC).toMatch(/lock_not_available/);
+    expect(DOC).toMatch(/temp-table load/);
+    expect(DOC).toMatch(/redacted psql error/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
   });
