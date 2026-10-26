@@ -230,29 +230,29 @@ app.delete("/api/data/task_labels", async (c) => {
 });
 
 app.get("/api/data/:table", async (c) => {
-  const table = c.req.param("table");
-  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
+  const table = c.req.param("table");
+  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const rows = await listOwned(got.store, table);
   return json({ data: rows }, 200, OPEN_CORS);
 });
 
 app.get("/api/data/:table/:id", async (c) => {
-  const table = c.req.param("table");
-  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
+  const table = c.req.param("table");
+  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const row = await getOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
 
 app.post("/api/data/:table", async (c) => {
-  const table = c.req.param("table");
-  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
+  const table = c.req.param("table");
+  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await upsertOwned(got.store, table as PlannerTable, body);
   if (!row) return json({ error: "cannot insert" }, 400, OPEN_CORS);
@@ -260,10 +260,10 @@ app.post("/api/data/:table", async (c) => {
 });
 
 app.patch("/api/data/:table/:id", async (c) => {
-  const table = c.req.param("table");
-  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
+  const table = c.req.param("table");
+  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
@@ -271,10 +271,10 @@ app.patch("/api/data/:table/:id", async (c) => {
 });
 
 app.delete("/api/data/:table/:id", async (c) => {
-  const table = c.req.param("table");
-  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
+  const table = c.req.param("table");
+  if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const n = await deleteOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!n) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ deleted: n }, 200, OPEN_CORS);

@@ -107,7 +107,8 @@ const settingsA = await getOwned(storeA, "user_settings", A);
 const settingsB = await getOwned(storeB, "user_settings", B);
 ok(settingsA?.theme === "light", "settings: A theme is light");
 ok(settingsB?.theme === "dark", "settings: B theme is dark");
-ok((await getOwned(storeA, "user_settings", B))?.theme === "light", "settings: A settings read is still A (owner key)");
+ok((await getOwned(storeA, "user_settings", B)) === null, "getOwned settings: A cannot read B by id");
+ok((await getOwned(storeA, "user_settings", A))?.theme === "light", "getOwned settings: A can read own");
 
 const labelsA = await listTaskLabels(storeA, TASK_A);
 const labelsCross = await listTaskLabels(storeA, TASK_B);
@@ -141,6 +142,10 @@ ok((await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [
 const sneak = await applyPatch(storeA, "tasks", { id: TASK_B }, { title: "patched by A" });
 ok(sneak.matched === 0, "applyPatch: A cannot patch B task");
 ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [TASK_B])) === "B only task", "applyPatch: B title still B");
+
+const sneakSettings = await applyPatch(storeA, "user_settings", { id: B }, { theme: "light" });
+ok(sneakSettings.matched === 0, "applyPatch: A cannot patch B settings by id");
+ok((await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [B])) === "dark", "applyPatch settings: B theme still dark");
 
 const ownPatch = await applyPatch(storeA, "tasks", { id: TASK_A }, { title: "A retitled" });
 ok(ownPatch.matched === 1, "applyPatch: A can patch own task");
@@ -272,10 +277,15 @@ for (const table of PLANNER_TABLES) {
 }
 
 const bSettingsBefore = await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [B]);
-ok((await deleteOwned(storeA, "user_settings", B)) >= 0, "deleteOwned settings: A call does not throw");
+const aSettingsBefore = await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [A]);
+ok((await deleteOwned(storeA, "user_settings", B)) === 0, "deleteOwned settings: A cannot delete B");
 ok(
   (await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [B])) === bSettingsBefore,
   "deleteOwned settings: B settings still present",
+);
+ok(
+  (await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [A])) === aSettingsBefore,
+  "deleteOwned settings: A settings untouched when targeting B",
 );
 
 for (const table of PLANNER_TABLES) {

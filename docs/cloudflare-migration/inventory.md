@@ -9,6 +9,9 @@ Live Nuvo stays on Vercel + Supabase until a signed-off cutover
 ([`docs/cloudflare-cutover.md`](../cloudflare-cutover.md)). This PR adds a Worker
 that is **inert** unless `VITE_API_BASE_URL` is set.
 
+Access control on the Worker (Neon has no RLS):
+[`access-audit.md`](./access-audit.md).
+
 ---
 
 ## 1 · Tables
