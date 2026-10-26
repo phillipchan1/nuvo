@@ -37,11 +37,19 @@ function denied(status: number): boolean {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
+const sessionSrc = readFileSync(join(here, "session.ts"), "utf8");
 const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
+const routeSrc = [
+  indexSrc,
+  sessionSrc,
+  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts"].map(
+    (name) => readFileSync(join(here, name), "utf8"),
+  ),
+].join("\n");
 
-ok(/sessionUser\(io\.auth/.test(indexSrc), "requireStore: owner comes from verified session");
-ok(!/c\.req\.query\(["']user_id["']\)/.test(indexSrc), "routes: no user_id query param");
-ok(!/c\.req\.header\(["'](?:x-user-id|user-id)["']\)/i.test(indexSrc), "routes: no client user-id header");
+ok(/sessionUser\(io\.auth/.test(sessionSrc), "requireStore: owner comes from verified session");
+ok(!/c\.req\.query\(["']user_id["']\)/.test(routeSrc), "routes: no user_id query param");
+ok(!/c\.req\.header\(["'](?:x-user-id|user-id)["']\)/i.test(routeSrc), "routes: no client user-id header");
 ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
 
@@ -101,7 +109,7 @@ const env = {
   BETTER_AUTH_SECRET: "access-http-secret-32-bytes-long!!",
   BETTER_AUTH_URL: "http://localhost:8787",
   CRON_SECRET: "access-http-cron-secret",
-  RESEND_API_KEY: "re_test_inbound",
+  ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
 };
 

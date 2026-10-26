@@ -246,6 +246,74 @@ ok(
   (await scalar<string>("SELECT project_id::text FROM tasks WHERE id = $1", [TASK_B])) === PROJECT_B,
   "updateOwned task: B project_id unchanged",
 );
+ok(
+  (await updateOwned(storeA, "initiatives", B_ROW.initiatives, { name: "stolen" })) === null,
+  "updateOwned initiative: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM initiatives WHERE id = $1", [B_ROW.initiatives])) === "B Initiative",
+  "updateOwned initiative: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "key_results", B_ROW.key_results, { name: "stolen" })) === null,
+  "updateOwned key_result: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM key_results WHERE id = $1", [B_ROW.key_results])) === "B KR",
+  "updateOwned key_result: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "slots", B_ROW.slots, { title: "stolen" })) === null,
+  "updateOwned slot: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT title FROM slots WHERE id = $1", [B_ROW.slots])) === "B slot",
+  "updateOwned slot: B title unchanged",
+);
+ok(
+  (await updateOwned(storeA, "record_comments", B_ROW.record_comments, { body: "stolen" })) === null,
+  "updateOwned comment: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT body FROM record_comments WHERE id = $1", [B_ROW.record_comments])) === "B note",
+  "updateOwned comment: B body unchanged",
+);
+ok(
+  (await updateOwned(storeA, "reminders", B_ROW.reminders, { anchor: "end" })) === null,
+  "updateOwned reminder: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT anchor FROM reminders WHERE id = $1", [B_ROW.reminders])) === "start",
+  "updateOwned reminder: B anchor unchanged",
+);
+ok(
+  (await updateOwned(storeA, "labels", B_ROW.labels, { name: "stolen" })) === null,
+  "updateOwned label: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM labels WHERE id = $1", [B_ROW.labels])) === "B tag",
+  "updateOwned label: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "recurrences", B_ROW.recurrences, { rrule: "FREQ=YEARLY" })) === null,
+  "updateOwned recurrence: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT rrule FROM recurrences WHERE id = $1", [B_ROW.recurrences])) === "FREQ=DAILY",
+  "updateOwned recurrence: B rrule unchanged",
+);
+ok(
+  (await updateOwned(storeA, "week_reviews", B_ROW.week_reviews, { report: { stolen: true } })) === null,
+  "updateOwned week_review: A cannot edit B",
+);
+ok(
+  (await updateOwned(storeA, "sprints", B_ROW.sprints, { week_start: "1999-01-01" })) === null,
+  "updateOwned sprint: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT week_start::text FROM sprints WHERE id = $1", [B_ROW.sprints])) === "2026-10-26",
+  "updateOwned sprint: B week_start unchanged",
+);
 
 for (let i = 0; i < 8; i++) {
   ok(

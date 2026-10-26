@@ -45,8 +45,8 @@ export async function handleInboundEmail(c: Context<AppEnv>): Promise<Response> 
 
   const secret = c.env.RESEND_WEBHOOK_SECRET ?? "";
   const apiKey = c.env.RESEND_API_KEY ?? "";
-  if (!secret || !apiKey) {
-    return json({ error: "RESEND_WEBHOOK_SECRET / RESEND_API_KEY not configured" }, 500, OPEN_CORS);
+  if (!secret) {
+    return json({ error: "RESEND_WEBHOOK_SECRET not configured" }, 500, OPEN_CORS);
   }
 
   const raw = await c.req.text();
@@ -118,6 +118,7 @@ export async function handleInboundEmail(c: Context<AppEnv>): Promise<Response> 
     text = typeof rec.text === "string" ? rec.text : null;
     html = typeof rec.html === "string" ? rec.html : null;
   } else {
+    if (!apiKey) return json({ error: "RESEND_API_KEY not configured" }, 500, OPEN_CORS);
     const fetched = await fetchReceivedMail(apiKey, meta.emailId);
     if (!fetched.ok) return json({ error: "could not fetch mail body" }, 500, OPEN_CORS);
     text = fetched.text;

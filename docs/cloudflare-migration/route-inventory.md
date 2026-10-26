@@ -155,15 +155,16 @@ cutover.
 
 `npm run check:worker` (already in `.github/workflows/checks.yml`):
 
-| File | What |
-|---|---|
-| `access.check.ts` | Store-layer isolation + FK plant |
-| `accessHttp.check.ts` | HTTP A/B + unauth 401 + POST-id leak + PATCH FK + every ported route above |
-| `authAdapter.check.ts` / `authUrl.check.ts` / `db.check.ts` / `requestReuse.check.ts` | auth / db |
-| `miniflare.seq.check.ts` | workerd + Postgres; authorized cron `push-dispatch` still 501 |
+| File | Count | What |
+|---|---|---|
+| `access.check.ts` | 186 | Store-layer isolation + FK plant |
+| `accessHttp.check.ts` | 307 | HTTP A/B + unauth 401 + POST-id leak + PATCH FK + every ported route above |
+| `authUrl.check.ts` | 98 | auth URL / local fallback |
+| `authAdapter.check.ts` | 29 | Better Auth adapter |
+| `db.check.ts` | 55 | Hyperdrive / connect timeout |
+| `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
+| `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
 
-`npm run check:isolation-mutation` still mutates every
-`user_id = ${store.userId}` in `store.ts`.
+`npm run check:isolation-mutation`: **64/64** owner filters in `store.ts`.
 
-Run `node --experimental-strip-types worker/src/accessHttp.check.ts`
-and read the printed `N checks, 0 failed` line for the live count.
+SPA: `npm run typecheck` clean · `npm test` **2088** passed (159 files).
