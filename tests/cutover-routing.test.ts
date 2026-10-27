@@ -108,11 +108,12 @@ describe("direct fetch / session call sites", () => {
   });
 });
 
-describe("release binaries do not bake VITE_API_BASE_URL on this PR", () => {
-  it("Mac and iOS release workflows stay on master's variable / unset path", () => {
+describe("release binaries bake VITE_API_BASE_URL as a public literal", () => {
+  it("Mac and iOS release workflows hardcode https://api.nuvo.day", () => {
     const mac = read(".github/workflows/release.yml");
     const ios = read(".github/workflows/ios-release.yml");
-    expect(mac).not.toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
-    expect(ios).toMatch(/vars\.VITE_API_BASE_URL/);
+    expect(mac).toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
+    expect(ios).toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
+    expect(ios).not.toMatch(/vars\.VITE_API_BASE_URL/);
   });
 });

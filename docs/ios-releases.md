@@ -185,12 +185,17 @@ signing fails, provide manual certs (same as
 
 Settings → Secrets and variables → Actions:
 
-#### 6b · API base URL (Cloudflare rehearsal — inert unless set)
+#### 6b · API base URL (Cloudflare — baked literal, runtime flip)
 
-The IPA reads `VITE_API_BASE_URL` from a GitHub **Actions variable** (Settings →
-Secrets and variables → Actions → **Variables**), not a secret. Leave it empty
-until cutover. The iOS app is a WKWebView loading local files, so a same-origin
-`/api` will not resolve — set the **absolute** Worker origin + `/api`.
+`ios-release.yml` bakes the **hardcoded public literal**
+`VITE_API_BASE_URL=https://api.nuvo.day`. It is not a GitHub Actions
+variable. The IPA is a WKWebView loading local files, so the value must
+be that absolute Worker origin.
+
+The bake only lets the binary ask `GET /api/maintenance` at launch. It
+does **not** switch traffic. The only rollback is #117's runtime
+`cutover_flipped` flag on that payload — `CUTOVER_FLIPPED=false` (plus
+unfreeze). Clearing a repo variable does not roll a shipped IPA back.
 
 See [`cloudflare-cutover.md`](./cloudflare-cutover.md).
 
@@ -202,7 +207,7 @@ Required secrets: `APPSTORE_KEY_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_PRIVATE_KEY
 
 | Secret | Required | Value |
 |---|---|---|
-| `VITE_API_BASE_URL` | no (variable) | Empty today. Workers preview: `https://nuvo-preview.<account>.workers.dev/api` |
+| `VITE_API_BASE_URL` | n/a (hardcoded in `ios-release.yml`) | Public literal `https://api.nuvo.day`. Rollback is `cutover_flipped` via `/api/maintenance`, not this value |
 | `VITE_SUPABASE_URL` | yes | Same as web/desktop build |
 | `VITE_SUPABASE_ANON_KEY` | yes | Same as web/desktop build |
 | `VITE_POSTHOG_PROJECT_TOKEN` | yes | Same as web/desktop build (D-114) |
