@@ -23,6 +23,8 @@ import { HARNESS_CALENDAR_ACCOUNTS, HARNESS_SETTINGS } from "../calendar/calenda
 import type { AttendeeStatus, ExternalEvent, GoogleRawEvent, Label, Slot, Task } from "../../lib/types";
 import type { Domain, Project, VTask, VerticalData } from "../../lib/vertical";
 import { toDateISO } from "../../lib/dates";
+import { slotTasksKey, slotsKey } from "../../hooks/useSlots";
+import { scheduledTasksKey } from "../../hooks/useTasks";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 const dom = (id: string, name: string, color: string, icon: string, sort: number) =>
@@ -126,6 +128,26 @@ type Scenario = {
   steps?: Task[];
 };
 
+// ── today's blocks, for "Put in a slot" (D-172) ──────────────────────────────
+// What the task sheet reads for the day: slots (one already holding a task, one
+// a project's sitting, one repeating) and timed tasks (one open, one done). The
+// done one and any event must never be offered.
+function todaysBlocks() {
+  const morning = mkSlot({ id: "s-morning", start_time: at(8).toISOString(), duration_minutes: 60, domain_id: "d1" });
+  const sitting = mkSlot({ id: "s-proj", project_id: "p1", domain_id: "d1" });
+  const admin = mkSlot({ id: "s-admin", title: "Admin hour", start_time: at(17).toISOString(), duration_minutes: 60, recurrence_id: "r-admin", recurrence_date: toDateISO(at(17)) });
+  const children = [
+    mkTask({ id: "t-inslot", title: "Clear the studio inbox", status: "planned", do_date: toDateISO(at(8)), duration_minutes: 30, domain_id: "d1", slot_id: "s-morning" }),
+    mkTask({ id: "c1", title: "Nav + footer pass", status: "planned", duration_minutes: 30, project_id: "p1", slot_id: "s-proj" }),
+    mkTask({ id: "c2", title: "Case study photos", status: "planned", duration_minutes: 45, project_id: "p1", slot_id: "s-proj" }),
+  ];
+  const timed = [
+    mkTask({ id: "t-call", title: "Call the bank about the wire", status: "planned", do_date: toDateISO(at(11)), start_time: at(11).toISOString(), duration_minutes: 30, domain_id: "d2" }),
+    mkTask({ id: "t-standup", title: "Stand-up notes", status: "done", do_date: toDateISO(at(10, 30)), start_time: at(10, 30).toISOString(), duration_minutes: 15, domain_id: "d1", completed_at: new Date().toISOString() }),
+  ];
+  return { slots: [morning, sitting, admin], children, timed };
+}
+
 function scenarios(): Record<string, Scenario> {
   const basic = mkEvent({ id: "e-basic", title: "Design review" }, at(10), at(10, 45));
   const meet = mkEvent(
@@ -227,6 +249,11 @@ function scenarios(): Record<string, Scenario> {
       }),
     },
 
+    "task-in-slot": {
+      label: "inside a slot · Put in a slot names it", group: "Task",
+      task: todaysBlocks().children[0],
+    },
+
     "block-project": {
       label: "project block · 3 tasks", group: "Block",
       slot: { tap: { kind: "slot", slot: slotP, title: "Marketing site v2", start: at(13), end: at(15), childCount: 3, doneCount: 1 }, children: slotChildren },
@@ -252,6 +279,26 @@ function stubs(log: (name: string) => void) {
   ) as never;
 }
 
+/** Like `stubs`, but each write is logged with the ids (and times) it was given. */
+function slotStubs(log: (line: string) => void) {
+  const say = (a: unknown): string => {
+    if (Array.isArray(a)) return `[${a.map(say).filter(Boolean).join(", ")}]`;
+    if (a instanceof Date) return `at ${a.toTimeString().slice(0, 5)}`;
+    if (a && typeof a === "object" && "id" in a) return String((a as { id: string }).id);
+    return "";
+  };
+  return new Proxy(
+    {},
+    {
+      get: (_t, name: string) =>
+        (...args: unknown[]) => {
+          log(`${name} ${args.map(say).filter(Boolean).join(" ")}`);
+          return Promise.resolve(null);
+        },
+    },
+  ) as never;
+}
+
 export default function SheetsHarness() {
   const key = new URLSearchParams(window.location.search).get("sheets") ?? "";
   const all = useMemo(scenarios, []);
@@ -269,6 +316,21 @@ export default function SheetsHarness() {
     if (sc?.events) qc.setQueryData(["external_events", "h", "h"], sc.events);
     for (const e of sc?.events ?? []) qc.setQueryData(["event_details", e.id], sc.details?.[e.id] ?? {});
     if (sc?.task) qc.setQueryData(["tasks", "steps", sc.task.id], sc.steps ?? []);
+    // Today's blocks under the keys the task sheet asks for (any other day is
+    // left unseeded, so a task on tomorrow shows no "Put in a slot" row). The
+    // timed-block task joins the day's scheduled tasks, as it would live.
+    if (sc?.group === "Task") {
+      const day = new Date();
+      day.setHours(0, 0, 0, 0);
+      const next = new Date(day);
+      next.setDate(next.getDate() + 1);
+      const [from, to] = [day.toISOString(), next.toISOString()];
+      const blocks = todaysBlocks();
+      const timed = sc.task?.start_time ? [...blocks.timed, sc.task] : blocks.timed;
+      qc.setQueryData(slotsKey(from, to), blocks.slots);
+      qc.setQueryData(scheduledTasksKey(from, to), timed);
+      qc.setQueryData(slotTasksKey(blocks.slots.map((x) => x.id)), blocks.children);
+    }
     return qc;
   }, [sc]);
 
@@ -280,6 +342,8 @@ export default function SheetsHarness() {
   }, [sc]);
 
   const mutations = useMemo(() => stubs((n) => setLast(n)), []);
+  // Slot writes say WHICH blocks they were handed, so a pick can be read back.
+  const slotMutations = useMemo(() => slotStubs((n) => setLast(n)), []);
   const store = useMemo(() => {
     const data: VerticalData = {
       domains: DOMAINS, initiatives: [], projects: PROJECTS, tasks: [] as VTask[],
@@ -361,6 +425,7 @@ export default function SheetsHarness() {
             labels={LABELS}
             vertical={store.data}
             mutations={mutations}
+            slotMutations={slotMutations}
             accent={DOMAINS.find((d) => d.id === sc.task!.domain_id)?.color ?? null}
             onClose={close}
             onAskNuvo={() => setLast("askNuvo")}

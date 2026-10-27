@@ -76,6 +76,7 @@ been used to argue against things it doesn't forbid.
 | **Today / the Day** | `do_date` set; optionally blocked. |
 | **No time yet** · **On the clock** | The two groups in the Today list, on both screens: today's work that has no time on the calendar, then the work that does, in clock order. Rows don't show a clock, so the group is how you can tell which part of today is still only a wish (D-148). The day-level form of *loose* / *has a time*. |
 | **Anytime** · **Anytime that day** | Planned for a day with no time on the clock. On desktop it's the calendar's **anytime** row (the all-day lane over the grid); on the phone, the anytime chips. Rollover lands carried work here (D-141). *Anytime that day* (a task's menu) / *Anytime* (its popover) keeps the day and drops the time — it replaced *Unblock* (D-154). The opposite move keeps the clock: a timed task sent to another day by hand stays at its hour (*Tomorrow · 11:30am*). |
+| **Put in a slot** | The phone task sheet's way onto another block, standing in for the Schedule's drag (D-172). It lists that day's **slots** and **timed tasks**: pick a slot and the task goes in it (the slot grows to fit); pick a task and the two become one new slot at *that* task's time. The same acts and rules as dropping on a block (D-170), so a tap and a drop can't disagree. The row appears only when the day has something to put the task with, and it names the slot the task is in now. A verb over *slot*, not a new thing. |
 
 ## The ceremonies (flows)
 

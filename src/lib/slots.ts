@@ -8,6 +8,7 @@
 // handlers (what they write) can't disagree.
 
 import type { Slot, Task } from "./types";
+import { toDateISO } from "./dates";
 import { domainById, projectById, taskDomainId, type VerticalData } from "./vertical";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
@@ -236,6 +237,62 @@ export function planMakeSlot(
   }
 
   return { kind: "none", reason: "Make a slot takes tasks and one slot, or two slots" };
+}
+
+/** One row of the phone's "Put in a slot" list, and what tapping it does. */
+export type SlotPick =
+  | { kind: "slot"; slot: Slot; act: "join" }
+  | { kind: "task"; task: Task; act: "combine" };
+
+/**
+ * The day a task's "Put in a slot" list is read from: the day it sits on, or
+ * today for work with no day yet (the same day a drag from the rail lands it on).
+ */
+export function slotPickDay(task: Pick<Task, "start_time" | "do_date">, today: string): string {
+  if (task.start_time) return toDateISO(new Date(task.start_time));
+  return task.do_date ?? today;
+}
+
+/**
+ * **"Put in a slot": what a task can be gathered with, without a drag** (D-172).
+ *
+ * The phone's calendar has no drag, so the task sheet lists what dropping the
+ * task on a block would do on the desktop. That day's **slots** are listed (the
+ * task joins one), and so are its **timed tasks** (the two combine into a new
+ * slot at that task's time, because the block you pick doesn't move). Every row
+ * is one `gatherActFor` says yes to, so a tap and a drop can't disagree about
+ * what gathers.
+ *
+ *  - A finished task is never anyone's child (`planMakeSlot`'s filter), so it
+ *    gets no list at all.
+ *  - The slot it's already in is left out, because joining it would do nothing.
+ *  - Events are never listed: a slot holds tasks.
+ *
+ * The rows come in the day's own order, earliest first, so the blocks next to
+ * this one are next to each other on the list. The whole day is listed, not a
+ * window around the task's time, because a window would hide the evening slot
+ * you meant to put it in.
+ */
+export function slotPicksFor(
+  task: Task,
+  day: string,
+  blocks: { slots: readonly Slot[]; tasks: readonly Task[] },
+): SlotPick[] {
+  if (task.status === "done" || task.status === "trashed") return [];
+  const carried: DragPayload = { kind: "tasks", tasks: [task] };
+  const onDay = (iso: string) => toDateISO(new Date(iso)) === day;
+  const picks: { at: number; pick: SlotPick }[] = [];
+  for (const slot of blocks.slots) {
+    if (slot.id === task.slot_id || !onDay(slot.start_time)) continue;
+    if (gatherActFor(carried, { kind: "slot", slot }) !== "join") continue;
+    picks.push({ at: new Date(slot.start_time).getTime(), pick: { kind: "slot", slot, act: "join" } });
+  }
+  for (const other of blocks.tasks) {
+    if (other.id === task.id || !other.start_time || !onDay(other.start_time)) continue;
+    if (gatherActFor(carried, { kind: "task", task: other }) !== "combine") continue;
+    picks.push({ at: new Date(other.start_time).getTime(), pick: { kind: "task", task: other, act: "combine" } });
+  }
+  return picks.sort((a, b) => a.at - b.at).map((p) => p.pick);
 }
 
 /** Morning / Midday / Afternoon / Evening from a start instant. */
