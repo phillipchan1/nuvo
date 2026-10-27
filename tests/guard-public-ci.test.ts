@@ -1155,6 +1155,7 @@ describe("public-repo CI guard", () => {
     expect(checks).toMatch(/ACTIONLINT_VERSION: "1\.7\.12"/);
     expect(checks).toMatch(/ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"/);
     expect(checks).toMatch(/sha256sum -c -/);
+    expect(checks).toMatch(/actionlint -color -shellcheck=/);
     expect(checks).not.toMatch(/branches-ignore:/);
   });
 

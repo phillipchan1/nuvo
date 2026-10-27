@@ -11,7 +11,7 @@
       "file": "checks.yml",
       "job": "checks",
       "id": "actionlint",
-      "sha256": "f33c10d6702c54e32a04b9ccbba3a6969b27f6cbb58137ac99ae887d1cae9c9c"
+      "sha256": "f83de8691f0585adb6491b0b653fdd18c98395d7616470fb128694b0ea8f2ec6"
     },
     {
       "file": "checks.yml",
