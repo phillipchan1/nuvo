@@ -321,6 +321,7 @@ jobs:
               skipped_from_copy,
               SYNC_LOG_SEQUENCE_MARGIN,
               parse_labeled_count,
+              compose_resync_script,
               is_retryable_lock_timeout,
               retryable_lock_timeout_stop,
               sync_log_anti_join_insert_sql,
@@ -573,6 +574,8 @@ jobs:
               source: bool = False,
               cwd: str | None = None,
               stdin: str | None = None,
+              retryable_lock: bool = False,
+              resync_script: str | None = None,
           ) -> str:
               res = subprocess.run(
                   cmd,
@@ -583,9 +586,11 @@ jobs:
                   env=clean_env(source=source),
               )
               if res.returncode != 0:
-                  err = redact((res.stderr or res.stdout or "").strip())
-                  if is_retryable_lock_timeout(err):
-                      die(retryable_lock_timeout_stop(err))
+                  stderr = redact((res.stderr or "").strip())
+                  stdout = redact((res.stdout or "").strip())
+                  err = stderr or stdout
+                  if retryable_lock and stderr and is_retryable_lock_timeout(stderr):
+                      die(retryable_lock_timeout_stop(stderr, script=resync_script))
                   die(f"{cmd[0]} failed ({res.returncode}): {err}")
               return res.stdout
 
@@ -1423,24 +1428,22 @@ jobs:
               sync_cols = ", ".join(SYNC_LOG_COLUMNS)
               push_cols = ", ".join(PUSH_COLUMNS)
               script = work / "resync.sql"
-              script.write_text(
-                  "\n".join(
-                      [
-                          sync_log_load_sql() + ";",
-                          f"\\copy cutover_sync_log_src ({sync_cols}) "
-                          f"FROM {sql_literal(str(sync_path))} WITH CSV",
-                          sync_log_resync_txn_sql(),
-                          push_load_rows_sql() + ";",
-                          f"\\copy cutover_push_rows ({push_cols}) "
-                          f"FROM {sql_literal(str(push_path))} WITH CSV",
-                          push_anti_join_delete_sql() + ";",
-                          push_upsert_sql() + ";",
-                          "",
-                      ]
+              script_text = compose_resync_script(
+                  sync_copy_sql=(
+                      f"\\copy cutover_sync_log_src ({sync_cols}) "
+                      f"FROM {sql_literal(str(sync_path))} WITH CSV"
                   ),
-                  encoding="utf-8",
+                  push_copy_sql=(
+                      f"\\copy cutover_push_rows ({push_cols}) "
+                      f"FROM {sql_literal(str(push_path))} WITH CSV"
+                  ),
               )
-              out = run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(script)])
+              script.write_text(script_text, encoding="utf-8")
+              out = run(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(script)],
+                  retryable_lock=True,
+                  resync_script=script_text,
+              )
               inserted = parse_labeled_count(out, "sync_log_inserted")
               setval_out = parse_labeled_count(out, "sync_log_setval")
               counts = [

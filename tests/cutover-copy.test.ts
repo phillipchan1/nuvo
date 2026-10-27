@@ -71,7 +71,8 @@ describe("cutover_copy helpers", () => {
     expect(txn).toMatch(/LOCK TABLE public\.sync_log IN SHARE ROW EXCLUSIVE MODE/);
     expect(txn).toMatch(/WHEN lock_not_available/);
     expect(txn).not.toMatch(/WHEN query_canceled/);
-    expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\)/);
+    expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(txn).not.toMatch(/SQLERRM ILIKE/);
     expect(txn).toMatch(/incoming row\(s\) differ on Neon/);
     expect(txn).toMatch(/sync_log_setval=/);
     expect(txn).toMatch(/COMMIT;/);
@@ -88,55 +89,182 @@ describe("cutover_copy helpers", () => {
     expect(setvalAt).toBeGreaterThan(insert);
     expect(commit).toBeGreaterThan(setvalAt);
     const load = py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())");
-    expect(load).toMatch(/^SET lock_timeout = '10s';/);
+    expect(load).toMatch(/^\\set VERBOSITY sqlstate\nSET client_min_messages = error;\nSET lock_timeout = '10s';/);
     expect(load).not.toMatch(/^SET LOCAL lock_timeout/);
+    expect(load.indexOf("\\set VERBOSITY sqlstate")).toBeLessThan(load.indexOf("SET client_min_messages = error;"));
+    expect(load.indexOf("SET client_min_messages = error;")).toBeLessThan(load.indexOf("SET lock_timeout = '10s'"));
     expect(load.indexOf("SET lock_timeout = '10s'")).toBeLessThan(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
     expect(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeGreaterThanOrEqual(0);
     const script = `${load};\n${txn}`;
+    expect(script.indexOf("\\set VERBOSITY sqlstate")).toBeLessThan(script.indexOf("SET client_min_messages = error;"));
+    expect(script.indexOf("SET client_min_messages = error;")).toBeLessThan(script.indexOf("SET lock_timeout = '10s'"));
     expect(script.indexOf("SET lock_timeout = '10s'")).toBeLessThan(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
     expect(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeLessThan(script.indexOf("BEGIN;"));
     expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
   });
 
-  it("classifies a sync_log lock timeout as retryable", () => {
+  it("classifies a lock timeout as retryable only on an anchored ERROR 55P03 banner", () => {
     const out = py(
-      "from cutover_copy import is_retryable_lock_timeout, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
-      + "print(is_retryable_lock_timeout('ERROR:  canceling statement due to lock timeout')); "
+      "from cutover_copy import is_retryable_lock_timeout, SYNC_LOG_LOCK_TIMEOUT_MESSAGE, PUSH_LOCK_TIMEOUT_MESSAGE, LOCK_TIMEOUT_SQLSTATE; "
+      + "print(is_retryable_lock_timeout('ERROR:  55P03: canceling statement due to lock timeout')); "
       + "print(is_retryable_lock_timeout(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)); "
+      + "print(is_retryable_lock_timeout(PUSH_LOCK_TIMEOUT_MESSAGE)); "
+      + "print(is_retryable_lock_timeout('ERROR:  canceling statement due to lock timeout')); "
+      + "print(is_retryable_lock_timeout('sync_log lock timed out after 10s — retry the resync (retryable)')); "
       + "print(is_retryable_lock_timeout('sync_log id collision: 1 incoming row(s) differ on Neon')); "
       + "print(is_retryable_lock_timeout('canceling statement due to statement timeout')); "
-      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)",
+      + "print(is_retryable_lock_timeout('psql:resync.sql:24: ERROR:  55P03')); "
+      + "print(is_retryable_lock_timeout('DETAIL:  SQLSTATE 55P03 is mentioned')); "
+      + "print(is_retryable_lock_timeout('prefix ERROR:  55P03: not at line start')); "
+      + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\npsql:a:1: ERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('psql:f:2: ERROR:  P0001: ERROR:  55P03: fake')); "
+      + "print(is_retryable_lock_timeout(\"ERROR:  P0001: x\\nERROR:  55P03: fake\")); "
+      + "print(is_retryable_lock_timeout('pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('NOTICE:  ERROR:  55P03: fake\\nWARNING:  ERROR:  55P03: fake\\nERROR:  duplicate key value violates unique constraint \"t_pkey\"')); "
+      + "print(LOCK_TIMEOUT_SQLSTATE); "
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE); "
+      + "print(PUSH_LOCK_TIMEOUT_MESSAGE)",
     );
     expect(out).toBe(
-      "True\nTrue\nFalse\nFalse\nsync_log lock timed out after 10s — retry the resync (retryable)",
+      "False\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
+      + "sync_log lock timed out after 10s — retry the resync (retryable) [55P03]\n"
+      + "push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]",
     );
   });
 
-  it("retryable lock-timeout stop includes the redacted psql error", () => {
+  it("takes SQLSTATE from the first error-banner line, not a later spoof", () => {
     const out = py(
-      "from cutover_copy import retryable_lock_timeout_stop, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
-      + "print(retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE\"')); "
+      "from cutover_copy import first_error_banner_line, first_psql_sqlstate, is_retryable_lock_timeout; "
+      + "samples = ["
+      + "  'pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'NOTICE:  ERROR:  55P03: fake\\nWARNING:  ERROR:  55P03: fake\\nERROR:  statement timeout',"
+      + "]; "
+      + "print('\\n'.join("
+      + "  (first_error_banner_line(s) or 'NONE') + '|' + (first_psql_sqlstate(s) or 'NONE') + '|' + str(is_retryable_lock_timeout(s))"
+      + "  for s in samples"
+      + "))",
+    );
+    expect(out).toBe("NONE|NONE|False\nNONE|NONE|False\nNONE|NONE|False");
+  });
+
+  it("does not treat chatter or spoof bodies before the first ERROR as retryable", () => {
+    const out = py(
+      "from cutover_copy import first_error_banner_line, first_psql_sqlstate, is_retryable_lock_timeout; "
+      + "samples = ["
+      + "  'psql:resync.sql:1: NOTICE:  x\\nERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: WARNING:  x\\nERROR:  55P03: fake\\npsql:resync.sql:3: ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"',"
+      + "  'psql:resync.sql:1: NOTICE:  x\\r\\nERROR:  55P03: fake\\r\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: ERROR:  23505:\\npsql:resync.sql:1: DETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'psql:resync.sql:1: NOTICE:  x\\npsql:a:1: ERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: INFO:  x\\npsql:x:1: ERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: INFO:  x\\npsql:resync.sql:1: ERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:/tmp/dumps/resync.sql:10: NOTICE:  x\\npsql:/tmp/dumps/resync.sql:10: ERROR:  55P03: fake\\npsql:/tmp/dumps/resync.sql:20: ERROR:  P0001: not a lock',"
+      + "]; "
+      + "print('\\n'.join("
+      + "  (first_error_banner_line(s) or 'NONE') + '|' + (first_psql_sqlstate(s) or 'NONE') + '|' + str(is_retryable_lock_timeout(s))"
+      + "  for s in samples"
+      + "))",
+    );
+    expect(out).toBe(
+      "NONE|NONE|False\n"
+      + "NONE|NONE|False\n"
+      + "NONE|NONE|False\n"
+      + "psql:resync.sql:1: ERROR:  23505:|23505|False\n"
+      + "NONE|NONE|False\n"
+      + "NONE|NONE|False\n"
+      + "NONE|NONE|False\n"
+      + "NONE|NONE|False",
+    );
+  });
+
+  it("accepts a PG17 sqlstate banner with no colon after 55P03", () => {
+    const out = py(
+      "from cutover_copy import first_psql_sqlstate, is_retryable_lock_timeout, table_from_resync_error, compose_resync_script; "
+      + "script = compose_resync_script(sync_copy_sql='\\\\copy cutover_sync_log_src (id) FROM \\'/tmp/s.csv\\' WITH CSV', push_copy_sql='\\\\copy cutover_push_rows (id) FROM \\'/tmp/p.csv\\' WITH CSV'); "
+      + "n = next(i for i, l in enumerate(script.splitlines(), 1) if 'LOCK TABLE public.sync_log' in l); "
+      + "bare = f'psql:resync.sql:{n}: ERROR:  55P03'; "
+      + "colon = f'psql:resync.sql:{n}: ERROR:  55P03:'; "
+      + "spaces = f'psql:resync.sql:{n}: ERROR:  55P03  '; "
+      + "print(is_retryable_lock_timeout(bare)); "
+      + "print(first_psql_sqlstate(bare)); "
+      + "print(table_from_resync_error(bare, script)); "
+      + "print(is_retryable_lock_timeout(colon)); "
+      + "print(is_retryable_lock_timeout(spaces))",
+    );
+    expect(out).toBe("True\n55P03\nsync_log\nTrue\nTrue");
+  });
+
+  it("maps a sqlstate 55P03 banner to the table at that resync.sql line", () => {
+    const out = py(
+      "from cutover_copy import compose_resync_script, is_retryable_lock_timeout, table_from_resync_error, retryable_lock_timeout_stop; "
+      + "script = compose_resync_script(sync_copy_sql='\\\\copy cutover_sync_log_src (id) FROM \\'/tmp/s.csv\\' WITH CSV', push_copy_sql='\\\\copy cutover_push_rows (id) FROM \\'/tmp/p.csv\\' WITH CSV'); "
+      + "lines = script.splitlines(); "
+      + "sync_n = next(i for i, l in enumerate(lines, 1) if 'LOCK TABLE public.sync_log' in l); "
+      + "push_n = next(i for i, l in enumerate(lines, 1) if 'cutover_push_anti_join_delete()' in l); "
+      + "upsert_n = next(i for i, l in enumerate(lines, 1) if 'cutover_push_upsert()' in l); "
+      + "sync_err = f'psql:resync.sql:{sync_n}: ERROR:  55P03'; "
+      + "push_err = f'psql:resync.sql:{push_n}: ERROR:  55P03'; "
+      + "upsert_err = f'psql:resync.sql:{upsert_n}: ERROR:  55P03'; "
+      + "print(is_retryable_lock_timeout(sync_err)); "
+      + "print(table_from_resync_error(sync_err, script)); "
+      + "print(is_retryable_lock_timeout(push_err)); "
+      + "print(table_from_resync_error(push_err, script)); "
+      + "print(is_retryable_lock_timeout(upsert_err)); "
+      + "print(table_from_resync_error(upsert_err, script)); "
+      + "print('sync_log' in retryable_lock_timeout_stop(sync_err, script=script)); "
+      + "print('push_subscriptions' in retryable_lock_timeout_stop(push_err, script=script))",
+    );
+    expect(out).toBe("True\nsync_log\nTrue\npush_subscriptions\nTrue\npush_subscriptions\nTrue\nTrue");
+  });
+
+  it("retryable lock-timeout stop names the table that waited", () => {
+    const out = py(
+      "from cutover_copy import retryable_lock_timeout_stop, SYNC_LOG_LOCK_TIMEOUT_MESSAGE, PUSH_LOCK_TIMEOUT_MESSAGE; "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE\"')); "
+      + "print('---'); "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE\"')); "
       + "print('---'); "
       + "print(retryable_lock_timeout_stop('')); "
-      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout'))",
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  55P03: LOCK TABLE public.sync_log')); "
+      + "print(PUSH_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  55P03: LOCK TABLE public.push_subscriptions'))",
     );
-    expect(out).toContain("sync_log lock timed out after 10s — retry the resync (retryable): ERROR:  canceling statement due to lock timeout");
+    expect(out).toContain("sync_log lock timed out after 10s — retry the resync (retryable) [55P03]: ERROR:  55P03: canceling statement due to lock timeout");
     expect(out).toContain("LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE");
+    expect(out).toContain("push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]: ERROR:  55P03: canceling statement due to lock timeout");
+    expect(out).toContain("LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE");
     expect(out).not.toMatch(/user_id|provider|operation|RETURNING \*/);
-    expect(out).toContain("---\nsync_log lock timed out after 10s — retry the resync (retryable)\nTrue");
+    expect(out).toContain("---\nlock timed out after 10s — retry the resync (retryable) [55P03]\nTrue\nTrue");
+    const pushStop = py(
+      "from cutover_copy import retryable_lock_timeout_stop; "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: lock timeout', 'push_subscriptions'))",
+    );
+    expect(pushStop).toMatch(/^push_subscriptions lock timed out/);
+    expect(pushStop).not.toMatch(/sync_log lock timed out/);
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
-    const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql())");
+    const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql, push_load_rows_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql()); print('---'); print(push_load_rows_sql())");
     expect(sql).toMatch(/FROM public\.push_subscriptions/);
     expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE SET/);
     expect(sql).toMatch(/last_seen_at = EXCLUDED\.last_seen_at/);
     expect(sql).toMatch(/failure_count = EXCLUDED\.failure_count/);
     expect(sql).toMatch(/DELETE FROM public\.push_subscriptions/);
     expect(sql).toMatch(/SELECT COUNT\(\*\) FROM gone/);
+    expect(sql).toMatch(/SELECT pg_temp\.cutover_push_anti_join_delete\(\) AS count/);
+    expect(sql).toMatch(/SELECT pg_temp\.cutover_push_upsert\(\) AS count/);
+    expect(sql).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(sql).not.toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(sql).toMatch(/WHEN lock_not_available/);
+    expect(sql).not.toMatch(/SQLERRM ILIKE/);
     expect(sql).not.toMatch(/RETURNING \*/);
-    const idxDelete = WORKFLOW.indexOf("push_anti_join_delete_sql() + \";\"");
-    const idxUpsert = WORKFLOW.indexOf("push_upsert_sql() + \";\"");
+    expect(sql).not.toMatch(/def push_lock_sql|push_lock_timeout_probe_sql/);
+    expect(COPY_PY).not.toMatch(/def push_lock_sql/);
+    expect(COPY_PY).not.toMatch(/def push_lock_timeout_probe_sql/);
+    const idxDelete = COPY_PY.indexOf("push_anti_join_delete_sql() + \";\"");
+    const idxUpsert = COPY_PY.indexOf("push_upsert_sql() + \";\"");
     expect(idxDelete).toBeGreaterThan(0);
     expect(idxUpsert).toBeGreaterThan(idxDelete);
   });
@@ -264,7 +392,15 @@ describe("cutover-migrate.yml", () => {
     expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/sync_log_resync_txn_sql/);
     expect(WORKFLOW).toMatch(/is_retryable_lock_timeout/);
-    expect(WORKFLOW).toMatch(/retryable_lock_timeout_stop\(err\)/);
+    expect(WORKFLOW).toMatch(/retryable_lock_timeout_stop\(stderr, script=resync_script\)/);
+    expect(WORKFLOW).toMatch(/compose_resync_script/);
+    expect(WORKFLOW).toMatch(/retryable_lock=True/);
+    expect(WORKFLOW.match(/retryable_lock=True/g)?.length).toBe(1);
+    expect(WORKFLOW).toMatch(/if retryable_lock and stderr and is_retryable_lock_timeout\(stderr\)/);
+    expect(WORKFLOW).toMatch(/err = stderr or stdout/);
+    expect(WORKFLOW).not.toMatch(/is_retryable_lock_timeout\(err\)/);
+    expect(WORKFLOW).not.toMatch(/is_retryable_lock_timeout\(stdout\)/);
+    expect(WORKFLOW).not.toMatch(/retryable_lock_timeout_stop\(err\)/);
     expect(WORKFLOW).not.toMatch(/die\(SYNC_LOG_LOCK_TIMEOUT_MESSAGE\)/);
     expect(WORKFLOW).not.toMatch(/psql\(target, sync_log_setval_sql/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
@@ -317,6 +453,16 @@ describe("runbook", () => {
     expect(DOC).toMatch(/redacted psql error/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
+    expect(DOC).toMatch(/SQLSTATE `55P03`/);
+    expect(DOC).toMatch(/names that table from the\s+resync\.sql line number, not `sync_log`/);
+    expect(DOC).toMatch(/\\set VERBOSITY sqlstate/);
+    expect(DOC).toMatch(/ERROR:  55P03/);
+    expect(DOC).toMatch(/Only the resync target/);
+    expect(DOC).toMatch(/psql:<file>:<n>: ERROR:/);
+    expect(DOC).toMatch(/client_min_messages = error/);
+    expect(DOC).toMatch(/pg_restore/);
+    expect(DOC).toMatch(/no automatic retry/);
+    expect(DOC).toMatch(/re-dispatch `cutover-migrate` with `phase=resync` by hand/);
     expect(DOC).toMatch(/CUTOVER_FLIPPED/);
     expect(DOC).toMatch(/skipped: true/);
     expect(DOC).toMatch(/`1`, `true`, `yes`, `on`/);

@@ -320,8 +320,11 @@ ok(/LOCK TABLE public\.sync_log/.test(copyPy), "cutover_copy.py locks sync_log f
 ok(/SYNC_LOG_LOCK_TIMEOUT = "10s"/.test(copyPy) && /sync_log_set_lock_timeout_sql\(local=True\)/.test(copyPy) && copyPy.indexOf("sync_log_set_lock_timeout_sql(local=True)") < copyPy.indexOf("LOCK TABLE public.sync_log"), "cutover_copy.py sets lock_timeout before LOCK TABLE");
 ok(/sync_log_set_lock_timeout_sql\(\)/.test(copyPy) && copyPy.indexOf("sync_log_set_lock_timeout_sql()") < copyPy.indexOf("CREATE TEMP TABLE cutover_sync_log_src"), "cutover_copy.py sets session lock_timeout before the temp-table load");
 ok(/WHEN lock_not_available/.test(copyPy) && !/WHEN query_canceled/.test(copyPy), "cutover_copy.py catches lock_not_available (55P03), not query_canceled");
+ok(/LOCK_TIMEOUT_SQLSTATE = "55P03"/.test(copyPy) && /55P03/.test(copyPy) && !/SQLERRM ILIKE/.test(copyPy), "cutover_copy.py keys retryable lock timeout on SQLSTATE 55P03, not message text");
+ok(/lock_timeout_message\("push_subscriptions"\)/.test(copyPy) && /DELETE FROM public\.push_subscriptions/.test(copyPy) && /pg_temp\.cutover_push_anti_join_delete/.test(copyPy), "cutover_copy.py names push_subscriptions on that table's lock timeout");
+ok(/\\set VERBOSITY sqlstate/.test(copyPy) && /SET client_min_messages = error/.test(copyPy) && /PSQL_PRE_ERROR/.test(copyPy) && /RETRYABLE_LOCK_TIMEOUT_BANNER/.test(copyPy), "cutover_copy.py keys retryable on a sqlstate 55P03 banner with no prior INFO/NOTICE");
 ok(/retry the resync \(retryable\)/.test(copyPy), "cutover_copy.py lock timeout is retryable");
-ok(/retryable_lock_timeout_stop\(err\)/.test(workflow), "cutover-migrate.yml includes the redacted psql error on lock timeout");
+ok(/retryable_lock=True/.test(workflow) && /retryable_lock_timeout_stop\(stderr, script=resync_script\)/.test(workflow) && /compose_resync_script/.test(workflow) && (workflow.match(/retryable_lock=True/g) || []).length === 1, "cutover-migrate.yml classifies lock timeout only on the resync psql call");
 ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");
 ok(/sync_log_reserve_sequence_sql/.test(workflow) && /SYNC_LOG_SEQUENCE_MARGIN/.test(copyPy), "cutover-migrate.yml reserves sync_log identity past source max after restore");
 ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(copyPy), "cutover_copy.py parked margin is 1e6 (trim must match)");
@@ -333,7 +336,7 @@ ok(/unschedule[\s\S]*phase=resync[\s\S]*CUTOVER_FLIPPED/.test(cutoverDoc), "cuto
 ok(/about 1e6 further Neon inserts/.test(cutoverDoc), "cutover.md notes ~1e6 inserts before Neon rows age-trim");
 ok(!/Supabase-origin ids are all below the floor/.test(cutoverDoc), "cutover.md softened the floor wording");
 ok(!/never deletes ids in the parked identity window/.test(cutoverDoc), "cutover.md no longer says trim keeps the parked window");
-ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(workflow), "cutover-migrate.yml deletes missing push rows before upsert");
+ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(copyPy), "compose_resync_script deletes missing push rows before upsert");
 ok(/push_subscriptions upserted/.test(workflow), "cutover-migrate.yml upserts push_subscriptions");
 ok(/sync_log_watermark/.test(workflow), "cutover-migrate.yml records a sync_log watermark");
 

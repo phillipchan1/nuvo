@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +19,9 @@ import {
   loadRunAllowlist,
   neededAllowlist,
   neededStepAllowlist,
+  findAllowlistOrphans,
+  assertAllowlistCoverage,
+  YAML_MAX_ALIAS_COUNT,
   listHash,
   unitHash,
   writesGithubEnv,
@@ -29,6 +32,11 @@ import {
   isDataUrlencodeFileArg,
   isLtFileToken,
   parseWorkflowDocument,
+  assertGithubCiLayout,
+  listGithubEntries,
+  resolveGithubDir,
+  allowlistFileName,
+  canonicalizeComposite,
   lineLooksLikeCacheSave,
   lineLooksLikeGhApiInput,
   lineLooksLikeHttpUpload,
@@ -446,6 +454,27 @@ describe("public-repo CI guard", () => {
     );
   });
 
+  it("fails fast on a YAML alias bomb", () => {
+    expect(YAML_MAX_ALIAS_COUNT).toBeGreaterThan(0);
+    expect(YAML_MAX_ALIAS_COUNT).toBeLessThanOrEqual(100);
+    let bomb = "on: push\njobs: {}\na: &a [x, x]\n";
+    let prev = "a";
+    for (const name of "bcdefghij") {
+      bomb += `${name}: &${name} [*${prev}, *${prev}]\n`;
+      prev = name;
+    }
+    expect(() => parseWorkflowDocument(bomb)).toThrow(/alias expansion|resource exhaustion/i);
+  });
+
+  it("fails on YAML parser warnings and unknown custom tags", async () => {
+    const { parseAllDocuments } = await import("yaml");
+    const tagged = "on: !evil push\njobs: {}\n";
+    expect(parseAllDocuments(tagged, { uniqueKeys: true })[0]?.warnings?.length).toBeGreaterThan(0);
+    expect(() => parseWorkflowDocument(tagged)).toThrow(/custom tag|parse warning/);
+    expect(() => parseWorkflowDocument("on: !!python/object foo\njobs: {}\n")).toThrow(/custom tag|parse warning/);
+    expect(() => parseWorkflowDocument("x: !foo [1, 2]\njobs: {}\n")).toThrow(/custom tag|parse warning/);
+  });
+
   it("fails on duplicate keys and << merge keys", () => {
     expect(() => parseWorkflowDocument("on: push\non: pull_request\njobs: {}\n")).toThrow(/parse error|unique/);
     expect(() =>
@@ -636,6 +665,8 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/ordered step-id list/);
     expect(src).toMatch(/whole canonical step/);
     expect(src).toMatch(/duplicate step ids/);
+    expect(src).toMatch(/YAML_MAX_ALIAS_COUNT/);
+    expect(src).toMatch(/assertAllowlistCoverage/);
     expect(existsSync(join(ROOT, "scripts/regen-public-ci-allowlist.mjs"))).toBe(true);
   });
 
@@ -669,6 +700,26 @@ describe("public-repo CI guard", () => {
     expect(needed.workflow_jobs.every((w) => w.file && Array.isArray(w.jobs) && w.sha256)).toBe(true);
     expect(committed).toEqual(needed);
     expect(neededStepAllowlist(join(ROOT, ".github/workflows"))).toEqual(needed.steps);
+    expect(findAllowlistOrphans(needed, committed)).toEqual([]);
+    expect(() => assertAllowlistCoverage(join(ROOT, ".github"))).not.toThrow();
+  });
+
+  it("fails when an allowlisted workflow, job, or step is deleted", () => {
+    const needed = {
+      steps: [{ file: "keep.yml", job: "t", id: "s", sha256: "a" }],
+      job_steps: [{ file: "keep.yml", job: "t", ids: ["s"], sha256: "b" }],
+      workflow_jobs: [{ file: "keep.yml", jobs: ["t"], sha256: "c" }],
+    };
+    expect(
+      findAllowlistOrphans(needed, {
+        steps: [
+          ...needed.steps,
+          { file: "gone.yml", job: "old", id: "x", sha256: "d" },
+        ],
+        job_steps: [...needed.job_steps, { file: "keep.yml", job: "removed", ids: ["x"], sha256: "e" }],
+        workflow_jobs: [...needed.workflow_jobs, { file: "gone.yml", jobs: ["old"], sha256: "f" }],
+      }),
+    ).toEqual(["workflow gone.yml", "job keep.yml removed", "step gone.yml old x"]);
   });
 
   it("100e: env/shell/working-directory edits, copied job BUNDLE override, pull_request_target", () => {
@@ -990,6 +1041,7 @@ describe("public-repo CI guard", () => {
     expect(owners).toMatch(/package\.json\s+@phillipchan1/);
     expect(owners).toMatch(/package-lock\.json\s+@phillipchan1/);
     expect(owners).toMatch(/\.github\/CODEOWNERS\s+@phillipchan1/);
+    expect(owners).toMatch(/\.github\/actions\/\s+@phillipchan1/);
     expect(owners).toMatch(/\.github\/workflows\/\s+@phillipchan1/);
   });
 
@@ -1211,5 +1263,201 @@ describe("public-repo CI guard", () => {
     expect(sql).not.toMatch(/encrypted_password|recovery_token|confirmation_token/);
     const migrations = readFileSync(join(ROOT, "docs/cloudflare-migration/migration_tmp.sql"), "utf8");
     expect(migrations).toMatch(/NOT a supabase\/migrations file/);
+  });
+});
+
+describe("public-ci-guard .github layout", () => {
+  function fakeGithub(entries: Record<string, string | "dir" | { symlink: string }>) {
+    const github = join(tmp(), ".github");
+    mkdirSync(github, { recursive: true });
+    for (const [rel, body] of Object.entries(entries)) {
+      const dest = join(github, rel);
+      mkdirSync(join(dest, ".."), { recursive: true });
+      if (body === "dir") mkdirSync(dest, { recursive: true });
+      else if (typeof body === "object" && body && "symlink" in body) symlinkSync(body.symlink, dest);
+      else writeFileSync(dest, body);
+    }
+    return github;
+  }
+
+  const miniWorkflow = "on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - id: s\n        run: echo hi\n";
+  const miniAction = [
+    "name: demo",
+    "runs:",
+    "  using: composite",
+    "  steps:",
+    "    - id: s",
+    "      run: echo hi",
+    "      shell: bash",
+    "",
+  ].join("\n");
+
+  it("accepts the committed .github tree and resolves workflows/ to .github", () => {
+    const github = join(ROOT, ".github");
+    const layout = assertGithubCiLayout(github);
+    expect(layout.workflows).toEqual([
+      "workflows/checks.yml",
+      "workflows/cutover-migrate.yml",
+      "workflows/ios-release.yml",
+      "workflows/release.yml",
+    ]);
+    expect(layout.actions).toEqual([]);
+    expect(resolveGithubDir(join(github, "workflows"))).toBe(github);
+    expect(resolveGithubDir(github)).toBe(github);
+    expect(allowlistFileName("workflows/checks.yml")).toBe("checks.yml");
+    expect(allowlistFileName("actions/foo/action.yml")).toBe("actions/foo/action.yml");
+  });
+
+  it("fails closed on evil.YML in workflows", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "workflows/evil.YML": miniWorkflow,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/evil\.YML/);
+    expect(() => neededAllowlist(github)).toThrow(/evil\.YML/);
+    expect(() => assertWorkflowsUploadAllowlist(github)).toThrow(/evil\.YML/);
+  });
+
+  it("fails closed on evil.YAML in workflows", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "workflows/evil.YAML": miniWorkflow,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/evil\.YAML/);
+    expect(() => neededAllowlist(github)).toThrow(/evil\.YAML/);
+    expect(() => assertWorkflowsUploadAllowlist(github)).toThrow(/evil\.YAML/);
+  });
+
+  it("fails closed on evil.Yml in workflows", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "workflows/evil.Yml": miniWorkflow,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/evil\.Yml/);
+    expect(() => neededAllowlist(github)).toThrow(/evil\.Yml/);
+    expect(() => assertWorkflowsUploadAllowlist(github)).toThrow(/evil\.Yml/);
+  });
+
+  it("fails closed when checks.yml is renamed to checks.YML", () => {
+    const github = fakeGithub({ "workflows/checks.yml": miniWorkflow });
+    renameSync(join(github, "workflows/checks.yml"), join(github, "workflows/checks.YML"));
+    expect(existsSync(join(github, "workflows/checks.yml"))).toBe(false);
+    expect(existsSync(join(github, "workflows/checks.YML"))).toBe(true);
+    expect(() => assertGithubCiLayout(github)).toThrow(/checks\.YML/);
+    expect(() => neededAllowlist(github)).toThrow(/checks\.YML/);
+    expect(() => assertWorkflowsUploadAllowlist(github)).toThrow(/checks\.YML/);
+  });
+
+  it("fails closed on workflows/sub/evil.yml", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "workflows/sub/evil.yml": miniWorkflow,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/workflows\/sub\/evil\.yml/);
+    expect(() => neededAllowlist(github)).toThrow(/sub\/evil\.yml/);
+    expect(() => assertWorkflowsUploadAllowlist(github)).toThrow(/sub\/evil\.yml/);
+  });
+
+  it("fails closed on a yaml file elsewhere under .github", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "sneak.yml": miniWorkflow,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/sneak\.yml/);
+  });
+
+  it("fails closed on action.YML and a non-action yaml under actions/", () => {
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "actions/demo/action.YML": miniAction,
+      "actions/demo/evil.yml": miniAction,
+    });
+    expect(() => assertGithubCiLayout(github)).toThrow(/action\.YML/);
+    expect(() => assertGithubCiLayout(github)).toThrow(/evil\.yml/);
+  });
+
+  it("fails closed on a symlink workflow", () => {
+    const github = fakeGithub({ "workflows/ok.yml": miniWorkflow });
+    symlinkSync(join(github, "workflows/ok.yml"), join(github, "workflows/link.yml"));
+    const listed = listGithubEntries(github);
+    expect(listed.some((e) => e.rel === "workflows/link.yml" && e.kind === "symlink")).toBe(true);
+    expect(() => assertGithubCiLayout(github)).toThrow(/link\.yml \(symlink\)/);
+  });
+
+  it("hashes composite action steps and applies the same deny rules", () => {
+    const leak = [
+      "name: leak",
+      "runs:",
+      "  using: composite",
+      "  steps:",
+      "    - id: s",
+      "      run: export BASH_ENV=/tmp/x",
+      "      shell: bash",
+      "",
+    ].join("\n");
+    const units = collectWorkflowUnits(leak);
+    expect(units.full).toBe(true);
+    expect(units.units[0]?.job).toBe("runs");
+    expect(units.units[0]?.id).toBe("s");
+    expect(canonicalizeComposite(units.doc)).toMatchObject({ runs: { using: "composite" } });
+    expect(findForbiddenUploadCommands(leak, "actions/leak/action.yml").map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["BASH_ENV", "step allowlist"]),
+    );
+
+    const envWrite = [
+      "name: env",
+      "runs:",
+      "  using: composite",
+      "  steps:",
+      "    - id: s",
+      "      run: echo x >> $GITHUB_ENV",
+      "      shell: bash",
+      "",
+    ].join("\n");
+    expect(findForbiddenUploadCommands(envWrite, "actions/env/action.yml").map((h) => h.kind)).toEqual(
+      expect.arrayContaining(["GITHUB_ENV", "step allowlist"]),
+    );
+
+    const upload = [
+      "name: up",
+      "runs:",
+      "  using: composite",
+      "  steps:",
+      "    - id: s",
+      "      uses: actions/upload-artifact@sha",
+      "      with:",
+      "        path: secret.dump",
+      "",
+    ].join("\n");
+    expect(() => assertWorkflowUploadAllowlist(upload, "actions/up/action.yml")).toThrow(/secret\.dump/);
+
+    const honest = collectWorkflowUnits(miniAction).units[0];
+    const entry = {
+      file: "actions/demo/action.yml",
+      job: "runs",
+      id: "s",
+      sha256: unitHash(honest),
+    };
+    expect(findForbiddenUploadCommands(miniAction, "actions/demo/action.yml", { allowlist: [entry] })).toEqual([]);
+    expect(isUnitAllowlisted("actions/demo/action.yml", honest, [entry])).toBe(true);
+
+    const github = fakeGithub({
+      "workflows/ok.yml": miniWorkflow,
+      "actions/demo/action.yml": miniAction,
+    });
+    const needed = neededAllowlist(github);
+    expect(needed.steps.some((s) => s.file === "actions/demo/action.yml" && s.job === "runs" && s.id === "s")).toBe(
+      true,
+    );
+    expect(needed.job_steps.some((j) => j.file === "actions/demo/action.yml" && j.job === "runs")).toBe(true);
+    expect(() =>
+      assertAllowlistCoverage(github, {
+        ...needed,
+        workflow_jobs: [...needed.workflow_jobs, { file: "deleted.yml", jobs: ["gone"], sha256: "0" }],
+        job_steps: [...needed.job_steps, { file: "ok.yml", job: "ghost", ids: ["n"], sha256: "0" }],
+        steps: [...needed.steps, { file: "ok.yml", job: "t", id: "removed", sha256: "0" }],
+      }),
+    ).toThrow(/orphan|deleted\.yml|ghost|removed/);
+    expect(() => assertAllowlistCoverage(github, needed)).not.toThrow();
   });
 });

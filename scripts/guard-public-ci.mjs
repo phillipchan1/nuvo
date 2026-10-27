@@ -50,9 +50,19 @@
  *      Outside an allowlisted step: writes to $GITHUB_ENV / $GITHUB_PATH,
  *      and writes to RELEASE_NOTES.md or release paths.
  *  11. actions/cache and actions/cache/save (restore-only is allowed).
- *  12. YAML is fail-closed: parse errors, doc.errors, more than one
- *      document, a non-mapping root, duplicate keys, or << merge keys
- *      throw. There is no raw-text fallback.
+ *  12. YAML is fail-closed: parse errors, doc.errors, doc.warnings,
+ *      unknown custom tags, more than one document, a non-mapping root,
+ *      duplicate keys, << merge keys, or alias expansion above
+ *      YAML_MAX_ALIAS_COUNT throw. There is no raw-text fallback.
+ *  13. Every .yml/.yaml under .github is listed recursively, matching
+ *      case-insensitively, including directories and symlinks. Only
+ *      top-level lowercase .github/workflows/*.yml|*.yaml regular files
+ *      and .github/actions/<path>/action.yml (or action.yaml) regular
+ *      files are scanned; any other workflow-like or action file (wrong
+ *      place or wrong case) fails closed. Composite action steps are
+ *      hashed and allowlisted the same way as workflow steps.
+ *  14. Committed allowlist entries that no longer exist (deleted
+ *      workflow, job, or step) fail. Regen after removing one.
  *
  * ## Limits
  *
@@ -66,7 +76,7 @@
  * `node scripts/regen-public-ci-allowlist.mjs`.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isScalar, parseAllDocuments, visit } from "yaml";
@@ -169,6 +179,30 @@ const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--discussion-category",
 ]);
 
+/** Cap YAML alias expansion so a billion-laughs bomb fails fast (N4). */
+export const YAML_MAX_ALIAS_COUNT = 100;
+
+const YAML_CORE_TAGS = new Set([
+  "tag:yaml.org,2002:str",
+  "tag:yaml.org,2002:int",
+  "tag:yaml.org,2002:float",
+  "tag:yaml.org,2002:bool",
+  "tag:yaml.org,2002:null",
+  "tag:yaml.org,2002:map",
+  "tag:yaml.org,2002:seq",
+  "tag:yaml.org,2002:timestamp",
+  "tag:yaml.org,2002:binary",
+  "tag:yaml.org,2002:omap",
+  "tag:yaml.org,2002:pairs",
+  "tag:yaml.org,2002:set",
+  "tag:yaml.org,2002:merge",
+]);
+
+function isStandardYamlTag(tag) {
+  if (tag == null || tag === "" || tag === "!" || tag === "?") return true;
+  return YAML_CORE_TAGS.has(tag);
+}
+
 function rejectMergeKeys(doc) {
   visit(doc, {
     Pair(_, pair) {
@@ -179,9 +213,21 @@ function rejectMergeKeys(doc) {
   });
 }
 
+function rejectUnknownTags(doc) {
+  visit(doc, {
+    Node(_, node) {
+      if (!node || typeof node !== "object" || !("tag" in node)) return;
+      const tag = node.tag;
+      if (isStandardYamlTag(tag)) return;
+      throw new Error(`workflow YAML unknown custom tag: ${tag}`);
+    },
+  });
+}
+
 /**
  * Fail-closed workflow parse: exactly one document, mapping root, no
- * parse errors, unique keys, no << merges. Never returns a partial tree.
+ * parse errors, no warnings, no unknown tags, unique keys, no << merges.
+ * Never returns a partial tree.
  */
 export function parseWorkflowDocument(text) {
   let docs;
@@ -197,8 +243,17 @@ export function parseWorkflowDocument(text) {
   if (doc.errors?.length) {
     throw new Error(`workflow YAML parse error: ${doc.errors.map((e) => e.message).join("; ")}`);
   }
+  rejectUnknownTags(doc);
+  if (doc.warnings?.length) {
+    throw new Error(`workflow YAML parse warning: ${doc.warnings.map((e) => e.message).join("; ")}`);
+  }
   rejectMergeKeys(doc);
-  const js = doc.toJS({ maxAliasCount: -1 });
+  let js;
+  try {
+    js = doc.toJS({ maxAliasCount: YAML_MAX_ALIAS_COUNT });
+  } catch (err) {
+    throw new Error(`workflow YAML alias expansion failed: ${err instanceof Error ? err.message : err}`);
+  }
   if (js == null || typeof js !== "object" || Array.isArray(js)) {
     throw new Error("workflow YAML root must be a mapping");
   }
@@ -278,6 +333,13 @@ export function canonicalizeJob(job) {
   return stableValue(omitKey(job, "steps"));
 }
 
+/** Whole composite action minus runs.steps — same role as canonicalizeWorkflow. */
+export function canonicalizeComposite(doc) {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+  const runs = doc.runs && typeof doc.runs === "object" && !Array.isArray(doc.runs) ? omitKey(doc.runs, "steps") : doc.runs;
+  return stableValue({ ...omitKey(doc, "runs"), runs });
+}
+
 export function canonicalizeStep(step) {
   if (step == null) return null;
   if (typeof step === "string") return stableValue({ run: step });
@@ -331,6 +393,37 @@ export function collectWorkflowUnits(workflowText) {
       jobs.push({ name: jobName, stepIds, duplicateIds, jobCanon });
     }
     return { doc, full: true, units, jobs, jobOrder, wfCanon };
+  }
+  const runs = doc.runs && typeof doc.runs === "object" && !Array.isArray(doc.runs) ? doc.runs : null;
+  const using = String(runs?.using ?? "").toLowerCase();
+  if (runs && (using === "composite" || Array.isArray(runs.steps))) {
+    const actionCanon = canonicalizeComposite(doc);
+    const jobCanon = canonicalizeJob(runs);
+    const jobName = "runs";
+    const stepIds = [];
+    const seen = new Set();
+    const duplicateIds = [];
+    if (Array.isArray(runs.steps)) {
+      for (const step of runs.steps) {
+        const id = step && typeof step === "object" ? String(step.id ?? "") : "";
+        if (seen.has(id)) duplicateIds.push(id);
+        seen.add(id);
+        stepIds.push(id);
+        units.push(unitFromStep(step, jobName, actionCanon, jobCanon, "step"));
+      }
+    }
+    jobs.push({ name: jobName, stepIds, duplicateIds, jobCanon });
+    return { doc, full: true, units, jobs, jobOrder: [jobName], wfCanon: actionCanon };
+  }
+  if (runs && using && using !== "composite") {
+    const actionCanon = stableValue(doc);
+    const jobCanon = stableValue(runs);
+    const id = "runs";
+    units.push(
+      unitFromStep({ id, uses: String(runs.main ?? runs.image ?? using) }, "runs", actionCanon, jobCanon, "step"),
+    );
+    jobs.push({ name: "runs", stepIds: [id], duplicateIds: [], jobCanon });
+    return { doc, full: true, units, jobs, jobOrder: ["runs"], wfCanon: actionCanon };
   }
   if (Array.isArray(doc.steps)) {
     for (const step of doc.steps) units.push(unitFromStep(step, "", wfCanon, null));
@@ -1173,38 +1266,201 @@ export function isUnitAllowlisted(filename, unit, allowlist) {
   );
 }
 
-export function neededAllowlist(workflowsDir) {
-  const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
+const YAML_LIKE_RE = /\.ya?ml$/i;
+
+export function isYamlLikeFilename(name) {
+  return YAML_LIKE_RE.test(String(name ?? ""));
+}
+
+export function isExactLowercaseYamlFilename(name) {
+  const n = String(name ?? "");
+  return n.endsWith(".yml") || n.endsWith(".yaml");
+}
+
+/** `.github` whether the caller passed that dir or `.github/workflows`. */
+export function resolveGithubDir(dir) {
+  const normalized = String(dir ?? "").replace(/[\\/]+$/, "");
+  if (existsSync(join(normalized, "workflows"))) return normalized;
+  const leaf = normalized.split(/[\\/]/).pop();
+  if (leaf === "workflows") return join(normalized, "..");
+  return normalized;
+}
+
+export function allowlistFileName(relFromGithub) {
+  const rel = String(relFromGithub ?? "").replaceAll("\\", "/");
+  if (rel.startsWith("workflows/")) return rel.slice("workflows/".length);
+  return rel;
+}
+
+export function isExpectedWorkflowRel(rel) {
+  const parts = String(rel ?? "").replaceAll("\\", "/").split("/");
+  return parts.length === 2 && parts[0] === "workflows" && isExactLowercaseYamlFilename(parts[1]);
+}
+
+export function isExpectedActionRel(rel) {
+  const parts = String(rel ?? "").replaceAll("\\", "/").split("/");
+  if (parts[0] !== "actions" || parts.length < 2) return false;
+  const base = parts[parts.length - 1];
+  return base === "action.yml" || base === "action.yaml";
+}
+
+/**
+ * Every directory entry under githubDir, relative, posix slashes.
+ * Includes files, directories, and symlinks. Does not follow symlinks.
+ */
+export function listGithubEntries(githubDir) {
+  const acc = [];
+  const walk = (rel) => {
+    const dir = rel ? join(githubDir, rel) : githubDir;
+    let names;
+    try {
+      names = readdirSync(dir);
+    } catch (err) {
+      throw new Error(`cannot list ${rel || ".github"}: ${err instanceof Error ? err.message : err}`);
+    }
+    for (const name of names.sort()) {
+      if (name === "." || name === "..") continue;
+      const childRel = rel ? `${rel}/${name}` : name;
+      const full = join(githubDir, childRel);
+      let st;
+      try {
+        st = lstatSync(full);
+      } catch {
+        acc.push({ rel: childRel, kind: "unknown", name });
+        continue;
+      }
+      if (st.isSymbolicLink()) {
+        acc.push({ rel: childRel, kind: "symlink", name });
+        continue;
+      }
+      if (st.isDirectory()) {
+        acc.push({ rel: childRel, kind: "directory", name });
+        walk(childRel);
+        continue;
+      }
+      if (st.isFile()) {
+        acc.push({ rel: childRel, kind: "file", name });
+        continue;
+      }
+      acc.push({ rel: childRel, kind: "other", name });
+    }
+  };
+  walk("");
+  return acc;
+}
+
+/**
+ * Fail closed: only top-level lowercase workflow files and
+ * action.yml / action.yaml under .github/actions. Any other
+ * workflow-like or action file (wrong case, subdirectory, symlink)
+ * is a problem. Symlinks are never followed.
+ */
+export function assertGithubCiLayout(githubDir) {
+  const entries = listGithubEntries(githubDir);
+  const problems = [];
+  const workflows = [];
+  const actions = [];
+  for (const e of entries) {
+    if (e.kind === "symlink") {
+      problems.push(`${e.rel} (symlink)`);
+      continue;
+    }
+    if (!isYamlLikeFilename(e.name)) continue;
+    const expectedWorkflow = e.kind === "file" && isExpectedWorkflowRel(e.rel);
+    const expectedAction = e.kind === "file" && isExpectedActionRel(e.rel);
+    if (expectedWorkflow) {
+      workflows.push(e.rel);
+      continue;
+    }
+    if (expectedAction) {
+      actions.push(e.rel);
+      continue;
+    }
+    problems.push(`${e.rel} (${e.kind})`);
+  }
+  if (problems.length) {
+    throw new Error(
+      `public-ci-guard: unexpected workflow or action file (only top-level lowercase .github/workflows/*.yml|*.yaml and .github/actions/**/action.yml|action.yaml regular files):\n${problems
+        .map((p) => `  ${p}`)
+        .join("\n")}`,
+    );
+  }
+  return { workflows: workflows.sort(), actions: actions.sort() };
+}
+
+function ingestAllowlistFile(rel, collected, steps, job_steps, workflow_jobs) {
+  const filename = allowlistFileName(rel);
+  for (const unit of collected.units) {
+    steps.push({ file: filename, job: unit.job || "", id: unit.id || "", sha256: unitHash(unit) });
+  }
+  if (collected.full) {
+    workflow_jobs.push({
+      file: filename,
+      jobs: collected.jobOrder,
+      sha256: listHash(collected.jobOrder),
+    });
+    for (const job of collected.jobs) {
+      job_steps.push({
+        file: filename,
+        job: job.name,
+        ids: job.stepIds,
+        sha256: listHash(job.stepIds),
+      });
+    }
+  }
+}
+
+export function neededAllowlist(dir) {
+  const githubDir = resolveGithubDir(dir);
+  const { workflows, actions } = assertGithubCiLayout(githubDir);
   const steps = [];
   const job_steps = [];
   const workflow_jobs = [];
-  for (const name of names.sort()) {
-    const text = readFileSync(join(workflowsDir, name), "utf8");
-    const collected = collectWorkflowUnits(text);
-    for (const unit of collected.units) {
-      steps.push({ file: name, job: unit.job || "", id: unit.id || "", sha256: unitHash(unit) });
-    }
-    if (collected.full) {
-      workflow_jobs.push({
-        file: name,
-        jobs: collected.jobOrder,
-        sha256: listHash(collected.jobOrder),
-      });
-      for (const job of collected.jobs) {
-        job_steps.push({
-          file: name,
-          job: job.name,
-          ids: job.stepIds,
-          sha256: listHash(job.stepIds),
-        });
-      }
-    }
+  for (const rel of workflows) {
+    ingestAllowlistFile(rel, collectWorkflowUnits(readFileSync(join(githubDir, rel), "utf8")), steps, job_steps, workflow_jobs);
+  }
+  for (const rel of actions) {
+    ingestAllowlistFile(rel, collectWorkflowUnits(readFileSync(join(githubDir, rel), "utf8")), steps, job_steps, workflow_jobs);
   }
   return { steps, job_steps, workflow_jobs };
 }
 
 export function neededStepAllowlist(workflowsDir) {
   return neededAllowlist(workflowsDir).steps;
+}
+
+export function findAllowlistOrphans(needed, committed) {
+  const files = new Set([
+    ...(needed.steps ?? []).map((s) => s.file),
+    ...(needed.job_steps ?? []).map((j) => j.file),
+    ...(needed.workflow_jobs ?? []).map((w) => w.file),
+  ]);
+  const jobs = new Set((needed.job_steps ?? []).map((j) => `${j.file}\0${j.job}`));
+  const steps = new Set((needed.steps ?? []).map((s) => `${s.file}\0${s.job}\0${s.id}`));
+  const orphans = [];
+  for (const w of committed.workflow_jobs ?? []) {
+    if (!files.has(w.file)) orphans.push(`workflow ${w.file}`);
+  }
+  for (const j of committed.job_steps ?? []) {
+    if (!jobs.has(`${j.file}\0${j.job}`)) orphans.push(`job ${j.file} ${j.job}`);
+  }
+  for (const s of committed.steps ?? []) {
+    if (!steps.has(`${s.file}\0${s.job}\0${s.id}`)) orphans.push(`step ${s.file} ${s.job} ${s.id}`);
+  }
+  return orphans;
+}
+
+export function assertAllowlistCoverage(dir, committed = loadRunAllowlist()) {
+  const needed = neededAllowlist(dir);
+  const orphans = findAllowlistOrphans(needed, committed);
+  if (orphans.length) {
+    throw new Error(
+      `public-ci allowlist orphan(s) (deleted workflow/job/step still listed):\n${orphans
+        .map((o) => `  ${o}`)
+        .join("\n")}`,
+    );
+  }
+  return needed;
 }
 
 export function hasHeredoc(run) {
@@ -1597,13 +1853,16 @@ export function assertWorkflowUploadAllowlist(workflowText, filename = "workflow
   return steps;
 }
 
-export function assertWorkflowsUploadAllowlist(workflowsDir) {
-  const names = readdirSync(workflowsDir).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
-  if (!names.length) throw new Error(`no workflows in ${workflowsDir}`);
+export function assertWorkflowsUploadAllowlist(dir) {
+  const githubDir = resolveGithubDir(dir);
+  const { workflows, actions } = assertGithubCiLayout(githubDir);
+  const names = [...workflows, ...actions];
+  if (!names.length) throw new Error(`no workflows in ${githubDir}`);
   const all = [];
-  for (const name of names) {
-    const text = readFileSync(join(workflowsDir, name), "utf8");
-    all.push(...assertWorkflowUploadAllowlist(text, name).map((step) => ({ ...step, file: name })));
+  for (const rel of names) {
+    const filename = allowlistFileName(rel);
+    const text = readFileSync(join(githubDir, rel), "utf8");
+    all.push(...assertWorkflowUploadAllowlist(text, filename).map((step) => ({ ...step, file: filename })));
   }
   return all;
 }
@@ -1739,7 +1998,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const checkLog = process.argv.includes("--check-log");
   const writeAllowlist = process.argv.includes("--write-allowlist");
   if (writeAllowlist) {
-    const dir = join(here, "..", ".github", "workflows");
+    const dir = join(here, "..", ".github");
     const needed = neededAllowlist(dir);
     writeFileSync(RUN_ALLOWLIST_PATH, `${JSON.stringify({ algorithm: "sha256", ...needed }, null, 2)}\n`);
     console.log(
@@ -1753,7 +2012,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(`public-ci-guard: ${files.length} log file(s) have no row data`);
     }
   } else {
-    const dir = join(here, "..", ".github", "workflows");
+    const dir = join(here, "..", ".github");
+    assertAllowlistCoverage(dir);
     const steps = assertWorkflowsUploadAllowlist(dir);
     if (job) {
       const staged = process.env.STAGED_UPLOAD || "artifacts/cutover-report.md";

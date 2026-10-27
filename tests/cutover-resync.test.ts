@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -15,6 +18,12 @@ function py(code: string): string {
     throw new Error(result.stderr || result.stdout || `python exited ${result.status}`);
   }
   return (result.stdout || "").trim();
+}
+
+function loadSql(): string {
+  return py(
+    "from cutover_copy import strip_psql_meta, sync_log_load_sql; print(strip_psql_meta(sync_log_load_sql()))",
+  );
 }
 
 const SYNC_DDL = `
@@ -118,7 +127,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     const anti = py("from cutover_copy import anti_join_ids; print(anti_join_ids([1,2,3,4,5,6], [1,2,3,5,6]))");
     expect(anti).toBe("[4]");
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await target.query(
       `INSERT INTO cutover_sync_log_src (id, user_id, provider, operation, status, error, created_at)
        SELECT id, user_id, provider, operation, status, error, created_at FROM public.sync_log`,
@@ -178,7 +187,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     const neonPreId = Number(neonPre.rows[0]?.id);
     expect(neonPreId).toBeGreaterThan(3);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     for (const id of [1, 2, 3]) {
       const row = await source.query<{
         id: string;
@@ -229,7 +238,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     const park = await lastValue(target);
     expect(park).toBe(1_000_003);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
 
@@ -258,7 +267,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
       );
     }
     await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))"));
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
     const afterFirst = await lastValue(target);
@@ -291,7 +300,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     expect(inFlight).toBeGreaterThan(1_000_003);
     expect(await lastValue(target)).toBe(inFlight);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
 
@@ -319,7 +328,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
       `INSERT INTO public.sync_log (id, provider, operation, status)
        OVERRIDING SYSTEM VALUE VALUES (1, 'neon', 'other', 'err')`,
     );
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1]);
 
     const counted = await target.query<{ count: string }>(
@@ -371,7 +380,7 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     expect(String(shown.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
     await target.exec("COMMIT");
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
     expect(await idsOf(target)).toEqual([1]);
@@ -409,13 +418,33 @@ describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
     await db.close();
   });
 
+  it("rewrites a push_subscriptions lock_not_available as that table's message", async () => {
+    const db = new PGlite();
+    const probe = py(
+      "from cutover_copy import lock_timeout_handler_sql; "
+      + "print(\"DO $cutover_push_lock_probe$\\nBEGIN\\n"
+      + "  RAISE EXCEPTION 'canceling statement due to lock timeout' USING ERRCODE = 'lock_not_available';\\n\""
+      + " + lock_timeout_handler_sql('push_subscriptions') + \"END\\n$cutover_push_lock_probe$\")",
+    );
+    let message = "";
+    try {
+      await db.exec(probe + ";");
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(message).not.toMatch(/sync_log lock timed out/);
+    expect(message).not.toMatch(/canceling statement due to lock timeout/);
+    await db.close();
+  });
+
   it("session lock_timeout is armed for the temp-table load before BEGIN", async () => {
     const db = new PGlite();
     await db.exec(SYNC_DDL);
     const before = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
     expect(String(before.rows[0]?.lock_timeout)).toMatch(/^(0|0s|0ms|-1)$/);
 
-    await db.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await db.exec(loadSql() + ";");
     const afterLoad = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
     expect(String(afterLoad.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
 
@@ -596,7 +625,7 @@ describe("resync + trim convergence", () => {
        OVERRIDING SYSTEM VALUE VALUES (2, 'github', 'sync', 'ok', now())`,
     );
     await target.exec(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(2))") + ";");
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await target.query(
       `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
        OVERRIDING SYSTEM VALUE VALUES (1000003, 'github', 'sync', 'ok', now() - interval '40 days')`,
@@ -629,5 +658,493 @@ describe("resync + trim convergence", () => {
 
     await source.close();
     await target.close();
+  });
+});
+
+const LIVE_PG_URL = process.env.CUTOVER_LIVE_TEST_DB?.trim() || "";
+const live = it.skipIf(!LIVE_PG_URL);
+
+async function connectLivePg(): Promise<Client> {
+  const client = new Client({ connectionString: LIVE_PG_URL, connectionTimeoutMillis: 2000 });
+  try {
+    await client.connect();
+    return client;
+  } catch (err) {
+    await client.end().catch(() => undefined);
+    throw err;
+  }
+}
+
+function psqlFile(sql: string): { stderr: string; status: number | null } {
+  const dir = mkdtempSync(join(tmpdir(), "cutover-qa-psql-"));
+  const file = join(dir, "resync.sql");
+  try {
+    writeFileSync(file, sql);
+    const result = spawnSync(
+      "psql",
+      ["-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-d", LIVE_PG_URL, "-f", file],
+      { encoding: "utf8" },
+    );
+    return { stderr: (result.stderr || "").trim(), status: result.status };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function classifyPsql(text: string, script = ""): { retryable: boolean; stop: string; table: string } {
+  const out = py(
+    "from cutover_copy import is_retryable_lock_timeout, retryable_lock_timeout_stop, table_from_resync_error; "
+    + `err = ${JSON.stringify(text)}; `
+    + `script = ${JSON.stringify(script)}; `
+    + "print(is_retryable_lock_timeout(err)); "
+    + "print(table_from_resync_error(err, script) or ''); "
+    + "print(retryable_lock_timeout_stop(err, script=script))",
+  );
+  const [retryable, table, ...rest] = out.split("\n");
+  return { retryable: retryable === "True", table, stop: rest.join("\n") };
+}
+
+function writeLiveResync(dir: string, opts?: { pushCsv?: string }): { script: string; file: string } {
+  const syncCsv = join(dir, "sync.csv");
+  const pushCsv = join(dir, "push.csv");
+  writeFileSync(syncCsv, "");
+  writeFileSync(pushCsv, opts?.pushCsv ?? "");
+  const script = py(
+    [
+      "from cutover_copy import compose_resync_script, SYNC_LOG_COLUMNS, PUSH_COLUMNS",
+      `sync_path = ${JSON.stringify(syncCsv)}`,
+      `push_path = ${JSON.stringify(pushCsv)}`,
+      "sync_cols = ', '.join(SYNC_LOG_COLUMNS)",
+      "push_cols = ', '.join(PUSH_COLUMNS)",
+      "print(compose_resync_script(",
+      "  sync_copy_sql=f\"\\\\copy cutover_sync_log_src ({sync_cols}) FROM '{sync_path}' WITH CSV\",",
+      "  push_copy_sql=f\"\\\\copy cutover_push_rows ({push_cols}) FROM '{push_path}' WITH CSV\",",
+      "), end='')",
+    ].join("\n"),
+  ).replaceAll("lock_timeout = '10s'", "lock_timeout = '400ms'");
+  const file = join(dir, "resync.sql");
+  writeFileSync(file, script);
+  return { script, file };
+}
+
+function psqlResync(file: string): { stderr: string; status: number | null } {
+  // Production: `psql -v ON_ERROR_STOP=1 -f` only. No `-v VERBOSITY=` —
+  // the file's `\set VERBOSITY sqlstate` must win.
+  const result = spawnSync(
+    "psql",
+    ["-v", "ON_ERROR_STOP=1", "-d", LIVE_PG_URL, "-f", file],
+    { encoding: "utf8" },
+  );
+  return { stderr: (result.stderr || "").trim(), status: result.status };
+}
+
+describe.sequential("live PostgreSQL lock timeout", () => {
+  live("names push_subscriptions when another session holds row + exclusive locks", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-push-"));
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110203)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(PUSH_DDL);
+      await locker.query(SYNC_DDL);
+      const id = "11111111-1111-1111-1111-111111111111";
+      const user = "22222222-2222-2222-2222-222222222222";
+      await locker.query(
+        `INSERT INTO public.push_subscriptions (id, user_id, endpoint, p256dh, auth)
+         VALUES ($1, $2, 'https://push.example/lock', 'k', 's')`,
+        [id, user],
+      );
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM public.push_subscriptions WHERE id = $1 FOR UPDATE", [id]);
+      await locker.query("LOCK TABLE public.push_subscriptions IN ACCESS EXCLUSIVE MODE");
+
+      const { script, file } = writeLiveResync(dir);
+      expect(script).toMatch(/^\\set VERBOSITY sqlstate/m);
+      expect(script).toMatch(/SET client_min_messages = error/);
+      expect(script).toMatch(/lock_timeout = '400ms'/);
+      expect(script).not.toMatch(/lock_timeout = '10s'/);
+
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+55P03(?::|[ \t]*$)/m);
+
+      const classified = classifyPsql(stderr, script);
+      expect(classified.retryable).toBe(true);
+      expect(classified.table).toBe("push_subscriptions");
+      expect(classified.stop).toMatch(/^push_subscriptions lock timed out/);
+      expect(classified.stop).not.toMatch(/sync_log lock timed out/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      try {
+        await locker.query("ROLLBACK");
+      } catch {
+        /* already closed */
+      }
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110203)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  }, 20_000);
+
+  live("names sync_log when another session holds the table exclusive", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-sync-"));
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110204)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(PUSH_DDL);
+      await locker.query(SYNC_DDL);
+      await locker.query(
+        `INSERT INTO public.sync_log (provider, operation, status) VALUES ('google', 'sync', 'ok')`,
+      );
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM public.sync_log FOR UPDATE");
+      await locker.query("LOCK TABLE public.sync_log IN ACCESS EXCLUSIVE MODE");
+
+      const { script, file } = writeLiveResync(dir);
+      expect(script).toMatch(/^\\set VERBOSITY sqlstate/m);
+      expect(script).toMatch(/lock_timeout = '400ms'/);
+
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+55P03(?::|[ \t]*$)/m);
+
+      const classified = classifyPsql(stderr, script);
+      expect(classified.retryable).toBe(true);
+      expect(classified.table).toBe("sync_log");
+      expect(classified.stop).toMatch(/^sync_log lock timed out/);
+      expect(classified.stop).not.toMatch(/push_subscriptions lock timed out/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      try {
+        await locker.query("ROLLBACK");
+      } catch {
+        /* already closed */
+      }
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110204)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  }, 20_000);
+
+  live("sqlstate verbosity keeps a 23505 unique collision off the public error line", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-23505-"));
+    const marker = "https://cutover-qa-s5-leak-marker-9f3c2e1a.invalid/push";
+    const user = "33333333-3333-3333-3333-333333333333";
+    const id1 = "44444444-4444-4444-4444-444444444444";
+    const id2 = "55555555-5555-5555-5555-555555555555";
+    const stamp = "2020-01-01 00:00:00+00";
+    const pushCsv = [
+      [id1, user, stamp, stamp, marker, "k", "s", "", "", "", "0"].join(","),
+      [id2, user, stamp, stamp, marker, "k", "s", "", "", "", "0"].join(","),
+      "",
+    ].join("\n");
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110205)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(PUSH_DDL);
+      await locker.query(SYNC_DDL);
+
+      const { script, file } = writeLiveResync(dir, { pushCsv });
+      expect(script).not.toContain(marker);
+
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+23505[ \t]*$/m);
+      expect(stderr).not.toContain(marker);
+      expect(stderr).not.toMatch(/DETAIL/);
+      expect(classifyPsql(stderr, script).retryable).toBe(false);
+
+      // Production run() dies with this line on a non-retryable resync psql.
+      const errorLine = `::error::psql failed (${status}): ${stderr}`;
+      expect(errorLine).not.toContain(marker);
+      expect(errorLine).not.toMatch(/DETAIL/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110205)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  }, 20_000);
+
+  live("does not treat 23505 DETAIL or RAISE EXCEPTION smuggled 55P03 as retryable", async () => {
+    const locker = await connectLivePg();
+
+    const captured: Record<string, string> = {};
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_unique CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_unique (id text PRIMARY KEY)");
+      await locker.query("INSERT INTO public.cutover_qa_unique (id) VALUES ('seed')");
+
+      const cases: [string, string][] = [
+        [
+          "a",
+          "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\nERROR:  55P03: fake');\n"
+          + "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\nERROR:  55P03: fake');",
+        ],
+        [
+          "b",
+          "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\npsql:a:1: ERROR:  55P03: fake');\n"
+          + "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\npsql:a:1: ERROR:  55P03: fake');",
+        ],
+        ["c", "DO $qa$ BEGIN RAISE EXCEPTION 'ERROR:  55P03: fake'; END $qa$"],
+        ["d", "DO $qa$ BEGIN RAISE EXCEPTION E'x\\nERROR:  55P03: fake'; END $qa$"],
+      ];
+      for (const [name, sql] of cases) {
+        const result = spawnSync(
+          "psql",
+          ["-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-d", LIVE_PG_URL, "-c", sql],
+          { encoding: "utf8" },
+        );
+        if (result.error) {
+          let pgErr: { code?: string; message: string; detail?: string } | null = null;
+          try {
+            await locker.query(sql);
+          } catch (caught) {
+            pgErr = caught as { code?: string; message: string; detail?: string };
+          }
+          expect(pgErr?.code, name).not.toBe("55P03");
+          const banner = `ERROR:  ${pgErr?.code ?? "P0001"}: ${pgErr?.message ?? ""}${pgErr?.detail ? `\nDETAIL:  ${pgErr.detail}` : ""}`;
+          captured[name] = banner;
+        } else {
+          captured[name] = (result.stderr || result.stdout || "").trim();
+        }
+        expect(classifyPsql(captured[name]).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(captured[name])}) or '')`,
+          ),
+        ).not.toBe("55P03");
+      }
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_unique CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+    expect(Object.keys(captured)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  live("does not treat pg_restore duplicate key with a spoof row as retryable", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-restore-"));
+    const dump = join(dir, "t.dump");
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_restore CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_restore (id text PRIMARY KEY)");
+      await locker.query("INSERT INTO public.cutover_qa_restore (id) VALUES (E'x\\nERROR:  55P03: fake')");
+      const dumped = spawnSync(
+        "pg_dump",
+        ["-Fc", "-t", "public.cutover_qa_restore", "-f", dump, LIVE_PG_URL],
+        { encoding: "utf8" },
+      );
+      expect(dumped.error, "pg_dump").toBeUndefined();
+      expect(dumped.status, dumped.stderr).toBe(0);
+      const restored = spawnSync(
+        "pg_restore",
+        ["--data-only", "--exit-on-error", "-d", LIVE_PG_URL, dump],
+        { encoding: "utf8" },
+      );
+      expect(restored.status, "pg_restore should fail on duplicate").not.toBe(0);
+      const stderr = (restored.stderr || "").trim();
+      expect(stderr).toMatch(/pg_restore: error:/);
+      expect(classifyPsql(stderr).retryable).toBe(false);
+      expect(
+        py(
+          `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(stderr)}) or '')`,
+        ),
+      ).not.toBe("55P03");
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_restore CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  live("does not treat default-verbosity 23505 with a spoof row as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_default CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_default (id text PRIMARY KEY)");
+      const sql =
+        "INSERT INTO public.cutover_qa_default (id) VALUES (E'x\\nERROR:  55P03: fake');\n"
+        + "INSERT INTO public.cutover_qa_default (id) VALUES (E'x\\nERROR:  55P03: fake');";
+      const result = spawnSync(
+        "psql",
+        ["-v", "ON_ERROR_STOP=1", "-d", LIVE_PG_URL, "-c", sql],
+        { encoding: "utf8" },
+      );
+      expect(result.status, "default-verbosity insert should fail").not.toBe(0);
+      const stderr = (result.stderr || "").trim();
+      expect(stderr).toMatch(/^ERROR:/m);
+      expect(classifyPsql(stderr).retryable).toBe(false);
+      expect(
+        py(
+          `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(stderr)}) or '')`,
+        ),
+      ).not.toBe("55P03");
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_default CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("does not treat a leading NOTICE/WARNING spoof before a real non-lock error as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      const sql =
+        "DO $qa$ BEGIN "
+        + "RAISE NOTICE 'ERROR:  55P03: fake'; "
+        + "RAISE WARNING 'ERROR:  55P03: fake'; "
+        + "RAISE EXCEPTION 'not a lock'; "
+        + "END $qa$";
+      const result = spawnSync(
+        "psql",
+        ["-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-d", LIVE_PG_URL, "-c", sql],
+        { encoding: "utf8" },
+      );
+      expect(result.status, "NOTICE then RAISE EXCEPTION should fail").not.toBe(0);
+      const stderr = (result.stderr || "").trim();
+      expect(stderr).toMatch(/NOTICE:/);
+      expect(stderr).toMatch(/WARNING:/);
+      expect(classifyPsql(stderr).retryable).toBe(false);
+      expect(
+        py(
+          `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(stderr)}) or '')`,
+        ),
+      ).not.toBe("55P03");
+    } finally {
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("does not treat multi-line NOTICE/WARNING/DETAIL spoof bodies as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_body CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_body (id text PRIMARY KEY)");
+      await locker.query("INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake')");
+
+      const cases: [string, string][] = [
+        [
+          "notice",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\nERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "warning",
+          "DO $qa$ BEGIN RAISE WARNING E'x\\nERROR:  55P03: fake'; END $qa$;\n"
+          + "INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake');\n",
+        ],
+        [
+          "crlf",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\r\\nERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "detail",
+          "INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake');\n",
+        ],
+        [
+          "notice-psql-spoof",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\npsql:a:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+      ];
+      for (const [name, sql] of cases) {
+        const { stderr, status } = psqlFile(sql);
+        expect(status, name).not.toBe(0);
+        expect(classifyPsql(stderr).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(stderr)}) or '')`,
+          ),
+          name,
+        ).not.toBe("55P03");
+      }
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_body CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("does not treat INFO-body or trigger-restored NOTICE spoofs as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      const cases: [string, string][] = [
+        [
+          "info-other-file",
+          "DO $qa$ BEGIN RAISE INFO E'x\\npsql:x:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "info-same-file",
+          "DO $qa$ BEGIN RAISE INFO E'x\\npsql:resync.sql:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "trigger-set-same-file",
+          "CREATE OR REPLACE FUNCTION public.cutover_qa_trig_notice() RETURNS void\n"
+          + "LANGUAGE plpgsql AS $fn$\n"
+          + "BEGIN\n"
+          + "  PERFORM set_config('client_min_messages', 'notice', false);\n"
+          + "  RAISE NOTICE E'x\\npsql:resync.sql:1: ERROR:  55P03: fake';\n"
+          + "  RAISE EXCEPTION 'not a lock';\n"
+          + "END\n"
+          + "$fn$;\n"
+          + "SELECT public.cutover_qa_trig_notice();\n",
+        ],
+      ];
+      for (const [name, sql] of cases) {
+        const { stderr, status } = psqlFile(sql);
+        expect(status, name).not.toBe(0);
+        expect(classifyPsql(stderr).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_error_banner_line; print(first_error_banner_line(${JSON.stringify(stderr)}) or 'NONE')`,
+          ),
+          name,
+        ).toBe("NONE");
+      }
+    } finally {
+      await locker.query("DROP FUNCTION IF EXISTS public.cutover_qa_trig_notice()").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("sync_log_load_sql suppresses NOTICE on a live session", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-load-"));
+    const file = join(dir, "resync.sql");
+    try {
+      const load = py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql(), end='')");
+      writeFileSync(
+        file,
+        `${load};\nDO $qa$ BEGIN RAISE NOTICE 'cutover-qa-should-be-silent'; END $qa$;\n`,
+      );
+      const result = spawnSync(
+        "psql",
+        ["-v", "ON_ERROR_STOP=1", "-d", LIVE_PG_URL, "-f", file],
+        { encoding: "utf8" },
+      );
+      const stderr = result.stderr || "";
+      expect(stderr).not.toMatch(/cutover-qa-should-be-silent/);
+      expect(stderr).not.toMatch(/NOTICE:/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await locker.end().catch(() => undefined);
+    }
   });
 });

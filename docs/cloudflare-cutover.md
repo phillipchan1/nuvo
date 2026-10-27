@@ -364,8 +364,23 @@ data). The temp-table load (before `BEGIN`) sets session `lock_timeout = '10s'`.
 Then, in the **same transaction** (`SET LOCAL lock_timeout = '10s'`
 then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
 `lock_not_available` / `55P03` and is rewritten to
-`sync_log lock timed out after 10s — retry the resync (retryable)`,
-with the redacted psql error appended, rather than hanging the job),
+`sync_log lock timed out after 10s — retry the resync (retryable) [55P03]`,
+with the redacted psql error appended, rather than hanging the job).
+The resync script starts with `\set VERBOSITY sqlstate` and
+`SET client_min_messages = error` so the psql banner is
+`ERROR:  55P03` with no message text (PG17 prints no colon after the
+code; NOTICE / WARNING are suppressed; INFO cannot be). Only the resync target
+`psql` call classifies a retryable lock timeout; dump / restore /
+`pg_restore` always stop as a plain failure. The classifier takes the
+first `psql:<file>:<n>: ERROR:` banner and requires `ERROR:  55P03` on
+that line (colon after the code is optional); the table is the
+script line that number maps to, not message text. Any INFO / NOTICE /
+WARNING / LOG / DEBUG banner before that ERROR is not retryable. A bare
+or `pg_restore` `ERROR:` line is not retryable.
+A `push_subscriptions`
+lock timeout uses the same SQLSTATE `55P03` and names that table from the
+resync.sql line number, not `sync_log`. There is **no automatic retry**:
+re-dispatch `cutover-migrate` with `phase=resync` by hand.
 `setval`s `GREATEST(max(id), last_value, 1)`
 so the parked identity never decreases — `--exclude-table-data` drops
 sequence data and `OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
@@ -427,7 +442,10 @@ Order:
    `GREATEST(max(id), last_value, 1)` in that transaction so the park
    never drops (session `lock_timeout` on the temp-table load, then
    `SET LOCAL lock_timeout = '10s'` before `LOCK TABLE`; timeout is
-   retryable and includes the redacted psql error), then deletes
+   retryable when the error carries SQLSTATE `55P03`, names the table
+   that waited (`sync_log` or `push_subscriptions`), and includes the
+   redacted psql error — re-dispatch `phase=resync` by hand; there is
+   no automatic retry), then deletes
    missing `push_subscriptions`
    ids and upserts the rest.
 7. **Switch** — flip `VITE_API_BASE_URL`. Or **unfreeze** — apply
