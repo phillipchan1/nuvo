@@ -1,17 +1,24 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
+import { edgeFunctionUrl, workersEnabled } from "./backend";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance";
 import { isSpotlightWindow } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-export const supabaseConfigured = Boolean(url && anonKey);
+export const supabaseConfigured = Boolean((url && anonKey) || workersEnabled);
 
 // Exported so callers that need to stream an edge function (the agent replies
 // over SSE, which `functions.invoke` can't consume) can build the request URL
 // and auth headers themselves.
 export const supabaseUrl = url ?? "http://localhost:54321";
 export const supabaseAnonKey = anonKey ?? "missing-anon-key";
+
+/** Edge-function URL. Unchanged when `VITE_API_BASE_URL` is unset. */
+export function functionUrl(name: string): string {
+  return edgeFunctionUrl(supabaseUrl, name);
+}
 
 /**
  * Dev-only request timing.
@@ -22,9 +29,34 @@ export const supabaseAnonKey = anonKey ?? "missing-anon-key";
  * with the server. Wrapping it here is the only place that observes the real
  * traffic. Records into `window.__nuvoTiming`; tree-shaken from production.
  */
-const timedFetch: typeof fetch | undefined = import.meta.env.DEV
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
+  if (init?.method) return init.method.toUpperCase();
+  if (typeof input !== "string" && !(input instanceof URL) && input.method) return input.method.toUpperCase();
+  return "GET";
+}
+
+function isAuthUrl(url: string): boolean {
+  return /\/auth\/v1\//i.test(url);
+}
+
+function isMutatingMethod(method: string): boolean {
+  return method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
+}
+
+/** PostgREST/Worker RPC reads travel as POST. Contacts must stay readable while frozen. */
+function isRpcRead(url: string): boolean {
+  return /\/(?:rest\/v1|api)\/rpc\/contacts(?:\?|$)/i.test(url);
+}
+
+const innerFetch: typeof fetch = import.meta.env.DEV
   ? async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = requestUrl(input);
       const started = performance.now();
       const res = await fetch(input, init);
       const ms = performance.now() - started;
@@ -32,7 +64,20 @@ const timedFetch: typeof fetch | undefined = import.meta.env.DEV
       log.push({ url, ms: Math.round(ms), at: Math.round(started) });
       return res;
     }
-  : undefined;
+  : fetch;
+
+/** Freeze data writes on the live Supabase path. Auth refresh stays allowed. */
+const guardedFetch: typeof fetch = async (input, init) => {
+  const method = requestMethod(input, init);
+  const url = requestUrl(input);
+  if (isMutatingMethod(method) && !isAuthUrl(url) && !isRpcRead(url) && (await writeFrozen())) {
+    return new Response(JSON.stringify({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return innerFetch(input, init);
+};
 
 // Spotlight is a consumer of the session main writes, not a second refresher.
 // Two heaps rotating one refresh token is `refresh_token_already_used`, and
@@ -42,7 +87,7 @@ const timedFetch: typeof fetch | undefined = import.meta.env.DEV
 const spotlight = isSpotlightWindow();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: timedFetch ? { fetch: timedFetch } : {},
+  global: { fetch: guardedFetch },
   auth: {
     autoRefreshToken: !spotlight,
     detectSessionInUrl: !spotlight,
@@ -52,12 +97,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {
+  const report = (message: string) => {
+    void import("./appError").then(({ reportAppError }) => {
+      void reportAppError(new Error(message), { source: fn });
+    });
+    console.warn(`[nuvo] edge fn ${fn} failed:`, message);
+  };
+  if (workersEnabled) {
+    fetch(functionUrl(fn), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    }).then(async (res) => {
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        report(`${res.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);
+      }
+    }).catch((err: unknown) => {
+      report(err instanceof Error ? err.message : String(err));
+    });
+    return;
+  }
   supabase.functions.invoke(fn, { body }).then(({ error }) => {
     if (!error) return;
-    void import("./appError").then(({ reportAppError }) => {
-      void reportAppError(error, { source: fn });
-    });
-    console.warn(`[nuvo] edge fn ${fn} failed:`, error.message);
+    report(error.message);
   });
 }
 

@@ -1,0 +1,100 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nuvo",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+  // Production custom domain. Already attached to the placeholder `nuvo`
+  // script — keep it on the real Worker `nuvo` deploy. Preview has no routes.
+  "routes": [{ "pattern": "api.nuvo.day", "custom_domain": true }],
+  // Static Vite build. Deep links fall back to index.html (same as Vercel SPA).
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  // BETTER_AUTH_URL and ENVIRONMENT are not set here — wrangler vars ship
+  // with the Worker. Local (`.dev.vars`): ENVIRONMENT=local and optionally
+  // BETTER_AUTH_URL=http://localhost:8787. ENVIRONMENT=local (or a
+  // DB/Hyperdrive hostname that is exactly loopback) is the only unset-URL
+  // fallback. Preview sets ENVIRONMENT=preview (OTP log path, not a
+  // localhost fallback) and BETTER_AUTH_URL to the public Worker origin
+  // (docs/cloudflare-cutover.md). Production omits ENVIRONMENT.
+  "vars": {
+    "RESEND_FROM": "Nuvo <noreply@inbox.nuvo.day>"
+  },
+  // Production / `wrangler dev` only. Preview uses DATABASE_URL (see env.preview).
+  // Cloudflare Hyperdrive config `nuvo-neon`.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "2c52343139524c4e9ba39f8c1c9b0795",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  // Workers Paid. UTC, matching today's pg_cron. Same `* * * * *` tick runs
+  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until CUTOVER_FLIPPED.
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "5 7 * * *",
+      "5 8 * * *",
+      "15 9 * * *",
+      "20 9 * * *",
+      "0 10 * * 0",
+      "30 4 * * *",
+      "0 4 * * *"
+    ]
+  },
+  // Calendar-dispatch fan-out. Included Queue ops on Workers Paid; see
+  // worker/src/cronJobs.ts for the per-account projection.
+  "queues": {
+    "producers": [
+      { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
+    ],
+    "consumers": [
+      {
+        "queue": "nuvo-calendar-sync",
+        "max_batch_size": 10,
+        "max_retries": 3
+      }
+    ]
+  },
+  // workers.dev only. No routes, no custom domain. Do not deploy without
+  // `--env preview`. See docs/cloudflare-cutover.md.
+  "env": {
+    "preview": {
+      "name": "nuvo-preview",
+      "workers_dev": true,
+      // Empty array, not omitted — wrangler inherits top-level routes
+      // otherwise and a preview deploy would steal api.nuvo.day.
+      "routes": [],
+      // No Hyperdrive here on purpose. Wrangler does not inherit the
+      // top-level binding; preview uses the DATABASE_URL secret. The
+      // dry-run warning about a missing HYPERDRIVE on preview is expected.
+      "vars": {
+        "RESEND_FROM": "Nuvo <noreply@localhost>",
+        "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
+        "ENVIRONMENT": "preview"
+      },
+      // Same Queue as top-level — preview does not inherit producers/consumers.
+      "queues": {
+        "producers": [
+          { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
+        ],
+        "consumers": [
+          {
+            "queue": "nuvo-calendar-sync",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
+        ]
+      }
+    }
+  }
+}

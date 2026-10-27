@@ -102,7 +102,7 @@ export function useWeekDraft() {
   // ── the two buckets, intelligence picks: projects (lead initiatives, next-up,
   //    deadlines) + inbox (deadlines). One ranked set. Every pick has an owner —
   //    slated, starred, owed or dated; the app never reaches for a task on its own
-  //    (D-164). ──
+  //    (D-169). ──
   // the week's projects are the pull's primary source — pass the week so it can
   // read them off On Deck instead of guessing from deadlines
   const suggestions = useMemo(() => suggestPull(data, weekStartISO), [data, weekStartISO]);

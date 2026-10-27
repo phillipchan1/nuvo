@@ -240,7 +240,7 @@ describe("a missed block from a past week is placed fresh", () => {
   });
 });
 
-describe("the pull only offers work somebody owns (D-164)", () => {
+describe("the pull only offers work somebody owns (D-169)", () => {
   // Every pick has an owner: a project you slated, a bet you starred, something you
   // already owe (it slipped) or something with a date on it. There used to be a
   // fifth — the shortest open task in any domain that had gone quiet — and it

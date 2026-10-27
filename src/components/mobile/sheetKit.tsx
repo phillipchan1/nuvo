@@ -17,7 +17,7 @@
 //
 // Mobile-only on purpose: none of this is mounted on the desktop shell.
 
-import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type UIEvent } from "react";
 import { Icon, type IconName } from "../Icon";
 import { toDateISO, todayISO, tomorrowISO } from "../../lib/dates";
 import Sheet from "./Sheet";
@@ -122,6 +122,8 @@ export function AutoText({
   value,
   onChange,
   onBlur,
+  onFocus,
+  inputRef,
   placeholder,
   label,
   className = "",
@@ -131,26 +133,42 @@ export function AutoText({
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
+  onFocus?: () => void;
+  /** The textarea itself, for a parent that has to focus it (the notes field
+   *  swaps this in under your finger and must raise the keyboard in the same tap). */
+  inputRef?: Ref<HTMLTextAreaElement>;
   placeholder?: string;
   label: string;
   className?: string;
   single?: boolean;
   minRows?: number;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const setRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      ref.current = el;
+      if (typeof inputRef === "function") inputRef(el);
+      else if (inputRef) (inputRef as { current: HTMLTextAreaElement | null }).current = el;
+    },
+    [inputRef],
+  );
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    // scrollHeight stops at the padding edge; the box is border-box, so a bordered
+    // field (the notes) was 2px short of its own text — and 2px off the read face
+    // that stands in for it. Borderless titles add nothing.
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
   }, [value]);
   return (
     <textarea
-      ref={ref}
+      ref={setRef}
       value={value}
       rows={minRows}
       onChange={(e) => onChange(single ? e.target.value.replace(/\n/g, " ") : e.target.value)}
       onBlur={onBlur}
+      onFocus={onFocus}
       onKeyDown={
         single
           ? (e) => {

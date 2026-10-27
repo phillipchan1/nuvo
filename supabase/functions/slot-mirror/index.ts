@@ -12,6 +12,7 @@
 import { admin, handleOptions, json, logSync, readSecret, requireUser } from "../_shared/admin.ts";
 import { mirrorDescription, mirrorSpan, mirrorTitle } from "../_shared/mirror.ts";
 import { deleteMirror, putMirror, resolveMirrorTarget } from "../_shared/mirrorTargets.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 /** A held block reads as a container, not as a task — the glyph is what tells
  *  them apart at a glance on a phone's calendar. */
@@ -20,6 +21,8 @@ const SLOT_GLYPH = "🗂";
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const body_ = await req.json();

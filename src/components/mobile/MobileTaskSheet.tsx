@@ -9,6 +9,7 @@ import { domainById, initiativeById, isProjectComplete, projectById, taskDomainI
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
+import TaskNotes from "../TaskNotes";
 import TaskSteps from "../TaskSteps";
 import Sheet from "./Sheet";
 import { at, span } from "./dayPlan";
@@ -324,14 +325,26 @@ export default function MobileTaskSheet({
           </SheetSection>
 
           <SheetSection label="Notes">
-            <AutoText
+            <TaskNotes
               value={notes}
-              onChange={setNotes}
               onBlur={commitNotes}
-              label="Notes"
-              placeholder="Add notes"
-              minRows={3}
-              className="field leading-relaxed"
+              // The read face wears the textarea's box exactly — `.field`, three
+              // rows tall — so a number turning tappable never moves the sheet.
+              readClassName="field leading-relaxed"
+              readStyle={{ minHeight: "calc(3 * 1.3em + 1rem + 2px)" }}
+              renderEditor={({ inputRef, onFocus, onBlur }) => (
+                <AutoText
+                  value={notes}
+                  onChange={setNotes}
+                  onBlur={onBlur}
+                  onFocus={onFocus}
+                  inputRef={inputRef}
+                  label="Notes"
+                  placeholder="Add notes"
+                  minRows={3}
+                  className="field leading-relaxed"
+                />
+              )}
             />
           </SheetSection>
 

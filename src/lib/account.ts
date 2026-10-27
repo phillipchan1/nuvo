@@ -1,12 +1,37 @@
-import { supabase } from "./supabase";
+import { signOut } from "./authActions";
+import { workersEnabled } from "./backend";
+import { functionUrl, supabase } from "./supabase";
 import { writeWasEntitled } from "./subscription";
 import { clearPersistedCache } from "./sync/persist";
 import { clearOutbox } from "./sync/outbox";
 import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
 
-export { ACCOUNT_DELETE_CONFIRM, isAccountDeleteConfirm } from "../../supabase/functions/_shared/accountDeletion.ts";
+export {
+  ACCOUNT_DELETE_CONFIRM,
+  APPLE_DELETE_NOTICE,
+  STRIPE_DELETE_BLOCK_MESSAGE,
+  isAccountDeleteConfirm,
+} from "../../supabase/functions/_shared/accountDeletion.ts";
 
 export async function requestAccountDeletion(): Promise<void> {
+  if (workersEnabled) {
+    const { signedBearerToken } = await import("./authClient");
+    const token = signedBearerToken();
+    const res = await fetch(functionUrl("delete-account"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ confirm: ACCOUNT_DELETE_CONFIRM }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Could not delete your account");
+    }
+    return;
+  }
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>(
     "delete-account",
     { body: { confirm: ACCOUNT_DELETE_CONFIRM } },
@@ -28,6 +53,5 @@ export async function wipeLocalAccountData(): Promise<void> {
 
 export async function signOutAfterDeletion(): Promise<void> {
   await wipeLocalAccountData();
-  const { error } = await supabase.auth.signOut();
-  if (error) await supabase.auth.signOut({ scope: "local" });
+  await signOut();
 }

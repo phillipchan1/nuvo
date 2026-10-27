@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase, supabaseUrl, supabaseAnonKey } from "../lib/supabase";
+import { assertWritable } from "../lib/maintenance";
+import { functionUrl, supabase, supabaseAnonKey } from "../lib/supabase";
 import { attachmentPromptBlock, isImageAttachment } from "../lib/agentAttachments";
 import { marqueeManifest } from "../lib/marqueeRegistry";
 import { detectDeviceTz } from "../lib/timezone";
@@ -117,9 +118,10 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
 
         // The agent replies over SSE; `functions.invoke` can't consume a stream,
         // so call the function endpoint directly and read the body ourselves.
+        await assertWritable();
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token ?? supabaseAnonKey;
-        const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {
+        const res = await fetch(functionUrl("agent"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

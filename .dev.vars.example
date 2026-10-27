@@ -1,0 +1,26 @@
+# Local wrangler only. Copy to `.dev.vars` (gitignored).
+# ENVIRONMENT=local is the only unset-BETTER_AUTH_URL fallback besides a
+# loopback DB/Hyperdrive hostname. Never set ENVIRONMENT=local on workers.dev.
+ENVIRONMENT=local
+BETTER_AUTH_URL=http://localhost:8787
+BETTER_AUTH_SECRET=replace-with-32-plus-random-bytes
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
+# RESEND_API_KEY=
+# RESEND_FROM=Nuvo <noreply@localhost>
+# Optional. /api/cron/* compares this bearer in constant time.
+# CRON_SECRET=
+# AES-256-GCM token keyring (32-byte hex or base64). Never log these.
+# TOKEN_ENC_KEY_V1=
+# TOKEN_ENC_KEY_V2=
+# TOKEN_ENC_CURRENT=1
+# Same VAPID pair as Supabase — a new pair breaks every existing subscription.
+# VAPID_PUBLIC_KEY=
+# VAPID_PRIVATE_KEY=
+# VAPID_SUBJECT=mailto:support@nuvo.app
+# Google token refresh when a mirror access token has expired (PR B owns connect).
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
+# MAINTENANCE_WRITE_FREEZE=
+# CUTOVER_ARMED=
+# Allowlist only: 1 / true / yes / on. Unset = Worker crons skip (stay on pg_cron).
+# CUTOVER_FLIPPED=

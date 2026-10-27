@@ -26,6 +26,7 @@ import {
 } from "../_shared/mcp.ts";
 import { buildContext } from "../agent/context.ts";
 import { executeTool } from "../agent/tools.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const TOOLS = mcpToolsFromDefs();
 const RATE_LIMIT_PER_MIN = 120;
@@ -107,6 +108,8 @@ function sessionHeaders(req: Request): Record<string, string> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const token = tokenFrom(req);

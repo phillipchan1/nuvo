@@ -38,7 +38,8 @@ jobs:
     outputs:
       should_run: ${{ steps.decide.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v5
+      - id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
       - id: decide
@@ -72,30 +73,36 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
-      - name: Set up Node
-        uses: actions/setup-node@v5
+      - id: setup-node
+        name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
           cache: npm
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - id: setup-rust
+        name: Set up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-ios
 
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
+      - id: cache-rust
+        name: Cache Rust build
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Install dependencies
+      - id: install
+        name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Compute version
+      - id: version
+        name: Compute version
         # BUILD_NUMBER comes from the commit count on this ref (git rev-list
         # --count HEAD), not this workflow's own github.run_number. This
         # workflow and release.yml (desktop) each have an independent run
@@ -116,7 +123,8 @@ jobs:
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
           echo "Building iOS version $VERSION (build $BUILD_NUMBER)"
 
-      - name: Configure App Store Connect API key
+      - id: appstore-key
+        name: Configure App Store Connect API key
         env:
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
@@ -136,7 +144,8 @@ jobs:
           echo "APPLE_API_ISSUER=${APPSTORE_ISSUER_ID}" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_PATH=${KEY_PATH}" >> "$GITHUB_ENV"
 
-      - name: Resolve build number against App Store Connect
+      - id: build-number
+        name: Resolve build number against App Store Connect
         # BUILD_NUMBER is the commit count, matching desktop's version — but
         # a manual re-run of this workflow on a commit that already uploaded
         # successfully would reuse that same number, which App Store Connect
@@ -160,7 +169,8 @@ jobs:
           echo "BUILD_NUMBER=$RESOLVED" >> "$GITHUB_ENV"
           echo "Resolved iOS build number: $RESOLVED"
 
-      - name: Initialize iOS project
+      - id: ios-init
+        name: Initialize iOS project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -178,14 +188,20 @@ jobs:
       # SDKROOT and compiled the watch app for iOS (run 31719213175). This step
       # exports NUVO_WATCH_APP; the app's "Embed Nuvo Watch" phase copies that
       # product into Nuvo.app/Watch/ during the archive below.
-      - name: Build the watchOS companion
+      - id: watch-build
+        name: Build the watchOS companion
         if: env.NUVO_IOS_WATCH != '0'
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/ios-watch-build.sh
 
-      - name: Build signed IPA
+      - id: build-ipa
+        name: Build signed IPA
         env:
+          # Repo variable (not a secret). Empty = today's Supabase path.
+          # Cutover: https://nuvo-preview.<account>.workers.dev/api
+          # See docs/cloudflare-cutover.md and docs/ios-releases.md.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
@@ -213,7 +229,8 @@ jobs:
           fi
           npm run tauri ios build -- --export-method app-store-connect --ci --build-number "$BUILD_NUMBER"
 
-      - name: Upload to TestFlight
+      - id: testflight
+        name: Upload to TestFlight
         env:
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}

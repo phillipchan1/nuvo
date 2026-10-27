@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { signOut } from "../../../lib/authActions";
 import { manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, type Subscription } from "../../../lib/subscription";
 import { useSubscription } from "../../../hooks/useSubscription";
@@ -37,7 +37,7 @@ export default function IapLockedScreen({
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => supabase.auth.signOut()}
+              onClick={() => void signOut()}
               className="tap fast text-caption text-muted hover:text-ink"
             >
               Sign out
@@ -49,7 +49,7 @@ export default function IapLockedScreen({
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource={subscription?.plan_source ?? "apple"} />
         </div>
       </div>
     </div>
@@ -111,7 +111,7 @@ function PastDue() {
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => supabase.auth.signOut()}
+              onClick={() => void signOut()}
               className="tap fast text-caption text-muted hover:text-ink"
             >
               Sign out
@@ -123,7 +123,7 @@ function PastDue() {
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource="apple" />
         </div>
       </div>
     </div>

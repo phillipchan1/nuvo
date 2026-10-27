@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { signOut } from "../lib/authActions";
 import { supabase } from "../lib/supabase";
 import { linkGoogleIdentity } from "../lib/googleAuth";
 import { appleLinkAvailable, linkAppleIdentity } from "../lib/appleAuth";
@@ -34,6 +35,7 @@ import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
+import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
@@ -1519,6 +1521,7 @@ function LabelsPane() {
 }
 
 function AccountPane() {
+  const { subscription } = useSubscription();
   const [email, setEmail] = useState("");
   const [methods, setMethods] = useState<SignInMethod[]>([]);
   // Which provider is mid-redirect, if any — not a bare boolean, so two rows
@@ -1580,7 +1583,7 @@ function AccountPane() {
           <div className="mono truncate text-body text-ink">{email || "…"}</div>
         </div>
         <div className="flex-1" />
-        <Btn kind="signal" onClick={() => supabase.auth.signOut()}>
+        <Btn kind="signal" onClick={() => void signOut()}>
           Sign out
         </Btn>
       </div>
@@ -1630,7 +1633,7 @@ function AccountPane() {
         </div>
       )}
 
-      <DeleteAccount />
+      <DeleteAccount planSource={subscription?.plan_source ?? null} />
     </div>
   );
 }

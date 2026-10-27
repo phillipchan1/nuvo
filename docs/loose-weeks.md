@@ -101,7 +101,7 @@ the second one:
 
 - **Nuvo proposes it** — deadlines, slipped work, on-deck projects. You
   accept or prune, guiltlessly; it was never your idea. (There used to be a fourth —
-  one small task per quiet domain, "showing up" — and it was removed in D-164: it was
+  one small task per quiet domain, "showing up" — and it was removed in D-169: it was
   the one proposal with no owner.)
 - **You already decided it** — the week-slot. It arrives **pre-kept**.
 

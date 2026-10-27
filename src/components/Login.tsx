@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { supabase, supabaseConfigured } from "../lib/supabase";
+import { requestEmailOtp, signInWithPassword, verifyEmailOtp } from "../lib/authActions";
+import { supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
 import { appleSignInAvailable, isAppleSignInCancelled, signInWithApple } from "../lib/appleAuth";
 import { lastAuthProvider, providerLabel } from "../lib/authProviders";
@@ -87,7 +88,7 @@ export default function Login({
     if (!addr || !password || busy === "password") return;
     setBusy("password");
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: addr, password });
+    const { error } = await signInWithPassword(addr, password);
     setBusy(null);
     if (error) setError(error.message);
     // On success useAuth's onAuthStateChange takes over.
@@ -98,7 +99,7 @@ export default function Login({
     if (!addr || busy === "otp") return;
     setBusy("otp");
     setError(null);
-    const { error } = await supabase.auth.signInWithOtp({ email: addr });
+    const { error } = await requestEmailOtp(addr);
     setBusy(null);
     if (error) setError(error.message);
     else setEmailGate("code");
@@ -109,7 +110,7 @@ export default function Login({
     if (!token || busy === "otp") return;
     setBusy("otp");
     setError(null);
-    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: "email" });
+    const { error } = await verifyEmailOtp(email.trim(), token);
     setBusy(null);
     if (error) setError(error.message);
     // On success useAuth's onAuthStateChange takes over.

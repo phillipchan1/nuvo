@@ -224,7 +224,7 @@ it needs to work on a phone.
   fields on every way out (iOS never blurs a field when ✕ is tapped) and compare writes against
   *what was last sent*, not the open-time snapshot. Verify at `?sheets=<state>`
   (`mobile/SheetsHarness.tsx`, fourteen fixtures), then resize to 320.
-- **What a drop onto a block does is decided once** (D-165) — `gatherActFor` /
+- **What a drop onto a block does is decided once** (D-170) — `gatherActFor` /
   `resolveBlockDrop` in `lib/slots`. A block's edges place beside; its middle gathers (join ·
   combine · absorb · merge), a task's only after `COMBINE_DWELL_MS`. The Schedule's drag
   tracker shows that answer and the drop handlers write it — **never re-decide it in a
@@ -371,6 +371,14 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
   Google silently re-uses the last account in the webview's cookie jar, which on iOS
   outlives a Nuvo sign-out — a signed-out phone landed straight back in the previous user
   and no second Google was reachable at all (D-126).
+- **What in free text can be tapped: `recognize` (`src/lib/recognize.ts`)** — URL, email, phone
+  (D-165). `renderRecognized` (`lib/descriptionHtml.tsx`) draws it for event descriptions *and*,
+  through `TaskNotes` (`components/TaskNotes.tsx`), a task's notes on both shells. `notes` stays a
+  plain string — recognition happens at read time, nothing is stored. **Never a second linkifier,
+  and never a phone pattern that guesses:** a missed link costs nothing, a wrong one dials a
+  stranger (no bare digit runs, no `+`-less national numbers). Links are `<a target="_blank">`
+  *including* `tel:` / `mailto:` — the native shells open links only through the opener plugin's
+  `_blank` handler (`tests/external-links.test.ts`).
 - Capture via free text: `parseCapture` in `src/lib/nlp.ts` turns
   "call David tomorrow 9am 30m #work !high" into structure.
 

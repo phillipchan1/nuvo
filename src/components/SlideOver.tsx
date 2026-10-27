@@ -17,6 +17,7 @@ import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurre
 import { useEventDetails, useEventSeriesRule, useHiddenEvents } from "../hooks/useCalendar";
 import { eventKey, eventSeriesKey, isExternalEventRecurring } from "../lib/now";
 import ReminderSelect from "./ReminderSelect";
+import TaskNotes from "./TaskNotes";
 import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
 import { DescriptionHtml } from "../lib/descriptionHtml";
@@ -493,6 +494,32 @@ export function TaskPopover({
     ? describeRule(ruleOf(recurrence), task.do_date ?? todayISO())
     : null;
 
+  // The notes read the same in both layouts too. The words are plain text; a phone
+  // number, email or link in them is tappable until you start typing (TaskNotes).
+  // The read face wears the textarea's box so the swap doesn't jump.
+  const notesBox =
+    "w-full min-h-[9rem] max-h-[min(40vh,22rem)] overflow-y-auto rounded-md border border-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink transition-colors hover:border-line hover:bg-bg";
+  const notesField = (
+    <TaskNotes
+      value={notes}
+      onBlur={commitNotes}
+      readClassName={notesBox}
+      renderEditor={({ inputRef, onFocus, onBlur }) => (
+        <textarea
+          ref={inputRef}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
+          aria-label="Notes"
+          className={`${notesBox} resize-y bg-transparent outline-none placeholder:text-muted/55 focus:border-line-strong focus:bg-bg`}
+          placeholder="Notes…"
+        />
+      )}
+    />
+  );
+
   // Delegation and the record's stamps read the same in both layouts — they
   // move column, they never disappear (the slide-out lost them once).
   const prework = (
@@ -923,17 +950,7 @@ export function TaskPopover({
                     <TaskSteps task={task} mutations={mutations} keyboardEntry />
                   </PopField>
 
-                  <PopField label="Notes">
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      onBlur={commitNotes}
-                      rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
-                      aria-label="Notes"
-                      className="w-full min-h-[9rem] max-h-[min(40vh,22rem)] resize-y overflow-y-auto rounded-md border border-transparent bg-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
-                      placeholder="Notes…"
-                    />
-                  </PopField>
+                  <PopField label="Notes">{notesField}</PopField>
                   <PopField label={`✦ ${ASSISTANT_NAME}`}>{prework}</PopField>
                   <div className="mono text-micro text-muted/70">{stamps}</div>
                 </>
@@ -950,15 +967,7 @@ export function TaskPopover({
               </PopSection>
 
               <PopSection label="Notes" divider className="min-h-0 flex-1">
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  onBlur={commitNotes}
-                  rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
-                  aria-label="Notes"
-                  className="w-full min-h-[9rem] max-h-[min(40vh,22rem)] resize-y overflow-y-auto rounded-md border border-transparent bg-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
-                  placeholder="Notes…"
-                />
+                {notesField}
               </PopSection>
 
               <PopSection label={`✦ ${ASSISTANT_NAME}`} divider>

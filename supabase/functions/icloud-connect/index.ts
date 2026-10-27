@@ -7,10 +7,13 @@
 import { admin, handleOptions, json, logSync, requireUser, storeSecret } from "../_shared/admin.ts";
 import { discoverCalendars } from "../_shared/caldav.ts";
 import { withoutMirrorCalendar } from "../_shared/mirror.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

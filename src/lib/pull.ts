@@ -42,7 +42,7 @@ export interface PullSuggestion {
  *  owe (it slipped), or something with a date on it. There used to be a fifth —
  *  one small task from each domain that had gone quiet — and it was the one pick
  *  with no owner: the *shortest* open task in the domain, of any age, that you had
- *  never slated, owed or dated. It is gone (D-164). A quiet domain is still *named*
+ *  never slated, owed or dated. It is gone (D-169). A quiet domain is still *named*
  *  (the Week's Plan conscience read, W5); it just doesn't pull work in on its own. */
 export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggestion[] {
   const picked = new Map<string, PullSuggestion>();

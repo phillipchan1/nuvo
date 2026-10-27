@@ -655,7 +655,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
  * that has passed"), so a week can take it as unplaced work.
  *
  * It used to vanish instead: the pull offered it (it was carried, or — before
- * D-164 — a quiet-domain top-up) and you could keep it, but the draft drops
+ * D-169 — a quiet-domain top-up) and you could keep it, but the draft drops
  * anything that already has a `start_time`, and that time wasn't in this week's
  * blocks either — so it landed nowhere and was reported nowhere.
  */

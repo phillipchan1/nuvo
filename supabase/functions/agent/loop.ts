@@ -459,7 +459,9 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
         body: body(messages, tools, false),
       });
       if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text()}`);
-      const json = await res.json();
+      const json = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string | null; tool_calls?: ToolCall[] } }>;
+      };
       const choice = json.choices?.[0]?.message;
       return { content: choice?.content ?? null, tool_calls: choice?.tool_calls };
     },

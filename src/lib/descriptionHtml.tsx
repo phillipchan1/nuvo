@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { recognize, type Recognized } from "./recognize";
 
 // Renders an event's description/notes as safe React — no dangerouslySetInnerHTML.
 // A plain URL in the text (ICS/Teams invites paste the join link straight into the
@@ -6,7 +7,8 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 // to end up as a tappable link, or the Zoom/Meet/Teams join link is just inert
 // text — the one thing you opened the event for. Shared so every surface that
 // shows a description (desktop popover, mobile sheet) can find and join the same
-// meeting link the same way.
+// meeting link the same way. What counts as a link — a URL, an email, a phone
+// number — is `lib/recognize.ts`, and the same renderer draws a task's notes.
 //
 // Invite bodies are built for email, not for a 250px column: Google's
 // `-::~:~::~:…::-` fence, Teams' 80-underscore rules, 100-character join URLs
@@ -20,23 +22,34 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
  *  underscore rule, an ASCII line of dashes or box-drawing. */
 const FENCE_RE = /-::~[:~]*::-|_{12,}|[-─—=]{12,}/g;
 
-function linkifyRun(text: string, keyBase: string): React.ReactNode[] {
-  const URL_RE = /https?:\/\/[^\s<>"]+/g;
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = URL_RE.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    parts.push(
-      <a key={`${keyBase}-${m.index}`} href={m[0]} target="_blank" rel="noopener noreferrer"
-        className="text-accent underline-offset-2 hover:underline break-all">
-        {m[0]}
+/** The ONE anchor for anything `recognize` finds — a URL, an email, a phone number.
+ *  `target="_blank"` on purpose, `tel:` and `mailto:` included: the native shells open
+ *  links through tauri-plugin-opener, whose click handler only takes `_blank` anchors
+ *  (see tests/external-links.test.ts). The vertical padding is a thumb-sized hit area on
+ *  a touch screen — an inline element's padding grows what you can tap without moving
+ *  a line of text. Shared with the task notes field, so a number reads the same in an
+ *  invite and in a note.
+ *
+ *  No `break-all` / `nowrap`: a link wraps exactly as the words around it do, and only a
+ *  run too long for its own line breaks (the container's `overflow-wrap: anywhere`).
+ *  `break-all` split `maya` / `@example.com` across a line end while the notes
+ *  textarea moved the whole address down — so the field jumped every time it swapped
+ *  between reading and editing. */
+export function renderRecognized(parts: Recognized[], keyBase: string): React.ReactNode[] {
+  return parts.map((p, i) =>
+    p.kind === "text" ? (
+      p.text
+    ) : (
+      <a key={`${keyBase}-${i}`} href={p.href} target="_blank" rel="noopener noreferrer"
+        className="text-accent underline-offset-2 hover:underline [@media(pointer:coarse)]:py-3">
+        {p.text}
       </a>
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
+    ),
+  );
+}
+
+function linkifyRun(text: string, keyBase: string): React.ReactNode[] {
+  return renderRecognized(recognize(text), keyBase);
 }
 
 function linkifyText(text: string): React.ReactNode {
@@ -53,18 +66,21 @@ function linkifyText(text: string): React.ReactNode {
   return parts.length === 1 ? parts[0] : <>{parts}</>;
 }
 
-function domToReact(node: Node, key: number): React.ReactNode {
+/** `inLink`: already inside an `<a>`, where a second anchor would be invalid HTML. */
+function domToReact(node: Node, key: number, inLink = false): React.ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
     const t = node.textContent ?? "";
-    return t ? <React.Fragment key={key}>{linkifyText(t)}</React.Fragment> : null;
+    if (!t) return null;
+    return <React.Fragment key={key}>{inLink ? t : linkifyText(t)}</React.Fragment>;
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return null;
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
-  const kids = Array.from(el.childNodes).map((n, i) => domToReact(n, i));
+  const href = tag === "a" ? (el.getAttribute("href") ?? "") : "";
+  const linked = inLink || (tag === "a" && /^https?:\/\//.test(href));
+  const kids = Array.from(el.childNodes).map((n, i) => domToReact(n, i, linked));
   switch (tag) {
     case "a": {
-      const href = el.getAttribute("href") ?? "";
       if (/^https?:\/\//.test(href))
         return <a key={key} href={href} target="_blank" rel="noopener noreferrer"
           className="text-accent underline-offset-2 hover:underline break-all">{kids}</a>;

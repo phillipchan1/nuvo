@@ -6163,9 +6163,157 @@ account, light and dark. The commit-side clearing of a stale block was **not** d
 writes); it has no unit harness. Open: non-work domains still share the work window; per-day
 hours and learned proposals are bets 2–3 in the review.*
 
+**D-164 · 2026-10-26 · The Cloudflare Workers + Neon + Better Auth path is a
+rehearsal. Production stays on Vercel + Supabase until a signed-off cutover.**
+
+A dual backend is in the repo (`worker/`, `VITE_API_BASE_URL`) so we can prove
+owner isolation without RLS and rehearse a workers.dev preview. The shipped web
+and iOS app keep talking to Supabase when the flag is empty. Billing webhooks,
+calendar OAuth/sync, capture/MCP, inbound email, push cron, Realtime, and
+Google/Apple as GoTrue providers stay on Supabase. No DNS change, no prod
+deploy, no App Store submission from this work.
+
+**Anchor.** No Question Ledger row — this is infrastructure, not a question in
+the operator's head. Strains nothing in the product grammar. The four no's:
+no pool, no new user-facing name, no clean-data requirement, nothing that only
+holds in the builder's account.
+
+*Status: standing — rehearsal only. Inventory:
+[`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).
+Cutover / rollback: [`cloudflare-cutover.md`](../cloudflare-cutover.md).*
+
+**D-165 · 2026-10-26 · A phone number, an email or a link in a task's notes is tappable —
+recognised when read, never stored. The notes stay plain text.**
+
+"Call Frontier Loyalty" had the number and the script in the task's notes, and the only way to
+dial it was to select it, copy it and switch apps. Notes were a bare `<textarea>` on both shells,
+which cannot hold a link — while an event's description had drawn URLs as links for months
+(`DescriptionHtml`), URLs only. One idea, two surfaces, drifted.
+
+**What shipped.** `lib/recognize.ts` is the one answer to "what in this text can you act on?" —
+URL, email, phone — and `DescriptionHtml` and the new `TaskNotes` field (both shells) draw it
+through one renderer, `renderRecognized`. `TaskNotes` has two faces. Notes that hold something
+actionable read as text with links: a tap on a link acts, a tap anywhere else swaps the textarea in
+under the finger, caret at the end, inside the same gesture so iOS raises the keyboard. Notes with
+nothing to tap — and empty notes — are the textarea they always were, so a fresh account pays
+nothing. Focus holds the editor in place: typing a number into plain notes never swaps it out from
+under the caret; it turns into a link when you leave the field.
+
+**Recognition, not formatting.** Phil asked for notes to "support formatting". We built the part
+that pays — act on what is already there — and not the part that doesn't. Bold, headings and
+markdown need an editor (a contenteditable or a toolbar breaks iOS dictation, P5); `notes` is a
+plain string that travels to the agent's prompt, the inbound-email body and the calendar record,
+none of which render markup; and a formatted notes field is the "notes app" `overview.md` §2
+refuses. Also deliberately **not** built: `- [ ]` checklists inside notes (a second subtask list
+beside Steps — P11, P10); addresses parsed out of prose (the least reliable shape of the lot, and
+a wrong guess is a wrong tap — P7, P16); a date in a note becoming "put it on the calendar" (a path
+to a day that skips the Week — P2). *These are candidates for §2 and are not entered there yet.*
+
+**The rule behind every pattern: a missed link costs nothing, a wrong one dials a stranger.** So
+phones are narrow on purpose — `+<country> …` anywhere in the world, and the North-American
+shapes — and a bare run of digits is never a phone, nor is a date, an IP address, a price or a
+card number. A national number from elsewhere with no `+` ("020 7946 0958") stays plain text
+rather than being guessed at: the honest P16 limit of doing this without a phone-number library
+or a known region. A number is dialled as typed; no country code is invented.
+
+**Anchor.** No Question Ledger row closes this cleanly — the nearest is D2, and the question a
+human asks is "I'm at the block; is what I need one tap away?" (proposed as a row, ◐; **not added
+to the ledger**). Altitude: Day. Story step: land (`brandscript.md` §7, "the prep is already
+written"). Failure prevented: none of §6's five — a convenience in the sense of §9.1, and ranked as
+one. Strains: P5 (mitigated — read-first only when there is something to tap), P13 (links get a
+44px hit area on touch), P16 (above). The four no's: no pool, no new name, degrades to plain text
+on empty or messy notes, and P16 is the live one.
+
+*Status: built — `tests/recognize.test.ts` (what it must link and, mostly, what it must never; each
+guard replayed by breaking it), `tests/task-notes.test.tsx` (both faces and the handoff), full
+suite, typecheck, build. Driven at `?sheets=task-block` at 375 and 320 with touch emulation: a tap
+on the words opens the textarea focused with the caret at the end, a tap away restores the read
+face, no horizontal overflow, link targets 44px, and the two faces break lines at the same points
+(0.2px apart in height). **Not driven:** a real tap-to-call on an iPhone, in the PWA or the Tauri
+shell — links are `<a target="_blank">`, which the opener plugin intercepts for http, https, mailto
+and tel (read from the pinned 2.5.5 source), but no device was in the loop; and the desktop task
+popover (`SlideOver`), which needs a signed-in app, so it has unit tests and a typecheck only.
+Open: the first number as a 44px **Call** act in the sheet's strip beside Mark done (the Join
+pattern); the same recognition for Nuvo's pre-work, which renders as markdown.*
+
+**D-166 · 2026-10-26 · The SPA's paid gate reads Worker `GET /api/entitlement`
+when the cutover flag is on; today's PostgREST path stays until then.**
+
+Phil approved the follow-up to D-164 / the entitlement Worker read: after
+Better Auth there is no GoTrue JWT for RLS on `subscriptions`, so the SPA
+cannot keep selecting that table once `VITE_API_BASE_URL` is set. The same
+flag that moves auth and planner CRUD now moves the **read** of entitlement
+to `/api/entitlement` (Better Auth session, Bearer + cookies). Stripe,
+StoreKit, Checkout, portal, IAP purchase / restore, and webhooks are
+untouched — they still write the Supabase row the Worker SELECTs. A Worker
+error is verify-error, never an unlock; `isEntitled` stays the one function.
+The read also returns `current_period_end`, `cancel_at_period_end`, and
+referral display fields so Billing can say Ends / Resume. Friend-code
+minting stays on today's path — the share block is disabled when the flag
+is on.
+
+**Anchor.** No Question Ledger row — infrastructure, same as D-164. Strains
+nothing in the product grammar. The four no's: no pool, no new user-facing
+name, no clean-data requirement, nothing that only holds in the builder's
+account. Pre-flip live check:
+[`cloudflare-migration/billing-live-check.md`](../cloudflare-migration/billing-live-check.md).
+
+*Status: standing — flag-off is a no-op. Tests: `tests/entitlement-read.test.ts`, `tests/billing-share-worker.test.tsx`.*
+
+**D-167 · 2026-10-26 · slot-mirror, task-mirror and push-dispatch run on the
+Worker against Neon. The VAPID pair does not change. A foreign id is 404.**
+
+The three functions that write a person's blocks onto their phone calendar, or
+nudge a closed app, now have a Worker + Neon path. Supabase copies stay until
+flip. The Worker is the tenant wall (no RLS): every user-data query is scoped
+by the verified session `user_id`, or by an explicit per-user loop on cron.
+
+**Mirrors.** Google-with-a-mirror-calendar still wins, then the first writable
+iCloud account (D-085 / the 2026-08-12 rank-3 audit). The device zone rides the
+request and falls back to UTC, never a home zone (D-082). A missing or foreign
+`slotId` / `taskId` is 404 — the same body as a random id — so a POST is not an
+existence oracle. Tokens open through PR A's `openToken` / `parseTokenKeyring`
+(length-prefixed AAD `calendar_accounts:row_id:user_id`). Writes refuse when
+the freeze is on (`requireWritableStore` / `refuseFrozenWrite`).
+
+**Push.** The dispatcher still decides nothing: anchors and fire instants come
+from the shared kernel (`reminderRules.ts` / `reminderAnchors.ts`), so an open
+app and the cron still race for the same claim key. `DISPATCH_LAG_MS` is 30s.
+Fan-out is a per-user SQL loop — no Queue. 404/410 deletes that device's
+subscription only. `push_subscriptions` writes match A's cutover resync:
+delete-missing, then a full-row `ON CONFLICT (id)` upsert, never another
+user's row. **The VAPID pair is the same pair as today's Supabase function.**
+Every Worker cron — push-dispatch included — is gated on fail-closed
+`CUTOVER_FLIPPED` (`gateCron` / `gateCronBearerRoute` in
+`worker/src/cutoverFlip.ts`). Unset / unknown → HTTP 200
+`{ skipped: true, reason: "cutover_not_flipped" }`, nothing sent even
+with Neon reminder prefs on. Freeze 503s writes only; it is not the cron
+skip. The push-dispatch HTTP route ignores a caller `nowMs` (test-only
+on `runPushDispatch`).
+
+**Anchor.** No Question Ledger row — infrastructure, like D-164 / D-166.
+Strains nothing in the product grammar. The four no's: no pool, no new
+user-facing name, no clean-data requirement, nothing that only holds in the
+builder's account.
+
+*Status: standing — rehearsal. Worker routes `/api` + `/functions/v1`. Cron
+Trigger `* * * * *` plus `/api/cron/push-dispatch`. Tests:
+`worker/src/accessHttp.check.ts` (A/B + oracle + freeze),
+`worker/src/pushDispatch.check.ts` (mocked endpoint, claim, gone),
+`worker/src/access.check.ts` (delete-missing then upsert). Inventory:
+[`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).*
+
+**D-168 · 2026-10-27 · Delete-account on the Worker does not cancel Stripe; it blocks a charging Stripe row and names Apple.**
+
+D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret and must not call the Stripe API (port rule). So the wipe **refuses** while the session user's `subscriptions` row is a Stripe subscription (`plan_source = stripe`, or leftover `stripe_subscription_id`) **and** status is `active` / `past_due` / `unpaid` / `trialing` — even if `plan_source` is now `apple`. Period end and customer-id-alone are not a gate. An unknown stripe status fails closed. A no-card trial (no Stripe subscription) and a StoreKit-only row can delete. Apple copy is Settings → your name → Subscriptions — never a Stripe sentence. (#105 on master took D-167 for the mirrors.)
+
+**Anchor.** Same leave path as D-117 (O4 stays ○). Strains **P8** (Account still holds identity *and* leave). Four no's: no pool, no new name, works with a missing or empty billing row, not builder-only.
+
+*Status: built — `tests/delete-account-worker.test.ts`, `tests/delete-account-ui.test.tsx`.*
+
 ---
 
-**D-164 · 2026-10-27 · Plan the week pulls only work somebody owns — the quiet-domain top-up
+**D-169 · 2026-10-27 · Plan the week pulls only work somebody owns — the quiet-domain top-up
 is gone.** *(Supersedes the quiet-domain clause of D-034's "Leftovers" lane.)*
 
 Origin ⓟ: *"plan the week brought in a task that was from God knows where — review metrics wr
@@ -6208,7 +6356,7 @@ data) and a real account's pull — Plan the week on the real data is the check 
 
 ---
 
-**D-165 · 2026-10-27 · Work dropped on a block goes INTO it or BESIDE it — the middle
+**D-170 · 2026-10-27 · Work dropped on a block goes INTO it or BESIDE it — the middle
 gathers, the edges place beside, and a task's middle waits a beat before it makes a slot.**
 
 Origin ⓟ: *"when dragging inbox items etc onto another task on the calendar we create a slot of

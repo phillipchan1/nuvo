@@ -28,7 +28,7 @@ export const LANE_QUESTION: Record<WeekLane, string> = {
   // "Leftovers" is the operator's word and the plainest one, but the lane also
   // holds work that's *due*, which isn't literally a leftover. The question
   // carries the honesty the label can't. (D-034) It also used to hold one small
-  // task from each quiet domain — gone, because no one had asked for it (D-164).
+  // task from each quiet domain — gone, because no one had asked for it (D-169).
   loose: "What didn't get done, and what's due?",
   inbox: "What came in that you haven't sorted?",
 };

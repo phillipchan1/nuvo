@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { signOut } from "../../../lib/authActions";
 import { fetchPortalUrl, openBillingUrl } from "../../../lib/stripeBilling";
 import { planOf, type Subscription } from "../../../lib/subscription";
 import { Btn } from "../../ui";
@@ -36,7 +36,7 @@ export default function WebLockedScreen({
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => supabase.auth.signOut()}
+              onClick={() => void signOut()}
               className="tap fast text-caption text-muted hover:text-ink"
             >
               Sign out
@@ -48,7 +48,7 @@ export default function WebLockedScreen({
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource={subscription?.plan_source ?? null} />
         </div>
       </div>
     </div>
@@ -88,7 +88,7 @@ function PastDue() {
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => supabase.auth.signOut()}
+              onClick={() => void signOut()}
               className="tap fast text-caption text-muted hover:text-ink"
             >
               Sign out
@@ -100,7 +100,7 @@ function PastDue() {
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource="stripe" />
         </div>
       </div>
     </div>
