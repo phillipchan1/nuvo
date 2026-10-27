@@ -71,7 +71,8 @@ describe("cutover_copy helpers", () => {
     expect(txn).toMatch(/LOCK TABLE public\.sync_log IN SHARE ROW EXCLUSIVE MODE/);
     expect(txn).toMatch(/WHEN lock_not_available/);
     expect(txn).not.toMatch(/WHEN query_canceled/);
-    expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\)/);
+    expect(txn).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(txn).not.toMatch(/SQLERRM ILIKE/);
     expect(txn).toMatch(/incoming row\(s\) differ on Neon/);
     expect(txn).toMatch(/sync_log_setval=/);
     expect(txn).toMatch(/COMMIT;/);
@@ -98,32 +99,50 @@ describe("cutover_copy helpers", () => {
     expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
   });
 
-  it("classifies a sync_log lock timeout as retryable", () => {
+  it("classifies a lock timeout as retryable only on SQLSTATE 55P03", () => {
     const out = py(
-      "from cutover_copy import is_retryable_lock_timeout, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
-      + "print(is_retryable_lock_timeout('ERROR:  canceling statement due to lock timeout')); "
+      "from cutover_copy import is_retryable_lock_timeout, SYNC_LOG_LOCK_TIMEOUT_MESSAGE, PUSH_LOCK_TIMEOUT_MESSAGE, LOCK_TIMEOUT_SQLSTATE; "
+      + "print(is_retryable_lock_timeout('ERROR:  55P03: canceling statement due to lock timeout')); "
       + "print(is_retryable_lock_timeout(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)); "
+      + "print(is_retryable_lock_timeout(PUSH_LOCK_TIMEOUT_MESSAGE)); "
+      + "print(is_retryable_lock_timeout('ERROR:  canceling statement due to lock timeout')); "
+      + "print(is_retryable_lock_timeout('sync_log lock timed out after 10s — retry the resync (retryable)')); "
       + "print(is_retryable_lock_timeout('sync_log id collision: 1 incoming row(s) differ on Neon')); "
       + "print(is_retryable_lock_timeout('canceling statement due to statement timeout')); "
-      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE)",
+      + "print(LOCK_TIMEOUT_SQLSTATE); "
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE); "
+      + "print(PUSH_LOCK_TIMEOUT_MESSAGE)",
     );
     expect(out).toBe(
-      "True\nTrue\nFalse\nFalse\nsync_log lock timed out after 10s — retry the resync (retryable)",
+      "True\nTrue\nTrue\nFalse\nFalse\nFalse\nFalse\n55P03\n"
+      + "sync_log lock timed out after 10s — retry the resync (retryable) [55P03]\n"
+      + "push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]",
     );
   });
 
-  it("retryable lock-timeout stop includes the redacted psql error", () => {
+  it("retryable lock-timeout stop names the table that waited", () => {
     const out = py(
-      "from cutover_copy import retryable_lock_timeout_stop, SYNC_LOG_LOCK_TIMEOUT_MESSAGE; "
-      + "print(retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE\"')); "
+      "from cutover_copy import retryable_lock_timeout_stop, SYNC_LOG_LOCK_TIMEOUT_MESSAGE, PUSH_LOCK_TIMEOUT_MESSAGE; "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE\"')); "
+      + "print('---'); "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: canceling statement due to lock timeout\\nCONTEXT:  SQL statement \"LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE\"')); "
       + "print('---'); "
       + "print(retryable_lock_timeout_stop('')); "
-      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  canceling statement due to lock timeout'))",
+      + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  55P03: LOCK TABLE public.sync_log')); "
+      + "print(PUSH_LOCK_TIMEOUT_MESSAGE in retryable_lock_timeout_stop('ERROR:  55P03: LOCK TABLE public.push_subscriptions'))",
     );
-    expect(out).toContain("sync_log lock timed out after 10s — retry the resync (retryable): ERROR:  canceling statement due to lock timeout");
+    expect(out).toContain("sync_log lock timed out after 10s — retry the resync (retryable) [55P03]: ERROR:  55P03: canceling statement due to lock timeout");
     expect(out).toContain("LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE");
+    expect(out).toContain("push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]: ERROR:  55P03: canceling statement due to lock timeout");
+    expect(out).toContain("LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE");
     expect(out).not.toMatch(/user_id|provider|operation|RETURNING \*/);
-    expect(out).toContain("---\nsync_log lock timed out after 10s — retry the resync (retryable)\nTrue");
+    expect(out).toContain("---\nlock timed out after 10s — retry the resync (retryable) [55P03]\nTrue\nTrue");
+    const pushStop = py(
+      "from cutover_copy import retryable_lock_timeout_stop; "
+      + "print(retryable_lock_timeout_stop('ERROR:  55P03: lock timeout', 'push_subscriptions'))",
+    );
+    expect(pushStop).toMatch(/^push_subscriptions lock timed out/);
+    expect(pushStop).not.toMatch(/sync_log lock timed out/);
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
@@ -134,6 +153,11 @@ describe("cutover_copy helpers", () => {
     expect(sql).toMatch(/failure_count = EXCLUDED\.failure_count/);
     expect(sql).toMatch(/DELETE FROM public\.push_subscriptions/);
     expect(sql).toMatch(/SELECT COUNT\(\*\) FROM gone/);
+    expect(sql).toMatch(/LOCK TABLE public\.push_subscriptions IN SHARE ROW EXCLUSIVE MODE/);
+    expect(sql).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(sql).not.toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(sql).toMatch(/WHEN lock_not_available/);
+    expect(sql).not.toMatch(/SQLERRM ILIKE/);
     expect(sql).not.toMatch(/RETURNING \*/);
     const idxDelete = WORKFLOW.indexOf("push_anti_join_delete_sql() + \";\"");
     const idxUpsert = WORKFLOW.indexOf("push_upsert_sql() + \";\"");
@@ -317,6 +341,10 @@ describe("runbook", () => {
     expect(DOC).toMatch(/redacted psql error/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
+    expect(DOC).toMatch(/SQLSTATE `55P03`/);
+    expect(DOC).toMatch(/names that table, not `sync_log`/);
+    expect(DOC).toMatch(/no automatic retry/);
+    expect(DOC).toMatch(/re-dispatch `cutover-migrate` with `phase=resync` by hand/);
   });
 
   it("documents aclexplode restore and idempotent unfreeze", () => {

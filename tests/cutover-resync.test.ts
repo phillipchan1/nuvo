@@ -409,6 +409,23 @@ describe("sync_log late commit", () => {
     await db.close();
   });
 
+  it("rewrites a push_subscriptions lock_not_available as that table's message", async () => {
+    const db = new PGlite();
+    const probe = py(
+      "from cutover_copy import push_lock_timeout_probe_sql; print(push_lock_timeout_probe_sql())",
+    );
+    let message = "";
+    try {
+      await db.exec(probe + ";");
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+    expect(message).not.toMatch(/sync_log lock timed out/);
+    expect(message).not.toMatch(/canceling statement due to lock timeout/);
+    await db.close();
+  });
+
   it("session lock_timeout is armed for the temp-table load before BEGIN", async () => {
     const db = new PGlite();
     await db.exec(SYNC_DDL);

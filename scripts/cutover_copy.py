@@ -246,9 +246,20 @@ SYNC_LOG_SEQUENCE_MARGIN = 1_000_000
 SYNC_LOG_SEQ = "pg_get_serial_sequence('public.sync_log','id')"
 SYNC_LOG_SEQ_NAME = "public.sync_log_id_seq"
 SYNC_LOG_LOCK_TIMEOUT = "10s"
-SYNC_LOG_LOCK_TIMEOUT_MESSAGE = (
-    "sync_log lock timed out after 10s — retry the resync (retryable)"
-)
+LOCK_TIMEOUT_SQLSTATE = "55P03"
+LOCK_TIMEOUT_TABLES = ("push_subscriptions", "sync_log")
+
+
+def lock_timeout_message(table: str | None = None) -> str:
+    named = f"{table} " if table else ""
+    return (
+        f"{named}lock timed out after 10s — retry the resync (retryable) "
+        f"[{LOCK_TIMEOUT_SQLSTATE}]"
+    )
+
+
+SYNC_LOG_LOCK_TIMEOUT_MESSAGE = lock_timeout_message("sync_log")
+PUSH_LOCK_TIMEOUT_MESSAGE = lock_timeout_message("push_subscriptions")
 
 
 def sync_log_last_value_sql() -> str:
@@ -314,30 +325,47 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-def is_retryable_lock_timeout(text: str) -> bool:
+def table_from_lock_error(text: str) -> str | None:
+    """Name the table from the error; never guess sync_log for a push lock."""
     lower = (text or "").lower()
-    return "lock timeout" in lower or "lock timed out" in lower
+    for table in LOCK_TIMEOUT_TABLES:
+        if table in lower:
+            return table
+    return None
 
 
-def retryable_lock_timeout_stop(redacted_psql_error: str) -> str:
+def is_retryable_lock_timeout(text: str) -> bool:
+    """Retryable only when SQLSTATE 55P03 is present — not message text."""
+    return LOCK_TIMEOUT_SQLSTATE in (text or "")
+
+
+def retryable_lock_timeout_stop(
+    redacted_psql_error: str,
+    table: str | None = None,
+) -> str:
     """Operator-facing stop: retryable banner plus the redacted psql text."""
     err = (redacted_psql_error or "").strip()
+    named = table or table_from_lock_error(err)
+    msg = lock_timeout_message(named)
     if not err:
-        return SYNC_LOG_LOCK_TIMEOUT_MESSAGE
-    return f"{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}: {err}"
+        return msg
+    return f"{msg}: {err}"
 
 
-def sync_log_lock_timeout_handler_sql() -> str:
+def lock_timeout_handler_sql(table: str) -> str:
     # PG lock_timeout raises lock_not_available (55P03), not query_canceled.
+    # Key the rewrite on that SQLSTATE (WHEN lock_not_available), not SQLERRM.
+    msg = lock_timeout_message(table).replace("'", "''")
     return (
         "EXCEPTION\n"
         "  WHEN lock_not_available THEN\n"
-        "    IF SQLERRM ILIKE '%lock timeout%' THEN\n"
-        f"      RAISE EXCEPTION '{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}'\n"
-        "        USING ERRCODE = 'lock_not_available';\n"
-        "    END IF;\n"
-        "    RAISE;\n"
+        f"    RAISE EXCEPTION '{msg}'\n"
+        "      USING ERRCODE = 'lock_not_available';\n"
     )
+
+
+def sync_log_lock_timeout_handler_sql() -> str:
+    return lock_timeout_handler_sql("sync_log")
 
 
 def sync_log_lock_sql() -> str:
@@ -437,6 +465,9 @@ def push_upsert_sql() -> str:
     cols = ", ".join(PUSH_COLUMNS)
     assignments = ",\n    ".join(f"{c} = EXCLUDED.{c}" for c in PUSH_COLUMNS if c != "id")
     return (
+        "BEGIN;\n"
+        + push_lock_sql()
+        + ";\n"
         "WITH upserted AS (\n"
         f"  INSERT INTO public.push_subscriptions ({cols})\n"
         f"  SELECT {cols} FROM cutover_push_rows\n"
@@ -444,16 +475,60 @@ def push_upsert_sql() -> str:
         f"    {assignments}\n"
         "  RETURNING 1\n"
         ")\n"
-        "SELECT COUNT(*) FROM upserted"
+        "SELECT COUNT(*) FROM upserted;\n"
+        "COMMIT;"
+    )
+
+
+def push_set_lock_timeout_sql(*, local: bool = False) -> str:
+    kind = "LOCAL " if local else ""
+    return f"SET {kind}lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}'"
+
+
+def push_lock_timeout_handler_sql() -> str:
+    return lock_timeout_handler_sql("push_subscriptions")
+
+
+def push_lock_sql() -> str:
+    return (
+        push_set_lock_timeout_sql(local=True) + ";\n"
+        "DO $cutover_push_lock$\n"
+        "BEGIN\n"
+        "  LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE;\n"
+        f"{push_lock_timeout_handler_sql()}"
+        "END\n"
+        "$cutover_push_lock$"
+    )
+
+
+def push_lock_timeout_probe_sql(
+    *,
+    errcode: str = "lock_not_available",
+    message: str = "canceling statement due to lock timeout",
+) -> str:
+    """Raise errcode/message through the same EXCEPTION rewrite the lock uses."""
+    safe_code = errcode.replace("'", "")
+    safe_msg = message.replace("'", "''")
+    return (
+        "DO $cutover_push_lock_probe$\n"
+        "BEGIN\n"
+        f"  RAISE EXCEPTION '{safe_msg}' USING ERRCODE = '{safe_code}';\n"
+        f"{push_lock_timeout_handler_sql()}"
+        "END\n"
+        "$cutover_push_lock_probe$"
     )
 
 
 def push_anti_join_delete_sql() -> str:
     return (
+        "BEGIN;\n"
+        + push_lock_sql()
+        + ";\n"
         "WITH gone AS (\n"
         "  DELETE FROM public.push_subscriptions t\n"
         "  WHERE NOT EXISTS (SELECT 1 FROM cutover_push_rows s WHERE s.id = t.id)\n"
         "  RETURNING 1\n"
         ")\n"
-        "SELECT COUNT(*) FROM gone"
+        "SELECT COUNT(*) FROM gone;\n"
+        "COMMIT;"
     )
