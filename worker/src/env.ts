@@ -36,9 +36,8 @@ export interface Env {
   /** Same fail-closed parse as the write freeze. Arms the copy window. */
   CUTOVER_ARMED?: string;
   /**
-   * Post-flip switch (shared with PRs D and E). Only 1/true/yes/on means
-   * flipped. Unset, empty, or any unknown value = not flipped — Worker
-   * Google crons no-op 200 `{ skipped: true }`.
+   * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
+   * Unset, empty, and anything else is not flipped — Worker crons skip.
    */
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */

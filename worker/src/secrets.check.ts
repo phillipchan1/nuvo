@@ -16,10 +16,8 @@ import {
   jobsForSchedule,
   canonicalCronJob,
   consumeCalendarSyncBatch,
-  runCronJob,
 } from "./cronJobs.ts";
-import { cutoverFlipped, writeFrozen } from "./maintenance.ts";
-import type { Env } from "./env.ts";
+import { writeFrozen } from "./maintenance.ts";
 import { redactSecrets } from "./lib/redact.ts";
 
 const fails: string[] = [];
@@ -130,24 +128,6 @@ ok(!writeFrozen("false"), "writeFrozen false is off");
 ok(!writeFrozen("no"), "writeFrozen no is off");
 ok(!writeFrozen("off"), "writeFrozen off is off");
 
-ok(!cutoverFlipped(undefined) && !cutoverFlipped("") && !cutoverFlipped("maybe"), "CUTOVER_FLIPPED unset/unknown is not flipped");
-ok(!cutoverFlipped("0") && !cutoverFlipped("false") && !cutoverFlipped("off"), "CUTOVER_FLIPPED explicit off is not flipped");
-ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("On"), "CUTOVER_FLIPPED 1/true/yes/on is flipped");
-ok(writeFrozen("maybe") && !cutoverFlipped("maybe"), "cutoverFlipped is allowlist-only, not writeFrozen");
-
-const googleCronJobs = ["calendar-dispatch", "google-renew", "google-resubscribe"] as const;
-const unknownFlipEnv = { CUTOVER_FLIPPED: "maybe" } as Env;
-const unsetFlipEnv = {} as Env;
-const flippedEnv = { CUTOVER_FLIPPED: "1" } as Env;
-for (const job of googleCronJobs) {
-  const scheduledUnset = await runCronJob(job, unsetFlipEnv, null);
-  const scheduledUnknown = await runCronJob(job, unknownFlipEnv, null);
-  const scheduledFlipped = await runCronJob(job, flippedEnv, null);
-  ok(scheduledUnset.status === 200 && scheduledUnset.skipped === true && scheduledUnset.reason === "cutover_not_flipped", `runCronJob ${job} unset`);
-  ok(scheduledUnknown.status === 200 && scheduledUnknown.skipped === true && scheduledUnknown.reason === "cutover_not_flipped", `runCronJob ${job} unknown`);
-  ok(scheduledFlipped.skipped !== true, `runCronJob ${job} after flip is not skipped`);
-}
-
 ok(canonicalCronJob("nuvo-calendar-dispatch") === "calendar-dispatch", "cron alias calendar-dispatch");
 ok(canonicalCronJob("nuvo-rollover-pdt") === "rollover", "cron alias rollover");
 ok(jobsForSchedule("* * * * *").includes("calendar-dispatch"), "minute tick includes calendar-dispatch");
@@ -230,16 +210,16 @@ ok(/cron\.alter_job/.test(unfreezeSql) && /was_active/.test(unfreezeSql), "unfre
 ok(!/GRANT[^\n]+anon, authenticated/.test(unfreezeSql), "unfreeze.sql does not invent direct grants to anon/authenticated");
 
 const maintSrc = readFileSync(join(root, "worker/src/maintenance.ts"), "utf8");
-ok(/export function cutoverFlipped/.test(maintSrc), "maintenance.ts exports allowlist cutoverFlipped");
-ok(!/function cutoverFlipped[\s\S]*return writeFrozen/.test(maintSrc), "cutoverFlipped does not derive from writeFrozen");
+ok(!/export function cutoverFlipped/.test(maintSrc), "maintenance.ts does not own cutoverFlipped");
+ok(/writeFreezeOn/.test(maintSrc), "maintenance.ts writeFrozen is writeFreezeOn");
 
 const routesSrc = readFileSync(join(root, "worker/src/google/routes.ts"), "utf8");
 const syncWrite = routesSrc.slice(routesSrc.indexOf('paths("google-sync")'), routesSrc.indexOf('paths("google-events")'));
 const contactsWrite = routesSrc.slice(routesSrc.indexOf('paths("google-contacts")'), routesSrc.indexOf('paths("calendar-refresh")'));
 const syncChunk = syncWrite.slice(syncWrite.indexOf("freezeWrite"));
 const contactsChunk = contactsWrite.slice(contactsWrite.indexOf("freezeWrite"));
-ok(syncChunk.indexOf("skipCronBearerUntilFlip") < syncChunk.indexOf("requestIo") && syncChunk.includes("skipCronBearerUntilFlip"), "google-sync cron bearer skips before requestIo");
-ok(contactsChunk.indexOf("skipCronBearerUntilFlip") < contactsChunk.indexOf("requestIo") && contactsChunk.includes("skipCronBearerUntilFlip"), "google-contacts cron bearer skips before requestIo");
+ok(syncChunk.indexOf("gateCronBearerRoute") < syncChunk.indexOf("requestIo") && syncChunk.includes('gateCronBearerRoute(c.env, "google-sync")'), "google-sync cron bearer uses gateCronBearerRoute before requestIo");
+ok(contactsChunk.indexOf("gateCronBearerRoute") < contactsChunk.indexOf("requestIo") && contactsChunk.includes('gateCronBearerRoute(c.env, "google-contacts")'), "google-contacts cron bearer uses gateCronBearerRoute before requestIo");
 
 const eventsSrc = readFileSync(join(root, "worker/src/google/events.ts"), "utf8");
 ok(!/,\s*"error",\s*String\(e\)/.test(eventsSrc), "events.ts does not write raw String(e) to sync_log");

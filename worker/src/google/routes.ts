@@ -4,8 +4,8 @@ import { json, OPEN_CORS } from "../cors.ts";
 import type { Env } from "../env.ts";
 import { readJson, requireUuid } from "../http.ts";
 import { bearerToken, cronAuthorized } from "../cron.ts";
+import { gateCronBearerRoute } from "../cutoverFlip.ts";
 import { logServerError } from "../lib/redact.ts";
-import { cutoverFlipped } from "../maintenance.ts";
 import type { RequestIo } from "../requestIo.ts";
 import { handleGoogleOauthCallback, startGoogleOauth } from "./oauth.ts";
 import { handleGoogleEvents } from "./events.ts";
@@ -46,16 +46,6 @@ function isReadMethod(method: string): boolean {
 
 function clientError(code: string, status = 500): Response {
   return json({ error: code }, status, OPEN_CORS);
-}
-
-/** CRON_SECRET-bearer Google jobs skip before the DB opens. Allowlist only. */
-function skipCronBearerUntilFlip(c: Context<AppEnv>, cronOk: boolean): Response | null {
-  if (!cronOk || cutoverFlipped(c.env.CUTOVER_FLIPPED)) return null;
-  return json(
-    { ok: true, skipped: true, reason: "cutover_not_flipped", stay_on_supabase: true },
-    200,
-    OPEN_CORS,
-  );
 }
 
 export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): void {
@@ -108,8 +98,10 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
         (): { mode?: string; accountId?: string; calendarId?: string } => ({}),
       );
       const cronOk = cronAuthorized(bearerToken(c.req.header("authorization")), c.env.CRON_SECRET);
-      const skipped = skipCronBearerUntilFlip(c, cronOk);
-      if (skipped) return skipped;
+      if (cronOk) {
+        const gated = gateCronBearerRoute(c.env, "google-sync");
+        if (gated) return gated;
+      }
       const io = await deps.requestIo(c);
       try {
         if (cronOk) {
@@ -211,8 +203,10 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
         (): { accountId?: string } => ({}),
       );
       const cronOk = cronAuthorized(bearerToken(c.req.header("authorization")), c.env.CRON_SECRET);
-      const skipped = skipCronBearerUntilFlip(c, cronOk);
-      if (skipped) return skipped;
+      if (cronOk) {
+        const gated = gateCronBearerRoute(c.env, "google-contacts");
+        if (gated) return gated;
+      }
       const io = await deps.requestIo(c);
       try {
         if (cronOk) {

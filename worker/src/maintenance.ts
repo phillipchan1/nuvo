@@ -13,16 +13,5 @@ export function writeFrozen(value: string | undefined | null): boolean {
   return writeFreezeOn(value);
 }
 
-/**
- * Post-flip gate for Worker crons that must not run beside Supabase
- * `pg_cron`. Fail closed: unset / unknown = not flipped. Allowlist only
- * (`1` / `true` / `yes` / `on`) — not `writeFrozen`, which is fail-closed
- * the other way so a typo freezes writes.
- */
-export function cutoverFlipped(value: string | undefined | null): boolean {
-  const v = (value ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
-
 export const WRITE_FROZEN_MESSAGE =
   "Nuvo is briefly read-only during a maintenance window. Try again in a few minutes.";

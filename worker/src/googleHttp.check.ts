@@ -292,7 +292,7 @@ for (const job of ["google-renew", "calendar-dispatch", "google-resubscribe"] as
   ok(skipped.status === 200, `cron ${job} before flip is 200 (got ${skipped.status})`);
   ok((skipped.body as { skipped?: boolean }).skipped === true, `cron ${job} before flip is skipped:true`);
   ok((skipped.body as { reason?: string }).reason === "cutover_not_flipped", `cron ${job} before flip reason`);
-  ok((skipped.body as { stay_on_supabase?: boolean }).stay_on_supabase === true, `cron ${job} before flip stays on supabase`);
+  ok((skipped.body as { job?: string }).job === job, `cron ${job} before flip names the job`);
 
   const unknownFlip = await call(`/api/cron/${job}`, {
     method: "POST",

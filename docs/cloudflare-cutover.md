@@ -50,7 +50,8 @@ None of these belong in the Vite bundle.
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune, `google-renew`, `calendar-dispatch`, `google-resubscribe`. Push / github stay 501 |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Until `CUTOVER_FLIPPED`, every cron and cron-bearer route returns 200 `{ skipped: true, reason: "cutover_not_flipped" }` and does not open the DB. After flip: rollover, purge-trash, reminder-deliveries-prune, `google-renew`, `calendar-dispatch`, `google-resubscribe` run; push / github stay 501 |
+| `CUTOVER_FLIPPED` | var | **Allowlist only:** `1` / `true` / `yes` / `on` (trimmed, case-insensitive). Unset, empty, and anything else (`garbage`, `maybe`, `2`, `false`, `0`) is not flipped. Worker crons stay skipped until this is set |
 | `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id` |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
 | `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
@@ -214,23 +215,27 @@ Calendar push channels re-subscribe to the Worker at the flip
 
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
 or wrong). The scheduled handler is Cloudflare-authenticated and calls the
-same runners. Ported jobs (`rollover`, `purge-trash`,
-`reminder-deliveries-prune`) iterate `users` then scope by `user_id`.
-Calendar-dispatch enqueues due accounts onto `CALENDAR_SYNC_QUEUE` and
-consumes Google (other providers ack for PR C). `google-renew` re-watches
-channels that expire within 48h. Flip tooling:
-`POST /api/cron/google-resubscribe`. Push / github still 501 /
-`stay_on_supabase`.
+same runners. **One flip gate** (`worker/src/cutoverFlip.ts`): until
+`CUTOVER_FLIPPED` is an allowlisted value (`1` / `true` / `yes` / `on`),
+every post-flip job returns **200 `{ ok: true, skipped: true, reason:
+"cutover_not_flipped", job }`** on both the scheduled path and
+`/api/cron/:job`, with no DB, fetch, or queue work. After the flip,
+ported jobs (`rollover`, `purge-trash`, `reminder-deliveries-prune`)
+iterate `users` then scope by `user_id`. Calendar-dispatch enqueues due
+accounts onto `CALENDAR_SYNC_QUEUE` and the consumer polls Google
+(other providers ack). `google-renew` re-watches channels that expire
+within 48h. Flip tooling: `POST /api/cron/google-resubscribe`. Push /
+github stay 501 / `stay_on_supabase`.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch 501 |
-| `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
-| `15 9 * * *` | `google-renew` | ported — re-watches Google channels expiring within 48h |
-| `20 9 * * *` | `github-poll` | 501 |
-| `0 10 * * 0` | `trim-sync-log` | 501 |
-| `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
-| `0 4 * * *` | `purge-trash` | ported — iterates `users`, scopes `DELETE` by `user_id` |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch 501 after flip |
+| `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
+| `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
+| `20 9 * * *` | `github-poll` | skip until flip, then 501 |
+| `0 10 * * 0` | `trim-sync-log` | skip until flip, then 501 |
+| `30 4 * * *` | `reminder-deliveries-prune` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
+| `0 4 * * *` | `purge-trash` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 
 **Queue projection (flag, not extra spend):** one send + one consume per due
 account per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -241,6 +246,20 @@ Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 tooling: `POST /api/cron/google-resubscribe` re-watches every Google
 channel onto the Worker webhook; `calendar-dispatch` poll covers watch
 setup failures (unverified domain).
+
+### Flip runbook (order is load-bearing)
+
+Do **not** set `CUTOVER_FLIPPED` until both of these have landed. The
+Worker copies must not run beside `pg_cron`, and they must not run
+against a Neon that is still missing the last billing / `sync_log` rows.
+
+1. **`cron.unschedule` the Supabase `pg_cron` jobs** (`nuvo-*` in
+   `00000000000002_cron.sql`). Reversible: reschedule from that file.
+2. **Final `phase=resync`** — one more `cutover-migrate` resync after
+   the `VITE_API_BASE_URL` switch so every post-switch source row lands.
+3. **Set `CUTOVER_FLIPPED=1`** on the Worker. Accepted values are only
+   `1`, `true`, `yes`, `on` (trimmed, case-insensitive). Anything else
+   stays skipped.
 
 ## Write freeze
 

@@ -5,12 +5,13 @@
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune)
- * iterate `users` then scope by `user_id`. Google jobs skip until
- * `CUTOVER_FLIPPED` (allowlist only — not `writeFrozen`). The shared
- * `worker/src/cutoverFlip.ts` helper will own the union once it lands.
- * Calendar-dispatch fans out one Queue message per due account so a single
- * isolate does not loop every tenant against Google/Graph/CalDAV (Workers
- * Paid CPU). The consumer runs Google poll (other providers ack for PR C).
+ * iterate `users` then scope by `user_id`. Jobs that must not run beside
+ * Supabase `pg_cron` belong in `POST_FLIP_CRON_JOBS` (`cutoverFlip.ts`).
+ * `handleCron` / `runCronJob` call `gateCron` before any DB / fetch /
+ * queue work. Unset `CUTOVER_FLIPPED` skips with 200. Calendar-dispatch
+ * fans out one Queue message per due account so a single isolate does
+ * not loop every tenant against Google/Graph/CalDAV (Workers Paid CPU).
+ * After the flip the consumer polls Google (other providers ack for PR C).
  * `google-renew` re-watches channels. Push / github stay 501. Without a
  * queue binding, HTTP calendar-dispatch claims Google in-process
  * (PGlite / tests).
@@ -24,11 +25,12 @@ import type { Context } from "hono";
 import { BLOCKED_CRON_JOBS, stayOnSupabase } from "./blocked.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
+import { gateCron } from "./cutoverFlip.ts";
 import { closeSql, openSql, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { runGoogleSync } from "./google/sync.ts";
-import { cutoverFlipped, WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 
 export interface QueueMessage<T> {
@@ -55,21 +57,6 @@ export interface CronResult {
   deleted?: number;
   skipped?: boolean;
   reason?: string;
-}
-
-/** This PR's Google jobs only. Shared cutoverFlip.ts will own the union. */
-const GOOGLE_CRON_JOBS = new Set(["calendar-dispatch", "google-renew", "google-resubscribe"]);
-
-function skipGoogleUntilFlip(job: string, env: Env): CronResult | null {
-  const name = canonicalCronJob(job);
-  if (!GOOGLE_CRON_JOBS.has(name) || cutoverFlipped(env.CUTOVER_FLIPPED)) return null;
-  return {
-    job: name,
-    status: 200,
-    stay_on_supabase: true,
-    skipped: true,
-    reason: "cutover_not_flipped",
-  };
 }
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
@@ -210,8 +197,9 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
-  const skipped = skipGoogleUntilFlip(name, env);
-  if (skipped) return skipped;
+  if (gateCron(env, name)) {
+    return { job: name, status: 200, stay_on_supabase: true, skipped: true, reason: "cutover_not_flipped" };
+  }
   if (name === "calendar-dispatch") {
     if (!sql) return blocked(name);
     if (env.CALENDAR_SYNC_QUEUE) {
@@ -256,8 +244,9 @@ export async function handleScheduled(
 }
 
 /**
- * One message = one calendar account. Google runs poll here. Other
- * providers ack for PR C. Counts only — never log ids, tokens, or row data.
+ * One message = one calendar account. After the flip, Google runs poll
+ * here. Other providers ack for PR C. Counts only — never log ids,
+ * tokens, or row data. `gateCron` skips before any SQL.
  */
 export async function consumeCalendarSyncBatch(
   batch: QueueBatch<CalendarSyncMessage>,
@@ -265,7 +254,7 @@ export async function consumeCalendarSyncBatch(
 ): Promise<number> {
   let n = 0;
   let sql: Sql | null = null;
-  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) {
+  if (gateCron(env, "queue-consume")) {
     for (const msg of batch.messages) {
       n += 1;
       msg.ack();
@@ -313,8 +302,8 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   }
   const job = jobName ?? c.req.param("job") ?? "";
   const name = canonicalCronJob(job);
-  const skipped = skipGoogleUntilFlip(name, c.env);
-  if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
+  const gated = gateCron(c.env, name);
+  if (gated) return gated;
 
   if (name === "calendar-dispatch") {
     const io = await requestIo(c);

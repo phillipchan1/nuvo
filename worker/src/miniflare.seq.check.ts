@@ -483,7 +483,9 @@ try {
     8000,
     "cron",
   );
-  ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+  ok(cron.status === 200, `cron authorized: HTTP ${cron.status}`);
+  const cronBody = (await cron.json()) as { skipped?: boolean; reason?: string };
+  ok(cronBody.skipped === true && cronBody.reason === "cutover_not_flipped", "cron authorized skips until flip");
 
   const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
   ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);
