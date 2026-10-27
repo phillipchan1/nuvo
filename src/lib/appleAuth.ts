@@ -32,7 +32,8 @@
 // The email may be a `@privaterelay.appleid.com` alias. Anything that mails the
 // user has to tolerate that.
 import type { AuthError } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
+import { workersEnabled } from "./backend";
+import { functionUrl, supabase } from "./supabase";
 import { authReturnUrl } from "./authRedirect";
 import { isTauriIOS } from "./platform";
 import { randomUrlSafeToken, sha256Hex } from "./webcrypto";
@@ -123,16 +124,29 @@ async function nativeCredential(hashedNonce: string): Promise<AppleCredential | 
 /** Persist what Apple only ever says once, plus the code that makes deletion
  *  revocable. Never throws — sign-in has already succeeded by this point. */
 async function rememberAppleIdentity(credential: AppleCredential): Promise<void> {
+  const body = {
+    appleUserId: credential.user ?? null,
+    authorizationCode: credential.authorizationCode ?? null,
+    email: credential.email ?? null,
+    givenName: credential.givenName ?? null,
+    familyName: credential.familyName ?? null,
+  };
   try {
-    await supabase.functions.invoke("apple-identity", {
-      body: {
-        appleUserId: credential.user ?? null,
-        authorizationCode: credential.authorizationCode ?? null,
-        email: credential.email ?? null,
-        givenName: credential.givenName ?? null,
-        familyName: credential.familyName ?? null,
-      },
-    });
+    if (workersEnabled) {
+      const { signedBearerToken } = await import("./authClient");
+      const token = signedBearerToken();
+      await fetch(functionUrl("apple-identity"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      return;
+    }
+    await supabase.functions.invoke("apple-identity", { body });
   } catch {
     /* best effort — the next sign-in carries a fresh authorization code */
   }
@@ -140,6 +154,41 @@ async function rememberAppleIdentity(credential: AppleCredential): Promise<void>
 
 /** Sign in (or sign up) with Apple. */
 export async function signInWithApple(): Promise<{ error: AuthError | Error | null }> {
+  if (workersEnabled) {
+    const { createNuvoAuthClient } = await import("./authClient");
+    const client = createNuvoAuthClient();
+    if (isTauriIOS()) {
+      let credential: AppleCredential | null = null;
+      let rawNonce = "";
+      try {
+        rawNonce = randomUrlSafeToken();
+        credential = await nativeCredential(await sha256Hex(rawNonce));
+      } catch (e) {
+        return { error: e instanceof Error ? e : new Error(String(e)) };
+      }
+      if (credential?.identityToken) {
+        const res = await client.signIn.social({
+          provider: "apple",
+          idToken: { token: credential.identityToken, nonce: rawNonce },
+        });
+        if (!res.error) await rememberAppleIdentity(credential);
+        return { error: res.error ? new Error(res.error.message || "Sign-in failed") : null };
+      }
+      if (!appleWebAuthConfigured()) {
+        return {
+          error: new Error(
+            "Sign in with Apple isn't available in this version of the app. Update from TestFlight, or continue with Google.",
+          ),
+        };
+      }
+    }
+    const res = await client.signIn.social({
+      provider: "apple",
+      callbackURL: authReturnUrl(),
+    });
+    return { error: res.error ? new Error(res.error.message || "Sign-in failed") : null };
+  }
+
   if (isTauriIOS()) {
     let credential: AppleCredential | null = null;
     let rawNonce = "";
@@ -186,6 +235,13 @@ export async function signInWithApple(): Promise<{ error: AuthError | Error | nu
  *  is what stops an existing account from ending up with a second, empty one
  *  the first time its owner taps Sign in with Apple. */
 export async function linkAppleIdentity() {
+  if (workersEnabled) {
+    const { createNuvoAuthClient } = await import("./authClient");
+    return createNuvoAuthClient().linkSocial({
+      provider: "apple",
+      callbackURL: authReturnUrl(),
+    });
+  }
   return supabase.auth.linkIdentity({
     provider: "apple",
     options: appleAuthOptions(),

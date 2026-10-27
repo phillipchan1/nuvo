@@ -8,6 +8,14 @@ export function isAccountDeleteConfirm(typed: unknown): boolean {
   return typeof typed === "string" && typed.trim() === ACCOUNT_DELETE_CONFIRM;
 }
 
+/** Worker 409 when a Stripe row would keep charging. */
+export const STRIPE_DELETE_BLOCK_MESSAGE =
+  "Cancel your Stripe subscription in Settings → Billing first, then delete your account.";
+
+/** StoreKit can delete; we cannot cancel Apple. Same words in the panel and the 200. */
+export const APPLE_DELETE_NOTICE =
+  "Cancel your subscription in Apple Account settings (Settings → your name → Subscriptions). We cannot cancel an App Store subscription for you.";
+
 /** A live Stripe subscription we can cancel. Apple / StoreKit ids never
  *  land here — we cannot cancel those, and we must not pretend we can. */
 export function stripeSubscriptionIdToCancel(

@@ -35,6 +35,7 @@ import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
+import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
@@ -1520,6 +1521,7 @@ function LabelsPane() {
 }
 
 function AccountPane() {
+  const { subscription } = useSubscription();
   const [email, setEmail] = useState("");
   const [methods, setMethods] = useState<SignInMethod[]>([]);
   // Which provider is mid-redirect, if any — not a bare boolean, so two rows
@@ -1631,7 +1633,7 @@ function AccountPane() {
         </div>
       )}
 
-      <DeleteAccount />
+      <DeleteAccount planSource={subscription?.plan_source ?? null} />
     </div>
   );
 }

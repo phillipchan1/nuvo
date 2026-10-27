@@ -118,6 +118,21 @@ const rejected = await fetchSubscriptionByUserId(
 );
 ok(rejected === null, "a row for a different user_id is dropped (no cross-user leak)");
 
+for (const status of [404, 406] as const) {
+  const missing = await fetchSubscriptionByUserId(
+    { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
+    A,
+    async () => new Response("nope", { status }),
+  );
+  ok(missing === null, `fetch ${status}: shared entitlement reader treats as empty`);
+}
+const emptyOk = await fetchSubscriptionByUserId(
+  { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
+  A,
+  async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+);
+ok(emptyOk === null, "fetch 200 + [] is the documented empty result");
+
 const body = entitlementResponseBody(entitlementOf(stripeActive, A, now));
 ok(body.entitled === true && body.plan === "active", "response body carries the tier");
 ok(body.current_period_end === "2026-11-26T00:00:00Z", "response body carries current_period_end");

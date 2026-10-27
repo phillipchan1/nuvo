@@ -4,6 +4,9 @@ import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
+import { appleIssuedClientId } from "../../supabase/functions/_shared/appleIdentity.ts";
+import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { parseRawKey } from "./secrets.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
 export type AuthInstance = ReturnType<typeof createAuth>;
@@ -44,15 +47,59 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
   }
 }
 
+export function appleSocialProvider(env: Env) {
+  const clientId = appleIssuedClientId(env, "web");
+  const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
+  // Fail closed: missing or invalid TOKEN_ENC_KEY_V1 would persist tokens
+  // we cannot seal. Do not wire a sign-in that cannot persist.
+  const v1 = (env.TOKEN_ENC_KEY_V1 ?? "").trim();
+  if (!clientId || !clientSecret || !v1) return undefined;
+  try {
+    parseRawKey(v1);
+  } catch {
+    return undefined;
+  }
+  const bundle = env.APPLE_BUNDLE_ID?.trim();
+  return {
+    clientId,
+    clientSecret,
+    ...(bundle ? { appBundleIdentifier: bundle } : {}),
+  };
+}
+
 export function createAuth(env: Env, database: AuthDatabase) {
   const secret = env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
+  const secrets = parseBetterAuthSecrets(env.BETTER_AUTH_SECRETS);
   const baseURL = resolveAuthBaseURL(env);
+  const apple = appleSocialProvider(env);
   return betterAuth({
     secret,
+    ...(secrets ? { secrets } : {}),
     baseURL,
     basePath: "/api/auth",
     database,
+    account: {
+      // 1.7.13 stores OAuth tokens in plaintext unless this is set.
+      encryptOAuthTokens: true,
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          before: async (account, ctx) => {
+            const sealed = await sealAccountTokenFields(env, account, ctx?.context.secretConfig);
+            return { data: { ...account, ...sealed } };
+          },
+        },
+        update: {
+          before: async (account, ctx) => {
+            const sealed = await sealAccountTokenFields(env, account, ctx?.context.secretConfig);
+            return { data: { ...account, ...sealed } };
+          },
+        },
+      },
+    },
+    ...(apple ? { socialProviders: { apple } } : {}),
     // Password stays for App Review / already-verified accounts. Sign-up
     // must not auto-sign-in: an unverified email+password account would
     // otherwise adopt the planner row for that email (account takeover).

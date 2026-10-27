@@ -11,6 +11,11 @@ export interface Env {
   HYPERDRIVE?: HyperdriveBinding;
   DATABASE_URL?: string;
   BETTER_AUTH_SECRET?: string;
+  /**
+   * Optional BA keyring: `2:<current>,1:<previous>`. First entry is the
+   * write version. `BETTER_AUTH_SECRET` stays the legacy bare-hex key.
+   */
+  BETTER_AUTH_SECRETS?: string;
   BETTER_AUTH_URL?: string;
   /** wrangler / `.dev.vars` only: `local` allows a localhost auth fallback. `preview` enables OTP log delivery. Never `local` on workers.dev. */
   ENVIRONMENT?: string;
@@ -18,6 +23,14 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
+  /** Better Auth Apple provider (Services ID or bundle id) + client_secret JWT. */
+  APPLE_CLIENT_ID?: string;
+  APPLE_CLIENT_SECRET?: string;
+  APPLE_BUNDLE_ID?: string;
+  APPLE_SIWA_CLIENT_ID?: string;
+  APPLE_SIWA_TEAM_ID?: string;
+  APPLE_SIWA_KEY_ID?: string;
+  APPLE_SIWA_PRIVATE_KEY?: string;
   /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503; github theme falls back to null. */
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
@@ -27,7 +40,7 @@ export interface Env {
   SUPABASE_URL?: string;
   /** Service-role key used only to SELECT subscriptions by session user_id. Never a Stripe secret. */
   SUPABASE_SERVICE_ROLE_KEY?: string;
-  /** AES-256-GCM key (32-byte hex or base64). Required to seal/open tokens. */
+  /** AES-256-GCM key (32-byte hex or base64). Required to seal/open tokens. Unset → fail closed. */
   TOKEN_ENC_KEY_V1?: string;
   TOKEN_ENC_KEY_V2?: string;
   /** `1` (default) or `2`. Seal uses this version; open accepts any configured version. */

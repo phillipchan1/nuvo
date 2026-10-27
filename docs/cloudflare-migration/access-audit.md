@@ -92,6 +92,13 @@ That is a CRUD gap, not an access gap — there is no unscoped write.
 | `POST /api/rpc/rotate_inbound_token` | `UPDATE user_settings WHERE user_id = store.userId` | A's `inbound_token` unchanged | same |
 | `POST /api/rpc/claim_reminder` | Reminder must be owned; delivery inserted as `store.userId` | 404, no `reminder_deliveries` row for A | same |
 
+### Identity + deletion
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `POST /api/apple-identity` (and `/functions/v1/apple-identity`) | Session owner. Merges name/email (`mergeAppleProfile`), links Better Auth `account` (`providerId=apple`, `accountId` = Apple `sub`). Client `user_id` ignored. A foreign Apple sub is dropped with the same `{ ok: true }` — no existence oracle. | 200, A's row unchanged | `accessHttp.check.ts` + `access.check.ts` |
+| `POST /api/delete-account` (and `/functions/v1/delete-account`) | Session owner. Confirm word `DELETE`. Stripe sub that still bills — `active` / `trialing` / `past_due` / `unpaid` / `incomplete` (Supabase `subscriptions` via entitlement — **no Stripe secret, no Stripe API**) → **409** with a cancel-in-Billing message. Else wipe Neon `users` (cascade) + Better Auth `"user"` (cascade). | B posting A's id wipes **B**, not A. Unauth → 401 | `accessHttp.check.ts` + `tests/delete-account-worker.test.ts` |
+
 ### Billing read (Supabase `subscriptions`, not Neon)
 
 | Route | Scope | Cross-user | Test |
@@ -117,6 +124,11 @@ Full table: [`route-inventory.md`](./route-inventory.md).
 | `POST /api/cron/github-poll` · `nuvo-github-poll` | `CRON_SECRET`. No-op (200 `skipped:true`) unless `CUTOVER_FLIPPED` is an explicit truthy (`1` / `true` / `yes` / `on`); unset / unknown = not flipped. Then iterates `SELECT id FROM users` then `activity_sources WHERE user_id = $id`. | unauth 401; skip before flip; after flip poll does not move A's units onto B | `accessHttp.check.ts` |
 | `POST /api/cron/trim-sync-log` · `nuvo-trim-sync-log` | `CRON_SECRET`. Same `CUTOVER_FLIPPED` allowlist (`1` / `true` / `yes` / `on`). Per-user `DELETE` of `sync_log` older than 30 days. When `sync_log_id_seq.last_value >= 1e6`, also `id < last_value - 1e6 + 1`. Floor keeps recent Neon-origin rows out of trim (~1e6 inserts before it rises past them). Never `setval`. | unauth 401; skip before flip; after flip recent rows kept, Neon-origin ids at/above the floor kept, sequence unchanged | `accessHttp.check.ts` |
 | `ALL /api/cron/:job` | `CRON_SECRET`, then fail-closed `CUTOVER_FLIPPED` (`gateCron` in `cutoverFlip.ts`) before the DB opens. Ported jobs iterate `users` then `user_id = $id`. Unset flip → 200 `{ skipped: true, reason: "cutover_not_flipped" }`. After flip: push-dispatch / github-poll / trim-sync-log / rollover / purge / prune / `calendar-dispatch` / `google-renew` / `google-resubscribe` run | unauth 401; skip before flip (nothing sent); purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `pushDispatch.check.ts` + `cutoverFlip.check.ts` + `miniflare.seq.check.ts` + `googleHttp.check.ts` |
+
+Payment-rail `stripe_*` / `apple-iap` / `apple-webhook` writers stay off
+this Worker. `subscriptions` is read-only via `/api/entitlement` (and the
+delete-account Stripe gate). Calendar refresh tokens now live on the
+Worker (PR B).
 
 ### Google calendar (PR B)
 
@@ -157,6 +169,11 @@ deletes each clause in turn and expects `access.check.ts` to fail.
 | `claimReminder` | reminder owned, then insert delivery as `store.userId` |
 | `contacts` | `contacts_directory.user_id = store.userId` |
 | `bootstrapUser` | looks up `users` by `auth_id` / id / verified email; never by a client user id |
+| `getOwnedAppleIdentity` / `upsertOwnedAppleIdentity` | `apple_identities.user_id = store.userId` |
+| `appleUserIdTakenByOther` | unique `apple_user_id` belonging to someone else |
+| `linkOwnedAppleAccount` / `ownedAppleRefreshToken` | Better Auth `account` where `"userId"` is the session BA id and `"providerId" = 'apple'` |
+| `wipePlannerUser` | `DELETE FROM users WHERE id = store.userId` (cascade) |
+| `wipeBetterAuthUser` | `DELETE FROM "user" WHERE id = <session id>` |
 
 `users` itself is not a REST table. Adoption of an existing email row
 requires `emailVerified` on the session (OTP). Unverified
@@ -184,7 +201,7 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`) plus a Google account/event. B's signed bearer gets 403/404 or an empty payload on read / update / delete, including Google event delete / sync / create-on-A's-account. Unauthenticated → **401** on every user-data route (and `google-events`). Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log (including parked identity) included. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`) plus a Google account/event. B's signed bearer gets 403/404 or an empty payload on read / update / delete, including Google event delete / sync / create-on-A's-account. Unauthenticated → **401** on every user-data route (and `google-events`). Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. **apple-identity / delete-account:** B posting A's Apple sub or user id cannot take A's identity or wipe A; unauthenticated POSTs are 401; an active Stripe row is 409 and A's rows remain. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log (including parked identity) included. |
 | `worker/src/entitlement.check.ts` | Lookup URL is `user_id=eq.<session>`; Stripe/Apple rows share `isEntitled`; a remapped auth id fails the parity proof |
 | `scripts/check-entitlement-parity.ts` | 1:1 auth copy + per-user tier match. Counts only |
 | `worker/src/googleHttp.check.ts` | Google routes with a mock Calendar/People API: A/B 404 vs unknown same body, unauthenticated 401, cron secret, webhook channel mismatch, owner refresh/sync 200 |
