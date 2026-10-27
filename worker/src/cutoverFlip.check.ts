@@ -10,8 +10,8 @@ import {
   gateCronBearerRoute,
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
-import { CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
-import type { Sql } from "./db.ts";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
+import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 
@@ -74,6 +74,31 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const scheduledFn = (
+  app as typeof app & {
+    scheduled(
+      event: { cron: string },
+      env: Record<string, string | undefined>,
+      ctx: { waitUntil(promise: Promise<unknown>): void },
+    ): Promise<void>;
+  }
+).scheduled;
+ok(typeof scheduledFn === "function", "app exports scheduled");
+let scheduledSqlOpens = 0;
+const restoreOpenSql = installOpenSqlForTests(() => {
+  scheduledSqlOpens += 1;
+  throw new Error("openSql used before flip");
+});
+try {
+  for (const cron of ALL_CRON_SCHEDULES) {
+    await scheduledFn({ cron }, {}, { waitUntil() {} });
+    await scheduledFn({ cron }, { CUTOVER_FLIPPED: "garbage" }, { waitUntil() {} });
+  }
+  ok(scheduledSqlOpens === 0, "unflipped scheduled() opens no SQL for every cron");
+} finally {
+  restoreOpenSql();
+}
 
 const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
 ok(
@@ -198,15 +223,15 @@ try {
 }
 
 for (const value of flipOn) {
-  const out = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: value }, throwingSql());
-  ok(out.skipped !== true && out.status === 501, `runCronJob push-dispatch runs after ${value} (501 unported)`);
-  const http = await app.request("http://localhost/api/cron/push-dispatch", {
+  const out = await runCronJob("google-renew", { CUTOVER_FLIPPED: value }, throwingSql());
+  ok(out.skipped !== true && out.status === 501, `runCronJob google-renew runs after ${value} (501 unported)`);
+  const http = await app.request("http://localhost/api/cron/google-renew", {
     method: "POST",
     headers: { Authorization: `Bearer ${cronSecret}` },
   }, { CRON_SECRET: cronSecret, CUTOVER_FLIPPED: value });
-  ok(http.status === 501, `handleCron push-dispatch runs after ${value}: HTTP ${http.status}`);
+  ok(http.status === 501, `handleCron google-renew runs after ${value}: HTTP ${http.status}`);
   const body = (await http.json()) as { stay_on_supabase?: boolean; skipped?: boolean };
-  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron push-dispatch after ${value} is stay_on_supabase`);
+  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron google-renew after ${value} is stay_on_supabase`);
 }
 
 const bearerSkip = gateCronBearerRoute({}, "github-activity");

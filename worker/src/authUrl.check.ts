@@ -211,12 +211,26 @@ const cronUnset = await app.request("http://localhost/api/cron/push-dispatch", {
 }, prodEnv);
 ok(cronUnset.status === 401, "cron unset secret: 401");
 
+const { installRequestIoForTests } = await import("./requestIo.ts");
+const restoreCronIo = installRequestIoForTests(() => ({
+  sql: Object.assign(async () => [], { json: (value: unknown) => value }),
+  auth: {} as never,
+  close: async () => {},
+}));
 const cronOk = await app.request("http://localhost/api/cron/push-dispatch", {
   headers: { Authorization: "Bearer cron-test-secret" },
 }, { ...prodEnv, CRON_SECRET: "cron-test-secret" });
 ok(cronOk.status === 200, `cron matching secret: HTTP ${cronOk.status} (skip until flip)`);
 const cronBody = await cronOk.json() as { ok?: boolean; skipped?: boolean; reason?: string; job?: string };
 ok(cronBody.ok === true && cronBody.skipped === true && cronBody.reason === "cutover_not_flipped" && cronBody.job === "push-dispatch", "cron matching secret skips until flip");
+
+const cronFlipped = await app.request("http://localhost/api/cron/push-dispatch", {
+  headers: { Authorization: "Bearer cron-test-secret" },
+}, { ...prodEnv, CRON_SECRET: "cron-test-secret", CUTOVER_FLIPPED: "1" });
+restoreCronIo();
+ok(cronFlipped.status === 200, `cron matching secret after flip: HTTP ${cronFlipped.status}`);
+const flippedBody = await cronFlipped.json() as { ok?: boolean; skipped?: boolean; stay_on_supabase?: boolean };
+ok(flippedBody.ok === true && flippedBody.skipped !== true && flippedBody.stay_on_supabase !== true, "cron matching secret runs push-dispatch after flip");
 
 ok(
   !/c\.res\.headers\.set/.test(readFileSync(join(root, "worker/src/index.ts"), "utf8")),

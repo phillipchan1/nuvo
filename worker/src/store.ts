@@ -1469,18 +1469,80 @@ export async function listOwnedPushSubscriptions(store: Store): Promise<Record<s
   `;
 }
 
+export type PushSubscriptionWrite = {
+  id?: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  label?: string | null;
+  time_zone?: string | null;
+  last_seen_at?: string | null;
+  failure_count?: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+/** Full-row upsert. ON CONFLICT (id) never takes another user's row. */
 export async function insertPushSubscription(
   store: Store,
-  row: { id?: string; endpoint: string; p256dh: string; auth: string; label?: string },
+  row: PushSubscriptionWrite,
 ): Promise<Record<string, unknown> | null> {
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
+  const now = new Date().toISOString();
   const rows = await sql`
-    INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, label)
-    VALUES (${id}, ${store.userId}, ${row.endpoint}, ${row.p256dh}, ${row.auth}, ${row.label ?? null})
+    INSERT INTO push_subscriptions (
+      id, user_id, created_at, updated_at, endpoint, p256dh, auth,
+      label, time_zone, last_seen_at, failure_count
+    ) VALUES (
+      ${id}, ${store.userId}, ${row.created_at ?? now}, ${row.updated_at ?? now},
+      ${row.endpoint}, ${row.p256dh}, ${row.auth}, ${row.label ?? null},
+      ${row.time_zone ?? null}, ${row.last_seen_at ?? null}, ${row.failure_count ?? 0}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      created_at = EXCLUDED.created_at,
+      updated_at = EXCLUDED.updated_at,
+      endpoint = EXCLUDED.endpoint,
+      p256dh = EXCLUDED.p256dh,
+      auth = EXCLUDED.auth,
+      label = EXCLUDED.label,
+      time_zone = EXCLUDED.time_zone,
+      last_seen_at = EXCLUDED.last_seen_at,
+      failure_count = EXCLUDED.failure_count
+    WHERE push_subscriptions.user_id = ${store.userId}
     RETURNING id, user_id, endpoint
   `;
   return rows[0] ?? null;
+}
+
+/**
+ * Same order as cutover: delete rows missing from the incoming set, then
+ * full-row upsert. Scoped to the session user — never another tenant.
+ */
+export async function resyncOwnedPushSubscriptions(
+  store: Store,
+  rows: PushSubscriptionWrite[],
+): Promise<{ deleted: number; upserted: number }> {
+  const sql = store.sql;
+  const keep = rows.map((row) => row.id).filter((id): id is string => Boolean(id));
+  const gone = keep.length
+    ? await sql`
+        DELETE FROM push_subscriptions
+        WHERE user_id = ${store.userId}
+          AND NOT (id = ANY(${keep}))
+        RETURNING id
+      `
+    : await sql`
+        DELETE FROM push_subscriptions
+        WHERE user_id = ${store.userId}
+        RETURNING id
+      `;
+  let upserted = 0;
+  for (const row of rows) {
+    if (await insertPushSubscription(store, row)) upserted += 1;
+  }
+  return { deleted: gone.length, upserted };
 }
 
 export async function listOwnedActivitySources(store: Store): Promise<Record<string, unknown>[]> {

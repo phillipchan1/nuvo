@@ -35,7 +35,7 @@
     "enabled": true
   },
   // Workers Paid. UTC, matching today's pg_cron. Same `* * * * *` tick runs
-  // calendar-dispatch (Queue fan-out) and push-dispatch (501 until PR D).
+  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until CUTOVER_FLIPPED.
   "triggers": {
     "crons": [
       "* * * * *",
