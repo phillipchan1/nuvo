@@ -95,6 +95,40 @@ those counts and hashes — never emails or row data. `checks.yml` runs
 `scripts/guard-public-ci.mjs`, which fails if any workflow uploads anything
 else.
 
+### Limits
+
+Every public workflow step (`run` and `uses`, including
+`actions/github-script` and reusable-workflow `jobs.<id>.uses`) is
+default-deny: rejected unless listed in
+`scripts/guard-public-ci.allowlist.json` by file + job + step id with a
+sha256 of the **whole** canonical step (every key, including
+`timeout-minutes`) plus the **whole** job minus `steps` (`container`,
+`services`, `strategy`, `if`, `environment`, `permissions`, `outputs`,
+`concurrency`, `timeout-minutes`, reusable `uses` / `with` / `secrets`,
+…) plus the **whole** workflow minus `jobs` (`on`, `concurrency`,
+`run-name`, `env`, `defaults`, `permissions`, …). Unknown keys are
+included — the full object is hashed, not a key list. Per job, the
+ordered step-id list is hashed and duplicate ids are rejected. Per
+workflow, the ordered job list is hashed. Deleting `signing` /
+`assert-logs`, reordering `publish` first, or duplicating `publish`
+fails. A new job, step, trigger (e.g. `pull_request_target`), container,
+or env change fails.
+
+Always denied, even on an allowlisted step: `BASH_ENV` / `ENV` keys.
+Writes to `$GITHUB_ENV` / `$GITHUB_PATH` and to `RELEASE_NOTES.md` or
+release paths are denied outside allowlisted steps. `curl` / `wget` /
+`gh` value checks stay as defense in depth.
+
+`nc` and other non-`gh` exfil inside an already-allowlisted run are out
+of scope for the value deny-list. Reviewers must read the hashed step
+before bumping its sha256. `@phillipchan1` is required on the allowlist
+JSON, the guard script, and `.github/workflows/` (`.github/CODEOWNERS`).
+Regenerating hashes:
+
+```bash
+node scripts/regen-public-ci-allowlist.mjs
+```
+
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
 
@@ -256,10 +290,13 @@ its rows stay out of snapshot/parity (billing webhooks insert via
 `logSync`). After the switch, `phase=resync` copies **every** source
 row whose `id` is missing on the target. An incoming id that already
 exists on Neon with **different content** aborts (count only — no row
-data). Then, in the **same transaction** (`SET LOCAL lock_timeout = '10s'`
-then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out with
-`sync_log lock timed out after 10s — retry the resync (retryable)`
-rather than hanging the job), `setval`s `GREATEST(max(id), last_value, 1)`
+data). The temp-table load (before `BEGIN`) sets session `lock_timeout = '10s'`.
+Then, in the **same transaction** (`SET LOCAL lock_timeout = '10s'`
+then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
+`lock_not_available` / `55P03` and is rewritten to
+`sync_log lock timed out after 10s — retry the resync (retryable)`,
+with the redacted psql error appended, rather than hanging the job),
+`setval`s `GREATEST(max(id), last_value, 1)`
 so the parked identity never decreases — `--exclude-table-data` drops
 sequence data and `OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
 `sync_log`), the job `setval`s to source `max(id)` plus a 1e6 margin
@@ -313,8 +350,10 @@ Order:
 6. **First resync** — the same job copies every `sync_log` id missing
    on Neon (aborts on a content collision), `setval`s
    `GREATEST(max(id), last_value, 1)` in that transaction so the park
-   never drops (`SET LOCAL lock_timeout = '10s'` before `LOCK TABLE`;
-   timeout is retryable), then deletes missing `push_subscriptions`
+   never drops (session `lock_timeout` on the temp-table load, then
+   `SET LOCAL lock_timeout = '10s'` before `LOCK TABLE`; timeout is
+   retryable and includes the redacted psql error), then deletes
+   missing `push_subscriptions`
    ids and upserts the rest.
 7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
    `cutover-migrate` with `phase=resync` so post-switch billing

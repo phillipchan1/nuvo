@@ -75,7 +75,9 @@ describe("a StoreKit failure keeps its reason", () => {
  *  where the ids have to be named. */
 describe("ios-release.yml bakes the product ids into the IPA", () => {
   const yml = readFileSync(".github/workflows/ios-release.yml", "utf8");
-  const step = yml.slice(yml.indexOf("- name: Build signed IPA")).split(/\n      - name: /)[0];
+  const start = yml.indexOf("      - id: build-ipa");
+  const next = yml.indexOf("\n      - id:", start + 1);
+  const step = next === -1 ? yml.slice(start) : yml.slice(start, next);
 
   it("finds the step", () => {
     expect(step).toContain("tauri ios build");

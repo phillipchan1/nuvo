@@ -195,8 +195,15 @@ def sync_log_copy_sql() -> str:
     return f"COPY (SELECT {cols} FROM public.sync_log) TO STDOUT WITH CSV"
 
 
+def sync_log_set_lock_timeout_sql(*, local: bool = False) -> str:
+    kind = "LOCAL " if local else ""
+    return f"SET {kind}lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}'"
+
+
 def sync_log_load_sql() -> str:
+    # Session-level so CREATE TEMP / \\copy (before BEGIN) cannot hang either.
     return (
+        sync_log_set_lock_timeout_sql() + ";\n"
         "CREATE TEMP TABLE cutover_sync_log_src (\n"
         "  id bigint PRIMARY KEY,\n"
         "  user_id uuid,\n"
@@ -238,6 +245,10 @@ SYNC_LOG_SEQUENCE_MARGIN = 1_000_000
 
 SYNC_LOG_SEQ = "pg_get_serial_sequence('public.sync_log','id')"
 SYNC_LOG_SEQ_NAME = "public.sync_log_id_seq"
+SYNC_LOG_LOCK_TIMEOUT = "10s"
+SYNC_LOG_LOCK_TIMEOUT_MESSAGE = (
+    "sync_log lock timed out after 10s — retry the resync (retryable)"
+)
 
 
 def sync_log_last_value_sql() -> str:
@@ -303,36 +314,63 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-SYNC_LOG_LOCK_TIMEOUT = "10s"
-SYNC_LOG_LOCK_TIMEOUT_MESSAGE = (
-    "sync_log lock timed out after 10s — retry the resync (retryable)"
-)
-
-
 def is_retryable_lock_timeout(text: str) -> bool:
     lower = (text or "").lower()
     return "lock timeout" in lower or "lock timed out" in lower
+
+
+def retryable_lock_timeout_stop(redacted_psql_error: str) -> str:
+    """Operator-facing stop: retryable banner plus the redacted psql text."""
+    err = (redacted_psql_error or "").strip()
+    if not err:
+        return SYNC_LOG_LOCK_TIMEOUT_MESSAGE
+    return f"{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}: {err}"
+
+
+def sync_log_lock_timeout_handler_sql() -> str:
+    # PG lock_timeout raises lock_not_available (55P03), not query_canceled.
+    return (
+        "EXCEPTION\n"
+        "  WHEN lock_not_available THEN\n"
+        "    IF SQLERRM ILIKE '%lock timeout%' THEN\n"
+        f"      RAISE EXCEPTION '{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}'\n"
+        "        USING ERRCODE = 'lock_not_available';\n"
+        "    END IF;\n"
+        "    RAISE;\n"
+    )
 
 
 def sync_log_lock_sql() -> str:
     # SHARE ROW EXCLUSIVE waits for in-flight INSERTs and blocks new ones
     # (INSERT takes ROW EXCLUSIVE). nextval is only reached through INSERT
     # on this table. lock_timeout so a stuck writer cannot hang the job;
-    # query_canceled from lock timeout is rewritten as a retryable error.
+    # lock_not_available from lock timeout is rewritten as a retryable error.
     return (
-        f"SET LOCAL lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}';\n"
+        sync_log_set_lock_timeout_sql(local=True) + ";\n"
         "DO $cutover_sync_log_lock$\n"
         "BEGIN\n"
         "  LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE;\n"
-        "EXCEPTION\n"
-        "  WHEN query_canceled THEN\n"
-        "    IF SQLERRM ILIKE '%lock timeout%' THEN\n"
-        f"      RAISE EXCEPTION '{SYNC_LOG_LOCK_TIMEOUT_MESSAGE}'\n"
-        "        USING ERRCODE = 'lock_not_available';\n"
-        "    END IF;\n"
-        "    RAISE;\n"
+        f"{sync_log_lock_timeout_handler_sql()}"
         "END\n"
         "$cutover_sync_log_lock$"
+    )
+
+
+def sync_log_lock_timeout_probe_sql(
+    *,
+    errcode: str = "lock_not_available",
+    message: str = "canceling statement due to lock timeout",
+) -> str:
+    """Raise errcode/message through the same EXCEPTION rewrite the lock uses."""
+    safe_code = errcode.replace("'", "")
+    safe_msg = message.replace("'", "''")
+    return (
+        "DO $cutover_sync_log_lock_probe$\n"
+        "BEGIN\n"
+        f"  RAISE EXCEPTION '{safe_msg}' USING ERRCODE = '{safe_code}';\n"
+        f"{sync_log_lock_timeout_handler_sql()}"
+        "END\n"
+        "$cutover_sync_log_lock_probe$"
     )
 
 
