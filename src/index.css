@@ -2515,84 +2515,110 @@ select.field { appearance: none; -webkit-appearance: none; }
 .cal-dragging .fc-timegrid-col:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
-/* Dragging over a slot → the slot lights up solid teal (ready to accept) and the
-   drag ghost fades to almost nothing, so the item reads as "dropping into" it.
-   The slot under the cursor is hit-tested in JS (`.slot-drop-target`), and
-   `body.over-slot` drives the ghost fade — both set together by the drag tracker. */
+/* Dragging into a block → the slot (or the task, once armed) lifts and the drag
+   ghost fades to almost nothing, so the item reads as "going into" it. The
+   block under the cursor is hit-tested in JS (`.slot-drop-target`,
+   `.block-combine-armed`), and `body.over-slot` drives the ghost fade — both
+   set together by the drag tracker. */
 .fc-event.evt-slot {
   transition: background-color var(--d-fast) var(--ease-out),
     box-shadow var(--d-fast) var(--ease-out),
     border-color var(--d-fast) var(--ease-out),
     transform var(--d-fast) var(--ease-out);
 }
-/* Hovered slot lights up as a receptacle: the dashed outline fuses to a solid
-   ring, the fill warms to a soft teal wash, an outer halo bleeds past the edge so
-   the whole band reads as "drop here", and it lifts a hair toward the cursor. */
+/* Hovered slot lifts as a receptacle — the design law's lift (shadow + a small
+   rise), not a ring: focus lifts, it doesn't outline. The fill warms toward
+   --slot and the dashed container edge goes solid, so "drop here" reads at a
+   glance. */
 .fc-event.evt-slot.slot-drop-target {
   background: color-mix(in srgb, var(--slot) 26%, var(--surface)) !important;
   border-style: solid !important;
   border-color: var(--slot) !important;
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 80%, transparent),
-    0 0 0 2px var(--slot),
-    0 0 0 7px color-mix(in srgb, var(--slot) 20%, transparent),
-    var(--shadow-lift) !important;
-  transform: scale(1.015);
+  box-shadow: var(--shadow-lift) !important;
+  transform: translateY(-3px);
   z-index: 6;
 }
-/* Slot stays readable while the landing preview sits beside it. */
-.fc-event.evt-slot.slot-adjacent-anchor {
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 55%, transparent),
-    var(--shadow-lift) !important;
-  z-index: 5;
+/* A task's middle, waiting out the pause before letting go there makes a slot
+   (COMBINE_DWELL_MS in lib/slots — keep the two in step). Its bar widens across
+   the wait: one compositor-only transform on one element, which is how the
+   pause teaches itself. */
+.fc-event.evt-task [data-evt-bar] {
+  transform-origin: left center;
 }
-/* Hide the cursor ghost — the landing preview IS the affordance. */
-.slot-adjacent-drop .fc-event-mirror,
-.slot-adjacent-drop .fc-event-dragging {
-  opacity: 0 !important;
+.fc-event.evt-task.block-combine-pending [data-evt-bar] {
+  transform: scaleX(2.2);
+  transition: transform 300ms linear;
 }
-/* Where the dragged block will land: stacked above/below the slot at final size. */
-.slot-adjacent-preview {
+/* …armed: it lifts, and the preview below draws the slot it becomes. */
+.fc-event.evt-task.block-combine-armed {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+  z-index: 6;
+}
+.fc-event.evt-task.block-combine-armed [data-evt-bar] {
+  transform: scaleX(2.2);
+}
+/* An edge: letting go places beside. A caret on the side you're on — where the
+   block will stand — rather than a frame around the one you're beside. */
+.fc-event.block-beside-left {
+  box-shadow: -3px 0 0 0 var(--accent);
+}
+.fc-event.block-beside-right {
+  box-shadow: 3px 0 0 0 var(--accent);
+}
+/* The block a gathering drop makes, moves or grows — drawn over the target at
+   the size it will be, from the target's start. Opaque, because it IS what the
+   target becomes; dashed, because it is a container (D-157). */
+.block-gather-preview {
   position: fixed;
   left: 0;
   top: 0;
   z-index: 9998;
   pointer-events: none;
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 4px 8px 4px 0;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
   border-radius: 6px;
-  border: 2px dashed color-mix(in srgb, var(--accent) 58%, transparent);
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border: 1.5px dashed color-mix(in srgb, var(--slot) 72%, transparent);
+  background: color-mix(in srgb, var(--slot) 20%, var(--surface));
   box-shadow: var(--shadow-lift);
   overflow: hidden;
   opacity: 0;
   transform: scale(0.98);
+  transform-origin: top left;
   transition: opacity var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
 }
-.slot-adjacent-preview.is-visible {
+.block-gather-preview.is-visible {
   opacity: 1;
   transform: scale(1);
 }
-.slot-adjacent-preview-bar {
-  flex-shrink: 0;
-  width: 3px;
-  align-self: stretch;
-  border-radius: 2px;
-  background: var(--accent);
+.block-gather-preview-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--slot) 45%, var(--ink));
 }
-.slot-adjacent-preview-title {
+.block-gather-preview-title {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.3;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+}
+.block-gather-preview-title[hidden] {
+  display: none;
+}
+.block-gather-preview-items {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+  white-space: pre-line;
+  overflow: hidden;
 }
 .over-slot .fc-event-mirror,
 .over-slot .fc-event-dragging {

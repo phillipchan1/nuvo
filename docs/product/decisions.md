@@ -6205,3 +6205,92 @@ June design proposals that still say the pull is "showing up-balanced". Not the 
 The rest step at `?planweek`, 375px — reads Slots · Carried over · Due this week, no quiet row.
 **Not driven:** the desktop `SundayRitual` (same one-line label change; it needs the account's
 data) and a real account's pull — Plan the week on the real data is the check that matters.*
+
+---
+
+**D-165 · 2026-10-27 · Work dropped on a block goes INTO it or BESIDE it — the middle
+gathers, the edges place beside, and a task's middle waits a beat before it makes a slot.**
+
+Origin ⓟ: *"when dragging inbox items etc onto another task on the calendar we create a slot of
+those items. have intelligence draft what to call the slot … right and left edges for side by
+side and most of middle with hover interaction for slot combination."* D-098 made several
+things dropped on **open time** one slot, but only from work not yet on the grid: if one of the
+pieces was already placed, the only route was to drag it back to the rail first. And dropping on
+a task did one thing — stand beside it — with no way to say *these belong together*.
+
+- **One target grammar for every block that holds work.** A task block and a slot both have
+  two edge bands (≤28px, 22% of the width; a block under 64px is all middle) and a middle.
+  **Edges place beside** — the ordinary drop, at the pointer's time. **The middle gathers.**
+  There are no top or bottom bands: open time above or below a block already means before or
+  after. Which *side* a block lands on is FullCalendar's ordering, not the edge you used, so
+  both edges mean the same thing and say so (`Beside "…"`, a caret on that side).
+- **This replaces the slot edges `241b1e0` added (Aug 18, never logged).** Those bands meant
+  *before / after in time* — a sideways gesture with an up-or-down result, which needed a
+  stacked dashed preview to explain itself. Logged here so it doesn't come back.
+- **The block you drop on doesn't move; what you carry comes to it.** `gatherActFor`
+  (`lib/slots`) decides the middle, once, for the tracker (what it shows) and the handlers
+  (what they write): work on a slot **joins** (D-098, unchanged); work on a task **combines**
+  into a new slot at the task's hour; a slot on a task **absorbs** it (the slot moves to that
+  hour); a slot on a slot **merges** (the target keeps its name, project and series, grows,
+  and the other goes). Each is one undo. Sizes come from the kernel (`sizeSlotToContents`)
+  via `slotMinutesFor` — cut at midnight, never shrinking a block sized by hand.
+- **A task's middle waits ~300ms before it arms** (`COMBINE_DWELL_MS`; its bar widens across
+  the wait). Joining a slot makes nothing, so a slot arms at once; combining *makes* a slot,
+  and a drag swept across a busy day must not offer that on every block it passes. Let go
+  mid-pause and the drop is the ordinary one. Armed, the target lifts and a dashed preview
+  draws the slot it becomes, at its real size — so one that will now run over your 10:00
+  says so first (D-109's rule: the ghost is the block you'll get).
+- **What never gathers, and why** — each a thing that would be lost: a finished task (a
+  record, not a container), an event (never anyone's child — dragging one is a move and stays
+  quiet), a project dragged whole (its sitting lands beside; D-109's offer already asks about
+  its placed work), an empty slot (merging it is deleting it by drop), a repeating slot's
+  occurrence as the one merged away (that's a this-or-series question), and another project's
+  sitting (the project would be left with no time this week).
+- **No super-slot.** A slot inside a slot is a second container and a new noun (P10); a slot
+  mirrors to the calendar as one busy block, and the busy and week rules would all need to
+  learn nesting. Slot on slot merges, flat.
+- **Nuvo drafts the name; you take it.** A slot is named the moment it exists
+  (`deriveSlotTitle`, P7). A drop-made slot's popover opens on the name with Nuvo's draft
+  already asked for (`nameSlot`, the shared rubric) — it waits *under* the field as
+  `✦ Launch prep ⇥`, and only Tab or a tap puts it on the block. Typing first wins; closing
+  keeps the derived name. The manual "suggest a name" now lands there too: it used to fill the
+  field itself, where blurring away quietly saved it. A slot its project names asks nothing.
+- **⌘G is the drag's twin** (`planMakeSlot`): lit tasks become one slot at the earliest of
+  their times; tasks and one slot go into it; two slots merge by the same guards. A block's
+  menu offers **Make one slot** when it opens on a lit selection — so the right-click on a
+  selected block no longer collapses the selection.
+
+**Principles strained, named.** **P3** — the AI name is a proposal with a one-key promote,
+never a write. **Golden rule 4** (no hidden-only affordance) — the pause is discoverable only
+by doing it, which is why ⌘G and the menu exist. **P10** held: no new noun; *slot* already
+named all four outcomes. Not built: the **phone** has no drag on its calendar and no slot act
+on its task sheet, so it shows these slots but can't make one this way — a "Put in a slot…"
+picker on `MobileTaskSheet` is the follow-up. **Join** still doesn't grow its slot (D-098's
+behaviour, left alone); merge and absorb do.
+
+Ledger: **D3** ("I have 40 minutes — what fits?") — claiming a window with several pieces,
+some already placed, is now one gesture. Not re-scored: same reason as D-098.
+
+*Status: built — `tests/block-drop.test.ts` (36: zones, every guard, sizing, the resolver,
+⌘G's plan), full suite (157 files, 2132 tests), typecheck, `npm run build`. Driven with a
+pointer at `?gather` (`GatherHarness` — the real `CalendarPane` and `SlotPopover` over
+fixtures): edge → beside at the pointer's time; middle released mid-pause → beside; middle
+held → pending, armed, preview, `Make a slot with "Email Sam"`, a 45m slot, popover on the
+name, the draft under it, Tab took it; Esc kept the derived name; typing first dropped the
+draft; a two-row group → one 75m slot; a block onto a block → 60m; a slot onto a task →
+absorbed at 9:00; slot onto slot → merged; the repeating, empty and other-project slots and a
+finished task → quiet; an event → quiet; Esc mid-drag → nothing written; ⌘G and the menu.
+**And on the local dummy account, against a real database:** a rail row onto a block → one
+slot, one ⌘Z restoring both; a slot onto a slot → merged in Postgres, and ⌘Z brought the
+removed slot back under its own id with its tasks. That run found a real bug, fixed before
+this landed: the combine marked a repeating occurrence `recurrence_overridden` BEFORE making
+the slot, the outbox folded the later `slot_id` into that earlier op at its place in line, and
+Postgres refused it (`tasks_slot_id_fkey`) — the occurrence never joined. The mark now comes
+after the act. **The fold itself is a latent hazard** (an update can carry a new reference
+backward past the insert it needs — read from `fold` in `sync/ops.ts`, not reproduced: D-098's multi-drop should hit it offline on a task with an
+unsent edit) — logged as a follow-up, not fixed here. Not driven: the name draft against a
+live `nameSlot` (the local stack has no edge runtime; the harness stubs it), and the Mac app
+(WKWebView). **`npm run perf`** on the dummy account: both drags (`drag a block +1h`, `drop a
+rail task on the grid`) and 14 more within budget; **`draw-create a task ↵` is over (139 > 100
+renders) on `HEAD` too**, identical numbers before and after this change on two runs each —
+a standing miss, not this one's.*

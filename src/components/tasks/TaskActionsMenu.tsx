@@ -76,6 +76,7 @@ export default function TaskActionsMenu({
   onToggleDone,
   onDuplicate,
   onToEvent,
+  onMakeSlot,
   startInDelete = false,
 }: {
   task: Task;
@@ -99,6 +100,9 @@ export default function TaskActionsMenu({
   /** Acts only some hosts have — the calendar's Duplicate and → Event. */
   onDuplicate?: () => void;
   onToEvent?: { label: string; action: () => void };
+  /** The calendar's ⌘G, offered when the menu opened on a block inside a lit
+   *  selection: what's lit becomes one slot. */
+  onMakeSlot?: () => void;
   /** Open on the series' delete scope — ⌫ on a calendar block (D-158) asks the
    *  same question, in the same place, as ⌫ inside this menu. */
   startInDelete?: boolean;
@@ -195,6 +199,12 @@ export default function TaskActionsMenu({
   const items: Item[] = deleteMode && recurring
     ? deleteItems
     : [
+    ...(onMakeSlot
+      ? [
+          { kind: "action" as const, label: "Make one slot", key: "⌘G", action: () => { onClose(); onMakeSlot(); } },
+          { kind: "sep" as const },
+        ]
+      : []),
     {
       kind: "action", label: "Open", key: "↵",
       action: () => {
