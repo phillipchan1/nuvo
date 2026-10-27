@@ -202,30 +202,22 @@ revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
    `DATABASE_URL` at the scratch database. Cutover: point it at Neon `neondb`.
 
    ```bash
-   TOKEN_ENC_KEY_V1="$(cat "$S/nuvo-token-enc-key-v1")" \
+   TOKEN_ENC_KEY_V1_FILE="$S/nuvo-token-enc-key-v1" \
    DATABASE_URL="$(cat "$S/nuvo-neon-scratch-url")" \
      node --experimental-strip-types worker/src/tokenDecrypt.check.ts
    ```
 
-   It prints only `provider ok` / `provider fail`. **Go** = every provider
-   that has sealed rows prints `ok` and none prints `fail`. A skip (exit 0
-   with nothing opened) is **not** a go: it means the key or URL was unset,
-   or no tokens were sealed.
+   The check reads the key from that file (never prints it) and talks to Neon
+   over HTTPS (`@neondatabase/serverless`), because the box cannot reach
+   Postgres on 5432. It decrypts every sealed token. It prints only
+   `provider ok` / `provider fail`. **Go** = every provider that has rows
+   prints `ok` and none prints `fail`. A skip (exit 0 with nothing opened)
+   is **not** a go: it means the key or URL was unset. A provider with rows
+   and 0 tokens checked is a no-go (exit 1).
 3. Because the Worker secret cannot be read back, step 1's matching digest is
    what ties the Worker to the key step 2 just proved. If the digests differ,
    or anyone re-ran `wrangler secret put` from another source, re-set the
    Worker from the box file before the flip.
-
-Known gaps in step 2 (found in the Oct 27 dry run, run 40593628187):
-
-- The box cannot reach Neon's Postgres port 5432 (the connect times out), and
-  `tokenDecrypt.check.ts` uses the TCP `postgres` driver, so from the box it
-  ends in `CONNECT_TIMEOUT` rather than `ok`. That is a no-go, not a skip. Run
-  it from a machine with 5432 egress, or fix the script first.
-- Its `UNION ALL` mixes `calendar_accounts.provider` (enum
-  `calendar_provider`) with `text`, so on a restored schema the query fails
-  with `42804 UNION types calendar_provider and text cannot be matched`.
-  `provider::text` fixes it. That is a code change and needs its own PR.
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
 redacted before it is printed. The custom-format dump is verified on the
