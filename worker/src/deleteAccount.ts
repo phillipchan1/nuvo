@@ -31,11 +31,24 @@ import { wipeOwnedAccount, type Store } from "./store.ts";
 /** Token-free reason when an Apple refresh row exists but will not open. */
 export const APPLE_TOKEN_UNOPENABLE = "apple_token_unopenable";
 
-async function userIdFingerprint(id: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id));
-  return Array.from(new Uint8Array(digest).subarray(0, 8))
+/** HMAC-SHA256(user id) keyed by an existing Worker secret. Never log the key. */
+async function userIdFingerprint(id: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(id));
+  return Array.from(new Uint8Array(mac).subarray(0, 8))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function fingerprintSecret(env: Env): string | null {
+  const secret = (env.BETTER_AUTH_SECRET ?? env.TOKEN_ENC_KEY_V1 ?? "").trim();
+  return secret || null;
 }
 
 export async function deleteOwnedAccount(
@@ -79,12 +92,13 @@ export async function deleteOwnedAccount(
   let appleRevoked: boolean | null = null;
   if (loaded && !loaded.token) {
     appleRevoked = false;
-    const userHash = await userIdFingerprint(user.id);
-    console.warn("delete-account:", APPLE_TOKEN_UNOPENABLE, {
+    const secret = fingerprintSecret(env);
+    const line: { reason: string; source: string; user?: string } = {
       reason: APPLE_TOKEN_UNOPENABLE,
       source: loaded.source,
-      user: userHash,
-    });
+    };
+    if (secret) line.user = await userIdFingerprint(user.id, secret);
+    console.warn("delete-account:", APPLE_TOKEN_UNOPENABLE, line);
   } else if (loaded?.token) {
     const config = readAppleAuthConfig({
       APPLE_CLIENT_ID: env.APPLE_CLIENT_ID,

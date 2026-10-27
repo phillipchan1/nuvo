@@ -26,9 +26,9 @@ import {
   sealAccountTokenFields,
   tryDecryptBaToken,
 } from "../worker/src/lib/accountTokens.ts";
-import { parseTokenKeyring, sealToken, TokenCryptoError } from "../worker/src/secrets.ts";
+import { parseTokenKeyring, sealToken, sealedColumnValues, TokenCryptoError } from "../worker/src/secrets.ts";
 import { makePgliteSql } from "../worker/src/pgliteSql.ts";
-import { ownedAppleRefreshToken, type Store } from "../worker/src/store.ts";
+import { ownedAppleRefreshToken, upsertOwnedAppleIdentity, type Store } from "../worker/src/store.ts";
 
 vi.mock("../supabase/functions/_shared/appleIdentity.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../supabase/functions/_shared/appleIdentity.ts")>();
@@ -45,7 +45,24 @@ const ID_TOKEN = "id_apple_web_do_not_store";
 const ACCESS_LINK = "at_apple_link_do_not_store";
 const REFRESH_LINK = "rt_apple_link_do_not_store";
 const ID_TOKEN_LINK = "id_apple_link_do_not_store";
+const NATIVE_REFRESH = "rt_apple_native_do_not_store";
 const APPLE_SUB = "001234.apple-sub.oauth";
+
+const APPLE_IDENTITIES_DDL = `
+CREATE TABLE IF NOT EXISTS apple_identities (
+  user_id UUID PRIMARY KEY,
+  apple_user_id TEXT,
+  email TEXT,
+  given_name TEXT,
+  family_name TEXT,
+  is_private_relay BOOLEAN NOT NULL DEFAULT FALSE,
+  refresh_token_enc BYTEA,
+  refresh_token_iv BYTEA,
+  key_version SMALLINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`;
 
 function encKey(): string {
   const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 7);
@@ -129,6 +146,28 @@ async function assertNoPlaintext(row: AccountRow, tokens: string[], secret: stri
     const ba = await tryDecryptBaToken(secret, value as string);
     expect(ba !== null || isNuvoSealedToken(value as string)).toBe(true);
   }
+}
+
+function otherEncKey(): string {
+  const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 91);
+  return btoa(String.fromCharCode(...bytes));
+}
+
+async function seedNativeAppleRefresh(store: Store, env: Env, token = NATIVE_REFRESH): Promise<void> {
+  const keyring = await parseTokenKeyring(env);
+  const sealed = await sealToken(token, { table: "apple_identities", rowId: store.userId, userId: store.userId }, keyring);
+  const cols = sealedColumnValues(sealed);
+  await upsertOwnedAppleIdentity(
+    store,
+    {
+      apple_user_id: APPLE_SUB,
+      email: null,
+      given_name: null,
+      family_name: null,
+      is_private_relay: false,
+    },
+    { enc: cols.refresh_token_enc, iv: cols.refresh_token_iv, keyVersion: cols.key_version },
+  );
 }
 
 function storeWithFakeWipe(db: PGlite, userId: string): Store {
@@ -437,6 +476,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
 
     const db = new PGlite();
     await db.exec(SCHEMA);
+    await db.exec(APPLE_IDENTITIES_DDL);
     const kysely = pgliteKysely(db);
     const writeEnv = { ...tokenEnv(), BETTER_AUTH_SECRET: oldSecret };
     const writeAuth = createAuth(writeEnv, { db: kysely, type: "postgres" });
@@ -493,6 +533,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const db = new PGlite();
     await db.exec(SCHEMA);
+    await db.exec(APPLE_IDENTITIES_DDL);
     const kysely = pgliteKysely(db);
     const writeEnv = tokenEnv();
     const auth = createAuth(writeEnv, { db: kysely, type: "postgres" });
@@ -542,6 +583,111 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       expect(line).not.toContain(ACCESS);
       expect(line).not.toContain(stored);
       expect(line).not.toContain(user.id);
+    }
+    warn.mockRestore();
+    await kysely.destroy();
+    await db.close();
+  });
+
+  it("web-unopenable plus native token revokes with the native token and its client_id", async () => {
+    const db = new PGlite();
+    await db.exec(SCHEMA);
+    await db.exec(APPLE_IDENTITIES_DDL);
+    const kysely = pgliteKysely(db);
+    const env = tokenEnv();
+    const auth = createAuth(env, { db: kysely, type: "postgres" });
+    const ctx = await auth.$context;
+    const user = await ctx.internalAdapter.createUser({
+      name: "Ada",
+      email: "ada-web-miss-native@example.test",
+      emailVerified: true,
+    });
+    await ctx.internalAdapter.createAccount({
+      userId: user.id,
+      providerId: "apple",
+      accountId: APPLE_SUB,
+      accessToken: ACCESS,
+      refreshToken: REFRESH,
+      idToken: ID_TOKEN,
+    });
+    const store = storeWithFakeWipe(db, user.id);
+    await seedNativeAppleRefresh(store, env);
+    vi.mocked(revokeAppleToken).mockClear();
+    const res = await deleteOwnedAccount(
+      store,
+      { id: user.id },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      {
+        ...env,
+        BETTER_AUTH_SECRET: "wrong-only-better-auth-secret-32b!",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "k",
+      },
+      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, appleRevoked: true });
+    expect(revokeAppleToken).toHaveBeenCalledTimes(1);
+    const [config, token] = vi.mocked(revokeAppleToken).mock.calls[0] ?? [];
+    expect(token).toBe(NATIVE_REFRESH);
+    expect(token).not.toBe(REFRESH);
+    expect(config?.clientId).toBe(env.APPLE_SIWA_CLIENT_ID);
+    expect(config?.clientId).not.toBe(env.APPLE_CLIENT_ID);
+    await kysely.destroy();
+    await db.close();
+  });
+
+  it("web and native both unopenable: appleRevoked=false and one token-free log", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const db = new PGlite();
+    await db.exec(SCHEMA);
+    await db.exec(APPLE_IDENTITIES_DDL);
+    const kysely = pgliteKysely(db);
+    const env = tokenEnv();
+    const auth = createAuth(env, { db: kysely, type: "postgres" });
+    const ctx = await auth.$context;
+    const user = await ctx.internalAdapter.createUser({
+      name: "Ada",
+      email: "ada-both-unopenable@example.test",
+      emailVerified: true,
+    });
+    await ctx.internalAdapter.createAccount({
+      userId: user.id,
+      providerId: "apple",
+      accountId: APPLE_SUB,
+      accessToken: ACCESS,
+      refreshToken: REFRESH,
+      idToken: ID_TOKEN,
+    });
+    const store = storeWithFakeWipe(db, user.id);
+    await seedNativeAppleRefresh(store, env);
+    vi.mocked(revokeAppleToken).mockClear();
+    const wrongSecret = "wrong-only-better-auth-secret-32b!";
+    const res = await deleteOwnedAccount(
+      store,
+      { id: user.id },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      {
+        ...env,
+        BETTER_AUTH_SECRET: wrongSecret,
+        TOKEN_ENC_KEY_V1: otherEncKey(),
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "k",
+      },
+      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, appleRevoked: false });
+    expect(revokeAppleToken).not.toHaveBeenCalled();
+    const logged = warn.mock.calls.map((c) => JSON.stringify(c));
+    expect(logged.filter((line) => line.includes(APPLE_TOKEN_UNOPENABLE))).toHaveLength(1);
+    for (const line of logged) {
+      expect(line).not.toContain(REFRESH);
+      expect(line).not.toContain(NATIVE_REFRESH);
+      expect(line).not.toContain(user.id);
+      expect(line).not.toContain(wrongSecret);
+      expect(line).not.toContain(env.BETTER_AUTH_SECRET);
+      expect(line).not.toContain(env.TOKEN_ENC_KEY_V1);
     }
     warn.mockRestore();
     await kysely.destroy();

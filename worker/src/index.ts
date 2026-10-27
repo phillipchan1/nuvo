@@ -41,6 +41,7 @@ import { scheduleClose } from "./requestIo.ts";
 import { handleGithubActivity } from "./githubActivity.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
+import { registerGoogleRoutes } from "./google/routes.ts";
 import { handleSlotMirror } from "./slotMirror.ts";
 import { handleTaskMirror } from "./taskMirror.ts";
 import { installPushFetchForTests, workerTestFetch } from "./pushDispatch.ts";
@@ -418,6 +419,21 @@ function refuseIfFrozen(c: Context<AppEnv>): Response | null {
   return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
 }
 
+async function requirePlanner(
+  c: Context<AppEnv>,
+  raw?: Request,
+): Promise<{ userId: string } | { error: Response }> {
+  const got = await requireStore(c, raw);
+  if ("error" in got) return got;
+  return { userId: got.store.userId };
+}
+
+registerGoogleRoutes(app, {
+  requireUser: requirePlanner,
+  requestIo,
+  refuseIfFrozen,
+});
+
 app.all("/api/cron/:job", (c) => handleCron(c));
 app.all("/api/github-activity", (c) => handleGithubActivity(c));
 app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
@@ -556,8 +572,16 @@ async function scheduled(
   }
 }
 
-function queue(batch: QueueBatch<CalendarSyncMessage>, env: Env): void {
-  consumeCalendarSyncBatch(batch, env);
+function queue(
+  batch: QueueBatch<CalendarSyncMessage>,
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): void {
+  if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) {
+    for (const msg of batch.messages) msg.ack();
+    return;
+  }
+  ctx.waitUntil(consumeCalendarSyncBatch(batch, env));
 }
 
 Object.assign(app, { scheduled, queue });

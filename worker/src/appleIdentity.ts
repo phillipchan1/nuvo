@@ -150,20 +150,10 @@ export type OwnedAppleRefresh =
   | { token: string; source: AppleTokenSource }
   | { token: null; source: AppleTokenSource; reason: "unopenable" };
 
-export async function loadOwnedAppleRefreshToken(
+async function openNativeOwnedAppleRefresh(
   store: Store,
-  authUserId: string,
   env: Env,
 ): Promise<OwnedAppleRefresh | null> {
-  const accountRow = await ownedAppleAccountTokenRow(store.sql, authUserId);
-  if (accountRow) {
-    const fromAccount = await openAccountRefreshToken(env, accountRow.refreshToken, {
-      id: accountRow.id,
-      userId: accountRow.userId,
-    });
-    if (fromAccount) return { token: fromAccount, source: "web" };
-    return { token: null, source: "web", reason: "unopenable" };
-  }
   const row = await getOwnedAppleIdentity(store);
   if (!row?.refresh_token_enc || !row.refresh_token_iv) return null;
   try {
@@ -182,6 +172,28 @@ export async function loadOwnedAppleRefreshToken(
     if (err instanceof TokenCryptoError) return { token: null, source: "native", reason: "unopenable" };
     throw err;
   }
+}
+
+export async function loadOwnedAppleRefreshToken(
+  store: Store,
+  authUserId: string,
+  env: Env,
+): Promise<OwnedAppleRefresh | null> {
+  const accountRow = await ownedAppleAccountTokenRow(store.sql, authUserId);
+  if (accountRow) {
+    const fromAccount = await openAccountRefreshToken(env, accountRow.refreshToken, {
+      id: accountRow.id,
+      userId: accountRow.userId,
+    });
+    if (fromAccount) return { token: fromAccount, source: "web" };
+    // Web ciphertext we cannot open — fall through to native before failing.
+  }
+  const native = await openNativeOwnedAppleRefresh(store, env);
+  if (native?.token) return native;
+  if (accountRow || native) {
+    return { token: null, source: native?.source ?? "web", reason: "unopenable" };
+  }
+  return null;
 }
 
 export type { AppleProfile, AppleTokenSource };

@@ -2,7 +2,9 @@
  * Copy-window write freeze for non-billing edge functions.
  *
  * Set the Supabase secret `WRITE_FREEZE=1` (or `MAINTENANCE_WRITE_FREEZE=1`)
- * before the dump. Every mutating request then 503s. Billing webhooks
+ * before the dump. Any non-empty value other than 0/false/no/off freezes
+ * (fail-closed; unset/empty stays open). Every mutating request then 503s.
+ * Billing webhooks
  * (stripe-webhook, apple-webhook, checkout, portal, IAP, referral-code)
  * do not import this — they keep writing subscriptions / sync_log /
  * push_subscriptions on Supabase.
@@ -12,7 +14,8 @@
 export const WRITE_FROZEN_MESSAGE =
   "Nuvo is briefly read-only during a maintenance window. Try again in a few minutes.";
 
-const TRUTHY = new Set(["1", "true", "yes", "on"]);
+/** Explicit off. Unset/empty is also off; any other non-empty value freezes. */
+const EXPLICIT_OFF = new Set(["0", "false", "no", "off"]);
 
 const FREEZE_HEADERS = {
   "Content-Type": "application/json",
@@ -21,7 +24,9 @@ const FREEZE_HEADERS = {
 };
 
 export function writeFreezeOn(raw: string | undefined | null): boolean {
-  return TRUTHY.has((raw ?? "").trim().toLowerCase());
+  const v = (raw ?? "").trim().toLowerCase();
+  if (!v) return false;
+  return !EXPLICIT_OFF.has(v);
 }
 
 export type EnvGet = (name: string) => string | undefined;
