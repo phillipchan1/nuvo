@@ -94,6 +94,72 @@ INSERT INTO public.calendar_accounts (
     'two_way',
     '[{"id":"cal-b@group.calendar.google.com","summary":"B Cal","color":null,"visible":true,"channel_id":"ch-b","resource_id":"res-b"}]'::jsonb,
     false
+  ),
+  (
+    'aaaaaaaa-eeee-4000-8000-000000000011',
+    '11111111-1111-1111-1111-111111111111',
+    'm365',
+    'a-m365@example.test',
+    NULL,
+    NULL,
+    'read_only',
+    '[{"id":"primary","summary":"A Outlook","color":null,"visible":true}]'::jsonb,
+    false
+  ),
+  (
+    'bbbbbbbb-eeee-4000-8000-000000000011',
+    '22222222-2222-2222-2222-222222222222',
+    'm365',
+    'b-m365@example.test',
+    NULL,
+    NULL,
+    'read_only',
+    '[{"id":"primary","summary":"B Outlook","color":null,"visible":true}]'::jsonb,
+    false
+  ),
+  (
+    'aaaaaaaa-eeee-4000-8000-000000000012',
+    '11111111-1111-1111-1111-111111111111',
+    'icloud',
+    'a-icloud@example.test',
+    NULL,
+    NULL,
+    'two_way',
+    '[{"id":"https://caldav.example/a","summary":"A iCloud","color":null,"visible":true}]'::jsonb,
+    false
+  ),
+  (
+    'bbbbbbbb-eeee-4000-8000-000000000012',
+    '22222222-2222-2222-2222-222222222222',
+    'icloud',
+    'b-icloud@example.test',
+    NULL,
+    NULL,
+    'two_way',
+    '[{"id":"https://caldav.example/b","summary":"B iCloud","color":null,"visible":true}]'::jsonb,
+    false
+  ),
+  (
+    'aaaaaaaa-eeee-4000-8000-000000000013',
+    '11111111-1111-1111-1111-111111111111',
+    'ics',
+    'A subscribed',
+    NULL,
+    NULL,
+    'read_only',
+    '[{"id":"primary","summary":"A ICS","color":null,"visible":true}]'::jsonb,
+    false
+  ),
+  (
+    'bbbbbbbb-eeee-4000-8000-000000000013',
+    '22222222-2222-2222-2222-222222222222',
+    'ics',
+    'B subscribed',
+    NULL,
+    NULL,
+    'read_only',
+    '[{"id":"primary","summary":"B ICS","color":null,"visible":true}]'::jsonb,
+    false
   );
 
 INSERT INTO public.external_events (

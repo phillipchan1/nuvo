@@ -5,13 +5,13 @@
  */
 import type { Sql } from "../db.ts";
 import type { Env } from "../env.ts";
-import { calendarAccountAad, markSyncResult as markOwnedSyncResult } from "../google/owned.ts";
+import { calendarAccountAad, calendarSyncInterval, markSyncResult as markOwnedSyncResult } from "../google/owned.ts";
 import { redactSecrets } from "../lib/redact.ts";
 import { openToken, parseTokenKeyring, sealToken } from "../secrets.ts";
 import type { Store } from "../store.ts";
 import { mapAccount, type CalendarAccount } from "./types.ts";
 
-export { calendarSyncInterval } from "../google/owned.ts";
+export { calendarSyncInterval };
 
 export async function logSync(
   sql: Sql,

@@ -13,9 +13,9 @@ import { logServerError } from "../lib/redact.ts";
 import type { RequestIo } from "../requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "../store.ts";
 import { handleIcloudEvents } from "./icloudEvents.ts";
-import { runIcloudContacts, runIcloudSync } from "./icloud.ts";
-import { assertPublicFeedUrl, runIcsSync } from "./icsFeed.ts";
-import { runM365Sync } from "./m365.ts";
+import { runIcloudContacts, runIcloudSync, syncIcloudAccount } from "./icloud.ts";
+import { assertPublicFeedUrl, runIcsSync, syncIcsAccount } from "./icsFeed.ts";
+import { runM365Sync, syncM365Account } from "./m365.ts";
 import {
   getOwnedAccount,
   listOwnedAccounts,
@@ -153,11 +153,11 @@ export async function runCalendarRefreshOthers(
   let synced = 0;
   for (const account of accounts) {
     try {
-      if (account.provider === "m365") await runM365Sync(sql, env, { accountId: account.id, userId });
+      if (account.provider === "m365") await syncM365Account(sql, account, env);
       else if (account.provider === "icloud") {
-        await runIcloudSync(sql, env, { accountId: account.id, userId });
+        await syncIcloudAccount(sql, account, env);
         await runIcloudContacts(sql, env, { accountId: account.id, userId }).catch(() => undefined);
-      } else await runIcsSync(sql, env, { accountId: account.id, userId });
+      } else await syncIcsAccount(sql, account, env);
       synced += 1;
     } catch (e) {
       logServerError("calendar-refresh", e);

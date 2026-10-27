@@ -99,7 +99,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
 | `apple-identity` | User JWT | no | Stay |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
-| `calendar-refresh` | User JWT | no | **Worker (Google only)** — other providers stay 501 |
+| `calendar-refresh` | User JWT | no | **Worker** — Google + M365 + iCloud + ICS |
 | `capture` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `day` | User JWT | no | **Worker/Neon** |
 | `delete-account` | User JWT + confirm | Stripe cancel | Stay |
@@ -110,10 +110,10 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `google-sync` | Service role / JWT | no | **Worker** |
 | `google-webhook` | Channel token | no | **Worker** (re-subscribe at flip; poll fallback) |
 | `iap-catalog` | Public | no | Stay |
-| `icloud-*` | JWT / service | no | Stay |
-| `ics-subscribe` / `ics-sync` | JWT / service | no | Stay |
+| `icloud-*` | JWT / service | no | **Worker** — connect / sync / events / contacts; cron-bearer skipped until `CUTOVER_FLIPPED` |
+| `ics-subscribe` / `ics-sync` | JWT / service | no | **Worker** — ICS SSRF guard; cron-bearer skipped until `CUTOVER_FLIPPED` |
 | `inbound-email` | Svix + inbound token | no | **Worker/Neon** |
-| `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
+| `m365-oauth` / `m365-sync` | OAuth / service | no | **Worker** — cron-bearer skipped until `CUTOVER_FLIPPED` |
 | `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
 | `referral-code` | User JWT | Stripe | Stay |

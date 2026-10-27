@@ -142,16 +142,16 @@ These read/write user-data tables that **are** moving (`tasks`,
 run correctly against Neon without the Worker owning the query. They
 are blocked because they need Vault secrets or provider OAuth — not
 because they are allowed to keep writing Supabase after cutover.
-`slot-mirror`, `task-mirror`, `push-dispatch`, and `github-activity`
-are ported.
+`slot-mirror`, `task-mirror`, `push-dispatch`, `github-activity`,
+and the Google / M365 / iCloud / ICS calendar routes are ported.
 
 | Route | User-data tables | Blocker |
 |---|---|---|
-| `google-oauth` / `google-sync` / `google-events` / `google-webhook` / `google-contacts` | `calendar_accounts`, `external_events`, `user_settings`, `contacts_directory` | Vault refresh tokens + Google APIs |
-| `m365-oauth` / `m365-sync` | `calendar_accounts`, `external_events` | Vault + Microsoft |
-| `icloud-connect` / `icloud-sync` / `icloud-events` / `icloud-contacts` | `calendar_accounts`, `external_events`, `user_settings` | Vault + CalDAV/CardDAV |
-| `ics-subscribe` / `ics-sync` | `calendar_accounts`, `external_events` | feed pull + account rows |
-| `calendar-refresh` | `calendar_accounts` | token refresh via Vault |
+| `google-oauth` / `google-sync` / `google-events` / `google-webhook` / `google-contacts` | `calendar_accounts`, `external_events`, `user_settings`, `contacts_directory` | **Ported** — sealed tokens + Google APIs |
+| `m365-oauth` / `m365-sync` | `calendar_accounts`, `external_events` | **Ported** — sealed tokens + Graph |
+| `icloud-connect` / `icloud-sync` / `icloud-events` / `icloud-contacts` | `calendar_accounts`, `external_events`, `user_settings` | **Ported** — sealed app password + CalDAV/CardDAV |
+| `ics-subscribe` / `ics-sync` | `calendar_accounts`, `external_events` | **Ported** — sealed feed URL + SSRF guard |
+| `calendar-refresh` | `calendar_accounts` | **Ported** — Google + M365 + iCloud + ICS |
 | `apple-identity` | `apple_identities` | GoTrue identity link |
 | `delete-account` | almost every user table + Stripe cancel | Stripe + auth wipe |
 

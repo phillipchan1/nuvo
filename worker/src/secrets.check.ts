@@ -16,6 +16,7 @@ import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, handleSche
 import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 import { redactSecrets } from "./lib/redact.ts";
+import { tokenShapeOk } from "./lib/ms.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -261,6 +262,22 @@ try {
   ok(true, "github PAT: AAD user mismatch fails");
 }
 
+for (const row of [
+  { provider: "m365", secret: "M.R3_BAY.offline-m365-refresh-token-xx" },
+  { provider: "icloud", secret: "abcd-efgh-ijkl-mnop" },
+  { provider: "ics", secret: "https://cal.example.test/feed.ics" },
+] as const) {
+  const sealedRow = await sealToken(row.secret, aad, ringV1);
+  const openedRow = await openToken(sealedRow, aad, ringV1);
+  ok(openedRow === row.secret && tokenShapeOk(row.provider, openedRow), `${row.provider} offline decrypt shape`);
+  try {
+    await openToken(sealedRow, otherUser, ringV1);
+    ok(false, `${row.provider} offline decrypt rejects the wrong user`);
+  } catch {
+    ok(true, `${row.provider} offline decrypt rejects the wrong user`);
+  }
+}
+
 let acked = 0;
 let retried = 0;
 const consumed = await consumeCalendarSyncBatch(
@@ -284,7 +301,7 @@ const flippedConsumed = await consumeCalendarSyncBatch(
   },
   { CUTOVER_FLIPPED: "1" },
 );
-ok(flippedConsumed === 2 && flippedRetry === 1 && flippedAck === 1, "flipped queue: google without sql retries; other providers ack");
+ok(flippedConsumed === 2 && flippedRetry === 2 && flippedAck === 0, "flipped queue: google and ics without sql retry");
 
 const vaultSql = readFileSync(join(root, "docs/cloudflare-migration/vault_tokens.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(vaultSql), "vault_tokens.sql is SECURITY DEFINER");
