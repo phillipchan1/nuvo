@@ -1225,6 +1225,9 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/cloudflare-migration\/migration_tmp\.sql/);
     expect(doc).toMatch(/SECURITY DEFINER/);
     expect(doc).toMatch(/migration_reader/);
+    expect(doc).toMatch(/permission denied for schema auth/);
+    expect(doc).toMatch(/vault_tokens/);
+    expect(doc).toMatch(/supabase_admin/);
     expect(doc).toMatch(/DROP SCHEMA migration_tmp CASCADE/);
     expect(doc).toMatch(/Engineer 3/);
     expect(doc).toMatch(/public,graphql_public/);
@@ -1256,6 +1259,11 @@ describe("public-repo CI guard", () => {
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION migration_tmp\.auth_users\(\)/);
     expect(sql).toMatch(/GRANT USAGE ON SCHEMA migration_tmp TO migration_reader/);
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION migration_tmp\.auth_users\(\) TO migration_reader/);
+    expect(sql).toMatch(/GRANT USAGE ON SCHEMA auth TO postgres/);
+    expect(sql).toMatch(/GRANT SELECT \(\s*id,\s*raw_user_meta_data,\s*email,\s*email_confirmed_at,\s*created_at,\s*updated_at\s*\) ON TABLE auth\.users TO postgres/);
+    expect(sql).toMatch(/GRANT SELECT \(\s*id,\s*user_id,\s*provider,\s*identity_data,\s*provider_id,\s*created_at,\s*updated_at\s*\) ON TABLE auth\.identities TO postgres/);
+    expect(sql).toMatch(/supabase_admin/);
+    expect(sql).not.toMatch(/GRANT USAGE ON SCHEMA auth TO migration_reader/);
     expect(sql).toMatch(/DROP SCHEMA migration_tmp CASCADE/);
     expect(sql).toMatch(/Engineer 3/);
     expect(sql).toMatch(/public,graphql_public/);

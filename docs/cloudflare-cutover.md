@@ -148,20 +148,27 @@ post-cutover drop) is
 [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 It is **not** under `supabase/migrations` and must not be `db push`ed.
 
-**Already applied on Supabase prod** by Engineer 3 via the management API
+**Wrappers applied on Supabase prod** by Engineer 3 via the management API
 SQL editor. Verified 2026-10-26 (PT) from live `pg_get_functiondef` + the
 grant catalog: owner `postgres`, `SECURITY DEFINER`, `search_path=""`,
 `EXECUTE` for `migration_reader` only. PostgREST `db_schema` is
 `public,graphql_public`, so `migration_tmp` is not exposed.
 
-The cutover source role (`migration_reader`) is read-only and has **no
-`USAGE` on `auth`** — `SELECT` / `COPY` from `auth.users` /
-`auth.identities` fails with `permission denied for schema auth`. The
-workflow therefore `COPY`s `migration_tmp.auth_users()` /
-`migration_tmp.auth_identities()`. Bodies project only `name` / `full_name`
+The Oct 26 dry runs (`workflow_dispatch` 40380281025 / 40380492458)
+failed with `permission denied for schema auth` because the job `COPY`ed
+`auth.users` directly as `migration_reader`. The workflow now `COPY`s
+`migration_tmp.auth_users()` / `migration_tmp.auth_identities()` — same
+pattern as `vault_tokens()`. Bodies project only `name` / `full_name`
 (and identity `sub` / `provider_id`) through `pg_catalog.jsonb_build_object`
 + `jsonb_strip_nulls`. Password hashes, recovery tokens, and other GoTrue
-secrets never leave `auth`.
+secrets never leave `auth`. **Never `GRANT USAGE` on `auth` to
+`migration_reader`.**
+
+The DEFINER is `postgres`, which on hosted Supabase is not a superuser
+and has no `USAGE` on `auth` either. Re-apply
+[`migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql) and the
+`GRANT` block at the bottom **as `supabase_admin`** (auth schema owner)
+before the next dry run — column `SELECT` only, for the COPY columns.
 
 After cutover is signed off and `SOURCE_DATABASE_URL` is deleted:
 

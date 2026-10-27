@@ -1,18 +1,36 @@
 -- migration_tmp — source-only SECURITY DEFINER readers for the cutover.
+-- Same trust model as vault_tokens.sql: owner postgres, SECURITY DEFINER,
+-- search_path="", EXECUTE for migration_reader only. Never GRANT USAGE
+-- on schema auth to migration_reader.
 --
 -- This is NOT a supabase/migrations file. Do not `db push` it. PostgREST
 -- would see it only if `migration_tmp` were added to the exposed schemas;
 -- it must not be. Prod `db_schema` is `public,graphql_public` (verified
 -- 2026-10-26), so these functions are not on PostgREST.
 --
--- Already applied on Supabase prod (nuvo). Engineer 3 created it via the
--- Supabase management API SQL editor. Verified 2026-10-26 (PT) against
--- live `pg_get_functiondef` + grant catalog: owner postgres, SECURITY
--- DEFINER, search_path="", EXECUTE for migration_reader only.
+-- Engineer 3 created the wrappers via the Supabase management API SQL
+-- editor. Verified 2026-10-26 (PT) against live `pg_get_functiondef` +
+-- the grant catalog: owner postgres, SECURITY DEFINER, search_path="",
+-- EXECUTE for migration_reader only.
 --
--- Bodies below match that live `pg_get_functiondef` exactly
+-- The Oct 26 dry runs (workflow_dispatch 40380281025 / 40380492458)
+-- still failed: the job COPYed auth.users directly as migration_reader
+-- (`permission denied for schema auth`). The workflow now COPYs these
+-- functions. They run as postgres, and on hosted Supabase postgres is
+-- not a superuser — it has no USAGE on auth either. The column GRANT
+-- block below (supabase_admin only) is the missing privilege. Same
+-- pattern as vault_tokens(): the DEFINER reads the privileged schema;
+-- migration_reader only EXECUTEs.
+--
+-- Bodies match that live `pg_get_functiondef` exactly
 -- (`SET search_path TO ''`, pg_catalog-qualified jsonb_build_object /
--- jsonb_strip_nulls). Re-apply only if prod drifts.
+-- jsonb_strip_nulls).
+--
+-- Apply by hand (Phil / tech lead). Do NOT run from CI or
+-- cutover-migrate.yml.
+--   1. This file as postgres (or supabase_admin) — functions + EXECUTE.
+--   2. The GRANT block after COMMIT as supabase_admin (auth owner).
+--      A 42501 on that block means the session is still postgres.
 --
 -- After cutover is signed off and SOURCE_DATABASE_URL is deleted:
 --   DROP SCHEMA migration_tmp CASCADE;
@@ -42,14 +60,25 @@
 --          has_schema_privilege('service_role', n.oid, 'USAGE') AS svc_u,
 --          has_schema_privilege('migration_reader', n.oid, 'USAGE') AS reader_u
 --   FROM pg_namespace n
---   WHERE n.nspname = 'migration_tmp';
+--   WHERE n.nspname IN ('migration_tmp', 'auth');
+--   -- reader_u on auth must be false. Then, as a member of migration_reader:
+--   SET ROLE migration_reader;
 --   SELECT 'auth_users' AS t, COUNT(*)::bigint AS n FROM migration_tmp.auth_users()
 --   UNION ALL
 --   SELECT 'auth_identities', COUNT(*) FROM migration_tmp.auth_identities();
+--   RESET ROLE;
 
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS migration_tmp;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_reader') THEN
+    CREATE ROLE migration_reader NOLOGIN;
+  END IF;
+END
+$$;
 
 -- CREATE OR REPLACE cannot change a SETOF / TABLE shape. Drop first.
 DROP FUNCTION IF EXISTS migration_tmp.auth_users();
@@ -76,8 +105,31 @@ REVOKE ALL ON SCHEMA migration_tmp FROM PUBLIC;
 REVOKE ALL ON SCHEMA migration_tmp FROM anon, authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION migration_tmp.auth_users() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION migration_tmp.auth_identities() FROM PUBLIC, anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA migration_tmp TO postgres;
 GRANT USAGE ON SCHEMA migration_tmp TO migration_reader;
 GRANT EXECUTE ON FUNCTION migration_tmp.auth_users() TO migration_reader;
 GRANT EXECUTE ON FUNCTION migration_tmp.auth_identities() TO migration_reader;
 
 COMMIT;
+
+-- supabase_admin only (owns schema auth). postgres is the SECURITY DEFINER
+-- owner and needs USAGE + column SELECT so auth_users() / auth_identities()
+-- can read what COPY needs. Never GRANT USAGE on auth to migration_reader.
+GRANT USAGE ON SCHEMA auth TO postgres;
+GRANT SELECT (
+  id,
+  raw_user_meta_data,
+  email,
+  email_confirmed_at,
+  created_at,
+  updated_at
+) ON TABLE auth.users TO postgres;
+GRANT SELECT (
+  id,
+  user_id,
+  provider,
+  identity_data,
+  provider_id,
+  created_at,
+  updated_at
+) ON TABLE auth.identities TO postgres;
