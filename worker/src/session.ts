@@ -18,7 +18,10 @@ export async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
 export async function requireStore(
   c: Context<AppEnv>,
   raw?: Request,
-): Promise<{ store: Store; email: string | null } | { error: Response }> {
+): Promise<
+  | { store: Store; email: string | null; user: { id: string; email?: string | null; emailVerified: boolean } }
+  | { error: Response }
+> {
   const io = await requestIo(c);
   let user;
   try {
@@ -33,5 +36,5 @@ export async function requireStore(
   const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
     emailVerified: user.emailVerified,
   });
-  return { store, email: user.email ?? null };
+  return { store, email: user.email ?? null, user };
 }

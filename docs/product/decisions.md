@@ -6301,3 +6301,11 @@ Trigger `* * * * *` plus `/api/cron/push-dispatch`. Tests:
 `worker/src/pushDispatch.check.ts` (mocked endpoint, claim, gone),
 `worker/src/access.check.ts` (delete-missing then upsert). Inventory:
 [`cloudflare-migration/inventory.md`](../cloudflare-migration/inventory.md).*
+
+**D-168 · 2026-10-27 · Delete-account on the Worker does not cancel Stripe; it blocks a charging Stripe row and names Apple.**
+
+D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret and must not call the Stripe API (port rule). So the wipe **refuses** while the session user's `subscriptions` row is a Stripe subscription (`plan_source = stripe`, or leftover `stripe_subscription_id`) **and** status is `active` / `past_due` / `unpaid` / `trialing` — even if `plan_source` is now `apple`. Period end and customer-id-alone are not a gate. An unknown stripe status fails closed. A no-card trial (no Stripe subscription) and a StoreKit-only row can delete. Apple copy is Settings → your name → Subscriptions — never a Stripe sentence. (#105 on master took D-167 for the mirrors.)
+
+**Anchor.** Same leave path as D-117 (O4 stays ○). Strains **P8** (Account still holds identity *and* leave). Four no's: no pool, no new name, works with a missing or empty billing row, not builder-only.
+
+*Status: built — `tests/delete-account-worker.test.ts`, `tests/delete-account-ui.test.tsx`.*

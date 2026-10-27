@@ -31,6 +31,7 @@ import {
   updateSettingsTheme,
   updateTaskTitle,
   upsertOwned,
+  appleUserIdTakenByOther,
   deleteOwnedCalendarAccount,
   getOwnedActivitySource,
   getOwnedAppleIdentity,
@@ -616,6 +617,8 @@ ok(
   (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [B])) === "apple-sub-b",
   "upsert apple_identities: B sub unchanged",
 );
+ok(await appleUserIdTakenByOther(storeA, "apple-sub-b"), "apple identity: B's sub is taken from A's view");
+ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a")), "apple identity: own sub is not taken-by-other");
 
 ok(!(await listOwnedConnections(storeA)).some((row) => row.id === CONN_B), "list connections: A cannot list B");
 ok((await insertConnection(storeA, { app: "x", name: "A2", token_hash: "hash-a2" }))?.user_id === A, "insert connections: row is A's");

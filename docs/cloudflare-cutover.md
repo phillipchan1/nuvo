@@ -43,7 +43,8 @@ None of these belong in the Vite bundle.
 |---|---|---|
 | `HYPERDRIVE` | Worker binding | **Production / `wrangler dev` only.** Preview does not bind it |
 | `DATABASE_URL` | secret | **Required on preview.** Optional local fallback when Hyperdrive is set |
-| `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
+| `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes). During a keyring rotation this **must stay the OLD secret** (BA's `legacySecret` for bare-hex). Set it to NEW while `BETTER_AUTH_SECRETS=2:NEW,1:OLD` and old tokens open to null — Apple revoke is silently skipped |
+| `BETTER_AUTH_SECRETS` | secret (optional) | BA keyring `2:<current>,1:<previous>`. First entry is the write version. Unset → `secretConfig` is the string `BETTER_AUTH_SECRET`. The previous secret belongs here **and** in `BETTER_AUTH_SECRET`, not only in the keyring |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
 | `RESEND_API_KEY` | secret | OTP email + inbound-email body fetch. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |
@@ -52,13 +53,17 @@ None of these belong in the Vite bundle.
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
 | `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job` and `/api/push-dispatch`, compared in constant time. Unset or mismatch → 401. Until `CUTOVER_FLIPPED`, every cron and cron-bearer route (including github-activity `action: "sync"` and google-sync / google-contacts / google-events) returns 200 `{ skipped: true, reason: "cutover_not_flipped" }` and does not open the DB. After flip: rollover, purge-trash, reminder-deliveries-prune, push-dispatch, github-poll, trim-sync-log, `google-renew`, `calendar-dispatch`, `google-resubscribe` run. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound |
 | `CUTOVER_FLIPPED` | var | **Allowlist only:** `1` / `true` / `yes` / `on` (trimmed, case-insensitive). Unset, empty, and anything else (`garbage`, `maybe`, `2`, `false`, `0`) is not flipped. Set only after runbook step 8. One helper: `gateCron` / `gateCronBearerRoute` in `worker/src/cutoverFlip.ts`. Freeze is not a substitute — freeze 503s writes only. Until then Worker crons, push-dispatch bearer routes, github-activity `action: "sync"` with `CRON_SECRET`, and google-sync / google-contacts / google-events cron-bearer routes stay skipped |
-| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id` |
+| `APPLE_CLIENT_ID` | secret | Better Auth Apple provider (Services ID or bundle id) |
+| `APPLE_CLIENT_SECRET` | secret | Better Auth Apple `client_secret` JWT. **Not** `STRIPE_SECRET` |
+| `APPLE_BUNDLE_ID` | secret | Native SIWA; revoke/exchange fallback client id |
+| `APPLE_SIWA_TEAM_ID` / `APPLE_SIWA_KEY_ID` / `APPLE_SIWA_PRIVATE_KEY` / `APPLE_SIWA_CLIENT_ID` | secrets | Authorization-code exchange + Apple `/auth/revoke` (guideline 5.1.1(v)) |
+| `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id`. Unset or invalid → fail closed (Apple refresh token is not stored; 503, no plaintext) |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **Same pair as today's Supabase function** — a new pair breaks every existing subscription |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh |
 | `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
-| `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
+| `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `APP_URL` | var | SPA origin for the post-consent redirect |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |

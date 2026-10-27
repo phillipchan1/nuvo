@@ -62,6 +62,8 @@ import {
   upsertOwned,
   type PlannerTable,
 } from "./store.ts";
+import { persistAppleIdentity } from "./appleIdentity.ts";
+import { deleteOwnedAccount } from "./deleteAccount.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -442,6 +444,35 @@ app.all("/api/day", (c) => handleDay(c));
 app.all("/api/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/api/inbound-email", (c) => handleInboundEmail(c));
 app.all("/api/route-events", (c) => handleRouteEvents(c));
+
+app.options("/api/apple-identity", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/delete-account", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/apple-identity", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/delete-account", () => new Response("ok", { headers: OPEN_CORS }));
+
+app.post("/api/apple-identity", async (c) => {
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  const body = await readJson<unknown>(c).catch(() => ({}));
+  return persistAppleIdentity(got.store, got.user, body, c.env);
+});
+app.post("/functions/v1/apple-identity", async (c) => {
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  const body = await readJson<unknown>(c).catch(() => ({}));
+  return persistAppleIdentity(got.store, got.user, body, c.env);
+});
+
+app.post("/api/delete-account", async (c) => {
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return deleteOwnedAccount(got.store, got.user, await readJson<unknown>(c), c.env);
+});
+app.post("/functions/v1/delete-account", async (c) => {
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return deleteOwnedAccount(got.store, got.user, await readJson<unknown>(c), c.env);
+});
 
 app.all("/functions/v1/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
 app.all("/functions/v1/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));

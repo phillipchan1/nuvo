@@ -82,6 +82,7 @@ describe("the two doors still mount Delete account", () => {
     expect(deleteSecret).toHaveLength(1);
     expect(readFileSync(`supabase/migrations/${deleteSecret[0]}`, "utf8")).toMatch(/function public\.delete_secret/);
     expect(existsSync("supabase/functions/delete-account/index.ts")).toBe(true);
+    expect(existsSync("worker/src/deleteAccount.ts")).toBe(true);
     expect(existsSync("supabase/migrations/00000000000070_plan_source.sql")).toBe(false);
 
     const planSource = readdirSync("supabase/migrations").filter((f) => f.endsWith("_plan_source.sql"));
