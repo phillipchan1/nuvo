@@ -20,7 +20,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Piece | Today | After cutover | Rollback |
 |---|---|---|---|
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
-| Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | `CUTOVER_FLIPPED=false` + unfreeze. Clients already baked with `VITE_API_BASE_URL` stay asking `/api/maintenance` and stay on Supabase until flipped again |
+| Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | **24h after flip only.** Set `CUTOVER_FLIPPED` back, then freeze Neon writes (`MAINTENANCE_WRITE_FREEZE`). Never drop or reset Neon. After 24h, fix forward |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Same flag flip |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
@@ -62,6 +62,7 @@ None of these belong in the Vite bundle.
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **Same pair as today's Supabase function** — a new pair breaks every existing subscription |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh |
 | `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
+| `MIN_CLIENT_VERSION` | var | Floor the SPA reads as `min_version` from `GET /api/maintenance`. Unset / empty → clients **fail open** (no update wall). Set on the Worker deploy (below) when a shipped binary must stop writing |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
@@ -170,7 +171,8 @@ DROP SCHEMA migration_tmp CASCADE;
 ```
 
 That drop is a source-side cleanup, not a rollback step. Supabase itself
-stays up (clear `VITE_API_BASE_URL`) until you decide otherwise.
+stays up. Rollback is `CUTOVER_FLIPPED=false` (see below), not clearing
+`VITE_API_BASE_URL`.
 
 Client build-time:
 
@@ -204,6 +206,9 @@ npm run cf:preview:dry-run
 
 # Deploy ONLY the preview env (this PR does not run this)
 npx wrangler deploy --env preview
+
+# Client floor. Unset = fail-open. Set when a shipped binary must stop writing.
+npx wrangler vars put MIN_CLIENT_VERSION --env preview
 ```
 
 Do **not** run `wrangler deploy` without `--env preview`. Do **not** attach a
@@ -455,7 +460,9 @@ Order:
    or as rollback — rollback is `CUTOVER_FLIPPED=false` plus unfreeze.
    Or **unfreeze** — apply `unfreeze.sql`, which restores the recorded
    ACLs and each job's prior `active` exactly (idempotent), then clear
-   `CUTOVER_ARMED` and `WRITE_FREEZE`.
+   `CUTOVER_ARMED` and `WRITE_FREEZE`. Rollback of a flipped Worker is
+   the dedicated section below — not this unfreeze, and not clearing
+   `VITE_API_BASE_URL`.
 8. **Flip Worker crons** — in this order, and not before:
    1. `cron.unschedule` Supabase `nuvo-github-poll` and
       `nuvo-trim-sync-log` (and any other `nuvo-*` job that would
@@ -468,6 +475,44 @@ Order:
       200 `{ skipped: true }` on `github-poll`, `trim-sync-log`, and
       github-activity `action: "sync"` with `CRON_SECRET`. The freeze
       is not enough.
+
+---
+
+## Rollback (24 hours after flip)
+
+The rollback window is **24 hours after the flip**. After that, fix
+forward only. Do not drop or reset Neon.
+
+1. Set `CUTOVER_FLIPPED` back (unset, empty, `false`, or any value that
+   is not `1` / `true` / `yes` / `on`). Clients already baked with
+   `VITE_API_BASE_URL` ask `GET /api/maintenance` at launch and stay on
+   Supabase. Do not clear the bake.
+2. Freeze Neon writes through the Worker's existing mechanism:
+   `MAINTENANCE_WRITE_FREEZE` (same parse as the live freeze). This is
+   not a substitute for step 1 — freeze 503s Worker writes; the flag
+   is what sends the SPA back to Supabase.
+3. Export every row changed since the flip, per planner table, as a
+   **count** plus an **encrypted dump**. Filter on
+   `field_ts` / `updated_at` (whichever the table carries) `>` the flip
+   timestamp. On the orchestrator box only:
+
+   ```bash
+   # Key lives on the box. Name the path. Never print or commit the value.
+   #   /home/box/agent-data/nuvo-rollback/rollback.key
+   mkdir -p /home/box/agent-data/nuvo-rollback
+   # per table: count, then \copy | gpg/age
+   psql "$NEON_DATABASE_URL" -c "SELECT count(*) FROM ${TABLE} WHERE coalesce(updated_at, to_timestamp(0)) > '${FLIP_TS}'"
+   psql "$NEON_DATABASE_URL" -c "\\copy (SELECT * FROM ${TABLE} WHERE coalesce(updated_at, to_timestamp(0)) > '${FLIP_TS}') TO STDOUT" \
+     | gpg --symmetric --cipher-algo AES256 --batch --passphrase-file /home/box/agent-data/nuvo-rollback/rollback.key \
+     > /home/box/agent-data/nuvo-rollback/${TABLE}.csv.gpg
+   ```
+
+   `age` is the same shape (`age -e -p` / `-i` against that key path).
+   The dump stays on the orchestrator. It is not a CI artifact.
+
+The rollback report line includes the **stranded-row count per table**
+(the `count(*)` above). Those rows were written on Neon after the flip
+and will not be on Supabase.
 
 ---
 
@@ -485,7 +530,7 @@ It does **not** skip `VITE_SUPABASE_*` — those stay baked so a rollback
 |---|---|---|
 | Before cutover (today) | unset / empty | Supabase, same as now |
 | Workers preview | `https://nuvo-preview.<account>.workers.dev/api` | Worker `/api/auth`, `/api/data`, `/api/rpc`. Absolute URL — the IPA is a WKWebView loading local files, so `/api` will not resolve |
-| Rollback | clear the variable | Supabase again after the next TestFlight build |
+| Rollback (24h window) | leave the bake | Set `CUTOVER_FLIPPED=false`. Clients already baked ask `GET /api/maintenance` and stay on Supabase. Do not clear the variable |
 
 ### Signing (current target)
 

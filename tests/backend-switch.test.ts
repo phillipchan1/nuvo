@@ -158,4 +158,99 @@ describe("resolveLaunchBackend", () => {
     expect(workersEnabled).toBe(false);
     await expect(writeFrozen()).resolves.toBe(false);
   });
+
+  it("persists a flip so a later launch timeout stays on the Worker", async () => {
+    const memory = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+      removeItem: (key: string) => { memory.delete(key); },
+    });
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.nuvo.day");
+    const { CUTOVER_FLIP_STORAGE_KEY, resolveLaunchBackend, LAUNCH_TIMEOUT_MS, resetMaintenanceCacheForTests } =
+      await import("../src/lib/maintenance");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ write_freeze: false, cutover_flipped: true }), { status: 200 }),
+      ),
+    );
+    await resolveLaunchBackend();
+    expect(workersEnabled).toBe(true);
+    expect(localStorage.getItem(CUTOVER_FLIP_STORAGE_KEY)).toBe("1");
+
+    const saved = localStorage.getItem(CUTOVER_FLIP_STORAGE_KEY);
+    resetWorkersEnabledForTests();
+    resetMaintenanceCacheForTests();
+    if (saved) localStorage.setItem(CUTOVER_FLIP_STORAGE_KEY, saved);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+      ),
+    );
+    vi.useFakeTimers();
+    const pending = resolveLaunchBackend();
+    await vi.advanceTimersByTimeAsync(LAUNCH_TIMEOUT_MS + 20);
+    await pending;
+    vi.useRealTimers();
+    expect(workersEnabled).toBe(true);
+  });
+
+  it("explicit cutover_flipped:false unflips a persisted Worker launch", async () => {
+    const memory = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+      removeItem: (key: string) => { memory.delete(key); },
+    });
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.nuvo.day");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ write_freeze: false, cutover_flipped: true }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ write_freeze: false, cutover_flipped: false }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const { resolveLaunchBackend, writeFrozen, CUTOVER_FLIP_STORAGE_KEY } = await import("../src/lib/maintenance");
+    await resolveLaunchBackend();
+    expect(workersEnabled).toBe(true);
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(6_000);
+    await writeFrozen();
+    vi.useRealTimers();
+    expect(workersEnabled).toBe(false);
+    expect(localStorage.getItem(CUTOVER_FLIP_STORAGE_KEY)).toBeNull();
+  });
+
+  it("omitting cutover_flipped after a flip stays sticky", async () => {
+    const memory = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+      removeItem: (key: string) => { memory.delete(key); },
+    });
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.nuvo.day");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ write_freeze: false, cutover_flipped: true }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ write_freeze: false }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { resolveLaunchBackend, writeFrozen, CUTOVER_FLIP_STORAGE_KEY } = await import("../src/lib/maintenance");
+    await resolveLaunchBackend();
+    expect(workersEnabled).toBe(true);
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(6_000);
+    await writeFrozen();
+    vi.useRealTimers();
+    expect(workersEnabled).toBe(true);
+    expect(localStorage.getItem(CUTOVER_FLIP_STORAGE_KEY)).toBe("1");
+  });
 });

@@ -52,7 +52,7 @@ describe("maintenance min_version gate", () => {
     await expect(assertWritable()).rejects.toThrow(UPDATE_REQUIRED_MESSAGE);
   });
 
-  it("fails closed when the Worker omits min_version", async () => {
+  it("fails open when the Worker omits min_version", async () => {
     vi.stubEnv("VITE_MAINTENANCE_URL", "https://api.nuvo.day/api/maintenance");
     vi.stubGlobal(
       "fetch",
@@ -62,8 +62,8 @@ describe("maintenance min_version gate", () => {
     );
     const { resolveLaunchBackend } = await import("../src/lib/maintenance");
     await resolveLaunchBackend();
-    expect(clientBelowMinVersion()).toBe(true);
-    await expect(assertWritable()).rejects.toThrow(UPDATE_REQUIRED_MESSAGE);
+    expect(clientBelowMinVersion()).toBe(false);
+    await expect(assertWritable()).resolves.toBeUndefined();
   });
 
   it("does not block writes when min_version is at or below this build", async () => {

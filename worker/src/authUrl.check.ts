@@ -206,6 +206,8 @@ const webCors = apiCors("https://app.nuvo.day", { BETTER_AUTH_URL: "https://api.
 ok(webCors["Access-Control-Allow-Origin"] === "https://app.nuvo.day", "apiCors echoes app.nuvo.day");
 ok(needsCredentialedCors("/api/data/tasks"), "data routes use credentialed CORS");
 ok(needsCredentialedCors("/api/google-oauth"), "google-oauth uses credentialed CORS");
+ok(needsCredentialedCors("/api/icloud-events"), "icloud-events uses credentialed CORS");
+ok(needsCredentialedCors("/api/agent"), "agent uses credentialed CORS");
 ok(!needsCredentialedCors("/api/entitlement"), "entitlement stays off the credentialed list");
 
 const health = await app.request("http://localhost/api/health");

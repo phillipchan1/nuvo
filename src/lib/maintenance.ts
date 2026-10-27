@@ -17,6 +17,7 @@ export const UPDATE_REQUIRED_MESSAGE =
 
 const TTL_MS = 5_000;
 export const LAUNCH_TIMEOUT_MS = 4_000;
+export const CUTOVER_FLIP_STORAGE_KEY = "nuvo.cutover_flipped";
 
 let cached: { frozen: boolean; at: number } | null = null;
 let seenArmed = false;
@@ -24,6 +25,23 @@ let seenFlipped = false;
 let minVersion: string | null = null;
 let resolved = false;
 let sawMaintenanceBody = false;
+
+function readPersistedFlip(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(CUTOVER_FLIP_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistFlip(on: boolean): void {
+  try {
+    if (on) globalThis.localStorage?.setItem(CUTOVER_FLIP_STORAGE_KEY, "1");
+    else globalThis.localStorage?.removeItem(CUTOVER_FLIP_STORAGE_KEY);
+  } catch {
+    // Private mode / missing storage — memory still holds the launch decision.
+  }
+}
 
 function flagOn(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase() ?? "";
@@ -54,6 +72,7 @@ export function resetMaintenanceCacheForTests(): void {
   minVersion = null;
   resolved = false;
   sawMaintenanceBody = false;
+  persistFlip(false);
 }
 
 /** Allowlisted truthy. `Boolean("false")` is a JS trap — do not use it. */
@@ -85,7 +104,7 @@ function currentAppVersion(): string {
 
 export function clientBelowMinVersion(): boolean {
   if (!resolved || !sawMaintenanceBody) return false;
-  if (!minVersion) return true;
+  if (!minVersion) return false;
   return isBelowMinVersion(currentAppVersion(), minVersion);
 }
 
@@ -105,19 +124,27 @@ function applyMaintenanceBody(body: {
   const armed = parseMaintenanceFlag(body.cutover_armed);
   if (armed === true || bakedArmed()) seenArmed = true;
   const flipped = parseMaintenanceFlag(body.cutover_flipped);
-  if (flipped === true) seenFlipped = true;
+  if (flipped === true) {
+    seenFlipped = true;
+    persistFlip(true);
+  } else if (flipped === false) {
+    seenFlipped = false;
+    persistFlip(false);
+  }
 
   minVersion = readMinVersion(body);
 
   if (atLaunch) {
     setWorkersEnabled(seenFlipped);
+  } else if (flipped === false) {
+    setWorkersEnabled(false);
   } else if (flipped === true && !workersEnabled) {
     requestMidSessionReload();
     return;
   } else if (seenFlipped && !workersEnabled) {
     setWorkersEnabled(true);
   }
-  // {} or cutover_flipped:false after a sticky flip must not unflip.
+  // {} omit after a sticky flip must not unflip. Explicit false unflips (rollback).
 
   cached = {
     frozen: parseMaintenanceFlag(body.write_freeze) === true || clientBelowMinVersion(),
@@ -127,8 +154,11 @@ function applyMaintenanceBody(body: {
 
 function failSafe(): void {
   // Pre-flip: behave like master (fail-open). Armed or already flipped: freeze.
+  // A persisted flip (relaunch after the switch) stays on the Worker.
+  if (readPersistedFlip()) seenFlipped = true;
   cached = { frozen: seenArmed || seenFlipped || bakedArmed(), at: Date.now() };
-  if (!seenFlipped) setWorkersEnabled(false);
+  if (seenFlipped) setWorkersEnabled(true);
+  else setWorkersEnabled(false);
 }
 
 async function fetchMaintenance(url: string, timeoutMs: number): Promise<Response> {
@@ -143,6 +173,7 @@ async function fetchMaintenance(url: string, timeoutMs: number): Promise<Respons
 
 /** Launch-time backend choice. One binary works before and after the flip. */
 export async function resolveLaunchBackend(): Promise<void> {
+  if (readPersistedFlip()) seenFlipped = true;
   if (bakedFreeze()) {
     cached = { frozen: true, at: Date.now() };
     resolved = true;

@@ -62,13 +62,38 @@ const CREDENTIALED_CORS_PREFIXES = [
   "/api/calendar-refresh",
   "/api/m365-oauth",
   "/api/icloud-connect",
+  "/api/icloud-events",
   "/api/ics-subscribe",
+  "/api/auth",
+  "/api/agent",
+  "/api/mcp",
+  "/api/capture",
+  "/api/delete-account",
+  "/api/apple-identity",
+  "/api/task-mirror",
+  "/api/slot-mirror",
+  "/api/github-activity",
+  "/api/route-events",
+  "/api/rollover",
+  "/api/day",
   "/functions/v1/google-oauth",
   "/functions/v1/google-events",
   "/functions/v1/calendar-refresh",
   "/functions/v1/m365-oauth",
   "/functions/v1/icloud-connect",
+  "/functions/v1/icloud-events",
   "/functions/v1/ics-subscribe",
+  "/functions/v1/agent",
+  "/functions/v1/mcp",
+  "/functions/v1/capture",
+  "/functions/v1/delete-account",
+  "/functions/v1/apple-identity",
+  "/functions/v1/task-mirror",
+  "/functions/v1/slot-mirror",
+  "/functions/v1/github-activity",
+  "/functions/v1/route-events",
+  "/functions/v1/rollover",
+  "/functions/v1/day",
 ];
 
 export function needsCredentialedCors(path: string): boolean {
@@ -88,6 +113,30 @@ export function authCors(origin: string | null | undefined, env: Env): Record<st
   const allowed = trustedAuthOrigins(env);
   const echoed = origin && allowed.includes(origin) ? origin : allowed[0];
   return credentialedCors(echoed);
+}
+
+/**
+ * Stamp the reflected origin LAST on a live Response.
+ *
+ * Hono 4.13 copies the previous `c.res` headers onto a newly assigned
+ * Response (`headers.set` for every old key). A handler that sent
+ * `Access-Control-Allow-Origin: *` therefore overwrites a reflected
+ * origin unless this runs after that assignment. Always `Vary: Origin`.
+ * Never leave `*` alongside `Access-Control-Allow-Credentials`.
+ */
+export function reflectAllowOrigin(res: Response, origin: string | null | undefined): void {
+  res.headers.set("Vary", "Origin");
+  if (origin && origin !== "*") {
+    res.headers.set("Access-Control-Allow-Origin", origin);
+  } else {
+    res.headers.delete("Access-Control-Allow-Origin");
+  }
+  if (
+    res.headers.get("Access-Control-Allow-Credentials") === "true" &&
+    res.headers.get("Access-Control-Allow-Origin") === "*"
+  ) {
+    res.headers.delete("Access-Control-Allow-Origin");
+  }
 }
 
 /** JSON 500 when auth config throws. Echo ACAO+credentials only for loopback Origins. */

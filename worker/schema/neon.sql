@@ -7,6 +7,17 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Live Neon has these enums (supabase/migrations/00000000000001_core.sql +
+-- backlog in 00000000000004_flows.sql). Rehearsal TEXT hid the cast failure.
+DO $$ BEGIN
+  CREATE TYPE public.task_status AS ENUM ('inbox', 'planned', 'done', 'trashed', 'backlog');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TYPE public.task_priority AS ENUM ('none', 'low', 'medium', 'high');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY,
   email TEXT UNIQUE,
@@ -562,3 +573,92 @@ ALTER TABLE public.sprints ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFA
 ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Enum-cast the rehearsal TEXT columns so complete/trash match live Neon.
+ALTER TABLE public.tasks ALTER COLUMN status DROP DEFAULT;
+ALTER TABLE public.tasks
+  ALTER COLUMN status TYPE public.task_status USING status::public.task_status;
+ALTER TABLE public.tasks ALTER COLUMN status SET DEFAULT 'inbox';
+ALTER TABLE public.tasks ALTER COLUMN priority DROP DEFAULT;
+ALTER TABLE public.tasks
+  ALTER COLUMN priority TYPE public.task_priority USING priority::public.task_priority;
+ALTER TABLE public.tasks ALTER COLUMN priority SET DEFAULT 'none';
+
+-- Writable columns the Supabase path stores that the thin CREATE TABLE omitted.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS energy TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS sprint_id UUID;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS initiative_id UUID REFERENCES public.initiatives (id) ON DELETE SET NULL;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS assignee TEXT NOT NULL DEFAULT 'me';
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS prework TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS prework_at TIMESTAMPTZ;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_id UUID REFERENCES public.recurrences (id) ON DELETE SET NULL;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_date DATE;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_overridden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS big_rock_id TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS suggestion JSONB;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS suggested_at TIMESTAMPTZ;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS key_result_id UUID REFERENCES public.key_results (id) ON DELETE SET NULL;
+
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS context_at TIMESTAMPTZ;
+
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS tended_at TIMESTAMPTZ;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS verification JSONB;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS key_result_id UUID REFERENCES public.key_results (id) ON DELETE SET NULL;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS brief JSONB;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
+
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS momentum TEXT NOT NULL DEFAULT 'flat';
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS tended_at TIMESTAMPTZ;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS verification JSONB;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS brief JSONB;
+
+ALTER TABLE public.key_results ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.slots ADD COLUMN IF NOT EXISTS recurrence_id UUID REFERENCES public.recurrences (id) ON DELETE SET NULL;
+ALTER TABLE public.slots ADD COLUMN IF NOT EXISTS recurrence_date DATE;
+ALTER TABLE public.slots ADD COLUMN IF NOT EXISTS recurrence_overridden BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS freq TEXT NOT NULL DEFAULT 'weekly';
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS interval INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS byweekday INTEGER[] NOT NULL DEFAULT '{}'::integer[];
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS bymonthday INTEGER;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS anchor_date DATE;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS until_date DATE;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS max_count INTEGER;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS exdates DATE[] NOT NULL DEFAULT '{}'::date[];
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS time_of_day_minutes INTEGER;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES public.projects (id) ON DELETE SET NULL;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS domain_id UUID REFERENCES public.domains (id) ON DELETE SET NULL;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS priority public.task_priority NOT NULL DEFAULT 'none';
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS color TEXT;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS last_materialized DATE;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS bysetpos INTEGER;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS bymonth INTEGER;
+
+ALTER TABLE public.record_comments ADD COLUMN IF NOT EXISTS author_kind TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE public.record_comments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.sprints ADD COLUMN IF NOT EXISTS day_contexts JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS manual_domain_id UUID REFERENCES public.domains (id) ON DELETE SET NULL;
+
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS show_weather BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS auto_add_meet TEXT NOT NULL DEFAULT 'guests';
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS saved_views JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS default_task_duration_minutes INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS calendar_fit_hours INTEGER NOT NULL DEFAULT 13;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS calendar_domain_map JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS default_calendar_account_id UUID REFERENCES public.calendar_accounts (id) ON DELETE SET NULL;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS onboarding_completed_version INTEGER;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS default_calendar_id TEXT;

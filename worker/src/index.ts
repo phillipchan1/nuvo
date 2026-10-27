@@ -4,7 +4,7 @@ import { handleAgent } from "./agentHttp.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
-import { API_SECURITY, apiCors, beginAuthCors, json, needsCredentialedCors, OPEN_CORS } from "./cors.ts";
+import { API_SECURITY, apiCors, beginAuthCors, json, needsCredentialedCors, OPEN_CORS, reflectAllowOrigin } from "./cors.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -86,8 +86,12 @@ export function installWorkerFetchForTests(fn?: FetchLike): () => void {
 }
 
 /** Clone — Workers Response headers are immutable; mutating them becomes a plain-text 500. */
-function withClonedHeaders(res: Response, extra: Record<string, string>): Response {
-  const headers = new Headers(res.headers);
+function withClonedHeaders(res: Response, extra: Record<string, string>, replaceCors = false): Response {
+  const headers = new Headers();
+  res.headers.forEach((value, key) => {
+    if (replaceCors && key.toLowerCase().startsWith("access-control-")) return;
+    headers.set(key, value);
+  });
   for (const [key, value] of Object.entries(extra)) {
     headers.set(key, value);
   }
@@ -98,15 +102,21 @@ app.use("*", async (c, next) => {
   await next();
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/") || path.startsWith("/functions/v1/")) {
-    const extra = { ...API_SECURITY };
+    const extra: Record<string, string> = { ...API_SECURITY };
+    let replaceCors = false;
     if (needsCredentialedCors(path)) {
       try {
         Object.assign(extra, apiCors(c.req.header("Origin"), c.env));
+        replaceCors = true;
       } catch {
         // BETTER_AUTH_URL unset — leave the handler's OPEN_CORS.
       }
     }
-    c.res = withClonedHeaders(c.res, extra);
+    c.res = withClonedHeaders(c.res, extra, replaceCors);
+    if (replaceCors) {
+      // After Hono copies old ACAO * onto this Response, origin last.
+      reflectAllowOrigin(c.res, extra["Access-Control-Allow-Origin"]);
+    }
   }
 });
 
