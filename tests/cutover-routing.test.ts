@@ -34,10 +34,11 @@ describe("supabase wrap — every .from / .rpc / invoke after the flip", () => {
     expect(src).toMatch(/currentAccessToken\(\)/);
   });
 
-  it("sync transport skips Worker apply_patch and PATCHes the row", () => {
+  it("sync transport uses apply_patch on both backends", () => {
     const src = read("src/lib/sync/transport.ts");
-    expect(src).toMatch(/!workersEnabled/);
     expect(src).toMatch(/apply_patch/);
+    expect(src).toMatch(/p_field_ts: op.fieldTs/);
+    expect(src).not.toMatch(/!workersEnabled/);
     expect(src).toMatch(/\.update\(op\.payload\)/);
   });
 });
@@ -61,8 +62,6 @@ describe("direct fetch / session call sites", () => {
     const settings = read("src/components/SettingsModal.tsx");
     expect(settings).toMatch(/currentAccessToken/);
     expect(settings).toMatch(/functionUrl\(provider === "google" \? "google-oauth" : "m365-oauth"\)/);
-    expect(settings).toMatch(/workersEnabled/);
-    expect(settings).toMatch(/useAuth/);
     const banner = read("src/components/ReconnectBanner.tsx");
     expect(banner).toMatch(/currentAccessToken/);
     expect(banner).toMatch(/functionUrl\(fn\)/);
@@ -109,12 +108,11 @@ describe("direct fetch / session call sites", () => {
   });
 });
 
-describe("release binaries bake VITE_API_BASE_URL", () => {
-  it("Mac release.yml and iOS ios-release.yml set https://api.nuvo.day", () => {
+describe("release binaries do not bake VITE_API_BASE_URL on this PR", () => {
+  it("Mac and iOS release workflows stay on master's variable / unset path", () => {
     const mac = read(".github/workflows/release.yml");
     const ios = read(".github/workflows/ios-release.yml");
-    expect(mac).toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
-    expect(ios).toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
-    expect(ios).not.toMatch(/vars\.VITE_API_BASE_URL/);
+    expect(mac).not.toMatch(/VITE_API_BASE_URL: https:\/\/api\.nuvo\.day/);
+    expect(ios).toMatch(/vars\.VITE_API_BASE_URL/);
   });
 });

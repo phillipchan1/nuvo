@@ -16,20 +16,33 @@ type Filter =
 
 type Order = { col: string; ascending: boolean; nullsFirst?: boolean };
 
-type Result<T> = { data: T; error: { message: string; code?: string } | null };
+type Result<T> = { data: T; error: { message: string; code?: string; status?: number } | null };
 
-function err(message: string, code?: string): { message: string; code?: string } {
-  return code ? { message, code } : { message };
+function err(message: string, code?: string, status?: number): { message: string; code?: string; status?: number } {
+  const out: { message: string; code?: string; status?: number } = { message };
+  if (code) out.code = code;
+  if (status != null) out.status = status;
+  return out;
 }
 
-function asError(e: unknown): { message: string; code?: string } {
+function asError(e: unknown): { message: string; code?: string; status?: number } {
   if (e && typeof e === "object" && "message" in e) {
     const code = "code" in e && typeof (e as { code?: unknown }).code === "string"
       ? (e as { code: string }).code
       : undefined;
-    return err(String((e as { message: unknown }).message), code);
+    const status = "status" in e && typeof (e as { status?: unknown }).status === "number"
+      ? (e as { status: number }).status
+      : undefined;
+    return err(String((e as { message: unknown }).message), code, status);
   }
   return err(e instanceof Error ? e.message : String(e));
+}
+
+function httpError(body: unknown, status: number, fallback: string): { message: string; code?: string; status?: number } {
+  const message = (body as { error?: string; message?: string } | null)?.error
+    ?? (body as { message?: string } | null)?.message
+    ?? fallback;
+  return err(message, String(status), status);
 }
 
 function applyFilters(rows: Record<string, unknown>[], filters: Filter[]): Record<string, unknown>[] {
@@ -166,7 +179,7 @@ async function listTable(table: string, signal?: AbortSignal): Promise<Record<st
     const message = (body as { error?: string; message?: string } | null)?.error
       ?? (body as { message?: string } | null)?.message
       ?? `GET ${table} failed (${res.status})`;
-    throw Object.assign(new Error(message), { code: String(res.status) });
+    throw Object.assign(new Error(message), { code: String(res.status), status: res.status });
   }
   return rowsFrom(body);
 }
@@ -389,7 +402,7 @@ class WorkerQuery {
         );
         if (!res.ok) {
           const body = await readJson(res);
-          return { data: null, error: err((body as { error?: string })?.error ?? `delete failed (${res.status})`) };
+          return { data: null, error: httpError(body, res.status, `delete failed (${res.status})`) };
         }
         return { data: null, error: null };
       }
@@ -402,7 +415,7 @@ class WorkerQuery {
       });
       if (!res.ok && res.status !== 404) {
         const body = await readJson(res);
-        return { data: null, error: err((body as { error?: string })?.error ?? `delete failed (${res.status})`) };
+        return { data: null, error: httpError(body, res.status, `delete failed (${res.status})`) };
       }
       return { data: null, error: null };
     }
@@ -416,7 +429,7 @@ class WorkerQuery {
       });
       if (!res.ok && res.status !== 404) {
         const body = await readJson(res);
-        return { data: null, error: err((body as { error?: string })?.error ?? `delete failed (${res.status})`) };
+        return { data: null, error: httpError(body, res.status, `delete failed (${res.status})`) };
       }
     }
     return { data: null, error: null };
@@ -439,7 +452,7 @@ class WorkerQuery {
       });
       const body = await readJson(res);
       if (!res.ok) {
-        return { data: null, error: err((body as { error?: string })?.error ?? `update failed (${res.status})`) };
+        return { data: null, error: httpError(body, res.status, `update failed (${res.status})`) };
       }
       const next = rowFrom(body) ?? { ...row, ...patch, id: rowId };
       updated.push(next);
@@ -463,7 +476,7 @@ class WorkerQuery {
         });
         const body = await readJson(res);
         if (!res.ok) {
-          return { data: null, error: err((body as { error?: string })?.error ?? `write failed (${res.status})`) };
+          return { data: null, error: httpError(body, res.status, `write failed (${res.status})`) };
         }
         written.push(rowFrom(body) ?? (row as Record<string, unknown>));
         continue;
@@ -478,7 +491,7 @@ class WorkerQuery {
         if (this.upsertOpts?.ignoreDuplicates && (res.status === 400 || res.status === 409)) {
           continue;
         }
-        return { data: null, error: err((body as { error?: string })?.error ?? `write failed (${res.status})`) };
+        return { data: null, error: httpError(body, res.status, `write failed (${res.status})`) };
       }
       written.push(rowFrom(body) ?? (row as Record<string, unknown>));
     }
@@ -502,12 +515,7 @@ export async function workerRpc<T = unknown>(
     if (!res.ok) {
       return {
         data: null as T,
-        error: err(
-          (body as { error?: string; message?: string } | null)?.error
-            ?? (body as { message?: string } | null)?.message
-            ?? `rpc ${name} failed (${res.status})`,
-          String(res.status),
-        ),
+        error: httpError(body, res.status, `rpc ${name} failed (${res.status})`),
       };
     }
     const data = body && typeof body === "object" && "data" in body
@@ -522,7 +530,7 @@ export async function workerRpc<T = unknown>(
 export async function workerInvoke<T = unknown>(
   name: string,
   body?: Record<string, unknown>,
-): Promise<{ data: T | null; error: { message: string } | null }> {
+): Promise<{ data: T | null; error: { message: string; status?: number } | null }> {
   try {
     const headers = await workerAuthHeaders();
     const res = await fetch(edgeFunctionUrl(supabaseOrigin, name), {
@@ -540,7 +548,7 @@ export async function workerInvoke<T = unknown>(
       const message = (parsed as { error?: string; message?: string } | null)?.error
         ?? (parsed as { message?: string } | null)?.message
         ?? `${name} failed (${res.status})`;
-      return { data: parsed as T, error: { message } };
+      return { data: parsed as T, error: { message, status: res.status } };
     }
     return { data: parsed as T, error: null };
   } catch (e) {

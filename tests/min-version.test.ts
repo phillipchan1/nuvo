@@ -25,7 +25,8 @@ describe("parseVersion / isBelowMinVersion", () => {
     expect(isBelowMinVersion("0.1.1", "0.1.1")).toBe(false);
     expect(isBelowMinVersion("0.2.0", "0.1.99")).toBe(false);
     expect(isBelowMinVersion("1.0.0", "2.0.0")).toBe(true);
-    expect(isBelowMinVersion("bad", "1.0.0")).toBe(false);
+    expect(isBelowMinVersion("bad", "1.0.0")).toBe(true);
+    expect(isBelowMinVersion("1.0.0", "nope")).toBe(true);
   });
 
   it("reads min_version first, then the aliases", () => {
@@ -43,6 +44,20 @@ describe("maintenance min_version gate", () => {
       "fetch",
       vi.fn(async () =>
         new Response(JSON.stringify({ write_freeze: false, min_version: "99.0.0" }), { status: 200 }),
+      ),
+    );
+    const { resolveLaunchBackend } = await import("../src/lib/maintenance");
+    await resolveLaunchBackend();
+    expect(clientBelowMinVersion()).toBe(true);
+    await expect(assertWritable()).rejects.toThrow(UPDATE_REQUIRED_MESSAGE);
+  });
+
+  it("fails closed when the Worker omits min_version", async () => {
+    vi.stubEnv("VITE_MAINTENANCE_URL", "https://api.nuvo.day/api/maintenance");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ write_freeze: false, cutover_flipped: false }), { status: 200 }),
       ),
     );
     const { resolveLaunchBackend } = await import("../src/lib/maintenance");

@@ -92,6 +92,62 @@ function optId(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function optStr(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  return typeof value === "string" ? value : String(value);
+}
+
+function optNum(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+const PATCH_LOCKED = new Set(["id", "user_id", "created_at", "field_ts"]);
+
+function fieldTsMillis(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof value === "number" ? value : Date.parse(String(value));
+    if (Number.isFinite(n)) out[key] = n;
+  }
+  return out;
+}
+
+function decideLww(
+  stored: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  incomingTs: Record<string, unknown> | undefined,
+): { next: Record<string, unknown>; applied: string[]; rejected: string[]; nextTs: Record<string, string> } {
+  const now = Date.now();
+  const storedTs = fieldTsMillis(stored.field_ts);
+  const mineTs = fieldTsMillis(incomingTs);
+  const next: Record<string, unknown> = {};
+  const applied: string[] = [];
+  const rejected: string[] = [];
+  const nextTs: Record<string, string> = {};
+  for (const [key, value] of Object.entries(storedTs)) {
+    nextTs[key] = new Date(value).toISOString();
+  }
+  for (const key of Object.keys(patch)) {
+    if (PATCH_LOCKED.has(key)) {
+      rejected.push(key);
+      continue;
+    }
+    const mine = Math.min(mineTs[key] ?? now, now);
+    const theirs = storedTs[key];
+    if (theirs != null && mine <= theirs) {
+      rejected.push(key);
+      continue;
+    }
+    next[key] = patch[key];
+    nextTs[key] = new Date(mine).toISOString();
+    applied.push(key);
+  }
+  return { next, applied, rejected, nextTs };
+}
+
 /** Every FK on insert / update / upsert must resolve to a row this owner can read. */
 export async function assertOwnedFks(
   store: Store,
@@ -234,20 +290,44 @@ export async function insertTask(
     title: string;
     notes?: string;
     status?: string;
+    do_date?: string | null;
+    start_time?: string | null;
+    duration_minutes?: number | null;
+    deadline?: string | null;
+    priority?: string;
+    roll_count?: number;
+    completed_at?: string | null;
+    trashed_at?: string | null;
     project_id?: string | null;
     domain_id?: string | null;
     slot_id?: string | null;
     parent_task_id?: string | null;
+    sort_order?: number;
+    source?: string | null;
+    external_id?: string | null;
+    google_event_id?: string | null;
+    connection_id?: string | null;
   },
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, "tasks", row))) return null;
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
   const rows = await sql`
-    INSERT INTO tasks (id, user_id, title, notes, status, project_id, domain_id, slot_id, parent_task_id)
+    INSERT INTO tasks (
+      id, user_id, title, notes, status, do_date, start_time, duration_minutes,
+      deadline, priority, roll_count, completed_at, trashed_at,
+      project_id, domain_id, slot_id, parent_task_id, sort_order,
+      source, external_id, google_event_id, connection_id
+    )
     VALUES (
       ${id}, ${store.userId}, ${row.title}, ${row.notes ?? ""}, ${row.status ?? "inbox"},
-      ${row.project_id ?? null}, ${row.domain_id ?? null}, ${row.slot_id ?? null}, ${row.parent_task_id ?? null}
+      ${row.do_date ?? null}, ${row.start_time ?? null}, ${row.duration_minutes ?? null},
+      ${row.deadline ?? null}, ${row.priority ?? "none"}, ${row.roll_count ?? 0},
+      ${row.completed_at ?? null}, ${row.trashed_at ?? null},
+      ${row.project_id ?? null}, ${row.domain_id ?? null}, ${row.slot_id ?? null},
+      ${row.parent_task_id ?? null}, ${row.sort_order ?? 0},
+      ${row.source ?? null}, ${row.external_id ?? null}, ${row.google_event_id ?? null},
+      ${row.connection_id ?? null}
     )
     RETURNING *
   `;
@@ -470,10 +550,23 @@ export async function insertOwned(
       title: String(row.title ?? "Untitled"),
       notes: typeof row.notes === "string" ? row.notes : "",
       status: typeof row.status === "string" ? row.status : "inbox",
+      do_date: optStr(row.do_date),
+      start_time: optStr(row.start_time),
+      duration_minutes: optNum(row.duration_minutes),
+      deadline: optStr(row.deadline),
+      priority: typeof row.priority === "string" ? row.priority : "none",
+      roll_count: optNum(row.roll_count) ?? 0,
+      completed_at: optStr(row.completed_at),
+      trashed_at: optStr(row.trashed_at),
       project_id: optId(row.project_id),
       domain_id: optId(row.domain_id),
       slot_id: optId(row.slot_id),
       parent_task_id: optId(row.parent_task_id),
+      sort_order: optNum(row.sort_order) ?? 0,
+      source: optStr(row.source),
+      external_id: optStr(row.external_id),
+      google_event_id: optStr(row.google_event_id),
+      connection_id: optId(row.connection_id),
     });
   }
   if (table === "domains") {
@@ -618,15 +711,116 @@ export async function upsertSettings(
   return rows.length ? rows[0] ?? null : null;
 }
 
+export async function updateTask(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "tasks", patch))) return null;
+  const sql = store.sql;
+  const setTitle = typeof patch.title === "string" ? 1 : 0;
+  const setNotes = "notes" in patch ? 1 : 0;
+  const setStatus = typeof patch.status === "string" ? 1 : 0;
+  const setDoDate = "do_date" in patch ? 1 : 0;
+  const setStart = "start_time" in patch ? 1 : 0;
+  const setDuration = "duration_minutes" in patch ? 1 : 0;
+  const setDeadline = "deadline" in patch ? 1 : 0;
+  const setPriority = typeof patch.priority === "string" ? 1 : 0;
+  const setRoll = "roll_count" in patch ? 1 : 0;
+  const setCompleted = "completed_at" in patch ? 1 : 0;
+  const setTrashed = "trashed_at" in patch ? 1 : 0;
+  const setProject = "project_id" in patch ? 1 : 0;
+  const setDomain = "domain_id" in patch ? 1 : 0;
+  const setSlot = "slot_id" in patch ? 1 : 0;
+  const setParent = "parent_task_id" in patch ? 1 : 0;
+  const setSort = "sort_order" in patch ? 1 : 0;
+  const setSource = "source" in patch ? 1 : 0;
+  const setExternal = "external_id" in patch ? 1 : 0;
+  const setGoogle = "google_event_id" in patch ? 1 : 0;
+  const setConnection = "connection_id" in patch ? 1 : 0;
+  const setFieldTs = "field_ts" in patch ? 1 : 0;
+  const title = typeof patch.title === "string" ? patch.title : "";
+  const notes = typeof patch.notes === "string" ? patch.notes : "";
+  const status = typeof patch.status === "string" ? patch.status : "";
+  const doDate = optStr(patch.do_date);
+  const startTime = optStr(patch.start_time);
+  const duration = optNum(patch.duration_minutes);
+  const deadline = optStr(patch.deadline);
+  const priority = typeof patch.priority === "string" ? patch.priority : "";
+  const rollCount = optNum(patch.roll_count) ?? 0;
+  const completedAt = optStr(patch.completed_at);
+  const trashedAt = optStr(patch.trashed_at);
+  const projectId = optId(patch.project_id);
+  const domainId = optId(patch.domain_id);
+  const slotId = optId(patch.slot_id);
+  const parentId = optId(patch.parent_task_id);
+  const sortOrder = optNum(patch.sort_order) ?? 0;
+  const source = optStr(patch.source);
+  const externalId = optStr(patch.external_id);
+  const googleEventId = optStr(patch.google_event_id);
+  const connectionId = optId(patch.connection_id);
+  const fieldTs = sql.json(patch.field_ts ?? {});
+  const rows = await sql`
+    UPDATE tasks
+    SET
+      title = CASE WHEN ${setTitle} = 1 THEN ${title} ELSE title END,
+      notes = CASE WHEN ${setNotes} = 1 THEN ${notes} ELSE notes END,
+      status = CASE WHEN ${setStatus} = 1 THEN ${status} ELSE status END,
+      do_date = CASE WHEN ${setDoDate} = 1 THEN ${doDate} ELSE do_date END,
+      start_time = CASE WHEN ${setStart} = 1 THEN ${startTime} ELSE start_time END,
+      duration_minutes = CASE WHEN ${setDuration} = 1 THEN ${duration} ELSE duration_minutes END,
+      deadline = CASE WHEN ${setDeadline} = 1 THEN ${deadline} ELSE deadline END,
+      priority = CASE WHEN ${setPriority} = 1 THEN ${priority} ELSE priority END,
+      roll_count = CASE WHEN ${setRoll} = 1 THEN ${rollCount} ELSE roll_count END,
+      completed_at = CASE WHEN ${setCompleted} = 1 THEN ${completedAt} ELSE completed_at END,
+      trashed_at = CASE WHEN ${setTrashed} = 1 THEN ${trashedAt} ELSE trashed_at END,
+      project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
+      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
+      slot_id = CASE WHEN ${setSlot} = 1 THEN ${slotId} ELSE slot_id END,
+      parent_task_id = CASE WHEN ${setParent} = 1 THEN ${parentId} ELSE parent_task_id END,
+      sort_order = CASE WHEN ${setSort} = 1 THEN ${sortOrder} ELSE sort_order END,
+      source = CASE WHEN ${setSource} = 1 THEN ${source} ELSE source END,
+      external_id = CASE WHEN ${setExternal} = 1 THEN ${externalId} ELSE external_id END,
+      google_event_id = CASE WHEN ${setGoogle} = 1 THEN ${googleEventId} ELSE google_event_id END,
+      connection_id = CASE WHEN ${setConnection} = 1 THEN ${connectionId} ELSE connection_id END,
+      field_ts = CASE WHEN ${setFieldTs} = 1 THEN ${fieldTs} ELSE field_ts END,
+      updated_at = now()
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
 export async function updateTaskTitle(
   store: Store,
   id: string,
   title: string,
 ): Promise<Record<string, unknown> | null> {
+  return updateTask(store, id, { title });
+}
+
+export async function updateDomain(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
   const sql = store.sql;
+  const setName = typeof patch.name === "string" ? 1 : 0;
+  const setColor = typeof patch.color === "string" ? 1 : 0;
+  const setIntention = "intention" in patch ? 1 : 0;
+  const setFieldTs = "field_ts" in patch ? 1 : 0;
+  const name = typeof patch.name === "string" ? patch.name : "";
+  const color = typeof patch.color === "string" ? patch.color : "";
+  const intention = typeof patch.intention === "string" ? patch.intention : "";
+  const fieldTs = sql.json(patch.field_ts ?? {});
   const rows = await sql`
-    UPDATE tasks
-    SET title = ${title}, updated_at = now()
+    UPDATE domains
+    SET
+      name = CASE WHEN ${setName} = 1 THEN ${name} ELSE name END,
+      color = CASE WHEN ${setColor} = 1 THEN ${color} ELSE color END,
+      intention = CASE WHEN ${setIntention} = 1 THEN ${intention} ELSE intention END,
+      field_ts = CASE WHEN ${setFieldTs} = 1 THEN ${fieldTs} ELSE field_ts END
     WHERE id = ${id}
       AND user_id = ${store.userId}
     RETURNING *
@@ -639,15 +833,7 @@ export async function updateDomainName(
   id: string,
   name: string,
 ): Promise<Record<string, unknown> | null> {
-  const sql = store.sql;
-  const rows = await sql`
-    UPDATE domains
-    SET name = ${name}
-    WHERE id = ${id}
-      AND user_id = ${store.userId}
-    RETURNING *
-  `;
-  return rows.length ? rows[0] ?? null : null;
+  return updateDomain(store, id, { name });
 }
 
 export async function updateProjectName(
@@ -661,7 +847,7 @@ export async function updateProjectName(
 export async function updateProject(
   store: Store,
   id: string,
-  patch: { name?: string; domain_id?: string | null; initiative_id?: string | null },
+  patch: { name?: string; domain_id?: string | null; initiative_id?: string | null; field_ts?: unknown },
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, "projects", patch))) return null;
   const sql = store.sql;
@@ -671,14 +857,56 @@ export async function updateProject(
   const name = typeof patch.name === "string" ? patch.name : "";
   const domainId = patch.domain_id ?? null;
   const initiativeId = patch.initiative_id ?? null;
+  const setFieldTs = "field_ts" in patch ? 1 : 0;
+  const fieldTs = sql.json((patch as { field_ts?: unknown }).field_ts ?? {});
   const rows = await sql`
     UPDATE projects
     SET
       name = CASE WHEN ${setName} = 1 THEN ${name} ELSE name END,
       domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
-      initiative_id = CASE WHEN ${setInit} = 1 THEN ${initiativeId} ELSE initiative_id END
+      initiative_id = CASE WHEN ${setInit} = 1 THEN ${initiativeId} ELSE initiative_id END,
+      field_ts = CASE WHEN ${setFieldTs} = 1 THEN ${fieldTs} ELSE field_ts END
     WHERE id = ${id}
       AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows.length ? rows[0] ?? null : null;
+}
+
+export async function updateSettings(
+  store: Store,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const setTheme = typeof patch.theme === "string" ? 1 : 0;
+  const setDayStart = "day_start_hour" in patch ? 1 : 0;
+  const setDayEnd = "day_end_hour" in patch ? 1 : 0;
+  const setWeekStart = "week_start" in patch ? 1 : 0;
+  const setWorkStart = "work_start_minutes" in patch ? 1 : 0;
+  const setWorkEnd = "work_end_minutes" in patch ? 1 : 0;
+  const setTimeZone = "time_zone" in patch ? 1 : 0;
+  const setFieldTs = "field_ts" in patch ? 1 : 0;
+  const theme = typeof patch.theme === "string" ? patch.theme : "";
+  const dayStart = optNum(patch.day_start_hour) ?? 6;
+  const dayEnd = optNum(patch.day_end_hour) ?? 23;
+  const weekStart = optNum(patch.week_start) ?? 1;
+  const workStart = optNum(patch.work_start_minutes) ?? 480;
+  const workEnd = optNum(patch.work_end_minutes) ?? 990;
+  const timeZone = optStr(patch.time_zone);
+  const fieldTs = sql.json(patch.field_ts ?? {});
+  const rows = await sql`
+    UPDATE user_settings
+    SET
+      theme = CASE WHEN ${setTheme} = 1 THEN ${theme} ELSE theme END,
+      day_start_hour = CASE WHEN ${setDayStart} = 1 THEN ${dayStart} ELSE day_start_hour END,
+      day_end_hour = CASE WHEN ${setDayEnd} = 1 THEN ${dayEnd} ELSE day_end_hour END,
+      week_start = CASE WHEN ${setWeekStart} = 1 THEN ${weekStart} ELSE week_start END,
+      work_start_minutes = CASE WHEN ${setWorkStart} = 1 THEN ${workStart} ELSE work_start_minutes END,
+      work_end_minutes = CASE WHEN ${setWorkEnd} = 1 THEN ${workEnd} ELSE work_end_minutes END,
+      time_zone = CASE WHEN ${setTimeZone} = 1 THEN ${timeZone} ELSE time_zone END,
+      field_ts = CASE WHEN ${setFieldTs} = 1 THEN ${fieldTs} ELSE field_ts END,
+      updated_at = now()
+    WHERE user_id = ${store.userId}
     RETURNING *
   `;
   return rows.length ? rows[0] ?? null : null;
@@ -688,14 +916,7 @@ export async function updateSettingsTheme(
   store: Store,
   theme: string,
 ): Promise<Record<string, unknown> | null> {
-  const sql = store.sql;
-  const rows = await sql`
-    UPDATE user_settings
-    SET theme = ${theme}, updated_at = now()
-    WHERE user_id = ${store.userId}
-    RETURNING *
-  `;
-  return rows.length ? rows[0] ?? null : null;
+  return updateSettings(store, { theme });
 }
 
 export async function updateOwned(
@@ -706,15 +927,10 @@ export async function updateOwned(
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, table, patch))) return null;
   if (table === "tasks") {
-    if (typeof patch.title === "string") return updateTaskTitle(store, id, patch.title);
-    if ("project_id" in patch || "domain_id" in patch || "slot_id" in patch || "parent_task_id" in patch) {
-      return updateTaskFks(store, id, patch);
-    }
-    return null;
+    return updateTask(store, id, patch);
   }
   if (table === "domains") {
-    if (typeof patch.name !== "string") return null;
-    return updateDomainName(store, id, patch.name);
+    return updateDomain(store, id, patch);
   }
   if (table === "projects") {
     const hasName = typeof patch.name === "string";
@@ -724,12 +940,12 @@ export async function updateOwned(
       name: hasName ? String(patch.name) : undefined,
       domain_id: "domain_id" in patch ? optId(patch.domain_id) : undefined,
       initiative_id: "initiative_id" in patch ? optId(patch.initiative_id) : undefined,
+      field_ts: "field_ts" in patch ? patch.field_ts : undefined,
     });
   }
   if (table === "user_settings") {
     if (id !== store.userId) return null;
-    if (typeof patch.theme !== "string") return null;
-    return updateSettingsTheme(store, patch.theme);
+    return updateSettings(store, patch);
   }
   if (table === "event_domain_routing" && "domain_id" in patch) {
     const current = await getOwned(store, table, id);
@@ -833,20 +1049,42 @@ export async function updateSlot(
   const hasTitle = typeof patch.title === "string";
   const hasProject = "project_id" in patch;
   const hasDomain = "domain_id" in patch;
-  if (!hasTitle && !hasProject && !hasDomain) return null;
+  const hasDoDate = "do_date" in patch;
+  const hasStart = "start_time" in patch;
+  const hasDuration = "duration_minutes" in patch;
+  const hasColor = "color" in patch;
+  const hasFieldTs = "field_ts" in patch;
+  if (!hasTitle && !hasProject && !hasDomain && !hasDoDate && !hasStart && !hasDuration && !hasColor && !hasFieldTs) {
+    return null;
+  }
   const sql = store.sql;
   const setTitle = hasTitle ? 1 : 0;
   const setProject = hasProject ? 1 : 0;
   const setDomain = hasDomain ? 1 : 0;
+  const setDoDate = hasDoDate ? 1 : 0;
+  const setStart = hasStart ? 1 : 0;
+  const setDuration = hasDuration ? 1 : 0;
+  const setColor = hasColor ? 1 : 0;
+  const setFieldTs = hasFieldTs ? 1 : 0;
   const title = hasTitle ? String(patch.title) : "";
   const projectId = optId(patch.project_id);
   const domainId = optId(patch.domain_id);
+  const doDate = optStr(patch.do_date);
+  const startTime = optStr(patch.start_time);
+  const duration = optNum(patch.duration_minutes);
+  const color = optStr(patch.color);
+  const fieldTs = sql.json(patch.field_ts ?? {});
   const rows = await sql`
     UPDATE slots
     SET
       title = CASE WHEN ${setTitle} = 1 THEN ${title} ELSE title END,
       project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
       domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
+      do_date = CASE WHEN ${setDoDate} = 1 THEN ${doDate} ELSE do_date END,
+      start_time = CASE WHEN ${setStart} = 1 THEN ${startTime} ELSE start_time END,
+      duration_minutes = CASE WHEN ${setDuration} = 1 THEN ${duration} ELSE duration_minutes END,
+      color = CASE WHEN ${setColor} = 1 THEN ${color} ELSE color END,
+      field_ts = CASE WHEN ${setFieldTs} = 1 THEN ${fieldTs} ELSE field_ts END,
       updated_at = now()
     WHERE id = ${id}
       AND user_id = ${store.userId}
@@ -987,29 +1225,7 @@ export async function updateTaskFks(
   id: string,
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
-  if (!(await assertOwnedFks(store, "tasks", patch))) return null;
-  const sql = store.sql;
-  const setProject = "project_id" in patch ? 1 : 0;
-  const setDomain = "domain_id" in patch ? 1 : 0;
-  const setSlot = "slot_id" in patch ? 1 : 0;
-  const setParent = "parent_task_id" in patch ? 1 : 0;
-  const projectId = optId(patch.project_id);
-  const domainId = optId(patch.domain_id);
-  const slotId = optId(patch.slot_id);
-  const parentId = optId(patch.parent_task_id);
-  const rows = await sql`
-    UPDATE tasks
-    SET
-      project_id = CASE WHEN ${setProject} = 1 THEN ${projectId} ELSE project_id END,
-      domain_id = CASE WHEN ${setDomain} = 1 THEN ${domainId} ELSE domain_id END,
-      slot_id = CASE WHEN ${setSlot} = 1 THEN ${slotId} ELSE slot_id END,
-      parent_task_id = CASE WHEN ${setParent} = 1 THEN ${parentId} ELSE parent_task_id END,
-      updated_at = now()
-    WHERE id = ${id}
-      AND user_id = ${store.userId}
-    RETURNING *
-  `;
-  return rows.length ? rows[0] ?? null : null;
+  return updateTask(store, id, patch);
 }
 
 export async function deleteOwned(
@@ -1124,40 +1340,32 @@ export async function applyPatch(
   table: string,
   match: Record<string, unknown>,
   patch: Record<string, unknown>,
+  incomingTs?: Record<string, unknown>,
 ): Promise<{ applied: string[]; rejected: string[]; matched: number }> {
   if (!isPlannerTable(table)) {
     throw new Error(`apply_patch: ${table} is not a syncable table`);
   }
-  const rejected: string[] = [];
-  const title = typeof patch.title === "string" ? patch.title : null;
-  const name = typeof patch.name === "string" ? patch.name : null;
-  const theme = typeof patch.theme === "string" ? patch.theme : null;
-  for (const key of Object.keys(patch)) {
-    if (key === "id" || key === "user_id" || key === "created_at" || key === "field_ts") {
-      rejected.push(key);
-    }
+  if (!patch || Object.keys(patch).length === 0) {
+    return { applied: [], rejected: [], matched: 0 };
   }
-  const matchId = typeof match.id === "string" ? match.id : "";
-  if (table === "tasks" && title) {
-    const row = await updateTaskTitle(store, matchId, title);
-    return { applied: row ? ["title"] : [], rejected, matched: row ? 1 : 0 };
-  }
-  if (table === "domains" && name) {
-    const row = await updateDomainName(store, matchId, name);
-    return { applied: row ? ["name"] : [], rejected, matched: row ? 1 : 0 };
-  }
-  if (table === "projects" && name) {
-    const row = await updateProjectName(store, matchId, name);
-    return { applied: row ? ["name"] : [], rejected, matched: row ? 1 : 0 };
-  }
-  if (table === "user_settings" && theme) {
-    if (matchId && matchId !== store.userId) {
-      return { applied: [], rejected, matched: 0 };
-    }
-    const row = await updateSettingsTheme(store, theme);
-    return { applied: row ? ["theme"] : [], rejected, matched: row ? 1 : 0 };
-  }
-  return { applied: [], rejected, matched: 0 };
+  const matchId = typeof match.id === "string"
+    ? match.id
+    : typeof match.user_id === "string"
+      ? match.user_id
+      : "";
+  const owned = table === "user_settings"
+    ? await getOwned(store, table, matchId || store.userId)
+    : await getOwned(store, table, matchId);
+  if (!owned) return { applied: [], rejected: [], matched: 0 };
+
+  const { next, applied, rejected, nextTs } = decideLww(owned, patch, incomingTs);
+  if (!applied.length) return { applied, rejected, matched: 1 };
+
+  const row = await updateOwned(store, table, table === "user_settings" ? store.userId : matchId, {
+    ...next,
+    field_ts: nextTs,
+  });
+  return { applied, rejected, matched: row ? 1 : 0 };
 }
 
 export async function rotateInboundToken(store: Store): Promise<string | null> {

@@ -20,12 +20,12 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Piece | Today | After cutover | Rollback |
 |---|---|---|---|
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
-| Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
+| Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | `CUTOVER_FLIPPED=false` + unfreeze. Clients already baked with `VITE_API_BASE_URL` stay asking `/api/maintenance` and stay on Supabase until flipped again |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
-| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
+| Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Same flag flip |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; same VAPID pair). Supabase copies stay until flip | n/a |
-| Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
+| Billing / Stripe / StoreKit | Supabase edge | **Still Supabase.** A separate agent owns entitlement. Do not move it here | n/a |
+| Calendar + OAuth (Google, M365, iCloud, ICS) | Supabase edge + pg_cron | Worker `/functions/v1/:name` **and** `/api/:name` for `google-oauth`, `google-events`, `calendar-refresh`, `m365-oauth`, `icloud-connect`, `ics-subscribe`. Crons `google-renew` / `calendar-dispatch` / `m365-sync` / `icloud-sync` / `ics-sync` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
@@ -448,10 +448,14 @@ Order:
    no automatic retry), then deletes
    missing `push_subscriptions`
    ids and upserts the rest.
-7. **Switch** — flip `VITE_API_BASE_URL`. Or **unfreeze** — apply
-   `unfreeze.sql`, which restores the recorded ACLs and each job's
-   prior `active` exactly (idempotent), then clear `CUTOVER_ARMED`
-   and `WRITE_FREEZE`.
+7. **Switch** — set `CUTOVER_FLIPPED` (`1` / `true` / `yes` / `on`).
+   Clients already baked with `VITE_API_BASE_URL` (separate release-workflow
+   PR, needs Phil's yes) ask `GET /api/maintenance` at launch and flip
+   then. Do **not** treat flipping `VITE_API_BASE_URL` as the live switch
+   or as rollback — rollback is `CUTOVER_FLIPPED=false` plus unfreeze.
+   Or **unfreeze** — apply `unfreeze.sql`, which restores the recorded
+   ACLs and each job's prior `active` exactly (idempotent), then clear
+   `CUTOVER_ARMED` and `WRITE_FREEZE`.
 8. **Flip Worker crons** — in this order, and not before:
    1. `cron.unschedule` Supabase `nuvo-github-poll` and
       `nuvo-trim-sync-log` (and any other `nuvo-*` job that would
@@ -469,10 +473,13 @@ Order:
 
 ## iOS TestFlight at cutover
 
-`.github/workflows/ios-release.yml` reads `VITE_API_BASE_URL` from a GitHub
-**Actions variable** (Settings → Secrets and variables → Actions → Variables).
-It does **not** skip `VITE_SUPABASE_*` — those stay baked so a rollback build
-and any unported function still have a target.
+`.github/workflows/ios-release.yml` and `release.yml` bake
+`VITE_API_BASE_URL=https://api.nuvo.day` only after Phil signs the
+small dedicated PR for those two workflows. That bake is **not** the
+live switch: the binary still talks to Supabase until
+`GET /api/maintenance` returns `cutover_flipped`.
+It does **not** skip `VITE_SUPABASE_*` — those stay baked so a rollback
+(`CUTOVER_FLIPPED=false`) and any unported function still have a target.
 
 | When | `VITE_API_BASE_URL` variable | What the IPA talks to |
 |---|---|---|

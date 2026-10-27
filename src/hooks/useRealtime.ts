@@ -249,5 +249,5 @@ export function useRealtime(enabled: boolean) {
       for (const table of TABLES) setTableLive(table, false);
       for (const ch of channels.values()) supabase.removeChannel(ch);
     };
-  }, [enabled, qc]);
+  }, [enabled, qc, workersEnabled]);
 }

@@ -1,7 +1,8 @@
 import { betterAuth } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { Pool } from "pg";
-import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
+import { authCookieSecure, resolveAuthBaseURL } from "./authUrl.ts";
+import { trustedAuthOrigins } from "./cors.ts";
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
 import { appleIssuedClientId } from "../../supabase/functions/_shared/appleIdentity.ts";
@@ -109,9 +110,7 @@ export function createAuth(env: Env, database: AuthDatabase) {
       minPasswordLength: 8,
       requireEmailVerification: true,
     },
-    trustedOrigins: isLocalAuthHost(baseURL)
-      ? [baseURL, "http://localhost:5717", "http://localhost:8787", "http://[::1]:5717", "http://[::1]:8787"]
-      : [baseURL],
+    trustedOrigins: trustedAuthOrigins(env),
     advanced: {
       database: {
         generateId: () => crypto.randomUUID(),

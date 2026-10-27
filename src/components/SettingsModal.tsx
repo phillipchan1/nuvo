@@ -35,8 +35,6 @@ import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
-import { useAuth } from "../hooks/useAuth";
-import { workersEnabled } from "../lib/backend";
 import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
@@ -1523,7 +1521,6 @@ function LabelsPane() {
 }
 
 function AccountPane() {
-  const { session } = useAuth();
   const { subscription } = useSubscription();
   const [email, setEmail] = useState("");
   const [methods, setMethods] = useState<SignInMethod[]>([]);
@@ -1547,20 +1544,10 @@ function AccountPane() {
   };
 
   useEffect(() => {
-    // After the flip, GoTrue has no session — the account row is the one useAuth holds.
-    if (workersEnabled) {
-      setEmail(session?.user?.email ?? "");
-      setMethods(
-        readSignInMethods(session?.user?.identities, session?.user?.app_metadata?.provider, {
-          apple: appleLinkAvailable(),
-        }),
-      );
-      return;
-    }
     refresh();
     const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
     return () => sub.subscription.unsubscribe();
-  }, [session]);
+  }, []);
 
   // Linking — rather than a second sign-in — is what keeps the same auth UUID.
   // Supabase folds two identities onto one account only when they share a

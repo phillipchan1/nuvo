@@ -12,7 +12,8 @@ export function parseVersion(raw: string | null | undefined): [number, number, n
 export function isBelowMinVersion(current: string, minimum: string): boolean {
   const a = parseVersion(current);
   const b = parseVersion(minimum);
-  if (!a || !b) return false;
+  // Unparseable current or minimum cannot prove this build is new enough.
+  if (!a || !b) return true;
   if (a[0] !== b[0]) return a[0] < b[0];
   if (a[1] !== b[1]) return a[1] < b[1];
   return a[2] < b[2];

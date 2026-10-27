@@ -193,6 +193,21 @@ if (localOk.ok) {
   );
 }
 
+const { apiCors, needsCredentialedCors, trustedAuthOrigins } = await import("./cors.ts");
+const prodOrigins = trustedAuthOrigins({ BETTER_AUTH_URL: "https://api.nuvo.day" });
+ok(prodOrigins.includes("https://app.nuvo.day"), "trustedOrigins includes app.nuvo.day");
+ok(prodOrigins.includes("tauri://localhost"), "trustedOrigins includes tauri://localhost");
+ok(prodOrigins.includes("https://tauri.localhost"), "trustedOrigins includes https://tauri.localhost");
+const tauriCors = apiCors("tauri://localhost", { BETTER_AUTH_URL: "https://api.nuvo.day" });
+ok(tauriCors["Access-Control-Allow-Origin"] === "tauri://localhost", "apiCors echoes tauri origin");
+ok(tauriCors["Access-Control-Allow-Credentials"] === "true", "apiCors sends credentials");
+ok(tauriCors["Access-Control-Allow-Origin"] !== "*", "apiCors never uses ACAO *");
+const webCors = apiCors("https://app.nuvo.day", { BETTER_AUTH_URL: "https://api.nuvo.day" });
+ok(webCors["Access-Control-Allow-Origin"] === "https://app.nuvo.day", "apiCors echoes app.nuvo.day");
+ok(needsCredentialedCors("/api/data/tasks"), "data routes use credentialed CORS");
+ok(needsCredentialedCors("/api/google-oauth"), "google-oauth uses credentialed CORS");
+ok(!needsCredentialedCors("/api/entitlement"), "entitlement stays off the credentialed list");
+
 const health = await app.request("http://localhost/api/health");
 ok(health.status === 200, "GET /api/health is 200");
 const healthBody = await health.json() as { ok?: boolean; service?: string; write_freeze?: boolean };

@@ -546,3 +546,19 @@ ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS key_version SMALLIN
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS key_version SMALLINT;
+
+-- Per-field LWW map. Live Neon already has this from the Supabase copy.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.key_results ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.slots ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.labels ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.record_comments ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.week_reviews ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.sprints ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.recurrences ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS field_ts JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -170,6 +170,6 @@ export function extraDeleted(n: number): Response {
 }
 
 export function extraTableParam(c: Context<AppEnv>): ExtraDataTable | null {
-  const table = c.req.param("table");
+  const table = c.req.param("table") ?? "";
   return isExtraDataTable(table) ? table : null;
 }

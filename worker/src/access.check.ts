@@ -37,6 +37,7 @@ import {
   getOwnedAppleIdentity,
   getOwnedCalendarAccount,
   getOwnedExternalEvent,
+  updateOwnedExternalEvent,
   insertActivityBinding,
   insertActivitySource,
   insertActivityUnit,
@@ -190,6 +191,42 @@ ok((await scalar<string>("SELECT theme FROM user_settings WHERE user_id = $1", [
 const ownPatch = await applyPatch(storeA, "tasks", { id: TASK_A }, { title: "A retitled" });
 ok(ownPatch.matched === 1, "applyPatch: A can patch own task");
 ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [TASK_A])) === "A retitled", "applyPatch: A title updated");
+
+const completed = await updateOwned(storeA, "tasks", TASK_A, {
+  status: "done",
+  completed_at: "2026-10-27T12:00:00Z",
+});
+ok(completed?.status === "done", "updateOwned task: complete persists status");
+ok(String(completed?.completed_at ?? "").startsWith("2026-10-27"), "updateOwned task: complete persists completed_at");
+
+const trashed = await updateOwned(storeA, "tasks", TASK_A, {
+  status: "trashed",
+  trashed_at: "2026-10-27T12:05:00Z",
+});
+ok(trashed?.status === "trashed", "updateOwned task: trash persists status");
+ok(String(trashed?.trashed_at ?? "").startsWith("2026-10-27"), "updateOwned task: trash persists trashed_at");
+
+const mixed = await applyPatch(
+  storeA,
+  "tasks",
+  { id: TASK_A },
+  { title: "mixed newer", notes: "should lose" },
+  { title: "2026-10-27T13:00:00Z", notes: "2020-01-01T00:00:00Z" },
+);
+ok(mixed.applied.includes("title"), "applyPatch LWW: newer title applies");
+ok(mixed.rejected.includes("notes") || mixed.applied.includes("notes"), "applyPatch LWW: notes is decided");
+const afterMixed = await getOwned(storeA, "tasks", TASK_A);
+ok(afterMixed?.title === "mixed newer", "applyPatch LWW: title is the newer write");
+
+const olderTitle = await applyPatch(
+  storeA,
+  "tasks",
+  { id: TASK_A },
+  { title: "stale" },
+  { title: "2020-01-01T00:00:00Z" },
+);
+ok(olderTitle.rejected.includes("title"), "applyPatch LWW: older title is rejected");
+ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [TASK_A])) === "mixed newer", "applyPatch LWW: stored title stays");
 
 ok((await deleteOwned(storeA, "tasks", TASK_B)) === 0, "deleteOwned: A cannot delete B task");
 ok((await count("tasks", "id = $1", [TASK_B])) === 1, "deleteOwned: B task still present");
@@ -519,6 +556,18 @@ ok(
 );
 ok((await count("external_events", "user_id = $1", [B])) === 1, "insert external_events: B count unchanged");
 ok((await getOwnedExternalEvent(storeA, EVT_A))?.id === EVT_A, "get external_events: A can read own");
+ok(
+  (await updateOwnedExternalEvent(storeA, EVT_B, { title: "stolen" })) === null,
+  "update external_events: A cannot patch B",
+);
+ok(
+  (await scalar<string>("SELECT title FROM external_events WHERE id = $1", [EVT_B])) !== "stolen",
+  "update external_events: B title unchanged",
+);
+ok(
+  (await updateOwnedExternalEvent(storeA, EVT_A, { title: "A renamed" }))?.title === "A renamed",
+  "update external_events: A can patch own",
+);
 
 ok(
   (await listOwnedPushSubscriptions(storeA)).every((row) => row.user_id === A),

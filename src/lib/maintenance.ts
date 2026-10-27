@@ -16,12 +16,14 @@ export const UPDATE_REQUIRED_MESSAGE =
   "This version of Nuvo is out of date. Update to keep writing.";
 
 const TTL_MS = 5_000;
+export const LAUNCH_TIMEOUT_MS = 4_000;
 
 let cached: { frozen: boolean; at: number } | null = null;
 let seenArmed = false;
 let seenFlipped = false;
 let minVersion: string | null = null;
 let resolved = false;
+let sawMaintenanceBody = false;
 
 function flagOn(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase() ?? "";
@@ -51,6 +53,26 @@ export function resetMaintenanceCacheForTests(): void {
   seenFlipped = false;
   minVersion = null;
   resolved = false;
+  sawMaintenanceBody = false;
+}
+
+/** Allowlisted truthy. `Boolean("false")` is a JS trap — do not use it. */
+export function parseMaintenanceFlag(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
+    if (v === "0" || v === "false" || v === "no" || v === "off" || v === "") return false;
+    return undefined;
+  }
+  return undefined;
+}
+
+function requestMidSessionReload(): void {
+  if (typeof window === "undefined" || typeof window.location?.reload !== "function") return;
+  window.location.reload();
 }
 
 export function clientMinVersion(): string | null {
@@ -62,7 +84,8 @@ function currentAppVersion(): string {
 }
 
 export function clientBelowMinVersion(): boolean {
-  if (!minVersion) return false;
+  if (!resolved || !sawMaintenanceBody) return false;
+  if (!minVersion) return true;
   return isBelowMinVersion(currentAppVersion(), minVersion);
 }
 
@@ -77,17 +100,45 @@ function applyMaintenanceBody(body: {
   min_version?: unknown;
   min_client_version?: unknown;
   minimum_version?: unknown;
-}): void {
-  seenArmed = Boolean(body.cutover_armed) || bakedArmed();
-  seenFlipped = Boolean(body.cutover_flipped) || seenFlipped;
+}, atLaunch: boolean): void {
+  sawMaintenanceBody = true;
+  const armed = parseMaintenanceFlag(body.cutover_armed);
+  if (armed === true || bakedArmed()) seenArmed = true;
+  const flipped = parseMaintenanceFlag(body.cutover_flipped);
+  if (flipped === true) seenFlipped = true;
+
   minVersion = readMinVersion(body);
-  setWorkersEnabled(Boolean(body.cutover_flipped));
-  cached = { frozen: Boolean(body.write_freeze) || clientBelowMinVersion(), at: Date.now() };
+
+  if (atLaunch) {
+    setWorkersEnabled(seenFlipped);
+  } else if (flipped === true && !workersEnabled) {
+    requestMidSessionReload();
+    return;
+  } else if (seenFlipped && !workersEnabled) {
+    setWorkersEnabled(true);
+  }
+  // {} or cutover_flipped:false after a sticky flip must not unflip.
+
+  cached = {
+    frozen: parseMaintenanceFlag(body.write_freeze) === true || clientBelowMinVersion(),
+    at: Date.now(),
+  };
 }
 
 function failSafe(): void {
-  cached = { frozen: true, at: Date.now() };
+  // Pre-flip: behave like master (fail-open). Armed or already flipped: freeze.
+  cached = { frozen: seenArmed || seenFlipped || bakedArmed(), at: Date.now() };
   if (!seenFlipped) setWorkersEnabled(false);
+}
+
+async function fetchMaintenance(url: string, timeoutMs: number): Promise<Response> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    return await fetch(url, { method: "GET", cache: "no-store", signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Launch-time backend choice. One binary works before and after the flip. */
@@ -104,7 +155,7 @@ export async function resolveLaunchBackend(): Promise<void> {
     return;
   }
   try {
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    const res = await fetchMaintenance(url, LAUNCH_TIMEOUT_MS);
     if (!res.ok) {
       failSafe();
       resolved = true;
@@ -118,7 +169,7 @@ export async function resolveLaunchBackend(): Promise<void> {
       min_client_version?: unknown;
       minimum_version?: unknown;
     };
-    applyMaintenanceBody(body);
+    applyMaintenanceBody(body, true);
     resolved = true;
   } catch {
     failSafe();
@@ -130,7 +181,7 @@ export async function writeFrozen(): Promise<boolean> {
   if (bakedFreeze() || clientBelowMinVersion()) return true;
   if (cached && Date.now() - cached.at < TTL_MS) return cached.frozen;
   const url = maintenanceUrl();
-  const armedFallback = bakedArmed() || seenArmed || apiConfigured();
+  const armedFallback = bakedArmed() || seenArmed || seenFlipped;
   if (!url) return armedFallback ? true : (cached?.frozen ?? false);
   try {
     const res = await fetch(url, { method: "GET", cache: "no-store" });
@@ -143,8 +194,8 @@ export async function writeFrozen(): Promise<boolean> {
       min_client_version?: unknown;
       minimum_version?: unknown;
     };
-    applyMaintenanceBody(body);
-    return cached?.frozen ?? false;
+    applyMaintenanceBody(body, false);
+    return (cached?.frozen ?? false) || clientBelowMinVersion();
   } catch {
     return armedFallback ? true : (cached?.frozen ?? false);
   }

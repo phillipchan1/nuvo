@@ -92,6 +92,18 @@ describe("workerFrom", () => {
   });
 });
 
+  it("puts HTTP status on 4xx so classifyError parks instead of retrying", async () => {
+    armWorker();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "not found" }), { status: 404 })),
+    );
+    const { error } = await workerFrom("tasks").update({ status: "done" }).eq("id", "t1");
+    expect(error?.status).toBe(404);
+    expect(error?.code).toBe("404");
+  });
+});
+
 describe("workerRpc / workerInvoke", () => {
   it("POSTs /api/rpc/:name", async () => {
     armWorker();

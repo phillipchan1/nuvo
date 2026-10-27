@@ -4,7 +4,7 @@ import { handleAgent } from "./agentHttp.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
-import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import { API_SECURITY, apiCors, beginAuthCors, json, needsCredentialedCors, OPEN_CORS } from "./cors.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -98,7 +98,15 @@ app.use("*", async (c, next) => {
   await next();
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/") || path.startsWith("/functions/v1/")) {
-    c.res = withClonedHeaders(c.res, API_SECURITY);
+    const extra = { ...API_SECURITY };
+    if (needsCredentialedCors(path)) {
+      try {
+        Object.assign(extra, apiCors(c.req.header("Origin"), c.env));
+      } catch {
+        // BETTER_AUTH_URL unset — leave the handler's OPEN_CORS.
+      }
+    }
+    c.res = withClonedHeaders(c.res, extra);
   }
 });
 
@@ -434,12 +442,17 @@ app.delete("/api/data/:table/:id", async (c) => {
 app.post("/api/rpc/apply_patch", async (c) => {
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
-  const body = await readJson<{ p_table?: string; p_match?: Record<string, unknown>; p_patch?: Record<string, unknown> }>(c);
+  const body = await readJson<{
+    p_table?: string;
+    p_match?: Record<string, unknown>;
+    p_patch?: Record<string, unknown>;
+    p_field_ts?: Record<string, unknown>;
+  }>(c);
   if (!body.p_table || !body.p_match || !body.p_patch) {
     return json({ error: "p_table, p_match, p_patch required" }, 400, OPEN_CORS);
   }
   try {
-    const result = await applyPatch(got.store, body.p_table, body.p_match, body.p_patch);
+    const result = await applyPatch(got.store, body.p_table, body.p_match, body.p_patch, body.p_field_ts);
     return json({ data: result }, 200, OPEN_CORS);
   } catch {
     return json({ error: "request failed" }, 400, OPEN_CORS);
