@@ -311,7 +311,7 @@ ok(/sync_log_set_lock_timeout_sql\(\)/.test(copyPy) && copyPy.indexOf("sync_log_
 ok(/WHEN lock_not_available/.test(copyPy) && !/WHEN query_canceled/.test(copyPy), "cutover_copy.py catches lock_not_available (55P03), not query_canceled");
 ok(/LOCK_TIMEOUT_SQLSTATE = "55P03"/.test(copyPy) && /55P03/.test(copyPy) && !/SQLERRM ILIKE/.test(copyPy), "cutover_copy.py keys retryable lock timeout on SQLSTATE 55P03, not message text");
 ok(/lock_timeout_message\("push_subscriptions"\)/.test(copyPy) && /DELETE FROM public\.push_subscriptions/.test(copyPy) && /pg_temp\.cutover_push_anti_join_delete/.test(copyPy), "cutover_copy.py names push_subscriptions on that table's lock timeout");
-ok(/\\set VERBOSITY verbose/.test(copyPy) && /FIRST_ERROR_BANNER/.test(copyPy) && /RETRYABLE_LOCK_TIMEOUT_BANNER/.test(copyPy), "cutover_copy.py keys retryable on the first error-banner line being ERROR 55P03");
+ok(/\\set VERBOSITY verbose/.test(copyPy) && /SET client_min_messages = error/.test(copyPy) && /FIRST_ERROR_BANNER/.test(copyPy) && /RETRYABLE_LOCK_TIMEOUT_BANNER/.test(copyPy), "cutover_copy.py keys retryable on the first psql-prefixed ERROR 55P03 banner");
 ok(/retry the resync \(retryable\)/.test(copyPy), "cutover_copy.py lock timeout is retryable");
 ok(/retryable_lock=True/.test(workflow) && /retryable_lock_timeout_stop\(stderr\)/.test(workflow) && (workflow.match(/retryable_lock=True/g) || []).length === 1, "cutover-migrate.yml classifies lock timeout only on the resync psql call");
 ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");

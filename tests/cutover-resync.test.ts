@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -675,6 +675,22 @@ async function connectLivePg(): Promise<Client> {
   }
 }
 
+function psqlFile(sql: string): { stderr: string; status: number | null } {
+  const dir = mkdtempSync(join(tmpdir(), "cutover-qa-psql-"));
+  const file = join(dir, "resync.sql");
+  try {
+    writeFileSync(file, sql);
+    const result = spawnSync(
+      "psql",
+      ["-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-d", LIVE_PG_URL, "-f", file],
+      { encoding: "utf8" },
+    );
+    return { stderr: (result.stderr || "").trim(), status: result.status };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function classifyPsql(text: string): { retryable: boolean; stop: string; table: string } {
   const out = py(
     "from cutover_copy import is_retryable_lock_timeout, retryable_lock_timeout_stop, table_from_lock_error; "
@@ -727,7 +743,7 @@ describe("live PostgreSQL lock timeout", () => {
       expect(err?.message).not.toMatch(/sync_log lock timed out/);
 
       const banner =
-        `ERROR:  55P03: ${err!.message}\n` +
+        `psql:resync.sql:24: ERROR:  55P03: ${err!.message}\n` +
         `CONTEXT:  SQL statement ${JSON.stringify(deleteSql)}`;
       const classified = classifyPsql(banner);
       expect(classified.retryable).toBe(true);
@@ -790,7 +806,7 @@ describe("live PostgreSQL lock timeout", () => {
       expect(err?.message).not.toMatch(/push_subscriptions lock timed out/);
 
       const banner =
-        `ERROR:  55P03: ${err!.message}\n` +
+        `psql:resync.sql:12: ERROR:  55P03: ${err!.message}\n` +
         `CONTEXT:  SQL statement "LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE"`;
       const classified = classifyPsql(banner);
       expect(classified.retryable).toBe(true);
@@ -959,6 +975,53 @@ describe("live PostgreSQL lock timeout", () => {
         ),
       ).not.toBe("55P03");
     } finally {
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("does not treat multi-line NOTICE/WARNING/DETAIL spoof bodies as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_body CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_body (id text PRIMARY KEY)");
+      await locker.query("INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake')");
+
+      const cases: [string, string][] = [
+        [
+          "notice",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\nERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "warning",
+          "DO $qa$ BEGIN RAISE WARNING E'x\\nERROR:  55P03: fake'; END $qa$;\n"
+          + "INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake');\n",
+        ],
+        [
+          "crlf",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\r\\nERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "detail",
+          "INSERT INTO public.cutover_qa_body (id) VALUES (E'x\\nERROR:  55P03: fake');\n",
+        ],
+        [
+          "notice-psql-spoof",
+          "DO $qa$ BEGIN RAISE NOTICE E'x\\npsql:a:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+      ];
+      for (const [name, sql] of cases) {
+        const { stderr, status } = psqlFile(sql);
+        expect(status, name).not.toBe(0);
+        expect(classifyPsql(stderr).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(stderr)}) or '')`,
+          ),
+          name,
+        ).not.toBe("55P03");
+      }
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_body CASCADE").catch(() => undefined);
       await locker.end().catch(() => undefined);
     }
   });

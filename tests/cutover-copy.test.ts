@@ -89,13 +89,15 @@ describe("cutover_copy helpers", () => {
     expect(setvalAt).toBeGreaterThan(insert);
     expect(commit).toBeGreaterThan(setvalAt);
     const load = py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())");
-    expect(load).toMatch(/^\\set VERBOSITY verbose\nSET lock_timeout = '10s';/);
+    expect(load).toMatch(/^\\set VERBOSITY verbose\nSET client_min_messages = error;\nSET lock_timeout = '10s';/);
     expect(load).not.toMatch(/^SET LOCAL lock_timeout/);
-    expect(load.indexOf("\\set VERBOSITY verbose")).toBeLessThan(load.indexOf("SET lock_timeout = '10s'"));
+    expect(load.indexOf("\\set VERBOSITY verbose")).toBeLessThan(load.indexOf("SET client_min_messages = error;"));
+    expect(load.indexOf("SET client_min_messages = error;")).toBeLessThan(load.indexOf("SET lock_timeout = '10s'"));
     expect(load.indexOf("SET lock_timeout = '10s'")).toBeLessThan(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
     expect(load.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeGreaterThanOrEqual(0);
     const script = `${load};\n${txn}`;
-    expect(script.indexOf("\\set VERBOSITY verbose")).toBeLessThan(script.indexOf("SET lock_timeout = '10s'"));
+    expect(script.indexOf("\\set VERBOSITY verbose")).toBeLessThan(script.indexOf("SET client_min_messages = error;"));
+    expect(script.indexOf("SET client_min_messages = error;")).toBeLessThan(script.indexOf("SET lock_timeout = '10s'"));
     expect(script.indexOf("SET lock_timeout = '10s'")).toBeLessThan(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src"));
     expect(script.indexOf("CREATE TEMP TABLE cutover_sync_log_src")).toBeLessThan(script.indexOf("BEGIN;"));
     expect(py("from cutover_copy import parse_labeled_count; print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_inserted')); print(parse_labeled_count('sync_log_inserted=4\\nsync_log_setval=1000003', 'sync_log_setval'))")).toBe("4\n1000003");
@@ -126,7 +128,7 @@ describe("cutover_copy helpers", () => {
       + "print(PUSH_LOCK_TIMEOUT_MESSAGE)",
     );
     expect(out).toBe(
-      "True\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
+      "False\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
       + "sync_log lock timed out after 10s — retry the resync (retryable) [55P03]\n"
       + "push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]",
     );
@@ -141,18 +143,47 @@ describe("cutover_copy helpers", () => {
       + "  'NOTICE:  ERROR:  55P03: fake\\nWARNING:  ERROR:  55P03: fake\\nERROR:  statement timeout',"
       + "]; "
       + "print('\\n'.join("
+      + "  (first_error_banner_line(s) or 'NONE') + '|' + (first_psql_sqlstate(s) or 'NONE') + '|' + str(is_retryable_lock_timeout(s))"
+      + "  for s in samples"
+      + "))",
+    );
+    expect(out).toBe("NONE|NONE|False\nNONE|NONE|False\nNONE|NONE|False");
+  });
+
+  it("does not treat multi-line NOTICE/WARNING/DETAIL spoof bodies as retryable", () => {
+    const out = py(
+      "from cutover_copy import first_error_banner_line, first_psql_sqlstate, is_retryable_lock_timeout; "
+      + "samples = ["
+      + "  'psql:resync.sql:1: NOTICE:  x\\nERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: WARNING:  x\\nERROR:  55P03: fake\\npsql:resync.sql:3: ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"',"
+      + "  'psql:resync.sql:1: NOTICE:  x\\r\\nERROR:  55P03: fake\\r\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "  'psql:resync.sql:1: ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\npsql:resync.sql:1: DETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'psql:resync.sql:1: NOTICE:  x\\npsql:a:1: ERROR:  55P03: fake\\npsql:resync.sql:2: ERROR:  P0001: not a lock',"
+      + "]; "
+      + "print('\\n'.join("
       + "  (first_error_banner_line(s) or '') + '\\n' + (first_psql_sqlstate(s) or '') + '\\n' + str(is_retryable_lock_timeout(s))"
       + "  for s in samples"
       + "))",
     );
     expect(out).toBe(
-      "pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\n"
-      + "\nFalse\n"
-      + "ERROR:  duplicate key value violates unique constraint \"t_pkey\"\n"
-      + "\nFalse\n"
-      + "ERROR:  statement timeout\n"
-      + "\nFalse",
+      "psql:resync.sql:2: ERROR:  P0001: not a lock\n"
+      + "P0001\nFalse\n"
+      + "psql:resync.sql:3: ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\n"
+      + "23505\nFalse\n"
+      + "psql:resync.sql:2: ERROR:  P0001: not a lock\n"
+      + "P0001\nFalse\n"
+      + "psql:resync.sql:1: ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\n"
+      + "23505\nFalse\n"
+      + "psql:resync.sql:2: ERROR:  P0001: not a lock\n"
+      + "P0001\nFalse",
     );
+    expect(py(
+      "from cutover_copy import is_retryable_lock_timeout, table_from_lock_error; "
+      + "err = 'psql:resync.sql:24: ERROR:  55P03: push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]\\n"
+      + "CONTEXT:  SQL statement \"DELETE FROM public.push_subscriptions\"'; "
+      + "print(is_retryable_lock_timeout(err)); "
+      + "print(table_from_lock_error(err))",
+    )).toBe("True\npush_subscriptions");
   });
 
   it("retryable lock-timeout stop names the table that waited", () => {
@@ -392,8 +423,9 @@ describe("runbook", () => {
     expect(DOC).toMatch(/\\set VERBOSITY verbose/);
     expect(DOC).toMatch(/ERROR:  55P03:/);
     expect(DOC).toMatch(/Only the resync target/);
-    expect(DOC).toMatch(/first error-banner line/);
-    expect(DOC).toMatch(/pg_restore: error:/);
+    expect(DOC).toMatch(/psql:<file>:<n>: ERROR:/);
+    expect(DOC).toMatch(/client_min_messages = error/);
+    expect(DOC).toMatch(/pg_restore/);
     expect(DOC).toMatch(/no automatic retry/);
     expect(DOC).toMatch(/re-dispatch `cutover-migrate` with `phase=resync` by hand/);
     expect(DOC).toMatch(/CUTOVER_FLIPPED/);

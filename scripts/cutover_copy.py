@@ -219,8 +219,11 @@ def sync_log_load_sql() -> str:
     # Session-level so CREATE TEMP / \\copy (before BEGIN) cannot hang either.
     # VERBOSITY verbose so the whole -f script (including push DML) reports
     # SQLSTATE 55P03 on lock_timeout — default psql banners omit it.
+    # client_min_messages = error is the first SQL statement so NOTICE /
+    # WARNING (and their multi-line bodies) never reach the classifier.
     return (
         psql_verbosity_sql() + "\n"
+        + "SET client_min_messages = error;\n"
         + sync_log_set_lock_timeout_sql() + ";\n"
         "CREATE TEMP TABLE cutover_sync_log_src (\n"
         "  id bigint PRIMARY KEY,\n"
@@ -343,23 +346,23 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-# First error-banner line of any form — not the first line that happens to
-# carry a SQLSTATE. NOTICE / WARNING / DETAIL / CONTEXT / HINT and data
-# lines are skipped. A later row-value `ERROR:  55P03: fake` must not win.
+# Resync is `psql -f` + VERBOSITY verbose: a real banner is always
+# `psql:<file>:<n>: ERROR:  55P03:`. Bare / pg_restore ERROR lines never
+# count. If one of those appears before any psql-prefixed ERROR, stop —
+# a later DETAIL / NOTICE body spoof must not win.
+PSQL_FIELD = re.compile(
+    r"^psql:([^:\n]+):\d+: (ERROR|NOTICE|WARNING|DETAIL|HINT|CONTEXT|LOCATION):"
+)
 SKIP_PSQL_NON_ERROR = re.compile(
     r"^(?:psql:[^:\n]+:\d+: )?(?:NOTICE|WARNING|DETAIL|HINT|CONTEXT|LOCATION):"
 )
-FIRST_ERROR_BANNER = re.compile(
-    r"^(?:psql:[^:\n]+:\d+: )?ERROR:|"
-    r"^pg_restore: error:"
-)
-# Retryable only when THAT first banner line is ERROR:  55P03:.
-# pg_restore: error: … never matches, even if the same line mentions 55P03.
+FIRST_ERROR_BANNER = re.compile(r"^psql:[^:\n]+:\d+: ERROR:")
+BARE_OR_RESTORE_ERROR = re.compile(r"^(?:ERROR:|pg_restore: error:)")
 RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
-    r"^(?:psql:[^:\n]+:\d+: )?ERROR:\s+55P03:"
+    r"^psql:[^:\n]+:\d+: ERROR:\s+55P03:"
 )
 FIRST_PSQL_ERROR_SQLSTATE = re.compile(
-    r"^(?:psql:[^:\n]+:\d+: )?ERROR:\s+([0-9A-Z]{5}):"
+    r"^psql:[^:\n]+:\d+: ERROR:\s+([0-9A-Z]{5}):"
 )
 
 # Prefer the failing statement / CONTEXT over a loose name match.
@@ -383,17 +386,32 @@ def table_from_lock_error(text: str) -> str | None:
 
 
 def first_error_banner_line(text: str) -> str | None:
-    """First psql / pg_restore error banner; skip NOTICE and data lines."""
+    """First `psql:<file>:<n>: ERROR:` banner. Bare / pg_restore never count."""
+    notice_file: str | None = None
     for raw in (text or "").splitlines():
+        field = PSQL_FIELD.match(raw)
+        if field:
+            file, kind = field.group(1), field.group(2)
+            if kind != "ERROR":
+                if kind in ("NOTICE", "WARNING"):
+                    notice_file = file
+                continue
+            # A NOTICE/WARNING body may contain `psql:a:1: ERROR:  55P03:`.
+            # Real -f banners reuse the script file of the NOTICE/WARNING.
+            if notice_file is not None and file != notice_file:
+                continue
+            return raw
         if SKIP_PSQL_NON_ERROR.match(raw):
             continue
-        if FIRST_ERROR_BANNER.match(raw):
-            return raw
+        if BARE_OR_RESTORE_ERROR.match(raw):
+            if notice_file is not None:
+                continue
+            return None
     return None
 
 
 def first_psql_sqlstate(text: str) -> str | None:
-    """SQLSTATE on the first error-banner line only; None if it has none."""
+    """SQLSTATE on the first psql-prefixed ERROR banner; None if it has none."""
     line = first_error_banner_line(text)
     if line is None:
         return None
@@ -402,7 +420,7 @@ def first_psql_sqlstate(text: str) -> str | None:
 
 
 def is_retryable_lock_timeout(text: str) -> bool:
-    """Retryable only when the first error-banner line is `ERROR:  55P03:`."""
+    """Retryable only when the first psql-prefixed ERROR banner is 55P03."""
     line = first_error_banner_line(text)
     return bool(line and RETRYABLE_LOCK_TIMEOUT_BANNER.match(line))
 
