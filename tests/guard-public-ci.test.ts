@@ -1149,15 +1149,16 @@ describe("public-repo CI guard", () => {
   it("keeps ::add-mask:: off teed logs and still fails a real row-shaped dump.log", () => {
     const workflow = readFileSync(join(ROOT, ".github/workflows/cutover-migrate.yml"), "utf8");
     expect(workflow).toMatch(/os\.write\(3, line\.encode\(\)\)/);
-    expect(workflow.match(/exec 3>&1/g)?.length).toBe(4);
+    expect(workflow.match(/^\s+exec 3>&1\s*$/gm)?.length).toBe(4);
     expect(workflow).toMatch(/\|\s*tee "/);
 
     const dir = tmp();
     const dumpLog = join(dir, "dump.log");
     const script = [
+      "set -o pipefail",
       "exec 3>&1",
       `python3 -c ${JSON.stringify(
-        "import os, sys\nos.write(3, b'::add-mask::phil@example.com\\n')\nprint('exported 2 auth.users', flush=True)",
+        "import os,sys; os.write(3, b'::add-mask::phil@example.com\\n'); print('exported 2 auth.users', flush=True)",
       )} 2>&1 | tee ${JSON.stringify(dumpLog)}`,
     ].join("\n");
     const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
