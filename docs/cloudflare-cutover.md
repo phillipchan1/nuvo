@@ -284,8 +284,11 @@ then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
 `lock_not_available` / `55P03` and is rewritten to
 `sync_log lock timed out after 10s — retry the resync (retryable) [55P03]`,
 with the redacted psql error appended, rather than hanging the job).
-A `push_subscriptions` lock timeout uses the same SQLSTATE `55P03` and
-names that table, not `sync_log`. There is **no automatic retry**:
+The resync script starts with `\set VERBOSITY verbose` so the psql banner
+carries `ERROR:  55P03:` (default verbosity omits the SQLSTATE, and the
+job only treats an anchored banner as retryable). A `push_subscriptions`
+lock timeout uses the same SQLSTATE `55P03` and names that table from the
+failing statement or CONTEXT, not `sync_log`. There is **no automatic retry**:
 re-dispatch `cutover-migrate` with `phase=resync` by hand.
 `setval`s `GREATEST(max(id), last_value, 1)`
 so the parked identity never decreases — `--exclude-table-data` drops

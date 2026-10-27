@@ -6,6 +6,7 @@ Never prints row data. Counts, hashes, and watermarks only.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -200,10 +201,27 @@ def sync_log_set_lock_timeout_sql(*, local: bool = False) -> str:
     return f"SET {kind}lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}'"
 
 
+def psql_verbosity_sql() -> str:
+    """Make psql print SQLSTATE on errors (default verbosity omits it)."""
+    return r"\set VERBOSITY verbose"
+
+
+def strip_psql_meta(sql: str) -> str:
+    """Drop psql meta-commands so libpq / PGlite can exec the SQL."""
+    return "\n".join(
+        line
+        for line in (sql or "").splitlines()
+        if not line.lstrip().startswith("\\")
+    )
+
+
 def sync_log_load_sql() -> str:
     # Session-level so CREATE TEMP / \\copy (before BEGIN) cannot hang either.
+    # VERBOSITY verbose so the whole -f script (including push DML) reports
+    # SQLSTATE 55P03 on lock_timeout — default psql banners omit it.
     return (
-        sync_log_set_lock_timeout_sql() + ";\n"
+        psql_verbosity_sql() + "\n"
+        + sync_log_set_lock_timeout_sql() + ";\n"
         "CREATE TEMP TABLE cutover_sync_log_src (\n"
         "  id bigint PRIMARY KEY,\n"
         "  user_id uuid,\n"
@@ -325,18 +343,37 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
+# Anchored to the psql error banner so a mention of 55P03 in a message,
+# DETAIL, or hint is not retryable. Covers `ERROR:  55P03:` and
+# `psql:file:line: ERROR:  55P03:` (N1).
+RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
+    r"^(psql:[^\n]*: )?ERROR:\s+55P03:",
+    re.MULTILINE,
+)
+
+# Prefer the failing statement / CONTEXT over a loose name match.
+_LOCK_TIMEOUT_STATEMENT_TABLE = re.compile(
+    r"(?is)(?:lock\s+table|delete\s+from|insert\s+into|update|from|into)\s+"
+    r"(?:only\s+)?(?:public\.)?(push_subscriptions|sync_log)\b"
+)
+
+
 def table_from_lock_error(text: str) -> str | None:
-    """Name the table from the error; never guess sync_log for a push lock."""
-    lower = (text or "").lower()
+    """Name the table from the failing statement or CONTEXT; never guess."""
+    blob = text or ""
+    match = _LOCK_TIMEOUT_STATEMENT_TABLE.search(blob)
+    if match:
+        return match.group(1).lower()
+    lower = blob.lower()
     for table in LOCK_TIMEOUT_TABLES:
-        if table in lower:
+        if re.search(rf"(?<![a-z0-9_]){re.escape(table)}(?![a-z0-9_])", lower):
             return table
     return None
 
 
 def is_retryable_lock_timeout(text: str) -> bool:
-    """Retryable only when SQLSTATE 55P03 is present — not message text."""
-    return LOCK_TIMEOUT_SQLSTATE in (text or "")
+    """Retryable only on an anchored `ERROR:  55P03:` banner, not message text."""
+    return bool(RETRYABLE_LOCK_TIMEOUT_BANNER.search(text or ""))
 
 
 def retryable_lock_timeout_stop(
@@ -457,11 +494,17 @@ def push_load_rows_sql() -> str:
         "  time_zone text,\n"
         "  last_seen_at timestamptz,\n"
         "  failure_count integer\n"
-        ")"
+        ");\n"
+        + _push_count_fn_sql(
+            "cutover_push_anti_join_delete",
+            _push_anti_join_delete_body_sql(),
+        )
+        + ";\n"
+        + _push_count_fn_sql("cutover_push_upsert", _push_upsert_body_sql())
     )
 
 
-def push_upsert_sql() -> str:
+def _push_upsert_body_sql() -> str:
     cols = ", ".join(PUSH_COLUMNS)
     assignments = ",\n    ".join(f"{c} = EXCLUDED.{c}" for c in PUSH_COLUMNS if c != "id")
     return (
@@ -476,46 +519,7 @@ def push_upsert_sql() -> str:
     )
 
 
-def push_set_lock_timeout_sql(*, local: bool = False) -> str:
-    kind = "LOCAL " if local else ""
-    return f"SET {kind}lock_timeout = '{SYNC_LOG_LOCK_TIMEOUT}'"
-
-
-def push_lock_timeout_handler_sql() -> str:
-    return lock_timeout_handler_sql("push_subscriptions")
-
-
-def push_lock_sql() -> str:
-    return (
-        push_set_lock_timeout_sql(local=True) + ";\n"
-        "DO $cutover_push_lock$\n"
-        "BEGIN\n"
-        "  LOCK TABLE public.push_subscriptions IN SHARE ROW EXCLUSIVE MODE;\n"
-        f"{push_lock_timeout_handler_sql()}"
-        "END\n"
-        "$cutover_push_lock$"
-    )
-
-
-def push_lock_timeout_probe_sql(
-    *,
-    errcode: str = "lock_not_available",
-    message: str = "canceling statement due to lock timeout",
-) -> str:
-    """Raise errcode/message through the same EXCEPTION rewrite the lock uses."""
-    safe_code = errcode.replace("'", "")
-    safe_msg = message.replace("'", "''")
-    return (
-        "DO $cutover_push_lock_probe$\n"
-        "BEGIN\n"
-        f"  RAISE EXCEPTION '{safe_msg}' USING ERRCODE = '{safe_code}';\n"
-        f"{push_lock_timeout_handler_sql()}"
-        "END\n"
-        "$cutover_push_lock_probe$"
-    )
-
-
-def push_anti_join_delete_sql() -> str:
+def _push_anti_join_delete_body_sql() -> str:
     return (
         "WITH gone AS (\n"
         "  DELETE FROM public.push_subscriptions t\n"
@@ -524,3 +528,26 @@ def push_anti_join_delete_sql() -> str:
         ")\n"
         "SELECT COUNT(*) FROM gone"
     )
+
+
+def _push_count_fn_sql(name: str, body: str) -> str:
+    """Session-scoped wrapper so a lock_timeout names this table on stderr."""
+    return (
+        f"CREATE OR REPLACE FUNCTION pg_temp.{name}() RETURNS bigint\n"
+        "LANGUAGE plpgsql AS $cutover_push_fn$\n"
+        "DECLARE n bigint;\n"
+        "BEGIN\n"
+        f"  EXECUTE $cutover_push_body${body}$cutover_push_body$ INTO n;\n"
+        "  RETURN n;\n"
+        f"{lock_timeout_handler_sql('push_subscriptions')}"
+        "END\n"
+        "$cutover_push_fn$"
+    )
+
+
+def push_upsert_sql() -> str:
+    return "SELECT pg_temp.cutover_push_upsert() AS count"
+
+
+def push_anti_join_delete_sql() -> str:
+    return "SELECT pg_temp.cutover_push_anti_join_delete() AS count"

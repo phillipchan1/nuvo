@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -15,6 +16,12 @@ function py(code: string): string {
     throw new Error(result.stderr || result.stdout || `python exited ${result.status}`);
   }
   return (result.stdout || "").trim();
+}
+
+function loadSql(): string {
+  return py(
+    "from cutover_copy import strip_psql_meta, sync_log_load_sql; print(strip_psql_meta(sync_log_load_sql()))",
+  );
 }
 
 const SYNC_DDL = `
@@ -118,7 +125,7 @@ describe("sync_log late commit", () => {
     const anti = py("from cutover_copy import anti_join_ids; print(anti_join_ids([1,2,3,4,5,6], [1,2,3,5,6]))");
     expect(anti).toBe("[4]");
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await target.query(
       `INSERT INTO cutover_sync_log_src (id, user_id, provider, operation, status, error, created_at)
        SELECT id, user_id, provider, operation, status, error, created_at FROM public.sync_log`,
@@ -178,7 +185,7 @@ describe("sync_log late commit", () => {
     const neonPreId = Number(neonPre.rows[0]?.id);
     expect(neonPreId).toBeGreaterThan(3);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     for (const id of [1, 2, 3]) {
       const row = await source.query<{
         id: string;
@@ -229,7 +236,7 @@ describe("sync_log late commit", () => {
     const park = await lastValue(target);
     expect(park).toBe(1_000_003);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
 
@@ -258,7 +265,7 @@ describe("sync_log late commit", () => {
       );
     }
     await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(3))"));
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
     const afterFirst = await lastValue(target);
@@ -291,7 +298,7 @@ describe("sync_log late commit", () => {
     expect(inFlight).toBeGreaterThan(1_000_003);
     expect(await lastValue(target)).toBe(inFlight);
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1, 2, 3]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
 
@@ -319,7 +326,7 @@ describe("sync_log late commit", () => {
       `INSERT INTO public.sync_log (id, provider, operation, status)
        OVERRIDING SYSTEM VALUE VALUES (1, 'neon', 'other', 'err')`,
     );
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1]);
 
     const counted = await target.query<{ count: string }>(
@@ -371,7 +378,7 @@ describe("sync_log late commit", () => {
     expect(String(shown.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
     await target.exec("COMMIT");
 
-    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.exec(loadSql() + ";");
     await loadSrc(target, source, [1]);
     await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
     expect(await idsOf(target)).toEqual([1]);
@@ -412,7 +419,10 @@ describe("sync_log late commit", () => {
   it("rewrites a push_subscriptions lock_not_available as that table's message", async () => {
     const db = new PGlite();
     const probe = py(
-      "from cutover_copy import push_lock_timeout_probe_sql; print(push_lock_timeout_probe_sql())",
+      "from cutover_copy import lock_timeout_handler_sql; "
+      + "print(\"DO $cutover_push_lock_probe$\\nBEGIN\\n"
+      + "  RAISE EXCEPTION 'canceling statement due to lock timeout' USING ERRCODE = 'lock_not_available';\\n\""
+      + " + lock_timeout_handler_sql('push_subscriptions') + \"END\\n$cutover_push_lock_probe$\")",
     );
     let message = "";
     try {
@@ -432,7 +442,7 @@ describe("sync_log late commit", () => {
     const before = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
     expect(String(before.rows[0]?.lock_timeout)).toMatch(/^(0|0s|0ms|-1)$/);
 
-    await db.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await db.exec(loadSql() + ";");
     const afterLoad = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
     expect(String(afterLoad.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
 
@@ -575,5 +585,162 @@ describe("push_subscriptions window edits", () => {
 
     await source.close();
     await target.close();
+  });
+});
+
+const LIVE_PG_URL =
+  process.env.DATABASE_URL?.trim() || "postgresql://postgres:postgres@127.0.0.1:5432/nuvo";
+
+async function connectLivePg(): Promise<Client | null> {
+  const client = new Client({ connectionString: LIVE_PG_URL, connectionTimeoutMillis: 2000 });
+  try {
+    await client.connect();
+    return client;
+  } catch (err) {
+    await client.end().catch(() => undefined);
+    if (process.env.GITHUB_ACTIONS) throw err;
+    return null;
+  }
+}
+
+function classifyPsql(text: string): { retryable: boolean; stop: string; table: string } {
+  const out = py(
+    "from cutover_copy import is_retryable_lock_timeout, retryable_lock_timeout_stop, table_from_lock_error; "
+    + `err = ${JSON.stringify(text)}; `
+    + "print(is_retryable_lock_timeout(err)); "
+    + "print(table_from_lock_error(err) or ''); "
+    + "print(retryable_lock_timeout_stop(err))",
+  );
+  const [retryable, table, ...rest] = out.split("\n");
+  return { retryable: retryable === "True", table, stop: rest.join("\n") };
+}
+
+describe("live PostgreSQL lock timeout", () => {
+  it("names push_subscriptions when another session holds row + exclusive locks", async () => {
+    const locker = await connectLivePg();
+    if (!locker) return;
+
+    const worker = new Client({ connectionString: LIVE_PG_URL });
+    await worker.connect();
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110203)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query(PUSH_DDL);
+      const id = "11111111-1111-1111-1111-111111111111";
+      const user = "22222222-2222-2222-2222-222222222222";
+      await locker.query(
+        `INSERT INTO public.push_subscriptions (id, user_id, endpoint, p256dh, auth)
+         VALUES ($1, $2, 'https://push.example/lock', 'k', 's')`,
+        [id, user],
+      );
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM public.push_subscriptions WHERE id = $1 FOR UPDATE", [id]);
+      await locker.query("LOCK TABLE public.push_subscriptions IN ACCESS EXCLUSIVE MODE");
+
+      const loadSqlText = py("from cutover_copy import push_load_rows_sql; print(push_load_rows_sql())");
+      for (const part of loadSqlText.split(/;\n(?=CREATE )/)) {
+        await worker.query(part);
+      }
+      await worker.query("SET lock_timeout = '400ms'");
+      const deleteSql = py("from cutover_copy import push_anti_join_delete_sql; print(push_anti_join_delete_sql())");
+      let err: { code?: string; message: string } | null = null;
+      try {
+        await worker.query(deleteSql);
+        throw new Error("expected push_subscriptions lock timeout");
+      } catch (caught) {
+        if (caught instanceof Error && caught.message === "expected push_subscriptions lock timeout") throw caught;
+        err = caught as { code?: string; message: string };
+      }
+      expect(err?.code).toBe("55P03");
+      expect(err?.message).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+      expect(err?.message).not.toMatch(/sync_log lock timed out/);
+
+      const banner =
+        `ERROR:  55P03: ${err!.message}\n` +
+        `CONTEXT:  SQL statement ${JSON.stringify(deleteSql)}`;
+      const classified = classifyPsql(banner);
+      expect(classified.retryable).toBe(true);
+      expect(classified.table).toBe("push_subscriptions");
+      expect(classified.stop).toMatch(/^push_subscriptions lock timed out/);
+      expect(classified.stop).not.toMatch(/sync_log lock timed out/);
+
+      const defaultPsql = `ERROR:  canceling statement due to lock timeout\nCONTEXT:  SQL statement ${JSON.stringify(deleteSql)}`;
+      expect(classifyPsql(defaultPsql).retryable).toBe(false);
+    } finally {
+      await worker.end().catch(() => undefined);
+      try {
+        await locker.query("ROLLBACK");
+      } catch {
+        /* already closed */
+      }
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110203)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  it("names sync_log when another session holds the table exclusive", async () => {
+    const locker = await connectLivePg();
+    if (!locker) return;
+
+    const worker = new Client({ connectionString: LIVE_PG_URL });
+    await worker.connect();
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110204)");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(SYNC_DDL);
+      await locker.query(
+        `INSERT INTO public.sync_log (provider, operation, status) VALUES ('google', 'sync', 'ok')`,
+      );
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM public.sync_log FOR UPDATE");
+      await locker.query("LOCK TABLE public.sync_log IN ACCESS EXCLUSIVE MODE");
+
+      await worker.query("BEGIN");
+      const lockSql = py("from cutover_copy import sync_log_lock_sql; print(sync_log_lock_sql())").replace(
+        "SET LOCAL lock_timeout = '10s';",
+        "SET LOCAL lock_timeout = '400ms';",
+      );
+      let err: { code?: string; message: string } | null = null;
+      try {
+        for (const part of lockSql.split(/;\n(?=DO )/)) {
+          await worker.query(part);
+        }
+        throw new Error("expected sync_log lock timeout");
+      } catch (caught) {
+        if (caught instanceof Error && caught.message === "expected sync_log lock timeout") throw caught;
+        err = caught as { code?: string; message: string };
+      }
+      expect(err?.code).toBe("55P03");
+      expect(err?.message).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
+      expect(err?.message).not.toMatch(/push_subscriptions lock timed out/);
+
+      const banner =
+        `ERROR:  55P03: ${err!.message}\n` +
+        `CONTEXT:  SQL statement "LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE"`;
+      const classified = classifyPsql(banner);
+      expect(classified.retryable).toBe(true);
+      expect(classified.table).toBe("sync_log");
+      expect(classified.stop).toMatch(/^sync_log lock timed out/);
+    } finally {
+      await worker.query("ROLLBACK").catch(() => undefined);
+      await worker.end().catch(() => undefined);
+      try {
+        await locker.query("ROLLBACK");
+      } catch {
+        /* already closed */
+      }
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110204)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
   });
 });

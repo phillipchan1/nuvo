@@ -52,8 +52,8 @@
  *  11. actions/cache and actions/cache/save (restore-only is allowed).
  *  12. YAML is fail-closed: parse errors, doc.errors, doc.warnings,
  *      unknown custom tags, more than one document, a non-mapping root,
- *      duplicate keys, or << merge keys throw. There is no raw-text
- *      fallback.
+ *      duplicate keys, << merge keys, or alias expansion above
+ *      YAML_MAX_ALIAS_COUNT throw. There is no raw-text fallback.
  *  13. Every .yml/.yaml under .github is listed recursively, matching
  *      case-insensitively, including directories and symlinks. Only
  *      top-level lowercase .github/workflows/*.yml|*.yaml regular files
@@ -61,6 +61,8 @@
  *      files are scanned; any other workflow-like or action file (wrong
  *      place or wrong case) fails closed. Composite action steps are
  *      hashed and allowlisted the same way as workflow steps.
+ *  14. Committed allowlist entries that no longer exist (deleted
+ *      workflow, job, or step) fail. Regen after removing one.
  *
  * ## Limits
  *
@@ -177,6 +179,9 @@ const GH_RELEASE_CREATE_VALUE_FLAGS = new Set([
   "--discussion-category",
 ]);
 
+/** Cap YAML alias expansion so a billion-laughs bomb fails fast (N4). */
+export const YAML_MAX_ALIAS_COUNT = 100;
+
 const YAML_CORE_TAGS = new Set([
   "tag:yaml.org,2002:str",
   "tag:yaml.org,2002:int",
@@ -243,7 +248,12 @@ export function parseWorkflowDocument(text) {
     throw new Error(`workflow YAML parse warning: ${doc.warnings.map((e) => e.message).join("; ")}`);
   }
   rejectMergeKeys(doc);
-  const js = doc.toJS({ maxAliasCount: -1 });
+  let js;
+  try {
+    js = doc.toJS({ maxAliasCount: YAML_MAX_ALIAS_COUNT });
+  } catch (err) {
+    throw new Error(`workflow YAML alias expansion failed: ${err instanceof Error ? err.message : err}`);
+  }
   if (js == null || typeof js !== "object" || Array.isArray(js)) {
     throw new Error("workflow YAML root must be a mapping");
   }
@@ -1419,6 +1429,40 @@ export function neededStepAllowlist(workflowsDir) {
   return neededAllowlist(workflowsDir).steps;
 }
 
+export function findAllowlistOrphans(needed, committed) {
+  const files = new Set([
+    ...(needed.steps ?? []).map((s) => s.file),
+    ...(needed.job_steps ?? []).map((j) => j.file),
+    ...(needed.workflow_jobs ?? []).map((w) => w.file),
+  ]);
+  const jobs = new Set((needed.job_steps ?? []).map((j) => `${j.file}\0${j.job}`));
+  const steps = new Set((needed.steps ?? []).map((s) => `${s.file}\0${s.job}\0${s.id}`));
+  const orphans = [];
+  for (const w of committed.workflow_jobs ?? []) {
+    if (!files.has(w.file)) orphans.push(`workflow ${w.file}`);
+  }
+  for (const j of committed.job_steps ?? []) {
+    if (!jobs.has(`${j.file}\0${j.job}`)) orphans.push(`job ${j.file} ${j.job}`);
+  }
+  for (const s of committed.steps ?? []) {
+    if (!steps.has(`${s.file}\0${s.job}\0${s.id}`)) orphans.push(`step ${s.file} ${s.job} ${s.id}`);
+  }
+  return orphans;
+}
+
+export function assertAllowlistCoverage(dir, committed = loadRunAllowlist()) {
+  const needed = neededAllowlist(dir);
+  const orphans = findAllowlistOrphans(needed, committed);
+  if (orphans.length) {
+    throw new Error(
+      `public-ci allowlist orphan(s) (deleted workflow/job/step still listed):\n${orphans
+        .map((o) => `  ${o}`)
+        .join("\n")}`,
+    );
+  }
+  return needed;
+}
+
 export function hasHeredoc(run) {
   return /<</.test(String(run));
 }
@@ -1969,6 +2013,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   } else {
     const dir = join(here, "..", ".github");
+    assertAllowlistCoverage(dir);
     const steps = assertWorkflowsUploadAllowlist(dir);
     if (job) {
       const staged = process.env.STAGED_UPLOAD || "artifacts/cutover-report.md";

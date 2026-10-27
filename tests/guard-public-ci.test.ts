@@ -19,6 +19,9 @@ import {
   loadRunAllowlist,
   neededAllowlist,
   neededStepAllowlist,
+  findAllowlistOrphans,
+  assertAllowlistCoverage,
+  YAML_MAX_ALIAS_COUNT,
   listHash,
   unitHash,
   writesGithubEnv,
@@ -451,6 +454,18 @@ describe("public-repo CI guard", () => {
     );
   });
 
+  it("fails fast on a YAML alias bomb", () => {
+    expect(YAML_MAX_ALIAS_COUNT).toBeGreaterThan(0);
+    expect(YAML_MAX_ALIAS_COUNT).toBeLessThanOrEqual(100);
+    let bomb = "on: push\njobs: {}\na: &a [x, x]\n";
+    let prev = "a";
+    for (const name of "bcdefghij") {
+      bomb += `${name}: &${name} [*${prev}, *${prev}]\n`;
+      prev = name;
+    }
+    expect(() => parseWorkflowDocument(bomb)).toThrow(/alias expansion|resource exhaustion/i);
+  });
+
   it("fails on YAML parser warnings and unknown custom tags", async () => {
     const { parseAllDocuments } = await import("yaml");
     const tagged = "on: !evil push\njobs: {}\n";
@@ -650,6 +665,8 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/ordered step-id list/);
     expect(src).toMatch(/whole canonical step/);
     expect(src).toMatch(/duplicate step ids/);
+    expect(src).toMatch(/YAML_MAX_ALIAS_COUNT/);
+    expect(src).toMatch(/assertAllowlistCoverage/);
     expect(existsSync(join(ROOT, "scripts/regen-public-ci-allowlist.mjs"))).toBe(true);
   });
 
@@ -683,6 +700,26 @@ describe("public-repo CI guard", () => {
     expect(needed.workflow_jobs.every((w) => w.file && Array.isArray(w.jobs) && w.sha256)).toBe(true);
     expect(committed).toEqual(needed);
     expect(neededStepAllowlist(join(ROOT, ".github/workflows"))).toEqual(needed.steps);
+    expect(findAllowlistOrphans(needed, committed)).toEqual([]);
+    expect(() => assertAllowlistCoverage(join(ROOT, ".github"))).not.toThrow();
+  });
+
+  it("fails when an allowlisted workflow, job, or step is deleted", () => {
+    const needed = {
+      steps: [{ file: "keep.yml", job: "t", id: "s", sha256: "a" }],
+      job_steps: [{ file: "keep.yml", job: "t", ids: ["s"], sha256: "b" }],
+      workflow_jobs: [{ file: "keep.yml", jobs: ["t"], sha256: "c" }],
+    };
+    expect(
+      findAllowlistOrphans(needed, {
+        steps: [
+          ...needed.steps,
+          { file: "gone.yml", job: "old", id: "x", sha256: "d" },
+        ],
+        job_steps: [...needed.job_steps, { file: "keep.yml", job: "removed", ids: ["x"], sha256: "e" }],
+        workflow_jobs: [...needed.workflow_jobs, { file: "gone.yml", jobs: ["old"], sha256: "f" }],
+      }),
+    ).toEqual(["workflow gone.yml", "job keep.yml removed", "step gone.yml old x"]);
   });
 
   it("100e: env/shell/working-directory edits, copied job BUNDLE override, pull_request_target", () => {
@@ -1387,5 +1424,14 @@ describe("public-ci-guard .github layout", () => {
       true,
     );
     expect(needed.job_steps.some((j) => j.file === "actions/demo/action.yml" && j.job === "runs")).toBe(true);
+    expect(() =>
+      assertAllowlistCoverage(github, {
+        ...needed,
+        workflow_jobs: [...needed.workflow_jobs, { file: "deleted.yml", jobs: ["gone"], sha256: "0" }],
+        job_steps: [...needed.job_steps, { file: "ok.yml", job: "ghost", ids: ["n"], sha256: "0" }],
+        steps: [...needed.steps, { file: "ok.yml", job: "t", id: "removed", sha256: "0" }],
+      }),
+    ).toThrow(/orphan|deleted\.yml|ghost|removed/);
+    expect(() => assertAllowlistCoverage(github, needed)).not.toThrow();
   });
 });
