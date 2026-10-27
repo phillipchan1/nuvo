@@ -439,22 +439,37 @@ app.options("/functions/v1/task-mirror", () => new Response("ok", { headers: OPE
 app.options("/api/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/functions/v1/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
 
+function refuseMirrorGet(c: Context<AppEnv>): Response | null {
+  if (c.req.method === "GET" || c.req.method === "HEAD") {
+    return json({ error: "method not allowed" }, 405, OPEN_CORS);
+  }
+  return null;
+}
+
 app.all("/api/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
 });
 app.all("/functions/v1/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
 });
 app.all("/api/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
 });
 app.all("/functions/v1/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });

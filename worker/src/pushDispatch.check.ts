@@ -1,5 +1,8 @@
 // Push-dispatch with a mocked Web Push endpoint.
 // Run: node --experimental-strip-types worker/src/pushDispatch.check.ts
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
@@ -15,6 +18,63 @@ function ok(cond: boolean, msg: string) {
   checks++;
   if (!cond) fails.push(msg);
 }
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+function walkTs(dir: string, files: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) walkTs(p, files);
+    else if (name.endsWith(".ts") && !name.endsWith(".check.ts")) files.push(p);
+  }
+  return files;
+}
+
+function exportedFunctions(src: string): { name: string; body: string }[] {
+  const starts: { name: string; index: number }[] = [];
+  const re = /^export (?:async )?function (\w+)\b/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) starts.push({ name: m[1], index: m.index });
+  return starts.map((start, i) => ({
+    name: start.name,
+    body: src.slice(start.index, i + 1 < starts.length ? starts[i + 1].index : src.length),
+  }));
+}
+
+const SENDER_CALL = /(?:runPushDispatch|sendWebPush)\(/;
+const allowedSenderFiles = new Set([
+  join(here, "pushDispatch.ts"),
+  join(here, "lib/webpush.ts"),
+  join(here, "cronJobs.ts"),
+]);
+for (const file of walkTs(here)) {
+  const src = readFileSync(file, "utf8");
+  if (!SENDER_CALL.test(src)) continue;
+  ok(allowedSenderFiles.has(file), `sender call only in allowed files: ${file.slice(here.length + 1)}`);
+}
+
+const cronJobsSrc = readFileSync(join(here, "cronJobs.ts"), "utf8");
+for (const fn of exportedFunctions(cronJobsSrc)) {
+  const senderAt = fn.body.search(SENDER_CALL);
+  if (senderAt < 0) continue;
+  const gateAt = fn.body.indexOf("gateCron(");
+  ok(gateAt >= 0 && gateAt < senderAt, `cronJobs.ts ${fn.name} calls sender after gateCron`);
+}
+
+const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
+const routeRe = /app\.(all|get|post|put|patch|delete)\(\s*(["'`])([^"'`]+)\2\s*,\s*([\s\S]*?)\);/g;
+let routeMatch: RegExpExecArray | null;
+let pushRoutes = 0;
+while ((routeMatch = routeRe.exec(indexSrc))) {
+  const path = routeMatch[3] ?? "";
+  if (!path.includes("push-dispatch")) continue;
+  pushRoutes += 1;
+  ok(
+    /^\(c\)\s*=>\s*handleCron\(\s*c\s*,\s*["']push-dispatch["']\s*\)$/.test((routeMatch[4] ?? "").trim()),
+    `index.ts ${path} is exactly handleCron(c, "push-dispatch")`,
+  );
+}
+ok(pushRoutes === 2, `index.ts has two dedicated push-dispatch routes (got ${pushRoutes})`);
 
 function bytesToB64url(bytes: Uint8Array): string {
   let bin = "";
@@ -54,6 +114,12 @@ ok(self.ok === true, "webPushSelfTest signs");
 ok(self.matchesClient === true, "webPushSelfTest matches the client public key");
 const mismatch = await webPushSelfTest(env, "other-key");
 ok(mismatch.ok === true && mismatch.matchesClient === false, "webPushSelfTest notices a split pair");
+const brokenSelf = await webPushSelfTest({
+  ...env,
+  VAPID_PRIVATE_KEY: "not-a-valid-d",
+});
+ok(brokenSelf.ok === false, "selfTest broken key fails");
+ok(brokenSelf.error === "VAPID keys could not sign", "selfTest error is generic — no raw crypto or exception text");
 
 const posts: { url: string; headers: Headers; status: number }[] = [];
 const mockFetch = async (input: string, init?: RequestInit) => {
@@ -145,31 +211,71 @@ await db.query(
   ["bbbbbbbb-ffff-4000-8000-000000000001", B, "https://push.example.test/user-b", keysB.p256dh, keysB.auth],
 );
 
-const restore = installRequestIoForTests(() => ({
-  sql,
-  auth: {} as never,
-  close: async () => {},
-}));
+let ioOpened = 0;
+const restore = installRequestIoForTests(() => {
+  ioOpened += 1;
+  return {
+    sql,
+    auth: {} as never,
+    close: async () => {},
+  };
+});
 const restorePushFetch = installPushFetchForTests(mockFetch);
 posts.length = 0;
-const skipHttp = await app.request("http://localhost:8787/api/cron/push-dispatch", {
-  method: "POST",
-  headers: {
-    Origin: "http://localhost:8787",
-    Authorization: `Bearer ${env.CRON_SECRET}`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ nowMs }),
-}, env);
-ok(skipHttp.status === 200, `HTTP cron before flip: ${skipHttp.status}`);
-const skipHttpBody = (await skipHttp.json()) as { ok?: boolean; skipped?: boolean; reason?: string; job?: string };
-ok(skipHttpBody.ok === true && skipHttpBody.skipped === true && skipHttpBody.reason === "cutover_not_flipped" && skipHttpBody.job === "push-dispatch", "HTTP cron skips before flip");
-ok(posts.length === 0, "HTTP cron before flip: nothing sent even with Neon prefs + nowMs");
+
+const PUSH_ROUTES = [
+  "/api/cron/push-dispatch",
+  "/api/cron/nuvo-push-dispatch",
+  "/api/push-dispatch",
+  "/functions/v1/push-dispatch",
+] as const;
+const SKIP_KEYS = ["job", "ok", "reason", "skipped"] as const;
+
+function isExactSkipBody(body: unknown): body is { job: string; ok: true; reason: string; skipped: true } {
+  if (!body || typeof body !== "object") return false;
+  const rec = body as Record<string, unknown>;
+  const keys = Object.keys(rec).sort();
+  return (
+    keys.length === SKIP_KEYS.length &&
+    keys.every((key, i) => key === SKIP_KEYS[i]) &&
+    rec.ok === true &&
+    rec.skipped === true &&
+    rec.reason === "cutover_not_flipped" &&
+    rec.job === "push-dispatch"
+  );
+}
+
+ioOpened = 0;
+for (const path of PUSH_ROUTES) {
+  for (const method of ["GET", "POST"] as const) {
+    for (const body of [{ nowMs }, { selfTest: true, clientPublicKey: vapid.publicKey }] as const) {
+      const query = new URLSearchParams(
+        Object.fromEntries(
+          Object.entries(body).map(([key, value]) => [key, String(value)]),
+        ),
+      ).toString();
+      const res = await app.request(`http://localhost:8787${path}${method === "GET" ? `?${query}` : ""}`, {
+        method,
+        headers: {
+          Origin: "http://localhost:8787",
+          Authorization: `Bearer ${env.CRON_SECRET}`,
+          ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+      }, env);
+      ok(res.status === 200, `unflipped ${method} ${path}: HTTP ${res.status}`);
+      const skipBody = await res.json();
+      ok(isExactSkipBody(skipBody), `unflipped ${method} ${path}: exact skip body`);
+    }
+  }
+}
+ok(ioOpened === 0, "unflipped push routes: zero IO opens");
+ok(posts.length === 0, "unflipped push routes: nothing sent even with Neon prefs + nowMs");
 const skipDeliveries = await db.query<{ n: number }>(
   `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id IN ($1, $2)`,
   [A, B],
 );
-ok(Number(skipDeliveries.rows[0]?.n ?? 0) === 0, "HTTP cron before flip: no claims");
+ok(Number(skipDeliveries.rows[0]?.n ?? 0) === 0, "unflipped push routes: no claims");
 
 const skipJob = await runCronJob("push-dispatch", env, sql);
 ok(skipJob.skipped === true && skipJob.status === 200 && skipJob.reason === "cutover_not_flipped", "runCronJob skips push-dispatch before flip");

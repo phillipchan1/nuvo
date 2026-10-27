@@ -10,8 +10,8 @@ import {
   gateCronBearerRoute,
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
-import { CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
-import type { Sql } from "./db.ts";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
+import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 
@@ -74,6 +74,31 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const scheduledFn = (
+  app as typeof app & {
+    scheduled(
+      event: { cron: string },
+      env: Record<string, string | undefined>,
+      ctx: { waitUntil(promise: Promise<unknown>): void },
+    ): Promise<void>;
+  }
+).scheduled;
+ok(typeof scheduledFn === "function", "app exports scheduled");
+let scheduledSqlOpens = 0;
+const restoreOpenSql = installOpenSqlForTests(() => {
+  scheduledSqlOpens += 1;
+  throw new Error("openSql used before flip");
+});
+try {
+  for (const cron of ALL_CRON_SCHEDULES) {
+    await scheduledFn({ cron }, {}, { waitUntil() {} });
+    await scheduledFn({ cron }, { CUTOVER_FLIPPED: "garbage" }, { waitUntil() {} });
+  }
+  ok(scheduledSqlOpens === 0, "unflipped scheduled() opens no SQL for every cron");
+} finally {
+  restoreOpenSql();
+}
 
 const skipRes = skippedUntilCutoverFlip("rollover");
 ok(skipRes.status === 200, "skippedUntilCutoverFlip is HTTP 200");

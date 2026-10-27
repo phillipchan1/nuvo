@@ -46,14 +46,8 @@ export async function webPushSelfTest(
     const pub = env.VAPID_PUBLIC_KEY!.trim();
     const matchesClient = clientPublicKey ? clientPublicKey.trim() === pub : undefined;
     return { ok: true, matchesClient };
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      error:
-        `${raw} — this almost always means the public and private keys are from ` +
-        "different generate-vapid-keys runs, or one was pasted with whitespace.",
-    };
+  } catch {
+    return { ok: false, error: "VAPID keys could not sign" };
   }
 }
 

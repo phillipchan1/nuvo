@@ -1139,6 +1139,19 @@ const frozenMirror = await withTimeout(
   "A slot-mirror frozen",
 );
 ok(frozenMirror.status === 503, `A slot-mirror while frozen: HTTP ${frozenMirror.status}`);
+const frozenMirrorGet = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/slot-mirror",
+    {
+      method: "GET",
+      headers: { ...jsonHeaders(a.token), Origin: origin },
+    },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "A slot-mirror frozen GET",
+);
+ok(frozenMirrorGet.status === 405, `A slot-mirror GET while frozen: HTTP ${frozenMirrorGet.status} (not 503)`);
 
 const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
   const rows: Record<string, SubscriptionColumns> = {
