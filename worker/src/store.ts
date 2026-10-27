@@ -103,6 +103,10 @@ function optNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function asJson(sql: Sql, value: unknown) {
+  return sql.json(JSON.parse(JSON.stringify(value ?? {})) as Parameters<Sql["json"]>[0]);
+}
+
 const PATCH_LOCKED = new Set(["id", "user_id", "created_at", "field_ts"]);
 
 function fieldTsMillis(raw: unknown): Record<string, number> {
@@ -759,7 +763,7 @@ export async function updateTask(
   const externalId = optStr(patch.external_id);
   const googleEventId = optStr(patch.google_event_id);
   const connectionId = optId(patch.connection_id);
-  const fieldTs = sql.json(patch.field_ts ?? {});
+  const fieldTs = asJson(sql, patch.field_ts);
   const rows = await sql`
     UPDATE tasks
     SET
@@ -813,7 +817,7 @@ export async function updateDomain(
   const name = typeof patch.name === "string" ? patch.name : "";
   const color = typeof patch.color === "string" ? patch.color : "";
   const intention = typeof patch.intention === "string" ? patch.intention : "";
-  const fieldTs = sql.json(patch.field_ts ?? {});
+  const fieldTs = asJson(sql, patch.field_ts);
   const rows = await sql`
     UPDATE domains
     SET
@@ -858,7 +862,7 @@ export async function updateProject(
   const domainId = patch.domain_id ?? null;
   const initiativeId = patch.initiative_id ?? null;
   const setFieldTs = "field_ts" in patch ? 1 : 0;
-  const fieldTs = sql.json((patch as { field_ts?: unknown }).field_ts ?? {});
+  const fieldTs = asJson(sql, (patch as { field_ts?: unknown }).field_ts);
   const rows = await sql`
     UPDATE projects
     SET
@@ -893,7 +897,7 @@ export async function updateSettings(
   const workStart = optNum(patch.work_start_minutes) ?? 480;
   const workEnd = optNum(patch.work_end_minutes) ?? 990;
   const timeZone = optStr(patch.time_zone);
-  const fieldTs = sql.json(patch.field_ts ?? {});
+  const fieldTs = asJson(sql, patch.field_ts);
   const rows = await sql`
     UPDATE user_settings
     SET
@@ -1073,7 +1077,7 @@ export async function updateSlot(
   const startTime = optStr(patch.start_time);
   const duration = optNum(patch.duration_minutes);
   const color = optStr(patch.color);
-  const fieldTs = sql.json(patch.field_ts ?? {});
+  const fieldTs = asJson(sql, patch.field_ts);
   const rows = await sql`
     UPDATE slots
     SET
@@ -1763,16 +1767,15 @@ export async function updateOwnedExternalEvent(
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   const current = await getOwnedExternalEvent(store, id);
-  if (!current) return null;
   const sql = store.sql;
-  const startAt = typeof patch.start_at === "string" ? patch.start_at : (current.start_at as string);
-  const endAt = typeof patch.end_at === "string" ? patch.end_at : (current.end_at as string);
-  const title = typeof patch.title === "string" ? patch.title : (current.title as string | null);
-  const allDay = typeof patch.all_day === "boolean" ? patch.all_day : (current.all_day as boolean | null);
+  const startAt = typeof patch.start_at === "string" ? patch.start_at : (current?.start_at as string | undefined) ?? null;
+  const endAt = typeof patch.end_at === "string" ? patch.end_at : (current?.end_at as string | undefined) ?? null;
+  const title = typeof patch.title === "string" ? patch.title : (current?.title as string | null | undefined) ?? null;
+  const allDay = typeof patch.all_day === "boolean" ? patch.all_day : (current?.all_day as boolean | null | undefined) ?? null;
   const location = typeof patch.location === "string" || patch.location === null
     ? patch.location
-    : (current.location as string | null);
-  const busy = typeof patch.busy === "boolean" ? patch.busy : (current.busy as boolean | null);
+    : (current?.location as string | null | undefined) ?? null;
+  const busy = typeof patch.busy === "boolean" ? patch.busy : (current?.busy as boolean | null | undefined) ?? null;
   const rows = await sql`
     UPDATE external_events
     SET start_at = ${startAt}, end_at = ${endAt}, title = ${title},

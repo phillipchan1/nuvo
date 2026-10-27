@@ -32,12 +32,15 @@ import {
   updateTaskTitle,
   upsertOwned,
   appleUserIdTakenByOther,
+  deleteOwnedActivityBinding,
   deleteOwnedCalendarAccount,
+  deleteOwnedPushByEndpoint,
   getOwnedActivitySource,
   getOwnedAppleIdentity,
   getOwnedCalendarAccount,
   getOwnedExternalEvent,
   updateOwnedExternalEvent,
+  updateOwnedConnection,
   insertActivityBinding,
   insertActivitySource,
   insertActivityUnit,
@@ -192,41 +195,58 @@ const ownPatch = await applyPatch(storeA, "tasks", { id: TASK_A }, { title: "A r
 ok(ownPatch.matched === 1, "applyPatch: A can patch own task");
 ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [TASK_A])) === "A retitled", "applyPatch: A title updated");
 
+function isoOf(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  return String(value ?? "");
+}
+
 const completed = await updateOwned(storeA, "tasks", TASK_A, {
   status: "done",
   completed_at: "2026-10-27T12:00:00Z",
 });
 ok(completed?.status === "done", "updateOwned task: complete persists status");
-ok(String(completed?.completed_at ?? "").startsWith("2026-10-27"), "updateOwned task: complete persists completed_at");
+ok(isoOf(completed?.completed_at).includes("2026-10-27"), "updateOwned task: complete persists completed_at");
 
 const trashed = await updateOwned(storeA, "tasks", TASK_A, {
   status: "trashed",
   trashed_at: "2026-10-27T12:05:00Z",
 });
 ok(trashed?.status === "trashed", "updateOwned task: trash persists status");
-ok(String(trashed?.trashed_at ?? "").startsWith("2026-10-27"), "updateOwned task: trash persists trashed_at");
+ok(isoOf(trashed?.trashed_at).includes("2026-10-27"), "updateOwned task: trash persists trashed_at");
 
+const lwwRow = await insertTask(storeA, { title: "lww seed", notes: "held" });
+const LWW = String(lwwRow?.id ?? "");
+const olderTs = new Date(Date.now() - 86_400_000).toISOString();
+const nowTs = new Date().toISOString();
+const stamped = await applyPatch(
+  storeA,
+  "tasks",
+  { id: LWW },
+  { title: "stamped", notes: "held" },
+  { title: olderTs, notes: nowTs },
+);
+ok(stamped.applied.includes("title"), "applyPatch LWW: first stamp applies on empty field_ts");
 const mixed = await applyPatch(
   storeA,
   "tasks",
-  { id: TASK_A },
+  { id: LWW },
   { title: "mixed newer", notes: "should lose" },
-  { title: "2026-10-27T13:00:00Z", notes: "2020-01-01T00:00:00Z" },
+  { title: nowTs, notes: olderTs },
 );
 ok(mixed.applied.includes("title"), "applyPatch LWW: newer title applies");
-ok(mixed.rejected.includes("notes") || mixed.applied.includes("notes"), "applyPatch LWW: notes is decided");
-const afterMixed = await getOwned(storeA, "tasks", TASK_A);
+ok(mixed.rejected.includes("notes"), "applyPatch LWW: older notes is rejected");
+const afterMixed = await getOwned(storeA, "tasks", LWW);
 ok(afterMixed?.title === "mixed newer", "applyPatch LWW: title is the newer write");
 
 const olderTitle = await applyPatch(
   storeA,
   "tasks",
-  { id: TASK_A },
+  { id: LWW },
   { title: "stale" },
-  { title: "2020-01-01T00:00:00Z" },
+  { title: olderTs },
 );
 ok(olderTitle.rejected.includes("title"), "applyPatch LWW: older title is rejected");
-ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [TASK_A])) === "mixed newer", "applyPatch LWW: stored title stays");
+ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [LWW])) === "mixed newer", "applyPatch LWW: stored title stays");
 
 ok((await deleteOwned(storeA, "tasks", TASK_B)) === 0, "deleteOwned: A cannot delete B task");
 ok((await count("tasks", "id = $1", [TASK_B])) === 1, "deleteOwned: B task still present");
@@ -645,6 +665,16 @@ ok(
   !(await listOwnedActivityBindings(storeA)).some((row) => row.id === BIND_B),
   "list activity_bindings: A cannot list B",
 );
+ok((await deleteOwnedActivityBinding(storeA, BIND_B)) === 0, "delete activity_bindings: A cannot delete B");
+ok((await count("activity_bindings", "id = $1", [BIND_B])) === 1, "delete activity_bindings: B row still present");
+ok(
+  (await deleteOwnedPushByEndpoint(storeA, "https://push.example/b")) === 0,
+  "delete push_subscriptions: A cannot delete B endpoint",
+);
+ok(
+  (await count("push_subscriptions", "id = $1 AND user_id = $2", [PUSH_B, B])) === 1,
+  "delete push_subscriptions: B row still present",
+);
 ok(
   (await insertActivityUnit(storeA, {
     source_id: SRC_B,
@@ -670,6 +700,15 @@ ok(await appleUserIdTakenByOther(storeA, "apple-sub-b"), "apple identity: B's su
 ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a")), "apple identity: own sub is not taken-by-other");
 
 ok(!(await listOwnedConnections(storeA)).some((row) => row.id === CONN_B), "list connections: A cannot list B");
+ok(
+  (await updateOwnedConnection(storeA, CONN_B, { revoked_at: "2026-10-27T12:00:00Z" })) === null,
+  "update connections: A cannot revoke B",
+);
+ok(
+  (await scalar<string>("SELECT revoked_at::text FROM connections WHERE id = $1", [CONN_B])) == null
+    || (await scalar<string>("SELECT revoked_at::text FROM connections WHERE id = $1", [CONN_B])) === "",
+  "update connections: B revoked_at unchanged",
+);
 ok((await insertConnection(storeA, { app: "x", name: "A2", token_hash: "hash-a2" }))?.user_id === A, "insert connections: row is A's");
 ok(
   (await listOwnedInboundEmails(storeA)).every((row) => row.user_id === A),

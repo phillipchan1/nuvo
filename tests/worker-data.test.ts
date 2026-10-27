@@ -90,7 +90,6 @@ describe("workerFrom", () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe("https://api.nuvo.day/api/data/tasks/t1");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "PATCH" });
   });
-});
 
   it("puts HTTP status on 4xx so classifyError parks instead of retrying", async () => {
     armWorker();
