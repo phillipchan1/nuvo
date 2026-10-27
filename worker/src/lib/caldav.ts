@@ -58,7 +58,7 @@ async function dav(
   url: string,
   init: { method: string; auth: string; depth?: "0" | "1"; body?: string },
 ): Promise<Response> {
-  return icloudFetch(url, {
+  return icloudDavFetch(url, {
     method: init.method,
     headers: {
       Authorization: init.auth,
@@ -70,7 +70,7 @@ async function dav(
   });
 }
 
-async function icloudFetch(url: string, init: RequestInit): Promise<Response> {
+export async function icloudDavFetch(url: string, init: RequestInit): Promise<Response> {
   let current = url;
   for (let i = 0; i < 6; i++) {
     assertIcloudDavUrl(current, "URL");
@@ -78,7 +78,12 @@ async function icloudFetch(url: string, init: RequestInit): Promise<Response> {
     if ([301, 302, 307, 308].includes(res.status)) {
       const loc = res.headers.get("Location");
       if (!loc) return res;
-      const next = new URL(loc, current).toString();
+      let next: string;
+      try {
+        next = new URL(loc, current).toString();
+      } catch {
+        throw new Error("refused non-icloud CalDAV redirect");
+      }
       assertIcloudDavUrl(next, "redirect");
       current = next;
       continue;
@@ -361,7 +366,7 @@ export async function putEvent(
   password: string,
   ifMatch?: string | null,
 ): Promise<string | null> {
-  const res = await icloudFetch(href, {
+  const res = await icloudDavFetch(href, {
     method: "PUT",
     headers: {
       Authorization: basicAuth(username, password),
@@ -382,7 +387,7 @@ export async function deleteEvent(
   password: string,
   ifMatch?: string | null,
 ): Promise<number> {
-  const res = await icloudFetch(href, {
+  const res = await icloudDavFetch(href, {
     method: "DELETE",
     headers: {
       Authorization: basicAuth(username, password),

@@ -13,13 +13,17 @@ import {
   fetchIcsFeed,
   ICS_MAX_BYTES,
   installDnsLookupForTests,
+  installIcsDeadlineForTests,
   installIcsFetchTimeoutForTests,
   isBlockedHost,
 } from "./lib/ssrf.ts";
 import { deleteEvent, isIcloudDavUrl, putEvent } from "./lib/caldav.ts";
+import { discoverAddressBooks, fetchContacts } from "./lib/carddav.ts";
 import { handleIcloudEvents, pickVisibleCalendar } from "./calendar/icloudEvents.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
+import { runM365Sync } from "./calendar/m365.ts";
 import { sealAccountSecret } from "./calendar/store.ts";
+import { MS_TOKEN_URL } from "./lib/ms.ts";
 import { bootstrapUser, makeStore } from "./store.ts";
 import app from "./index.ts";
 import type { Env } from "./env.ts";
@@ -33,11 +37,14 @@ function ok(cond: boolean, msg: string) {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const A = "11111111-1111-1111-1111-111111111111";
+const M365_A = "aaaaaaaa-eeee-4000-8000-000000000011";
 const ICLOUD_A = "aaaaaaaa-eeee-4000-8000-000000000012";
 const ICS_A = "aaaaaaaa-eeee-4000-8000-000000000013";
 
 const ssrfSrc = readFileSync(join(here, "lib/ssrf.ts"), "utf8");
 const caldavSrc = readFileSync(join(here, "lib/caldav.ts"), "utf8");
+const carddavSrc = readFileSync(join(here, "lib/carddav.ts"), "utf8");
+const msSrc = readFileSync(join(here, "lib/ms.ts"), "utf8");
 const m365Src = readFileSync(join(here, "calendar/m365.ts"), "utf8");
 ok(ssrfSrc.includes('redirect: "manual"'), "ICS fetch uses redirect:manual");
 ok(ssrfSrc.includes("AbortSignal.timeout"), "ICS fetch uses AbortSignal.timeout");
@@ -46,6 +53,10 @@ ok(ssrfSrc.includes("ICS_MAX_REDIRECTS"), "ICS fetch caps redirects");
 ok(!/put event failed: HTTP \$\{res\.status\} \$\{await res\.text\(\)\}/.test(caldavSrc), "caldav put error omits response body");
 ok(/hostname !== "graph\.microsoft\.com"/.test(m365Src), "m365 pins @odata.nextLink to graph.microsoft.com");
 ok(caldavSrc.includes("isIcloudDavUrl"), "caldav pins request URLs to *.icloud.com");
+ok(carddavSrc.includes("icloudDavFetch") && carddavSrc.includes("isIcloudDavUrl"), "carddav uses the shared icloud pin");
+ok(!/await fetch\(/.test(carddavSrc), "carddav dav does not call plain fetch");
+ok(/reconnect/.test(msSrc) && /invalid_grant/.test(msSrc), "m365 reconnects only on invalid_grant / 401 / 403");
+ok(ssrfSrc.includes("ICS_DEADLINE_MS"), "ICS fetch has an overall deadline");
 
 const SSRF_URLS = [
   ["https://[::ffff:127.0.0.1]/feed.ics", "IPv4-mapped loopback"],
@@ -64,6 +75,13 @@ const SSRF_URLS = [
   ["https://192.168.1.1/feed.ics", "192.168/16"],
   ["https://169.254.169.254/feed.ics", "link-local metadata"],
   ["https://172.16.0.1/feed.ics", "172.16/12"],
+  ["https://[::7f00:1]/feed.ics", "IPv4-compatible loopback"],
+  ["https://[64:ff9b::a00:1]/feed.ics", "NAT64 64:ff9b::/96 embedding 10.0.0.1"],
+  ["https://[2002:a00:1::]/feed.ics", "6to4 2002::/16 embedding 10.0.0.1"],
+  ["https://[ff02::1]/feed.ics", "IPv6 multicast"],
+  ["https://224.0.0.1/feed.ics", "IPv4 multicast"],
+  ["https://255.255.255.255/feed.ics", "IPv4 broadcast"],
+  ["https://192.0.0.7/feed.ics", "192.0.0.0/24"],
 ];
 
 for (const [url, label] of SSRF_URLS) {
@@ -109,6 +127,10 @@ for (const [url, label] of SSRF_URLS) {
   const restore = installDnsLookupForTests(async () => ["203.0.113.10"]);
   const out = await assertPublicFeedUrl("https://cal.example.test/feed.ics");
   ok(out.ok && out.url.startsWith("https://cal.example.test/"), "public hostname with public DNS is allowed");
+  const on443 = await assertPublicFeedUrl("https://cal.example.test:443/feed.ics");
+  ok(on443.ok, "ICS allows explicit port 443");
+  const otherPort = await assertPublicFeedUrl("https://cal.example.test:8443/feed.ics");
+  ok(!otherPort.ok, "ICS rejects a non-443 port");
   restore();
 }
 
@@ -196,6 +218,44 @@ function urlOf(input: RequestInfo | URL): string {
   restoreDns();
 }
 
+{
+  const restoreDns = installDnsLookupForTests(async () => ["203.0.113.10"]);
+  const restoreFetch = installOutboundFetchForTests(async () => {
+    return new Response(null, { status: 302, headers: { Location: "http://[" } });
+  });
+  let threw = false;
+  let out: Awaited<ReturnType<typeof fetchIcsFeed>> | null = null;
+  try {
+    out = await fetchIcsFeed("https://cal.example.test/redir.ics");
+  } catch {
+    threw = true;
+  }
+  ok(!threw && out && !out.ok && out.error === "feed fetch failed", "malformed Location is a normal fetch failure");
+  restoreFetch();
+  restoreDns();
+}
+
+{
+  const restoreDns = installDnsLookupForTests(async () => ["203.0.113.10"]);
+  const restoreHop = installIcsFetchTimeoutForTests(40);
+  const restoreDeadline = installIcsDeadlineForTests(40);
+  const restoreFetch = installOutboundFetchForTests(async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        controller.enqueue(new Uint8Array([1]));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "text/calendar" } });
+  });
+  const out = await fetchIcsFeed("https://cal.example.test/drip.ics");
+  ok(!out.ok && out.error === "feed fetch timed out", "slow-drip abort is a timeout, not too large");
+  restoreFetch();
+  restoreDeadline();
+  restoreHop();
+  restoreDns();
+}
+
 ok(isIcloudDavUrl("https://caldav.icloud.com/"), "caldav.icloud.com is allowed");
 ok(isIcloudDavUrl("https://p12-caldav.icloud.com/123/"), "shard host is allowed");
 ok(!isIcloudDavUrl("https://evil.example/cal"), "non-icloud URL is rejected");
@@ -254,6 +314,43 @@ ok(!isIcloudDavUrl("https://icloud.com.evil.example/"), "suffix spoof is rejecte
   }
   ok(threw, "deleteEvent rejects a non-icloud redirect");
   ok(!calls.some((c) => c.url.includes("attacker.test") && c.auth), "deleteEvent does not send Basic auth off-host");
+  restoreFetch();
+}
+
+{
+  const calls: { url: string; auth: boolean }[] = [];
+  const restoreFetch = installOutboundFetchForTests(async (input, init) => {
+    const headers = new Headers(init?.headers);
+    calls.push({ url: urlOf(input), auth: headers.has("Authorization") });
+    return new Response("nope", { status: 207 });
+  });
+  let threw = false;
+  try {
+    await fetchContacts("https://evil.example/book/", "user", "pass");
+  } catch (e) {
+    threw = /non-icloud/.test(e instanceof Error ? e.message : String(e));
+  }
+  ok(threw, "CardDAV rejects an off-host href");
+  ok(calls.length === 0, "CardDAV sends no request for an off-host href");
+  restoreFetch();
+}
+
+{
+  const calls: { url: string; auth: boolean }[] = [];
+  const restoreFetch = installOutboundFetchForTests(async (input, init) => {
+    const headers = new Headers(init?.headers);
+    calls.push({ url: urlOf(input), auth: headers.has("Authorization") });
+    return new Response(null, { status: 301, headers: { Location: "https://evil.example/steal" } });
+  });
+  let threw = false;
+  try {
+    await discoverAddressBooks("user", "pass");
+  } catch (e) {
+    threw = /non-icloud/.test(e instanceof Error ? e.message : String(e));
+  }
+  ok(threw, "CardDAV rejects an off-host 301");
+  ok(calls.every((c) => c.url.includes("icloud.com")), "CardDAV only fetches an icloud hop");
+  ok(!calls.some((c) => c.url.includes("evil.example") && c.auth), "CardDAV off-host 301 sends no auth");
   restoreFetch();
 }
 
@@ -405,6 +502,66 @@ const after401 = await db.query<{ needs_reconnect: boolean }>(
 ok(after401.rows[0]?.needs_reconnect === true, "HTTP 401 marks needs_reconnect");
 restore401();
 restore401Dns();
+
+await sealAccountSecret(sql, M365_A, A, env, "m365-refresh-token-value-xxxxx");
+const m365Env: Env = { ...env, MS_CLIENT_ID: "test-ms-client", MS_CLIENT_SECRET: "test-ms-secret" };
+
+async function m365RefreshCase(
+  label: string,
+  spec: {
+    status?: number;
+    body?: string;
+    network?: boolean;
+    env?: Env;
+    reconnect: boolean;
+  },
+): Promise<void> {
+  await db.query(
+    "UPDATE calendar_accounts SET needs_reconnect = false, sync_failures = 0, next_sync_at = NULL WHERE id = $1",
+    [M365_A],
+  );
+  const restore = installOutboundFetchForTests(async (input) => {
+    if (urlOf(input) !== MS_TOKEN_URL && !urlOf(input).startsWith(MS_TOKEN_URL)) {
+      return new Response("not token", { status: 404 });
+    }
+    if (spec.network) throw new TypeError("network down");
+    return new Response(spec.body ?? "", {
+      status: spec.status ?? 500,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  const before = await db.query<{ sync_failures: number }>(
+    "SELECT sync_failures FROM calendar_accounts WHERE id = $1",
+    [M365_A],
+  );
+  await runM365Sync(sql, spec.env ?? m365Env, { accountId: M365_A, userId: A });
+  const after = await db.query<{
+    sync_failures: number;
+    next_sync_at: string | Date | null;
+    needs_reconnect: boolean;
+  }>("SELECT sync_failures, next_sync_at, needs_reconnect FROM calendar_accounts WHERE id = $1", [M365_A]);
+  const nextAt = after.rows[0]?.next_sync_at ? new Date(after.rows[0].next_sync_at).getTime() : 0;
+  ok(
+    Number(after.rows[0]?.sync_failures ?? 0) > Number(before.rows[0]?.sync_failures ?? 0),
+    `${label}: increments sync_failures`,
+  );
+  ok(nextAt > Date.now(), `${label}: moves next_sync_at`);
+  ok(Boolean(after.rows[0]?.needs_reconnect) === spec.reconnect, `${label}: needs_reconnect=${spec.reconnect}`);
+  restore();
+}
+
+await m365RefreshCase("400 invalid_grant", {
+  status: 400,
+  body: JSON.stringify({ error: "invalid_grant" }),
+  reconnect: true,
+});
+await m365RefreshCase("401", { status: 401, body: "{}", reconnect: true });
+await m365RefreshCase("403", { status: 403, body: "{}", reconnect: true });
+await m365RefreshCase("5xx", { status: 503, body: "{}", reconnect: false });
+await m365RefreshCase("429", { status: 429, body: "{}", reconnect: false });
+await m365RefreshCase("network", { network: true, reconnect: false });
+await m365RefreshCase("missing access_token", { status: 200, body: JSON.stringify({ expires_in: 3600 }), reconnect: false });
+await m365RefreshCase("missing MS client", { env, reconnect: false });
 
 await db.close();
 

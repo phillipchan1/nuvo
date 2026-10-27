@@ -9,8 +9,14 @@
 // Discovery walks current-user-principal -> addressbook-home-set -> the
 // addressbook collections under it, then a REPORT pulls the vCards.
 
+import { icloudDavFetch, isIcloudDavUrl } from "./caldav.ts";
+
 const ICLOUD_BASE = "https://contacts.icloud.com";
 const UA = "Nuvo/1.0";
+
+function assertIcloudHref(raw: string): void {
+  if (!isIcloudDavUrl(raw)) throw new Error("refused non-icloud CardDAV URL");
+}
 
 export interface CardDavAddressBook {
   /** Absolute collection URL. */
@@ -32,28 +38,17 @@ async function dav(
   url: string,
   init: { method: string; auth: string; depth?: "0" | "1"; body?: string },
 ): Promise<Response> {
-  let current = url;
-  for (let i = 0; i < 6; i++) {
-    const res = await fetch(current, {
-      method: init.method,
-      redirect: "manual",
-      headers: {
-        Authorization: init.auth,
-        "User-Agent": UA,
-        ...(init.depth ? { Depth: init.depth } : {}),
-        ...(init.body ? { "Content-Type": "application/xml; charset=utf-8" } : {}),
-      },
-      ...(init.body ? { body: init.body } : {}),
-    });
-    if ([301, 302, 307, 308].includes(res.status)) {
-      const loc = res.headers.get("Location");
-      if (!loc) return res;
-      current = new URL(loc, current).toString();
-      continue;
-    }
-    return res;
-  }
-  throw new Error("too many CardDAV redirects");
+  assertIcloudHref(url);
+  return icloudDavFetch(url, {
+    method: init.method,
+    headers: {
+      Authorization: init.auth,
+      "User-Agent": UA,
+      ...(init.depth ? { Depth: init.depth } : {}),
+      ...(init.body ? { "Content-Type": "application/xml; charset=utf-8" } : {}),
+    },
+    ...(init.body ? { body: init.body } : {}),
+  });
 }
 
 // ── Tiny XML helpers (namespace-agnostic) ─────────────────────────────────
@@ -187,6 +182,7 @@ export async function discoverAddressBooks(
     pickFirst(principalXml, "href");
   if (!principalHref) throw new Error("could not resolve iCloud contacts principal");
   const principalUrl = new URL(principalHref.trim(), principalRes.url || `${ICLOUD_BASE}/`).toString();
+  assertIcloudHref(principalUrl);
 
   // 2. Address book home set.
   const homeRes = await dav(principalUrl, {
@@ -200,6 +196,7 @@ export async function discoverAddressBooks(
   const homeHref = pickFirst(pickFirst(homeXml, "addressbook-home-set") ?? "", "href");
   if (!homeHref) throw new Error("could not resolve iCloud addressbook home");
   const homeUrl = new URL(homeHref.trim(), homeRes.url || principalUrl).toString();
+  assertIcloudHref(homeUrl);
 
   // 3. Enumerate collections under the home set.
   const listRes = await dav(homeUrl, {
@@ -210,6 +207,7 @@ export async function discoverAddressBooks(
   });
   assertOk(listRes, "addressbook list");
   const books = parseAddressBookList(await listRes.text(), homeUrl);
+  for (const book of books) assertIcloudHref(book.url);
 
   // Unlike calendars, an account with no address book is a legitimate state
   // (contacts were never used). The caller treats [] as "nothing to sync" and
@@ -240,6 +238,7 @@ export async function fetchContacts(
   username: string,
   password: string,
 ): Promise<CardDavContact[]> {
+  assertIcloudHref(bookUrl);
   const auth = basicAuth(username, password);
   const body =
     `<?xml version="1.0" encoding="utf-8"?><C:addressbook-query xmlns:A="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">` +

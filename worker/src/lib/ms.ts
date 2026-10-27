@@ -1,11 +1,27 @@
 import type { Sql } from "../db.ts";
 import { logSync, openAccountSecret, sealAccountSecret, updateAccount } from "../calendar/store.ts";
 import type { CalendarAccount } from "../calendar/types.ts";
+import { outboundFetch } from "./outboundFetch.ts";
 
 export const MS_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 export const MS_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 export const GRAPH = "https://graph.microsoft.com/v1.0";
 export const MS_SCOPES = "offline_access User.Read Calendars.Read";
+
+async function isMsReconnectFailure(res: Response): Promise<boolean> {
+  if (res.status === 401 || res.status === 403) return true;
+  if (res.status !== 400) return false;
+  try {
+    const body = (await res.clone().json()) as { error?: string };
+    return body.error === "invalid_grant";
+  } catch {
+    try {
+      return /invalid_grant/.test(await res.clone().text());
+    } catch {
+      return false;
+    }
+  }
+}
 
 export async function getMsAccessToken(
   sql: Sql,
@@ -17,30 +33,37 @@ export async function getMsAccessToken(
     : 0;
   if (account.access_token && expiresAt > Date.now() + 60_000) return account.access_token;
 
-  const fail = async (why: string): Promise<never> => {
-    await updateAccount(sql, account.id, account.user_id, { needs_reconnect: true });
+  const fail = async (why: string, reconnect: boolean): Promise<never> => {
+    if (reconnect) {
+      await updateAccount(sql, account.id, account.user_id, { needs_reconnect: true });
+    }
     await logSync(sql, "m365", "token-refresh", "error", why, account.user_id);
     throw new Error("m365 token refresh failed");
   };
 
   const refreshToken = await openAccountSecret(account, env);
-  if (!refreshToken) return await fail("no refresh token stored");
-  if (!env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET) return await fail("MS client is not configured");
+  if (!refreshToken) return await fail("no refresh token stored", false);
+  if (!env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET) return await fail("MS client is not configured", false);
 
-  const res = await fetch(MS_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: env.MS_CLIENT_ID,
-      client_secret: env.MS_CLIENT_SECRET,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      scope: MS_SCOPES,
-    }),
-  });
-  if (!res.ok) return await fail(`refresh failed: ${res.status}`);
+  let res: Response;
+  try {
+    res = await outboundFetch(MS_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: env.MS_CLIENT_ID,
+        client_secret: env.MS_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        scope: MS_SCOPES,
+      }),
+    });
+  } catch {
+    return await fail("refresh network error", false);
+  }
+  if (!res.ok) return await fail(`refresh failed: ${res.status}`, await isMsReconnectFailure(res));
   const tok = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
-  if (!tok.access_token) return await fail("token response missing access_token");
+  if (!tok.access_token) return await fail("token response missing access_token", false);
 
   if (tok.refresh_token) {
     await sealAccountSecret(sql, account.id, account.user_id, env, tok.refresh_token);
