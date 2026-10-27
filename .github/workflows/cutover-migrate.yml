@@ -131,19 +131,23 @@ jobs:
       CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
       CUTOVER_LOG_DIR: ${{ runner.temp }}/nuvo-cutover-logs
     steps:
-      - name: Checkout
+      - id: checkout
+        name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Setup Node (token seal, same module as the Worker)
+      - id: setup-node
+        name: Setup Node (token seal, same module as the Worker)
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
 
-      - name: Install JS deps for token seal
+      - id: npm-ci
+        name: Install JS deps for token seal
         run: npm ci --ignore-scripts
 
-      - name: Mask secrets and resolve target
+      - id: mask
+        name: Mask secrets and resolve target
         run: |
           set +x
           set -eu
@@ -242,7 +246,8 @@ jobs:
           print(f"mode={mode} target={kind}", flush=True)
           PY
 
-      - name: Install postgresql-client-17
+      - id: install-pg
+        name: Install postgresql-client-17
         run: |
           set +x
           set -eu
@@ -255,7 +260,8 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_restore --version
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
-      - name: Write cutover helper
+      - id: write-helper
+        name: Write cutover helper
         run: |
           set +x
           set -eu
@@ -442,7 +448,7 @@ jobs:
                    lower(COALESCE(email, '')) || '|' ||
                    CASE WHEN email_confirmed_at IS NOT NULL THEN 't' ELSE 'f' END || '|' ||
                    COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
-                   COALESCE(to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
                  )), '' ORDER BY id::text COLLATE "C"), '')) AS h
           FROM migration_tmp.auth_users()
           """
@@ -474,7 +480,7 @@ jobs:
                      user_id::text
                    ) || '|' ||
                    COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
-                   COALESCE(to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
                  )), '' ORDER BY
                    user_id::text COLLATE "C",
                    provider COLLATE "C",
@@ -1470,7 +1476,8 @@ jobs:
               main()
           PY
 
-      - name: Pick pg_dump matching source major
+      - id: pick-dump
+        name: Pick pg_dump matching source major
         if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
@@ -1521,7 +1528,8 @@ jobs:
           mkdir -p "$CUTOVER_LOG_DIR"
           python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
 
-      - name: Assert cutover logs have no row data
+      - id: assert-logs
+        name: Assert cutover logs have no row data
         if: ${{ always() }}
         run: |
           set +x
@@ -1543,7 +1551,8 @@ jobs:
           set -eu
           node scripts/guard-public-ci.mjs --job
 
-      - name: Re-encrypt vault tokens in-runner
+      - id: seal-tokens
+        name: Re-encrypt vault tokens in-runner
         if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
@@ -1554,7 +1563,8 @@ jobs:
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           node --experimental-strip-types scripts/cutover-seal-tokens.mjs
 
-      - name: Re-sync sync_log tail + reconcile push deletes
+      - id: resync
+        name: Re-sync sync_log tail + reconcile push deletes
         if: ${{ inputs.phase == 'resync' || steps.verify.outcome == 'success' }}
         run: |
           set +x
@@ -1565,7 +1575,8 @@ jobs:
           mkdir -p "$CUTOVER_LOG_DIR"
           python3 "${RUNNER_TEMP}/cutover.py" resync 2>&1 | tee "${CUTOVER_LOG_DIR}/resync.log"
 
-      - name: Upload checksum report
+      - id: upload
+        name: Upload checksum report
         if: ${{ always() && steps.guard.outcome == 'success' }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
@@ -1574,7 +1585,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Shred dumps
+      - id: shred
+        name: Shred dumps
         if: ${{ always() }}
         run: |
           set +x

@@ -94,6 +94,40 @@ those counts and hashes — never emails or row data. `checks.yml` runs
 `scripts/guard-public-ci.mjs`, which fails if any workflow uploads anything
 else.
 
+### Limits
+
+Every public workflow step (`run` and `uses`, including
+`actions/github-script` and reusable-workflow `jobs.<id>.uses`) is
+default-deny: rejected unless listed in
+`scripts/guard-public-ci.allowlist.json` by file + job + step id with a
+sha256 of the **whole** canonical step (every key, including
+`timeout-minutes`) plus the **whole** job minus `steps` (`container`,
+`services`, `strategy`, `if`, `environment`, `permissions`, `outputs`,
+`concurrency`, `timeout-minutes`, reusable `uses` / `with` / `secrets`,
+…) plus the **whole** workflow minus `jobs` (`on`, `concurrency`,
+`run-name`, `env`, `defaults`, `permissions`, …). Unknown keys are
+included — the full object is hashed, not a key list. Per job, the
+ordered step-id list is hashed and duplicate ids are rejected. Per
+workflow, the ordered job list is hashed. Deleting `signing` /
+`assert-logs`, reordering `publish` first, or duplicating `publish`
+fails. A new job, step, trigger (e.g. `pull_request_target`), container,
+or env change fails.
+
+Always denied, even on an allowlisted step: `BASH_ENV` / `ENV` keys.
+Writes to `$GITHUB_ENV` / `$GITHUB_PATH` and to `RELEASE_NOTES.md` or
+release paths are denied outside allowlisted steps. `curl` / `wget` /
+`gh` value checks stay as defense in depth.
+
+`nc` and other non-`gh` exfil inside an already-allowlisted run are out
+of scope for the value deny-list. Reviewers must read the hashed step
+before bumping its sha256. `@phillipchan1` is required on the allowlist
+JSON, the guard script, and `.github/workflows/` (`.github/CODEOWNERS`).
+Regenerating hashes:
+
+```bash
+node scripts/regen-public-ci-allowlist.mjs
+```
+
 Billing / Stripe / StoreKit stay on Supabase — this workflow does not retarget
 webhooks. Nuvo stays on direct OpenAI; there is no AI Gateway in this path.
 
