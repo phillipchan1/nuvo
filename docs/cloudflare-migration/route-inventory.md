@@ -164,13 +164,13 @@ are ported.
 | File | Count | What |
 |---|---|---|
 | `access.check.ts` | 230 | Store-layer isolation + FK plant + day window + reminder target table |
-| `accessHttp.check.ts` | 487 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity (CRON_SECRET sync flip-skip before DB) + github-poll / trim-sync-log |
+| `accessHttp.check.ts` | 533 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity (CRON_SECRET sync flip-skip before DB) + github-poll / trim-sync-log + maintenance no-store |
 | `authUrl.check.ts` | 99 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
-| `secrets.check.ts` | 133 | A's seal/open + writeFrozen + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
-| `cutoverFlip.check.ts` | 290 | Shared allowlist + POST_FLIP_CRON_JOBS + cronAuthorized source-scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` before requestIo + unflipped `scheduled()` |
+| `secrets.check.ts` | 227 | A's seal/open + writeFrozen fail-closed (typo + non-string) + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
+| `cutoverFlip.check.ts` | 407 | Shared allowlist + POST_FLIP_CRON_JOBS + per-function CRON_SECRET scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` + google-events gate + queue no-IO unflipped + maintenance no-store |
 | `pushDispatch.check.ts` | — | 4-route unflipped skip matrix + sender call-site scan |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` skips until `CUTOVER_FLIPPED` |
 

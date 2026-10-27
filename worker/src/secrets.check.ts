@@ -150,10 +150,21 @@ ok(writeFrozen("maybe"), "writeFrozen maybe is frozen (fail-closed)");
 ok(writeFrozen("typo"), "writeFrozen typo is frozen");
 ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
+ok(!writeFrozen(null), "writeFrozen null is off");
 ok(!writeFrozen("0"), "writeFrozen 0 is off");
 ok(!writeFrozen("false"), "writeFrozen false is off");
 ok(!writeFrozen("no"), "writeFrozen no is off");
 ok(!writeFrozen("off"), "writeFrozen off is off");
+for (const value of [1, true, false, 0, { toString: () => "1" }]) {
+  let threw = false;
+  let frozen = false;
+  try {
+    frozen = writeFrozen(value);
+  } catch {
+    threw = true;
+  }
+  ok(!threw && frozen === true, `writeFrozen present non-string ${typeof value} freezes`);
+}
 
 ok(cutoverFlipped("1"), "cutoverFlipped 1");
 ok(cutoverFlipped("true"), "cutoverFlipped true");
@@ -183,7 +194,7 @@ ok(gateCronBearerRoute({ CUTOVER_FLIPPED: "on" }, "github-poll") === null, "gate
 
 const skipPush = await runCronJob("push-dispatch", {}, null);
 ok(skipPush.skipped === true && skipPush.status === 200 && skipPush.reason === "cutover_not_flipped", "runCronJob skips push-dispatch before flip");
-ok(skipPush.stay_on_supabase === true, "skipped cron stays on supabase");
+ok(skipPush.ok === true && !("stay_on_supabase" in skipPush), "skipped cron uses cutover skip shape (no stay_on_supabase)");
 const skipUnknown = await runCronJob("rollover", { CUTOVER_FLIPPED: "maybe" }, null);
 ok(skipUnknown.skipped === true && skipUnknown.reason === "cutover_not_flipped", "unknown CUTOVER_FLIPPED skips rollover");
 const skipCalendar = await runCronJob("calendar-dispatch", { CUTOVER_FLIPPED: "" }, null);
