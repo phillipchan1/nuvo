@@ -162,8 +162,8 @@ const skipHttp = await app.request("http://localhost:8787/api/cron/push-dispatch
   body: JSON.stringify({ nowMs }),
 }, env);
 ok(skipHttp.status === 200, `HTTP cron before flip: ${skipHttp.status}`);
-const skipHttpBody = (await skipHttp.json()) as { ok?: boolean; skipped?: boolean };
-ok(skipHttpBody.ok === true && skipHttpBody.skipped === true, "HTTP cron skips before flip");
+const skipHttpBody = (await skipHttp.json()) as { ok?: boolean; skipped?: boolean; reason?: string };
+ok(skipHttpBody.ok === true && skipHttpBody.skipped === true && skipHttpBody.reason === "cutover_not_flipped", "HTTP cron skips before flip");
 ok(posts.length === 0, "HTTP cron before flip: nothing sent even with Neon prefs + nowMs");
 const skipDeliveries = await db.query<{ n: number }>(
   `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id IN ($1, $2)`,

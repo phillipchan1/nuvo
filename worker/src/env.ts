@@ -36,9 +36,10 @@ export interface Env {
   /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
   CUTOVER_ARMED?: string;
   /**
-   * `1` / `true` / `yes` / `on` lets Worker crons run. Unset / unknown is
-   * fail-closed: every cron (HTTP + Cron Trigger) returns 200 `{ skipped: true }`.
-   * Freeze is not a substitute — freeze 503s writes only.
+   * `1` / `true` after the flip and the final `phase=resync`.
+   * Unset / unknown = not flipped. Jobs in `POST_FLIP_CRON_JOBS` then
+   * no-op with 200 `{ skipped: true, reason: "cutover_not_flipped" }` so
+   * they cannot double-fire with Supabase `pg_cron`.
    */
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */

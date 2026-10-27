@@ -3,16 +3,16 @@
  *
  * HTTP `/api/cron/:job` still requires CRON_SECRET (constant time). The
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
- * Both paths no-op unless `CUTOVER_FLIPPED` is truthy (`cutoverFlipped` in
- * cron.ts) — unset / unknown is fail-closed 200 `{ skipped: true }` so
- * Worker + pg_cron cannot double-fire. Freeze 503s writes only.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune,
- * push-dispatch) iterate `users` then scope by `user_id`. Calendar-dispatch
- * fans out one Queue message per due account so a single isolate does not
- * loop every tenant against Google/Graph/CalDAV (Workers Paid CPU). github /
- * google-renew stay 501. Queue consume is a no-op scaffold — later PRs
- * sync one account per message.
+ * push-dispatch) iterate `users` then scope by `user_id`.
+ * Jobs that must not run beside Supabase `pg_cron` belong in
+ * `POST_FLIP_CRON_JOBS` (B/D add theirs). `handleCron` / `runCronJob`
+ * skip them until `CUTOVER_FLIPPED` (fail closed).
+ * Calendar-dispatch fans out one Queue message per due account so a single
+ * isolate does not loop every tenant against Google/Graph/CalDAV (Workers
+ * Paid CPU). github / google-renew stay 501. Queue consume is a no-op
+ * scaffold — later PRs sync one account per message.
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -22,15 +22,13 @@
 import type { Context } from "hono";
 import { BLOCKED_CRON_JOBS, stayOnSupabase } from "./blocked.ts";
 import { OPEN_CORS, json } from "./cors.ts";
-import { bearerToken, cronAuthorized, cutoverFlipped } from "./cron.ts";
+import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Sql } from "./db.ts";
 import type { Env } from "./env.ts";
-import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
+import { cutoverFlipped, WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import { runPushDispatch } from "./pushDispatch.ts";
 import { readJson } from "./http.ts";
-
-export { cutoverFlipped };
 
 export interface QueueMessage<T> {
   body: T;
@@ -52,9 +50,42 @@ export interface CronResult {
   status: number;
   stay_on_supabase: boolean;
   skipped?: boolean;
+  reason?: string;
   enqueued?: number;
   rolled?: number;
   deleted?: number;
+}
+
+/**
+ * Worker copies of jobs that stay on Supabase `pg_cron` until the flip.
+ * B/D add their cron names here — do not invent a second flag.
+ */
+export const POST_FLIP_CRON_JOBS: readonly string[] = [
+  "github-poll",
+  "trim-sync-log",
+  "push-dispatch",
+  "rollover",
+  "purge-trash",
+  "reminder-deliveries-prune",
+  "calendar-dispatch",
+];
+
+/** Fail closed: unset / unknown `CUTOVER_FLIPPED` = not flipped. */
+export function skipUntilCutoverFlip(job: string, env: Env): boolean {
+  const name = canonicalCronJob(job);
+  return POST_FLIP_CRON_JOBS.includes(name) && !cutoverFlipped(env.CUTOVER_FLIPPED);
+}
+
+/** HTTP / scheduled no-op for a post-flip job that is not yet flipped. */
+export function skippedUntilCutoverFlip(job: string, env: Env): CronResult | null {
+  if (!skipUntilCutoverFlip(job, env)) return null;
+  return {
+    job: canonicalCronJob(job),
+    status: 200,
+    stay_on_supabase: true,
+    skipped: true,
+    reason: "cutover_not_flipped",
+  };
 }
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
@@ -194,9 +225,8 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
-  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) {
-    return { job: name, status: 200, stay_on_supabase: true, skipped: true };
-  }
+  const skipped = skippedUntilCutoverFlip(name, env);
+  if (skipped) return skipped;
   if (name === "calendar-dispatch") {
     if (!sql || !env.CALENDAR_SYNC_QUEUE) return blocked(name);
     const enqueued = await enqueueDueCalendarAccounts(sql, env);
@@ -254,14 +284,13 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   if (!cronAuthorized(token, c.env.CRON_SECRET)) {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
-  const job = jobName ?? c.req.param("job") ?? "";
-  const name = canonicalCronJob(job);
-  if (!cutoverFlipped(c.env.CUTOVER_FLIPPED)) {
-    return json({ ok: true, job: name, skipped: true, stay_on_supabase: true }, 200, OPEN_CORS);
-  }
   if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
     return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
   }
+  const job = jobName ?? c.req.param("job") ?? "";
+  const name = canonicalCronJob(job);
+  const skipped = skippedUntilCutoverFlip(name, c.env);
+  if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
 
   if (name === "calendar-dispatch") {
     const io = await requestIo(c);

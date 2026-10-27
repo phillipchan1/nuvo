@@ -5,7 +5,6 @@ import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.t
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { cutoverFlipped } from "./cron.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -488,7 +487,6 @@ async function scheduled(
   env: Env,
   ctx: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<void> {
-  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) return;
   if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
   let sql: Sql | null = null;
   try {

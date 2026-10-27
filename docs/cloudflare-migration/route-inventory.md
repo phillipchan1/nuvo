@@ -87,17 +87,17 @@ blocked with the billing group so we do not retarget StoreKit config.
 ## 4 · Cron
 
 `/api/cron/:job` still requires `CRON_SECRET` (constant-time). Unset or
-wrong → 401. After auth, `cutoverFlipped` (`CUTOVER_FLIPPED` in
-`worker/src/cron.ts`) fail-closes every job — unset / unknown is 200
-`{ skipped: true }` so Worker + pg_cron cannot double-fire. Cron Triggers
-call the same `runCronJob` gate.
+wrong → 401. After auth (and freeze), `skippedUntilCutoverFlip` fail-closes
+jobs in `POST_FLIP_CRON_JOBS` — unset / unknown is 200
+`{ skipped: true, reason: "cutover_not_flipped" }` so Worker + pg_cron
+cannot double-fire. Cron Triggers call the same `runCronJob` gate.
 
 | Job | Tables | Status | Tests |
 |---|---|---|---|
 | `rollover` / `nuvo-rollover-pst` / `pdt` | `users`, `tasks`, `user_settings` | ported+tested | unauth 401; authorized 200; iterates `SELECT id FROM users` then `WHERE user_id = $id` |
 | `purge-trash` / `nuvo-purge-trash` | `users`, `tasks` | ported+tested | unauth 401; A/B stale trash gone, recent trash + live task kept |
 | `reminder-deliveries-prune` / `nuvo-reminder-deliveries-prune` | `users`, `reminder_deliveries` | ported+tested | unauth 401; A/B stale deliveries gone, recent kept |
-| `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | ported+tested | unauth 401; authorized + unset `CUTOVER_FLIPPED` → 200 `{ skipped: true }` (nothing sent); after flip 200 and runs; HTTP ignores caller `nowMs` |
+| `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | ported+tested | unauth 401; authorized + unset `CUTOVER_FLIPPED` → 200 `{ skipped: true, reason: "cutover_not_flipped" }` (nothing sent); after flip 200 and runs; HTTP ignores caller `nowMs` |
 | `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
 | `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
 | `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | **blocked** | 501 |
