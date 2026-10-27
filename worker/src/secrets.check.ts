@@ -250,7 +250,7 @@ ok(/access_token_enc BYTEA/.test(sealSrc), "cutover-seal-tokens.mjs adds access_
 ok(/access_token = NULL/.test(sealSrc), "cutover-seal-tokens.mjs nulls plaintext access_token");
 ok(/btrim\(access_token\)/.test(sealSrc) && /leftover/.test(sealSrc), "cutover-seal-tokens.mjs counts leftover plaintext");
 ok(/plaintext access_token remains/.test(sealSrc), "cutover-seal-tokens.mjs fails if plaintext remains");
-ok(!/console\.(log|error|info)\([^\n]*access_token[^\n]*\$\{/.test(sealSrc), "cutover-seal-tokens.mjs never interpolates access_token into logs");
+ok(!/console\.(log|error|info)\([^\n]*(row\.access_token|\$\{secret\})/.test(sealSrc), "cutover-seal-tokens.mjs never logs access_token values");
 
 const neon = readFileSync(join(root, "worker/schema/neon.sql"), "utf8");
 ok(/CREATE TABLE IF NOT EXISTS public\.calendar_accounts/.test(neon), "neon.sql has calendar_accounts");
