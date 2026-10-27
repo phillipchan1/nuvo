@@ -94,6 +94,9 @@ const TASKS: Task[] = [
   task("Book flights", { do_date: ISO, slot_id: "s-plain" }),
   task("Outline the talk", { do_date: ISO, slot_id: "s-repeat", duration_minutes: 60 }),
   task("Other project's piece", { do_date: ISO, slot_id: "s-other", project_id: "p2" }),
+  // The all-day row — planned for today, no time yet.
+  task("Water the plants", { do_date: ISO, duration_minutes: 15 }),
+  task("Pick up dry cleaning", { do_date: ISO, duration_minutes: 30 }),
   // The rail's inbox — no day yet.
   task("Call the bank"),
   task("Order toner", { duration_minutes: 15 }),

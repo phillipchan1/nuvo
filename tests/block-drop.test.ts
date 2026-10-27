@@ -94,6 +94,12 @@ describe("gatherActFor — what the middle of a block does with what's in hand",
     expect(gatherActFor(tasks({ id: "a" }), { kind: "task", task: task({ start_time: null }) })).toBeNull();
   });
 
+  it("an all-day chip in hand gathers like any task — it has no clock, but the block it lands on does", () => {
+    const chip = { id: "a", start_time: null, do_date: "2026-10-27" };
+    expect(gatherActFor(tasks(chip), { kind: "slot", slot: slot() })).toBe("join");
+    expect(gatherActFor(tasks(chip), { kind: "task", task: task() })).toBe("combine");
+  });
+
   it("a project lands as its own sitting beside a task", () => {
     expect(gatherActFor({ kind: "project" }, { kind: "task", task: task() })).toBeNull();
   });
@@ -198,6 +204,14 @@ describe("planMakeSlot — ⌘G, the keyboard's twin of the drop", () => {
       expect(plan.start.toISOString()).toBe(nine);
       expect(plan.tasks.map((t) => t.id)).toEqual(["a", "b"]);
     }
+  });
+  it("takes its hour from the timed block when an all-day chip is in the selection", () => {
+    const plan = planMakeSlot({ tasks: [task({ id: "a", start_time: null }), task({ id: "b", start_time: eleven })], slots: [] }, none);
+    expect(plan).toMatchObject({ kind: "create", start: new Date(eleven) });
+  });
+  it("says so when every selected task is an all-day chip — a slot starts at a time", () => {
+    const plan = planMakeSlot({ tasks: [task({ id: "a", start_time: null }), task({ id: "b", start_time: null })], slots: [] }, none);
+    expect(plan.kind).toBe("none");
   });
   it("leaves finished tasks where they are", () => {
     const plan = planMakeSlot({ tasks: [task({ id: "a" }), task({ id: "b", status: "done" })], slots: [] }, none);

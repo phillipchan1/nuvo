@@ -6441,4 +6441,8 @@ live `nameSlot` (the local stack has no edge runtime; the harness stubs it), and
 (WKWebView). **`npm run perf`** on the dummy account: both drags (`drag a block +1h`, `drop a
 rail task on the grid`) and 14 more within budget; **`draw-create a task ↵` is over (139 > 100
 renders) on `HEAD` too**, identical numbers before and after this change on two runs each —
-a standing miss, not this one's.*
+a standing miss, not this one's. **From the all-day row** (driven at `?gather`, 2026-10-27): a
+chip onto a slot's middle joins it, held on a task's middle makes the slot (preview, 60m, the
+name opens), and onto a slot's edge lands beside it as a timed block. ⌘G with a chip selected
+takes the slot's hour from a timed block in the selection, and with only chips selected it says
+a slot needs a time. Those last two are unit-tested, not driven (3 more tests, 39).*
