@@ -39,7 +39,6 @@ export const CALENDAR_FUNCTIONS = new Set([
 export const BLOCKED_USERDATA_FUNCTIONS = new Set([
   "apple-identity",
   "delete-account",
-  "github-activity",
   "push-dispatch",
 ]);
 
@@ -50,8 +49,6 @@ export const BLOCKED_CRON_JOBS = new Set([
   "nuvo-google-renew",
   "calendar-dispatch",
   "nuvo-calendar-dispatch",
-  "github-poll",
-  "nuvo-github-poll",
 ]);
 
 export function stayOnSupabase(name: string, extra?: Record<string, unknown>): Response {
