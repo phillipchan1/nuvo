@@ -129,6 +129,64 @@ gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.total_co
 secrets, and `mode=dry-run` skips both preflights. They are not deleted by the
 cleanup. Set them only for `mode=cutover`.
 
+#### Reset scratch: before **and** after every dry run
+
+The restore aborts with `target public is not empty` if
+`nuvo_dryrun_scratch` still holds the last run, and a finished dry run leaves
+a full copy of prod there (auth users with password hashes, sealed tokens).
+So reset it twice per dry run:
+
+1. **Before**: after the secrets are restored, before `gh workflow run`.
+2. **After**: once the go/no-go check below has run and the secrets are
+   deleted. No prod copy stays on Neon between runs.
+
+The reset connects to `neondb` (the database it must never touch), proves
+that, records `neondb`'s table count, drops and recreates only
+`nuvo_dryrun_scratch`, then checks `neondb` is unchanged and scratch has 0
+tables. It runs over HTTPS (443) with `@neondatabase/serverless`, since the
+box cannot speak Postgres on 5432. URLs are read from the box files and never
+printed:
+
+```bash
+# one-time on the box: pinned driver outside the repo (not a repo dependency)
+T=/home/box/agent-data/tools/neon
+[ -d "$T/node_modules/@neondatabase/serverless" ] || {
+  mkdir -p "$T" && echo '{"private":true,"type":"module"}' > "$T/package.json" &&
+  npm i --prefix "$T" --no-fund --no-audit @neondatabase/serverless@1.0.2; }
+cd "$T"
+node --input-type=module <<'EOF'
+import { neon } from "@neondatabase/serverless";
+import fs from "node:fs";
+const S = "/home/box/agent-data/secrets";
+const TARGET = "nuvo_dryrun_scratch";
+const line = fs.readFileSync(`${S}/nuvo-neon.env`, "utf8").split("\n")
+  .find((l) => l.trim().startsWith("NEON_DIRECT_URL="));
+if (!line) throw new Error("missing NEON_DIRECT_URL");
+const mainUrl = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
+const scratchUrl = fs.readFileSync(`${S}/nuvo-neon-scratch-url`, "utf8").trim();
+if (new URL(scratchUrl).pathname.slice(1) !== TARGET) throw new Error("scratch file is not " + TARGET);
+const tables = async (q) => (await q`select count(*)::int n from information_schema.tables
+  where table_schema not in ('pg_catalog','information_schema')`)[0].n;
+const main = neon(mainUrl);
+const db = (await main`select current_database() db`)[0].db;
+if (db !== "neondb") throw new Error("ABORT: connected db is not neondb");
+if (TARGET === db) throw new Error("ABORT: target is the connected db");
+const before = await tables(main);
+console.log(`connected=neondb neondb_tables_before=${before}`);
+await main.query(`DROP DATABASE IF EXISTS "${TARGET}" WITH (FORCE)`);
+await main.query(`CREATE DATABASE "${TARGET}"`);
+const after = await tables(main);
+if (after !== before) throw new Error(`neondb table count changed ${before} -> ${after}`);
+const scr = neon(scratchUrl);
+console.log(`neondb_tables_after=${after} scratch=${(await scr`select current_database() db`)[0].db} tables=${await tables(scr)}`);
+EOF
+```
+
+Expect `neondb_tables_before=22`, `neondb_tables_after=22`, and
+`scratch=nuvo_dryrun_scratch tables=0`. Stop if the connected database is not
+`neondb`, if the `neondb` count moves, or if scratch is not at 0 tables. Never
+point this at any other database name.
+
 #### Go/no-go: Worker and copy job use the same `TOKEN_ENC_KEY_V1`
 
 A key mismatch is silent until the Worker tries to open a sealed token (Apple
@@ -157,6 +215,17 @@ revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
    what ties the Worker to the key step 2 just proved. If the digests differ,
    or anyone re-ran `wrangler secret put` from another source, re-set the
    Worker from the box file before the flip.
+
+Known gaps in step 2 (found in the Oct 27 dry run, run 40593628187):
+
+- The box cannot reach Neon's Postgres port 5432 (the connect times out), and
+  `tokenDecrypt.check.ts` uses the TCP `postgres` driver, so from the box it
+  ends in `CONNECT_TIMEOUT` rather than `ok`. That is a no-go, not a skip. Run
+  it from a machine with 5432 egress, or fix the script first.
+- Its `UNION ALL` mixes `calendar_accounts.provider` (enum
+  `calendar_provider`) with `text`, so on a restored schema the query fails
+  with `42804 UNION types calendar_provider and text cannot be matched`.
+  `provider::text` fixes it. That is a code change and needs its own PR.
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
 redacted before it is printed. The custom-format dump is verified on the
