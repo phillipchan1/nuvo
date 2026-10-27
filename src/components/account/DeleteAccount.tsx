@@ -3,14 +3,24 @@ import { Btn } from "../ui";
 import { TextInput } from "../form";
 import {
   ACCOUNT_DELETE_CONFIRM,
+  APPLE_DELETE_NOTICE,
+  STRIPE_DELETE_BLOCK_MESSAGE,
   isAccountDeleteConfirm,
   requestAccountDeletion,
   signOutAfterDeletion,
 } from "../../lib/account";
+import type { PlanSource } from "../../lib/subscription";
 
 /** Two-step wipe. Lives on Settings → Account and on the locked screen —
- *  a locked-out trial still has to be able to leave (App Store 5.1.1v). */
-export function DeleteAccount({ compact = false }: { compact?: boolean }) {
+ *  a locked-out trial still has to be able to leave (App Store 5.1.1v).
+ *  Apple / trial copy never mentions Stripe. */
+export function DeleteAccount({
+  compact = false,
+  planSource = null,
+}: {
+  compact?: boolean;
+  planSource?: PlanSource | null;
+}) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,15 +73,11 @@ export function DeleteAccount({ compact = false }: { compact?: boolean }) {
           plans, projects, calendar connections, and settings. You will not be
           able to sign back in.
         </p>
-        <p className="mt-2 text-caption leading-snug text-muted">
-          If you subscribed through Apple, cancel in Apple Account settings first
-          (Settings → your name → Subscriptions). We cannot cancel an App Store
-          subscription for you.
-        </p>
-        <p className="mt-2 text-caption leading-snug text-muted">
-          If you pay through the web or Mac, we cancel that Stripe subscription
-          when you delete.
-        </p>
+        {planSource === "stripe" ? (
+          <p className="mt-2 text-caption leading-snug text-muted">{STRIPE_DELETE_BLOCK_MESSAGE}</p>
+        ) : (
+          <p className="mt-2 text-caption leading-snug text-muted">{APPLE_DELETE_NOTICE}</p>
+        )}
         <label htmlFor={inputId} className="mt-3 block text-caption text-ink">
           Type <span className="mono">{ACCOUNT_DELETE_CONFIRM}</span> to confirm
         </label>

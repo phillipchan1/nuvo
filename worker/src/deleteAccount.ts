@@ -4,8 +4,9 @@
  * Body: `{ confirm: "DELETE" }`. Owner is the verified session — a client
  * `user_id` is ignored. Billing is read by the session user.id (entitlement
  * contract). A Stripe row that is active, past_due, or unrecognized blocks
- * the wipe. StoreKit / no-card trials do not. Apple users never see a
- * Stripe message. Wipe is one transaction.
+ * the wipe. StoreKit / no-card trials do not. Apple users can delete
+ * and are told to cancel in Apple Account settings — never a Stripe
+ * message. Wipe is one transaction.
  */
 import {
   isAccountDeleteConfirm,
@@ -15,6 +16,8 @@ import { json, OPEN_CORS } from "./cors.ts";
 import type { Env } from "./env.ts";
 import {
   ACTIVE_STRIPE_DELETE_MESSAGE,
+  APPLE_DELETE_NOTICE,
+  billingPlanSource,
   BillingLookupError,
   readBillingSubscription,
   stripeSubscriptionBlocksDelete,
@@ -72,5 +75,9 @@ export async function deleteOwnedAccount(
   if (planner === 0 && auth === 0) {
     return json({ error: "not found" }, 404, OPEN_CORS);
   }
-  return json({ ok: true, appleRevoked }, 200, OPEN_CORS);
+  const payload: { ok: true; appleRevoked: boolean | null; notice?: string } = { ok: true, appleRevoked };
+  if (billingPlanSource(billing) === "apple") {
+    payload.notice = APPLE_DELETE_NOTICE;
+  }
+  return json(payload, 200, OPEN_CORS);
 }

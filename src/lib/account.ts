@@ -6,7 +6,12 @@ import { clearPersistedCache } from "./sync/persist";
 import { clearOutbox } from "./sync/outbox";
 import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
 
-export { ACCOUNT_DELETE_CONFIRM, isAccountDeleteConfirm } from "../../supabase/functions/_shared/accountDeletion.ts";
+export {
+  ACCOUNT_DELETE_CONFIRM,
+  APPLE_DELETE_NOTICE,
+  STRIPE_DELETE_BLOCK_MESSAGE,
+  isAccountDeleteConfirm,
+} from "../../supabase/functions/_shared/accountDeletion.ts";
 
 export async function requestAccountDeletion(): Promise<void> {
   if (workersEnabled) {

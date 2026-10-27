@@ -6,8 +6,10 @@ import { deleteOwnedAccount } from "../worker/src/deleteAccount.ts";
 import { applyIsolationSchema } from "../worker/src/isolationDb.ts";
 import {
   ACTIVE_STRIPE_DELETE_MESSAGE,
+  APPLE_DELETE_NOTICE,
   BillingLookupError,
   readBillingSubscription,
+  stripePaymentOnFile,
   stripeSubscriptionBlocksDelete,
 } from "../worker/src/lib/billingRead.ts";
 import { EntitlementUnavailableError, fetchSubscriptionByUserId, installSubscriptionFetcherForTests } from "../worker/src/entitlement.ts";
@@ -23,15 +25,46 @@ describe("Worker delete-account Stripe gate", () => {
     installSubscriptionFetcherForTests(fetchSubscriptionByUserId);
   });
 
-  it("blocks only Stripe active / past_due / unknown", () => {
+  it("blocks Stripe active / past_due only when a customer or period is on file", () => {
     expect(
-      stripeSubscriptionBlocksDelete({ status: "active", plan_source: "stripe", present: true }),
+      stripeSubscriptionBlocksDelete({
+        status: "active",
+        plan_source: "stripe",
+        stripe_customer_id: "cus_live",
+        present: true,
+      }),
     ).toBe(true);
     expect(
-      stripeSubscriptionBlocksDelete({ status: "past_due", plan_source: "stripe", present: true }),
+      stripeSubscriptionBlocksDelete({
+        status: "past_due",
+        plan_source: "stripe",
+        current_period_end: "2026-12-01T00:00:00Z",
+        present: true,
+      }),
     ).toBe(true);
+    expect(
+      stripeSubscriptionBlocksDelete({
+        status: "active",
+        plan_source: "stripe",
+        stripe_customer_id: null,
+        present: true,
+      }),
+    ).toBe(false);
+    expect(stripePaymentOnFile({ plan_source: "stripe", stripe_customer_id: "cus_live" })).toBe(true);
+    expect(stripePaymentOnFile({ plan_source: "stripe", stripe_customer_id: null })).toBe(false);
+  });
+
+  it("fails closed on an unknown stripe status even without a visible customer", () => {
     expect(
       stripeSubscriptionBlocksDelete({ status: "paused", plan_source: "stripe", present: true }),
+    ).toBe(true);
+    expect(
+      stripeSubscriptionBlocksDelete({
+        status: "unpaid",
+        plan_source: "stripe",
+        stripe_customer_id: null,
+        present: true,
+      }),
     ).toBe(true);
   });
 
@@ -89,7 +122,7 @@ describe("Worker delete-account Stripe gate", () => {
     ).toBe(false);
   });
 
-  it("Apple users never see a Stripe cancel message", async () => {
+  it("Apple users can delete and are told to cancel in Apple Settings, with no Stripe wording", async () => {
     const restore = installSubscriptionFetcherForTests(async (_env, userId) => ({
       user_id: userId,
       status: "active",
@@ -104,8 +137,10 @@ describe("Worker delete-account Stripe gate", () => {
         { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
       );
       expect(res.status).not.toBe(409);
-      const body = (await res.json()) as { error?: string };
-      expect(body.error ?? "").not.toMatch(/Stripe/i);
+      const body = (await res.json()) as { error?: string; notice?: string; ok?: boolean };
+      expect(JSON.stringify(body)).not.toMatch(/Stripe/i);
+      expect(body.notice).toBe(APPLE_DELETE_NOTICE);
+      expect(body.notice).toMatch(/Apple Account settings/i);
     } finally {
       restore();
     }
@@ -119,6 +154,7 @@ describe("Worker delete-account Stripe gate", () => {
         status: "active",
         trial_ends_at: null,
         plan_source: "stripe",
+        current_period_end: "2026-12-01T00:00:00Z",
       };
     });
     try {
@@ -230,7 +266,11 @@ describe("delete-account wipe is one transaction", () => {
 
 function dummyStore(userId = SESSION): Store {
   const sql = Object.assign(
-    async () => [],
+    async (strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("DELETE FROM")) return [{ id: userId }];
+      return [];
+    },
     {
       json: (value: unknown) => value,
       begin: async <T>(fn: (tx: Sql) => Promise<T>) => fn(sql as Sql),

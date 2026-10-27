@@ -158,6 +158,7 @@ installSubscriptionFetcherForTests(async (_env, userId) => {
     status: "active",
     trial_ends_at: null,
     plan_source: "stripe",
+    current_period_end: "2026-12-01T00:00:00Z",
   };
 });
 
