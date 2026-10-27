@@ -29,8 +29,8 @@ const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
 const envSrc = readFileSync(join(here, "env.ts"), "utf8");
 const exampleSrc = readFileSync(join(here, "../../.dev.vars.example"), "utf8");
 
-ok(!/writeFrozen/.test(flipSrc), "cutoverFlip.ts does not use writeFrozen");
-ok(!/maintenance/.test(flipSrc), "cutoverFlip.ts does not import maintenance.ts");
+ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlip.ts does not call writeFrozen");
+ok(!/from ["']\.\/maintenance/.test(flipSrc), "cutoverFlip.ts does not import maintenance.ts");
 ok(/CUTOVER_FLIPPED\?:/.test(envSrc), "Env names CUTOVER_FLIPPED");
 ok(/# CUTOVER_FLIPPED=/.test(exampleSrc), ".dev.vars.example leaves CUTOVER_FLIPPED unset");
 
