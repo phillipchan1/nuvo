@@ -6446,3 +6446,42 @@ chip onto a slot's middle joins it, held on a task's middle makes the slot (prev
 name opens), and onto a slot's edge lands beside it as a timed block. ⌘G with a chip selected
 takes the slot's hour from a timed block in the selection, and with only chips selected it says
 a slot needs a time. Those last two are unit-tested, not driven (3 more tests, 39).*
+
+**D-171 · 2026-10-27 · The offline queue never folds a reference ahead of the insert it points
+at — it declines the merge instead of moving it.**
+
+`fold` (`src/lib/sync/ops.ts`) merged a row's later update into its earlier op and replayed the
+result at the *earlier* seq. A later member that added a reference took it back in time: rename a
+task, then drop it with another onto open time, and the assign (`slot_id` → the new block) folded
+into the rename and reached Postgres ahead of the block's insert — `23503 tasks_slot_id_fkey`,
+parked. Seen on the dummy account via a D-165 combine; that caller was reordered, the queue was
+not. So an update is **not folded** when any string in its patch is the id of a row inserted after
+the op it would join; it goes out on its own, at its own seq.
+
+Rejected: **fold at the later seq** (unless folding into an insert). It drags the *earlier*
+member's fields forward past whatever happened in between. Assign a task to a block, delete the
+block (`removeSlot` leans on `on delete set null`), then rename the task, and the slid merge
+re-asserts `slot_id` after the block is gone. Same 23503, from the other side. It also can't apply
+to an insert at all, and that was the second case. Declining reorders nothing, so it is right by
+construction. It costs one extra request, and only when a row was re-pointed at something just
+made. The match is deliberately schema-blind (no foreign-key map to drift from the migrations), so
+the only way it can be wrong is by sending one request more than it needed to.
+
+Consequence: one row can now fold into several ops. So each folded op carries the exact span of
+stored seqs it stands for (`fromSeq`..`throughSeq`), and `ack`, `recordFailure` and the
+annihilation sweep stay inside that span. Without the floor, three things went wrong. A later op
+landing retired a *parked* earlier one, a write silently gone. A later op failing told an earlier,
+delivered one's waiters it never landed. And sweeping delete → recreate → delete dropped the first
+delete while it was still owed, so offline the row survived on the server.
+
+**Anchor.** No Question Ledger row; this is infrastructure, like D-164 / D-166. Strains nothing in
+the product grammar. It serves the outbox's own promise that a queued write is safe. The four no's:
+no pool, no new user-facing name, no clean-data requirement, nothing builder-only.
+
+*Status: built. `tests/sync/fold-references.test.ts` (10 tests) drives the real outbox and drain
+against a fake server that enforces `tasks.slot_id` / `tasks.project_id` with `on delete set null`.
+9 of the 10 fail on the old code, and the 3 bookkeeping tests fail on the old outbox alone. Driven
+on the local dummy account (2026-10-27), offline. Rename "Call the plumber", then drop it and
+"Order printer ink" onto 4pm: the fold sends the rename (106), the block's insert (107), then
+both assigns (108, 109). Back online, the queue drained with nothing parked, and Postgres had both
+tasks in the new slot. Then restored to the seed.*
