@@ -118,14 +118,40 @@ describe("cutover_copy helpers", () => {
       + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\npsql:a:1: ERROR:  55P03: fake) already exists.')); "
       + "print(is_retryable_lock_timeout('psql:f:2: ERROR:  P0001: ERROR:  55P03: fake')); "
       + "print(is_retryable_lock_timeout(\"ERROR:  P0001: x\\nERROR:  55P03: fake\")); "
+      + "print(is_retryable_lock_timeout('pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('NOTICE:  ERROR:  55P03: fake\\nWARNING:  ERROR:  55P03: fake\\nERROR:  duplicate key value violates unique constraint \"t_pkey\"')); "
       + "print(LOCK_TIMEOUT_SQLSTATE); "
       + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE); "
       + "print(PUSH_LOCK_TIMEOUT_MESSAGE)",
     );
     expect(out).toBe(
-      "True\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
+      "True\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
       + "sync_log lock timed out after 10s — retry the resync (retryable) [55P03]\n"
       + "push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]",
+    );
+  });
+
+  it("takes SQLSTATE from the first error-banner line, not a later spoof", () => {
+    const out = py(
+      "from cutover_copy import first_error_banner_line, first_psql_sqlstate, is_retryable_lock_timeout; "
+      + "samples = ["
+      + "  'pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'ERROR:  duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.',"
+      + "  'NOTICE:  ERROR:  55P03: fake\\nWARNING:  ERROR:  55P03: fake\\nERROR:  statement timeout',"
+      + "]; "
+      + "print('\\n'.join("
+      + "  (first_error_banner_line(s) or '') + '\\n' + (first_psql_sqlstate(s) or '') + '\\n' + str(is_retryable_lock_timeout(s))"
+      + "  for s in samples"
+      + "))",
+    );
+    expect(out).toBe(
+      "pg_restore: error: COPY failed for table \"t\": ERROR:  duplicate key value violates unique constraint \"t_pkey\"\n"
+      + "\nFalse\n"
+      + "ERROR:  duplicate key value violates unique constraint \"t_pkey\"\n"
+      + "\nFalse\n"
+      + "ERROR:  statement timeout\n"
+      + "\nFalse",
     );
   });
 
@@ -301,7 +327,14 @@ describe("cutover-migrate.yml", () => {
     expect(WORKFLOW).toMatch(/reserved sync_log identity setval=/);
     expect(WORKFLOW).toMatch(/sync_log_resync_txn_sql/);
     expect(WORKFLOW).toMatch(/is_retryable_lock_timeout/);
-    expect(WORKFLOW).toMatch(/retryable_lock_timeout_stop\(err\)/);
+    expect(WORKFLOW).toMatch(/retryable_lock_timeout_stop\(stderr\)/);
+    expect(WORKFLOW).toMatch(/retryable_lock=True/);
+    expect(WORKFLOW.match(/retryable_lock=True/g)?.length).toBe(1);
+    expect(WORKFLOW).toMatch(/if retryable_lock and stderr and is_retryable_lock_timeout\(stderr\)/);
+    expect(WORKFLOW).toMatch(/err = stderr or stdout/);
+    expect(WORKFLOW).not.toMatch(/is_retryable_lock_timeout\(err\)/);
+    expect(WORKFLOW).not.toMatch(/is_retryable_lock_timeout\(stdout\)/);
+    expect(WORKFLOW).not.toMatch(/retryable_lock_timeout_stop\(err\)/);
     expect(WORKFLOW).not.toMatch(/die\(SYNC_LOG_LOCK_TIMEOUT_MESSAGE\)/);
     expect(WORKFLOW).not.toMatch(/psql\(target, sync_log_setval_sql/);
     expect(WORKFLOW).toMatch(/phase=resync|phase == 'resync'/);
@@ -358,6 +391,9 @@ describe("runbook", () => {
     expect(DOC).toMatch(/names that table from the\s+failing statement or CONTEXT, not `sync_log`/);
     expect(DOC).toMatch(/\\set VERBOSITY verbose/);
     expect(DOC).toMatch(/ERROR:  55P03:/);
+    expect(DOC).toMatch(/Only the resync target/);
+    expect(DOC).toMatch(/first error-banner line/);
+    expect(DOC).toMatch(/pg_restore: error:/);
     expect(DOC).toMatch(/no automatic retry/);
     expect(DOC).toMatch(/re-dispatch `cutover-migrate` with `phase=resync` by hand/);
     expect(DOC).toMatch(/CUTOVER_FLIPPED/);

@@ -343,10 +343,21 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-# SQLSTATE from the first psql ERROR line only. Not MULTILINE: a later
-# DETAIL, hint, or row value that happens to contain `ERROR:  55P03:` is
-# ignored. The optional prefix is `psql:<file>:<line>: ` — not a greedy
-# `psql:…:` that can skip past `ERROR:  P0001:` to a 55P03 in the message.
+# First error-banner line of any form — not the first line that happens to
+# carry a SQLSTATE. NOTICE / WARNING / DETAIL / CONTEXT / HINT and data
+# lines are skipped. A later row-value `ERROR:  55P03: fake` must not win.
+SKIP_PSQL_NON_ERROR = re.compile(
+    r"^(?:psql:[^:\n]+:\d+: )?(?:NOTICE|WARNING|DETAIL|HINT|CONTEXT|LOCATION):"
+)
+FIRST_ERROR_BANNER = re.compile(
+    r"^(?:psql:[^:\n]+:\d+: )?ERROR:|"
+    r"^pg_restore: error:"
+)
+# Retryable only when THAT first banner line is ERROR:  55P03:.
+# pg_restore: error: … never matches, even if the same line mentions 55P03.
+RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
+    r"^(?:psql:[^:\n]+:\d+: )?ERROR:\s+55P03:"
+)
 FIRST_PSQL_ERROR_SQLSTATE = re.compile(
     r"^(?:psql:[^:\n]+:\d+: )?ERROR:\s+([0-9A-Z]{5}):"
 )
@@ -371,18 +382,29 @@ def table_from_lock_error(text: str) -> str | None:
     return None
 
 
-def first_psql_sqlstate(text: str) -> str | None:
-    """SQLSTATE on the first `ERROR:` banner line; ignore later lines."""
+def first_error_banner_line(text: str) -> str | None:
+    """First psql / pg_restore error banner; skip NOTICE and data lines."""
     for raw in (text or "").splitlines():
-        match = FIRST_PSQL_ERROR_SQLSTATE.match(raw)
-        if match:
-            return match.group(1)
+        if SKIP_PSQL_NON_ERROR.match(raw):
+            continue
+        if FIRST_ERROR_BANNER.match(raw):
+            return raw
     return None
 
 
+def first_psql_sqlstate(text: str) -> str | None:
+    """SQLSTATE on the first error-banner line only; None if it has none."""
+    line = first_error_banner_line(text)
+    if line is None:
+        return None
+    match = FIRST_PSQL_ERROR_SQLSTATE.match(line)
+    return match.group(1) if match else None
+
+
 def is_retryable_lock_timeout(text: str) -> bool:
-    """Retryable only when the first ERROR line's SQLSTATE is 55P03."""
-    return first_psql_sqlstate(text) == LOCK_TIMEOUT_SQLSTATE
+    """Retryable only when the first error-banner line is `ERROR:  55P03:`."""
+    line = first_error_banner_line(text)
+    return bool(line and RETRYABLE_LOCK_TIMEOUT_BANNER.match(line))
 
 
 def retryable_lock_timeout_stop(

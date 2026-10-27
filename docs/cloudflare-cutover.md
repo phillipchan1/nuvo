@@ -324,7 +324,13 @@ then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
 with the redacted psql error appended, rather than hanging the job).
 The resync script starts with `\set VERBOSITY verbose` so the psql banner
 carries `ERROR:  55P03:` (default verbosity omits the SQLSTATE, and the
-job only treats an anchored banner as retryable). A `push_subscriptions`
+job only treats an anchored banner as retryable). Only the resync target
+`psql` call classifies a retryable lock timeout; dump / restore /
+`pg_restore` always stop as a plain failure. The classifier takes the
+first error-banner line (`ERROR:`, `psql:<file>:<n>: ERROR:`, or
+`pg_restore: error:`), skipping NOTICE, WARNING, DETAIL, CONTEXT and
+data lines, and requires `ERROR:  55P03:` on that line — a later
+row-value spoof is not retryable. A `push_subscriptions`
 lock timeout uses the same SQLSTATE `55P03` and names that table from the
 failing statement or CONTEXT, not `sync_log`. There is **no automatic retry**:
 re-dispatch `cutover-migrate` with `phase=resync` by hand.

@@ -131,7 +131,7 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "write-helper",
-      "sha256": "58ebc4dd7cb02d234f5c4c497fccfd85e561a93af6de95e44604be472c48b83f"
+      "sha256": "8ef74f63020f1a0c8e76262251203c3be3728353ed8aeb6af8483cb72ffb494b"
     },
     {
       "file": "cutover-migrate.yml",
