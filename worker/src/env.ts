@@ -26,8 +26,9 @@ export interface Env {
   APPLE_SIWA_TEAM_ID?: string;
   APPLE_SIWA_KEY_ID?: string;
   APPLE_SIWA_PRIVATE_KEY?: string;
-  /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503. */
+  /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503; github theme falls back to null. */
   OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
   /** Supabase origin for the billing read. Subscriptions stay there. */
@@ -45,7 +46,8 @@ export interface Env {
   CUTOVER_ARMED?: string;
   /**
    * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
-   * Unset, empty, and anything else is not flipped — Worker crons skip.
+   * Unset, empty, and anything else is not flipped — Worker crons and
+   * CRON_SECRET github-activity `action: "sync"` skip with 200.
    */
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */

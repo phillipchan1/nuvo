@@ -97,8 +97,8 @@ wrong → 401. No Workers Cron Triggers.
 | `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | **blocked** | `accessHttp` + `miniflare.seq` expect 501 |
 | `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
 | `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
-| `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | **blocked** | 501 |
-| `nuvo-trim-sync-log` | `sync_log` | **blocked** | SQL-on-Supabase today; no Worker job |
+| `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | ported+tested | unauth 401; 200 `skipped:true` until `CUTOVER_FLIPPED`; then iterates `users` then `user_id`; A's units stay on A |
+| `nuvo-trim-sync-log` / `trim-sync-log` | `sync_log` | ported+tested | unauth 401; 200 `skipped:true` until `CUTOVER_FLIPPED`; after flip, age > 30d deleted only below the floor (Supabase-origin); Neon-origin ids at/above the floor kept; sequence unchanged |
 
 Calendar mirror teardown during rollover is **skipped** (Vault + Google /
 iCloud). The Neon row still loses `start_time` / `do_date` as the
@@ -145,7 +145,7 @@ cutover.
 | `calendar-refresh` | `calendar_accounts` | token refresh via Vault |
 | `slot-mirror` / `task-mirror` | `slots` / `tasks` (`google_event_id`) | provider write-back |
 | `push-dispatch` | `push_subscriptions`, `reminders`, `tasks`, `slots`, `external_events`, `user_settings` | VAPID / web-push |
-| `github-activity` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | Vault GitHub tokens |
+| `github-activity` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | **ported** — PAT via A's `sealToken` / `openToken` |
 | `apple-identity` | `apple_identities` | GoTrue identity link |
 | `delete-account` | almost every user table + Stripe cancel | Stripe + auth wipe |
 
@@ -157,14 +157,16 @@ cutover.
 
 | File | Count | What |
 |---|---|---|
-| `access.check.ts` | 197 | Store-layer isolation + FK plant + day window + reminder target table |
-| `accessHttp.check.ts` | 333 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune crons + every ported route above |
-| `authUrl.check.ts` | 98 | auth URL / local fallback |
+| `access.check.ts` | 230 | Store-layer isolation + FK plant + day window + reminder target table |
+| `accessHttp.check.ts` | 487 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity (CRON_SECRET sync flip-skip before DB) + github-poll / trim-sync-log |
+| `authUrl.check.ts` | 99 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
-| `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
+| `secrets.check.ts` | 133 | A's seal/open + writeFrozen + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
+| `cutoverFlip.check.ts` | 290 | Shared allowlist + POST_FLIP_CRON_JOBS + cronAuthorized source-scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` before requestIo |
+| `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` skips until `CUTOVER_FLIPPED` |
 
-`npm run check:isolation-mutation`: **66/66** owner filters in `store.ts`.
+`npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.
 
-SPA: `npm run typecheck` clean · `npm test` **2103** passed (160 files).
+SPA: `npm run typecheck` clean · `npm test` **2265** passed (167 files).

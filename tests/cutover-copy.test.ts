@@ -317,6 +317,13 @@ describe("runbook", () => {
     expect(DOC).toMatch(/redacted psql error/);
     expect(DOC).toMatch(/deletes\s+missing ids first/);
     expect(DOC).toMatch(/phase=resync/);
+    expect(DOC).toMatch(/CUTOVER_FLIPPED/);
+    expect(DOC).toMatch(/skipped: true/);
+    expect(DOC).toMatch(/`1`, `true`, `yes`, `on`/);
+    expect(DOC).toMatch(/unschedule[\s\S]*phase=resync[\s\S]*CUTOVER_FLIPPED/);
+    expect(DOC).toMatch(/about 1e6 further Neon inserts/);
+    expect(DOC).not.toMatch(/Supabase-origin ids are all below the floor/);
+    expect(DOC).not.toMatch(/never deletes ids in the parked identity window/);
   });
 
   it("documents aclexplode restore and idempotent unfreeze", () => {

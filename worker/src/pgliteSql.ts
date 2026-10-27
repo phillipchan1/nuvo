@@ -29,6 +29,11 @@ export function makePgliteSql(db: PGlite): Sql {
         text += `$${params.length}::jsonb`;
         continue;
       }
+      if (value instanceof Uint8Array) {
+        params.push(value);
+        text += `$${params.length}::bytea`;
+        continue;
+      }
       params.push(value);
       if (Array.isArray(value)) {
         const uuidish = value.every((item) =>

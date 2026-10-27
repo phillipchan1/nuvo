@@ -103,7 +103,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `capture` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `day` | User JWT | no | **Worker/Neon** |
 | `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if it still bills) | Dual-path |
-| `github-activity` | JWT or service role | no | Stay |
+| `github-activity` | JWT or `CRON_SECRET` | no | Worker + Neon (A's sealed PAT). Supabase fn stays for rollback. |
 | `google-contacts` | JWT / service | no | Stay |
 | `google-events` | JWT | no | Stay |
 | `google-oauth` | OAuth state | no | Stay |
@@ -181,8 +181,8 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 |---|---|
 | `nuvo-rollover-pst` / `pdt` | `rollover` |
 | `nuvo-google-renew` | `google-sync` |
-| `nuvo-trim-sync-log` | SQL |
-| `nuvo-github-poll` | `github-activity` |
+| `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (age + Neon-origin floor; no-op until `CUTOVER_FLIPPED`) |
+| `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` (no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) |
 | `nuvo-push-dispatch` | `push-dispatch` |
 | `nuvo-reminder-deliveries-prune` | SQL |
@@ -192,9 +192,12 @@ External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Ca
 
 **Vercel crons:** none (`vercel.json` has no `crons`). The Worker now has
 Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
-`/api/cron/:job` still requires `CRON_SECRET`. Unported jobs stay 501.
-Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` — see
-[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
+`/api/cron/:job` still requires `CRON_SECRET`. Ported: rollover,
+purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log
+(no-op until `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps
+recent Neon-origin ids out of trim for ~1e6 further inserts). Unported
+jobs stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` —
+see [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---
 

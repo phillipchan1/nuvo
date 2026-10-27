@@ -560,3 +560,74 @@ describe.sequential("push_subscriptions window edits", { timeout: 60_000 }, () =
     await target.close();
   });
 });
+
+describe("resync + trim convergence", () => {
+  async function trimLikeWorker(db: PGlite): Promise<void> {
+    const last = await lastValue(db);
+    const floor = last >= 1_000_000 ? Math.max(last - 1_000_000 + 1, 1) : null;
+    if (floor == null) {
+      await db.query("DELETE FROM public.sync_log WHERE created_at < now() - interval '30 days'");
+    } else {
+      await db.query(
+        "DELETE FROM public.sync_log WHERE created_at < now() - interval '30 days' AND id < $1",
+        [floor],
+      );
+    }
+  }
+
+  async function resyncAll(source: PGlite, target: PGlite): Promise<void> {
+    await target.exec("DELETE FROM cutover_sync_log_src");
+    await loadSrc(target, source, await idsOf(source));
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+  }
+
+  it("repeated resync+trim converges when trim is gated until after the final resync", async () => {
+    const { cutoverFlipped } = await import("../worker/src/cutoverFlip.ts");
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+    );
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (2, 'github', 'sync', 'ok', now())`,
+    );
+    await target.exec(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(2))") + ";");
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await target.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (1000003, 'github', 'sync', 'ok', now() - interval '40 days')`,
+    );
+
+    expect(cutoverFlipped(undefined)).toBe(false);
+    expect(cutoverFlipped("maybe")).toBe(false);
+    const before: number[][] = [];
+    for (let i = 0; i < 3; i++) {
+      await resyncAll(source, target);
+      if (cutoverFlipped(undefined)) await trimLikeWorker(target);
+      before.push(await idsOf(target));
+    }
+    expect(before[0]).toEqual([1, 2, 1000003]);
+    expect(before[1]).toEqual(before[0]);
+    expect(before[2]).toEqual(before[0]);
+
+    await resyncAll(source, target);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+    await resyncAll(source, target);
+    expect(await idsOf(target)).toEqual([1, 2, 1000003]);
+
+    expect(cutoverFlipped("1")).toBe(true);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+    await trimLikeWorker(target);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+
+    await source.close();
+    await target.close();
+  });
+});

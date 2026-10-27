@@ -47,7 +47,7 @@ const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
 const routeSrc = [
   indexSrc,
   sessionSrc,
-  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts"].map(
+  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "githubActivity.ts"].map(
     (name) => readFileSync(join(here, name), "utf8"),
   ),
 ].join("\n");
@@ -76,6 +76,27 @@ ok(copyYml.includes('provider in {"google", "apple"}'), "copy: apple maps to Bet
 ok(copyYml.includes('"accountId"') && copyYml.includes('"userId"'), "copy: writes BA accountId + userId");
 ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
 ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
+
+const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
+ok(/user_id = \$\{store\.userId\}/.test(ghSrc), "github-activity: owner filter is store.userId");
+ok(/user_id = \$\{user\.id\}/.test(ghSrc), "github-poll: iterates users then scopes user_id");
+ok(/user_id = \$\{src\.user_id\}/.test(ghSrc), "github-activity: source writes stay on src.user_id");
+ok(!/c\.req\.query\(["']user_id["']\)/.test(ghSrc), "github-activity: no user_id query");
+ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: seals with A's secrets.ts");
+ok(/writeFrozen\(c\.env\.MAINTENANCE_WRITE_FREEZE\)/.test(ghSrc), "github-activity: writeFrozen after auth");
+ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim-sync-log: floor excludes Neon-origin ids (Supabase-origin ids sit below it)");
+ok(/CUTOVER_FLIPPED/.test(ghSrc), "trim-sync-log: comments the post-flip gate");
+ok(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc), "github-activity: CRON_SECRET sync uses gateCronBearerRoute(c.env, 'github-poll')");
+const cronSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
+const requireStoreAt = ghSrc.indexOf("requireStore(c)");
+const cronSync = cronSyncAt >= 0 && requireStoreAt > cronSyncAt ? ghSrc.slice(cronSyncAt, requireStoreAt) : "";
+ok(cronSync.includes("gateCronBearerRoute"), "github-activity cron sync: flip gate present");
+ok(cronSync.indexOf("gateCronBearerRoute") < cronSync.indexOf("requestIo"), "github-activity cron sync: flip gate before requestIo");
+ok(!/cutoverFlipped\(/.test(readFileSync(join(here, "maintenance.ts"), "utf8")), "maintenance.ts does not own cutoverFlipped");
+const cronJobsSrc = readFileSync(join(here, "cronJobs.ts"), "utf8");
+ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron uses gateCron");
+ok(/gateCron\(env, name\)/.test(cronJobsSrc), "runCronJob uses gateCron");
+ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers live in cutoverFlip.ts");
 
 const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
 ok(/export function refuseFrozenWrite/.test(writeFreezeSrc), "writeFreeze: refuseFrozenWrite is the shared helper");
@@ -145,6 +166,7 @@ const env = {
   CRON_SECRET: "access-http-cron-secret",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
+  TOKEN_ENC_KEY_V1: "00".repeat(32),
   CUTOVER_FLIPPED: "1",
 };
 
@@ -169,6 +191,14 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   const headers = new Headers(init.headers);
   if (!headers.has("Origin")) headers.set("Origin", origin);
   return app.request(`http://localhost:8787${path}`, { ...init, headers }, env);
+}
+
+async function cronRequest(path: string, extraEnv: Record<string, string> = {}): Promise<Response> {
+  return app.request(
+    `http://localhost:8787${path}`,
+    { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    { ...env, ...extraEnv },
+  );
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -395,6 +425,10 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/api/entitlement", body: { name: "no" } },
   { method: "PATCH", path: "/api/entitlement", body: { name: "no" } },
   { method: "DELETE", path: "/api/entitlement" },
+  { method: "POST", path: "/api/github-activity", body: { action: "sync" } },
+  { method: "POST", path: "/functions/v1/github-activity", body: { action: "connect", token: "x" } },
+  { method: "POST", path: "/api/cron/github-poll" },
+  { method: "POST", path: "/api/cron/trim-sync-log" },
 ];
 
 for (const route of unauth) {
@@ -1276,6 +1310,378 @@ const cronFrozen = await withTimeout(
   "cron frozen",
 );
 ok(cronFrozen.status === 503, `authorized cron while frozen: HTTP ${cronFrozen.status}`);
+
+const realFetch = globalThis.fetch;
+let githubApiCalls = 0;
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input);
+  if (url.includes("api.github.com")) githubApiCalls += 1;
+  const auth = new Headers(init?.headers).get("Authorization") ?? "";
+  if (url.startsWith("https://api.github.com/user") && !url.includes("/repos")) {
+    const login = auth.includes("BBBB") ? "octo-b" : "octo-a";
+    return new Response(JSON.stringify({ login, avatar_url: "https://example.test/a.png" }), { status: 200 });
+  }
+  if (url.includes("api.github.com/user/repos")) {
+    const full = auth.includes("BBBB") ? "octo-b/lab" : "octo-a/nuvo";
+    return new Response(JSON.stringify([{ full_name: full, pushed_at: "2026-10-01T00:00:00Z", private: false }]), {
+      status: 200,
+    });
+  }
+  if (url.includes("api.github.com/search/issues")) {
+    const title = url.includes("octo-b") ? "B only PR" : "A secret PR";
+    return new Response(
+      JSON.stringify({
+        items: [
+          {
+            node_id: title === "B only PR" ? "PR_kwDOB" : "PR_kwDOA",
+            title,
+            html_url: "https://github.com/example/pull/1",
+            pull_request: { merged_at: "2026-10-20T12:00:00Z" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }
+  return realFetch(input, init);
+};
+
+const RANDOM_SRC = "b0b0b0b0-0000-4000-8000-00000000ffff";
+const connectA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ action: "connect", token: "github_pat_11AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", user_id: b.id }),
+  }),
+  8000,
+  "A github connect",
+);
+ok(connectA.status === 200, `A github connect: HTTP ${connectA.status}`);
+const connectABody = (await connectA.json()) as { source?: { id?: string; login?: string } };
+ok(connectABody.source?.login === "octo-a", "A github connect: login from GitHub");
+const sourceA = connectABody.source?.id ?? "";
+ok(sourceA.length > 0, "A github connect: source id");
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceA, a.id])) === 1, "A github connect: row is A's");
+ok((await count("activity_sources", "user_id = $1", [b.id])) === 0, "A github connect: forged user_id did not plant on B");
+
+const connectB = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "connect", token: "github_pat_11BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", user_id: a.id }),
+  }),
+  8000,
+  "B github connect",
+);
+ok(connectB.status === 200, `B github connect: HTTP ${connectB.status}`);
+const sourceB = ((await connectB.json()) as { source?: { id?: string } }).source?.id ?? "";
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceB, b.id])) === 1, "B github connect: row is B's");
+ok((await count("activity_sources", "user_id = $1 AND id = $2", [a.id, sourceB])) === 0, "B github connect: client user_id ignored");
+
+const bindA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceA, projectId: A_ROW.projects, repo: "octo-a/nuvo" }),
+  }),
+  8000,
+  "A github bind",
+);
+ok(bindA.status === 200, `A github bind: HTTP ${bindA.status}`);
+const bindABody = (await bindA.json()) as { count?: number; recent?: Array<{ title?: string }> };
+ok((bindABody.count ?? 0) >= 1, "A github bind: pulled a PR");
+ok(bindABody.recent?.some((r) => r.title === "A secret PR"), "A github bind: recent is A's title");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "A github bind: unit on A");
+
+const bindFk = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceB, projectId: A_ROW.projects, repo: "octo-b/lab" }),
+  }),
+  8000,
+  "B bind A's project",
+);
+const bindFkRand = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceB, projectId: RANDOM_SRC, repo: "octo-b/lab" }),
+  }),
+  8000,
+  "B bind random project",
+);
+ok(denied(bindFk.status), `B bind A's project: HTTP ${bindFk.status}`);
+ok(bindFk.status === bindFkRand.status, `B bind FK vs random: ${bindFk.status} vs ${bindFkRand.status}`);
+ok((await count("activity_bindings", "user_id = $1 AND project_id = $2", [b.id, A_ROW.projects])) === 0, "B bind: no row on A's project");
+
+const stealSrc = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "bind", sourceId: sourceA, projectId: A_ROW.projects, repo: "octo-a/nuvo" }),
+  }),
+  8000,
+  "B bind A's source",
+);
+ok(denied(stealSrc.status), `B bind A's source: HTTP ${stealSrc.status}`);
+ok((await count("activity_bindings", "source_id = $1 AND user_id = $2", [sourceA, b.id])) === 0, "B bind A's source: no binding planted");
+
+const syncBOnA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "sync", sourceId: sourceA }),
+  }),
+  8000,
+  "B sync A's source",
+);
+const syncBOnABody = (await syncBOnA.json()) as { count?: number };
+ok(syncBOnA.status === 200 && syncBOnABody.count === 0, `B sync A's source: count=${syncBOnABody.count}`);
+ok((await count("activity_units", "user_id = $1 AND title = $2", [b.id, "A secret PR"])) === 0, "B sync: A's PR not planted on B");
+
+const themeB = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "theme", weekStartISO: "2026-10-19T00:00:00.000Z" }),
+  }),
+  8000,
+  "B theme",
+);
+ok(themeB.status === 200, `B theme: HTTP ${themeB.status}`);
+const themeBBody = (await themeB.json()) as { groups?: Array<{ titles?: string[] }> };
+const themeTitles = (themeBBody.groups ?? []).flatMap((g) => g.titles ?? []);
+ok(!themeTitles.includes("A secret PR"), "B theme: omits A's titles");
+
+const discA = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "disconnect", sourceId: sourceA }),
+  }),
+  8000,
+  "B disconnect A's source",
+);
+const discRand = await withTimeout(
+  request("/api/github-activity", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ action: "disconnect", sourceId: RANDOM_SRC }),
+  }),
+  8000,
+  "B disconnect random",
+);
+ok(discA.status === discRand.status, `B disconnect A's id vs random: ${discA.status} vs ${discRand.status}`);
+ok((await count("activity_sources", "id = $1 AND user_id = $2", [sourceA, a.id])) === 1, "B disconnect: A's source remains");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "B disconnect: A's unit remains");
+
+const cronGhNo = await withTimeout(request("/api/cron/github-poll", { method: "POST" }), 8000, "cron github unauth");
+ok(cronGhNo.status === 401, `cron github-poll unauth: HTTP ${cronGhNo.status}`);
+const cronTrimNo = await withTimeout(request("/api/cron/trim-sync-log", { method: "POST" }), 8000, "cron trim unauth");
+ok(cronTrimNo.status === 401, `cron trim-sync-log unauth: HTTP ${cronTrimNo.status}`);
+
+await db.query(
+  `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
+   VALUES ($1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+  [a.id],
+);
+await db.query(
+  `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
+   VALUES ($1, 'github', 'sync', 'ok', now())`,
+  [a.id],
+);
+const oldBeforeSkip = await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id]);
+ok(oldBeforeSkip === 1, "cron trim pre-flip: old A row is present");
+const trimSkip = await withTimeout(cronRequest("/api/cron/nuvo-trim-sync-log", { CUTOVER_FLIPPED: "" }), 8000, "cron trim skip");
+ok(trimSkip.status === 200, `cron trim before flip: HTTP ${trimSkip.status}`);
+const trimSkipBody = (await trimSkip.json()) as { skipped?: boolean; reason?: string };
+ok(trimSkipBody.skipped === true, "cron trim before flip: skipped:true");
+ok(trimSkipBody.reason === "cutover_not_flipped", "cron trim before flip: reason cutover_not_flipped");
+ok((await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id])) === 1, "cron trim before flip: old A row kept");
+ok((await count("sync_log", "user_id = $1", [a.id])) === 2, "cron trim before flip: recent A row kept");
+
+const githubBeforeSkip = githubApiCalls;
+const pollSkip = await withTimeout(cronRequest("/api/cron/github-poll", { CUTOVER_FLIPPED: "" }), 8000, "cron poll skip");
+ok(pollSkip.status === 200, `cron github-poll before flip: HTTP ${pollSkip.status}`);
+const pollSkipBody = (await pollSkip.json()) as { skipped?: boolean };
+ok(pollSkipBody.skipped === true, "cron github-poll before flip: skipped:true");
+ok(githubApiCalls === githubBeforeSkip, "cron github-poll before flip: no GitHub API call");
+
+for (const value of ["maybe", "2", "false", "0", "flipped"]) {
+  const unknown = await withTimeout(
+    cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: value }),
+    8000,
+    `cron trim unknown ${value}`,
+  );
+  const unknownBody = (await unknown.json()) as { skipped?: boolean };
+  ok(unknown.status === 200 && unknownBody.skipped === true, `cron trim CUTOVER_FLIPPED=${value}: fail-closed skip`);
+}
+ok((await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id])) === 1, "cron trim unknown values: old row still kept");
+
+const cronTrim = await withTimeout(
+  cronRequest("/api/cron/nuvo-trim-sync-log", { CUTOVER_FLIPPED: "1" }),
+  8000,
+  "cron trim",
+);
+ok(cronTrim.status === 200, `cron trim-sync-log after flip: HTTP ${cronTrim.status}`);
+const cronTrimBody = (await cronTrim.json()) as { skipped?: boolean; deleted?: number };
+ok(cronTrimBody.skipped !== true, "cron trim after flip: not skipped");
+ok((cronTrimBody.deleted ?? 0) >= 1, "cron trim after flip: deleted at least the old row");
+ok((await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id])) === 0, "cron trim after flip: old A rows gone");
+ok((await count("sync_log", "user_id = $1", [a.id])) === 1, "cron trim after flip: recent A row kept");
+
+await db.query(`SELECT setval('public.sync_log_id_seq', 1000100, true)`);
+await db.query(
+  `INSERT INTO sync_log (id, user_id, provider, operation, status, created_at)
+   OVERRIDING SYSTEM VALUE
+   VALUES (50, $1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+  [a.id],
+);
+await db.query(
+  `INSERT INTO sync_log (id, user_id, provider, operation, status, created_at)
+   OVERRIDING SYSTEM VALUE
+   VALUES (80, $1, 'github', 'sync', 'ok', now())`,
+  [a.id],
+);
+await db.query(
+  `INSERT INTO sync_log (id, user_id, provider, operation, status, created_at)
+   OVERRIDING SYSTEM VALUE
+   VALUES (1000050, $1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+  [a.id],
+);
+await db.query(`SELECT setval('public.sync_log_id_seq', 1000100, true)`);
+const lastBefore = await scalar<string | number>("SELECT last_value FROM public.sync_log_id_seq", []);
+const cronTrimParked = await withTimeout(
+  cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: "true" }),
+  8000,
+  "cron trim parked",
+);
+ok(cronTrimParked.status === 200, `cron trim after flip parked: HTTP ${cronTrimParked.status}`);
+ok((await count("sync_log", "id = $1", [50])) === 0, "cron trim after flip: old Supabase-origin id below the floor is gone");
+ok((await count("sync_log", "id = $1", [80])) === 1, "cron trim after flip: recent id below the floor is kept");
+ok((await count("sync_log", "id = $1", [1000050])) === 1, "cron trim after flip: old Neon-origin id at/above the floor is kept");
+const lastAfter = await scalar<string | number>("SELECT last_value FROM public.sync_log_id_seq", []);
+ok(String(lastAfter) === String(lastBefore), "cron trim after flip: identity last_value is unchanged");
+
+const cronPoll = await withTimeout(
+  cronRequest("/api/cron/github-poll", { CUTOVER_FLIPPED: "yes" }),
+  8000,
+  "cron poll",
+);
+ok(cronPoll.status === 200, `cron github-poll after flip: HTTP ${cronPoll.status}`);
+const cronPollBody = (await cronPoll.json()) as { skipped?: boolean };
+ok(cronPollBody.skipped !== true, "cron github-poll after flip: not skipped");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [a.id, "A secret PR"])) === 1, "cron poll: A's unit still A's");
+ok((await count("activity_units", "user_id = $1 AND title = $2", [b.id, "A secret PR"])) === 0, "cron poll: A's title not on B");
+
+await db.query("DELETE FROM sync_log WHERE user_id = $1", [a.id]);
+await db.query(`SELECT setval('public.sync_log_id_seq', 1000100, true)`);
+const sourceSnapshot = [
+  { id: 50, age: "40 days" },
+  { id: 80, age: null as string | null },
+  { id: 1000050, age: "40 days" },
+];
+async function resyncFromSnapshot() {
+  for (const row of sourceSnapshot) {
+    const exists = await count("sync_log", "id = $1", [row.id]);
+    if (exists > 0) continue;
+    await db.query(
+      `INSERT INTO sync_log (id, user_id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE
+       VALUES ($1, $2, 'github', 'sync', 'ok', ${row.age ? `now() - interval '${row.age}'` : "now()"})`,
+      [row.id, a.id],
+    );
+  }
+  await db.query(`SELECT setval('public.sync_log_id_seq', 1000100, true)`);
+}
+await resyncFromSnapshot();
+let convergeIds = "";
+for (let i = 0; i < 3; i++) {
+  const skippedTrim = await withTimeout(cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: "" }), 8000, `converge trim skip ${i}`);
+  const skippedBody = (await skippedTrim.json()) as { skipped?: boolean };
+  ok(skippedBody.skipped === true, `converge before flip ${i}: trim skipped`);
+  await resyncFromSnapshot();
+  const ids = (await db.query("SELECT id FROM sync_log WHERE user_id = $1 ORDER BY id", [a.id])).rows
+    .map((r) => String((r as { id: number }).id))
+    .join(",");
+  if (i === 0) convergeIds = ids;
+  else ok(ids === convergeIds, `converge before flip ${i}: ids stable (${ids})`);
+}
+ok(convergeIds === "50,80,1000050", `converge before flip: kept the resynced set (${convergeIds})`);
+
+const flippedTrim = await withTimeout(
+  cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: "1" }),
+  8000,
+  "converge trim flip",
+);
+ok(flippedTrim.status === 200, "converge after flip: trim ran");
+ok((await count("sync_log", "id = $1", [50])) === 0, "converge after flip: old Supabase-origin row trimmed");
+ok((await count("sync_log", "id = $1", [80])) === 1, "converge after flip: recent row kept");
+ok((await count("sync_log", "id = $1", [1000050])) === 1, "converge after flip: Neon-origin parked row kept");
+for (let i = 0; i < 2; i++) {
+  const again = await withTimeout(
+    cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: "1" }),
+    8000,
+    `converge trim again ${i}`,
+  );
+  const againBody = (await again.json()) as { deleted?: number };
+  ok((againBody.deleted ?? -1) === 0, `converge after flip ${i}: further trim deletes nothing`);
+}
+ok((await count("sync_log", "id IN (50, 80, 1000050)", [])) === 2, "converge after flip: set stays 80+1000050");
+
+const frozenGh = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/github-activity",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${a.token}`, "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({ action: "sync" }),
+    },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "github frozen",
+);
+ok(frozenGh.status === 503, `authorized github-activity while frozen: HTTP ${frozenGh.status}`);
+const frozenGhUnauth = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/github-activity",
+    { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "sync" }) },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "github frozen unauth",
+);
+ok(frozenGhUnauth.status === 401, "unauth github-activity while frozen is still 401");
+
+async function cronGithubSync(extraEnv: Record<string, string> = {}, path = "/api/github-activity") {
+  return app.request(
+    `http://localhost:8787${path}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.CRON_SECRET}`, "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({ action: "sync" }),
+    },
+    { ...env, ...extraEnv },
+  );
+}
+const githubBeforeBearerSkip = githubApiCalls;
+const bearerSyncSkip = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "" }), 8000, "github-activity cron sync skip");
+ok(bearerSyncSkip.status === 200, `github-activity CRON_SECRET sync before flip: HTTP ${bearerSyncSkip.status}`);
+const bearerSyncSkipBody = (await bearerSyncSkip.json()) as { skipped?: boolean; reason?: string; job?: string };
+ok(bearerSyncSkipBody.skipped === true, "github-activity CRON_SECRET sync before flip: skipped:true");
+ok(bearerSyncSkipBody.job === "github-poll", "github-activity CRON_SECRET sync before flip: job github-poll");
+ok(githubApiCalls === githubBeforeBearerSkip, "github-activity CRON_SECRET sync before flip: no GitHub API call");
+const fnSyncSkip = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "" }, "/functions/v1/github-activity"), 8000, "functions github-activity cron sync skip");
+ok(fnSyncSkip.status === 200 && ((await fnSyncSkip.json()) as { skipped?: boolean }).skipped === true, "functions/v1 github-activity CRON_SECRET sync before flip: skipped");
+const bearerUnknown = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "maybe" }), 8000, "github-activity cron sync unknown");
+ok(((await bearerUnknown.json()) as { skipped?: boolean }).skipped === true, "github-activity CRON_SECRET sync unknown value: fail-closed skip");
+const bearerFlipped = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "1" }), 8000, "github-activity cron sync flipped");
+ok(bearerFlipped.status === 200, `github-activity CRON_SECRET sync after flip: HTTP ${bearerFlipped.status}`);
+ok(((await bearerFlipped.json()) as { skipped?: boolean }).skipped !== true, "github-activity CRON_SECRET sync after flip: not skipped");
+
+globalThis.fetch = realFetch;
 
 restoreSubs();
 installSubscriptionFetcherForTests(async () => null);

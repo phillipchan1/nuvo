@@ -1109,6 +1109,19 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/NEVER upload/);
     expect(workflow).toMatch(/CUTOVER_DUMP_DIR/);
     expect(workflow).toMatch(/CUTOVER_LOG_DIR/);
+    expect(workflow).not.toMatch(/CUTOVER_DUMP_DIR:\s*\$\{\{\s*runner\.temp/);
+    expect(workflow).not.toMatch(/CUTOVER_LOG_DIR:\s*\$\{\{\s*runner\.temp/);
+    expect(workflow).toMatch(/echo "CUTOVER_DUMP_DIR=\$RUNNER_TEMP\/nuvo-cutover" >> "\$GITHUB_ENV"/);
+    expect(workflow).toMatch(/echo "CUTOVER_LOG_DIR=\$RUNNER_TEMP\/nuvo-cutover-logs" >> "\$GITHUB_ENV"/);
+    const dirsAt = workflow.indexOf("id: cutover-dirs");
+    const assertAt = workflow.indexOf("id: assert-logs");
+    const shredAt = workflow.indexOf("id: shred");
+    expect(dirsAt).toBeGreaterThan(workflow.indexOf("id: checkout"));
+    expect(assertAt).toBeGreaterThan(dirsAt);
+    expect(shredAt).toBeGreaterThan(dirsAt);
+    expect(workflow).toContain("id: shred\n        name: Shred dumps\n        if: ${{ always() }}");
+    expect(workflow).toMatch(/CUTOVER_DUMP_DIR:-\$\{RUNNER_TEMP\}\/nuvo-cutover/);
+    expect(workflow).toMatch(/CUTOVER_LOG_DIR:-\$\{RUNNER_TEMP\}\/nuvo-cutover-logs/);
     expect(workflow).toMatch(/migration_tmp\.auth_users\(\)/);
     expect(workflow).toMatch(/migration_tmp\.auth_identities\(\)/);
     expect(workflow).toMatch(/AUTH_USERS_SRC_HASH_SQL/);
@@ -1119,6 +1132,7 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/id: guard/);
     expect(workflow).toMatch(/id: assert-logs/);
     expect(workflow).toMatch(/id: setup-node/);
+    expect(workflow).toMatch(/persist-credentials: false/);
     expect(workflow).toMatch(/id: seal-tokens/);
     expect(workflow).toMatch(/id: resync/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);
@@ -1138,6 +1152,18 @@ describe("public-repo CI guard", () => {
   it("checks.yml runs the allowlist guard", () => {
     const checks = readFileSync(join(ROOT, ".github/workflows/checks.yml"), "utf8");
     expect(checks).toMatch(/scripts\/guard-public-ci\.mjs/);
+    expect(checks).toMatch(/id: actionlint/);
+    expect(checks).toMatch(/ACTIONLINT_VERSION: "1\.7\.12"/);
+    expect(checks).toMatch(/ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"/);
+    expect(checks).toMatch(/sha256sum -c -/);
+    expect(checks).toMatch(/SHELLCHECK_OPTS: "-S warning"/);
+    expect(checks).toMatch(/SHELLCHECK_VERSION: "0\.11\.0"/);
+    expect(checks).toMatch(/SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"/);
+    expect(checks).toMatch(/\/tmp\/actionlint -color$/m);
+    expect(checks).not.toMatch(/-shellcheck=/);
+    expect(checks).toMatch(/permissions:\n  contents: read/);
+    expect(checks.match(/persist-credentials: false/g)?.length).toBe(2);
+    expect(checks).not.toMatch(/branches-ignore:/);
   });
 
   it("cutover docs name migration_tmp and the post-cutover drop", () => {

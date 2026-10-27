@@ -38,6 +38,7 @@ import { handleDay } from "./dayHttp.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
+import { handleGithubActivity } from "./githubActivity.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
 import {
@@ -410,6 +411,8 @@ function refuseIfFrozen(c: Context<AppEnv>): Response | null {
 }
 
 app.all("/api/cron/:job", (c) => handleCron(c));
+app.all("/api/github-activity", (c) => handleGithubActivity(c));
+app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
 app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
 app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/api/day", (c) => handleDay(c));
@@ -454,7 +457,10 @@ app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
 app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
 app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
 app.all("/api/rollover", (c) => handleUserRollover(c));
-app.all("/functions/v1/:name", (c) => stayOnSupabase(c.req.param("name")));
+app.all("/functions/v1/:name", (c) => {
+  if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
+  return stayOnSupabase(c.req.param("name"));
+});
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);
