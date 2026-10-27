@@ -6283,11 +6283,12 @@ subscription only. `push_subscriptions` writes match A's cutover resync:
 delete-missing, then a full-row `ON CONFLICT (id)` upsert, never another
 user's row. **The VAPID pair is the same pair as today's Supabase function.**
 Every Worker cron — push-dispatch included — is gated on fail-closed
-`CUTOVER_FLIPPED` (`cutoverFlipped` in `worker/src/cron.ts`, shared with
-PRs B and E). Unset / unknown → HTTP 200 `{ skipped: true }`, nothing
-sent even with Neon reminder prefs on. Freeze 503s writes only; it is not
-the cron skip. The push-dispatch HTTP route ignores a caller `nowMs`
-(test-only on `runPushDispatch`).
+`CUTOVER_FLIPPED` (`gateCron` / `gateCronBearerRoute` in
+`worker/src/cutoverFlip.ts`). Unset / unknown → HTTP 200
+`{ skipped: true, reason: "cutover_not_flipped" }`, nothing sent even
+with Neon reminder prefs on. Freeze 503s writes only; it is not the cron
+skip. The push-dispatch HTTP route ignores a caller `nowMs` (test-only
+on `runPushDispatch`).
 
 **Anchor.** No Question Ledger row — infrastructure, like D-164 / D-166.
 Strains nothing in the product grammar. The four no's: no pool, no new

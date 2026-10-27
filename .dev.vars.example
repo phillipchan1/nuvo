@@ -22,5 +22,5 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
 # GOOGLE_CLIENT_SECRET=
 # MAINTENANCE_WRITE_FREEZE=
 # CUTOVER_ARMED=
-# Fail-closed. Unset / unknown = Worker crons no-op (200 skipped) so pg_cron stays alone.
+# Allowlist only: 1 / true / yes / on. Unset = Worker crons skip (stay on pg_cron).
 # CUTOVER_FLIPPED=

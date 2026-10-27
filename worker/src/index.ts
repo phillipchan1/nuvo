@@ -5,7 +5,6 @@ import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.t
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
-import { cutoverFlipped } from "./cron.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -17,6 +16,7 @@ import {
 } from "./cronJobs.ts";
 import { closeSql, CONNECT_TIMEOUT_MS, openSql, raceTimeout, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import type { RequestIo } from "./requestIo.ts";
 import type { AppEnv } from "./session.ts";
@@ -488,14 +488,15 @@ async function scheduled(
   env: Env,
   ctx: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<void> {
-  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) return;
   if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
   let sql: Sql | null = null;
   try {
-    try {
-      sql = openSql(env);
-    } catch {
-      sql = null;
+    if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
+      try {
+        sql = openSql(env);
+      } catch {
+        sql = null;
+      }
     }
     await handleScheduled(event, env, (job) => runCronJob(job, env, sql));
   } finally {
@@ -503,8 +504,8 @@ async function scheduled(
   }
 }
 
-function queue(batch: QueueBatch<CalendarSyncMessage>): void {
-  consumeCalendarSyncBatch(batch);
+function queue(batch: QueueBatch<CalendarSyncMessage>, env: Env): void {
+  consumeCalendarSyncBatch(batch, env);
 }
 
 Object.assign(app, { scheduled, queue });

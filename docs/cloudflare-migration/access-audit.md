@@ -112,7 +112,7 @@ Full table: [`route-inventory.md`](./route-inventory.md).
 | `POST /api/inbound-email` | Svix + `user_settings.inbound_token` | unknown token writes nothing; A's token writes A | same |
 | `POST /api/route-events` | Session; domains + routing owned | unauth 401 | same |
 | `POST /api/rollover` | Session user only | B does not roll A | same |
-| `ALL /api/cron/:job` | `CRON_SECRET`, then fail-closed `CUTOVER_FLIPPED` (`cutoverFlipped`). Ported jobs iterate `users` then `user_id = $id`. Unset flip → 200 skipped. Push/calendar/github stay 501 after flip until their PR | unauth 401; skip before flip (nothing sent); purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `pushDispatch.check.ts` + `miniflare.seq.check.ts` |
+| `ALL /api/cron/:job` | `CRON_SECRET`, then fail-closed `CUTOVER_FLIPPED` (`gateCron` in `cutoverFlip.ts`) before the DB opens. Ported jobs iterate `users` then `user_id = $id`. Unset flip → 200 `{ skipped: true, reason: "cutover_not_flipped" }`. After flip: push-dispatch / rollover / purge / prune run; calendar/github stay 501 | unauth 401; skip before flip (nothing sent); purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `pushDispatch.check.ts` + `cutoverFlip.check.ts` + `miniflare.seq.check.ts` |
 
 `stripe_*`, `apple_*` writers, calendar tokens, and push tables are
 **not** on this Worker. `subscriptions` is read-only via `/api/entitlement`.

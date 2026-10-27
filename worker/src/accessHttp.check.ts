@@ -946,7 +946,8 @@ const cronSkipRoll = await withTimeout(
   "cron rollover skip",
 );
 ok(cronSkipRoll.status === 200, `cron rollover before flip: HTTP ${cronSkipRoll.status}`);
-ok((await cronSkipRoll.json() as { skipped?: boolean }).skipped === true, "cron rollover skips before flip");
+const cronSkipRollBody = await cronSkipRoll.json() as { skipped?: boolean; reason?: string };
+ok(cronSkipRollBody.skipped === true && cronSkipRollBody.reason === "cutover_not_flipped", "cron rollover skips before flip");
 ok((await scalar<string>("SELECT do_date::text FROM tasks WHERE id = $1", [A_PAST])) === "2026-10-20", "cron rollover before flip: past task unmoved");
 const cronSkipPush = await withTimeout(
   app.request(
@@ -958,7 +959,8 @@ const cronSkipPush = await withTimeout(
   "cron push skip",
 );
 ok(cronSkipPush.status === 200, `cron push-dispatch before flip: HTTP ${cronSkipPush.status}`);
-ok((await cronSkipPush.json() as { skipped?: boolean }).skipped === true, "cron push-dispatch skips before flip");
+const cronSkipPushBody = await cronSkipPush.json() as { skipped?: boolean; reason?: string };
+ok(cronSkipPushBody.skipped === true && cronSkipPushBody.reason === "cutover_not_flipped", "cron push-dispatch skips before flip");
 const cronOk = await withTimeout(
   request("/api/cron/rollover", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
   8000,

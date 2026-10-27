@@ -1,15 +1,4 @@
 /**
- * Fail-closed post-flip gate for every Worker cron (HTTP + Cron Trigger).
- * Unset / unknown = not flipped = no-op, so pg_cron on Supabase stays the
- * only runner. Strict allowlist — never derive this from writeFrozen
- * (a freeze-off must not start crons). A later shared module replaces this.
- */
-export function cutoverFlipped(value: string | undefined | null): boolean {
-  const v = (value ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
-
-/**
  * Constant-time compare for the optional cron bearer.
  * Unset CRON_SECRET never authorizes (empty == empty is not a pass).
  */

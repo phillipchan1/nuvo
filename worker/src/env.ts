@@ -36,9 +36,8 @@ export interface Env {
   /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
   CUTOVER_ARMED?: string;
   /**
-   * `1` / `true` / `yes` / `on` lets Worker crons run. Unset / unknown is
-   * fail-closed: every cron (HTTP + Cron Trigger) returns 200 `{ skipped: true }`.
-   * Freeze is not a substitute — freeze 503s writes only.
+   * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
+   * Unset, empty, and anything else is not flipped — Worker crons skip.
    */
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */

@@ -485,8 +485,8 @@ try {
     "cron",
   );
   ok(cron.status === 200, `cron authorized push-dispatch: HTTP ${cron.status}`);
-  const cronBody = await cron.json() as { ok?: boolean };
-  ok(cronBody.ok === true, "cron push-dispatch: ok");
+  const cronBody = await cron.json() as { ok?: boolean; skipped?: boolean };
+  ok(cronBody.ok === true && cronBody.skipped !== true, "cron push-dispatch runs after flip");
 
   const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
   ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);

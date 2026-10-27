@@ -12,7 +12,7 @@ import {
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
 } from "./secrets.ts";
-import { cutoverFlipped } from "./cron.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
 import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, handleScheduled, runCronJob } from "./cronJobs.ts";
 import { writeFrozen } from "./maintenance.ts";
 
@@ -107,23 +107,26 @@ ok(!cutoverFlipped(undefined), "cutoverFlipped unset is fail-closed");
 ok(!cutoverFlipped("maybe"), "cutoverFlipped unknown is fail-closed");
 ok(!cutoverFlipped("0"), "cutoverFlipped 0 is fail-closed");
 ok(!cutoverFlipped("false"), "cutoverFlipped false is fail-closed");
-const cronSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "cron.ts"), "utf8");
-ok(/export function cutoverFlipped/.test(cronSrc) && !/writeFrozen\(/.test(cronSrc), "cutoverFlipped does not derive from writeFrozen");
+const here = dirname(fileURLToPath(import.meta.url));
+const cronSrc = readFileSync(join(here, "cron.ts"), "utf8");
+const flipSrc = readFileSync(join(here, "cutoverFlip.ts"), "utf8");
+ok(!/export function cutoverFlipped/.test(cronSrc), "cron.ts no longer owns cutoverFlipped");
+ok(/export function cutoverFlipped/.test(flipSrc) && !/writeFrozen\(/.test(flipSrc), "cutoverFlipped lives in cutoverFlip.ts and does not derive from writeFrozen");
 ok(
-  !existsSync(join(dirname(fileURLToPath(import.meta.url)), "lib/secrets.ts")),
+  !existsSync(join(here, "lib/secrets.ts")),
   "stub lib/secrets.ts is deleted",
 );
 
 const skipPush = await runCronJob("push-dispatch", {}, null);
-ok(skipPush.skipped === true && skipPush.status === 200, "runCronJob skips push-dispatch before flip");
+ok(skipPush.skipped === true && skipPush.status === 200 && skipPush.reason === "cutover_not_flipped", "runCronJob skips push-dispatch before flip");
 ok(skipPush.stay_on_supabase === true, "skipped cron stays on supabase");
 const skipUnknown = await runCronJob("rollover", { CUTOVER_FLIPPED: "maybe" }, null);
-ok(skipUnknown.skipped === true, "unknown CUTOVER_FLIPPED skips rollover");
+ok(skipUnknown.skipped === true && skipUnknown.reason === "cutover_not_flipped", "unknown CUTOVER_FLIPPED skips rollover");
 const skipCalendar = await runCronJob("calendar-dispatch", { CUTOVER_FLIPPED: "" }, null);
-ok(skipCalendar.skipped === true, "empty CUTOVER_FLIPPED skips calendar-dispatch");
+ok(skipCalendar.skipped === true && skipCalendar.reason === "cutover_not_flipped", "empty CUTOVER_FLIPPED skips calendar-dispatch");
 const scheduledSkip = await handleScheduled({ cron: "* * * * *" }, {}, (job) => runCronJob(job, {}, null));
 ok(
-  scheduledSkip.length === 2 && scheduledSkip.every((r) => r.skipped === true),
+  scheduledSkip.length === 2 && scheduledSkip.every((r) => r.skipped === true && r.reason === "cutover_not_flipped"),
   "minute tick skips every job before flip",
 );
 const flippedNoSql = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: "1" }, null);
