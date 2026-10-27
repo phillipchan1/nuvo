@@ -269,7 +269,7 @@
       "file": "ios-release.yml",
       "job": "testflight",
       "id": "build-ipa",
-      "sha256": "6ef4bcfef4fa437ccceb72e3a85a342c3ce98c8a11119dd5ef8246195070e7b1"
+      "sha256": "c54c05199fedcf17efddce353619948f7eb8bdf905c7a762f4f9907cb8495965"
     },
     {
       "file": "ios-release.yml",
@@ -347,7 +347,7 @@
       "file": "release.yml",
       "job": "release",
       "id": "build",
-      "sha256": "64209813f3c6968cf95be5044adf60fbd8205b6c3e9af06e9913eb366f1f0b32"
+      "sha256": "5b0722379622add456f328566f7a530b218890d0ddbc805c29d505eb111aef7f"
     },
     {
       "file": "release.yml",
