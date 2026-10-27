@@ -135,7 +135,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 describe("isEntitled is one function", () => {
-  const files = [...sourceFiles("src"), ...sourceFiles("supabase/functions")].filter(
+  const files = [...sourceFiles("src"), ...sourceFiles("supabase/functions"), ...sourceFiles("worker/src")].filter(
     (f) => !f.endsWith("planRules.ts"),
   );
 

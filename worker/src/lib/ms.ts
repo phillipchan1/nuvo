@@ -10,7 +10,7 @@ export const MS_SCOPES = "offline_access User.Read Calendars.Read";
 export async function getMsAccessToken(
   sql: Sql,
   account: CalendarAccount,
-  env: { TOKEN_ENC_KEY_V1?: string; MS_CLIENT_ID?: string; MS_CLIENT_SECRET?: string },
+  env: { TOKEN_ENC_KEY_V1?: string; TOKEN_ENC_KEY_V2?: string; TOKEN_ENC_CURRENT?: string; MS_CLIENT_ID?: string; MS_CLIENT_SECRET?: string },
 ): Promise<string> {
   const expiresAt = account.access_token_expires_at
     ? new Date(account.access_token_expires_at).getTime()
@@ -20,10 +20,10 @@ export async function getMsAccessToken(
   const fail = async (why: string): Promise<never> => {
     await updateAccount(sql, account.id, account.user_id, { needs_reconnect: true });
     await logSync(sql, "m365", "token-refresh", "error", why, account.user_id);
-    throw new Error(`m365 token refresh failed: ${why}`);
+    throw new Error("m365 token refresh failed");
   };
 
-  const refreshToken = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+  const refreshToken = await openAccountSecret(account, env);
   if (!refreshToken) return await fail("no refresh token stored");
   if (!env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET) return await fail("MS client is not configured");
 
@@ -38,12 +38,12 @@ export async function getMsAccessToken(
       scope: MS_SCOPES,
     }),
   });
-  if (!res.ok) return await fail(await res.text());
+  if (!res.ok) return await fail(`refresh failed: ${res.status}`);
   const tok = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
   if (!tok.access_token) return await fail("token response missing access_token");
 
-  if (tok.refresh_token && env.TOKEN_ENC_KEY_V1) {
-    await sealAccountSecret(sql, account.id, account.user_id, env.TOKEN_ENC_KEY_V1, tok.refresh_token);
+  if (tok.refresh_token) {
+    await sealAccountSecret(sql, account.id, account.user_id, env, tok.refresh_token);
   }
   const expires = new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString();
   await updateAccount(sql, account.id, account.user_id, {

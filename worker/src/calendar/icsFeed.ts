@@ -3,7 +3,7 @@ import type { Env } from "../env.ts";
 import { reconcileEvents } from "../lib/eventSync.ts";
 import { parseIcs } from "../lib/ics.ts";
 import { isBlockedHost, rewriteFeedUrl } from "../lib/ssrf.ts";
-import { loadAccountsPaged, logSync, markSyncResult, openAccountSecret, updateAccount } from "./store.ts";
+import { loadAccountsPaged, loggedError, logSync, markSyncResult, openAccountSecret, updateAccount } from "./store.ts";
 import type { CalendarAccount } from "./types.ts";
 
 const WINDOW_PAST_DAYS = 30;
@@ -29,7 +29,7 @@ export async function syncIcsAccount(sql: Sql, account: CalendarAccount, env: En
     throw new Error(why);
   };
 
-  const feedUrl = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+  const feedUrl = await openAccountSecret(account, env);
   if (!feedUrl) return await fail("no feed url stored");
   const guarded = assertPublicFeedUrl(feedUrl);
   if (!guarded.ok) return await fail(guarded.error);
@@ -73,24 +73,23 @@ export async function syncIcsAccount(sql: Sql, account: CalendarAccount, env: En
 export async function runIcsSync(
   sql: Sql,
   env: Env,
-  accountId?: string,
+  opts: { accountId?: string; userId?: string } = {},
 ): Promise<{ ok: true } | { error: string }> {
   try {
-    const accounts = await loadAccountsPaged(sql, "ics", accountId);
+    const accounts = await loadAccountsPaged(sql, "ics", opts.accountId, opts.userId);
     for (const account of accounts) {
       try {
         await syncIcsAccount(sql, account, env);
-        await markSyncResult(sql, account.id, true);
+        await markSyncResult(sql, account.id, account.user_id, true);
         await logSync(sql, "ics", "sync", "ok", undefined, account.user_id);
       } catch (e) {
-        await markSyncResult(sql, account.id, false);
-        await logSync(sql, "ics", "sync", "error", e instanceof Error ? e.message : String(e), account.user_id);
+        await markSyncResult(sql, account.id, account.user_id, false);
+        await logSync(sql, "ics", "sync", "error", loggedError(e), account.user_id);
       }
     }
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(sql, "ics", "sync", "error", msg);
-    return { error: msg };
+    await logSync(sql, "ics", "sync", "error", loggedError(e), opts.userId);
+    throw e;
   }
 }

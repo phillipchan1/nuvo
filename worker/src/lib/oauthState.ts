@@ -1,13 +1,13 @@
-/** HMAC-signed OAuth state. Key is BETTER_AUTH_SECRET (never a billing secret). */
-
-function b64url(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+/** HMAC-signed OAuth state. Same shape as the Supabase helper, keyed by BETTER_AUTH_SECRET. */
+export async function signState(secret: string, payload: Record<string, string>): Promise<string> {
+  const body = b64url(JSON.stringify(payload));
+  return `${body}.${await hmac(secret, body)}`;
 }
 
-function b64urlFromText(text: string): string {
-  return b64url(new TextEncoder().encode(text));
+export async function verifyState(secret: string, state: string): Promise<Record<string, string>> {
+  const [body, sig] = state.split(".");
+  if (!body || !sig || (await hmac(secret, body)) !== sig) throw new Error("bad oauth state");
+  return JSON.parse(atob(body.replaceAll("-", "+").replaceAll("_", "/"))) as Record<string, string>;
 }
 
 async function hmac(secret: string, payload: string): Promise<string> {
@@ -19,18 +19,15 @@ async function hmac(secret: string, payload: string): Promise<string> {
     ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return b64url(new Uint8Array(sig));
+  return b64urlBytes(new Uint8Array(sig));
 }
 
-export async function signState(secret: string, payload: Record<string, string>): Promise<string> {
-  const body = b64urlFromText(JSON.stringify(payload));
-  return `${body}.${await hmac(secret, body)}`;
+function b64url(text: string): string {
+  return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
-export async function verifyState(secret: string, state: string): Promise<Record<string, string>> {
-  const [body, sig] = state.split(".");
-  if (!body || !sig || (await hmac(secret, body)) !== sig) throw new Error("bad oauth state");
-  const padded = body.replaceAll("-", "+").replaceAll("_", "/");
-  const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
-  return JSON.parse(atob(padded + pad)) as Record<string, string>;
+function b64urlBytes(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }

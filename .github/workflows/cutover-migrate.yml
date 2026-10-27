@@ -8,17 +8,51 @@
 # Nothing in Supabase is modified or dropped; it stays up for rollback
 # (clear VITE_API_BASE_URL).
 #
+# Auth rows are read through migration_tmp.auth_users() / auth_identities()
+# (SECURITY DEFINER, EXECUTE granted to migration_reader only), because the
+# read-only role has no USAGE on Supabase's auth schema (same as leadwell).
+#
+# Artifacts: NEVER upload pg_dump, CSV, or any row-data file. This repo is
+# public. Dumps stay in $RUNNER_TEMP / the runner workspace; sha256 is
+# recorded and re-checked before restore, then an always() step shreds the
+# files. The only allowed artifact is the checksum report (per-table counts
+# + content md5). No emails, no password hashes, no dump files. Logs are
+# counts and hashes only. scripts/guard-public-ci.mjs fails checks + this
+# job if any other upload-artifact path is staged.
+#
 # Temporary repository secrets (names only — never print values):
 #   SOURCE_DATABASE_URL   Supabase session-pooler or direct URI (read-only)
 #   SCRATCH_DATABASE_URL  empty Neon branch used when mode=dry-run
 #   TARGET_DATABASE_URL   Neon URI used when mode=cutover (Hyperdrive later)
+#   TOKEN_ENC_KEY_V1      32-byte AES-256-GCM key (hex or base64). Same value
+#                         as the Worker secret. Used only to re-seal Vault
+#                         tokens in-runner. Never logged, never an artifact.
 # Delete them after the run:
 #   gh secret delete SOURCE_DATABASE_URL
 #   gh secret delete SCRATCH_DATABASE_URL
 #   gh secret delete TARGET_DATABASE_URL
+#   gh secret delete TOKEN_ENC_KEY_V1
 #
 # Cutover additionally requires the confirm input exactly `CUTOVER nuvo` and
 # runs in the `nuvo-cutover` environment (set required reviewers there).
+#
+# Billing tables stay on Supabase and are excluded from the dump, the
+# source-snapshot.json, and the parity proof: subscriptions,
+# stripe_webhook_events, apple_webhook_events, apple_notification_events.
+# sync_log structure is dumped (--exclude-table-data); its rows stay out
+# of snapshot/parity. After switch, resync inserts every source row whose
+# id is missing on the target, aborting if an incoming id already exists
+# with different content (count only). Then setval GREATEST(max(id),
+# last_value, 1) in the SAME transaction (table + sequence locked) so
+# the parked identity never decreases. After restore, setval to source
+# max(id) plus a 1e6 margin so Neon ids stay in the parked range for the
+# switch window. The dump-time watermark is reported only — a
+# late-committed lower id must still land. push_subscriptions stays in
+# the copy; resync deletes missing ids first, then upserts full source
+# rows (ON CONFLICT (id) DO UPDATE), counts only.
+# Dump refuses unless GET MAINTENANCE_URL reports cutover_armed, a gated
+# edge POST returns 503, and anon INSERT on a frozen table is denied.
+# freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
 #
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
 # AI Gateway — Nuvo stays on direct OpenAI. Does not deploy, change DNS,
@@ -44,6 +78,28 @@ on:
         type: string
         required: false
         default: ""
+      phase:
+        description: >
+          copy = dump + restore + verify + seal + first tail/reconcile.
+          resync = post-switch sync_log tail + push_subscriptions
+          anti-join only (pass the watermark from the copy report).
+        type: choice
+        options:
+          - copy
+          - resync
+        default: copy
+      sync_log_watermark_id:
+        description: >
+          Snapshot sync_log max(id) from the copy report. Required for
+          phase=resync when source-snapshot.json is gone.
+        type: string
+        required: false
+        default: ""
+      sync_log_watermark_at:
+        description: Snapshot sync_log max(created_at) from the copy report.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: cutover-migrate
@@ -61,13 +117,50 @@ jobs:
       SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
       TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
       SCRATCH_DATABASE_URL: ${{ secrets.SCRATCH_DATABASE_URL }}
+      TOKEN_ENC_KEY_V1: ${{ secrets.TOKEN_ENC_KEY_V1 }}
+      TOKEN_ENC_KEY_V2: ${{ secrets.TOKEN_ENC_KEY_V2 }}
+      TOKEN_ENC_CURRENT: ${{ vars.TOKEN_ENC_CURRENT }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
+      PHASE: ${{ inputs.phase || 'copy' }}
+      MAINTENANCE_URL: ${{ vars.MAINTENANCE_URL || vars.VITE_MAINTENANCE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+      WRITE_FREEZE_PREFLIGHT_URL: ${{ vars.WRITE_FREEZE_PREFLIGHT_URL }}
+      CUTOVER_SYNC_LOG_WATERMARK_ID: ${{ inputs.sync_log_watermark_id }}
+      CUTOVER_SYNC_LOG_WATERMARK_AT: ${{ inputs.sync_log_watermark_at }}
     steps:
-      - name: Checkout
+      - id: checkout
+        name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - name: Mask secrets and resolve target
+      # runner.temp is not available in jobs.<id>.env (GitHub rejects the
+      # workflow as unparseable). Fixed paths from $RUNNER_TEMP only —
+      # nothing from inputs. always() so later always() readers still see
+      # the same vars if checkout failed.
+      - id: cutover-dirs
+        name: Set cutover dump and log dirs
+        if: ${{ always() }}
+        run: |
+          set +x
+          set -eu
+          echo "CUTOVER_DUMP_DIR=$RUNNER_TEMP/nuvo-cutover" >> "$GITHUB_ENV"
+          echo "CUTOVER_LOG_DIR=$RUNNER_TEMP/nuvo-cutover-logs" >> "$GITHUB_ENV"
+
+      - id: setup-node
+        name: Setup Node (token seal, same module as the Worker)
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - id: npm-ci
+        name: Install JS deps for token seal
+        run: npm ci --ignore-scripts
+
+      - id: mask
+        name: Mask secrets and resolve target
         run: |
           set +x
           set -eu
@@ -120,7 +213,9 @@ jobs:
           source = (os.environ.get("SOURCE_DATABASE_URL") or "").strip()
           neon = (os.environ.get("TARGET_DATABASE_URL") or "").strip()
           scratch = (os.environ.get("SCRATCH_DATABASE_URL") or "").strip()
-          for value in (source, neon, scratch):
+          token_key = (os.environ.get("TOKEN_ENC_KEY_V1") or "").strip()
+          token_key_v2 = (os.environ.get("TOKEN_ENC_KEY_V2") or "").strip()
+          for value in (source, neon, scratch, token_key, token_key_v2):
               mask(value)
           if mode not in {"dry-run", "cutover"}:
               print("::error::mode must be dry-run or cutover", file=sys.stderr)
@@ -164,7 +259,8 @@ jobs:
           print(f"mode={mode} target={kind}", flush=True)
           PY
 
-      - name: Install postgresql-client-17
+      - id: install-pg
+        name: Install postgresql-client-17
         run: |
           set +x
           set -eu
@@ -177,7 +273,8 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_restore --version
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
-      - name: Write cutover helper
+      - id: write-helper
+        name: Write cutover helper
         run: |
           set +x
           set -eu
@@ -185,11 +282,13 @@ jobs:
           #!/usr/bin/env python3
           """Read-only Supabase dump → Neon restore + auth map + checksums.
 
-          Never prints connection strings, passwords, or emails.
+          Never prints connection strings, passwords, emails, or row data.
+          Dump / COPY files stay under CUTOVER_DUMP_DIR (runner temp).
           """
           from __future__ import annotations
 
           import hashlib
+          import json
           import os
           import re
           import subprocess
@@ -197,6 +296,40 @@ jobs:
           from pathlib import Path
           from typing import Iterable
           from urllib.parse import unquote, urlparse
+
+          ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".")
+          sys.path.insert(0, str(ROOT / "scripts"))
+          from cutover_copy import (
+              BILLING_TABLES,
+              COPY_SKIP_TABLES,
+              SYNC_LOG_COLUMNS,
+              PUSH_COLUMNS,
+              CutoverArmedError,
+              anon_insert_denied,
+              anon_insert_privilege_sql,
+              assert_cutover_armed,
+              dump_exclude_args,
+              edge_preflight_frozen,
+              parse_watermark,
+              parse_watermark_line,
+              post_status,
+              push_anti_join_delete_sql,
+              push_full_copy_sql,
+              push_load_rows_sql,
+              push_upsert_sql,
+              resolve_edge_preflight_url,
+              skipped_from_copy,
+              SYNC_LOG_SEQUENCE_MARGIN,
+              parse_labeled_count,
+              is_retryable_lock_timeout,
+              retryable_lock_timeout_stop,
+              sync_log_anti_join_insert_sql,
+              sync_log_copy_sql,
+              sync_log_load_sql,
+              sync_log_reserve_sequence_sql,
+              sync_log_resync_txn_sql,
+              sync_log_watermark_sql,
+          )
 
           DROP_ENV = (
               "PGHOST",
@@ -280,7 +413,7 @@ jobs:
                    created_at,
                    updated_at,
                    email_confirmed_at
-            FROM auth.users
+            FROM migration_tmp.auth_users()
           ) TO STDOUT WITH CSV
           """
           IDENTITIES_COPY = """
@@ -296,7 +429,7 @@ jobs:
                    ),
                    created_at,
                    updated_at
-            FROM auth.identities
+            FROM migration_tmp.auth_identities()
           ) TO STDOUT WITH CSV
           """
           PUBLIC_USERS_SQL = """
@@ -314,6 +447,77 @@ jobs:
             email = EXCLUDED.email,
             auth_id = EXCLUDED.auth_id;
           """
+          AUTH_USERS_SRC_HASH_SQL = """
+          SELECT 'auth_users' AS t,
+                 COUNT(*)::bigint AS n,
+                 md5(COALESCE(string_agg(md5((
+                   id::text || '|' ||
+                   COALESCE(
+                     raw_user_meta_data->>'name',
+                     raw_user_meta_data->>'full_name',
+                     split_part(email, '@', 1),
+                     ''
+                   ) || '|' ||
+                   lower(COALESCE(email, '')) || '|' ||
+                   CASE WHEN email_confirmed_at IS NOT NULL THEN 't' ELSE 'f' END || '|' ||
+                   COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                 )), '' ORDER BY id::text COLLATE "C"), '')) AS h
+          FROM migration_tmp.auth_users()
+          """
+          AUTH_USERS_DST_HASH_SQL = """
+          SELECT 'auth_users' AS t,
+                 COUNT(*)::bigint AS n,
+                 md5(COALESCE(string_agg(md5((
+                   id::text || '|' ||
+                   COALESCE(name, '') || '|' ||
+                   lower(COALESCE(email, '')) || '|' ||
+                   CASE WHEN "emailVerified" THEN 't' ELSE 'f' END || '|' ||
+                   COALESCE(to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
+                   COALESCE(to_char("updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                 )), '' ORDER BY id::text COLLATE "C"), '')) AS h
+          FROM "user"
+          """
+          AUTH_IDENT_SRC_HASH_SQL = """
+          SELECT 'auth_identities' AS t,
+                 COUNT(*)::bigint AS n,
+                 md5(COALESCE(string_agg(md5((
+                   user_id::text || '|' ||
+                   CASE
+                     WHEN lower(COALESCE(provider, '')) = 'email' THEN 'credential'
+                     WHEN lower(COALESCE(provider, '')) IN ('google', 'apple') THEN lower(provider)
+                     ELSE COALESCE(NULLIF(lower(provider), ''), 'credential')
+                   END || '|' ||
+                   COALESCE(
+                     NULLIF(COALESCE(identity_data->>'sub', identity_data->>'provider_id', provider_id::text, ''), ''),
+                     user_id::text
+                   ) || '|' ||
+                   COALESCE(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
+                   COALESCE(to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                 )), '' ORDER BY
+                   user_id::text COLLATE "C",
+                   provider COLLATE "C",
+                   COALESCE(identity_data->>'sub', identity_data->>'provider_id', provider_id::text, '') COLLATE "C"
+                 ), '')) AS h
+          FROM migration_tmp.auth_identities()
+          WHERE user_id IS NOT NULL
+          """
+          AUTH_IDENT_DST_HASH_SQL = """
+          SELECT 'auth_identities' AS t,
+                 COUNT(*)::bigint AS n,
+                 md5(COALESCE(string_agg(md5((
+                   "userId" || '|' ||
+                   "providerId" || '|' ||
+                   "accountId" || '|' ||
+                   COALESCE(to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '') || '|' ||
+                   COALESCE(to_char("updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), '')
+                 )), '' ORDER BY
+                   "userId" COLLATE "C",
+                   "providerId" COLLATE "C",
+                   "accountId" COLLATE "C"
+                 ), '')) AS h
+          FROM account
+          """
 
           def remember(value: str) -> None:
               text = (value or "").strip()
@@ -329,6 +533,8 @@ jobs:
                   "RESTORE_DATABASE_URL",
                   "TARGET_DATABASE_URL",
                   "SCRATCH_DATABASE_URL",
+                  "TOKEN_ENC_KEY_V1",
+                  "TOKEN_ENC_KEY_V2",
               ):
                   value = (os.environ.get(key) or "").strip()
                   if not value:
@@ -378,6 +584,8 @@ jobs:
               )
               if res.returncode != 0:
                   err = redact((res.stderr or res.stdout or "").strip())
+                  if is_retryable_lock_timeout(err):
+                      die(retryable_lock_timeout_stop(err))
                   die(f"{cmd[0]} failed ({res.returncode}): {err}")
               return res.stdout
 
@@ -575,7 +783,7 @@ jobs:
                   source=source,
               )
 
-          def list_public_tables(url: str, *, source: bool) -> list[str]:
+          def list_public_tables(url: str, *, source: bool, include_billing: bool = False) -> list[str]:
               out = psql(
                   url,
                   """
@@ -597,12 +805,93 @@ jobs:
               tables = []
               for raw in out.splitlines():
                   name = raw.strip()
-                  if name and name not in BA_TABLES:
-                      tables.append(name)
+                  if not name or name in BA_TABLES:
+                      continue
+                  if not include_billing and skipped_from_copy(name):
+                      continue
+                  tables.append(name)
               return tables
 
+          def dump_exclude_billing() -> list[str]:
+              return dump_exclude_args()
+
+          def snapshot_path(work: Path) -> Path:
+              return work / "source-snapshot.json"
+
+          def write_source_snapshot(
+              work: Path,
+              hashes: dict[str, dict[str, object]],
+              watermark: dict[str, object] | None = None,
+          ) -> None:
+              payload = {
+                  table: {"n": row.get("n"), "hash": row.get("hash")}
+                  for table, row in hashes.items()
+                  if not skipped_from_copy(table)
+              }
+              if not payload:
+                  die("source snapshot is empty — no frozen tables to prove")
+              mark = watermark or {"id": 0, "created_at": "-infinity"}
+              snapshot_path(work).write_text(
+                  json.dumps(
+                      {"tables": payload, "sync_log_watermark": mark},
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n",
+                  encoding="utf-8",
+              )
+              (work / "sync-log-watermark.json").write_text(
+                  json.dumps(mark, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+              print(
+                  f"recorded snapshot for {len(payload)} frozen tables (counts + md5 only); "
+                  f"sync_log watermark id={mark.get('id')}",
+                  flush=True,
+              )
+
+          def load_source_snapshot(work: Path) -> dict[str, dict[str, object]]:
+              path = snapshot_path(work)
+              if not path.exists():
+                  die("missing source-snapshot.json (dump must record frozen-table counts + md5)")
+              raw = json.loads(path.read_text(encoding="utf-8"))
+              tables = raw.get("tables") if isinstance(raw, dict) else None
+              if not isinstance(tables, dict) or not tables:
+                  die("source-snapshot.json has no frozen tables")
+              out: dict[str, dict[str, object]] = {}
+              for name, row in tables.items():
+                  if skipped_from_copy(name):
+                      die(f"source-snapshot.json includes skipped table {name}")
+                  if not isinstance(row, dict):
+                      die(f"source-snapshot.json row for {name} is not an object")
+                  out[name] = {"n": row.get("n"), "hash": row.get("hash")}
+              return out
+
+          def compare_to_snapshot(
+              label: str,
+              current: dict[str, dict[str, object]],
+              snapshot: dict[str, dict[str, object]],
+          ) -> list[str]:
+              problems: list[str] = []
+              for table, snap in snapshot.items():
+                  now = current.get(table) or {}
+                  snap_n, now_n = snap.get("n"), now.get("n")
+                  snap_h, now_h = snap.get("hash"), now.get("hash")
+                  print(
+                      f"  {label} {table}: snapshot={snap_n}/{snap_h} now={now_n}/{now_h}",
+                      flush=True,
+                  )
+                  if snap_n != now_n or not snap_h or not now_h or snap_h != now_h:
+                      problems.append(
+                          f"{label} {table}: snapshot={snap_n}/{snap_h} now={now_n}/{now_h}"
+                      )
+              extra = [t for t in current if t not in snapshot and not skipped_from_copy(t)]
+              for table in extra:
+                  problems.append(f"{label} {table}: present now, missing from snapshot")
+              return problems
+
           def refuse_nonempty_target(url: str) -> None:
-              tables = list_public_tables(url, source=False)
+              tables = list_public_tables(url, source=False, include_billing=True)
               if tables:
                   shown = ", ".join(tables[:20])
                   die(f"target public is not empty — abort, wrote nothing: {shown}")
@@ -636,6 +925,24 @@ jobs:
                   parts.append(piece if i == 0 else "UNION ALL" + piece)
               return "\n".join(parts) + "\nORDER BY 1"
 
+          def one_hash(url: str, sql: str, *, source: bool = False) -> dict[str, object]:
+              parsed = parse_hashes(psql(url, sql, source=source, extra=["-tA"]))
+              if not parsed:
+                  return {"n": None, "hash": None}
+              return next(iter(parsed.values()))
+
+          def auth_parity(source: str, target: str) -> list[tuple[str, dict[str, object], dict[str, object]]]:
+              pairs = [
+                  ("auth_users", AUTH_USERS_SRC_HASH_SQL, AUTH_USERS_DST_HASH_SQL),
+                  ("auth_identities", AUTH_IDENT_SRC_HASH_SQL, AUTH_IDENT_DST_HASH_SQL),
+              ]
+              out = []
+              for name, src_sql, dst_sql in pairs:
+                  src = one_hash(source, src_sql, source=True)
+                  dst = one_hash(target, dst_sql)
+                  out.append((name, src, dst))
+              return out
+
           def parse_hashes(text: str) -> dict[str, dict[str, object]]:
               out: dict[str, dict[str, object]] = {}
               for raw in text.splitlines():
@@ -664,9 +971,28 @@ jobs:
                       digest.update(chunk)
               return digest.hexdigest()
 
+          def dump_dir() -> Path:
+              raw = (os.environ.get("CUTOVER_DUMP_DIR") or "").strip()
+              if not raw:
+                  die("CUTOVER_DUMP_DIR is required (runner temp, never artifacts)")
+              path = Path(raw)
+              runner_temp = Path(os.environ.get("RUNNER_TEMP") or "").resolve()
+              resolved = path.resolve()
+              if runner_temp.parts and runner_temp not in resolved.parents and resolved != runner_temp:
+                  die("CUTOVER_DUMP_DIR must live under RUNNER_TEMP")
+              if "artifacts" in resolved.parts:
+                  die("CUTOVER_DUMP_DIR must not be the artifacts upload folder")
+              path.mkdir(parents=True, exist_ok=True)
+              return path
+
+          def report_dir() -> Path:
+              path = Path("artifacts")
+              path.mkdir(parents=True, exist_ok=True)
+              return path
+
           def assert_dump_checksum(dump_path: Path, sha_path: Path) -> str:
               if not sha_path.exists():
-                  die("missing artifacts/nuvo-source.sha256")
+                  die("missing dump sha256 (runner temp only)")
               expected = sha_path.read_text(encoding="utf-8").split()[0].lower()
               actual = sha256_file(dump_path)
               if actual != expected:
@@ -688,16 +1014,71 @@ jobs:
                   fh.write(f"SOURCE_PG_MAJOR={major}\n")
                   fh.write(f"SOURCE_PG_VERSION={pretty}\n")
 
+          def require_cutover_armed() -> None:
+              url = (os.environ.get("MAINTENANCE_URL") or "").strip()
+              try:
+                  assert_cutover_armed(url)
+              except CutoverArmedError as exc:
+                  die(str(exc))
+              print("maintenance endpoint reports cutover_armed", flush=True)
+
+          def require_write_freeze_preflight() -> None:
+              try:
+                  url = resolve_edge_preflight_url(
+                      os.environ.get("WRITE_FREEZE_PREFLIGHT_URL") or "",
+                      os.environ.get("SUPABASE_URL") or "",
+                  )
+              except ValueError as exc:
+                  die(str(exc))
+              try:
+                  status = post_status(url)
+              except Exception as exc:
+                  die(
+                      f"edge preflight unreachable — refuse to start copy "
+                      f"({type(exc).__name__})"
+                  )
+              if not edge_preflight_frozen(status):
+                  die(f"edge preflight expected 503, got {status} — WRITE_FREEZE is not on")
+              print("edge preflight 503 (WRITE_FREEZE)", flush=True)
+              source = os.environ["SOURCE_DATABASE_URL"]
+              out = psql(source, anon_insert_privilege_sql(), source=True, extra=["-tA"]).strip()
+              if not anon_insert_denied(out):
+                  die("anon INSERT on public.sync_log is still granted — freeze.sql was not applied")
+              print("anon insert denied", flush=True)
+
+          def load_sync_log_watermark(work: Path) -> dict[str, object]:
+              env_id = (os.environ.get("CUTOVER_SYNC_LOG_WATERMARK_ID") or "").strip()
+              env_at = (os.environ.get("CUTOVER_SYNC_LOG_WATERMARK_AT") or "").strip()
+              if env_id:
+                  return parse_watermark(env_id, env_at or "-infinity")
+              for path in (work / "sync-log-watermark.json", snapshot_path(work)):
+                  if not path.exists():
+                      continue
+                  raw = json.loads(path.read_text(encoding="utf-8"))
+                  mark = raw.get("sync_log_watermark") if path.name == "source-snapshot.json" else raw
+                  if isinstance(mark, dict) and mark.get("id") is not None:
+                      return parse_watermark(mark.get("id"), mark.get("created_at"))
+              die(
+                  "missing sync_log watermark — pass CUTOVER_SYNC_LOG_WATERMARK_ID "
+                  "/ CUTOVER_SYNC_LOG_WATERMARK_AT from the copy report"
+              )
+              raise AssertionError
+
+          def record_sync_log_watermark(source: str) -> dict[str, object]:
+              line = psql(source, sync_log_watermark_sql(), source=True, extra=["-tA"]).strip()
+              return parse_watermark_line(line)
+
           def cmd_dump() -> None:
+              require_cutover_armed()
+              require_write_freeze_preflight()
               source = os.environ["SOURCE_DATABASE_URL"]
               dump_bin = os.environ["PG_DUMP"]
               restore_bin = os.environ["PG_RESTORE"]
-              artifacts = Path("artifacts")
-              artifacts.mkdir(parents=True, exist_ok=True)
-              dump_path = artifacts / "nuvo-source.dump"
-              users_path = artifacts / "auth-users.csv"
-              identities_path = artifacts / "auth-identities.csv"
-              print("dumping public schema + data (no-owner, no-acl)…", flush=True)
+              work = dump_dir()
+              dump_path = work / "nuvo-source.dump"
+              users_path = work / "auth-users.csv"
+              identities_path = work / "auth-identities.csv"
+              print("dumping public schema + data (no-owner, no-acl; billing excluded; sync_log data excluded; runner only)…", flush=True)
               run(
                   [
                       dump_bin,
@@ -705,6 +1086,7 @@ jobs:
                       "--no-owner",
                       "--no-acl",
                       "--schema=public",
+                      *dump_exclude_billing(),
                       f"--file={dump_path}",
                       source,
                   ],
@@ -716,10 +1098,18 @@ jobs:
               toc = run([restore_bin, "--list", str(dump_path)])
               if "TABLE" not in toc:
                   die("pg_restore --list did not list any TABLE entries")
-              (artifacts / "nuvo-source.toc").write_text(toc, encoding="utf-8")
+              for billing in sorted(BILLING_TABLES):
+                  if re.search(rf"\bTABLE\b.*\b{re.escape(billing)}\b", toc):
+                      die(f"dump TOC includes billing table {billing} — excluded from the copy set")
+              if not re.search(r"\bTABLE\b.*\bsync_log\b", toc):
+                  die("dump TOC is missing sync_log — structure must be kept (--exclude-table-data)")
+              (work / "nuvo-source.toc").write_text(toc, encoding="utf-8")
               digest = sha256_file(dump_path)
-              (artifacts / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
-              print(f"verified backup: {bytes_} bytes sha256={digest}", flush=True)
+              (work / "nuvo-source.sha256").write_text(f"{digest}  nuvo-source.dump\n", encoding="utf-8")
+              print(
+                  f"verified backup: {bytes_} bytes sha256={digest} (runner only, not uploaded)",
+                  flush=True,
+              )
               print("exporting auth.users (read-only COPY)…", flush=True)
               run_to_file(
                   ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", USERS_COPY],
@@ -740,19 +1130,28 @@ jobs:
                   f"exported {len(users)} auth.users and {len(identities)} auth.identities",
                   flush=True,
               )
+              tables = list_public_tables(source, source=True)
+              if not tables:
+                  die("source has no frozen public tables")
+              print(f"snapshotting {len(tables)} frozen tables (count + md5)…", flush=True)
+              snap_hashes = parse_hashes(
+                  psql(source, content_hash_sql(tables), source=True, extra=["-tA"])
+              )
+              watermark = record_sync_log_watermark(source)
+              write_source_snapshot(work, snap_hashes, watermark)
 
           def cmd_restore() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
               target = os.environ["RESTORE_DATABASE_URL"]
               restore_bin = os.environ["PG_RESTORE"]
-              artifacts = Path("artifacts")
-              dump_path = artifacts / "nuvo-source.dump"
-              users_path = artifacts / "auth-users.csv"
-              identities_path = artifacts / "auth-identities.csv"
+              work = dump_dir()
+              dump_path = work / "nuvo-source.dump"
+              users_path = work / "auth-users.csv"
+              identities_path = work / "auth-identities.csv"
               better_auth = Path("worker/schema/better-auth.sql")
               if not dump_path.exists() or not dump_path.stat().st_size:
-                  die("missing verified dump artifacts/nuvo-source.dump")
-              digest = assert_dump_checksum(dump_path, artifacts / "nuvo-source.sha256")
+                  die("missing verified dump (runner temp)")
+              digest = assert_dump_checksum(dump_path, work / "nuvo-source.sha256")
               print(f"re-verified dump sha256={digest} before restore", flush=True)
               if not better_auth.exists():
                   die("missing worker/schema/better-auth.sql")
@@ -858,43 +1257,60 @@ jobs:
                   psql(target, "\n".join(acc_sql))
               print("upserting public.users from auth.users (auth_id = id)…", flush=True)
               psql(target, PUBLIC_USERS_SQL)
-              src_users = int(
-                  psql(source, "SELECT COUNT(*) FROM auth.users", source=True, extra=["-tA"]).strip()
-              )
-              dst_users = int(psql(target, 'SELECT COUNT(*) FROM "user"', extra=["-tA"]).strip())
-              src_ident = int(
-                  psql(source, "SELECT COUNT(*) FROM auth.identities", source=True, extra=["-tA"]).strip()
-              )
-              dst_acct = int(psql(target, "SELECT COUNT(*) FROM account", extra=["-tA"]).strip())
+              print("auth parity (count + ordered md5 of exported columns)…", flush=True)
+              auth_problems: list[str] = []
+              for name, src, dst in auth_parity(source, target):
+                  src_n, dst_n = src.get("n"), dst.get("n")
+                  src_h, dst_h = src.get("hash"), dst.get("hash")
+                  print(
+                      f"  {name}: source={src_n} target={dst_n} hash {src_h} → {dst_h}",
+                      flush=True,
+                  )
+                  if src_n != dst_n or not src_h or not dst_h or src_h != dst_h:
+                      auth_problems.append(
+                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      )
+              if auth_problems:
+                  die("auth count or content-hash mismatch — abort:\n  " + "\n  ".join(auth_problems))
+              mark = load_sync_log_watermark(work)
+              reserved = psql(
+                  target,
+                  sync_log_reserve_sequence_sql(int(mark["id"])),
+                  extra=["-tA"],
+              ).strip()
               print(
-                  f"auth map: users {src_users}→{dst_users} identities {src_ident}→{dst_acct} accounts",
+                  f"reserved sync_log identity setval={reserved} "
+                  f"(source max={mark.get('id')} + margin {SYNC_LOG_SEQUENCE_MARGIN})",
                   flush=True,
               )
-              if src_users != dst_users:
-                  die(f"auth user count mismatch: source={src_users} target={dst_users}")
-              if src_ident != dst_acct:
-                  die(f"auth identity/account count mismatch: source={src_ident} target={dst_acct}")
               print(f"restored into {os.environ.get('RESTORE_KIND', 'target')}", flush=True)
 
           def cmd_verify() -> None:
               source = os.environ["SOURCE_DATABASE_URL"]
               target = os.environ["RESTORE_DATABASE_URL"]
-              artifacts = Path("artifacts")
+              work = dump_dir()
+              artifacts = report_dir()
+              snapshot = load_source_snapshot(work)
               tables = list_public_tables(source, source=True)
               if not tables:
-                  die("source has no public tables")
+                  die("source has no frozen public tables")
+              for skipped in COPY_SKIP_TABLES:
+                  if skipped in tables:
+                      die(f"skipped table {skipped} leaked into the copy set")
               sql = content_hash_sql(tables)
-              print(f"checksumming {len(tables)} public tables (count + md5)…", flush=True)
+              print(f"checksumming {len(tables)} frozen tables vs snapshot (count + md5)…", flush=True)
               src_hashes = parse_hashes(psql(source, sql, source=True, extra=["-tA"]))
               dst_hashes = parse_hashes(psql(target, sql, extra=["-tA"]))
               problems: list[str] = []
+              problems.extend(compare_to_snapshot("source", src_hashes, snapshot))
+              problems.extend(compare_to_snapshot("target", dst_hashes, snapshot))
               lines = [
                   "# Nuvo cutover checksum report",
                   "",
                   f"- mode: {os.environ.get('CUTOVER_MODE', '')}",
                   f"- target: {os.environ.get('RESTORE_KIND', '')}",
                   f"- source postgres: {os.environ.get('SOURCE_PG_VERSION', '')}",
-                  f"- dump sha256: {(artifacts / 'nuvo-source.sha256').read_text(encoding='utf-8').split()[0] if (artifacts / 'nuvo-source.sha256').exists() else '?'}",
+                  f"- dump sha256: {(work / 'nuvo-source.sha256').read_text(encoding='utf-8').split()[0] if (work / 'nuvo-source.sha256').exists() else '?'}",
                   "",
                   "| table | source_count | target_count | source_md5 | target_md5 | ok |",
                   "| --- | ---: | ---: | --- | --- | --- |",
@@ -925,6 +1341,43 @@ jobs:
                       f"  {table}: source={src_n} target={dst_n} hash {src_h} → {dst_h}",
                       flush=True,
                   )
+              print("checksumming auth export vs Better Auth user/account…", flush=True)
+              for name, src, dst in auth_parity(source, target):
+                  src_n, dst_n = src.get("n"), dst.get("n")
+                  src_h, dst_h = src.get("hash"), dst.get("hash")
+                  ok = (
+                      isinstance(src_n, int)
+                      and isinstance(dst_n, int)
+                      and src_n == dst_n
+                      and bool(src_h)
+                      and bool(dst_h)
+                      and src_h == dst_h
+                  )
+                  if not ok:
+                      problems.append(
+                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      )
+                  lines.append(
+                      f"| {name} | {src_n if src_n is not None else '?'} | {dst_n if dst_n is not None else '?'} | {src_h or '?'} | {dst_h or '?'} | {'yes' if ok else 'NO'} |"
+                  )
+                  print(
+                      f"  {name}: source={src_n} target={dst_n} hash {src_h} → {dst_h}",
+                      flush=True,
+                  )
+              mark = None
+              try:
+                  mark = load_sync_log_watermark(work)
+                  lines.extend(
+                      [
+                          "",
+                          f"- sync_log watermark id: {mark.get('id')}",
+                          f"- sync_log watermark created_at: {mark.get('created_at')}",
+                          "- sync_log: structure dumped, data excluded from parity; resync is id anti-join",
+                          "- push_subscriptions: in copy; post-switch full-row upsert + delete-missing",
+                      ]
+                  )
+              except SystemExit:
+                  mark = None
               lines.extend(["", f"tables compared: {len(tables)}", f"mismatches: {len(problems)}", ""])
               report = artifacts / "cutover-report.md"
               report.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -933,12 +1386,91 @@ jobs:
                   with open(summary, "a", encoding="utf-8") as fh:
                       fh.write(report.read_text(encoding="utf-8"))
               if problems:
-                  die("row-count or content-hash mismatch — abort:\n  " + "\n  ".join(problems))
+                  die("snapshot/source/target count or md5 mismatch — abort:\n  " + "\n  ".join(problems))
               print("migration checksums ok", flush=True)
+              if mark:
+                  print(f"sync_log watermark id={mark.get('id')} (report only; resync is id anti-join)", flush=True)
+
+          def cmd_resync() -> None:
+              source = os.environ["SOURCE_DATABASE_URL"]
+              target = os.environ["RESTORE_DATABASE_URL"]
+              work = dump_dir()
+              try:
+                  mark = load_sync_log_watermark(work)
+                  print(
+                      f"sync_log snapshot watermark id={mark.get('id')} "
+                      "(report only; copy is every missing id)",
+                      flush=True,
+                  )
+              except SystemExit:
+                  print("sync_log watermark unavailable (report only)", flush=True)
+              sync_path = work / "sync-log-all.csv"
+              push_path = work / "push-rows.csv"
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", sync_log_copy_sql()],
+                  sync_path,
+                  source=True,
+              )
+              sync_n = sum(1 for line in sync_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"sync_log rows from source: {sync_n}", flush=True)
+              run_to_file(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", push_full_copy_sql()],
+                  push_path,
+                  source=True,
+              )
+              push_n = sum(1 for line in push_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              print(f"push_subscriptions rows from source: {push_n}", flush=True)
+              sync_cols = ", ".join(SYNC_LOG_COLUMNS)
+              push_cols = ", ".join(PUSH_COLUMNS)
+              script = work / "resync.sql"
+              script.write_text(
+                  "\n".join(
+                      [
+                          sync_log_load_sql() + ";",
+                          f"\\copy cutover_sync_log_src ({sync_cols}) "
+                          f"FROM {sql_literal(str(sync_path))} WITH CSV",
+                          sync_log_resync_txn_sql(),
+                          push_load_rows_sql() + ";",
+                          f"\\copy cutover_push_rows ({push_cols}) "
+                          f"FROM {sql_literal(str(push_path))} WITH CSV",
+                          push_anti_join_delete_sql() + ";",
+                          push_upsert_sql() + ";",
+                          "",
+                      ]
+                  ),
+                  encoding="utf-8",
+              )
+              out = run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(script)])
+              inserted = parse_labeled_count(out, "sync_log_inserted")
+              setval_out = parse_labeled_count(out, "sync_log_setval")
+              counts = [
+                  line.strip()
+                  for line in out.splitlines()
+                  if line.strip().isdigit()
+              ]
+              deleted = counts[0] if counts else "?"
+              upserted = counts[1] if len(counts) > 1 else "?"
+              print(
+                  f"sync_log inserted (id anti-join): "
+                  f"{inserted if inserted is not None else '?'}",
+                  flush=True,
+              )
+              print(
+                  f"sync_log identity setval="
+                  f"{setval_out if setval_out is not None else '?'}",
+                  flush=True,
+              )
+              print(f"push_subscriptions deleted on target (anti-join): {deleted}", flush=True)
+              print(f"push_subscriptions upserted: {upserted}", flush=True)
+              for path in (sync_path, push_path, script):
+                  try:
+                      path.unlink()
+                  except OSError:
+                      pass
 
           def main() -> None:
               if len(sys.argv) < 2:
-                  die("usage: cutover.py resolve|dump|restore|verify")
+                  die("usage: cutover.py resolve|dump|restore|verify|resync")
               action = sys.argv[1]
               if action == "resolve":
                   cmd_resolve()
@@ -948,6 +1480,8 @@ jobs:
                   cmd_restore()
               elif action == "verify":
                   cmd_verify()
+              elif action == "resync":
+                  cmd_resync()
               else:
                   die(f"unknown action {action}")
 
@@ -955,7 +1489,9 @@ jobs:
               main()
           PY
 
-      - name: Pick pg_dump matching source major
+      - id: pick-dump
+        name: Pick pg_dump matching source major
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -965,50 +1501,133 @@ jobs:
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           python3 "${RUNNER_TEMP}/cutover.py" resolve
 
-      - name: pg_dump source + export auth (read-only)
+      - id: dump
+        name: pg_dump source + export auth (read-only)
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
           set +x
           set -eu
+          set -o pipefail
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
-          python3 "${RUNNER_TEMP}/cutover.py" dump
+          mkdir -p "$CUTOVER_LOG_DIR"
+          python3 "${RUNNER_TEMP}/cutover.py" dump 2>&1 | tee "${CUTOVER_LOG_DIR}/dump.log"
 
-      - name: Upload verified source dump
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: nuvo-source-dump
-          path: |
-            artifacts/nuvo-source.dump
-            artifacts/nuvo-source.sha256
-            artifacts/nuvo-source.toc
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
+      - id: restore
+        name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
+        if: ${{ inputs.phase != 'resync' }}
         run: |
           set +x
           set -eu
+          set -o pipefail
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
-          python3 "${RUNNER_TEMP}/cutover.py" restore
+          mkdir -p "$CUTOVER_LOG_DIR"
+          python3 "${RUNNER_TEMP}/cutover.py" restore 2>&1 | tee "${CUTOVER_LOG_DIR}/restore.log"
 
-      - name: Per-table row count + content hash
+      - id: verify
+        name: Per-table row count + content hash
+        if: ${{ inputs.phase != 'resync' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
           set +x
           set -eu
+          set -o pipefail
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
-          python3 "${RUNNER_TEMP}/cutover.py" verify
+          mkdir -p "$CUTOVER_LOG_DIR"
+          python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
 
-      - name: Upload checksum report
+      - id: assert-logs
+        name: Assert cutover logs have no row data
         if: ${{ always() }}
+        run: |
+          set +x
+          set -eu
+          node scripts/guard-public-ci.mjs --check-log "$CUTOVER_LOG_DIR"
+
+      # Guard: this is the only upload-artifact. Path must stay a markdown
+      # checksum table (counts + md5). Never point it at a dump or CSV.
+      # Fails if anything else is staged, or if this public repo attempts a
+      # data upload. Mirror of leadwell PR #16 / scripts/guard-public-ci.mjs.
+      - id: guard
+        name: Guard public-repo artifacts
+        if: ${{ always() }}
+        env:
+          REPO_IS_PUBLIC: ${{ github.event.repository.private == false }}
+          STAGED_UPLOAD: artifacts/cutover-report.md
+        run: |
+          set +x
+          set -eu
+          node scripts/guard-public-ci.mjs --job
+
+      - id: seal-tokens
+        name: Re-encrypt vault tokens in-runner
+        if: ${{ inputs.phase != 'resync' }}
+        env:
+          PGOPTIONS: "-c default_transaction_read_only=on"
+        run: |
+          set +x
+          set -eu
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          node --experimental-strip-types scripts/cutover-seal-tokens.mjs
+
+      - id: resync
+        name: Re-sync sync_log tail + reconcile push deletes
+        if: ${{ inputs.phase == 'resync' || steps.verify.outcome == 'success' }}
+        run: |
+          set +x
+          set -eu
+          set -o pipefail
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          mkdir -p "$CUTOVER_LOG_DIR"
+          python3 "${RUNNER_TEMP}/cutover.py" resync 2>&1 | tee "${CUTOVER_LOG_DIR}/resync.log"
+
+      - id: upload
+        name: Upload checksum report
+        if: ${{ always() && steps.guard.outcome == 'success' }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: cutover-report
           path: artifacts/cutover-report.md
           retention-days: 7
           if-no-files-found: ignore
+
+      - id: shred
+        name: Shred dumps
+        if: ${{ always() }}
+        run: |
+          set +x
+          set -eu
+          # Dumps and COPY CSVs stay on the runner only. Never upload them.
+          shred_tree() {
+            local root="$1"
+            if [ -d "$root" ]; then
+              if command -v shred >/dev/null 2>&1; then
+                find "$root" -type f -exec shred -u {} + 2>/dev/null || true
+              fi
+              rm -rf "$root"
+            fi
+          }
+          shred_tree "${CUTOVER_DUMP_DIR:-${RUNNER_TEMP}/nuvo-cutover}"
+          shred_tree "${CUTOVER_LOG_DIR:-${RUNNER_TEMP}/nuvo-cutover-logs}"
+          find "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}" -type f \( \
+            -name '*.dump' -o \
+            -name 'auth-users.csv' -o \
+            -name 'auth-identities.csv' -o \
+            -name 'auth_users.csv' -o \
+            -name 'auth_identities.csv' -o \
+            -name 'nuvo-source.toc' -o \
+            -name 'nuvo-source.sha256' \
+          \) -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            if command -v shred >/dev/null 2>&1; then
+              shred -u "$f" || rm -f "$f"
+            else
+              rm -f "$f"
+            fi
+          done || true

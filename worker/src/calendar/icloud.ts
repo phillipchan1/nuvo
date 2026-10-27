@@ -9,6 +9,7 @@ import { isMirrorUid, withoutMirrorCalendar } from "../lib/mirror.ts";
 import { SYNC_WINDOW_FUTURE_DAYS, SYNC_WINDOW_PAST_DAYS } from "../lib/syncWindow.ts";
 import {
   loadAccountsPaged,
+  loggedError,
   logSync,
   markSyncResult,
   openAccountSecret,
@@ -22,7 +23,7 @@ export async function syncIcloudAccount(sql: Sql, account: CalendarAccount, env:
     throw new Error(why);
   };
 
-  const password = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+  const password = await openAccountSecret(account, env);
   if (!password) return await fail("no app-specific password stored");
 
   const windowStart = new Date(Date.now() - SYNC_WINDOW_PAST_DAYS * 86400_000);
@@ -92,30 +93,29 @@ export async function syncIcloudAccount(sql: Sql, account: CalendarAccount, env:
 export async function runIcloudSync(
   sql: Sql,
   env: Env,
-  accountId?: string,
+  opts: { accountId?: string; userId?: string } = {},
 ): Promise<{ ok: true } | { error: string }> {
   try {
-    const accounts = await loadAccountsPaged(sql, "icloud", accountId);
+    const accounts = await loadAccountsPaged(sql, "icloud", opts.accountId, opts.userId);
     for (const account of accounts) {
       try {
         await syncIcloudAccount(sql, account, env);
-        await markSyncResult(sql, account.id, true);
+        await markSyncResult(sql, account.id, account.user_id, true);
         await logSync(sql, "icloud", "sync", "ok", undefined, account.user_id);
       } catch (e) {
-        await markSyncResult(sql, account.id, false);
-        await logSync(sql, "icloud", "sync", "error", e instanceof Error ? e.message : String(e), account.user_id);
+        await markSyncResult(sql, account.id, account.user_id, false);
+        await logSync(sql, "icloud", "sync", "error", loggedError(e), account.user_id);
       }
     }
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(sql, "icloud", "sync", "error", msg);
-    return { error: msg };
+    await logSync(sql, "icloud", "sync", "error", loggedError(e), opts.userId);
+    throw e;
   }
 }
 
 async function syncIcloudContactsAccount(sql: Sql, account: CalendarAccount, env: Env): Promise<number> {
-  const password = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+  const password = await openAccountSecret(account, env);
   if (!password) throw new Error("no app-specific password stored");
 
   const books = await discoverAddressBooks(account.email, password);
@@ -143,26 +143,24 @@ async function syncIcloudContactsAccount(sql: Sql, account: CalendarAccount, env
 export async function runIcloudContacts(
   sql: Sql,
   env: Env,
-  accountId?: string,
-): Promise<{ ok: true; contacts: number; failures: string[] } | { error: string }> {
+  opts: { accountId?: string; userId?: string } = {},
+): Promise<{ ok: true; contacts: number; failures: string[] }> {
   try {
-    const accounts = await loadAccountsPaged(sql, "icloud", accountId);
+    const accounts = await loadAccountsPaged(sql, "icloud", opts.accountId, opts.userId);
     let total = 0;
     const failures: string[] = [];
     for (const account of accounts) {
       try {
         total += await syncIcloudContactsAccount(sql, account, env);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
         failures.push("account failed");
-        await logSync(sql, "icloud", "contacts", "error", msg, account.user_id);
+        await logSync(sql, "icloud", "contacts", "error", loggedError(e), account.user_id);
       }
     }
     if (!failures.length) await logSync(sql, "icloud", "contacts", "ok");
     return { ok: true, contacts: total, failures };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(sql, "icloud", "contacts", "error", msg);
-    return { error: msg };
+    await logSync(sql, "icloud", "contacts", "error", loggedError(e), opts.userId);
+    throw e;
   }
 }

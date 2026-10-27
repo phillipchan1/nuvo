@@ -1,0 +1,509 @@
+{
+  "algorithm": "sha256",
+  "steps": [
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "checkout",
+      "sha256": "32d4a298bfd2774e5d79179b2393eb7a0390409266b98ae432c1b41459bae108"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "actionlint",
+      "sha256": "f3e5fa0f097030ae2221cb41ca0408e5e58a8e66b3440efb0c16db86aac98ad6"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "setup-node",
+      "sha256": "e0b7ec41f44ea2fc4bdc3650d3738d6791e3081c67d4e9c252b249b40f87176b"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "npm-ci",
+      "sha256": "1d96440294b02fb2757f9ade9662f350f5d7248be7ac0a60ec1f6bb7b8fd9613"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "guard",
+      "sha256": "7a91de10b85096ccecf7673fd010eeb9e121aa03ced93fa49a167abfd69aac8b"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "typecheck",
+      "sha256": "8426a4547310dfe9bd21c44d775966aaa72d18103ad40fcd88ebeb5cfb8b5208"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "test",
+      "sha256": "f900087244f490973e53a8327bbd86fd4169934e633f99831776aab58f181850"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "parse-fns",
+      "sha256": "7134b7f508703573c38fe291a05765017270db9314deeed7932a882ce5cf1fd0"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "worker-typecheck",
+      "sha256": "b4a29b2429673929515c16a05a14da5f394790d0017e41a2a308faa347fad779"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "worker-check",
+      "sha256": "31629bb53cf327dcc74af272face507825d9e42619c4f64f10ae36b60de8159e"
+    },
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "id": "cf-preview",
+      "sha256": "ccf547e71d1ddd807fa150f850c4e7830dcfd97979cfb8133dd96b20b329b237"
+    },
+    {
+      "file": "checks.yml",
+      "job": "isolation-mutation",
+      "id": "checkout",
+      "sha256": "4420e4c9d8d05ff0dd2475ac10048d34b67e4ce9671f4ab966c08635b56c59d2"
+    },
+    {
+      "file": "checks.yml",
+      "job": "isolation-mutation",
+      "id": "setup-node",
+      "sha256": "0c3e544a2aea28b0cda46e2072ed529ff7065f0ab9e2892537870f1472c774dd"
+    },
+    {
+      "file": "checks.yml",
+      "job": "isolation-mutation",
+      "id": "npm-ci",
+      "sha256": "a430d08607728082489136967d3f74d54cdccb59a47402ac48660272c5790ea7"
+    },
+    {
+      "file": "checks.yml",
+      "job": "isolation-mutation",
+      "id": "isolation-mutation",
+      "sha256": "7d436c34ce32fc1ac859752d725010bac103872298754e5f281357cd9a3da512"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "checkout",
+      "sha256": "d32f78e8891f87ea4289f18258da124b1740f206ccbde34c9961ece388d2b16a"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "cutover-dirs",
+      "sha256": "723f6fa5fa223336d4ce823841e89b6089bd5025e4e907a87be446e49f8c70d0"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "setup-node",
+      "sha256": "dcdba668747a489ca34e59e8ff18183d4c852b826b7f1d1c6917ade3a8a0e7c2"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "npm-ci",
+      "sha256": "21c28b6f259c19e12b5dbcb64537349353a79fff0f6ad8766d884fc8f781efad"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "mask",
+      "sha256": "7d04ed1d59d6af4fef5b578e63549ef4a8ce116652e57f899e89934b9dd577db"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "install-pg",
+      "sha256": "7d993f018929e6e0f7688fe64707a1ef52c250dbdd4cf70c41a7a3686b548529"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "write-helper",
+      "sha256": "58ebc4dd7cb02d234f5c4c497fccfd85e561a93af6de95e44604be472c48b83f"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "pick-dump",
+      "sha256": "887589fd1c0f5d66e63b0e9aeb56c9ed8842981fbc3cdb855a3207e8db027fb0"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "dump",
+      "sha256": "bb029aa98cb017ca6f24cd6454adc21b49aa8745d3cfbe8666ed95db0b269078"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "restore",
+      "sha256": "10acb8e932a412c332e03d741ef1fdf19a9e7b7d1c76f6e2b1f4921c111f76f2"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "verify",
+      "sha256": "d2bf5b4ab4cd06deee73d202c346216727d60e0914866bad3fac1c48b665cd15"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "assert-logs",
+      "sha256": "4752ae05c9eb420303a0414c92a97a2ec7740fe04ed27276dd5935e40f35a37b"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "guard",
+      "sha256": "7942dc62e8cd7c7101df67f04e10016b2aa67550830d1d4c8376d829d069ab63"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "seal-tokens",
+      "sha256": "044e295c5fdd135b0e92c2fc48265070519bf47205fd2e053230264f40b53022"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "resync",
+      "sha256": "3c3cba9b4c496be19e23c781d7851f9353eaa8b11023d1fcdd5f7829c9b7a759"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "upload",
+      "sha256": "3a6fb07f054529d943a089f6fb8750b696d999ca97302d8a043c3aee8d44b88c"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "shred",
+      "sha256": "28457a355b25a24a53084039c66c69cae8f366a37be3ffc7e552158c7518e105"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "changes",
+      "id": "checkout",
+      "sha256": "b8994d760b98f8f8eea5a688591bd25e5a734d5f580f3153a67e46c2ecf11afa"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "changes",
+      "id": "decide",
+      "sha256": "ae2ee4b69043186ae24a079e2054b1841a0e238b47ef80ef7cf887e3fde2622d"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "checkout",
+      "sha256": "1596bae2d109b507c88781da6de802cb5770f83b622fdc68e8a7059a3ff1eadb"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "setup-node",
+      "sha256": "4d35031df24b53edec82d7208d61d3ccc304f09ecaa59f63ec135150d611c001"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "setup-rust",
+      "sha256": "8523ca31e4d216b5eca2d3804203c6a3106d96aa507b1231a61fa177556f21bc"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "cache-rust",
+      "sha256": "9642caa6afb5a487b358f096f90de5a79ab013cde97896d0d111cf7e299fabcf"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "install",
+      "sha256": "20e0498a56d840f18ed7457f3238be123108d2c36c29f584d6a20d8c4c34acd0"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "version",
+      "sha256": "6852659c1be6f33b967de4359b07bff892b55e96f6632d50b9e4a648e49419f8"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "appstore-key",
+      "sha256": "359b755d4261c0123918d377ce98c5613cd458887bd5186b6dc048a77182f0aa"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "build-number",
+      "sha256": "4aa029fa28b8a20558e9b1dc2f52146c7a39e13874e563d7544fb2b2f5932d9d"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "ios-init",
+      "sha256": "051d0a3f552bf064e208f8ad18ac784ad3020fc9ba12ae48d685c1e56d1a69b8"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "watch-build",
+      "sha256": "1ffd9cc19d350ba51c829b86a80f66889f3cf59a4ba3bb2220d25a165b88e2d0"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "build-ipa",
+      "sha256": "6ef4bcfef4fa437ccceb72e3a85a342c3ce98c8a11119dd5ef8246195070e7b1"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "id": "testflight",
+      "sha256": "804b623946d9e553055c869b28a493531e107da021a30d5bc9e21486fc20904d"
+    },
+    {
+      "file": "release.yml",
+      "job": "changes",
+      "id": "checkout",
+      "sha256": "6c47b60c7ad4e20f982edd0f08bc9c53de13e4e59237361edd75ed3f0f12a1cc"
+    },
+    {
+      "file": "release.yml",
+      "job": "changes",
+      "id": "decide",
+      "sha256": "4a830981d7ba8234943742d8981dfae7b90bb71167d77bdc2143f0166c3c0f02"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "checkout",
+      "sha256": "5c23b23b005f6dcd7251cfa6d90c47e74d9b3e0cda9a65011d335d90f1232dce"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "setup-node",
+      "sha256": "2ea53e3d7e93924a271f363cd16e37530da9849e3a505586fc4f78e25d3c5b32"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "setup-rust",
+      "sha256": "963da75c2fa7d08d00d7eac4708896fee6e5f8b41eaed450aaa5a81beaedd793"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "cache-rust",
+      "sha256": "87bff81fde8a3e29d4eb350d769852418fadd2b41e3f29541a66db9fbd3fdbb4"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "install",
+      "sha256": "81469808ff58c60b90b4267678cd47ff5b17e220842da0583e7af9dbe92485c7"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "version",
+      "sha256": "26ab05926ba9321b5b64ef3bcfddc8f1a44b6f009de18ba0a837649c962bed6b"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "signing",
+      "sha256": "daf1771d1716e79970f751dd8f834a2ed3f399c3d6bc17a465bfc48b6ef28434"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "release-notes",
+      "sha256": "2e43b92086df147075d12c169b59ec6da26f0c7bfdf697864d452fd61df590a2"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "changelog",
+      "sha256": "d747308398977676accffcd942626e63b30d5f650c8ac1386f8af0eab61f1622"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "build",
+      "sha256": "64209813f3c6968cf95be5044adf60fbd8205b6c3e9af06e9913eb366f1f0b32"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "publish",
+      "sha256": "2399987d97580c39d5d7229731e11ff1afcd2c0182211f3d398ec524be0caf43"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "id": "record-sha",
+      "sha256": "ec489c2cef60fe781d817331d8c36b59505e61795d37c52ea51a285130c4239c"
+    }
+  ],
+  "job_steps": [
+    {
+      "file": "checks.yml",
+      "job": "checks",
+      "ids": [
+        "checkout",
+        "actionlint",
+        "setup-node",
+        "npm-ci",
+        "guard",
+        "typecheck",
+        "test",
+        "parse-fns",
+        "worker-typecheck",
+        "worker-check",
+        "cf-preview"
+      ],
+      "sha256": "01eb869692c3a8c71d3fe17f588204cd9456caa126bbd2ce33fcc20a0fe835ac"
+    },
+    {
+      "file": "checks.yml",
+      "job": "isolation-mutation",
+      "ids": [
+        "checkout",
+        "setup-node",
+        "npm-ci",
+        "isolation-mutation"
+      ],
+      "sha256": "ece7763ccb1393e3daa4440fa14fe95ab6af23e39939875b1bf67f70b439cc59"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "ids": [
+        "checkout",
+        "cutover-dirs",
+        "setup-node",
+        "npm-ci",
+        "mask",
+        "install-pg",
+        "write-helper",
+        "pick-dump",
+        "dump",
+        "restore",
+        "verify",
+        "assert-logs",
+        "guard",
+        "seal-tokens",
+        "resync",
+        "upload",
+        "shred"
+      ],
+      "sha256": "e53426a286caaeb0d861698526fb4aade96743ac2d7eaae171c1e2e7cde68e46"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "changes",
+      "ids": [
+        "checkout",
+        "decide"
+      ],
+      "sha256": "9b75452dfa990370327cbbe578dcfd5beb8733a230ab0b09cd4e4eb9af49763f"
+    },
+    {
+      "file": "ios-release.yml",
+      "job": "testflight",
+      "ids": [
+        "checkout",
+        "setup-node",
+        "setup-rust",
+        "cache-rust",
+        "install",
+        "version",
+        "appstore-key",
+        "build-number",
+        "ios-init",
+        "watch-build",
+        "build-ipa",
+        "testflight"
+      ],
+      "sha256": "c057f8a07aac5ac3414ca44341d131d573fa709139d977ca3996e31b9f93f0c5"
+    },
+    {
+      "file": "release.yml",
+      "job": "changes",
+      "ids": [
+        "checkout",
+        "decide"
+      ],
+      "sha256": "9b75452dfa990370327cbbe578dcfd5beb8733a230ab0b09cd4e4eb9af49763f"
+    },
+    {
+      "file": "release.yml",
+      "job": "release",
+      "ids": [
+        "checkout",
+        "setup-node",
+        "setup-rust",
+        "cache-rust",
+        "install",
+        "version",
+        "signing",
+        "release-notes",
+        "changelog",
+        "build",
+        "publish",
+        "record-sha"
+      ],
+      "sha256": "1fb4c3cc27a1ec92d32dcf2f20b72b4b3f4cbbe138afae550734440cfa4b86d8"
+    }
+  ],
+  "workflow_jobs": [
+    {
+      "file": "checks.yml",
+      "jobs": [
+        "checks",
+        "isolation-mutation"
+      ],
+      "sha256": "8459d5da0d43d8bf3573f8f8977e2e966ec8f5055f352d2d8394972fef21974c"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "jobs": [
+        "cutover"
+      ],
+      "sha256": "6fdebdb533e18e9759369c3fa9053f1d90b180f76cb17243a589f835802fad05"
+    },
+    {
+      "file": "ios-release.yml",
+      "jobs": [
+        "changes",
+        "testflight"
+      ],
+      "sha256": "4fd0ba1fd16fd7e0b4c20c04378cfa5013f7a5826ca372cc6d0dd119a39d0b4b"
+    },
+    {
+      "file": "release.yml",
+      "jobs": [
+        "changes",
+        "release"
+      ],
+      "sha256": "057285682be5ae467e77ad6feaef3540ad0e0408994364361def4a03f6f975af"
+    }
+  ]
+}

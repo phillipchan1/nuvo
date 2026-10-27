@@ -3,7 +3,7 @@ import type { Env } from "../env.ts";
 import { GRAPH, getMsAccessToken } from "../lib/ms.ts";
 import { deleteAccountEvents, deleteEventsByProviderIds, reconcileEvents, type EventRow } from "../lib/eventSync.ts";
 import type { CalendarAccount } from "./types.ts";
-import { loadAccountsPaged, logSync, markSyncResult, updateAccount } from "./store.ts";
+import { loadAccountsPaged, loggedError, logSync, markSyncResult, updateAccount } from "./store.ts";
 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
@@ -49,7 +49,7 @@ export async function syncM365Account(sql: Sql, account: CalendarAccount, env: E
       await updateAccount(sql, account.id, account.user_id, { delta_link: null });
       throw new Error("delta link expired; baseline reset");
     }
-    if (!res.ok) throw new Error(`calendarView delta: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new Error(`calendarView delta: ${res.status}`);
     const body = (await res.json()) as {
       value?: Record<string, unknown>[];
       "@odata.nextLink"?: string;
@@ -87,25 +87,24 @@ export async function syncM365Account(sql: Sql, account: CalendarAccount, env: E
 export async function runM365Sync(
   sql: Sql,
   env: Env,
-  accountId?: string,
+  opts: { accountId?: string; userId?: string } = {},
 ): Promise<{ ok: true } | { error: string }> {
   try {
-    const accounts = await loadAccountsPaged(sql, "m365", accountId);
+    const accounts = await loadAccountsPaged(sql, "m365", opts.accountId, opts.userId);
     for (const account of accounts) {
-      if (account.needs_reconnect && !accountId) continue;
+      if (account.needs_reconnect && !opts.accountId) continue;
       try {
         await syncM365Account(sql, account, env);
-        await markSyncResult(sql, account.id, true);
+        await markSyncResult(sql, account.id, account.user_id, true);
         await logSync(sql, "m365", "delta-sync", "ok", undefined, account.user_id);
       } catch (e) {
-        await markSyncResult(sql, account.id, false);
-        await logSync(sql, "m365", "delta-sync", "error", e instanceof Error ? e.message : String(e), account.user_id);
+        await markSyncResult(sql, account.id, account.user_id, false);
+        await logSync(sql, "m365", "delta-sync", "error", loggedError(e), account.user_id);
       }
     }
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(sql, "m365", "sync", "error", msg);
-    return { error: msg };
+    await logSync(sql, "m365", "sync", "error", loggedError(e), opts.userId);
+    throw e;
   }
 }

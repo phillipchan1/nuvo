@@ -80,6 +80,7 @@ try {
       BETTER_AUTH_URL: origin,
       ENVIRONMENT: "preview",
       CRON_SECRET: cronSecret,
+      CUTOVER_FLIPPED: "1",
     },
     experimental: {
       disableExperimentalWarning: true,
@@ -345,8 +346,11 @@ try {
     15000,
     "foreign id",
   );
-  ok(steal.status >= 400 && steal.status < 500, `POST other owner's id: HTTP ${steal.status} (4xx, not 500)`);
-  ok((await steal.clone().text()).includes("hyperdrive") === false, "foreign id: no internal host");
+  const stealText = await steal.clone().text();
+  const stealBody = JSON.parse(stealText || "{}") as { data?: { id?: string } };
+  ok(steal.status === 200, `POST other owner's id: HTTP ${steal.status} (new owned row, not 500)`);
+  ok(stealText.includes("hyperdrive") === false, "foreign id: no internal host");
+  ok(stealBody.data?.id !== taskId, "foreign id: did not take A's id");
   const aReadSteal = await withTimeout(
     request(`/api/data/tasks/${taskId}`, {
       headers: { Authorization: `Bearer ${a.token}` },
@@ -480,7 +484,14 @@ try {
     8000,
     "cron",
   );
-  ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+  ok(cron.status === 200, `cron authorized push-dispatch: HTTP ${cron.status}`);
+  const cronBody = await cron.json() as { ok?: boolean; skipped?: boolean };
+  ok(cronBody.ok === true && cronBody.skipped !== true, "cron push-dispatch runs after flip");
+
+  const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
+  ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);
+  const maintenanceBody = (await maintenance.json()) as { write_freeze?: boolean };
+  ok(maintenanceBody.write_freeze === false, "preview write_freeze is off");
 } finally {
   await worker?.stop();
 }

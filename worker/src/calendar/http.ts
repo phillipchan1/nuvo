@@ -1,13 +1,15 @@
 import type { Context } from "hono";
-import { SessionLookupError, sessionUser } from "../auth.ts";
-import { OPEN_CORS, json } from "../cors.ts";
+import type { Hono } from "hono";
 import { bearerToken, cronAuthorized } from "../cron.ts";
+import { json, OPEN_CORS } from "../cors.ts";
+import { gateCronBearerRoute } from "../cutoverFlip.ts";
 import type { Env } from "../env.ts";
 import { BadRequestError, readJson, requireJsonObject, requireUuid } from "../http.ts";
 import { GRAPH, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../lib/ms.ts";
 import { signState, verifyState } from "../lib/oauthState.ts";
 import { discoverCalendars } from "../lib/caldav.ts";
 import { withoutMirrorCalendar } from "../lib/mirror.ts";
+import { logServerError } from "../lib/redact.ts";
 import type { RequestIo } from "../requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "../store.ts";
 import { handleIcloudEvents } from "./icloudEvents.ts";
@@ -17,6 +19,7 @@ import { runM365Sync } from "./m365.ts";
 import {
   getOwnedAccount,
   listOwnedAccounts,
+  loggedError,
   logSync,
   sealAccountSecret,
   upsertAccount,
@@ -24,65 +27,26 @@ import {
 
 type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
-const CALENDAR_ROUTES = [
-  "m365-oauth",
-  "m365-sync",
-  "icloud-connect",
-  "icloud-sync",
-  "icloud-events",
-  "icloud-contacts",
-  "ics-subscribe",
-  "ics-sync",
-  "calendar-refresh",
-] as const;
+export type CalendarRouteDeps = {
+  requireUser: (c: Context<AppEnv>, raw?: Request) => Promise<{ userId: string } | { error: Response }>;
+  requestIo: (c: Context<AppEnv>) => Promise<RequestIo>;
+  refuseIfFrozen?: (c: Context<AppEnv>) => Response | null;
+};
 
-export type CalendarRoute = (typeof CALENDAR_ROUTES)[number];
+const BEARER_SYNC = ["m365-sync", "icloud-sync", "icloud-contacts", "ics-sync"] as const;
+export type CalendarBearerRoute = (typeof BEARER_SYNC)[number];
 
-export function isCalendarRoute(name: string): name is CalendarRoute {
-  return (CALENDAR_ROUTES as readonly string[]).includes(name);
+function preflight(): Response {
+  return new Response("ok", { headers: OPEN_CORS });
 }
 
-type SessionUser = { id: string; email?: string | null; emailVerified: boolean };
-type SessionOk = { store: Store; user: SessionUser };
-type SessionErr = { error: Response };
-
-async function requireSessionStore(c: Context<AppEnv>, io: RequestIo): Promise<SessionOk | SessionErr> {
-  let user;
-  try {
-    user = await sessionUser(io.auth, c.req.raw);
-  } catch (err) {
-    if (err instanceof SessionLookupError) {
-      return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };
-    }
-    throw err;
-  }
-  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
-    emailVerified: user.emailVerified,
-  });
-  return { store, user };
+function clientError(code: string, status = 500): Response {
+  return json({ error: code }, status, OPEN_CORS);
 }
 
-async function sessionFromTokenQuery(c: Context<AppEnv>, io: RequestIo): Promise<SessionOk | SessionErr> {
-  const token = c.req.query("token") ?? "";
-  if (!token) return requireSessionStore(c, io);
-  const headers = new Headers(c.req.raw.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const fake = new Request(c.req.url, { method: c.req.method, headers });
-  let user;
-  try {
-    user = await sessionUser(io.auth, fake);
-  } catch (err) {
-    if (err instanceof SessionLookupError) {
-      return { error: json({ error: "service unavailable" }, 503, OPEN_CORS) };
-    }
-    throw err;
-  }
-  if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
-    emailVerified: user.emailVerified,
-  });
-  return { store, user };
+function isReadMethod(method: string): boolean {
+  const m = method.toUpperCase();
+  return m === "GET" || m === "HEAD";
 }
 
 function syncSelfUrl(c: Context<AppEnv>, name: string): string {
@@ -90,91 +54,141 @@ function syncSelfUrl(c: Context<AppEnv>, name: string): string {
   return `${url.origin}/functions/v1/${name}`;
 }
 
-async function ownedAccountId(store: ReturnType<typeof makeStore>, raw: unknown): Promise<string | undefined> {
-  if (typeof raw !== "string" || !raw) return undefined;
-  try {
-    requireUuid(raw, "accountId");
-  } catch {
-    return "00000000-0000-4000-8000-000000000000";
+export function registerCalendarRoutes(app: Hono<AppEnv>, deps: CalendarRouteDeps): void {
+  const paths = (suffix: string) => [`/functions/v1/${suffix}`, `/api/${suffix}`] as const;
+  const freezeWrite = (c: Context<AppEnv>, write: boolean) =>
+    write ? (deps.refuseIfFrozen?.(c) ?? null) : null;
+
+  for (const path of paths("m365-oauth")) {
+    app.options(path, preflight);
+    app.all(path, (c) => handleM365Oauth(c, deps));
   }
-  const owned = await getOwnedAccount(store, raw);
-  return owned?.id ?? "00000000-0000-4000-8000-000000000000";
+  for (const path of paths("icloud-connect")) {
+    app.options(path, preflight);
+    app.all(path, (c) => handleIcloudConnect(c, deps));
+  }
+  for (const path of paths("ics-subscribe")) {
+    app.options(path, preflight);
+    app.all(path, (c) => handleIcsSubscribe(c, deps));
+  }
+  for (const path of paths("icloud-events")) {
+    app.options(path, preflight);
+    app.all(path, (c) => handleEvents(c, deps));
+  }
+  for (const name of BEARER_SYNC) {
+    for (const path of paths(name)) {
+      app.options(path, preflight);
+      app.all(path, (c) => handleBearerSync(c, deps, name));
+    }
+  }
 }
 
-export async function handleCalendarRoute(
+async function handleBearerSync(
   c: Context<AppEnv>,
-  io: RequestIo,
-  name: CalendarRoute,
+  deps: CalendarRouteDeps,
+  name: CalendarBearerRoute,
 ): Promise<Response> {
-  if (c.req.method === "OPTIONS") return new Response("ok", { headers: OPEN_CORS });
-  const env = c.env;
-
-  if (name === "m365-oauth") return handleM365Oauth(c, io, env);
-  if (name === "icloud-connect") return handleIcloudConnect(c, io, env);
-  if (name === "ics-subscribe") return handleIcsSubscribe(c, io, env);
-  if (name === "icloud-events") return handleEvents(c, io, env);
-  if (name === "calendar-refresh") return handleRefresh(c, io, env);
-
-  const cronTok = bearerToken(c.req.header("authorization"));
-  const asCron = cronAuthorized(cronTok, env.CRON_SECRET);
-  if (asCron) {
-    const body = await readJson<{ accountId?: string }>(c).catch(() => ({} as { accountId?: string }));
-    const accountId = typeof body.accountId === "string" && body.accountId ? requireUuid(body.accountId, "accountId") : undefined;
-    if (name === "m365-sync") {
-      const out = await runM365Sync(io.sql, env, accountId);
-      return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-    }
-    if (name === "icloud-sync") {
-      const out = await runIcloudSync(io.sql, env, accountId);
-      return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-    }
-    if (name === "icloud-contacts") {
-      const out = await runIcloudContacts(io.sql, env, accountId);
-      return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-    }
-    if (name === "ics-sync") {
-      const out = await runIcsSync(io.sql, env, accountId);
-      return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-    }
+  if (isReadMethod(c.req.method)) {
+    const got = await deps.requireUser(c);
+    if ("error" in got) return got.error;
+    return json({ ok: true }, 200, OPEN_CORS);
   }
-
-  const got = await requireSessionStore(c, io);
-  if ("error" in got) return got.error;
+  const blocked = deps.refuseIfFrozen?.(c) ?? null;
+  if (blocked) return blocked;
   const body = await readJson<{ accountId?: string }>(c).catch(() => ({} as { accountId?: string }));
-  const accountId = await ownedAccountId(got.store, body.accountId);
-
-  if (name === "m365-sync") {
-    const out = await runM365Sync(io.sql, env, accountId);
-    return json(out, "error" in out ? 500 : 200, OPEN_CORS);
+  const cronOk = cronAuthorized(bearerToken(c.req.header("authorization")), c.env.CRON_SECRET);
+  if (cronOk) {
+    const gated = gateCronBearerRoute(c.env, name);
+    if (gated) return gated;
   }
-  if (name === "icloud-sync") {
-    const out = await runIcloudSync(io.sql, env, accountId);
-    return json(out, "error" in out ? 500 : 200, OPEN_CORS);
+  const io = await deps.requestIo(c);
+  try {
+    if (cronOk) {
+      const accountId = typeof body.accountId === "string" && body.accountId
+        ? requireUuid(body.accountId, "accountId")
+        : undefined;
+      const out = await runNamedSync(io.sql, c.env, name, { accountId });
+      return json(out, 200, OPEN_CORS);
+    }
+    const got = await deps.requireUser(c);
+    if ("error" in got) return got.error;
+    if (body.accountId) {
+      requireUuid(body.accountId, "accountId");
+      const owned = await getOwnedAccount(makeStore(io.sql, got.userId), body.accountId);
+      if (!owned) return json({ error: "not found" }, 404, OPEN_CORS);
+    }
+    const out = await runNamedSync(io.sql, c.env, name, {
+      accountId: typeof body.accountId === "string" ? body.accountId : undefined,
+      userId: got.userId,
+    });
+    return json(out, 200, OPEN_CORS);
+  } catch (e) {
+    logServerError(name, e);
+    return clientError("request_failed");
   }
-  if (name === "icloud-contacts") {
-    const out = await runIcloudContacts(io.sql, env, accountId);
-    return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-  }
-  if (name === "ics-sync") {
-    const out = await runIcsSync(io.sql, env, accountId);
-    return json(out, "error" in out ? 500 : 200, OPEN_CORS);
-  }
-  return json({ error: "not found" }, 404, OPEN_CORS);
 }
 
-async function handleM365Oauth(c: Context<AppEnv>, io: RequestIo, env: Env): Promise<Response> {
+async function runNamedSync(
+  sql: RequestIo["sql"],
+  env: Env,
+  name: CalendarBearerRoute,
+  opts: { accountId?: string; userId?: string },
+) {
+  if (name === "m365-sync") return runM365Sync(sql, env, opts);
+  if (name === "icloud-sync") return runIcloudSync(sql, env, opts);
+  if (name === "icloud-contacts") return runIcloudContacts(sql, env, opts);
+  return runIcsSync(sql, env, opts);
+}
+
+export async function runCalendarRefreshOthers(
+  sql: RequestIo["sql"],
+  env: Env,
+  userId: string,
+): Promise<{ synced: number; errors: string[] }> {
+  const store = makeStore(sql, userId);
+  const accounts = (await listOwnedAccounts(store)).filter(
+    (a) => !a.needs_reconnect && (a.provider === "m365" || a.provider === "icloud" || a.provider === "ics"),
+  );
+  const errors: string[] = [];
+  let synced = 0;
+  for (const account of accounts) {
+    try {
+      if (account.provider === "m365") await runM365Sync(sql, env, { accountId: account.id, userId });
+      else if (account.provider === "icloud") {
+        await runIcloudSync(sql, env, { accountId: account.id, userId });
+        await runIcloudContacts(sql, env, { accountId: account.id, userId }).catch(() => undefined);
+      } else await runIcsSync(sql, env, { accountId: account.id, userId });
+      synced += 1;
+    } catch (e) {
+      logServerError("calendar-refresh", e);
+      errors.push(`${account.provider}: sync failed`);
+    }
+  }
+  return { synced, errors };
+}
+
+async function handleM365Oauth(c: Context<AppEnv>, deps: CalendarRouteDeps): Promise<Response> {
   const url = new URL(c.req.url);
-  const secret = env.BETTER_AUTH_SECRET ?? "";
-  if (url.searchParams.get("action") === "start") {
-    const got = await sessionFromTokenQuery(c, io);
+  const isStart = url.searchParams.get("action") === "start";
+  const isCallback = Boolean(url.searchParams.get("code"));
+  const write = isCallback || (!isStart && !isReadMethod(c.req.method));
+  const blocked = write ? deps.refuseIfFrozen?.(c) ?? null : null;
+  if (blocked) return blocked;
+
+  if (isStart) {
+    const token = url.searchParams.get("token");
+    const headers = new Headers(c.req.raw.headers);
+    if (token && !headers.get("authorization")) headers.set("authorization", `Bearer ${token}`);
+    const raw = new Request(c.req.raw, { headers });
+    const got = await deps.requireUser(c, raw);
     if ("error" in got) return got.error;
-    if (!env.MS_CLIENT_ID) return json({ error: "MS client is not configured" }, 500, OPEN_CORS);
-    const state = await signState(secret, {
-      u: got.store.userId,
+    if (!c.env.MS_CLIENT_ID) return clientError("oauth_not_configured");
+    const state = await signState(c.env.BETTER_AUTH_SECRET ?? "", {
+      u: got.userId,
       r: url.searchParams.get("redirect") ?? "",
     });
     const consent = new URL(MS_AUTH_URL);
-    consent.searchParams.set("client_id", env.MS_CLIENT_ID);
+    consent.searchParams.set("client_id", c.env.MS_CLIENT_ID);
     consent.searchParams.set("redirect_uri", syncSelfUrl(c, "m365-oauth"));
     consent.searchParams.set("response_type", "code");
     consent.searchParams.set("scope", MS_SCOPES);
@@ -185,24 +199,25 @@ async function handleM365Oauth(c: Context<AppEnv>, io: RequestIo, env: Env): Pro
 
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
-  if (!code || !stateParam) return json({ error: "missing code/state" }, 400, OPEN_CORS);
+  if (!code || !stateParam) return clientError("bad_request", 400);
   let state: Record<string, string>;
   try {
-    state = await verifyState(secret, stateParam);
+    state = await verifyState(c.env.BETTER_AUTH_SECRET ?? "", stateParam);
   } catch {
-    return json({ error: "bad oauth state" }, 400, OPEN_CORS);
+    return clientError("bad_request", 400);
   }
-  if (!state.u || !env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET || !env.TOKEN_ENC_KEY_V1) {
-    return json({ error: "oauth is not configured" }, 500, OPEN_CORS);
+  if (!state.u || !c.env.MS_CLIENT_ID || !c.env.MS_CLIENT_SECRET) {
+    return clientError("oauth_not_configured");
   }
 
+  const io = await deps.requestIo(c);
   try {
     const tokenRes = await fetch(MS_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: env.MS_CLIENT_ID,
-        client_secret: env.MS_CLIENT_SECRET,
+        client_id: c.env.MS_CLIENT_ID,
+        client_secret: c.env.MS_CLIENT_SECRET,
         grant_type: "authorization_code",
         code,
         redirect_uri: syncSelfUrl(c, "m365-oauth"),
@@ -233,34 +248,40 @@ async function handleM365Oauth(c: Context<AppEnv>, io: RequestIo, env: Env): Pro
       needs_reconnect: false,
     });
     if (tok.refresh_token) {
-      await sealAccountSecret(io.sql, account.id, state.u, env.TOKEN_ENC_KEY_V1, tok.refresh_token);
+      await sealAccountSecret(io.sql, account.id, state.u, c.env, tok.refresh_token);
     }
     await logSync(io.sql, "m365", "oauth-connect", "ok", undefined, state.u);
     try {
-      c.executionCtx.waitUntil(runM365Sync(io.sql, env, account.id).then(() => undefined));
+      c.executionCtx.waitUntil(runM365Sync(io.sql, c.env, { accountId: account.id, userId: state.u }).then(() => undefined));
     } catch {
-      await runM365Sync(io.sql, env, account.id);
+      await runM365Sync(io.sql, c.env, { accountId: account.id, userId: state.u });
     }
-    return Response.redirect(state.r || env.APP_URL || "/", 302);
+    return Response.redirect(state.r || c.env.APP_URL || "/", 302);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(io.sql, "m365", "oauth", "error", msg);
-    return json({ error: msg }, 500, OPEN_CORS);
+    logServerError("m365-oauth", e);
+    await logSync(io.sql, "m365", "oauth", "error", loggedError(e), state.u);
+    return clientError("oauth_failed");
   }
 }
 
-async function handleIcloudConnect(c: Context<AppEnv>, io: RequestIo, env: Env): Promise<Response> {
-  const got = await requireSessionStore(c, io);
+async function handleIcloudConnect(c: Context<AppEnv>, deps: CalendarRouteDeps): Promise<Response> {
+  if (isReadMethod(c.req.method)) {
+    const got = await deps.requireUser(c);
+    if ("error" in got) return got.error;
+    return json({ ok: true }, 200, OPEN_CORS);
+  }
+  const blocked = deps.refuseIfFrozen?.(c) ?? null;
+  if (blocked) return blocked;
+  const got = await deps.requireUser(c);
   if ("error" in got) return got.error;
-  if (!env.TOKEN_ENC_KEY_V1) return json({ error: "token key is not configured" }, 500, OPEN_CORS);
   const body = requireJsonObject(await readJson<unknown>(c));
   const appleId = body.appleId;
   const appPassword = body.appPassword;
   if (!appleId || typeof appleId !== "string" || !/^[^@\s]+@[^@\s]+$/.test(appleId.trim())) {
-    return json({ error: "A valid Apple ID email is required" }, 400, OPEN_CORS);
+    return clientError("bad_request", 400);
   }
   if (!appPassword || typeof appPassword !== "string" || appPassword.trim().length < 8) {
-    return json({ error: "An app-specific password is required" }, 400, OPEN_CORS);
+    return clientError("bad_request", 400);
   }
   const username = appleId.trim();
   const password = appPassword.trim().replace(/\s+/g, "");
@@ -269,14 +290,17 @@ async function handleIcloudConnect(c: Context<AppEnv>, io: RequestIo, env: Env):
   try {
     calendars = await discoverCalendars(username, password);
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 400, OPEN_CORS);
+    logServerError("icloud-connect", e);
+    return clientError("bad_request", 400);
   }
 
-  const existing = (await listOwnedAccounts(got.store, "icloud")).find((a) => a.email === username);
+  const io = await deps.requestIo(c);
+  const store = makeStore(io.sql, got.userId);
+  const existing = (await listOwnedAccounts(store, "icloud")).find((a) => a.email === username);
   calendars = withoutMirrorCalendar(calendars, existing?.mirror_calendar_id ?? null);
 
   try {
-    const account = await upsertAccount(io.sql, got.store.userId, {
+    const account = await upsertAccount(io.sql, got.userId, {
       provider: "icloud",
       email: username,
       sync_direction: "two_way",
@@ -288,69 +312,84 @@ async function handleIcloudConnect(c: Context<AppEnv>, io: RequestIo, env: Env):
       })),
       needs_reconnect: false,
     });
-    await sealAccountSecret(io.sql, account.id, got.store.userId, env.TOKEN_ENC_KEY_V1, password);
-    await logSync(io.sql, "icloud", "connect", "ok", undefined, got.store.userId);
+    await sealAccountSecret(io.sql, account.id, got.userId, c.env, password);
+    await logSync(io.sql, "icloud", "connect", "ok", undefined, got.userId);
     try {
       c.executionCtx.waitUntil(
         Promise.all([
-          runIcloudSync(io.sql, env, account.id),
-          runIcloudContacts(io.sql, env, account.id),
+          runIcloudSync(io.sql, c.env, { accountId: account.id, userId: got.userId }),
+          runIcloudContacts(io.sql, c.env, { accountId: account.id, userId: got.userId }),
         ]).then(() => undefined),
       );
     } catch {
-      await Promise.all([runIcloudSync(io.sql, env, account.id), runIcloudContacts(io.sql, env, account.id)]);
+      await Promise.all([
+        runIcloudSync(io.sql, c.env, { accountId: account.id, userId: got.userId }),
+        runIcloudContacts(io.sql, c.env, { accountId: account.id, userId: got.userId }),
+      ]);
     }
     return json({ ok: true, id: account.id, calendars: calendars.length }, 200, OPEN_CORS);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(io.sql, "icloud", "connect", "error", msg);
-    return json({ error: msg }, 500, OPEN_CORS);
+    logServerError("icloud-connect", e);
+    await logSync(io.sql, "icloud", "connect", "error", loggedError(e), got.userId);
+    return clientError("request_failed");
   }
 }
 
-async function handleIcsSubscribe(c: Context<AppEnv>, io: RequestIo, env: Env): Promise<Response> {
-  const got = await requireSessionStore(c, io);
+async function handleIcsSubscribe(c: Context<AppEnv>, deps: CalendarRouteDeps): Promise<Response> {
+  if (isReadMethod(c.req.method)) {
+    const got = await deps.requireUser(c);
+    if ("error" in got) return got.error;
+    return json({ ok: true }, 200, OPEN_CORS);
+  }
+  const blocked = deps.refuseIfFrozen?.(c) ?? null;
+  if (blocked) return blocked;
+  const got = await deps.requireUser(c);
   if ("error" in got) return got.error;
-  if (!env.TOKEN_ENC_KEY_V1) return json({ error: "token key is not configured" }, 500, OPEN_CORS);
   const body = requireJsonObject(await readJson<unknown>(c));
   const checked = assertPublicFeedUrl(typeof body.url === "string" ? body.url : "");
-  if (!checked.ok) return json({ error: checked.error }, 400, OPEN_CORS);
+  if (!checked.ok) return clientError("bad_request", 400);
 
   const res = await fetch(checked.url, { headers: { Accept: "text/calendar" } });
-  if (!res.ok) return json({ error: `Feed returned HTTP ${res.status}` }, 400, OPEN_CORS);
+  if (!res.ok) return clientError("bad_request", 400);
   const text = await res.text();
-  if (!text.includes("BEGIN:VCALENDAR")) {
-    return json({ error: "That URL doesn't return an iCalendar feed" }, 400, OPEN_CORS);
-  }
+  if (!text.includes("BEGIN:VCALENDAR")) return clientError("bad_request", 400);
   const calName = (text.match(/X-WR-CALNAME:(.+)/)?.[1] ?? "").trim();
   const email =
     (typeof body.label === "string" && body.label.trim()) || calName || "Subscribed calendar";
 
+  const io = await deps.requestIo(c);
   try {
-    const account = await upsertAccount(io.sql, got.store.userId, {
+    const account = await upsertAccount(io.sql, got.userId, {
       provider: "ics",
       email,
       sync_direction: "read_only",
       calendars: [{ id: "primary", summary: calName || email, color: "#0EA5E9", visible: true }],
       needs_reconnect: false,
     });
-    await sealAccountSecret(io.sql, account.id, got.store.userId, env.TOKEN_ENC_KEY_V1, checked.url);
-    await logSync(io.sql, "ics", "subscribe", "ok", undefined, got.store.userId);
+    await sealAccountSecret(io.sql, account.id, got.userId, c.env, checked.url);
+    await logSync(io.sql, "ics", "subscribe", "ok", undefined, got.userId);
     try {
-      c.executionCtx.waitUntil(runIcsSync(io.sql, env, account.id).then(() => undefined));
+      c.executionCtx.waitUntil(runIcsSync(io.sql, c.env, { accountId: account.id, userId: got.userId }).then(() => undefined));
     } catch {
-      await runIcsSync(io.sql, env, account.id);
+      await runIcsSync(io.sql, c.env, { accountId: account.id, userId: got.userId });
     }
     return json({ ok: true, id: account.id }, 200, OPEN_CORS);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(io.sql, "ics", "subscribe", "error", msg);
-    return json({ error: msg }, 500, OPEN_CORS);
+    logServerError("ics-subscribe", e);
+    await logSync(io.sql, "ics", "subscribe", "error", loggedError(e), got.userId);
+    return clientError("request_failed");
   }
 }
 
-async function handleEvents(c: Context<AppEnv>, io: RequestIo, env: Env): Promise<Response> {
-  const got = await requireSessionStore(c, io);
+async function handleEvents(c: Context<AppEnv>, deps: CalendarRouteDeps): Promise<Response> {
+  if (isReadMethod(c.req.method)) {
+    const got = await deps.requireUser(c);
+    if ("error" in got) return got.error;
+    return json({ ok: true }, 200, OPEN_CORS);
+  }
+  const blocked = deps.refuseIfFrozen?.(c) ?? null;
+  if (blocked) return blocked;
+  const got = await deps.requireUser(c);
   if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
   if (typeof body.eventId === "string" && body.eventId) {
@@ -367,47 +406,20 @@ async function handleEvents(c: Context<AppEnv>, io: RequestIo, env: Env): Promis
       throw new BadRequestError("accountId is not a uuid");
     }
   }
+  const io = await deps.requestIo(c);
   try {
-    const out = await handleIcloudEvents(got.store, env, body);
+    const store = makeStore(io.sql, got.userId) as Store;
+    await bootstrapUser(store, null, { emailVerified: true });
+    const out = await handleIcloudEvents(store, c.env, body);
+    if (typeof out.body.error === "string" && out.status >= 400) {
+      const generic = out.status === 404 ? "not found" : out.status === 400 ? "bad_request" : "request_failed";
+      return json({ error: generic }, out.status, OPEN_CORS);
+    }
     return json(out.body, out.status, OPEN_CORS);
   } catch (e) {
-    if (e instanceof Response) return e;
-    const msg = e instanceof Error ? e.message : String(e);
-    await logSync(io.sql, "icloud", "event-writeback", "error", msg);
-    return json({ error: msg }, 500, OPEN_CORS);
+    if (e instanceof BadRequestError) return clientError("bad_request", 400);
+    logServerError("icloud-events", e);
+    await logSync(io.sql, "icloud", "event-writeback", "error", loggedError(e), got.userId);
+    return clientError("request_failed");
   }
-}
-
-async function handleRefresh(c: Context<AppEnv>, io: RequestIo, env: Env): Promise<Response> {
-  const got = await requireSessionStore(c, io);
-  if ("error" in got) return got.error;
-  await readJson<unknown>(c).catch(() => ({}));
-  const accounts = (await listOwnedAccounts(got.store)).filter(
-    (a) => !a.needs_reconnect && (a.provider === "m365" || a.provider === "icloud" || a.provider === "ics"),
-  );
-  const errors: string[] = [];
-  for (const account of accounts) {
-    const out =
-      account.provider === "m365"
-        ? await runM365Sync(io.sql, env, account.id)
-        : account.provider === "icloud"
-          ? await runIcloudSync(io.sql, env, account.id)
-          : await runIcsSync(io.sql, env, account.id);
-    if ("error" in out) errors.push(account.provider);
-    if (account.provider === "icloud") {
-      try {
-        c.executionCtx.waitUntil(runIcloudContacts(io.sql, env, account.id).then(() => undefined));
-      } catch {
-        await runIcloudContacts(io.sql, env, account.id);
-      }
-    }
-  }
-  if (errors.length === accounts.length && errors.length > 0) {
-    return json({ error: "refresh failed" }, 500, OPEN_CORS);
-  }
-  return json(
-    { ok: true, synced: accounts.length, errors: errors.length ? errors : undefined },
-    200,
-    OPEN_CORS,
-  );
 }

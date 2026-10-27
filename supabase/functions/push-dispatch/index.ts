@@ -35,6 +35,7 @@ import {
 } from "../_shared/reminderRules.ts";
 import { buildReminderAnchors, REMINDER_WINDOW_MS } from "../_shared/reminderAnchors.ts";
 import { sendWebPush, webPushConfigured, webPushSelfTest, type PushSubscriptionRow } from "../_shared/webpush.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 /**
  * How far past due a reminder must be before the server will claim it.
@@ -60,6 +61,8 @@ interface SettingsRow {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   const startedAt = Date.now();
   let notified = 0;

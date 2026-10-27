@@ -4,15 +4,14 @@
  * scopes each pass by that row's user_id.
  */
 import type { Sql } from "../db.ts";
+import type { Env } from "../env.ts";
+import { calendarAccountAad, markSyncResult as markOwnedSyncResult } from "../google/owned.ts";
+import { redactSecrets } from "../lib/redact.ts";
+import { openToken, parseTokenKeyring, sealToken } from "../secrets.ts";
 import type { Store } from "../store.ts";
-import { openToken, sealToken, tokenAad } from "../lib/secrets.ts";
 import { mapAccount, type CalendarAccount } from "./types.ts";
 
-export function calendarSyncInterval(provider: string, failures: number): number {
-  const base = provider === "google" || provider === "m365" ? 300 : 900;
-  const n = Math.min(Math.max(failures, 0), 5);
-  return Math.min(base * 2 ** n, 86_400);
-}
+export { calendarSyncInterval } from "../google/owned.ts";
 
 export async function logSync(
   sql: Sql,
@@ -70,22 +69,31 @@ export async function loadAccountsPaged(
   sql: Sql,
   provider: string,
   accountId?: string,
+  userId?: string,
 ): Promise<CalendarAccount[]> {
   if (accountId) {
     const one = await loadAccountById(sql, accountId);
     if (!one || one.provider !== provider) return [];
+    if (userId && one.user_id !== userId) return [];
     return [one];
   }
   const PAGE = 1000;
   const out: CalendarAccount[] = [];
   let lastId = "00000000-0000-0000-0000-000000000000";
   for (;;) {
-    const page = await sql`
-      SELECT * FROM calendar_accounts
-      WHERE provider = ${provider} AND id > ${lastId}
-      ORDER BY id
-      LIMIT ${PAGE}
-    `;
+    const page = userId
+      ? await sql`
+          SELECT * FROM calendar_accounts
+          WHERE provider = ${provider} AND user_id = ${userId} AND id > ${lastId}
+          ORDER BY id
+          LIMIT ${PAGE}
+        `
+      : await sql`
+          SELECT * FROM calendar_accounts
+          WHERE provider = ${provider} AND id > ${lastId}
+          ORDER BY id
+          LIMIT ${PAGE}
+        `;
     for (const row of page) out.push(mapAccount(row as Record<string, unknown>));
     if (page.length < PAGE) break;
     lastId = String((page[page.length - 1] as { id: string }).id);
@@ -118,34 +126,24 @@ export async function claimDueAccounts(
   return accounts;
 }
 
-export async function markSyncResult(sql: Sql, accountId: string, ok: boolean): Promise<void> {
-  const rows = await sql`SELECT provider, sync_failures FROM calendar_accounts WHERE id = ${accountId} LIMIT 1`;
-  const row = rows[0] as { provider?: string; sync_failures?: number } | undefined;
-  if (!row) return;
-  const failures = ok ? 0 : Number(row.sync_failures ?? 0) + 1;
-  const secs = calendarSyncInterval(String(row.provider ?? ""), failures);
-  await sql`
-    UPDATE calendar_accounts
-    SET sync_failures = ${failures},
-        next_sync_at = now() + (${secs} * interval '1 second')
-    WHERE id = ${accountId}
-  `;
+export async function markSyncResult(sql: Sql, accountId: string, userId: string, ok: boolean): Promise<void> {
+  await markOwnedSyncResult(sql, accountId, userId, ok);
 }
 
 export async function openAccountSecret(
   account: CalendarAccount,
-  key: string | undefined,
+  env: Pick<Env, "TOKEN_ENC_KEY_V1" | "TOKEN_ENC_KEY_V2" | "TOKEN_ENC_CURRENT">,
 ): Promise<string | null> {
-  if (!account.refresh_token_enc || !account.refresh_token_iv) return null;
-  if (!key) throw new Error("TOKEN_ENC_KEY_V1 is not set");
+  if (!account.refresh_token_enc || !account.refresh_token_iv || account.key_version == null) return null;
+  const ring = await parseTokenKeyring(env);
   return openToken(
-    key,
     {
-      enc: account.refresh_token_enc,
+      ciphertext: account.refresh_token_enc,
       iv: account.refresh_token_iv,
-      keyVersion: account.key_version ?? 1,
+      keyVersion: account.key_version,
     },
-    tokenAad("calendar_accounts", account.id, account.user_id),
+    calendarAccountAad(account),
+    ring,
   );
 }
 
@@ -153,19 +151,24 @@ export async function sealAccountSecret(
   sql: Sql,
   accountId: string,
   userId: string,
-  key: string,
+  env: Pick<Env, "TOKEN_ENC_KEY_V1" | "TOKEN_ENC_KEY_V2" | "TOKEN_ENC_CURRENT">,
   plaintext: string,
 ): Promise<void> {
-  const sealed = await sealToken(key, plaintext, tokenAad("calendar_accounts", accountId, userId));
+  const ring = await parseTokenKeyring(env);
+  const sealed = await sealToken(plaintext, calendarAccountAad({ id: accountId, user_id: userId }), ring);
   await sql`
     UPDATE calendar_accounts
     SET
-      refresh_token_enc = ${sealed.enc},
+      refresh_token_enc = ${sealed.ciphertext},
       refresh_token_iv = ${sealed.iv},
       key_version = ${sealed.keyVersion},
       refresh_token_secret_id = NULL
     WHERE id = ${accountId} AND user_id = ${userId}
   `;
+}
+
+export function loggedError(err: unknown): string {
+  return redactSecrets(err instanceof Error ? err.message : String(err));
 }
 
 export async function upsertAccount(

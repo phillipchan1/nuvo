@@ -14,10 +14,13 @@ import {
   stripeSubscriptionIdToCancel,
 } from "../_shared/accountDeletion.ts";
 import { readAppleAuthConfig, revokeAppleToken } from "../_shared/appleIdentity.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

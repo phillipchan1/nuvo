@@ -15,6 +15,7 @@ import { countGoogleInstancesBefore, googleSeriesOrFilter, materializeGoogleReso
 import { planGoogleSplit } from "../_shared/googleSplit.ts";
 import { isUsableTimeZone, toIcalLocal } from "../_shared/icalTz.ts";
 import { rruleCount, shiftRRuleDays } from "../_shared/recurrence.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 /** Master series id: generated column, then raw, then the Google instance suffix. */
 function seriesMasterId(evt: {
@@ -119,6 +120,8 @@ async function shiftLocalSeries(
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const body = await req.json();

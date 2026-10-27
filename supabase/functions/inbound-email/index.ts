@@ -15,6 +15,7 @@ import {
   titleFromSubject,
   verifySvixSignature,
 } from "../_shared/inboundEmail.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const RATE_LIMIT_PER_MIN = 30;
 
@@ -52,6 +53,8 @@ async function fetchReceivedMail(apiKey: string, emailId: string): Promise<Recei
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {

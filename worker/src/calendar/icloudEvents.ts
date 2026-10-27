@@ -110,7 +110,7 @@ async function rewriteOwnedRow(
 
 export async function handleIcloudEvents(
   store: Store,
-  env: { TOKEN_ENC_KEY_V1?: string },
+  env: { TOKEN_ENC_KEY_V1?: string; TOKEN_ENC_KEY_V2?: string; TOKEN_ENC_CURRENT?: string },
   body: Record<string, unknown>,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const sql = store.sql;
@@ -132,7 +132,7 @@ export async function handleIcloudEvents(
     const account = accounts.find((a) => !accountId || a.id === accountId);
     if (!account) return { status: 400, body: { error: "no iCloud account connected" } };
 
-    const password = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+    const password = await openAccountSecret(account, env);
     if (!password) return { status: 400, body: { error: "iCloud credential missing" } };
 
     const hidden = new Set(await hiddenCalendarIds(store));
@@ -240,7 +240,7 @@ export async function handleIcloudEvents(
   const account = evt.account as CalendarAccount;
   if (account.provider !== "icloud") return { status: 400, body: { error: "not an iCloud event" } };
 
-  const password = await openAccountSecret(account, env.TOKEN_ENC_KEY_V1);
+  const password = await openAccountSecret(account, env);
   if (!password) return { status: 400, body: { error: "iCloud credential missing" } };
 
   const raw = (evt.raw ?? {}) as Record<string, unknown>;

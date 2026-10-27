@@ -1,12 +1,16 @@
 // Microsoft 365 OAuth (read-only calendar access via Microsoft Graph).
 import { admin, json, logSync, signState, storeSecret, verifyState } from "../_shared/admin.ts";
 import { GRAPH, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../_shared/ms.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 function selfUrl(): string {
   return `${Deno.env.get("SUPABASE_URL")}/functions/v1/m365-oauth`;
 }
 
 Deno.serve(async (req) => {
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
+
   const url = new URL(req.url);
 
   try {

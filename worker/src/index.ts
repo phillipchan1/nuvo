@@ -1,10 +1,25 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import { handleAgent } from "./agentHttp.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
-import { bearerToken, cronAuthorized } from "./cron.ts";
+import { stayOnSupabase } from "./blocked.ts";
+import { handleCapture } from "./captureHttp.ts";
+import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import {
+  consumeCalendarSyncBatch,
+  handleCron,
+  handleScheduled,
+  handleUserRollover,
+  runCronJob,
+  type CalendarSyncMessage,
+  type QueueBatch,
+} from "./cronJobs.ts";
+import { closeSql, CONNECT_TIMEOUT_MS, openSql, raceTimeout, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
-import { CONNECT_TIMEOUT_MS, raceTimeout, type Sql } from "./db.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
+import type { RequestIo } from "./requestIo.ts";
+import type { AppEnv } from "./session.ts";
 import {
   BadRequestError,
   isDatabaseUnavailable,
@@ -14,12 +29,26 @@ import {
   requireJsonObject,
   requireUuid,
 } from "./http.ts";
-import { handleCalendarRoute, isCalendarRoute } from "./calendar/http.ts";
-import { isCalendarCronJob, runCalendarCron } from "./calendar/cron.ts";
-import { openRequestIo, scheduleClose, type RequestIo } from "./requestIo.ts";
+import {
+  EntitlementUnavailableError,
+  entitlementResponseBody,
+  readEntitlement,
+} from "./entitlement.ts";
+import { handleDay } from "./dayHttp.ts";
+import { handleInboundEmail } from "./inboundHttp.ts";
+import { handleMcp } from "./mcpHttp.ts";
+import { scheduleClose } from "./requestIo.ts";
+import { handleGithubActivity } from "./githubActivity.ts";
+import { handleRouteEvents } from "./routeEventsHttp.ts";
+import { requestIo, requireStore } from "./session.ts";
+import { registerCalendarRoutes } from "./calendar/http.ts";
+import { registerGoogleRoutes } from "./google/routes.ts";
+import { handleSlotMirror } from "./slotMirror.ts";
+import { handleTaskMirror } from "./taskMirror.ts";
+import { installPushFetchForTests, workerTestFetch } from "./pushDispatch.ts";
+import type { FetchLike } from "./lib/webpush.ts";
 import {
   applyPatch,
-  bootstrapUser,
   claimReminder,
   contacts,
   deleteOwned,
@@ -29,16 +58,18 @@ import {
   isPlannerTable,
   listOwned,
   listTaskLabels,
-  makeStore,
   rotateInboundToken,
   updateOwned,
   upsertOwned,
   type PlannerTable,
 } from "./store.ts";
 
-type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
-
 const app = new Hono<AppEnv>();
+
+/** Test-only: mock Google / CalDAV / web-push endpoints. */
+export function installWorkerFetchForTests(fn?: FetchLike): () => void {
+  return installPushFetchForTests(fn);
+}
 
 /** Clone — Workers Response headers are immutable; mutating them becomes a plain-text 500. */
 function withClonedHeaders(res: Response, extra: Record<string, string>): Response {
@@ -62,7 +93,10 @@ app.use("*", async (c, next) => {
  * itself have finished. Starting `sql.end()` from requireStore used to
  * kill queries still running in the route (CONNECTION_ENDED).
  */
-async function closeRequestIo(c: Context<AppEnv>, next: () => Promise<void>) {
+app.use("/api/*", closeIo);
+app.use("/functions/v1/*", closeIo);
+
+async function closeIo(c: Context<AppEnv>, next: () => Promise<void>) {
   try {
     await next();
   } finally {
@@ -72,17 +106,6 @@ async function closeRequestIo(c: Context<AppEnv>, next: () => Promise<void>) {
     scheduleClose(c, closing);
     await closing;
   }
-}
-
-app.use("/api/*", closeRequestIo);
-app.use("/functions/v1/*", closeRequestIo);
-
-async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
-  const existing = c.get("io");
-  if (existing) return existing;
-  const io = openRequestIo(c.env);
-  c.set("io", io);
-  return io;
 }
 
 function missingAsset(): Response {
@@ -101,8 +124,23 @@ app.get("/api/health", (c) =>
     ok: true,
     service: "nuvo",
     runtime: "cloudflare-workers",
+    write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
   }),
 );
+
+app.get("/api/maintenance", (c) =>
+  json(
+    {
+      write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
+      cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
+      cutover_flipped: cutoverFlipped(c.env?.CUTOVER_FLIPPED),
+      message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
+    },
+    200,
+    { ...OPEN_CORS, "Cache-Control": "no-store" },
+  ),
+);
+app.options("/api/maintenance", () => new Response("ok", { headers: OPEN_CORS }));
 
 async function sqlUnavailable(sql: Sql): Promise<boolean> {
   try {
@@ -172,7 +210,9 @@ async function sanitizeAuthResponse(res: Response, sql?: Sql): Promise<Response>
   });
 }
 
-async function requireStore(c: Context<AppEnv>) {
+async function requireSession(
+  c: Context<AppEnv>,
+): Promise<{ error: Response } | { user: { id: string; email?: string | null; emailVerified: boolean }; io: RequestIo }> {
   const io = await requestIo(c);
   let user;
   try {
@@ -184,15 +224,24 @@ async function requireStore(c: Context<AppEnv>) {
     throw err;
   }
   if (!user) return { error: json({ error: "unauthorized" }, 401, OPEN_CORS) };
-  const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
-    emailVerified: user.emailVerified,
-  });
-  return { store };
+  return { user, io };
+}
+
+async function requireWritableStore(c: Context<AppEnv>) {
+  const got = await requireStore(c);
+  if ("error" in got) return got;
+  if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
+    return {
+      error: json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS),
+    };
+  }
+  return got;
 }
 
 app.onError((err, c) => {
   if (err instanceof BadRequestError) return json({ error: "bad request" }, 400, OPEN_CORS);
   if (err instanceof SessionLookupError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
+  if (err instanceof EntitlementUnavailableError) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (isDatabaseUnavailable(err)) return json({ error: "service unavailable" }, 503, OPEN_CORS);
   if (postgresInputError(err)) return json({ error: "bad request" }, 400, OPEN_CORS);
   return json({ error: "internal error" }, 500, OPEN_CORS);
@@ -200,6 +249,45 @@ app.onError((err, c) => {
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
+
+/**
+ * Billing stays on Supabase. The session id is the preserved auth.users
+ * id — never a client-supplied owner, never an email remap.
+ */
+app.get("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  try {
+    const entitlement = await readEntitlement(c.env, got.user.id);
+    return json(entitlementResponseBody(entitlement), 200, OPEN_CORS);
+  } catch (err) {
+    if (err instanceof EntitlementUnavailableError) {
+      return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    }
+    throw err;
+  }
+});
+
+function entitlementWriteDenied(): Response {
+  return json({ error: "not found" }, 404, OPEN_CORS);
+}
+
+app.post("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.patch("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
+app.delete("/api/entitlement", async (c) => {
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return entitlementWriteDenied();
+});
 
 app.get("/api/data/task_labels", async (c) => {
   const got = await requireStore(c);
@@ -212,7 +300,7 @@ app.get("/api/data/task_labels", async (c) => {
 });
 
 app.post("/api/data/task_labels", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ task_id?: string; label_id?: string }>(c);
   if (!body.task_id || !body.label_id) return json({ error: "task_id and label_id required" }, 400, OPEN_CORS);
@@ -223,7 +311,7 @@ app.post("/api/data/task_labels", async (c) => {
 });
 
 app.delete("/api/data/task_labels", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const taskId = c.req.query("task_id");
   const labelId = c.req.query("label_id");
@@ -256,7 +344,7 @@ app.get("/api/data/:table/:id", async (c) => {
 app.post("/api/data/:table", async (c) => {
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await upsertOwned(got.store, table as PlannerTable, body);
@@ -267,7 +355,7 @@ app.post("/api/data/:table", async (c) => {
 app.patch("/api/data/:table/:id", async (c) => {
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
   const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
@@ -278,7 +366,7 @@ app.patch("/api/data/:table/:id", async (c) => {
 app.delete("/api/data/:table/:id", async (c) => {
   const table = c.req.param("table");
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const n = await deleteOwned(got.store, table, requireUuid(c.req.param("id")));
   if (!n) return json({ error: "not found" }, 404, OPEN_CORS);
@@ -286,7 +374,7 @@ app.delete("/api/data/:table/:id", async (c) => {
 });
 
 app.post("/api/rpc/apply_patch", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ p_table?: string; p_match?: Record<string, unknown>; p_patch?: Record<string, unknown> }>(c);
   if (!body.p_table || !body.p_match || !body.p_patch) {
@@ -309,14 +397,14 @@ app.post("/api/rpc/contacts", async (c) => {
 });
 
 app.post("/api/rpc/rotate_inbound_token", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const token = await rotateInboundToken(got.store);
   return json({ data: token }, 200, OPEN_CORS);
 });
 
 app.post("/api/rpc/claim_reminder", async (c) => {
-  const got = await requireStore(c);
+  const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = await readJson<{ reminder_key?: string; fire_at?: string }>(c);
   if (!body.reminder_key || !body.fire_at) {
@@ -326,55 +414,100 @@ app.post("/api/rpc/claim_reminder", async (c) => {
   return json({ data: ok }, ok ? 200 : 404, OPEN_CORS);
 });
 
-function notPorted(name: string): Response {
-  return json(
-    {
-      error: `${name} is not ported to the Worker yet`,
-      stay_on_supabase: true,
-    },
-    501,
-    OPEN_CORS,
-  );
+function refuseIfFrozen(c: Context<AppEnv>): Response | null {
+  if (!writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) return null;
+  return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
 }
 
-app.all("/api/cron/:job", async (c) => {
-  const token = bearerToken(c.req.header("authorization"));
-  if (!cronAuthorized(token, c.env.CRON_SECRET)) {
-    return json({ error: "unauthorized" }, 401, OPEN_CORS);
-  }
-  const job = c.req.param("job");
-  if (!isCalendarCronJob(job)) return notPorted(job);
-  const io = await requestIo(c);
-  const calendar = await runCalendarCron(io.sql, c.env, job);
-  if (calendar) return json(calendar.body, calendar.status, OPEN_CORS);
-  return notPorted(job);
+async function requirePlanner(
+  c: Context<AppEnv>,
+  raw?: Request,
+): Promise<{ userId: string } | { error: Response }> {
+  const got = await requireStore(c, raw);
+  if ("error" in got) return got;
+  return { userId: got.store.userId };
+}
+
+registerGoogleRoutes(app, {
+  requireUser: requirePlanner,
+  requestIo,
+  refuseIfFrozen,
 });
 
-app.all("/api/agent", () => notPorted("agent"));
-app.all("/api/mcp", () => notPorted("mcp"));
+registerCalendarRoutes(app, {
+  requireUser: requirePlanner,
+  requestIo,
+  refuseIfFrozen,
+});
 
-async function calendarOrStay(c: Context<AppEnv>, name: string): Promise<Response> {
-  if (!isCalendarRoute(name)) return notPorted(name);
-  return handleCalendarRoute(c, await requestIo(c), name);
+app.all("/api/cron/:job", (c) => handleCron(c));
+app.all("/api/github-activity", (c) => handleGithubActivity(c));
+app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
+app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
+app.all("/api/day", (c) => handleDay(c));
+app.all("/api/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
+app.all("/api/inbound-email", (c) => handleInboundEmail(c));
+app.all("/api/route-events", (c) => handleRouteEvents(c));
+
+app.all("/functions/v1/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
+app.all("/functions/v1/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
+app.all("/functions/v1/day", (c) => handleDay(c));
+app.all("/functions/v1/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
+app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
+app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
+app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
+app.all("/api/rollover", (c) => handleUserRollover(c));
+
+app.options("/api/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+
+function refuseMirrorGet(c: Context<AppEnv>): Response | null {
+  if (c.req.method === "GET" || c.req.method === "HEAD") {
+    return json({ error: "method not allowed" }, 405, OPEN_CORS);
+  }
+  return null;
 }
 
-for (const name of [
-  "m365-oauth",
-  "m365-sync",
-  "icloud-connect",
-  "icloud-sync",
-  "icloud-events",
-  "icloud-contacts",
-  "ics-subscribe",
-  "ics-sync",
-  "calendar-refresh",
-] as const) {
-  app.all(`/api/${name}`, (c) => calendarOrStay(c, name));
-}
+app.all("/api/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/functions/v1/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/api/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/functions/v1/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
+app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 
-app.all("/functions/v1/agent", () => notPorted("agent"));
-app.all("/functions/v1/mcp", () => notPorted("mcp"));
-app.all("/functions/v1/:name", (c) => calendarOrStay(c, c.req.param("name")));
+app.all("/functions/v1/:name", (c) => {
+  if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
+  return stayOnSupabase(c.req.param("name"));
+});
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);
@@ -395,15 +528,39 @@ async function fromAssets(c: { env: Env; req: { raw: Request; url: string } }): 
 app.all("/assets/*", (c) => fromAssets(c));
 app.all("*", (c) => fromAssets(c));
 
-async function scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  const io = openRequestIo(env);
+async function scheduled(
+  event: { cron: string },
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): Promise<void> {
+  if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
+  let sql: Sql | null = null;
   try {
-    const { runCalendarDispatch } = await import("./calendar/cron.ts");
-    await runCalendarDispatch(io.sql, env);
+    if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
+      try {
+        sql = openSql(env);
+      } catch {
+        sql = null;
+      }
+    }
+    await handleScheduled(event, env, (job) => runCronJob(job, env, sql));
   } finally {
-    ctx.waitUntil(io.close());
+    if (sql) ctx.waitUntil(closeSql(sql));
   }
 }
 
-Object.assign(app, { scheduled });
+function queue(
+  batch: QueueBatch<CalendarSyncMessage>,
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): void {
+  if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) {
+    for (const msg of batch.messages) msg.ack();
+    return;
+  }
+  ctx.waitUntil(consumeCalendarSyncBatch(batch, env));
+}
+
+Object.assign(app, { scheduled, queue });
+
 export default app;
