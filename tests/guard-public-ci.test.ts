@@ -1216,6 +1216,7 @@ describe("public-repo CI guard", () => {
     expect(checks).toMatch(/permissions:\n  contents: read/);
     expect(checks.match(/persist-credentials: false/g)?.length).toBe(2);
     expect(checks).not.toMatch(/branches-ignore:/);
+    expect(checks).toMatch(/id: test[\s\S]*DATABASE_URL: postgresql:\/\/postgres:postgres@127.0.0.1:5432\/nuvo/);
   });
 
   it("cutover docs name migration_tmp and the post-cutover drop", () => {
@@ -1225,7 +1226,15 @@ describe("public-repo CI guard", () => {
     expect(doc).toMatch(/cloudflare-migration\/migration_tmp\.sql/);
     expect(doc).toMatch(/SECURITY DEFINER/);
     expect(doc).toMatch(/migration_reader/);
-    expect(doc).toMatch(/DROP SCHEMA migration_tmp CASCADE/);
+    expect(doc).toMatch(/permission denied for schema auth/);
+    expect(doc).toMatch(/vault_tokens/);
+    expect(doc).not.toMatch(/supabase_admin/);
+    expect(doc).toMatch(/CREATE OR REPLACE/);
+    expect(doc).not.toMatch(/REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader/);
+    expect(doc).toMatch(/On PG17 a table-level REVOKE also clears that table's column ACLs/);
+    expect(doc).toMatch(/mode=dry-run/);
+    expect(doc).toMatch(/mode=cutover/);
+    expect(doc).toMatch(/DROP SCHEMA IF EXISTS migration_tmp CASCADE/);
     expect(doc).toMatch(/Engineer 3/);
     expect(doc).toMatch(/public,graphql_public/);
     expect(doc).not.toMatch(/dump is uploaded/);
@@ -1249,20 +1258,40 @@ describe("public-repo CI guard", () => {
     expect(sql).toContain(
       "SELECT i.id, i.user_id, i.provider::text, pg_catalog.jsonb_strip_nulls(pg_catalog.jsonb_build_object('sub', i.identity_data->>'sub', 'provider_id', i.identity_data->>'provider_id')), i.provider_id::text, i.created_at, i.updated_at FROM auth.identities i",
     );
-    expect(sql).toMatch(/SET search_path TO ''/);
+    expect(sql).toMatch(/SET search_path = pg_catalog, pg_temp/);
+    expect(sql).not.toMatch(/SET search_path TO ''/);
     expect(sql).toMatch(/ALTER FUNCTION migration_tmp\.auth_users\(\) OWNER TO postgres/);
     expect(sql).toMatch(/ALTER FUNCTION migration_tmp\.auth_identities\(\) OWNER TO postgres/);
     expect(sql).toMatch(/REVOKE ALL ON SCHEMA migration_tmp FROM PUBLIC/);
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION migration_tmp\.auth_users\(\)/);
     expect(sql).toMatch(/GRANT USAGE ON SCHEMA migration_tmp TO migration_reader/);
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION migration_tmp\.auth_users\(\) TO migration_reader/);
-    expect(sql).toMatch(/DROP SCHEMA migration_tmp CASCADE/);
+    expect(sql).not.toMatch(/GRANT USAGE ON SCHEMA auth TO postgres/);
+    expect(sql).not.toMatch(/GRANT SELECT[\s\S]*ON TABLE auth\.users TO postgres/);
+    expect(sql).not.toMatch(/GRANT SELECT[\s\S]*ON TABLE auth\.identities TO postgres/);
+    expect(sql).not.toMatch(/supabase_admin/);
+    expect(sql).not.toMatch(/GRANT USAGE ON SCHEMA auth TO migration_reader/);
+    expect(sql).not.toMatch(/REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader/);
+    expect(sql).not.toMatch(/COALESCE\([^;]*aclitem\[\]/);
+    expect(sql).toMatch(/CROSS JOIN LATERAL aclexplode\(n\.nspacl\)/);
+    expect(sql).toMatch(/CROSS JOIN LATERAL aclexplode\(c\.relacl\)/);
+    expect(sql).toMatch(/CROSS JOIN LATERAL aclexplode\(a\.attacl\)/);
+    expect(sql).toMatch(/SELECT \* FROM migration_tmp\.auth_grants/);
+    expect(sql).toMatch(/WHERE grantee = 'migration_reader'/);
+    expect(sql).toMatch(/migration_tmp\.auth_grants/);
+    expect(sql).toMatch(/DROP SCHEMA IF EXISTS migration_tmp CASCADE/);
     expect(sql).toMatch(/Engineer 3/);
     expect(sql).toMatch(/public,graphql_public/);
     expect(sql).toMatch(/has_function_privilege\('migration_reader'/);
     expect(sql).not.toMatch(/encrypted_password|recovery_token|confirmation_token/);
     const migrations = readFileSync(join(ROOT, "docs/cloudflare-migration/migration_tmp.sql"), "utf8");
     expect(migrations).toMatch(/NOT a supabase\/migrations file/);
+    const apply = readFileSync(join(ROOT, "tests/migration-tmp-apply.test.ts"), "utf8");
+    expect(apply).toMatch(/from "pg"/);
+    expect(apply).toMatch(/docs\/cloudflare-migration\/migration_tmp\.sql/);
+    expect(apply).toMatch(/docs\/cloudflare-migration\/vault_tokens\.sql/);
+    expect(apply).toMatch(/await db\.query\(authSql\)/);
+    expect(apply).toMatch(/await db\.query\(vaultSql\)/);
   });
 });
 

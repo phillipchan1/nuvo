@@ -50,8 +50,11 @@
 # late-committed lower id must still land. push_subscriptions stays in
 # the copy; resync deletes missing ids first, then upserts full source
 # rows (ON CONFLICT (id) DO UPDATE), counts only.
-# Dump refuses unless GET MAINTENANCE_URL reports cutover_armed, a gated
-# edge POST returns 503, and anon INSERT on a frozen table is denied.
+# mode=cutover dump refuses unless GET MAINTENANCE_URL reports
+# cutover_armed, a gated edge POST returns 503, and anon INSERT on a
+# frozen table is denied. mode=dry-run skips those preflights (no arm,
+# no freeze, no 503) and treats source-vs-snapshot drift and auth
+# parity (sign-ins during the run) as report-only.
 # freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
 #
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
@@ -309,7 +312,10 @@ jobs:
               anon_insert_privilege_sql,
               assert_cutover_armed,
               dump_exclude_args,
+              auth_parity_is_fatal,
+              dump_requires_freeze,
               edge_preflight_frozen,
+              is_dry_run_mode,
               parse_watermark,
               parse_watermark_line,
               post_status,
@@ -319,6 +325,7 @@ jobs:
               push_upsert_sql,
               resolve_edge_preflight_url,
               skipped_from_copy,
+              source_snapshot_is_fatal,
               SYNC_LOG_SEQUENCE_MARGIN,
               parse_labeled_count,
               compose_resync_script,
@@ -1074,8 +1081,11 @@ jobs:
               return parse_watermark_line(line)
 
           def cmd_dump() -> None:
-              require_cutover_armed()
-              require_write_freeze_preflight()
+              if dump_requires_freeze():
+                  require_cutover_armed()
+                  require_write_freeze_preflight()
+              else:
+                  print("dry-run: skipping armed/freeze preflight", flush=True)
               source = os.environ["SOURCE_DATABASE_URL"]
               dump_bin = os.environ["PG_DUMP"]
               restore_bin = os.environ["PG_RESTORE"]
@@ -1264,6 +1274,7 @@ jobs:
               psql(target, PUBLIC_USERS_SQL)
               print("auth parity (count + ordered md5 of exported columns)…", flush=True)
               auth_problems: list[str] = []
+              mode = os.environ.get("CUTOVER_MODE")
               for name, src, dst in auth_parity(source, target):
                   src_n, dst_n = src.get("n"), dst.get("n")
                   src_h, dst_h = src.get("hash"), dst.get("hash")
@@ -1272,9 +1283,11 @@ jobs:
                       flush=True,
                   )
                   if src_n != dst_n or not src_h or not dst_h or src_h != dst_h:
-                      auth_problems.append(
-                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
-                      )
+                      item = f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      if auth_parity_is_fatal(mode):
+                          auth_problems.append(item)
+                      else:
+                          print(f"dry-run: auth parity (report only) {item}", flush=True)
               if auth_problems:
                   die("auth count or content-hash mismatch — abort:\n  " + "\n  ".join(auth_problems))
               mark = load_sync_log_watermark(work)
@@ -1307,8 +1320,16 @@ jobs:
               src_hashes = parse_hashes(psql(source, sql, source=True, extra=["-tA"]))
               dst_hashes = parse_hashes(psql(target, sql, extra=["-tA"]))
               problems: list[str] = []
-              problems.extend(compare_to_snapshot("source", src_hashes, snapshot))
-              problems.extend(compare_to_snapshot("target", dst_hashes, snapshot))
+              mode = os.environ.get("CUTOVER_MODE")
+              source_drift = compare_to_snapshot("source", src_hashes, snapshot)
+              target_drift = compare_to_snapshot("target", dst_hashes, snapshot)
+              if source_snapshot_is_fatal(mode):
+                  problems.extend(source_drift)
+              elif source_drift:
+                  print("dry-run: source vs snapshot (report only)", flush=True)
+                  for item in source_drift:
+                      print(f"  {item}", flush=True)
+              problems.extend(target_drift)
               lines = [
                   "# Nuvo cutover checksum report",
                   "",
@@ -1336,9 +1357,22 @@ jobs:
                       and src_h == dst_h
                   )
                   if not ok:
-                      problems.append(
-                          f"{table}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      snap = snapshot.get(table) or {}
+                      target_matches_snap = (
+                          snap.get("n") == dst_n
+                          and bool(dst_h)
+                          and snap.get("hash") == dst_h
                       )
+                      if is_dry_run_mode(mode) and target_matches_snap:
+                          print(
+                              f"  {table}: source drifted vs snapshot (report only) "
+                              f"source={src_n}/{src_h} snapshot/target={dst_n}/{dst_h}",
+                              flush=True,
+                          )
+                      else:
+                          problems.append(
+                              f"{table}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                          )
                   lines.append(
                       f"| {table} | {src_n if src_n is not None else '?'} | {dst_n if dst_n is not None else '?'} | {src_h or '?'} | {dst_h or '?'} | {'yes' if ok else 'NO'} |"
                   )
@@ -1359,9 +1393,11 @@ jobs:
                       and src_h == dst_h
                   )
                   if not ok:
-                      problems.append(
-                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
-                      )
+                      item = f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      if auth_parity_is_fatal(mode):
+                          problems.append(item)
+                      else:
+                          print(f"dry-run: auth parity (report only) {item}", flush=True)
                   lines.append(
                       f"| {name} | {src_n if src_n is not None else '?'} | {dst_n if dst_n is not None else '?'} | {src_h or '?'} | {dst_h or '?'} | {'yes' if ok else 'NO'} |"
                   )

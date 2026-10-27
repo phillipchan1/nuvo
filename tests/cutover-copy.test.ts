@@ -378,6 +378,42 @@ describe("cutover-migrate.yml", () => {
     expect(COPY_PY).toMatch(/def assert_cutover_armed/);
   });
 
+  it("dry-run dump needs no freeze and never arms or 503s", () => {
+    expect(
+      py(
+        "from cutover_copy import is_dry_run_mode, dump_requires_freeze, source_snapshot_is_fatal, auth_parity_is_fatal; "
+        + "print(is_dry_run_mode('dry-run'), is_dry_run_mode('cutover'), is_dry_run_mode('DRY-RUN'), is_dry_run_mode(''), "
+        + "dump_requires_freeze('dry-run'), dump_requires_freeze('cutover'), "
+        + "source_snapshot_is_fatal('dry-run'), source_snapshot_is_fatal('cutover'), "
+        + "auth_parity_is_fatal('dry-run'), auth_parity_is_fatal('cutover'))",
+      ),
+    ).toBe("True False True False False True False True False True");
+    expect(COPY_PY).toMatch(/def dump_requires_freeze/);
+    expect(COPY_PY).toMatch(/def source_snapshot_is_fatal/);
+    expect(COPY_PY).toMatch(/def auth_parity_is_fatal/);
+    expect(WORKFLOW).toMatch(/dump_requires_freeze/);
+    expect(WORKFLOW).toMatch(/source_snapshot_is_fatal/);
+    expect(WORKFLOW).toMatch(/auth_parity_is_fatal/);
+    expect(WORKFLOW).toMatch(/dry-run: skipping armed\/freeze preflight/);
+    expect(WORKFLOW).toMatch(/dry-run: source vs snapshot \(report only\)/);
+    expect(WORKFLOW).toMatch(/dry-run: auth parity \(report only\)/);
+    expect(DOC).toMatch(/Auth parity[\s\S]*report-only in dry-run/);
+    const dumpIdx = WORKFLOW.indexOf("def cmd_dump()");
+    const nextDef = WORKFLOW.indexOf("\n          def ", dumpIdx + 1);
+    expect(dumpIdx).toBeGreaterThan(0);
+    const dumpFn = WORKFLOW.slice(dumpIdx, nextDef === -1 ? undefined : nextDef);
+    expect(dumpFn.indexOf("if dump_requires_freeze()")).toBeGreaterThan(-1);
+    expect(dumpFn.indexOf("if dump_requires_freeze()")).toBeLessThan(dumpFn.indexOf("require_cutover_armed()"));
+    expect(dumpFn.indexOf("if dump_requires_freeze()")).toBeLessThan(dumpFn.indexOf("require_write_freeze_preflight()"));
+    expect(dumpFn).toMatch(/dry-run: skipping armed\/freeze preflight/);
+    expect(dumpFn).not.toMatch(/CUTOVER_ARMED=1/);
+    expect(dumpFn).not.toMatch(/WRITE_FREEZE=1/);
+    expect(DOC).toMatch(/mode=dry-run[\s\S]*does \*\*not\*\* use this freeze|does \*\*not\*\* use this freeze/);
+    expect(DOC).toMatch(/`mode=cutover` only/);
+    expect(DOC).toMatch(/skips the armed \/ freeze \/ 503/);
+    expect(DOC).toMatch(/Source-vs-snapshot drift is report-only/);
+  });
+
   it("keeps sync_log structure and excludes its data from parity", () => {
     expect(WORKFLOW).toMatch(/COPY_SKIP_TABLES/);
     expect(WORKFLOW).toMatch(/exclude-table-data/);

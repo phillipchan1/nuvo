@@ -41,7 +41,7 @@
       "file": "checks.yml",
       "job": "checks",
       "id": "test",
-      "sha256": "f900087244f490973e53a8327bbd86fd4169934e633f99831776aab58f181850"
+      "sha256": "f73c6dbfb9ae1cada4c38fb121f4a648635b2d0b8b49d9b5a7563953b0dee8b7"
     },
     {
       "file": "checks.yml",
@@ -131,7 +131,7 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "write-helper",
-      "sha256": "54ff31c837bd98b877cc693208a182e4bba79c24a63b838f84a8297089979f3d"
+      "sha256": "cc022826d8064ace9afd0500fae7132c5b70f82afba8034bc9452b9a3fc24697"
     },
     {
       "file": "cutover-migrate.yml",
