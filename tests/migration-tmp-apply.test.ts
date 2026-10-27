@@ -89,6 +89,45 @@ function withDb(url: string, name: string): string {
   return parsed.href;
 }
 
+function extractCleanupSql(sql: string): string {
+  const lines: string[] = [];
+  let copying = false;
+  for (const line of sql.split("\n")) {
+    if (line === "--   BEGIN;") copying = true;
+    if (!copying) continue;
+    if (!line.startsWith("--")) {
+      throw new Error(`cleanup comment broke at: ${line}`);
+    }
+    lines.push(line.replace(/^--   /, "").replace(/^-- /, ""));
+    if (line === "--   COMMIT;") break;
+  }
+  if (lines[0] !== "BEGIN;" || lines[lines.length - 1] !== "COMMIT;") {
+    throw new Error("cleanup block must be BEGIN; … COMMIT;");
+  }
+  return lines.join("\n");
+}
+
+const REMAINING_READER_GRANTS_SQL = `
+SELECT
+  (SELECT COUNT(*)::bigint
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL aclexplode(c.relacl) e
+   JOIN pg_roles r ON r.oid = e.grantee
+   WHERE n.nspname = 'auth' AND r.rolname = 'migration_reader')
+  +
+  (SELECT COUNT(*)::bigint
+   FROM pg_attribute a
+   JOIN pg_class c ON c.oid = a.attrelid
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL aclexplode(a.attacl) e
+   JOIN pg_roles r ON r.oid = e.grantee
+   WHERE n.nspname = 'auth'
+     AND a.attnum > 0 AND NOT a.attisdropped
+     AND r.rolname = 'migration_reader') AS n,
+  has_schema_privilege('migration_reader', 'auth', 'USAGE') AS usage
+`;
+
 const adminUrl = resolveAdminUrl();
 const required = Boolean(process.env.GITHUB_ACTIONS);
 const describeApply = adminUrl || required ? describe : describe.skip;
@@ -177,5 +216,24 @@ describeApply("applies migration_tmp.sql and vault_tokens.sql on Postgres", () =
 
     const grants = await db.query<{ n: string }>("SELECT COUNT(*)::bigint AS n FROM migration_tmp.auth_grants");
     expect(Number(grants.rows[0]?.n)).toBeGreaterThan(0);
+
+    await db.query("DROP TABLE auth.flow_state");
+    const cleanup = extractCleanupSql(authSql);
+    try {
+      await db.query(cleanup);
+      await db.query(cleanup);
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
+      expect(code).not.toBe("42501");
+      throw err;
+    }
+
+    const leftover = await db.query<{ n: string; usage: boolean }>(REMAINING_READER_GRANTS_SQL);
+    expect(leftover.rows[0]?.n).toBe("0");
+    expect(leftover.rows[0]?.usage).toBe(false);
+    const schema = await db.query<{ n: string }>(
+      "SELECT COUNT(*)::bigint AS n FROM pg_namespace WHERE nspname = 'migration_tmp'",
+    );
+    expect(schema.rows[0]?.n).toBe("0");
   });
 });
