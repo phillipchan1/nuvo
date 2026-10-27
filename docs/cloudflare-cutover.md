@@ -368,11 +368,12 @@ then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
 with the redacted psql error appended, rather than hanging the job).
 The resync script starts with `\set VERBOSITY sqlstate` and
 `SET client_min_messages = error` so the psql banner is
-`ERROR:  55P03:` with no message text (NOTICE / WARNING are suppressed;
-INFO cannot be). Only the resync target `psql` call classifies a
-retryable lock timeout; dump / restore / `pg_restore` always stop as a
-plain failure. The classifier takes the first `psql:<file>:<n>: ERROR:`
-banner and requires `ERROR:  55P03:` on that line; the table is the
+`ERROR:  55P03` with no message text (PG17 prints no colon after the
+code; NOTICE / WARNING are suppressed; INFO cannot be). Only the resync target
+`psql` call classifies a retryable lock timeout; dump / restore /
+`pg_restore` always stop as a plain failure. The classifier takes the
+first `psql:<file>:<n>: ERROR:` banner and requires `ERROR:  55P03` on
+that line (colon after the code is optional); the table is the
 script line that number maps to, not message text. Any INFO / NOTICE /
 WARNING / LOG / DEBUG banner before that ERROR is not retryable. A bare
 or `pg_restore` `ERROR:` line is not retryable.

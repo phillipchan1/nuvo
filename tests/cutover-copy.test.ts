@@ -113,7 +113,7 @@ describe("cutover_copy helpers", () => {
       + "print(is_retryable_lock_timeout('sync_log lock timed out after 10s — retry the resync (retryable)')); "
       + "print(is_retryable_lock_timeout('sync_log id collision: 1 incoming row(s) differ on Neon')); "
       + "print(is_retryable_lock_timeout('canceling statement due to statement timeout')); "
-      + "print(is_retryable_lock_timeout('psql:resync.sql:24: ERROR:  55P03:')); "
+      + "print(is_retryable_lock_timeout('psql:resync.sql:24: ERROR:  55P03')); "
       + "print(is_retryable_lock_timeout('DETAIL:  SQLSTATE 55P03 is mentioned')); "
       + "print(is_retryable_lock_timeout('prefix ERROR:  55P03: not at line start')); "
       + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
@@ -180,6 +180,23 @@ describe("cutover_copy helpers", () => {
     );
   });
 
+  it("accepts a PG17 sqlstate banner with no colon after 55P03", () => {
+    const out = py(
+      "from cutover_copy import first_psql_sqlstate, is_retryable_lock_timeout, table_from_resync_error, compose_resync_script; "
+      + "script = compose_resync_script(sync_copy_sql='\\\\copy cutover_sync_log_src (id) FROM \\'/tmp/s.csv\\' WITH CSV', push_copy_sql='\\\\copy cutover_push_rows (id) FROM \\'/tmp/p.csv\\' WITH CSV'); "
+      + "n = next(i for i, l in enumerate(script.splitlines(), 1) if 'LOCK TABLE public.sync_log' in l); "
+      + "bare = f'psql:resync.sql:{n}: ERROR:  55P03'; "
+      + "colon = f'psql:resync.sql:{n}: ERROR:  55P03:'; "
+      + "spaces = f'psql:resync.sql:{n}: ERROR:  55P03  '; "
+      + "print(is_retryable_lock_timeout(bare)); "
+      + "print(first_psql_sqlstate(bare)); "
+      + "print(table_from_resync_error(bare, script)); "
+      + "print(is_retryable_lock_timeout(colon)); "
+      + "print(is_retryable_lock_timeout(spaces))",
+    );
+    expect(out).toBe("True\n55P03\nsync_log\nTrue\nTrue");
+  });
+
   it("maps a sqlstate 55P03 banner to the table at that resync.sql line", () => {
     const out = py(
       "from cutover_copy import compose_resync_script, is_retryable_lock_timeout, table_from_resync_error, retryable_lock_timeout_stop; "
@@ -188,9 +205,9 @@ describe("cutover_copy helpers", () => {
       + "sync_n = next(i for i, l in enumerate(lines, 1) if 'LOCK TABLE public.sync_log' in l); "
       + "push_n = next(i for i, l in enumerate(lines, 1) if 'cutover_push_anti_join_delete()' in l); "
       + "upsert_n = next(i for i, l in enumerate(lines, 1) if 'cutover_push_upsert()' in l); "
-      + "sync_err = f'psql:resync.sql:{sync_n}: ERROR:  55P03:'; "
-      + "push_err = f'psql:resync.sql:{push_n}: ERROR:  55P03:'; "
-      + "upsert_err = f'psql:resync.sql:{upsert_n}: ERROR:  55P03:'; "
+      + "sync_err = f'psql:resync.sql:{sync_n}: ERROR:  55P03'; "
+      + "push_err = f'psql:resync.sql:{push_n}: ERROR:  55P03'; "
+      + "upsert_err = f'psql:resync.sql:{upsert_n}: ERROR:  55P03'; "
       + "print(is_retryable_lock_timeout(sync_err)); "
       + "print(table_from_resync_error(sync_err, script)); "
       + "print(is_retryable_lock_timeout(push_err)); "
@@ -439,7 +456,7 @@ describe("runbook", () => {
     expect(DOC).toMatch(/SQLSTATE `55P03`/);
     expect(DOC).toMatch(/names that table from the\s+resync\.sql line number, not `sync_log`/);
     expect(DOC).toMatch(/\\set VERBOSITY sqlstate/);
-    expect(DOC).toMatch(/ERROR:  55P03:/);
+    expect(DOC).toMatch(/ERROR:  55P03/);
     expect(DOC).toMatch(/Only the resync target/);
     expect(DOC).toMatch(/psql:<file>:<n>: ERROR:/);
     expect(DOC).toMatch(/client_min_messages = error/);

@@ -704,32 +704,50 @@ function classifyPsql(text: string, script = ""): { retryable: boolean; stop: st
   return { retryable: retryable === "True", table, stop: rest.join("\n") };
 }
 
-function sampleResyncScript(): string {
-  return py(
-    "from cutover_copy import compose_resync_script; "
-    + "print(compose_resync_script("
-    + "sync_copy_sql=r'\\copy cutover_sync_log_src (id) FROM \\'s.csv\\' WITH CSV',"
-    + "push_copy_sql=r'\\copy cutover_push_rows (id) FROM \\'p.csv\\' WITH CSV',"
-    + "), end='')",
+function writeLiveResync(dir: string): { script: string; file: string } {
+  const syncCsv = join(dir, "sync.csv");
+  const pushCsv = join(dir, "push.csv");
+  writeFileSync(syncCsv, "");
+  writeFileSync(pushCsv, "");
+  const script = py(
+    [
+      "from cutover_copy import compose_resync_script, SYNC_LOG_COLUMNS, PUSH_COLUMNS",
+      `sync_path = ${JSON.stringify(syncCsv)}`,
+      `push_path = ${JSON.stringify(pushCsv)}`,
+      "sync_cols = ', '.join(SYNC_LOG_COLUMNS)",
+      "push_cols = ', '.join(PUSH_COLUMNS)",
+      "print(compose_resync_script(",
+      "  sync_copy_sql=f\"\\\\copy cutover_sync_log_src ({sync_cols}) FROM '{sync_path}' WITH CSV\",",
+      "  push_copy_sql=f\"\\\\copy cutover_push_rows ({push_cols}) FROM '{push_path}' WITH CSV\",",
+      "), end='')",
+    ].join("\n"),
+  ).replaceAll("lock_timeout = '10s'", "lock_timeout = '400ms'");
+  const file = join(dir, "resync.sql");
+  writeFileSync(file, script);
+  return { script, file };
+}
+
+function psqlResync(file: string): { stderr: string; status: number | null } {
+  // Production: `psql -v ON_ERROR_STOP=1 -f` only. No `-v VERBOSITY=` —
+  // the file's `\set VERBOSITY sqlstate` must win.
+  const result = spawnSync(
+    "psql",
+    ["-v", "ON_ERROR_STOP=1", "-d", LIVE_PG_URL, "-f", file],
+    { encoding: "utf8" },
   );
+  return { stderr: (result.stderr || "").trim(), status: result.status };
 }
 
-function resyncLine(script: string, needle: string): number {
-  const n = script.split("\n").findIndex((line) => line.includes(needle));
-  if (n < 0) throw new Error(`missing ${needle}`);
-  return n + 1;
-}
-
-describe("live PostgreSQL lock timeout", () => {
+describe.sequential("live PostgreSQL lock timeout", () => {
   live("names push_subscriptions when another session holds row + exclusive locks", async () => {
     const locker = await connectLivePg();
-
-    const worker = new Client({ connectionString: LIVE_PG_URL });
-    await worker.connect();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-push-"));
     try {
       await locker.query("SELECT pg_advisory_lock(88110203)");
       await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
       await locker.query(PUSH_DDL);
+      await locker.query(SYNC_DDL);
       const id = "11111111-1111-1111-1111-111111111111";
       const user = "22222222-2222-2222-2222-222222222222";
       await locker.query(
@@ -741,36 +759,23 @@ describe("live PostgreSQL lock timeout", () => {
       await locker.query("SELECT id FROM public.push_subscriptions WHERE id = $1 FOR UPDATE", [id]);
       await locker.query("LOCK TABLE public.push_subscriptions IN ACCESS EXCLUSIVE MODE");
 
-      const loadSqlText = py("from cutover_copy import push_load_rows_sql; print(push_load_rows_sql())");
-      for (const part of loadSqlText.split(/;\n(?=CREATE )/)) {
-        await worker.query(part);
-      }
-      await worker.query("SET lock_timeout = '400ms'");
-      const deleteSql = py("from cutover_copy import push_anti_join_delete_sql; print(push_anti_join_delete_sql())");
-      let err: { code?: string; message: string } | null = null;
-      try {
-        await worker.query(deleteSql);
-        throw new Error("expected push_subscriptions lock timeout");
-      } catch (caught) {
-        if (caught instanceof Error && caught.message === "expected push_subscriptions lock timeout") throw caught;
-        err = caught as { code?: string; message: string };
-      }
-      expect(err?.code).toBe("55P03");
-      expect(err?.message).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
-      expect(err?.message).not.toMatch(/sync_log lock timed out/);
+      const { script, file } = writeLiveResync(dir);
+      expect(script).toMatch(/^\\set VERBOSITY sqlstate/m);
+      expect(script).toMatch(/SET client_min_messages = error/);
+      expect(script).toMatch(/lock_timeout = '400ms'/);
+      expect(script).not.toMatch(/lock_timeout = '10s'/);
 
-      const script = sampleResyncScript();
-      const banner = `psql:resync.sql:${resyncLine(script, "cutover_push_anti_join_delete()")}: ERROR:  55P03:`;
-      const classified = classifyPsql(banner, script);
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+55P03(?::|[ \t]*$)/m);
+
+      const classified = classifyPsql(stderr, script);
       expect(classified.retryable).toBe(true);
       expect(classified.table).toBe("push_subscriptions");
       expect(classified.stop).toMatch(/^push_subscriptions lock timed out/);
       expect(classified.stop).not.toMatch(/sync_log lock timed out/);
-
-      const defaultPsql = `ERROR:  canceling statement due to lock timeout\nCONTEXT:  SQL statement ${JSON.stringify(deleteSql)}`;
-      expect(classifyPsql(defaultPsql).retryable).toBe(false);
     } finally {
-      await worker.end().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
       try {
         await locker.query("ROLLBACK");
       } catch {
@@ -778,22 +783,23 @@ describe("live PostgreSQL lock timeout", () => {
       }
       try {
         await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
       } catch {
         /* session may be aborted */
       }
       await locker.query("SELECT pg_advisory_unlock(88110203)").catch(() => undefined);
       await locker.end().catch(() => undefined);
     }
-  });
+  }, 20_000);
 
   live("names sync_log when another session holds the table exclusive", async () => {
     const locker = await connectLivePg();
-
-    const worker = new Client({ connectionString: LIVE_PG_URL });
-    await worker.connect();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-sync-"));
     try {
       await locker.query("SELECT pg_advisory_lock(88110204)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
       await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(PUSH_DDL);
       await locker.query(SYNC_DDL);
       await locker.query(
         `INSERT INTO public.sync_log (provider, operation, status) VALUES ('google', 'sync', 'ok')`,
@@ -802,34 +808,21 @@ describe("live PostgreSQL lock timeout", () => {
       await locker.query("SELECT id FROM public.sync_log FOR UPDATE");
       await locker.query("LOCK TABLE public.sync_log IN ACCESS EXCLUSIVE MODE");
 
-      await worker.query("BEGIN");
-      const lockSql = py("from cutover_copy import sync_log_lock_sql; print(sync_log_lock_sql())").replace(
-        "SET LOCAL lock_timeout = '10s';",
-        "SET LOCAL lock_timeout = '400ms';",
-      );
-      let err: { code?: string; message: string } | null = null;
-      try {
-        for (const part of lockSql.split(/;\n(?=DO )/)) {
-          await worker.query(part);
-        }
-        throw new Error("expected sync_log lock timeout");
-      } catch (caught) {
-        if (caught instanceof Error && caught.message === "expected sync_log lock timeout") throw caught;
-        err = caught as { code?: string; message: string };
-      }
-      expect(err?.code).toBe("55P03");
-      expect(err?.message).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
-      expect(err?.message).not.toMatch(/push_subscriptions lock timed out/);
+      const { script, file } = writeLiveResync(dir);
+      expect(script).toMatch(/^\\set VERBOSITY sqlstate/m);
+      expect(script).toMatch(/lock_timeout = '400ms'/);
 
-      const script = sampleResyncScript();
-      const banner = `psql:resync.sql:${resyncLine(script, "LOCK TABLE public.sync_log")}: ERROR:  55P03:`;
-      const classified = classifyPsql(banner, script);
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+55P03(?::|[ \t]*$)/m);
+
+      const classified = classifyPsql(stderr, script);
       expect(classified.retryable).toBe(true);
       expect(classified.table).toBe("sync_log");
       expect(classified.stop).toMatch(/^sync_log lock timed out/);
+      expect(classified.stop).not.toMatch(/push_subscriptions lock timed out/);
     } finally {
-      await worker.query("ROLLBACK").catch(() => undefined);
-      await worker.end().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
       try {
         await locker.query("ROLLBACK");
       } catch {
@@ -837,13 +830,14 @@ describe("live PostgreSQL lock timeout", () => {
       }
       try {
         await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
       } catch {
         /* session may be aborted */
       }
       await locker.query("SELECT pg_advisory_unlock(88110204)").catch(() => undefined);
       await locker.end().catch(() => undefined);
     }
-  });
+  }, 20_000);
 
   live("does not treat 23505 DETAIL or RAISE EXCEPTION smuggled 55P03 as retryable", async () => {
     const locker = await connectLivePg();

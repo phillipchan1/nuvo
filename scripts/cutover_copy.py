@@ -217,9 +217,10 @@ def strip_psql_meta(sql: str) -> str:
 
 def sync_log_load_sql() -> str:
     # Session-level so CREATE TEMP / \\copy (before BEGIN) cannot hang either.
-    # VERBOSITY sqlstate so the -f banner is `ERROR:  55P03:` with no
-    # message text. client_min_messages = error is the first SQL statement
-    # so NOTICE / WARNING never print (INFO cannot be suppressed).
+    # VERBOSITY sqlstate so the -f banner is `ERROR:  55P03` with no
+    # message text (PG17 prints no colon after the code).
+    # client_min_messages = error is the first SQL statement so NOTICE /
+    # WARNING never print (INFO cannot be suppressed).
     return (
         psql_verbosity_sql() + "\n"
         + "SET client_min_messages = error;\n"
@@ -346,21 +347,31 @@ def sync_log_collision_guard_sql() -> str:
 
 
 # Resync is `psql -f` + VERBOSITY sqlstate: a real banner is
-# `psql:<file>:<n>: ERROR:  55P03:` with no message. Bare / pg_restore
-# ERROR lines never count. Fail-closed: any INFO/NOTICE/WARNING/LOG/DEBUG
-# banner before the first ERROR means the stream was spoofable — None.
+# `psql:<file>:<n>: ERROR:  55P03` with no message (PG17 prints no
+# colon after the code). Bare / pg_restore ERROR lines never count.
+# Fail-closed: any INFO/NOTICE/WARNING/LOG/DEBUG banner before the
+# first ERROR means the stream was spoofable — None.
 PSQL_PRE_ERROR = re.compile(
-    r"^psql:[^:\n]+:\d+: (INFO|NOTICE|WARNING|LOG|DEBUG\d?):"
+    r"^psql:[^:\n]+:\d+: (INFO|NOTICE|WARNING|LOG|DEBUG\d?):",
+    re.MULTILINE,
 )
-FIRST_ERROR_BANNER = re.compile(r"^psql:[^:\n]+:\d+: ERROR:")
-BARE_OR_RESTORE_ERROR = re.compile(r"^(?:ERROR:|pg_restore: error:)")
+FIRST_ERROR_BANNER = re.compile(r"^psql:[^:\n]+:\d+: ERROR:", re.MULTILINE)
+BARE_OR_RESTORE_ERROR = re.compile(
+    r"^(?:ERROR:|pg_restore: error:)",
+    re.MULTILINE,
+)
 RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
-    r"^psql:[^:\n]+:\d+: ERROR:\s+55P03:"
+    r"^psql:[^:\n]+:\d+: ERROR:\s+55P03(?::|[ \t]*$)",
+    re.MULTILINE,
 )
 FIRST_PSQL_ERROR_SQLSTATE = re.compile(
-    r"^psql:[^:\n]+:\d+: ERROR:\s+([0-9A-Z]{5}):"
+    r"^psql:[^:\n]+:\d+: ERROR:\s+([0-9A-Z]{5})(?::|[ \t]*$)",
+    re.MULTILINE,
 )
-PSQL_ERROR_LINE_NO = re.compile(r"^psql:[^:\n]+:(\d+): ERROR:\s+55P03:")
+PSQL_ERROR_LINE_NO = re.compile(
+    r"^psql:[^:\n]+:(\d+): ERROR:\s+55P03(?::|[ \t]*$)",
+    re.MULTILINE,
+)
 _RESYNC_PUSH_LINE = re.compile(
     r"cutover_push_|pg_temp\.cutover_push_|public\.push_subscriptions"
 )
