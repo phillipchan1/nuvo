@@ -345,8 +345,11 @@ try {
     15000,
     "foreign id",
   );
-  ok(steal.status >= 400 && steal.status < 500, `POST other owner's id: HTTP ${steal.status} (4xx, not 500)`);
-  ok((await steal.clone().text()).includes("hyperdrive") === false, "foreign id: no internal host");
+  const stealText = await steal.clone().text();
+  const stealBody = JSON.parse(stealText || "{}") as { data?: { id?: string } };
+  ok(steal.status === 200, `POST other owner's id: HTTP ${steal.status} (new owned row, not 500)`);
+  ok(stealText.includes("hyperdrive") === false, "foreign id: no internal host");
+  ok(stealBody.data?.id !== taskId, "foreign id: did not take A's id");
   const aReadSteal = await withTimeout(
     request(`/api/data/tasks/${taskId}`, {
       headers: { Authorization: `Bearer ${a.token}` },
@@ -481,6 +484,11 @@ try {
     "cron",
   );
   ok(cron.status === 501, `cron authorized: HTTP ${cron.status}`);
+
+  const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
+  ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);
+  const maintenanceBody = (await maintenance.json()) as { write_freeze?: boolean };
+  ok(maintenanceBody.write_freeze === false, "preview write_freeze is off");
 } finally {
   await worker?.stop();
 }

@@ -12,21 +12,18 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "src/index.ts",
-    "src/auth.ts",
-    "src/authUrl.ts",
-    "src/cors.ts",
-    "src/cron.ts",
-    "src/db.ts",
-    "src/env.ts",
-    "src/http.ts",
-    "src/requestIo.ts",
-    "src/store.ts",
-    "src/appleIdentity.ts",
-    "src/deleteAccount.ts",
-    "src/lib/authMap.ts",
-    "src/lib/billingRead.ts",
-    "src/lib/secrets.ts"
+    "src/**/*.ts",
+    "../supabase/functions/_shared/dayShape.ts",
+    "../supabase/functions/_shared/mcp.ts",
+    "../supabase/functions/_shared/connectionScopes.ts",
+    "../supabase/functions/_shared/inboundEmail.ts",
+    "../supabase/functions/agent/toolDefs.ts",
+    "../supabase/functions/agent/loop.ts",
+    "../supabase/functions/agent/turn.ts",
+    "../supabase/functions/agent/prompt.ts",
+    "../supabase/functions/agent/suggestions.ts",
+    "../supabase/functions/agent/sanitizeReply.ts",
+    "../supabase/functions/agent/contextShape.ts"
   ],
   "exclude": ["src/*.check.ts", "src/isolationDb.ts", "src/pgliteSql.ts"]
 }

@@ -2,6 +2,7 @@
 // Validates the URL points at a real calendar, stores it in Vault, creates the
 // calendar_accounts row, then kicks an immediate sync so events appear at once.
 import { admin, handleOptions, json, logSync, requireUser, storeSecret } from "../_shared/admin.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 function isBlockedHost(host: string): boolean {
   // Lightweight SSRF guard: only public https feeds, never internal targets.
@@ -16,6 +17,8 @@ function isBlockedHost(host: string): boolean {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

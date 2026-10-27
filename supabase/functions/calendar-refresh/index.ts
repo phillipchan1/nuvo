@@ -1,10 +1,13 @@
 // Manual calendar pull — authenticated users can refresh on demand instead of
 // waiting for webhooks or the 5-minute poll.
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const user = await requireUser(req);

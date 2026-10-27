@@ -19,6 +19,7 @@
 //   disconnect { sourceId }         → delete the source (cascades units+bindings)
 
 import { admin, handleOptions, json, requireUser, readSecret, storeSecret, logSync } from "../_shared/admin.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 const GH = "https://api.github.com";
 const ghHeaders = (token: string) => ({
@@ -166,6 +167,8 @@ function isServiceRole(req: Request): boolean {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
   try {
     const body = await req.json().catch(() => ({}));
     const action: string = body.action ?? "sync";

@@ -11,6 +11,7 @@ import { admin, handleOptions, json, logSync, readSecret } from "../_shared/admi
 import { discoverAddressBooks, fetchContacts } from "../_shared/carddav.ts";
 import { type DirectoryContact, writeContacts } from "../_shared/contacts.ts";
 import { loadAccountsPaged } from "../_shared/syncSchedule.ts";
+import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 interface IcloudAccount {
   id: string;
@@ -54,6 +55,8 @@ async function syncAccount(account: IcloudAccount): Promise<number> {
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
+  const frozen = refuseFrozenWrite(req);
+  if (frozen) return frozen;
 
   try {
     const { accountId } = await req.json().catch(() => ({}));

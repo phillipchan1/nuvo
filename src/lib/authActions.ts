@@ -1,4 +1,5 @@
 import { workersEnabled } from "./backend";
+import { writeWasEntitled } from "./subscription";
 import { supabase } from "./supabase";
 
 type AuthErr = { message: string } | null;
@@ -38,7 +39,9 @@ export async function verifyEmailOtp(email: string, token: string): Promise<{ er
 
 export async function signOut(): Promise<{ error: AuthErr }> {
   if (workersEnabled) {
-    const { createNuvoAuthClient } = await import("./authClient");
+    const { clearSignedBearer, createNuvoAuthClient } = await import("./authClient");
+    writeWasEntitled(false);
+    clearSignedBearer();
     const res = await createNuvoAuthClient().signOut();
     return { error: res.error ? { message: res.error.message || "Sign-out failed" } : null };
   }

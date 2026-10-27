@@ -95,13 +95,13 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 
 | Function | Auth | Billing / webhook | Dual-path this PR? |
 |---|---|---|---|
-| `agent` | User JWT | no | Route alias only (handler still Deno/Supabase) |
+| `agent` | User JWT | no | **Worker/Neon** (session scoped) |
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
 | `apple-identity` | User JWT | no | Dual-path (Worker + Better Auth Apple provider) |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
 | `calendar-refresh` | User JWT | no | Stay |
-| `capture` | Connection bearer | no | Stay |
-| `day` | User JWT | no | Stay |
+| `capture` | Connection bearer | no | **Worker/Neon** (connection hash) |
+| `day` | User JWT | no | **Worker/Neon** |
 | `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if it still bills) | Dual-path |
 | `github-activity` | JWT or service role | no | Stay |
 | `google-contacts` | JWT / service | no | Stay |
@@ -112,13 +112,13 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `iap-catalog` | Public | no | Stay |
 | `icloud-*` | JWT / service | no | Stay |
 | `ics-subscribe` / `ics-sync` | JWT / service | no | Stay |
-| `inbound-email` | Svix + inbound token | no | Stay |
+| `inbound-email` | Svix + inbound token | no | **Worker/Neon** |
 | `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
-| `mcp` | Connection bearer | no | Route alias only |
+| `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `push-dispatch` | Service role cron | no | Stay |
 | `referral-code` | User JWT | Stripe | Stay |
-| `rollover` | Service role cron | no | Stay |
-| `route-events` | User JWT | no | Stay |
+| `rollover` | Session or `CRON_SECRET` | no | **Worker/Neon** (session = that user; cron iterates `users`) |
+| `route-events` | User JWT | no | **Worker/Neon** |
 | `slot-mirror` / `task-mirror` | JWT / service | no | Stay |
 | `stripe-checkout` / `stripe-portal` | User JWT | **Stripe** | **Stay — do not touch** |
 | `stripe-webhook` | Stripe signature | **Stripe** | **Stay — do not touch** |
@@ -144,7 +144,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `calendar_accounts` | `useCalendar.ts`, `SettingsModal.tsx` |
 | `external_events` | `useCalendar.ts`, `useAgentRecords.ts`, `lib/eventSearch.ts` |
 | `event_domain_routing` | `useEventRouting.ts`, `useEventRouter.ts` |
-| `subscriptions` | `useSubscription.ts` |
+| `subscriptions` | `useSubscription.ts` via `lib/entitlementRead.ts` — PostgREST today; `GET /api/entitlement` when `VITE_API_BASE_URL` is set |
 | `user_settings` | `useSettings.ts` |
 | `connections` | `AppsDevicesPane.tsx`, `useWatchSession.ts` |
 | `activity_*` | `useActivity.ts` |
@@ -190,10 +190,11 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 
 External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker has no
-`scheduled` handler. `CRON_SECRET` is compared in constant time on
-`/api/cron/:job` — see [`cloudflare-cutover.md`](../cloudflare-cutover.md)
-§ Crons stay off the Worker.
+**Vercel crons:** none (`vercel.json` has no `crons`). The Worker now has
+Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
+`/api/cron/:job` still requires `CRON_SECRET`. Unported jobs stay 501.
+Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` — see
+[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---
 
@@ -221,13 +222,19 @@ No automated `supabase db push` or `functions deploy` in CI.
 - Better Auth (email OTP + email/password for App Review / dev)
 - Planner REST: tasks, domains, projects, initiatives, key_results, slots, labels, recurrences, record_comments, week_reviews, sprints, reminders, event_domain_routing, user_settings
 - `apply_patch`, `contacts`, `rotate_inbound_token`, `claim_reminder`
-- `/functions/v1/agent` and `/functions/v1/mcp` **aliases** (501 until those handlers move)
+- `/functions/v1/agent` and `/functions/v1/mcp` (session / connection scoped on Neon)
+- `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
+- Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune` (iterate `users`)
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Friend-code minting (`referral-code`) is **not** ported; the share block is disabled on the flag-on Billing pane. Live check: [`billing-live-check.md`](./billing-live-check.md)
+
+See [`route-inventory.md`](./route-inventory.md) for the full table.
 
 **Stay on Supabase until a later cutover**
 
-- Billing webhooks and writers (Stripe, Apple IAP, StoreKit)
-- Calendar OAuth, sync, mirrors, Vault refresh tokens
-- Capture / MCP bearer, inbound email, push-dispatch cron
+- Billing webhooks and writers (Stripe, Apple IAP, StoreKit) — **flagged**: they also write `subscriptions` / `stripe_webhook_events` / `apple_webhook_events`, which stay on Supabase and are excluded from the copy set
+- Calendar OAuth, sync, mirrors, Vault refresh tokens — **flagged**: they write `calendar_accounts` / `external_events` / `tasks.google_event_id` that move to Neon (sealed token columns exist; routes still 501 except calendar-dispatch enqueue)
+- Push-dispatch cron — **flagged**: reads user-data tables moving to Neon
+- Capture / MCP bearer and inbound email are **ported** (connection hash / inbound token on Neon)
 - Realtime broadcast
 - `handle_new_user` on `auth.users`
 - Google / Apple identity linking as GoTrue providers (Worker has email paths only)

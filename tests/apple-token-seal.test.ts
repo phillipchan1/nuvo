@@ -4,7 +4,7 @@ import {
   APPLE_TOKEN_SEAL_ERROR,
   persistAppleProfileAndToken,
 } from "../worker/src/appleIdentity.ts";
-import { sealTokenOrThrow, TokenSealError } from "../worker/src/lib/secrets.ts";
+import { parseTokenKeyring, TokenCryptoError } from "../worker/src/secrets.ts";
 import type { Store } from "../worker/src/store.ts";
 
 const TOKEN = "rt_apple_refresh_do_not_store";
@@ -36,11 +36,11 @@ describe("Apple refresh token is never stored in plaintext", () => {
     vi.restoreAllMocks();
   });
 
-  it("sealTokenOrThrow fails closed when TOKEN_ENC_KEY_V1 is unset or invalid", async () => {
-    await expect(sealTokenOrThrow(undefined, TOKEN, "apple_identities:u:u")).rejects.toBeInstanceOf(TokenSealError);
-    await expect(sealTokenOrThrow("", TOKEN, "apple_identities:u:u")).rejects.toBeInstanceOf(TokenSealError);
-    await expect(sealTokenOrThrow("not-a-32-byte-key", TOKEN, "apple_identities:u:u")).rejects.toBeInstanceOf(
-      TokenSealError,
+  it("parseTokenKeyring fails closed when TOKEN_ENC_KEY_V1 is unset or invalid", async () => {
+    await expect(parseTokenKeyring({})).rejects.toBeInstanceOf(TokenCryptoError);
+    await expect(parseTokenKeyring({ TOKEN_ENC_KEY_V1: "" })).rejects.toBeInstanceOf(TokenCryptoError);
+    await expect(parseTokenKeyring({ TOKEN_ENC_KEY_V1: "not-a-32-byte-key" })).rejects.toBeInstanceOf(
+      TokenCryptoError,
     );
   });
 
@@ -81,12 +81,16 @@ describe("Apple refresh token is never stored in plaintext", () => {
     expect(calls.some((c) => c.values.some((v) => v instanceof Uint8Array))).toBe(true);
   });
 
-  it("the persist path never hands the refresh token to Better Auth account", () => {
+  it("the persist path uses A's seal helpers and never hands the token to Better Auth account", () => {
     const apple = readFileSync("worker/src/appleIdentity.ts", "utf8");
     const store = readFileSync("worker/src/store.ts", "utf8");
-    expect(apple).toContain("sealTokenOrThrow");
-    expect(apple).toContain("TokenSealError");
+    const secrets = readFileSync("worker/src/secrets.ts", "utf8");
+    expect(apple).toContain("parseTokenKeyring");
+    expect(apple).toContain("sealToken");
+    expect(apple).toContain("TokenCryptoError");
+    expect(apple).not.toContain("lib/secrets");
     expect(apple).not.toMatch(/linkOwnedAppleAccount\([^;]*refreshToken/);
+    expect(secrets).toContain("TOKEN_ENC_KEY_V1 missing");
     const start = store.indexOf("export async function linkOwnedAppleAccount");
     const end = store.indexOf("export async function ownedAppleRefreshToken");
     expect(store.slice(start, end)).not.toMatch(/refreshToken/);

@@ -7,6 +7,7 @@
 // measurable Key Results, each framed from a baseline so the app reads the Gain,
 // not just the gap. The model proposes; the human adjudicates each result.
 
+import { assertWritable } from "./maintenance";
 import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
 import {
   domainById,
@@ -146,6 +147,7 @@ export async function draftOKRs(opts: {
 }): Promise<OKRDraft> {
   const prompt = buildPrompt(opts.d, opts.item, opts.answers ?? []);
 
+  await assertWritable();
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token ?? supabaseAnonKey;
   const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {

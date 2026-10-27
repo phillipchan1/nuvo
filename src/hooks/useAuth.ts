@@ -87,7 +87,10 @@ export function useAuth() {
           const token = signedBearerToken() ?? signed;
           if (token) persistSignedBearer(token);
           if (!data?.user || !token) {
-            setSession(null);
+            setSession((prev) => {
+              if (prev) writeWasEntitled(false);
+              return null;
+            });
             return;
           }
           const expiresAt = data.session?.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);

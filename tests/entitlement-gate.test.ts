@@ -112,7 +112,7 @@ describe("resolveEntitlementView", () => {
  * to `status`, which is a real column, and `plan_source` is a real column too.
  */
 describe("the gating subscription select", () => {
-  const source = readFileSync(new URL("../src/hooks/useSubscription.ts", import.meta.url).pathname, "utf8");
+  const source = readFileSync(new URL("../src/lib/entitlementRead.ts", import.meta.url).pathname, "utf8");
 
   it("asks PostgREST only for physical columns", () => {
     const selects = [...source.matchAll(/\.select\((["'`])([^"'`]*)\1\)/g)].map((m) => m[2]);
@@ -122,7 +122,7 @@ describe("the gating subscription select", () => {
       for (const computed of ["entitled", "is_entitled", "plan"]) {
         expect(
           fields,
-          `useSubscription selects the computed alias \`${computed}\`. It is a SQL ` +
+          `the PostgREST entitlement read selects the computed alias \`${computed}\`. It is a SQL ` +
             "function, so a database missing it 400s this query and the whole app " +
             "goes down. Read the rule from _shared/planRules.ts instead.",
         ).not.toContain(computed);

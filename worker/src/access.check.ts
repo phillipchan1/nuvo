@@ -18,6 +18,8 @@ import {
   insertProject,
   insertTask,
   insertTaskLabel,
+  listDayScheduledTasks,
+  listDaySlots,
   listOwned,
   listTaskLabels,
   makeStore,
@@ -29,9 +31,30 @@ import {
   updateSettingsTheme,
   updateTaskTitle,
   upsertOwned,
-  getOwnedAppleIdentity,
   appleUserIdTakenByOther,
-  upsertOwnedAppleIdentity,
+  deleteOwnedCalendarAccount,
+  getOwnedActivitySource,
+  getOwnedAppleIdentity,
+  getOwnedCalendarAccount,
+  getOwnedExternalEvent,
+  insertActivityBinding,
+  insertActivitySource,
+  insertActivityUnit,
+  insertCalendarAccount,
+  insertConnection,
+  insertExternalEvent,
+  insertInboundEmail,
+  insertPushSubscription,
+  listOwnedActivityBindings,
+  listOwnedActivitySources,
+  listOwnedActivityUnits,
+  listOwnedCalendarAccounts,
+  listOwnedConnections,
+  listOwnedExternalEvents,
+  listOwnedInboundEmails,
+  listOwnedPushSubscriptions,
+  listOwnedSyncLog,
+  upsertAppleIdentity,
   type PlannerTable,
 } from "./store.ts";
 
@@ -96,6 +119,19 @@ const tasksB = await listOwned(storeB, "tasks");
 ok(tasksA.length === 1 && tasksA[0]?.id === TASK_A, "listOwned tasks: A sees only own");
 ok(!tasksA.some((t) => t.id === TASK_B), "listOwned tasks: A cannot list B");
 ok(tasksB.length === 1 && tasksB[0]?.id === TASK_B, "listOwned tasks: B sees only own");
+
+const DAY_START = "2026-10-25T00:00:00.000Z";
+const DAY_END = "2026-10-28T00:00:00.000Z";
+const SLOT_A = "aaaaaaaa-9999-4000-8000-000000000001";
+const dayTasksA = await listDayScheduledTasks(storeA, DAY_START, DAY_END);
+ok(dayTasksA.length === 1 && dayTasksA[0]?.id === TASK_A, "listDayScheduledTasks: A sees only own in-window task");
+ok(!dayTasksA.some((t) => t.id === TASK_B), "listDayScheduledTasks: A cannot see B");
+const dayTasksB = await listDayScheduledTasks(storeB, DAY_START, DAY_END);
+ok(dayTasksB.length === 1 && dayTasksB[0]?.id === TASK_B, "listDayScheduledTasks: B sees only own in-window task");
+ok(!dayTasksB.some((t) => t.id === TASK_A), "listDayScheduledTasks: B cannot see A");
+const daySlotsA = await listDaySlots(storeA, DAY_START, DAY_END);
+ok(daySlotsA.length === 1 && daySlotsA[0]?.id === SLOT_A, "listDaySlots: A sees only own");
+ok(!daySlotsA.some((s) => s.id === B_ROW.slots), "listDaySlots: A cannot see B");
 
 ok((await getOwned(storeA, "tasks", TASK_A))?.id === TASK_A, "getOwned: A can read own task");
 ok((await getOwned(storeA, "tasks", TASK_B)) === null, "getOwned: A asking for B task is null");
@@ -220,6 +256,26 @@ ok(
   "insertOwned routing: A cannot attach B domain_id",
 );
 ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: SLOT_A })) != null,
+  "insertOwned reminder: A can target own slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: TASK_A })) === null,
+  "insertOwned reminder: slot kind rejects a task id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "task", target_id: SLOT_A })) === null,
+  "insertOwned reminder: task kind rejects a slot id",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "slot", target_id: B_ROW.slots })) === null,
+  "insertOwned reminder: A cannot target B slot",
+);
+ok(
+  (await insertOwned(storeA, "reminders", { target_kind: "event", target_id: TASK_A })) === null,
+  "insertOwned reminder: event kind rejects target_id",
+);
+ok(
   (await upsertOwned(storeA, "event_domain_routing", { event_key: "evt-a", domain_id: DOMAIN_B })) === null,
   "upsertOwned routing: A cannot rehome evt-a onto B domain",
 );
@@ -248,6 +304,74 @@ ok(
 ok(
   (await scalar<string>("SELECT project_id::text FROM tasks WHERE id = $1", [TASK_B])) === PROJECT_B,
   "updateOwned task: B project_id unchanged",
+);
+ok(
+  (await updateOwned(storeA, "initiatives", B_ROW.initiatives, { name: "stolen" })) === null,
+  "updateOwned initiative: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM initiatives WHERE id = $1", [B_ROW.initiatives])) === "B Initiative",
+  "updateOwned initiative: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "key_results", B_ROW.key_results, { name: "stolen" })) === null,
+  "updateOwned key_result: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM key_results WHERE id = $1", [B_ROW.key_results])) === "B KR",
+  "updateOwned key_result: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "slots", B_ROW.slots, { title: "stolen" })) === null,
+  "updateOwned slot: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT title FROM slots WHERE id = $1", [B_ROW.slots])) === "B slot",
+  "updateOwned slot: B title unchanged",
+);
+ok(
+  (await updateOwned(storeA, "record_comments", B_ROW.record_comments, { body: "stolen" })) === null,
+  "updateOwned comment: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT body FROM record_comments WHERE id = $1", [B_ROW.record_comments])) === "B note",
+  "updateOwned comment: B body unchanged",
+);
+ok(
+  (await updateOwned(storeA, "reminders", B_ROW.reminders, { anchor: "end" })) === null,
+  "updateOwned reminder: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT anchor FROM reminders WHERE id = $1", [B_ROW.reminders])) === "start",
+  "updateOwned reminder: B anchor unchanged",
+);
+ok(
+  (await updateOwned(storeA, "labels", B_ROW.labels, { name: "stolen" })) === null,
+  "updateOwned label: A cannot rename B",
+);
+ok(
+  (await scalar<string>("SELECT name FROM labels WHERE id = $1", [B_ROW.labels])) === "B tag",
+  "updateOwned label: B name unchanged",
+);
+ok(
+  (await updateOwned(storeA, "recurrences", B_ROW.recurrences, { rrule: "FREQ=YEARLY" })) === null,
+  "updateOwned recurrence: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT rrule FROM recurrences WHERE id = $1", [B_ROW.recurrences])) === "FREQ=DAILY",
+  "updateOwned recurrence: B rrule unchanged",
+);
+ok(
+  (await updateOwned(storeA, "week_reviews", B_ROW.week_reviews, { report: { stolen: true } })) === null,
+  "updateOwned week_review: A cannot edit B",
+);
+ok(
+  (await updateOwned(storeA, "sprints", B_ROW.sprints, { week_start: "1999-01-01" })) === null,
+  "updateOwned sprint: A cannot edit B",
+);
+ok(
+  (await scalar<string>("SELECT week_start::text FROM sprints WHERE id = $1", [B_ROW.sprints])) === "2026-10-26",
+  "updateOwned sprint: B week_start unchanged",
 );
 
 for (let i = 0; i < 8; i++) {
@@ -354,27 +478,118 @@ ok(reB.userId === B, "bootstrap: verified re-signup of B's email adopts B");
 ok((await getOwned(reB, "domains", DOMAIN_B)) != null, "bootstrap: adopted B session sees B's domain");
 ok((await getOwned(reB, "domains", DOMAIN_A)) === null, "bootstrap: adopted B still cannot read A");
 
-const appleA = await getOwnedAppleIdentity(storeA);
-ok(appleA?.apple_user_id === "apple-sub-a.001", "apple identity: A reads own sub");
-ok(appleA?.email === "a@example.test", "apple identity: A reads own email");
-ok((await getOwnedAppleIdentity(storeA))?.email !== "b@example.test", "apple identity: A does not see B email");
-ok(await appleUserIdTakenByOther(storeA, "apple-sub-b.002"), "apple identity: B's sub is taken from A's view");
-ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a.001")), "apple identity: own sub is not taken-by-other");
-await upsertOwnedAppleIdentity(storeA, {
-  apple_user_id: "apple-sub-a.001",
-  email: "a-renamed@example.test",
-  given_name: "Ada",
-  family_name: "A",
-  is_private_relay: false,
+const ACCT_A = "aaaaaaaa-eeee-4000-8000-000000000001";
+const ACCT_B = "bbbbbbbb-eeee-4000-8000-000000000001";
+const EVT_A = "aaaaaaaa-ffff-4000-8000-000000000001";
+const EVT_B = "bbbbbbbb-ffff-4000-8000-000000000001";
+const PUSH_B = "bbbbbbbb-0101-4000-8000-000000000001";
+const SRC_A = "aaaaaaaa-0202-4000-8000-000000000001";
+const SRC_B = "bbbbbbbb-0202-4000-8000-000000000001";
+const BIND_B = "bbbbbbbb-0303-4000-8000-000000000001";
+const UNIT_B = "bbbbbbbb-0404-4000-8000-000000000001";
+const CONN_B = "bbbbbbbb-0505-4000-8000-000000000001";
+
+ok(
+  (await listOwnedCalendarAccounts(storeA)).every((row) => row.user_id === A),
+  "list calendar_accounts: A only own",
+);
+ok((await getOwnedCalendarAccount(storeA, ACCT_B)) === null, "get calendar_accounts: A cannot read B");
+ok((await getOwnedCalendarAccount(storeA, ACCT_A))?.id === ACCT_A, "get calendar_accounts: A can read own");
+ok((await deleteOwnedCalendarAccount(storeA, ACCT_B)) === 0, "delete calendar_accounts: A cannot delete B");
+ok((await count("calendar_accounts", "id = $1", [ACCT_B])) === 1, "delete calendar_accounts: B row still present");
+const plantedAcct = await insertCalendarAccount(storeA, {
+  id: "cccccccc-eeee-4000-8000-000000000099",
+  provider: "ics",
+  email: "planted@example.test",
 });
+ok(plantedAcct?.user_id === A, "insert calendar_accounts: client cannot set B as owner");
+
+ok((await listOwnedExternalEvents(storeA)).every((row) => row.user_id === A), "list external_events: A only own");
+ok((await getOwnedExternalEvent(storeA, EVT_B)) === null, "get external_events: A cannot read B");
 ok(
-  (await scalar<string>("SELECT email FROM apple_identities WHERE user_id = $1", [B])) === "b@example.test",
-  "apple identity: upsert on A does not rewrite B",
+  (await insertExternalEvent(storeA, {
+    account_id: ACCT_B,
+    title: "steal",
+    start_at: "2026-10-26T19:00:00Z",
+    end_at: "2026-10-26T20:00:00Z",
+  })) === null,
+  "insert external_events: A cannot attach B account_id",
+);
+ok((await count("external_events", "user_id = $1", [B])) === 1, "insert external_events: B count unchanged");
+ok((await getOwnedExternalEvent(storeA, EVT_A))?.id === EVT_A, "get external_events: A can read own");
+
+ok(
+  (await listOwnedPushSubscriptions(storeA)).every((row) => row.user_id === A),
+  "list push_subscriptions: A only own",
 );
 ok(
-  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [B])) === "apple-sub-b.002",
-  "apple identity: B sub unchanged after A upsert",
+  !(await listOwnedPushSubscriptions(storeA)).some((row) => row.id === PUSH_B),
+  "list push_subscriptions: A cannot list B",
 );
+ok(
+  (await insertPushSubscription(storeA, {
+    endpoint: "https://push.example/a2",
+    p256dh: "x",
+    auth: "y",
+  }))?.user_id === A,
+  "insert push_subscriptions: row is A's",
+);
+
+ok((await getOwnedActivitySource(storeA, SRC_B)) === null, "get activity_sources: A cannot read B");
+ok((await listOwnedActivitySources(storeA)).every((row) => row.user_id === A), "list activity_sources: A only own");
+ok(
+  (await insertActivityBinding(storeA, {
+    source_id: SRC_B,
+    project_id: PROJECT_A,
+    selector: "steal/b",
+  })) === null,
+  "insert activity_bindings: A cannot attach B source",
+);
+ok(
+  (await insertActivityBinding(storeA, {
+    source_id: SRC_A,
+    project_id: PROJECT_B,
+    selector: "steal/a",
+  })) === null,
+  "insert activity_bindings: A cannot attach B project",
+);
+ok((await count("activity_bindings", "id = $1", [BIND_B])) === 1, "insert activity_bindings: B row still present");
+ok(
+  !(await listOwnedActivityBindings(storeA)).some((row) => row.id === BIND_B),
+  "list activity_bindings: A cannot list B",
+);
+ok(
+  (await insertActivityUnit(storeA, {
+    source_id: SRC_B,
+    external_id: "PR_STEAL",
+    title: "nope",
+    occurred_at: "2026-10-26T13:00:00Z",
+  })) === null,
+  "insert activity_units: A cannot attach B source",
+);
+ok(!(await listOwnedActivityUnits(storeA)).some((row) => row.id === UNIT_B), "list activity_units: A cannot list B");
+ok((await insertActivitySource(storeA, { login: "user-a-2" }))?.user_id === A, "insert activity_sources: row is A's");
+
+ok((await getOwnedAppleIdentity(storeA))?.user_id === A, "get apple_identities: A sees own");
+ok((await getOwnedAppleIdentity(storeA))?.apple_user_id === "apple-sub-a", "get apple_identities: A sub");
+ok((await getOwnedAppleIdentity(storeB))?.apple_user_id === "apple-sub-b", "get apple_identities: B sub");
+const plantedApple = await upsertAppleIdentity(storeA, { apple_user_id: "apple-sub-a-2", email: "take@example.test" });
+ok(plantedApple?.user_id === A, "upsert apple_identities: writes A's row only");
+ok(
+  (await scalar<string>("SELECT apple_user_id FROM apple_identities WHERE user_id = $1", [B])) === "apple-sub-b",
+  "upsert apple_identities: B sub unchanged",
+);
+ok(await appleUserIdTakenByOther(storeA, "apple-sub-b"), "apple identity: B's sub is taken from A's view");
+ok(!(await appleUserIdTakenByOther(storeA, "apple-sub-a")), "apple identity: own sub is not taken-by-other");
+
+ok(!(await listOwnedConnections(storeA)).some((row) => row.id === CONN_B), "list connections: A cannot list B");
+ok((await insertConnection(storeA, { app: "x", name: "A2", token_hash: "hash-a2" }))?.user_id === A, "insert connections: row is A's");
+ok(
+  (await listOwnedInboundEmails(storeA)).every((row) => row.user_id === A),
+  "list inbound_emails: A only own",
+);
+ok((await insertInboundEmail(storeA, { email_id: "email-a-2" }))?.user_id === A, "insert inbound_emails: row is A's");
+ok((await listOwnedSyncLog(storeA)).every((row) => row.user_id === A), "list sync_log: A only own");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

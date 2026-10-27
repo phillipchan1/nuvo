@@ -15,7 +15,13 @@ import {
   readAppleAuthConfig,
   type AppleProfile,
 } from "../../supabase/functions/_shared/appleIdentity.ts";
-import { openToken, sealTokenOrThrow, TokenSealError } from "./lib/secrets.ts";
+import {
+  openToken,
+  parseTokenKeyring,
+  sealToken,
+  sealedColumnValues,
+  TokenCryptoError,
+} from "./secrets.ts";
 import {
   appleUserIdTakenByOther,
   getOwnedAppleIdentity,
@@ -38,6 +44,10 @@ function asRecord(body: unknown): Record<string, unknown> {
 
 function clean(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function appleTokenAad(userId: string) {
+  return { table: "apple_identities" as const, rowId: userId, userId };
 }
 
 export async function persistAppleIdentity(
@@ -91,13 +101,12 @@ export async function persistAppleProfileAndToken(
   let sealed: { enc: Uint8Array; iv: Uint8Array; keyVersion: number } | null = null;
   if (refreshToken) {
     try {
-      sealed = await sealTokenOrThrow(
-        env.TOKEN_ENC_KEY_V1,
-        refreshToken,
-        `apple_identities:${store.userId}:${store.userId}`,
-      );
+      const keyring = await parseTokenKeyring(env);
+      const token = await sealToken(refreshToken, appleTokenAad(store.userId), keyring);
+      const cols = sealedColumnValues(token);
+      sealed = { enc: cols.refresh_token_enc, iv: cols.refresh_token_iv, keyVersion: cols.key_version };
     } catch (err) {
-      if (err instanceof TokenSealError) {
+      if (err instanceof TokenCryptoError) {
         console.error(APPLE_TOKEN_SEAL_LOG);
         await writeAppleProfile(store, user, profile, null);
         return json({ error: APPLE_TOKEN_SEAL_ERROR }, 503, OPEN_CORS);
@@ -143,12 +152,21 @@ export async function loadOwnedAppleRefreshToken(
   if (fromAccount) return fromAccount;
   const row = await getOwnedAppleIdentity(store);
   if (!row?.refresh_token_enc || !row.refresh_token_iv) return null;
-  return openToken(
-    env.TOKEN_ENC_KEY_V1,
-    row.refresh_token_enc,
-    row.refresh_token_iv,
-    `apple_identities:${store.userId}:${store.userId}`,
-  );
+  try {
+    const keyring = await parseTokenKeyring(env);
+    return await openToken(
+      {
+        ciphertext: row.refresh_token_enc,
+        iv: row.refresh_token_iv,
+        keyVersion: row.key_version ?? 1,
+      },
+      appleTokenAad(store.userId),
+      keyring,
+    );
+  } catch (err) {
+    if (err instanceof TokenCryptoError) return null;
+    throw err;
+  }
 }
 
 export type { AppleProfile };
