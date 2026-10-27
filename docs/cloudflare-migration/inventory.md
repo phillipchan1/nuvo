@@ -115,7 +115,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `inbound-email` | Svix + inbound token | no | **Worker/Neon** |
 | `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
 | `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
-| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; pg_cron stays until flip |
+| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
 | `referral-code` | User JWT | Stripe | Stay |
 | `rollover` | Session or `CRON_SECRET` | no | **Worker/Neon** (session = that user; cron iterates `users`) |
 | `route-events` | User JWT | no | **Worker/Neon** |

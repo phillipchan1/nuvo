@@ -35,6 +35,12 @@ export interface Env {
   MAINTENANCE_WRITE_FREEZE?: string;
   /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
   CUTOVER_ARMED?: string;
+  /**
+   * `1` / `true` / `yes` / `on` lets Worker crons run. Unset / unknown is
+   * fail-closed: every cron (HTTP + Cron Trigger) returns 200 `{ skipped: true }`.
+   * Freeze is not a substitute — freeze 503s writes only.
+   */
+  CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
   /** Same VAPID pair as today's Supabase function — a new pair breaks every sub. */

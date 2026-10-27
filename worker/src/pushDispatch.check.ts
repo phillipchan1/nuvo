@@ -5,7 +5,8 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import app from "./index.ts";
-import { runPushDispatch } from "./pushDispatch.ts";
+import { runCronJob } from "./cronJobs.ts";
+import { installPushFetchForTests, runPushDispatch } from "./pushDispatch.ts";
 import { sendWebPush, webPushConfigured, webPushSelfTest } from "./lib/webpush.ts";
 
 const fails: string[] = [];
@@ -144,6 +145,59 @@ await db.query(
   ["bbbbbbbb-ffff-4000-8000-000000000001", B, "https://push.example.test/user-b", keysB.p256dh, keysB.auth],
 );
 
+const restore = installRequestIoForTests(() => ({
+  sql,
+  auth: {} as never,
+  close: async () => {},
+}));
+const restorePushFetch = installPushFetchForTests(mockFetch);
+posts.length = 0;
+const skipHttp = await app.request("http://localhost:8787/api/cron/push-dispatch", {
+  method: "POST",
+  headers: {
+    Origin: "http://localhost:8787",
+    Authorization: `Bearer ${env.CRON_SECRET}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ nowMs }),
+}, env);
+ok(skipHttp.status === 200, `HTTP cron before flip: ${skipHttp.status}`);
+const skipHttpBody = (await skipHttp.json()) as { ok?: boolean; skipped?: boolean };
+ok(skipHttpBody.ok === true && skipHttpBody.skipped === true, "HTTP cron skips before flip");
+ok(posts.length === 0, "HTTP cron before flip: nothing sent even with Neon prefs + nowMs");
+const skipDeliveries = await db.query<{ n: number }>(
+  `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id IN ($1, $2)`,
+  [A, B],
+);
+ok(Number(skipDeliveries.rows[0]?.n ?? 0) === 0, "HTTP cron before flip: no claims");
+
+const skipJob = await runCronJob("push-dispatch", env, sql);
+ok(skipJob.skipped === true && skipJob.status === 200, "runCronJob skips push-dispatch before flip");
+ok(posts.length === 0, "runCronJob before flip: mock endpoint silent");
+
+const flippedEnv = { ...env, CUTOVER_FLIPPED: "1" };
+const ignoredClock = await app.request("http://localhost:8787/api/cron/push-dispatch", {
+  method: "POST",
+  headers: {
+    Origin: "http://localhost:8787",
+    Authorization: `Bearer ${env.CRON_SECRET}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ nowMs }),
+}, flippedEnv);
+ok(ignoredClock.status === 200, `HTTP cron after flip: ${ignoredClock.status}`);
+const ignoredBody = (await ignoredClock.json()) as { ok?: boolean; skipped?: boolean; notified?: number };
+ok(ignoredBody.ok === true && ignoredBody.skipped !== true, "HTTP cron runs after flip");
+ok((ignoredBody.notified ?? 0) === 0, "HTTP cron ignores caller nowMs (fixture clock would have fired)");
+ok(posts.length === 0, "HTTP cron after flip: caller nowMs did not send");
+ok(
+  Number((await db.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id IN ($1, $2)`,
+    [A, B],
+  )).rows[0]?.n ?? 0) === 0,
+  "HTTP cron after flip: caller nowMs did not claim",
+);
+
 posts.length = 0;
 const result = await runPushDispatch(sql, env, { nowMs, fetchImpl: mockFetch });
 ok(result.ok === true, "dispatch: ok");
@@ -190,11 +244,6 @@ ok(
   "gone: B's subscription remains",
 );
 
-const restore = installRequestIoForTests(() => ({
-  sql,
-  auth: {} as never,
-  close: async () => {},
-}));
 const unauth = await app.request("http://localhost:8787/api/cron/push-dispatch", {
   method: "POST",
   headers: { Origin: "http://localhost:8787" },
@@ -209,9 +258,10 @@ const selfHttp = await app.request("http://localhost:8787/api/cron/push-dispatch
     "Content-Type": "application/json",
   },
   body: JSON.stringify({ selfTest: true, clientPublicKey: vapid.publicKey }),
-}, env);
+}, flippedEnv);
 ok(selfHttp.status === 200, `HTTP selfTest: ${selfHttp.status}`);
-const selfBody = (await selfHttp.json()) as { selfTest?: { ok?: boolean; matchesClient?: boolean } };
+const selfBody = (await selfHttp.json()) as { skipped?: boolean; selfTest?: { ok?: boolean; matchesClient?: boolean } };
+ok(selfBody.skipped !== true, "HTTP selfTest runs after flip");
 ok(selfBody.selfTest?.ok === true && selfBody.selfTest.matchesClient === true, "HTTP selfTest: pair matches");
 
 const alias = await app.request("http://localhost:8787/functions/v1/push-dispatch", {
@@ -222,9 +272,10 @@ const alias = await app.request("http://localhost:8787/functions/v1/push-dispatc
     "Content-Type": "application/json",
   },
   body: JSON.stringify({ selfTest: true }),
-}, env);
+}, flippedEnv);
 ok(alias.status === 200, `functions/v1/push-dispatch: ${alias.status}`);
 
+restorePushFetch();
 restore();
 await db.close();
 

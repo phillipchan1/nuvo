@@ -80,6 +80,7 @@ try {
       BETTER_AUTH_URL: origin,
       ENVIRONMENT: "preview",
       CRON_SECRET: cronSecret,
+      CUTOVER_FLIPPED: "1",
     },
     experimental: {
       disableExperimentalWarning: true,

@@ -130,6 +130,7 @@ const env = {
   CRON_SECRET: "access-http-cron-secret",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
+  CUTOVER_FLIPPED: "1",
 };
 
 const restore = installRequestIoForTests(() => {
@@ -928,6 +929,29 @@ ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [A_ROW.tasks])
 
 const cronNo = await withTimeout(request("/api/cron/rollover", { method: "POST" }), 8000, "cron unauth");
 ok(cronNo.status === 401, `cron unauth: HTTP ${cronNo.status}`);
+const cronSkipEnv = { ...env, CUTOVER_FLIPPED: "" };
+const cronSkipRoll = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/cron/rollover",
+    { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    cronSkipEnv,
+  ),
+  8000,
+  "cron rollover skip",
+);
+ok(cronSkipRoll.status === 200, `cron rollover before flip: HTTP ${cronSkipRoll.status}`);
+ok((await cronSkipRoll.json() as { skipped?: boolean }).skipped === true, "cron rollover skips before flip");
+const cronSkipPush = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/cron/push-dispatch",
+    { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    cronSkipEnv,
+  ),
+  8000,
+  "cron push skip",
+);
+ok(cronSkipPush.status === 200, `cron push-dispatch before flip: HTTP ${cronSkipPush.status}`);
+ok((await cronSkipPush.json() as { skipped?: boolean }).skipped === true, "cron push-dispatch skips before flip");
 const cronOk = await withTimeout(
   request("/api/cron/rollover", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
   8000,
@@ -988,7 +1012,9 @@ const cronPush = await withTimeout(
   "cron push",
 );
 ok(cronPush.status === 200, `cron push-dispatch: HTTP ${cronPush.status}`);
-ok((await cronPush.json() as { ok?: boolean }).ok === true, "cron push-dispatch: ok");
+const cronPushBody = await cronPush.json() as { ok?: boolean; skipped?: boolean };
+ok(cronPushBody.ok === true, "cron push-dispatch: ok");
+ok(cronPushBody.skipped !== true, "cron push-dispatch runs after flip");
 
 const beforeGoogle = googleCalls.length;
 const bSlotA = await withTimeout(

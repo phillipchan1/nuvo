@@ -3,6 +3,9 @@
  *
  * HTTP `/api/cron/:job` still requires CRON_SECRET (constant time). The
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
+ * Both paths no-op unless `CUTOVER_FLIPPED` is truthy (`cutoverFlipped` in
+ * cron.ts) — unset / unknown is fail-closed 200 `{ skipped: true }` so
+ * Worker + pg_cron cannot double-fire. Freeze 503s writes only.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune,
  * push-dispatch) iterate `users` then scope by `user_id`. Calendar-dispatch
@@ -19,13 +22,15 @@
 import type { Context } from "hono";
 import { BLOCKED_CRON_JOBS, stayOnSupabase } from "./blocked.ts";
 import { OPEN_CORS, json } from "./cors.ts";
-import { bearerToken, cronAuthorized } from "./cron.ts";
+import { bearerToken, cronAuthorized, cutoverFlipped } from "./cron.ts";
 import type { Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import { runPushDispatch } from "./pushDispatch.ts";
 import { readJson } from "./http.ts";
+
+export { cutoverFlipped };
 
 export interface QueueMessage<T> {
   body: T;
@@ -46,6 +51,7 @@ export interface CronResult {
   job: string;
   status: number;
   stay_on_supabase: boolean;
+  skipped?: boolean;
   enqueued?: number;
   rolled?: number;
   deleted?: number;
@@ -188,6 +194,9 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
+  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) {
+    return { job: name, status: 200, stay_on_supabase: true, skipped: true };
+  }
   if (name === "calendar-dispatch") {
     if (!sql || !env.CALENDAR_SYNC_QUEUE) return blocked(name);
     const enqueued = await enqueueDueCalendarAccounts(sql, env);
@@ -245,11 +254,14 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   if (!cronAuthorized(token, c.env.CRON_SECRET)) {
     return json({ error: "unauthorized" }, 401, OPEN_CORS);
   }
+  const job = jobName ?? c.req.param("job") ?? "";
+  const name = canonicalCronJob(job);
+  if (!cutoverFlipped(c.env.CUTOVER_FLIPPED)) {
+    return json({ ok: true, job: name, skipped: true, stay_on_supabase: true }, 200, OPEN_CORS);
+  }
   if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
     return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
   }
-  const job = jobName ?? c.req.param("job") ?? "";
-  const name = canonicalCronJob(job);
 
   if (name === "calendar-dispatch") {
     const io = await requestIo(c);
@@ -280,16 +292,16 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   }
 
   if (name === "push-dispatch") {
-    let body: { selfTest?: boolean; clientPublicKey?: string; nowMs?: number } = {};
+    let body: { selfTest?: boolean; clientPublicKey?: string } = {};
     try {
       body = await readJson(c);
     } catch {
       body = {};
     }
+    // nowMs is test-only on runPushDispatch — never accepted from HTTP.
     const result = await runPushDispatch(sql, c.env, {
       selfTest: body.selfTest === true,
       clientPublicKey: body.clientPublicKey,
-      nowMs: typeof body.nowMs === "number" ? body.nowMs : undefined,
     });
     return json(result, 200, OPEN_CORS);
   }

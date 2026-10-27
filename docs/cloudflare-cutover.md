@@ -56,6 +56,7 @@ None of these belong in the Vite bundle.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Optional until PR B. Mirror refresh when an access token has expired |
 | `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
+| `CUTOVER_FLIPPED` | var | `1` / `true` / `yes` / `on` lets Worker crons run. **Fail-closed:** unset / unknown → every cron (HTTP + Cron Trigger) returns 200 `{ skipped: true }` so pg_cron cannot double-fire. Freeze is not a substitute — freeze 503s writes only. One helper: `cutoverFlipped` in `worker/src/cron.ts` (PRs B / D / E share it) |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
@@ -196,7 +197,10 @@ account per minute. At the current ~12 accounts that is ~35k ops/day, inside
 Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 
 `pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
-`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`).
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`). Until
+`CUTOVER_FLIPPED` is an explicit truthy, `runCronJob` / `handleCron` /
+`scheduled` no-op (HTTP 200 `{ skipped: true }`) — including push-dispatch
+and every other Worker cron. Unset or an unknown value is not flipped.
 
 ## Write freeze
 
