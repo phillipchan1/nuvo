@@ -1132,6 +1132,7 @@ describe("public-repo CI guard", () => {
     expect(workflow).toMatch(/id: guard/);
     expect(workflow).toMatch(/id: assert-logs/);
     expect(workflow).toMatch(/id: setup-node/);
+    expect(workflow).toMatch(/persist-credentials: false/);
     expect(workflow).toMatch(/id: seal-tokens/);
     expect(workflow).toMatch(/id: resync/);
     expect(workflow).toMatch(/steps\.guard\.outcome == 'success'/);
@@ -1155,7 +1156,13 @@ describe("public-repo CI guard", () => {
     expect(checks).toMatch(/ACTIONLINT_VERSION: "1\.7\.12"/);
     expect(checks).toMatch(/ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"/);
     expect(checks).toMatch(/sha256sum -c -/);
-    expect(checks).toMatch(/actionlint -color -shellcheck=/);
+    expect(checks).toMatch(/SHELLCHECK_OPTS: "-S warning"/);
+    expect(checks).toMatch(/SHELLCHECK_VERSION: "0\.11\.0"/);
+    expect(checks).toMatch(/SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"/);
+    expect(checks).toMatch(/\/tmp\/actionlint -color$/m);
+    expect(checks).not.toMatch(/-shellcheck=/);
+    expect(checks).toMatch(/permissions:\n  contents: read/);
+    expect(checks.match(/persist-credentials: false/g)?.length).toBe(2);
     expect(checks).not.toMatch(/branches-ignore:/);
   });
 
