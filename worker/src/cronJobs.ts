@@ -26,7 +26,7 @@ import type { Context } from "hono";
 import { BLOCKED_CRON_JOBS, stayOnSupabase } from "./blocked.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
-import { gateCron } from "./cutoverFlip.ts";
+import { cutoverSkipBody, gateCron } from "./cutoverFlip.ts";
 import { closeSql, openSql, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
@@ -56,7 +56,8 @@ export interface CalendarSyncMessage {
 export interface CronResult {
   job: string;
   status: number;
-  stay_on_supabase: boolean;
+  stay_on_supabase?: boolean;
+  ok?: boolean;
   enqueued?: number;
   rolled?: number;
   deleted?: number;
@@ -203,7 +204,7 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
   if (gateCron(env, name)) {
-    return { job: name, status: 200, stay_on_supabase: true, skipped: true, reason: "cutover_not_flipped" };
+    return { ...cutoverSkipBody(name), status: 200 };
   }
   if (name === "calendar-dispatch") {
     if (!sql) return blocked(name);
