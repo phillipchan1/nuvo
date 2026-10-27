@@ -985,6 +985,11 @@ describe("public-repo CI guard", () => {
     const owners = readFileSync(join(ROOT, ".github/CODEOWNERS"), "utf8");
     expect(owners).toMatch(/scripts\/guard-public-ci\.allowlist\.json\s+@phillipchan1/);
     expect(owners).toMatch(/scripts\/guard-public-ci\.mjs\s+@phillipchan1/);
+    expect(owners).toMatch(/scripts\/regen-public-ci-allowlist\.mjs\s+@phillipchan1/);
+    expect(owners).toMatch(/tests\/guard-public-ci\.test\.ts\s+@phillipchan1/);
+    expect(owners).toMatch(/package\.json\s+@phillipchan1/);
+    expect(owners).toMatch(/package-lock\.json\s+@phillipchan1/);
+    expect(owners).toMatch(/\.github\/CODEOWNERS\s+@phillipchan1/);
     expect(owners).toMatch(/\.github\/workflows\/\s+@phillipchan1/);
   });
 
