@@ -4,7 +4,8 @@
  * Decrypt with BA's keyring-aware `secretConfig` (string when only
  * `BETTER_AUTH_SECRET` is set; `{ keys, currentVersion, legacySecret }`
  * when `BETTER_AUTH_SECRETS` is set) — never the raw string alone.
- * Encrypted-looking values (`$ba$` or even-length hex) that will not
+ * Encrypted-looking values (`$ba$` or lowercase even-length hex of
+ * 82+ chars — BA's xchacha20-poly1305 hex shape) that will not
  * decrypt fail closed: seal never re-wraps them, open returns null
  * (never ciphertext).
  */
@@ -48,10 +49,15 @@ export function isNuvoSealedToken(value: string): boolean {
   return value.startsWith(NUVO_PREFIX);
 }
 
-/** BA's own heuristic (`better-auth/oauth2` `isLikelyEncrypted`). */
+/**
+ * BA ciphertext: `$ba$<v>$…` envelope, or bare hex from a string
+ * `secretConfig`. xchacha20-poly1305 + managed nonce is 40 bytes of
+ * overhead (80 hex) plus at least one plaintext byte → **82+**
+ * lowercase even-length hex. Shorter or mixed-case hex is not sealed.
+ */
 export function isLikelyEncrypted(value: string): boolean {
   if (value.startsWith("$ba$")) return true;
-  return value.length % 2 === 0 && /^[0-9a-f]+$/i.test(value);
+  return value.length >= 82 && value.length % 2 === 0 && /^[0-9a-f]+$/.test(value);
 }
 
 export function baCiphertext(value: string): string {

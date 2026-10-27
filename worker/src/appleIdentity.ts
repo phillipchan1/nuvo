@@ -27,10 +27,12 @@ import {
   appleUserIdTakenByOther,
   getOwnedAppleIdentity,
   linkOwnedAppleAccount,
+  ownedAppleAccountTokenRow,
   ownedAppleRefreshToken,
   upsertOwnedAppleIdentity,
   type Store,
 } from "./store.ts";
+import { openAccountRefreshToken } from "./lib/accountTokens.ts";
 
 export type SessionUser = { id: string; email?: string | null };
 
@@ -144,15 +146,24 @@ async function writeAppleProfile(
   }
 }
 
-export type OwnedAppleRefresh = { token: string; source: AppleTokenSource };
+export type OwnedAppleRefresh =
+  | { token: string; source: AppleTokenSource }
+  | { token: null; source: AppleTokenSource; reason: "unopenable" };
 
 export async function loadOwnedAppleRefreshToken(
   store: Store,
   authUserId: string,
   env: Env,
 ): Promise<OwnedAppleRefresh | null> {
-  const fromAccount = await ownedAppleRefreshToken(store.sql, env, authUserId);
-  if (fromAccount) return { token: fromAccount, source: "web" };
+  const accountRow = await ownedAppleAccountTokenRow(store.sql, authUserId);
+  if (accountRow) {
+    const fromAccount = await openAccountRefreshToken(env, accountRow.refreshToken, {
+      id: accountRow.id,
+      userId: accountRow.userId,
+    });
+    if (fromAccount) return { token: fromAccount, source: "web" };
+    return { token: null, source: "web", reason: "unopenable" };
+  }
   const row = await getOwnedAppleIdentity(store);
   if (!row?.refresh_token_enc || !row.refresh_token_iv) return null;
   try {
@@ -166,9 +177,9 @@ export async function loadOwnedAppleRefreshToken(
       appleTokenAad(store.userId),
       keyring,
     );
-    return token ? { token, source: "native" } : null;
+    return token ? { token, source: "native" } : { token: null, source: "native", reason: "unopenable" };
   } catch (err) {
-    if (err instanceof TokenCryptoError) return null;
+    if (err instanceof TokenCryptoError) return { token: null, source: "native", reason: "unopenable" };
     throw err;
   }
 }

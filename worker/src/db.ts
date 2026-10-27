@@ -110,7 +110,7 @@ export function clientConnection(
  * `max: 1` — this is one of two sockets a data request opens (see openAuth).
  * Production multiplexes both through Hyperdrive (docs/cloudflare-cutover.md).
  */
-export function openSql(env: Env): Sql {
+function openSqlDefault(env: Env): Sql {
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured");
   const { connectionString, ssl } = clientConnection(env, url);
@@ -120,6 +120,20 @@ export function openSql(env: Env): Sql {
     connect_timeout: CONNECT_TIMEOUT_SECONDS,
     ssl,
   });
+}
+
+let openSqlImpl = openSqlDefault;
+
+/** Test-only: swap the opener so scheduled() IO is observable. */
+export function installOpenSqlForTests(fn: (env: Env) => Sql): () => void {
+  openSqlImpl = fn;
+  return () => {
+    openSqlImpl = openSqlDefault;
+  };
+}
+
+export function openSql(env: Env): Sql {
+  return openSqlImpl(env);
 }
 
 export function closeSql(sql: Sql): Promise<void> {

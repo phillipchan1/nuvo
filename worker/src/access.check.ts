@@ -45,6 +45,7 @@ import {
   insertExternalEvent,
   insertInboundEmail,
   insertPushSubscription,
+  resyncOwnedPushSubscriptions,
   listOwnedActivityBindings,
   listOwnedActivitySources,
   listOwnedActivityUnits,
@@ -482,6 +483,7 @@ const ACCT_A = "aaaaaaaa-eeee-4000-8000-000000000001";
 const ACCT_B = "bbbbbbbb-eeee-4000-8000-000000000001";
 const EVT_A = "aaaaaaaa-ffff-4000-8000-000000000001";
 const EVT_B = "bbbbbbbb-ffff-4000-8000-000000000001";
+const PUSH_A = "aaaaaaaa-0101-4000-8000-000000000001";
 const PUSH_B = "bbbbbbbb-0101-4000-8000-000000000001";
 const SRC_A = "aaaaaaaa-0202-4000-8000-000000000001";
 const SRC_B = "bbbbbbbb-0202-4000-8000-000000000001";
@@ -534,6 +536,42 @@ ok(
   }))?.user_id === A,
   "insert push_subscriptions: row is A's",
 );
+ok(
+  (await insertPushSubscription(storeA, {
+    id: PUSH_B,
+    endpoint: "https://push.example/steal",
+    p256dh: "x",
+    auth: "y",
+  })) === null,
+  "upsert push_subscriptions: A cannot take B's id",
+);
+ok((await count("push_subscriptions", "id = $1 AND user_id = $2", [PUSH_B, B])) === 1, "upsert push_subscriptions: B row unchanged");
+ok(
+  (await insertPushSubscription(storeA, {
+    id: PUSH_A,
+    endpoint: "https://push.example/a-resync",
+    p256dh: "p256-a",
+    auth: "auth-a",
+    label: "A phone",
+  }))?.user_id === A,
+  "upsert push_subscriptions: A can refresh own row",
+);
+const aResync = await resyncOwnedPushSubscriptions(storeA, [
+  {
+    id: PUSH_A,
+    endpoint: "https://push.example/a-keep",
+    p256dh: "p256-a",
+    auth: "auth-a",
+    label: "A phone",
+  },
+]);
+ok(aResync.upserted === 1, "resync push_subscriptions: upserts kept rows");
+ok((await count("push_subscriptions", "id = $1 AND user_id = $2", [PUSH_A, A])) === 1, "resync push_subscriptions: A kept row remains");
+ok((await count("push_subscriptions", "user_id = $1 AND endpoint = $2", [A, "https://push.example/a2"])) === 0, "resync push_subscriptions: A missing rows deleted");
+ok((await count("push_subscriptions", "id = $1 AND user_id = $2", [PUSH_B, B])) === 1, "resync push_subscriptions: B row untouched");
+ok((await resyncOwnedPushSubscriptions(storeA, [])).deleted >= 1, "resync empty: deletes A's remaining rows");
+ok((await count("push_subscriptions", "user_id = $1", [A])) === 0, "resync empty: A has no push rows");
+ok((await count("push_subscriptions", "id = $1 AND user_id = $2", [PUSH_B, B])) === 1, "resync empty: B row still untouched");
 
 ok((await getOwnedActivitySource(storeA, SRC_B)) === null, "get activity_sources: A cannot read B");
 ok((await listOwnedActivitySources(storeA)).every((row) => row.user_id === A), "list activity_sources: A only own");

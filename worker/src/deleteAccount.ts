@@ -28,6 +28,16 @@ import {
 import { loadOwnedAppleRefreshToken, type SessionUser } from "./appleIdentity.ts";
 import { wipeOwnedAccount, type Store } from "./store.ts";
 
+/** Token-free reason when an Apple refresh row exists but will not open. */
+export const APPLE_TOKEN_UNOPENABLE = "apple_token_unopenable";
+
+async function userIdFingerprint(id: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id));
+  return Array.from(new Uint8Array(digest).subarray(0, 8))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export async function deleteOwnedAccount(
   store: Store,
   user: SessionUser,
@@ -67,7 +77,15 @@ export async function deleteOwnedAccount(
   }
 
   let appleRevoked: boolean | null = null;
-  if (loaded?.token) {
+  if (loaded && !loaded.token) {
+    appleRevoked = false;
+    const userHash = await userIdFingerprint(user.id);
+    console.warn("delete-account:", APPLE_TOKEN_UNOPENABLE, {
+      reason: APPLE_TOKEN_UNOPENABLE,
+      source: loaded.source,
+      user: userHash,
+    });
+  } else if (loaded?.token) {
     const config = readAppleAuthConfig({
       APPLE_CLIENT_ID: env.APPLE_CLIENT_ID,
       APPLE_SIWA_TEAM_ID: env.APPLE_SIWA_TEAM_ID,

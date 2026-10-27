@@ -31,20 +31,15 @@ export const CALENDAR_FUNCTIONS = new Set([
   "ics-sync",
   "m365-oauth",
   "m365-sync",
-  "slot-mirror",
-  "task-mirror",
 ]);
 
-/** User-data jobs that need Vault / web-push / GoTrue — flagged, not ported. */
+/** User-data jobs that need Vault / GoTrue — flagged, not ported. */
 export const BLOCKED_USERDATA_FUNCTIONS = new Set([
   "apple-identity",
   "delete-account",
-  "push-dispatch",
 ]);
 
 export const BLOCKED_CRON_JOBS = new Set([
-  "push-dispatch",
-  "nuvo-push-dispatch",
   "google-renew",
   "nuvo-google-renew",
   "calendar-dispatch",

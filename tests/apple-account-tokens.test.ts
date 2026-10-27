@@ -15,7 +15,7 @@ import { decryptOAuthToken, setTokenUtil } from "better-auth/oauth2";
 import { ACCOUNT_DELETE_CONFIRM } from "../supabase/functions/_shared/accountDeletion.ts";
 import { revokeAppleToken } from "../supabase/functions/_shared/appleIdentity.ts";
 import { appleSocialProvider, createAuth } from "../worker/src/auth.ts";
-import { deleteOwnedAccount } from "../worker/src/deleteAccount.ts";
+import { APPLE_TOKEN_UNOPENABLE, deleteOwnedAccount } from "../worker/src/deleteAccount.ts";
 import type { Env } from "../worker/src/env.ts";
 import type { Sql } from "../worker/src/db.ts";
 import {
@@ -161,17 +161,22 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
     expect(src).toMatch(/TOKEN_ENC_KEY_V1/);
   });
 
-  it("classifies BA ciphertext by decrypt, not prefix — random hex is not sealed", async () => {
+  it("classifies BA ciphertext as $ba$ or lowercase even-length hex of 82+ chars", async () => {
     const secret = tokenEnv().BETTER_AUTH_SECRET as string;
     expect(isNuvoSealedToken("nv1.1.iv.ct")).toBe(true);
     expect(isLikelyEncrypted("$ba$not-real")).toBe(true);
-    expect(isLikelyEncrypted("aa".repeat(32))).toBe(true);
+    expect(isLikelyEncrypted("aa".repeat(32))).toBe(false);
+    expect(isLikelyEncrypted("aa".repeat(40))).toBe(false);
+    expect(isLikelyEncrypted("aa".repeat(41))).toBe(true);
+    expect(isLikelyEncrypted("AA".repeat(41))).toBe(false);
     expect(isLikelyEncrypted(REFRESH)).toBe(false);
     expect(await tryDecryptBaToken(secret, "$ba$not-real")).toBeNull();
     expect(await tryDecryptBaToken(secret, "aa".repeat(32))).toBeNull();
     const { symmetricEncrypt } = await import("better-auth/crypto");
     const hex = await symmetricEncrypt({ key: secret, data: REFRESH });
     expect(hex.startsWith("$ba$")).toBe(false);
+    expect(hex).toMatch(/^[0-9a-f]+$/);
+    expect(hex.length).toBeGreaterThanOrEqual(82);
     expect(isLikelyEncrypted(hex)).toBe(true);
     expect(await tryDecryptBaToken(secret, hex)).toBe(REFRESH);
   });
@@ -473,12 +478,72 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
     );
     expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, appleRevoked: false });
     const revokeArgs = vi.mocked(revokeAppleToken).mock.calls.map((c) => c[1]);
     expect(revokeArgs).not.toContain(row!.refreshToken);
     for (const arg of revokeArgs) {
       expect(isLikelyEncrypted(arg as string)).toBe(false);
     }
 
+    await kysely.destroy();
+    await db.close();
+  });
+
+  it("unopenable Apple token reports appleRevoked=false and logs a token-free reason", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const db = new PGlite();
+    await db.exec(SCHEMA);
+    const kysely = pgliteKysely(db);
+    const writeEnv = tokenEnv();
+    const auth = createAuth(writeEnv, { db: kysely, type: "postgres" });
+    const ctx = await auth.$context;
+    const user = await ctx.internalAdapter.createUser({
+      name: "Ada",
+      email: "ada-unopenable@example.test",
+      emailVerified: true,
+    });
+    await ctx.internalAdapter.createAccount({
+      userId: user.id,
+      providerId: "apple",
+      accountId: APPLE_SUB,
+      accessToken: ACCESS,
+      refreshToken: REFRESH,
+      idToken: ID_TOKEN,
+    });
+    const stored = (
+      await db.query<AccountRow>(
+        `SELECT "refreshToken" FROM account WHERE "userId" = $1`,
+        [user.id],
+      )
+    ).rows[0]?.refreshToken as string;
+    expect(isLikelyEncrypted(stored)).toBe(true);
+
+    vi.mocked(revokeAppleToken).mockClear();
+    const res = await deleteOwnedAccount(
+      storeWithFakeWipe(db, user.id),
+      { id: user.id },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      {
+        ...writeEnv,
+        BETTER_AUTH_SECRET: "wrong-only-better-auth-secret-32b!",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "k",
+      },
+      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, appleRevoked: false });
+    expect(revokeAppleToken).not.toHaveBeenCalled();
+
+    const logged = warn.mock.calls.map((c) => JSON.stringify(c));
+    expect(logged.some((line) => line.includes(APPLE_TOKEN_UNOPENABLE))).toBe(true);
+    for (const line of logged) {
+      expect(line).not.toContain(REFRESH);
+      expect(line).not.toContain(ACCESS);
+      expect(line).not.toContain(stored);
+      expect(line).not.toContain(user.id);
+    }
+    warn.mockRestore();
     await kysely.destroy();
     await db.close();
   });
