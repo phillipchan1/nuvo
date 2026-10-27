@@ -277,12 +277,21 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    `1`, `true`, `yes`, `on` (trimmed, case-insensitive). Anything else
    stays skipped — including github-activity `action: "sync"` with
    `CRON_SECRET`.
+4. **Confirm the flip landed.** `GET /api/maintenance` must report
+   `cutover_flipped: true` (boolean only — it does not echo the env
+   string). Then fire one **ported** cron — `/api/cron/rollover` or
+   `/api/cron/calendar-dispatch`, not `github-poll` or `trim-sync-log` —
+   and check it actually ran: a non-skipped JSON body, or a log line
+   from the runner — not `{ skipped: true, reason: "cutover_not_flipped" }`.
 
 ## Write freeze
 
 `MAINTENANCE_WRITE_FREEZE=1` on the Worker makes `GET /api/maintenance`
-return `{ write_freeze: true, cutover_armed: … }`. Mutating `/api/data`
-and write RPCs then 503. RPC reads (`contacts`) stay open. The SPA reads
+return `{ write_freeze: true, cutover_armed: …, cutover_flipped: … }`
+with `Cache-Control: no-store`.
+`cutover_flipped` is the boolean from the allowlist — it does not echo
+the env string. Mutating `/api/data` and write RPCs then 503. RPC reads
+(`contacts`) stay open. The SPA reads
 that flag (or `VITE_MAINTENANCE_URL` / `VITE_WRITE_FREEZE`) and the
 Supabase transport refuses writes so the outbox retries after the window.
 Auth refresh is not frozen.

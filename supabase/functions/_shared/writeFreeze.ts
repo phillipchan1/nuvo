@@ -23,8 +23,9 @@ const FREEZE_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-export function writeFreezeOn(raw: string | undefined | null): boolean {
-  const v = (raw ?? "").trim().toLowerCase();
+export function writeFreezeOn(raw: unknown): boolean {
+  if (typeof raw !== "string") return raw != null;
+  const v = raw.trim().toLowerCase();
   if (!v) return false;
   return !EXPLICIT_OFF.has(v);
 }
