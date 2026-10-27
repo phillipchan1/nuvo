@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/cutoverFlip.check.ts
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -74,6 +74,39 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
+ok(
+  /gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc),
+  "github-activity CRON_SECRET sync calls gateCronBearerRoute(c.env, 'github-poll')",
+);
+const ghSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
+const ghIoAt = ghSrc.indexOf("requestIo(c)", ghSyncAt);
+const ghGateAt = ghSrc.search(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/);
+ok(ghSyncAt >= 0 && ghGateAt > ghSyncAt && ghGateAt < ghIoAt, "github-activity CRON_SECRET sync gates before requestIo");
+
+function walkProdTs(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkProdTs(p));
+    else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".check.ts")) out.push(p);
+  }
+  return out;
+}
+
+for (const file of walkProdTs(here)) {
+  const src = readFileSync(file, "utf8");
+  const rel = file.slice(here.length + 1);
+  if (rel === "cron.ts") continue;
+  const cronAuth = /\bcronAuthorized\s*\(/.test(src);
+  const cronBearer = /CRON_SECRET/.test(src) && /\bbearerToken\s*\(/.test(src);
+  if (!cronAuth && !cronBearer) continue;
+  ok(
+    /\bgateCron\s*\(/.test(src) || /\bgateCronBearerRoute\s*\(/.test(src),
+    `${rel}: cronAuthorized / CRON_SECRET-bearer caller is gated by gateCron or gateCronBearerRoute`,
+  );
+}
 
 const skipRes = skippedUntilCutoverFlip("rollover");
 ok(skipRes.status === 200, "skippedUntilCutoverFlip is HTTP 200");
