@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/cutoverFlip.check.ts
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -100,6 +100,39 @@ try {
   restoreOpenSql();
 }
 
+const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
+ok(
+  /gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc),
+  "github-activity CRON_SECRET sync calls gateCronBearerRoute(c.env, 'github-poll')",
+);
+const ghSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
+const ghIoAt = ghSrc.indexOf("requestIo(c)", ghSyncAt);
+const ghGateAt = ghSrc.search(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/);
+ok(ghSyncAt >= 0 && ghGateAt > ghSyncAt && ghGateAt < ghIoAt, "github-activity CRON_SECRET sync gates before requestIo");
+
+function walkProdTs(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkProdTs(p));
+    else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".check.ts")) out.push(p);
+  }
+  return out;
+}
+
+for (const file of walkProdTs(here)) {
+  const src = readFileSync(file, "utf8");
+  const rel = file.slice(here.length + 1);
+  if (rel === "cron.ts") continue;
+  const cronAuth = /\bcronAuthorized\s*\(/.test(src);
+  const cronBearer = /CRON_SECRET/.test(src) && /\bbearerToken\s*\(/.test(src);
+  if (!cronAuth && !cronBearer) continue;
+  ok(
+    /\bgateCron\s*\(/.test(src) || /\bgateCronBearerRoute\s*\(/.test(src),
+    `${rel}: cronAuthorized / CRON_SECRET-bearer caller is gated by gateCron or gateCronBearerRoute`,
+  );
+}
+
 const skipRes = skippedUntilCutoverFlip("rollover");
 ok(skipRes.status === 200, "skippedUntilCutoverFlip is HTTP 200");
 const skipBody = (await skipRes.json()) as { ok?: boolean; skipped?: boolean; reason?: string; job?: string };
@@ -190,15 +223,15 @@ try {
 }
 
 for (const value of flipOn) {
-  const out = await runCronJob("github-poll", { CUTOVER_FLIPPED: value }, throwingSql());
-  ok(out.skipped !== true && out.status === 501, `runCronJob github-poll runs after ${value} (501 unported)`);
-  const http = await app.request("http://localhost/api/cron/github-poll", {
+  const out = await runCronJob("google-renew", { CUTOVER_FLIPPED: value }, throwingSql());
+  ok(out.skipped !== true && out.status === 501, `runCronJob google-renew runs after ${value} (501 unported)`);
+  const http = await app.request("http://localhost/api/cron/google-renew", {
     method: "POST",
     headers: { Authorization: `Bearer ${cronSecret}` },
   }, { CRON_SECRET: cronSecret, CUTOVER_FLIPPED: value });
-  ok(http.status === 501, `handleCron github-poll runs after ${value}: HTTP ${http.status}`);
+  ok(http.status === 501, `handleCron google-renew runs after ${value}: HTTP ${http.status}`);
   const body = (await http.json()) as { stay_on_supabase?: boolean; skipped?: boolean };
-  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron github-poll after ${value} is stay_on_supabase`);
+  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron google-renew after ${value} is stay_on_supabase`);
 }
 
 const bearerSkip = gateCronBearerRoute({}, "github-activity");

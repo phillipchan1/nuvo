@@ -5,15 +5,15 @@
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune,
- * push-dispatch) iterate `users` then scope by `user_id`. Jobs that must
- * not run beside Supabase `pg_cron` belong in `POST_FLIP_CRON_JOBS`
- * (`cutoverFlip.ts`). `handleCron` / `runCronJob` call `gateCron` before
- * any DB / fetch / queue work. Unset `CUTOVER_FLIPPED` skips with 200.
- * Calendar-dispatch fans out one Queue message per due account so a
- * single isolate does not loop every tenant against Google/Graph/CalDAV
- * (Workers Paid CPU). github / google-renew stay 501 after the flip.
- * Queue consume is a no-op scaffold — later PRs sync one account per
- * message.
+ * push-dispatch, github-poll, trim-sync-log) iterate `users` then scope
+ * by `user_id`. Jobs that must not run beside Supabase `pg_cron` belong
+ * in `POST_FLIP_CRON_JOBS` (`cutoverFlip.ts`). `handleCron` / `runCronJob`
+ * call `gateCron` before any DB / fetch / queue work. Unset
+ * `CUTOVER_FLIPPED` skips with 200. Calendar-dispatch fans out one Queue
+ * message per due account so a single isolate does not loop every tenant
+ * against Google/Graph/CalDAV (Workers Paid CPU). google-renew stays 501
+ * after the flip. Queue consume is a no-op scaffold — later PRs sync
+ * one account per message.
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -27,6 +27,7 @@ import { bearerToken, cronAuthorized } from "./cron.ts";
 import { cutoverFlipped, gateCron } from "./cutoverFlip.ts";
 import type { Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import { runPushDispatch } from "./pushDispatch.ts";
@@ -223,6 +224,16 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
     await runPushDispatch(sql, env);
     return { job: name, status: 200, stay_on_supabase: false };
   }
+  if (name === "github-poll") {
+    if (!sql) return blocked(name);
+    const out = await runGithubPoll(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false, enqueued: out.synced };
+  }
+  if (name === "trim-sync-log") {
+    if (!sql) return blocked(name);
+    const out = await runTrimSyncLog(sql);
+    return { job: name, status: 200, stay_on_supabase: false, deleted: out.deleted };
+  }
   return blocked(name);
 }
 
@@ -316,6 +327,16 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
       clientPublicKey: body.clientPublicKey,
     });
     return json(result, 200, OPEN_CORS);
+  }
+
+  if (name === "github-poll") {
+    const out = await runGithubPoll(sql, c.env);
+    return json(out, 200, OPEN_CORS);
+  }
+
+  if (name === "trim-sync-log") {
+    const out = await runTrimSyncLog(sql);
+    return json(out, 200, OPEN_CORS);
   }
 
   return stayOnSupabase(job || name);
