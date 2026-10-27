@@ -691,16 +691,33 @@ function psqlFile(sql: string): { stderr: string; status: number | null } {
   }
 }
 
-function classifyPsql(text: string): { retryable: boolean; stop: string; table: string } {
+function classifyPsql(text: string, script = ""): { retryable: boolean; stop: string; table: string } {
   const out = py(
-    "from cutover_copy import is_retryable_lock_timeout, retryable_lock_timeout_stop, table_from_lock_error; "
+    "from cutover_copy import is_retryable_lock_timeout, retryable_lock_timeout_stop, table_from_resync_error; "
     + `err = ${JSON.stringify(text)}; `
+    + `script = ${JSON.stringify(script)}; `
     + "print(is_retryable_lock_timeout(err)); "
-    + "print(table_from_lock_error(err) or ''); "
-    + "print(retryable_lock_timeout_stop(err))",
+    + "print(table_from_resync_error(err, script) or ''); "
+    + "print(retryable_lock_timeout_stop(err, script=script))",
   );
   const [retryable, table, ...rest] = out.split("\n");
   return { retryable: retryable === "True", table, stop: rest.join("\n") };
+}
+
+function sampleResyncScript(): string {
+  return py(
+    "from cutover_copy import compose_resync_script; "
+    + "print(compose_resync_script("
+    + "sync_copy_sql=r'\\copy cutover_sync_log_src (id) FROM \\'s.csv\\' WITH CSV',"
+    + "push_copy_sql=r'\\copy cutover_push_rows (id) FROM \\'p.csv\\' WITH CSV',"
+    + "), end='')",
+  );
+}
+
+function resyncLine(script: string, needle: string): number {
+  const n = script.split("\n").findIndex((line) => line.includes(needle));
+  if (n < 0) throw new Error(`missing ${needle}`);
+  return n + 1;
 }
 
 describe("live PostgreSQL lock timeout", () => {
@@ -742,10 +759,9 @@ describe("live PostgreSQL lock timeout", () => {
       expect(err?.message).toMatch(/push_subscriptions lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
       expect(err?.message).not.toMatch(/sync_log lock timed out/);
 
-      const banner =
-        `psql:resync.sql:24: ERROR:  55P03: ${err!.message}\n` +
-        `CONTEXT:  SQL statement ${JSON.stringify(deleteSql)}`;
-      const classified = classifyPsql(banner);
+      const script = sampleResyncScript();
+      const banner = `psql:resync.sql:${resyncLine(script, "cutover_push_anti_join_delete()")}: ERROR:  55P03:`;
+      const classified = classifyPsql(banner, script);
       expect(classified.retryable).toBe(true);
       expect(classified.table).toBe("push_subscriptions");
       expect(classified.stop).toMatch(/^push_subscriptions lock timed out/);
@@ -805,10 +821,9 @@ describe("live PostgreSQL lock timeout", () => {
       expect(err?.message).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\) \[55P03\]/);
       expect(err?.message).not.toMatch(/push_subscriptions lock timed out/);
 
-      const banner =
-        `psql:resync.sql:12: ERROR:  55P03: ${err!.message}\n` +
-        `CONTEXT:  SQL statement "LOCK TABLE public.sync_log IN SHARE ROW EXCLUSIVE MODE"`;
-      const classified = classifyPsql(banner);
+      const script = sampleResyncScript();
+      const banner = `psql:resync.sql:${resyncLine(script, "LOCK TABLE public.sync_log")}: ERROR:  55P03:`;
+      const classified = classifyPsql(banner, script);
       expect(classified.retryable).toBe(true);
       expect(classified.table).toBe("sync_log");
       expect(classified.stop).toMatch(/^sync_log lock timed out/);
@@ -1022,6 +1037,72 @@ describe("live PostgreSQL lock timeout", () => {
       }
     } finally {
       await locker.query("DROP TABLE IF EXISTS public.cutover_qa_body CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("does not treat INFO-body or trigger-restored NOTICE spoofs as retryable", async () => {
+    const locker = await connectLivePg();
+    try {
+      const cases: [string, string][] = [
+        [
+          "info-other-file",
+          "DO $qa$ BEGIN RAISE INFO E'x\\npsql:x:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "info-same-file",
+          "DO $qa$ BEGIN RAISE INFO E'x\\npsql:resync.sql:1: ERROR:  55P03: fake'; RAISE EXCEPTION 'not a lock'; END $qa$;\n",
+        ],
+        [
+          "trigger-set-same-file",
+          "CREATE OR REPLACE FUNCTION public.cutover_qa_trig_notice() RETURNS void\n"
+          + "LANGUAGE plpgsql AS $fn$\n"
+          + "BEGIN\n"
+          + "  PERFORM set_config('client_min_messages', 'notice', false);\n"
+          + "  RAISE NOTICE E'x\\npsql:resync.sql:1: ERROR:  55P03: fake';\n"
+          + "  RAISE EXCEPTION 'not a lock';\n"
+          + "END\n"
+          + "$fn$;\n"
+          + "SELECT public.cutover_qa_trig_notice();\n",
+        ],
+      ];
+      for (const [name, sql] of cases) {
+        const { stderr, status } = psqlFile(sql);
+        expect(status, name).not.toBe(0);
+        expect(classifyPsql(stderr).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_error_banner_line; print(first_error_banner_line(${JSON.stringify(stderr)}) or 'NONE')`,
+          ),
+          name,
+        ).toBe("NONE");
+      }
+    } finally {
+      await locker.query("DROP FUNCTION IF EXISTS public.cutover_qa_trig_notice()").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  });
+
+  live("sync_log_load_sql suppresses NOTICE on a live session", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-load-"));
+    const file = join(dir, "resync.sql");
+    try {
+      const load = py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql(), end='')");
+      writeFileSync(
+        file,
+        `${load};\nDO $qa$ BEGIN RAISE NOTICE 'cutover-qa-should-be-silent'; END $qa$;\n`,
+      );
+      const result = spawnSync(
+        "psql",
+        ["-v", "ON_ERROR_STOP=1", "-d", LIVE_PG_URL, "-f", file],
+        { encoding: "utf8" },
+      );
+      const stderr = result.stderr || "";
+      expect(stderr).not.toMatch(/cutover-qa-should-be-silent/);
+      expect(stderr).not.toMatch(/NOTICE:/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
       await locker.end().catch(() => undefined);
     }
   });

@@ -361,17 +361,19 @@ then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out as
 `lock_not_available` / `55P03` and is rewritten to
 `sync_log lock timed out after 10s — retry the resync (retryable) [55P03]`,
 with the redacted psql error appended, rather than hanging the job).
-The resync script starts with `\set VERBOSITY verbose` and
-`SET client_min_messages = error` so the psql banner carries
-`ERROR:  55P03:` (default verbosity omits the SQLSTATE; NOTICE / WARNING
-bodies are suppressed). Only the resync target `psql` call classifies a
+The resync script starts with `\set VERBOSITY sqlstate` and
+`SET client_min_messages = error` so the psql banner is
+`ERROR:  55P03:` with no message text (NOTICE / WARNING are suppressed;
+INFO cannot be). Only the resync target `psql` call classifies a
 retryable lock timeout; dump / restore / `pg_restore` always stop as a
 plain failure. The classifier takes the first `psql:<file>:<n>: ERROR:`
-banner and requires `ERROR:  55P03:` on that line — a bare or
-`pg_restore` `ERROR:` line, or a later row-value spoof, is not retryable.
+banner and requires `ERROR:  55P03:` on that line; the table is the
+script line that number maps to, not message text. Any INFO / NOTICE /
+WARNING / LOG / DEBUG banner before that ERROR is not retryable. A bare
+or `pg_restore` `ERROR:` line is not retryable.
 A `push_subscriptions`
 lock timeout uses the same SQLSTATE `55P03` and names that table from the
-failing statement or CONTEXT, not `sync_log`. There is **no automatic retry**:
+resync.sql line number, not `sync_log`. There is **no automatic retry**:
 re-dispatch `cutover-migrate` with `phase=resync` by hand.
 `setval`s `GREATEST(max(id), last_value, 1)`
 so the parked identity never decreases — `--exclude-table-data` drops

@@ -202,8 +202,8 @@ def sync_log_set_lock_timeout_sql(*, local: bool = False) -> str:
 
 
 def psql_verbosity_sql() -> str:
-    """Make psql print SQLSTATE on errors (default verbosity omits it)."""
-    return r"\set VERBOSITY verbose"
+    """Print only SQLSTATE on errors — no message text to spoof."""
+    return r"\set VERBOSITY sqlstate"
 
 
 def strip_psql_meta(sql: str) -> str:
@@ -217,10 +217,9 @@ def strip_psql_meta(sql: str) -> str:
 
 def sync_log_load_sql() -> str:
     # Session-level so CREATE TEMP / \\copy (before BEGIN) cannot hang either.
-    # VERBOSITY verbose so the whole -f script (including push DML) reports
-    # SQLSTATE 55P03 on lock_timeout — default psql banners omit it.
-    # client_min_messages = error is the first SQL statement so NOTICE /
-    # WARNING (and their multi-line bodies) never reach the classifier.
+    # VERBOSITY sqlstate so the -f banner is `ERROR:  55P03:` with no
+    # message text. client_min_messages = error is the first SQL statement
+    # so NOTICE / WARNING never print (INFO cannot be suppressed).
     return (
         psql_verbosity_sql() + "\n"
         + "SET client_min_messages = error;\n"
@@ -346,15 +345,12 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-# Resync is `psql -f` + VERBOSITY verbose: a real banner is always
-# `psql:<file>:<n>: ERROR:  55P03:`. Bare / pg_restore ERROR lines never
-# count. If one of those appears before any psql-prefixed ERROR, stop —
-# a later DETAIL / NOTICE body spoof must not win.
-PSQL_FIELD = re.compile(
-    r"^psql:([^:\n]+):\d+: (ERROR|NOTICE|WARNING|DETAIL|HINT|CONTEXT|LOCATION):"
-)
-SKIP_PSQL_NON_ERROR = re.compile(
-    r"^(?:psql:[^:\n]+:\d+: )?(?:NOTICE|WARNING|DETAIL|HINT|CONTEXT|LOCATION):"
+# Resync is `psql -f` + VERBOSITY sqlstate: a real banner is
+# `psql:<file>:<n>: ERROR:  55P03:` with no message. Bare / pg_restore
+# ERROR lines never count. Fail-closed: any INFO/NOTICE/WARNING/LOG/DEBUG
+# banner before the first ERROR means the stream was spoofable — None.
+PSQL_PRE_ERROR = re.compile(
+    r"^psql:[^:\n]+:\d+: (INFO|NOTICE|WARNING|LOG|DEBUG\d?):"
 )
 FIRST_ERROR_BANNER = re.compile(r"^psql:[^:\n]+:\d+: ERROR:")
 BARE_OR_RESTORE_ERROR = re.compile(r"^(?:ERROR:|pg_restore: error:)")
@@ -363,6 +359,13 @@ RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
 )
 FIRST_PSQL_ERROR_SQLSTATE = re.compile(
     r"^psql:[^:\n]+:\d+: ERROR:\s+([0-9A-Z]{5}):"
+)
+PSQL_ERROR_LINE_NO = re.compile(r"^psql:[^:\n]+:(\d+): ERROR:\s+55P03:")
+_RESYNC_PUSH_LINE = re.compile(
+    r"cutover_push_|pg_temp\.cutover_push_|public\.push_subscriptions"
+)
+_RESYNC_SYNC_LINE = re.compile(
+    r"cutover_sync_log|LOCK TABLE public\.sync_log|public\.sync_log"
 )
 
 # Prefer the failing statement / CONTEXT over a loose name match.
@@ -385,27 +388,54 @@ def table_from_lock_error(text: str) -> str | None:
     return None
 
 
+def compose_resync_script(*, sync_copy_sql: str, push_copy_sql: str) -> str:
+    """The -f script the migrate job writes; line numbers are the table map."""
+    return "\n".join(
+        [
+            sync_log_load_sql() + ";",
+            sync_copy_sql,
+            sync_log_resync_txn_sql(),
+            push_load_rows_sql() + ";",
+            push_copy_sql,
+            push_anti_join_delete_sql() + ";",
+            push_upsert_sql() + ";",
+            "",
+        ]
+    )
+
+
+def table_at_resync_line(script: str, line_no: int) -> str | None:
+    """Table for a 1-based line of the generated resync.sql. Last section wins."""
+    found: str | None = None
+    for i, line in enumerate((script or "").splitlines(), start=1):
+        if i > line_no:
+            break
+        if _RESYNC_PUSH_LINE.search(line):
+            found = "push_subscriptions"
+        elif _RESYNC_SYNC_LINE.search(line):
+            found = "sync_log"
+    return found
+
+
+def table_from_resync_error(stderr: str, script: str) -> str | None:
+    """Table from the first 55P03 banner's line number, not message text."""
+    line = first_error_banner_line(stderr)
+    if line is None:
+        return None
+    match = PSQL_ERROR_LINE_NO.match(line)
+    if not match:
+        return None
+    return table_at_resync_line(script, int(match.group(1)))
+
+
 def first_error_banner_line(text: str) -> str | None:
-    """First `psql:<file>:<n>: ERROR:` banner. Bare / pg_restore never count."""
-    notice_file: str | None = None
+    """First `psql:<file>:<n>: ERROR:` banner. Chatter before it is fatal."""
     for raw in (text or "").splitlines():
-        field = PSQL_FIELD.match(raw)
-        if field:
-            file, kind = field.group(1), field.group(2)
-            if kind != "ERROR":
-                if kind in ("NOTICE", "WARNING"):
-                    notice_file = file
-                continue
-            # A NOTICE/WARNING body may contain `psql:a:1: ERROR:  55P03:`.
-            # Real -f banners reuse the script file of the NOTICE/WARNING.
-            if notice_file is not None and file != notice_file:
-                continue
+        if PSQL_PRE_ERROR.match(raw):
+            return None
+        if FIRST_ERROR_BANNER.match(raw):
             return raw
-        if SKIP_PSQL_NON_ERROR.match(raw):
-            continue
         if BARE_OR_RESTORE_ERROR.match(raw):
-            if notice_file is not None:
-                continue
             return None
     return None
 
@@ -428,10 +458,15 @@ def is_retryable_lock_timeout(text: str) -> bool:
 def retryable_lock_timeout_stop(
     redacted_psql_error: str,
     table: str | None = None,
+    script: str | None = None,
 ) -> str:
     """Operator-facing stop: retryable banner plus the redacted psql text."""
     err = (redacted_psql_error or "").strip()
-    named = table or table_from_lock_error(err)
+    named = (
+        table
+        or table_from_resync_error(err, script or "")
+        or table_from_lock_error(err)
+    )
     msg = lock_timeout_message(named)
     if not err:
         return msg
