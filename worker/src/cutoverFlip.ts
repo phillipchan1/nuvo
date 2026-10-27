@@ -1,71 +1,59 @@
 /**
- * Post-flip gate for Worker copies of jobs that stay on Supabase `pg_cron`
- * until the switch. One flag, fail closed. B/D add names to
- * `POST_FLIP_CRON_JOBS` — do not invent a second flag.
+ * Single fail-closed flip gate for Worker crons and CRON_SECRET routes.
  *
- * A later PR owns this file as the only implementation. Names here
- * (`cutoverFlipped`, `POST_FLIP_CRON_JOBS`, `skippedUntilCutoverFlip`,
- * `gateCron`, `gateCronBearerRoute`) stay stable for that swap.
+ * Do not import writeFrozen / maintenance.ts — a freeze typo must not
+ * start these jobs, and a flip typo must not unfreeze writes.
  */
-export const CUTOVER_FLIPPED_VALUES = ["1", "true", "yes", "on"] as const;
+import { OPEN_CORS, json } from "./cors.ts";
+import type { Env } from "./env.ts";
 
+export type FlipEnv = Pick<Env, "CUTOVER_FLIPPED">;
+
+/** Allowlist only. Unset, empty, and anything else is not flipped. */
 export function cutoverFlipped(value: string | undefined | null): boolean {
   const v = (value ?? "").trim().toLowerCase();
-  return (CUTOVER_FLIPPED_VALUES as readonly string[]).includes(v);
-}
-
-export const POST_FLIP_CRON_JOBS = ["github-poll", "trim-sync-log"] as const;
-export type PostFlipCronJob = (typeof POST_FLIP_CRON_JOBS)[number];
-
-const POST_FLIP_ALIASES: Record<string, PostFlipCronJob> = {
-  "nuvo-github-poll": "github-poll",
-  "nuvo-trim-sync-log": "trim-sync-log",
-};
-
-export interface CutoverFlipEnv {
-  CUTOVER_FLIPPED?: string;
-}
-
-export interface CutoverFlipSkip {
-  job: string;
-  status: 200;
-  stay_on_supabase: true;
-  skipped: true;
-  reason: "cutover_not_flipped";
-}
-
-export function asPostFlipJob(job: string): PostFlipCronJob | null {
-  const raw = job.trim().toLowerCase();
-  if ((POST_FLIP_CRON_JOBS as readonly string[]).includes(raw)) return raw as PostFlipCronJob;
-  return POST_FLIP_ALIASES[raw] ?? null;
-}
-
-/** Fail closed: unset / unknown `CUTOVER_FLIPPED` = not flipped. */
-export function skipUntilCutoverFlip(job: string, env: CutoverFlipEnv): boolean {
-  return asPostFlipJob(job) != null && !cutoverFlipped(env.CUTOVER_FLIPPED);
-}
-
-export function skippedUntilCutoverFlip(job: string, env: CutoverFlipEnv): CutoverFlipSkip | null {
-  const name = asPostFlipJob(job);
-  if (!name || cutoverFlipped(env.CUTOVER_FLIPPED)) return null;
-  return {
-    job: name,
-    status: 200,
-    stay_on_supabase: true,
-    skipped: true,
-    reason: "cutover_not_flipped",
-  };
-}
-
-/** Scheduled / `runCronJob` gate. Null means run the job. */
-export function gateCron(job: string, env: CutoverFlipEnv): CutoverFlipSkip | null {
-  return skippedUntilCutoverFlip(job, env);
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 /**
- * CRON_SECRET bearer routes (github-activity `action: "sync"`, later B/D).
- * Call before opening the DB.
+ * Worker copies of jobs that must not run beside Supabase `pg_cron`.
+ * Includes every name the cron dispatcher can fire, plus the queue
+ * consumer and jobs later PRs add (google-resubscribe).
  */
-export function gateCronBearerRoute(job: string, env: CutoverFlipEnv): CutoverFlipSkip | null {
-  return skippedUntilCutoverFlip(job, env);
+export const POST_FLIP_CRON_JOBS: readonly string[] = [
+  "github-poll",
+  "trim-sync-log",
+  "calendar-dispatch",
+  "google-renew",
+  "google-resubscribe",
+  "push-dispatch",
+  "rollover",
+  "purge-trash",
+  "reminder-deliveries-prune",
+  "queue-consume",
+];
+
+export const CUTOVER_NOT_FLIPPED = "cutover_not_flipped";
+
+/** HTTP 200 skip. The one shape both cron paths and bearer routes return. */
+export function skippedUntilCutoverFlip(job: string): Response {
+  return json(
+    { ok: true, skipped: true, reason: CUTOVER_NOT_FLIPPED, job },
+    200,
+    OPEN_CORS,
+  );
+}
+
+/** null = run. Otherwise the skip Response. Used by handleCron + runCronJob. */
+export function gateCron(env: FlipEnv, job: string): Response | null {
+  if (cutoverFlipped(env.CUTOVER_FLIPPED)) return null;
+  return skippedUntilCutoverFlip(job);
+}
+
+/**
+ * Same skip, for every HTTP route that accepts the CRON_SECRET bearer
+ * to do sync or cron-like work. Check before the DB opens.
+ */
+export function gateCronBearerRoute(env: FlipEnv, name: string): Response | null {
+  return gateCron(env, name);
 }

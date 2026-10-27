@@ -37,10 +37,9 @@ export interface Env {
   /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
   CUTOVER_ARMED?: string;
   /**
-   * `1` / `true` after the flip and the final `phase=resync`.
-   * Unset / unknown = not flipped. `github-poll` and `trim-sync-log` then
-   * no-op with 200 `{ skipped: true }` so they cannot double-fire with
-   * Supabase `pg_cron` or delete rows the next resync would copy back.
+   * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
+   * Unset, empty, and anything else is not flipped — Worker crons and
+   * CRON_SECRET github-activity `action: "sync"` skip with 200.
    */
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */

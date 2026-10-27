@@ -49,12 +49,12 @@ None of these belong in the Vite bundle.
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Ported: rollover, purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push / google-renew stay 501 |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Until `CUTOVER_FLIPPED`, every cron and cron-bearer route (including github-activity `action: "sync"`) returns 200 `{ skipped: true, reason: "cutover_not_flipped" }` and does not open the DB. After flip: rollover, purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push / google-renew stay 501 |
+| `CUTOVER_FLIPPED` | var | **Allowlist only:** `1` / `true` / `yes` / `on` (trimmed, case-insensitive). Unset, empty, and anything else (`garbage`, `maybe`, `2`, `false`, `0`) is not flipped. Set only after runbook step 8. Until then Worker crons and github-activity `action: "sync"` with `CRON_SECRET` stay skipped |
 | `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
 | `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
-| `CUTOVER_FLIPPED` | var | Accepted (allowlist, case-insensitive): `1`, `true`, `yes`, `on`. Unset or any other value = not flipped (fail closed). Set only after runbook step 8. Until then `github-poll`, `trim-sync-log`, and github-activity `action: "sync"` with `CRON_SECRET` return 200 `{ skipped: true }` |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
@@ -209,29 +209,32 @@ custom domain. Do **not** retarget Stripe, Apple, Google, or Resend webhooks.
 
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
 or wrong). The scheduled handler is Cloudflare-authenticated and calls the
-same runners. Ported jobs (`rollover`, `purge-trash`,
-`reminder-deliveries-prune`, `github-poll`, `trim-sync-log`) iterate `users`
-then scope by `user_id`. Calendar-dispatch enqueues due accounts onto
-`CALENDAR_SYNC_QUEUE`. Push / google-renew stay 501 / `stay_on_supabase`.
-`trim-sync-log` deletes by `created_at < now() - 30 days` and, when the
-identity is parked (`last_value >= 1e6`), also `id < last_value - 1e6 + 1`.
-Copied source ids typically sit below that floor. The floor keeps recent
-Neon-origin rows out of age trim; it is not a permanent partition — after
-about 1e6 further Neon inserts the floor rises past those early Neon ids
-and any row older than 30 days is eligible. This cron, `github-poll`,
-and github-activity `action: "sync"` with `CRON_SECRET` stay no-ops until
-`CUTOVER_FLIPPED` is one of `1` / `true` / `yes` / `on` (step 8). Unset
-or any other value = 200 `{ skipped: true }`. The sequence is never reset.
+same runners. **One flip gate** (`worker/src/cutoverFlip.ts`): until
+`CUTOVER_FLIPPED` is an allowlisted value (`1` / `true` / `yes` / `on`),
+every post-flip job — and github-activity `action: "sync"` with
+`CRON_SECRET` — returns **200 `{ ok: true, skipped: true, reason:
+"cutover_not_flipped", job }`** with no DB, fetch, or queue work. After
+the flip, ported jobs (`rollover`, `purge-trash`,
+`reminder-deliveries-prune`, `github-poll`, `trim-sync-log`) iterate
+`users` then scope by `user_id`. Calendar-dispatch enqueues due accounts
+onto `CALENDAR_SYNC_QUEUE`. Unported jobs (push / google-renew) then
+501 / `stay_on_supabase`. `trim-sync-log` deletes by
+`created_at < now() - 30 days` and, when the identity is parked
+(`last_value >= 1e6`), also `id < last_value - 1e6 + 1`. Copied source
+ids typically sit below that floor. The floor keeps recent Neon-origin
+rows out of age trim; it is not a permanent partition — after about 1e6
+further Neon inserts the floor rises past those early Neon ids and any
+row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 |
-| `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
-| `15 9 * * *` | `google-renew` | 501 |
-| `20 9 * * *` | `github-poll` | ported — no-op until `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
-| `0 10 * * 0` | `trim-sync-log` | ported — no-op until `CUTOVER_FLIPPED`; then per-user age delete. Floor keeps recent Neon-origin ids out of trim until ~1e6 further inserts |
-| `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
-| `0 4 * * *` | `purge-trash` | ported — iterates `users`, scopes `DELETE` by `user_id` |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 after flip |
+| `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
+| `15 9 * * *` | `google-renew` | skip until flip, then 501 |
+| `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
+| `0 10 * * 0` | `trim-sync-log` | skip until flip, then per-user age delete. Floor keeps recent Neon-origin ids out of trim until ~1e6 further inserts |
+| `30 4 * * *` | `reminder-deliveries-prune` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
+| `0 4 * * *` | `purge-trash` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 
 **Queue projection (flag, not extra spend):** one send + one consume per due
 account per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -243,6 +246,21 @@ step 8 in order: unschedule, final resync, then set `CUTOVER_FLIPPED`.
 Doing it earlier lets Worker `github-poll` (and github-activity
 `CRON_SECRET` sync) double-fire with `nuvo-github-poll`, and lets trim
 delete old copied rows the next resync copies back.
+
+### Flip runbook (order is load-bearing)
+
+Do **not** set `CUTOVER_FLIPPED` until both of these have landed. The
+Worker copies must not run beside `pg_cron`, and they must not run
+against a Neon that is still missing the last billing / `sync_log` rows.
+
+1. **`cron.unschedule` the Supabase `pg_cron` jobs** (`nuvo-*` in
+   `00000000000002_cron.sql`). Reversible: reschedule from that file.
+2. **Final `phase=resync`** — one more `cutover-migrate` resync after
+   the `VITE_API_BASE_URL` switch so every post-switch source row lands.
+3. **Set `CUTOVER_FLIPPED=1`** on the Worker. Accepted values are only
+   `1`, `true`, `yes`, `on` (trimmed, case-insensitive). Anything else
+   stays skipped — including github-activity `action: "sync"` with
+   `CRON_SECRET`.
 
 ## Write freeze
 

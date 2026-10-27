@@ -9,3 +9,5 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
 # RESEND_FROM=Nuvo <noreply@localhost>
 # Optional. /api/cron/* compares this bearer in constant time.
 # CRON_SECRET=
+# Allowlist only: 1 / true / yes / on. Unset = Worker crons skip (stay on pg_cron).
+# CUTOVER_FLIPPED=

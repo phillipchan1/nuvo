@@ -582,7 +582,7 @@ describe("resync + trim convergence", () => {
   }
 
   it("repeated resync+trim converges when trim is gated until after the final resync", async () => {
-    const { skipUntilCutoverFlip } = await import("../worker/src/cronJobs.ts");
+    const { cutoverFlipped } = await import("../worker/src/cutoverFlip.ts");
     const source = new PGlite();
     const target = new PGlite();
     await source.exec(SYNC_DDL);
@@ -602,12 +602,12 @@ describe("resync + trim convergence", () => {
        OVERRIDING SYSTEM VALUE VALUES (1000003, 'github', 'sync', 'ok', now() - interval '40 days')`,
     );
 
-    expect(skipUntilCutoverFlip("trim-sync-log", {})).toBe(true);
-    expect(skipUntilCutoverFlip("github-poll", { CUTOVER_FLIPPED: "maybe" })).toBe(true);
+    expect(cutoverFlipped(undefined)).toBe(false);
+    expect(cutoverFlipped("maybe")).toBe(false);
     const before: number[][] = [];
     for (let i = 0; i < 3; i++) {
       await resyncAll(source, target);
-      if (!skipUntilCutoverFlip("trim-sync-log", {})) await trimLikeWorker(target);
+      if (cutoverFlipped(undefined)) await trimLikeWorker(target);
       before.push(await idsOf(target));
     }
     expect(before[0]).toEqual([1, 2, 1000003]);
@@ -620,7 +620,7 @@ describe("resync + trim convergence", () => {
     await resyncAll(source, target);
     expect(await idsOf(target)).toEqual([1, 2, 1000003]);
 
-    expect(skipUntilCutoverFlip("trim-sync-log", { CUTOVER_FLIPPED: "1" })).toBe(false);
+    expect(cutoverFlipped("1")).toBe(true);
     await trimLikeWorker(target);
     expect(await idsOf(target)).toEqual([2, 1000003]);
     await trimLikeWorker(target);

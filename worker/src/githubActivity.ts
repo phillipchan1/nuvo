@@ -444,8 +444,8 @@ export async function handleGithubActivity(c: Context<AppEnv>): Promise<Response
   const action = clean(body.action) || "sync";
   const cronToken = bearerToken(c.req.header("authorization"));
   if (action === "sync" && cronAuthorized(cronToken, c.env.CRON_SECRET)) {
-    const skipped = gateCronBearerRoute("github-poll", c.env);
-    if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
+    const skipped = gateCronBearerRoute(c.env, "github-poll");
+    if (skipped) return skipped;
     if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
       return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
     }

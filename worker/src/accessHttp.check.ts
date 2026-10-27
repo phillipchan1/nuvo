@@ -66,7 +66,7 @@ ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: seals with A's secret
 ok(/writeFrozen\(c\.env\.MAINTENANCE_WRITE_FREEZE\)/.test(ghSrc), "github-activity: writeFrozen after auth");
 ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim-sync-log: floor excludes Neon-origin ids (Supabase-origin ids sit below it)");
 ok(/CUTOVER_FLIPPED/.test(ghSrc), "trim-sync-log: comments the post-flip gate");
-ok(/gateCronBearerRoute\("github-poll"/.test(ghSrc), "github-activity: CRON_SECRET sync uses gateCronBearerRoute");
+ok(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc), "github-activity: CRON_SECRET sync uses gateCronBearerRoute(c.env, 'github-poll')");
 const cronSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
 const requireStoreAt = ghSrc.indexOf("requireStore(c)");
 const cronSync = cronSyncAt >= 0 && requireStoreAt > cronSyncAt ? ghSrc.slice(cronSyncAt, requireStoreAt) : "";
@@ -74,8 +74,8 @@ ok(cronSync.includes("gateCronBearerRoute"), "github-activity cron sync: flip ga
 ok(cronSync.indexOf("gateCronBearerRoute") < cronSync.indexOf("requestIo"), "github-activity cron sync: flip gate before requestIo");
 ok(!/cutoverFlipped\(/.test(readFileSync(join(here, "maintenance.ts"), "utf8")), "maintenance.ts does not own cutoverFlipped");
 const cronJobsSrc = readFileSync(join(here, "cronJobs.ts"), "utf8");
-ok(/gateCron\(name, c\.env\)/.test(cronJobsSrc), "handleCron uses gateCron");
-ok(/gateCron\(name, env\)/.test(cronJobsSrc), "runCronJob uses gateCron");
+ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron uses gateCron");
+ok(/gateCron\(env, name\)/.test(cronJobsSrc), "runCronJob uses gateCron");
 ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers live in cutoverFlip.ts");
 
 const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
@@ -147,6 +147,7 @@ const env = {
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
   TOKEN_ENC_KEY_V1: "00".repeat(32),
+  CUTOVER_FLIPPED: "1",
 };
 
 const restore = installRequestIoForTests(() => {
@@ -1352,7 +1353,7 @@ await db.query(
 );
 const oldBeforeSkip = await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 days'", [a.id]);
 ok(oldBeforeSkip === 1, "cron trim pre-flip: old A row is present");
-const trimSkip = await withTimeout(cronRequest("/api/cron/nuvo-trim-sync-log"), 8000, "cron trim skip");
+const trimSkip = await withTimeout(cronRequest("/api/cron/nuvo-trim-sync-log", { CUTOVER_FLIPPED: "" }), 8000, "cron trim skip");
 ok(trimSkip.status === 200, `cron trim before flip: HTTP ${trimSkip.status}`);
 const trimSkipBody = (await trimSkip.json()) as { skipped?: boolean; reason?: string };
 ok(trimSkipBody.skipped === true, "cron trim before flip: skipped:true");
@@ -1361,7 +1362,7 @@ ok((await count("sync_log", "user_id = $1 AND created_at < now() - interval '30 
 ok((await count("sync_log", "user_id = $1", [a.id])) === 2, "cron trim before flip: recent A row kept");
 
 const githubBeforeSkip = githubApiCalls;
-const pollSkip = await withTimeout(cronRequest("/api/cron/github-poll"), 8000, "cron poll skip");
+const pollSkip = await withTimeout(cronRequest("/api/cron/github-poll", { CUTOVER_FLIPPED: "" }), 8000, "cron poll skip");
 ok(pollSkip.status === 200, `cron github-poll before flip: HTTP ${pollSkip.status}`);
 const pollSkipBody = (await pollSkip.json()) as { skipped?: boolean };
 ok(pollSkipBody.skipped === true, "cron github-poll before flip: skipped:true");
@@ -1526,13 +1527,13 @@ async function cronGithubSync(extraEnv: Record<string, string> = {}, path = "/ap
   );
 }
 const githubBeforeBearerSkip = githubApiCalls;
-const bearerSyncSkip = await withTimeout(cronGithubSync(), 8000, "github-activity cron sync skip");
+const bearerSyncSkip = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "" }), 8000, "github-activity cron sync skip");
 ok(bearerSyncSkip.status === 200, `github-activity CRON_SECRET sync before flip: HTTP ${bearerSyncSkip.status}`);
 const bearerSyncSkipBody = (await bearerSyncSkip.json()) as { skipped?: boolean; reason?: string; job?: string };
 ok(bearerSyncSkipBody.skipped === true, "github-activity CRON_SECRET sync before flip: skipped:true");
 ok(bearerSyncSkipBody.job === "github-poll", "github-activity CRON_SECRET sync before flip: job github-poll");
 ok(githubApiCalls === githubBeforeBearerSkip, "github-activity CRON_SECRET sync before flip: no GitHub API call");
-const fnSyncSkip = await withTimeout(cronGithubSync({}, "/functions/v1/github-activity"), 8000, "functions github-activity cron sync skip");
+const fnSyncSkip = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "" }, "/functions/v1/github-activity"), 8000, "functions github-activity cron sync skip");
 ok(fnSyncSkip.status === 200 && ((await fnSyncSkip.json()) as { skipped?: boolean }).skipped === true, "functions/v1 github-activity CRON_SECRET sync before flip: skipped");
 const bearerUnknown = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "maybe" }), 8000, "github-activity cron sync unknown");
 ok(((await bearerUnknown.json()) as { skipped?: boolean }).skipped === true, "github-activity CRON_SECRET sync unknown value: fail-closed skip");

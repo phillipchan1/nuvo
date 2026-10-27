@@ -18,15 +18,7 @@ import {
   consumeCalendarSyncBatch,
   runCronJob,
 } from "./cronJobs.ts";
-import {
-  CUTOVER_FLIPPED_VALUES,
-  cutoverFlipped,
-  gateCron,
-  gateCronBearerRoute,
-  POST_FLIP_CRON_JOBS,
-  skipUntilCutoverFlip,
-  skippedUntilCutoverFlip,
-} from "./cutoverFlip.ts";
+import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 
 const fails: string[] = [];
@@ -112,7 +104,6 @@ ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
 
 ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
-ok(CUTOVER_FLIPPED_VALUES.join(",") === "1,true,yes,on", "cutoverFlipped accepted values are 1/true/yes/on");
 ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
 ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
 ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
@@ -121,14 +112,8 @@ ok(!/writeFrozen/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
 ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
 ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
 ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");
-ok(skipUntilCutoverFlip("github-poll", {}), "skipUntilCutoverFlip unset env");
-ok(skipUntilCutoverFlip("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "maybe" }), "skipUntilCutoverFlip alias + unknown");
-ok(!skipUntilCutoverFlip("github-poll", { CUTOVER_FLIPPED: "1" }), "skipUntilCutoverFlip flipped");
-ok(!skipUntilCutoverFlip("rollover", {}), "skipUntilCutoverFlip does not gate other crons");
-ok(skippedUntilCutoverFlip("trim-sync-log", {})?.skipped === true, "skippedUntilCutoverFlip returns skipped:true");
-ok(skippedUntilCutoverFlip("trim-sync-log", { CUTOVER_FLIPPED: "1" }) === null, "skippedUntilCutoverFlip null after flip");
-ok(gateCron("github-poll", {})?.skipped === true, "gateCron skips before flip");
-ok(gateCronBearerRoute("github-poll", { CUTOVER_FLIPPED: "on" }) === null, "gateCronBearerRoute null after flip");
+ok(gateCron({}, "github-poll") instanceof Response, "gateCron skips before flip");
+ok(gateCronBearerRoute({ CUTOVER_FLIPPED: "on" }, "github-poll") === null, "gateCronBearerRoute null after flip");
 const pollSkip = await runCronJob("github-poll", {}, null);
 ok(pollSkip.status === 200 && pollSkip.skipped === true && pollSkip.reason === "cutover_not_flipped", "runCronJob github-poll skips before flip");
 const trimSkip = await runCronJob("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "false" }, null);
@@ -151,7 +136,7 @@ const ghSrc = readFileSync(join(root, "worker/src/githubActivity.ts"), "utf8");
 ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(ghSrc), "trim: parked margin is 1e6");
 ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim: floor excludes Neon-origin ids");
 ok(/about 1e6[\s\S]*further Neon inserts/.test(ghSrc), "trim: floor rises after ~1e6 Neon inserts");
-ok(/gateCronBearerRoute\("github-poll"/.test(ghSrc), "github-activity cron sync uses gateCronBearerRoute");
+ok(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc), "github-activity cron sync uses gateCronBearerRoute(c.env, 'github-poll')");
 ok(ghSrc.indexOf("gateCronBearerRoute") < ghSrc.indexOf("requestIo(c)"), "github-activity cron sync gates before requestIo");
 ok(!/RESTART IDENTITY/.test(ghSrc) && !/setval\(/.test(ghSrc), "trim: never resets the parked identity");
 ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: uses A's secrets.ts");
@@ -162,7 +147,7 @@ ok(/requireStore\(c\)/.test(ghSrc), "github-activity: owner from session require
 const cronJobsSrc = readFileSync(join(root, "worker/src/cronJobs.ts"), "utf8");
 ok(/runGithubPoll/.test(cronJobsSrc) && /runTrimSyncLog/.test(cronJobsSrc), "cronJobs: github-poll and trim-sync-log are wired");
 ok(/name === "github-poll"/.test(cronJobsSrc) && /name === "trim-sync-log"/.test(cronJobsSrc), "cronJobs: both jobs have runners");
-ok(/gateCron\(name, env\)/.test(cronJobsSrc) && /gateCron\(name, c\.env\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
+ok(/gateCron\(env, name\)/.test(cronJobsSrc) && /gateCron\(c\.env, name\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
 ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers imported from cutoverFlip.ts");
 
 const blockedSrc = readFileSync(join(root, "worker/src/blocked.ts"), "utf8");

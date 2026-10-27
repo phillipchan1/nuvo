@@ -164,7 +164,7 @@ cutover.
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
 | `secrets.check.ts` | 140 | A's seal/open + writeFrozen + allowlist cutoverFlipped + gateCron / gateCronBearerRoute + cron aliases + github PAT AAD + trim floor |
-| `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
+| `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` skips until `CUTOVER_FLIPPED` |
 
 `npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.
 
