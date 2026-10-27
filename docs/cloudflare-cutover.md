@@ -262,14 +262,16 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    `CRON_SECRET`.
 4. **Confirm the flip landed.** `GET /api/maintenance` must report
    `cutover_flipped: true` (boolean only — it does not echo the env
-   string). Then fire one cron (`/api/cron/:job` or a scheduled tick)
+   string). Then fire one **ported** cron — `/api/cron/rollover` or
+   `/api/cron/calendar-dispatch`, not `github-poll` or `trim-sync-log` —
    and check it actually ran: a non-skipped JSON body, or a log line
    from the runner — not `{ skipped: true, reason: "cutover_not_flipped" }`.
 
 ## Write freeze
 
 `MAINTENANCE_WRITE_FREEZE=1` on the Worker makes `GET /api/maintenance`
-return `{ write_freeze: true, cutover_armed: …, cutover_flipped: … }`.
+return `{ write_freeze: true, cutover_armed: …, cutover_flipped: … }`
+with `Cache-Control: no-store`.
 `cutover_flipped` is the boolean from the allowlist — it does not echo
 the env string. Mutating `/api/data` and write RPCs then 503. RPC reads
 (`contacts`) stay open. The SPA reads

@@ -102,6 +102,17 @@ ok(writeFrozen("true"), "writeFrozen true");
 ok(writeFrozen("YES"), "writeFrozen YES");
 ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
+ok(!writeFrozen(null), "writeFrozen null is off");
+for (const value of [1, true, false, 0, { toString: () => "1" }]) {
+  let threw = false;
+  let frozen = false;
+  try {
+    frozen = writeFrozen(value);
+  } catch {
+    threw = true;
+  }
+  ok(!threw && frozen === true, `writeFrozen present non-string ${typeof value} freezes`);
+}
 
 ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
 ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");

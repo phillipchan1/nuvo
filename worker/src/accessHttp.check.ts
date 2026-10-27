@@ -1100,6 +1100,7 @@ ok(aEntAgain.status === 200 && aEntAgainBody.plan === "active", "B write attempt
 
 const maint = await withTimeout(request("/api/maintenance"), 8000, "GET maintenance");
 ok(maint.status === 200, `GET /api/maintenance unauth: HTTP ${maint.status}`);
+ok(maint.headers.get("Cache-Control") === "no-store", "GET /api/maintenance is Cache-Control: no-store");
 const maintBody = (await maint.json()) as { write_freeze?: boolean; cutover_armed?: boolean; cutover_flipped?: boolean };
 ok(maintBody.write_freeze === false, "maintenance default is off");
 ok(maintBody.cutover_armed === false, "maintenance default is not armed");

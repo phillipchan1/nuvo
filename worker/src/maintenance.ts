@@ -3,8 +3,10 @@
  * of truth; the app reads GET /api/maintenance and the mutating /api/data
  * + /api/rpc handlers refuse writes while it is on.
  */
-export function writeFrozen(value: string | undefined | null): boolean {
-  const v = (value ?? "").trim().toLowerCase();
+/** Fail-closed: unset/empty is off; a present non-string freezes (never throws). */
+export function writeFrozen(value: unknown): boolean {
+  if (typeof value !== "string") return value != null;
+  const v = value.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 

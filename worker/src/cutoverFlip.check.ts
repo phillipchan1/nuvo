@@ -13,6 +13,7 @@ import {
 import { CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
 import type { Sql } from "./db.ts";
 import app from "./index.ts";
+import { writeFrozen } from "./maintenance.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 
 const fails: string[] = [];
@@ -105,18 +106,94 @@ function walkProdTs(dir: string): string[] {
   return out;
 }
 
+function functionsIn(src: string): { name: string; body: string }[] {
+  const out: { name: string; body: string }[] = [];
+  const re = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    const brace = src.indexOf("{", m.index);
+    if (brace < 0) continue;
+    let depth = 0;
+    for (let i = brace; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          out.push({ name: m[1], body: src.slice(m.index, i + 1) });
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function usesCronSecretAuth(body: string): boolean {
+  if (/\bcronAuthorized\s*\(/.test(body)) return true;
+  if (/CRON_SECRET/.test(body) && /\bbearerToken\s*\(/.test(body)) return true;
+  if (/x-cron-secret/i.test(body)) return true;
+  if (/Bearer\s*\$\{[^}]*CRON_SECRET/.test(body)) return true;
+  if (/(?:===|!==|==|!=)\s*(?:c\.)?env\.CRON_SECRET/.test(body)) return true;
+  if (/(?:c\.)?env\.CRON_SECRET\s*(?:===|!==|==|!=)/.test(body)) return true;
+  return false;
+}
+
+function isFlipGated(body: string): boolean {
+  return /\bgateCron\s*\(/.test(body) || /\bgateCronBearerRoute\s*\(/.test(body);
+}
+
+function hasInlineCronCompare(src: string): boolean {
+  return (
+    /x-cron-secret/i.test(src) ||
+    /Bearer\s*\$\{[^}]*CRON_SECRET/.test(src) ||
+    /["']Bearer ["']\s*\+\s*[^\n]*CRON_SECRET/.test(src) ||
+    /(?:===|!==|==|!=)\s*(?:c\.)?env\.CRON_SECRET/.test(src) ||
+    /(?:c\.)?env\.CRON_SECRET\s*(?:===|!==|==|!=)/.test(src)
+  );
+}
+
+let cronSecretFns = 0;
 for (const file of walkProdTs(here)) {
   const src = readFileSync(file, "utf8");
   const rel = file.slice(here.length + 1);
   if (rel === "cron.ts") continue;
-  const cronAuth = /\bcronAuthorized\s*\(/.test(src);
-  const cronBearer = /CRON_SECRET/.test(src) && /\bbearerToken\s*\(/.test(src);
-  if (!cronAuth && !cronBearer) continue;
-  ok(
-    /\bgateCron\s*\(/.test(src) || /\bgateCronBearerRoute\s*\(/.test(src),
-    `${rel}: cronAuthorized / CRON_SECRET-bearer caller is gated by gateCron or gateCronBearerRoute`,
-  );
+  ok(!hasInlineCronCompare(src), `${rel}: no inline Bearer / x-cron-secret compare outside cron.ts`);
+  for (const fn of functionsIn(src)) {
+    if (!usesCronSecretAuth(fn.body)) continue;
+    cronSecretFns += 1;
+    ok(
+      isFlipGated(fn.body),
+      `${rel} ${fn.name}: cronAuthorized / CRON_SECRET-bearer caller is gated by gateCron or gateCronBearerRoute`,
+    );
+  }
 }
+ok(cronSecretFns >= 2, "per-function CRON_SECRET scan found handleCron and github-activity");
+
+const consumeStart = cronJobsSrc.indexOf("export function consumeCalendarSyncBatch");
+ok(consumeStart >= 0, "queue consumer is consumeCalendarSyncBatch");
+const consumeNext = cronJobsSrc.indexOf("\nexport ", consumeStart + 1);
+const consumeFn = cronJobsSrc.slice(consumeStart, consumeNext === -1 ? undefined : consumeNext);
+const unflippedGate = consumeFn.search(/if\s*\(\s*!cutoverFlipped\(\s*env\.CUTOVER_FLIPPED\s*\)\s*\)/);
+ok(unflippedGate >= 0, "queue consumer gates on !cutoverFlipped (M11)");
+const unflippedBrace = consumeFn.indexOf("{", unflippedGate);
+let unflippedDepth = 0;
+let unflippedEnd = -1;
+for (let i = unflippedBrace; i < consumeFn.length; i++) {
+  if (consumeFn[i] === "{") unflippedDepth++;
+  else if (consumeFn[i] === "}") {
+    unflippedDepth--;
+    if (unflippedDepth === 0) {
+      unflippedEnd = i;
+      break;
+    }
+  }
+}
+const unflippedBlock = unflippedEnd > 0 ? consumeFn.slice(unflippedGate, unflippedEnd + 1) : "";
+ok(/return\s+\w+/.test(unflippedBlock), "queue consumer returns without work when unflipped");
+ok(
+  !/\b(?:openSql|requestIo|fetch)\s*\(/.test(unflippedBlock),
+  "queue consumer unflipped path does no IO",
+);
 
 const skipRes = skippedUntilCutoverFlip("rollover");
 ok(skipRes.status === 200, "skippedUntilCutoverFlip is HTTP 200");
@@ -231,6 +308,7 @@ ok(bearerBody.job === "github-activity" && bearerBody.skipped === true, "gateCro
 
 const maintUnset = await app.request("http://localhost/api/maintenance", {}, {});
 ok(maintUnset.status === 200, "GET /api/maintenance unset: 200");
+ok(maintUnset.headers.get("Cache-Control") === "no-store", "GET /api/maintenance sets Cache-Control: no-store");
 const maintUnsetBody = (await maintUnset.json()) as Record<string, unknown>;
 ok(maintUnsetBody.cutover_flipped === false, "maintenance cutover_flipped is false when unset");
 ok(maintUnsetBody.write_freeze === false && maintUnsetBody.cutover_armed === false, "maintenance other flags stay booleans");
@@ -247,9 +325,40 @@ ok(maintOnBody.cutover_flipped === true, "maintenance cutover_flipped is true af
 ok(typeof maintOnBody.cutover_flipped === "boolean", "maintenance cutover_flipped is a boolean");
 ok(!Object.values(maintOnBody).includes("1"), "maintenance does not echo the env string");
 
+for (const value of [1, true, false, 0, { toString: () => "1" }, ["1"]]) {
+  const res = await app.request("http://localhost/api/maintenance", {}, { CUTOVER_FLIPPED: value as never });
+  ok(res.status === 200, `maintenance non-string flip ${typeof value}: 200 not 500`);
+  const body = (await res.json()) as { cutover_flipped?: boolean; write_freeze?: boolean };
+  ok(body.cutover_flipped === false, `maintenance non-string flip ${typeof value} is cutover_flipped=false`);
+}
+
+for (const value of [1, true, false, 0, { toString: () => "1" }, ["1"]]) {
+  let threw = false;
+  let frozen = false;
+  try {
+    frozen = writeFrozen(value);
+  } catch {
+    threw = true;
+  }
+  ok(!threw && frozen === true, `writeFrozen present non-string ${typeof value} freezes (fail-closed)`);
+}
+ok(!writeFrozen(undefined) && !writeFrozen(null) && !writeFrozen(""), "writeFrozen unset/empty is off");
+ok(writeFrozen("1") && writeFrozen("TRUE"), "writeFrozen allowlist still on");
+ok(!writeFrozen("garbage") && !writeFrozen("0"), "writeFrozen unknown string is still off");
+
+for (const value of [1, true, { toString: () => "1" }]) {
+  const res = await app.request("http://localhost/api/maintenance", {}, { MAINTENANCE_WRITE_FREEZE: value as never });
+  ok(res.status === 200, `maintenance non-string freeze ${typeof value}: 200 not 500`);
+  const body = (await res.json()) as { write_freeze?: boolean };
+  ok(body.write_freeze === true, `maintenance non-string freeze ${typeof value} is write_freeze=true`);
+}
+
 const doc = readFileSync(join(here, "../../docs/cloudflare-cutover.md"), "utf8");
 ok(/cutover_flipped: true/.test(doc), "runbook confirms GET /api/maintenance cutover_flipped");
 ok(/non-skipped/.test(doc) && /cutover_not_flipped/.test(doc), "runbook confirms one job actually ran");
+const step4 = doc.split("4. **Confirm the flip landed.**")[1]?.split("\n## ")[0] ?? "";
+ok(/\/api\/cron\/rollover/.test(step4) && /\/api\/cron\/calendar-dispatch/.test(step4), "runbook step 4 fires a ported cron");
+ok(/not `github-poll` or `trim-sync-log`/.test(step4), "runbook step 4 excludes github-poll and trim-sync-log");
 
 restoreIo();
 

@@ -127,7 +127,7 @@ app.get("/api/maintenance", (c) =>
       message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
     },
     200,
-    OPEN_CORS,
+    { ...OPEN_CORS, "Cache-Control": "no-store" },
   ),
 );
 app.options("/api/maintenance", () => new Response("ok", { headers: OPEN_CORS }));
