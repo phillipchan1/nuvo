@@ -1209,7 +1209,7 @@ function CarriedLane({
 
       <div className={runs.length > 0 ? "mt-5 border-t border-line pt-4" : ""}>
         {group("Carried over", rolled, "var(--signal)")}
-        {group("Due, or going quiet", rest)}
+        {group("Due this week", rest)}
         {group("New captures", captures)}
         {carried.length === 0 && captures.length === 0 && (
           <p className="py-1 text-caption text-muted">

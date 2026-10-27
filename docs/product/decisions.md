@@ -2279,6 +2279,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-17** | A public **affiliate marketplace** / partner portal, commission payouts, or in-app referral leaderboard | Wrong identity (P9 — quiet steward, not optimizer theater) and wrong scale (a handful of operators who love Nuvo need a personal **code**, not PartnerStack). Commissions imply Stripe Connect / tax forms / a second program for content partners who aren't customers. D-113 is the yes to personal codes; this row is the no to the marketplace wearing the same coat | A real non-customer partner is driving paid signups — then a *separate* affiliate program (Rewardful or equivalent), never folded into Settings or gamified |
 | **N-18** | A **Download for Mac** CTA in the phone Settings | A DMG is not a phone act. Settings → About on the phone was offering a Mac installer because the About pane treated "not the Tauri Mac app" as "web", and the iOS PWA / TestFlight shell is web. The marketing site already is the download door (D-018, D-124). Same smell as D-123's upkeep-in-the-chrome: a desktop-rank act living on a phone surface because it was easy to put there | Someone on a phone is regularly the person who installs the Mac app for themselves — evidence, not a guess. Even then the door stays on nuvo.day, not in Settings |
 | **N-19** | **Search, commands or a chat inside the capture door** (⌘K / ⌥Space) | Every one of them cost the one job. Search moved Enter onto any record your words *resembled*, so "call mom" opened an old task called "call mom about…" instead of adding yours; a leading space flipped the line into a chat; the command list made the empty state a menu. The door now does one thing — Task · Event · Slot — and reports "added" only once the write is queued (D-149). Navigation keeps its own keys and the spine; Nuvo keeps ⌘J; the phone keeps its Search screen | Desktop search comes back as **its own** door with its own key — never by re-sharing the capture line. A single line cannot both *add what I typed* and *find what I typed* without guessing which one you meant |
+| **N-20** | **Pulling a task into the week because its domain has gone quiet** — the app picking the shortest open task in a quiet domain and offering it in Plan the week | It is the one pick with **no owner**: you never slated it, owed it (it didn't slip) or dated it. It chose by *length* and ignored *age*, so an old, small, loose backlog task — *"review metrics WR expectancy"* — arrived in the week from nowhere, and the person's first question was "where did that come from?" That is the app deciding (P4) and the week carrying something the operator can't account for (W1, A4). A quiet domain is already *named* by the Week's Plan conscience read (W5, D-061), which is the honest hand-off; D-062 already decided that naming needs no auto-pulled work behind it | A quiet domain becomes something you can **act on from the read itself** ("slot something here" — you pick the task), with a reader for it (D-062's trigger). Even then: you choose the task; the app never does |
 
 ---
 
@@ -6161,3 +6162,46 @@ the old code and fails), full suite, typecheck, build; driven on both shells aga
 account, light and dark. The commit-side clearing of a stale block was **not** driven live (it
 writes); it has no unit harness. Open: non-work domains still share the work window; per-day
 hours and learned proposals are bets 2–3 in the review.*
+
+---
+
+**D-164 · 2026-10-27 · Plan the week pulls only work somebody owns — the quiet-domain top-up
+is gone.** *(Supersedes the quiet-domain clause of D-034's "Leftovers" lane.)*
+
+Origin ⓟ: *"plan the week brought in a task that was from God knows where — review metrics wr
+expectancy — where tf did that come from. it should only be from projects slated and inbox right?"*
+
+The pull (`suggestPull`, `lib/pull.ts`) had five sources, and the fifth — **presence** — took
+one task from each domain that had gone quiet: the *shortest* open task in it, of any age, that
+wasn't a recurring occurrence. It was the only pick with no owner. The other four each have one: a
+project you slated (On Deck), a bet you starred (lead), work you already owe (it slipped, `↻Nd`),
+and work with a date inside the week. Presence had nothing but "this domain is quiet" and "this is
+small", so an old loose backlog task in a quiet domain walked into the week unannounced and read, on
+the row, only as a `quiet` badge. *(Inferred: the live task's source was not observed — the dev app
+could not reach the account's data — but it is the one pick that fits.)*
+
+- **Removed:** source 5 and the `quiet` `PullKind`/badge. **Kept, on purpose:** carried work and
+  deadlines. They are debt and dates you already have; dropping them would let a deadline fall off
+  the week silently, which is a worse silent failure than a stray task.
+- **"The rest" now holds three things, not four** — *Carried over · Due this week · New captures*.
+  The group *Due, or going quiet* is renamed **Due this week**, on both shells (it was half false).
+- **A quiet domain is still named**, by the Week's Plan conscience read (W5, D-061) — that was
+  always the honest answer; the top-up was a second, silent one. The read still hands nothing
+  forward (D-062); the rejected shape is logged as **N-20**.
+- **The rule going forward:** nothing enters the pull that the person cannot account for in one
+  clause — *"you slated it · you starred it · you owe it · it's due."* A new source has to be
+  able to say which clause it is.
+
+Closes the trust half of **W1** (the load the funnel measures is work the operator recognises) and
+keeps **A4** honest. Strains **P3** in the right direction — it was a proposal in form but not in
+spirit, with nobody's decision behind it — and **P4**, which it restores. Not **P7**/**P16**: the
+rule holds with an empty account and a stranger's backlog. No pool, no new name.
+
+Stale and left alone: `docs/execution-flows.md` (§ Sunday step 4) and `docs/commitment-model.md` are
+June design proposals that still say the pull is "showing up-balanced". Not the live mechanism.
+
+*Status: built — `tests/plan-week-defaults.test.ts` (4 tests; all four fail against the old
+`pull.ts`), full suite (156 files, 2096 tests), typecheck, `npm run build`. Driven: the phone's
+The rest step at `?planweek`, 375px — reads Slots · Carried over · Due this week, no quiet row.
+**Not driven:** the desktop `SundayRitual` (same one-line label change; it needs the account's
+data) and a real account's pull — Plan the week on the real data is the check that matters.*

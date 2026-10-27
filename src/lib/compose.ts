@@ -654,10 +654,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
  * that rollover never cleared. Its time is gone (D-141: "the hour was for a day
  * that has passed"), so a week can take it as unplaced work.
  *
- * It used to vanish instead: the pull offered it ("going quiet") and you could
- * keep it, but the draft drops anything that already has a `start_time`, and
- * that time wasn't in this week's blocks either — so it landed nowhere and was
- * reported nowhere.
+ * It used to vanish instead: the pull offered it (it was carried, or — before
+ * D-164 — a quiet-domain top-up) and you could keep it, but the draft drops
+ * anything that already has a `start_time`, and that time wasn't in this week's
+ * blocks either — so it landed nowhere and was reported nowhere.
  */
 export function isStaleBlock(t: Pick<Task, "start_time" | "recurrence_id">, weekStartISO: string): boolean {
   // a repeating occurrence never carries (D-009) — its series already has this

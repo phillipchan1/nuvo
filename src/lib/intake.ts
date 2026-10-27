@@ -6,7 +6,7 @@
 // themselves are plain, and they are what the operator actually says out loud:
 //
 //   · Projects   — work belonging to a project you committed to this week
-//   · Leftovers  — what you already owed (carried), what's due, what's gone quiet
+//   · Leftovers  — what you already owed (carried) and what's due
 //   · Inbox      — raw captures that have never been sorted
 //
 // …all pouring into one measured week. That's the funnel the product already has
@@ -26,8 +26,9 @@ export const LANE_LABEL: Record<WeekLane, string> = {
 export const LANE_QUESTION: Record<WeekLane, string> = {
   projects: "What are you moving this week?",
   // "Leftovers" is the operator's word and the plainest one, but the lane also
-  // holds work that's *due* and one small task from each quiet domain — neither is
-  // literally a leftover. The question carries the honesty the label can't. (D-034)
+  // holds work that's *due*, which isn't literally a leftover. The question
+  // carries the honesty the label can't. (D-034) It also used to hold one small
+  // task from each quiet domain — gone, because no one had asked for it (D-164).
   loose: "What didn't get done, and what's due?",
   inbox: "What came in that you haven't sorted?",
 };
@@ -69,7 +70,7 @@ export const STEP_LABEL: Record<WeekPlanStep, string> = {
   projects: "Projects",
   // Named by exclusion, because that is honestly what it is: the week's work
   // that isn't a project. Every name we tried for it described only one of the
-  // four things inside — "Leftovers" and then "Carried" are both true of work
+  // three things inside — "Leftovers" and then "Carried" are both true of work
   // that slipped and false of a capture that arrived this morning. A category
   // named for its members will always be wrong about most of them.
   rest: "The rest",
@@ -140,8 +141,7 @@ export interface LaneInput {
  *  1. **Unsorted captures are the inbox**, wherever they end up placed.
  *  2. **Project attachment wins.** A project's work is decided *as the project*,
  *     in one place, whether or not a given piece happened to slip last week.
- *  3. Everything else — carried-over loose work, deadlines, quiet-domain top-ups
- *     — is a leftover.
+ *  3. Everything else — carried-over loose work and deadlines — is a leftover.
  *
  * **Carried used to beat project attachment** (D-034), on the reasoning that a
  * slipped task is "a leftover to re-time, not a fresh push". Driving it showed
@@ -226,7 +226,7 @@ export function readIntake(
  * (project work under its project's name).
  */
 export function workBadge(
-  kind: "carried" | "project" | "lead" | "due" | "quiet",
+  kind: "carried" | "project" | "lead" | "due",
   task: { rollCount?: number | null; deadlineDaysAway?: number | null },
 ): { text: string; urgent: boolean } | null {
   switch (kind) {
@@ -237,8 +237,6 @@ export function workBadge(
       if (d == null) return { text: "due", urgent: true };
       return d <= 0 ? { text: "overdue", urgent: true } : { text: `${d}d`, urgent: d <= 2 };
     }
-    case "quiet":
-      return { text: "quiet", urgent: false };
     case "lead":
       return { text: "★", urgent: false };
     case "project":

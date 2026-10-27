@@ -3,12 +3,10 @@
 // proposes; only you promote work toward the calendar).
 
 import { fmtHours } from "./dates";
-import { quietFor } from "./domainRead";
 import { projectsOnDeck } from "./priorities";
 import {
   backlogTasks,
   domainById,
-  showingUp,
   inboxTasks,
   initiativeById,
   isProjectComplete,
@@ -24,7 +22,7 @@ import {
 /** Why a piece of work is being suggested. Typed, not inferred from the reason
  *  string, so a surface can render a two-glyph badge (`↻10`, `2d`) instead of a
  *  sentence — the flow is read weekly, and prose you've read fifty times is noise. */
-export type PullKind = "carried" | "project" | "lead" | "due" | "quiet";
+export type PullKind = "carried" | "project" | "lead" | "due";
 
 export interface PullSuggestion {
   task: VTask;
@@ -36,8 +34,16 @@ export interface PullSuggestion {
 }
 
 /** `weekStartISO` turns on the primary source: the projects On Deck committed to
- *  that week. Without it the pull can only guess from deadlines + presence —
- *  which is how a fully-groomed week used to yield a single unrelated task. */
+ *  that week. Without it the pull can only guess from deadlines — which is how a
+ *  fully-groomed week used to yield a single unrelated task.
+ *
+ *  **Every task in the pull is one you can name a reason for that isn't "the app
+ *  picked it":** a project you slated, a bet you starred, something you already
+ *  owe (it slipped), or something with a date on it. There used to be a fifth —
+ *  one small task from each domain that had gone quiet — and it was the one pick
+ *  with no owner: the *shortest* open task in the domain, of any age, that you had
+ *  never slated, owed or dated. It is gone (D-164). A quiet domain is still *named*
+ *  (the Week's Plan conscience read, W5); it just doesn't pull work in on its own. */
 export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggestion[] {
   const picked = new Map<string, PullSuggestion>();
 
@@ -45,7 +51,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   // happens. Without this, a deadline or a slip could drag a task back into a
   // week you'd deliberately pushed its project out of — which made "push it out"
   // a lie. A project with no week at all ("needs a week") is not this week's
-  // either. Loose work (no project) still answers to deadlines/presence.
+  // either. Loose work (no project) still answers to deadlines.
   const onDeck = weekStartISO ? new Set(projectsOnDeck(d, weekStartISO).map((p) => p.id)) : null;
   const elsewhere = (task: VTask) => onDeck != null && task.projectId != null && !onDeck.has(task.projectId);
 
@@ -90,21 +96,6 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     if (t.deadlineDaysAway != null && t.deadlineDaysAway <= 7) {
       add(t, t.deadlineDaysAway <= 0 ? "deadline passed" : `due in ${t.deadlineDaysAway}d`, "due");
     }
-  }
-
-  // 5 · presence: one small task from each domain that's going quiet.
-  //    Never an occurrence of a repeating series — the series keeps its own
-  //    days, so pulling one (often a missed one from weeks ago) only duplicated
-  //    a block the week already had.
-  for (const domain of d.domains) {
-    if (showingUp(domain).lit) continue;
-    const candidates = d.tasks
-      .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !t.recurring && !picked.has(t.id))
-      .sort((a, b) => a.durationMins - b.durationMins);
-    const why = domain.lastTouchedDays == null
-      ? `nothing has landed in ${domain.name} yet`
-      : `${domain.name} has been quiet ${quietFor(domain.lastTouchedDays)}`;
-    add(candidates[0] ?? null, why, "quiet");
   }
 
   // cap the proposal at ~60% of weekly capacity — a starting pull, not a full

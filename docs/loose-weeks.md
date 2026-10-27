@@ -99,8 +99,10 @@ boolean (so `vertical.ts:317`, `LeftRail.tsx:610` and `SlideOver.tsx:119` don't 
 it and you prune. So there are already two ways into a week, and a deferral is just
 the second one:
 
-- **Nuvo proposes it** — deadlines, slipped work, on-deck projects, showing up. You
-  accept or prune, guiltlessly; it was never your idea.
+- **Nuvo proposes it** — deadlines, slipped work, on-deck projects. You
+  accept or prune, guiltlessly; it was never your idea. (There used to be a fourth —
+  one small task per quiet domain, "showing up" — and it was removed in D-164: it was
+  the one proposal with no owner.)
 - **You already decided it** — the week-slot. It arrives **pre-kept**.
 
 This is the priorities model one altitude down: you name one, or it proposes itself.
@@ -128,7 +130,7 @@ const elsewhere = (task: VTask) =>
 ```
 
 `task.projectId != null` means **loose work is never "elsewhere,"** so the deadline
-and showing up sources would cheerfully re-propose something you deliberately
+source would cheerfully re-propose something you deliberately
 pushed to August. Widen it to also honour the task's own `for_week` when set.
 
 Pleasingly, one predicate handles both directions: on Aug 3,
