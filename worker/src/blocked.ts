@@ -12,17 +12,10 @@ export const BILLING_FUNCTIONS = new Set([
 ]);
 
 /**
- * Calendar OAuth / sync / mirrors. They read and write user-data tables that
- * move to Neon (`calendar_accounts`, `external_events`, `tasks.google_event_id`)
- * but need Vault refresh tokens and provider APIs. Blocked — not rewritten.
+ * Non-Google calendar OAuth / sync / mirrors. Google routes are on this
+ * Worker. These still need provider APIs (PR C) and stay 501.
  */
 export const CALENDAR_FUNCTIONS = new Set([
-  "calendar-refresh",
-  "google-contacts",
-  "google-events",
-  "google-oauth",
-  "google-sync",
-  "google-webhook",
   "icloud-connect",
   "icloud-contacts",
   "icloud-events",
@@ -31,25 +24,15 @@ export const CALENDAR_FUNCTIONS = new Set([
   "ics-sync",
   "m365-oauth",
   "m365-sync",
-  "slot-mirror",
-  "task-mirror",
 ]);
 
-/** User-data jobs that need Vault / web-push / GoTrue — flagged, not ported. */
+/** User-data jobs that need Vault / GoTrue — flagged, not ported. */
 export const BLOCKED_USERDATA_FUNCTIONS = new Set([
   "apple-identity",
   "delete-account",
-  "push-dispatch",
 ]);
 
-export const BLOCKED_CRON_JOBS = new Set([
-  "push-dispatch",
-  "nuvo-push-dispatch",
-  "google-renew",
-  "nuvo-google-renew",
-  "calendar-dispatch",
-  "nuvo-calendar-dispatch",
-]);
+export const BLOCKED_CRON_JOBS = new Set<string>([]);
 
 export function stayOnSupabase(name: string, extra?: Record<string, unknown>): Response {
   return json(

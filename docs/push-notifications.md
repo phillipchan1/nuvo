@@ -6,6 +6,10 @@ real device; see §4's checklist and §6.
 [D-105](./product/decisions.md) (push is allowed with consent) ·
 [D-138](./product/decisions.md) (several leads; all-day; horizon may be a day or a week)
 **Rules:** [`_shared/reminderRules.ts`](../supabase/functions/_shared/reminderRules.ts)
+**Worker port (rehearsal):** `worker/src/pushDispatch.ts` + `worker/src/lib/webpush.ts`.
+Same VAPID pair as the Supabase function — a new pair breaks every sub. Cron
+is a Worker Cron Trigger (`* * * * *`) and `/api/cron/push-dispatch`. The kernel
+is still this file; do not re-implement fire instants on the Worker.
 
 Reminders used to fire only while Nuvo was open. They can now reach a closed
 app. This is the mechanism, the trade it takes, and the five commands that make

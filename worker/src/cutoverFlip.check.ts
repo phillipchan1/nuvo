@@ -10,10 +10,13 @@ import {
   gateCronBearerRoute,
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
-import { CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
-import type { Sql } from "./db.ts";
+import { PGlite } from "@electric-sql/pglite";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
+import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
+import { applyIsolationSchema } from "./isolationDb.ts";
 import { writeFrozen } from "./maintenance.ts";
+import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 
 const fails: string[] = [];
@@ -28,6 +31,7 @@ const flipSrc = readFileSync(join(here, "cutoverFlip.ts"), "utf8");
 const cronJobsSrc = readFileSync(join(here, "cronJobs.ts"), "utf8");
 const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
 const envSrc = readFileSync(join(here, "env.ts"), "utf8");
+const googleRoutesSrc = readFileSync(join(here, "google/routes.ts"), "utf8");
 const exampleSrc = readFileSync(join(here, "../../.dev.vars.example"), "utf8");
 
 ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlip.ts does not call writeFrozen");
@@ -75,6 +79,29 @@ for (const required of [
 
 ok(/gateCron\(env, name\)/.test(cronJobsSrc), "runCronJob calls gateCron");
 ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron calls gateCron");
+ok(/gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer calls gateCron");
+ok(!/false\s*&&\s*gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer gate is not short-circuited");
+ok(!/catch \{\s*continue;\s*\}/.test(cronJobsSrc), "queue consumer does not continue without ack or retry");
+ok(/acks\. Retry only when SQL cannot open/.test(cronJobsSrc), "queue consumer documents ack after runGoogleSync (per-account errors already back off)");
+ok(/gateCronBearerRoute\(c\.env, "google-sync"\)/.test(googleRoutesSrc), "google-sync cron bearer uses gateCronBearerRoute");
+ok(/gateCronBearerRoute\(c\.env, "google-contacts"\)/.test(googleRoutesSrc), "google-contacts cron bearer uses gateCronBearerRoute");
+ok(/gateCronBearerRoute\(c\.env, "google-events"\)/.test(googleRoutesSrc), "google-events cron bearer uses gateCronBearerRoute");
+const syncWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-sync")'), googleRoutesSrc.indexOf('paths("google-events")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+const eventsWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-events")'), googleRoutesSrc.indexOf('paths("google-webhook")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+const contactsWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-contacts")'), googleRoutesSrc.indexOf('paths("calendar-refresh")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+ok(syncWrite.indexOf("gateCronBearerRoute") >= 0 && syncWrite.indexOf("gateCronBearerRoute") < syncWrite.indexOf("requestIo"), "google-sync gates before requestIo");
+ok(eventsWrite.indexOf("gateCronBearerRoute") >= 0 && eventsWrite.indexOf("gateCronBearerRoute") < eventsWrite.indexOf("requestIo"), "google-events gates before requestIo");
+ok(contactsWrite.indexOf("gateCronBearerRoute") >= 0 && contactsWrite.indexOf("gateCronBearerRoute") < contactsWrite.indexOf("requestIo"), "google-contacts gates before requestIo");
+ok(/cronOk && acting/.test(eventsWrite) && eventsWrite.includes('gateCronBearerRoute(c.env, "google-events")'), "google-events gates the cronOk && acting branch");
 const runIdx = cronJobsSrc.indexOf("export async function runCronJob");
 const runGate = cronJobsSrc.indexOf("gateCron(env, name)", runIdx);
 const runSql = cronJobsSrc.indexOf("enqueueDueCalendarAccounts", runIdx);
@@ -85,6 +112,31 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const scheduledFn = (
+  app as typeof app & {
+    scheduled(
+      event: { cron: string },
+      env: Record<string, string | undefined>,
+      ctx: { waitUntil(promise: Promise<unknown>): void },
+    ): Promise<void>;
+  }
+).scheduled;
+ok(typeof scheduledFn === "function", "app exports scheduled");
+let scheduledSqlOpens = 0;
+const restoreOpenSql = installOpenSqlForTests(() => {
+  scheduledSqlOpens += 1;
+  throw new Error("openSql used before flip");
+});
+try {
+  for (const cron of ALL_CRON_SCHEDULES) {
+    await scheduledFn({ cron }, {}, { waitUntil() {} });
+    await scheduledFn({ cron }, { CUTOVER_FLIPPED: "garbage" }, { waitUntil() {} });
+  }
+  ok(scheduledSqlOpens === 0, "unflipped scheduled() opens no SQL for every cron");
+} finally {
+  restoreOpenSql();
+}
 
 const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
 ok(
@@ -106,25 +158,30 @@ function walkProdTs(dir: string): string[] {
   return out;
 }
 
+function sliceBlock(src: string, start: number, name: string, out: { name: string; body: string }[]) {
+  const brace = src.indexOf("{", start);
+  if (brace < 0) return;
+  let depth = 0;
+  for (let i = brace; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        out.push({ name, body: src.slice(start, i + 1) });
+        return;
+      }
+    }
+  }
+}
+
 function functionsIn(src: string): { name: string; body: string }[] {
   const out: { name: string; body: string }[] = [];
   const re = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    const brace = src.indexOf("{", m.index);
-    if (brace < 0) continue;
-    let depth = 0;
-    for (let i = brace; i < src.length; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") {
-        depth--;
-        if (depth === 0) {
-          out.push({ name: m[1], body: src.slice(m.index, i + 1) });
-          break;
-        }
-      }
-    }
-  }
+  while ((m = re.exec(src))) sliceBlock(src, m.index, m[1], out);
+  const arrowRe = /(?:async\s+)?\([^)]*\)\s*=>\s*\{/g;
+  let a: RegExpExecArray | null;
+  while ((a = arrowRe.exec(src))) sliceBlock(src, a.index, "(arrow)", out);
   return out;
 }
 
@@ -169,12 +226,12 @@ for (const file of walkProdTs(here)) {
 }
 ok(cronSecretFns >= 2, "per-function CRON_SECRET scan found handleCron and github-activity");
 
-const consumeStart = cronJobsSrc.indexOf("export function consumeCalendarSyncBatch");
+const consumeStart = cronJobsSrc.search(/export async function consumeCalendarSyncBatch/);
 ok(consumeStart >= 0, "queue consumer is consumeCalendarSyncBatch");
 const consumeNext = cronJobsSrc.indexOf("\nexport ", consumeStart + 1);
 const consumeFn = cronJobsSrc.slice(consumeStart, consumeNext === -1 ? undefined : consumeNext);
-const unflippedGate = consumeFn.search(/if\s*\(\s*!cutoverFlipped\(\s*env\.CUTOVER_FLIPPED\s*\)\s*\)/);
-ok(unflippedGate >= 0, "queue consumer gates on !cutoverFlipped (M11)");
+const unflippedGate = consumeFn.search(/if\s*\(\s*gateCron\(\s*env\s*,\s*["']queue-consume["']\s*\)\s*\)/);
+ok(unflippedGate >= 0, "queue consumer gates on gateCron(env, 'queue-consume') (M11)");
 const unflippedBrace = consumeFn.indexOf("{", unflippedGate);
 let unflippedDepth = 0;
 let unflippedEnd = -1;
@@ -191,7 +248,7 @@ for (let i = unflippedBrace; i < consumeFn.length; i++) {
 const unflippedBlock = unflippedEnd > 0 ? consumeFn.slice(unflippedGate, unflippedEnd + 1) : "";
 ok(/return\s+\w+/.test(unflippedBlock), "queue consumer returns without work when unflipped");
 ok(
-  !/\b(?:openSql|requestIo|fetch)\s*\(/.test(unflippedBlock),
+  !/\b(?:openSql|requestIo|fetch|runGoogleSync)\s*\(/.test(unflippedBlock),
   "queue consumer unflipped path does no IO",
 );
 
@@ -276,29 +333,75 @@ try {
   ok(ioOpened === 0, "HTTP skip never opened the DB");
 
   let acked = 0;
-  const consumed = consumeCalendarSyncBatch(
+  let retried = 0;
+  let queueIo = 0;
+  const consumed = await consumeCalendarSyncBatch(
     {
       messages: [
-        { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; } },
+        { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; }, retry: () => { retried += 1; } },
       ],
     },
-    {},
+    {
+      HYPERDRIVE: {
+        get connectionString() {
+          queueIo += 1;
+          return "postgres://probe.invalid/nuvo";
+        },
+      },
+    },
   );
-  ok(consumed === 1 && acked === 1, "queue consumer acks when not flipped");
+  ok(consumed === 1 && acked === 1 && retried === 0, "queue consumer acks when not flipped");
+  ok(queueIo === 0, "queue consumer before flip does no IO (false && gateCron would open SQL)");
 } finally {
   globalThis.fetch = origFetch;
 }
 
+{
+  // Per-account Google errors (503 / missing refresh) are isolated inside
+  // runGoogleSync and ack; next_sync_at backoff is the retry. Queue retry
+  // would fight that. Missing refresh on the isolation seed is the same
+  // path as a Google 503 after markSyncResult(false).
+  const db = new PGlite();
+  await applyIsolationSchema(db);
+  const sql = makePgliteSql(db);
+  const ACCOUNT = "aaaaaaaa-eeee-4000-8000-000000000001";
+  const USER = "11111111-1111-1111-1111-111111111111";
+  const before = await db.query<{ sync_failures: number; next_sync_at: string | null }>(
+    "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+    [ACCOUNT],
+  );
+  let failAck = 0;
+  let failRetry = 0;
+  const n = await consumeCalendarSyncBatch(
+    {
+      messages: [
+        {
+          body: { account_id: ACCOUNT, user_id: USER, provider: "google" },
+          ack: () => { failAck += 1; },
+          retry: () => { failRetry += 1; },
+        },
+      ],
+    },
+    { CUTOVER_FLIPPED: "1" },
+    sql,
+  );
+  const after = await db.query<{ sync_failures: number; next_sync_at: string | Date | null }>(
+    "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+    [ACCOUNT],
+  );
+  const nextAt = after.rows[0]?.next_sync_at ? new Date(after.rows[0].next_sync_at).getTime() : 0;
+  ok(n === 1 && failAck === 1 && failRetry === 0, "failed Google account acks (backoff, not queue retry)");
+  ok(
+    Number(after.rows[0]?.sync_failures ?? 0) > Number(before.rows[0]?.sync_failures ?? 0),
+    "failed Google account increments sync_failures",
+  );
+  ok(nextAt > Date.now(), "failed Google account sets next_sync_at in the future");
+  await db.close();
+}
+
 for (const value of flipOn) {
-  const out = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: value }, throwingSql());
-  ok(out.skipped !== true && out.status === 501, `runCronJob push-dispatch runs after ${value} (501 unported)`);
-  const http = await app.request("http://localhost/api/cron/push-dispatch", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${cronSecret}` },
-  }, { CRON_SECRET: cronSecret, CUTOVER_FLIPPED: value });
-  ok(http.status === 501, `handleCron push-dispatch runs after ${value}: HTTP ${http.status}`);
-  const body = (await http.json()) as { stay_on_supabase?: boolean; skipped?: boolean };
-  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron push-dispatch after ${value} is stay_on_supabase`);
+  const out = await runCronJob("google-renew", { CUTOVER_FLIPPED: value }, null);
+  ok(out.skipped !== true && out.status === 501, `runCronJob google-renew after ${value} is not skipped (needs sql)`);
 }
 
 const bearerSkip = gateCronBearerRoute({}, "github-activity");
@@ -344,7 +447,8 @@ for (const value of [1, true, false, 0, { toString: () => "1" }, ["1"]]) {
 }
 ok(!writeFrozen(undefined) && !writeFrozen(null) && !writeFrozen(""), "writeFrozen unset/empty is off");
 ok(writeFrozen("1") && writeFrozen("TRUE"), "writeFrozen allowlist still on");
-ok(!writeFrozen("garbage") && !writeFrozen("0"), "writeFrozen unknown string is still off");
+ok(writeFrozen("garbage") && writeFrozen("typo"), "writeFrozen unknown string is frozen (fail-closed)");
+ok(!writeFrozen("0") && !writeFrozen("false"), "writeFrozen explicit off stays open");
 
 for (const value of [1, true, { toString: () => "1" }]) {
   const res = await app.request("http://localhost/api/maintenance", {}, { MAINTENANCE_WRITE_FREEZE: value as never });

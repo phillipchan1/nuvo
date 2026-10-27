@@ -21,10 +21,11 @@ import { createAuth } from "./auth.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
+import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import { WRITE_FROZEN_MESSAGE } from "./maintenance.ts";
-import app from "./index.ts";
+import app, { installWorkerFetchForTests } from "./index.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -44,7 +45,7 @@ const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
 const routeSrc = [
   indexSrc,
   sessionSrc,
-  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "githubActivity.ts"].map(
+  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "slotMirror.ts", "taskMirror.ts", "pushDispatch.ts", "mirrorTargets.ts", "githubActivity.ts"].map(
     (name) => readFileSync(join(here, name), "utf8"),
   ),
 ].join("\n");
@@ -56,6 +57,11 @@ ok(!/body\.user_id/.test(indexSrc), "routes: body.user_id is not an owner key");
 ok(/user_id = \$\{store\.userId\}/.test(storeSrc), "store: owner filter is store.userId");
 ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
 ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
+ok(/user_id = \$\{store\.userId\}/.test(readFileSync(join(here, "slotMirror.ts"), "utf8")), "slot-mirror: owner filter is store.userId");
+ok(/user_id = \$\{store\.userId\}/.test(readFileSync(join(here, "taskMirror.ts"), "utf8")), "task-mirror: owner filter is store.userId");
+ok(/user_id = \$\{userId\}/.test(readFileSync(join(here, "pushDispatch.ts"), "utf8")), "push-dispatch: per-user iteration");
+ok(/from "\.\/secrets\.ts"/.test(readFileSync(join(here, "mirrorTargets.ts"), "utf8")), "mirrors: open tokens through A's secrets.ts");
+ok(!/lib\/secrets/.test(readFileSync(join(here, "mirrorTargets.ts"), "utf8")), "mirrors: no stub secrets module");
 
 const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
 ok(/user_id = \$\{store\.userId\}/.test(ghSrc), "github-activity: owner filter is store.userId");
@@ -144,10 +150,13 @@ const env = {
   BETTER_AUTH_SECRET: "access-http-secret-32-bytes-long!!",
   BETTER_AUTH_URL: "http://localhost:8787",
   CRON_SECRET: "access-http-cron-secret",
+  CUTOVER_FLIPPED: "1",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
-  TOKEN_ENC_KEY_V1: "00".repeat(32),
-  CUTOVER_FLIPPED: "1",
+  TOKEN_ENC_KEY_V1: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),
+  GOOGLE_CLIENT_ID: "test-google-client",
+  GOOGLE_CLIENT_SECRET: "test-google-secret",
+  APP_URL: "http://localhost:5717",
 };
 
 const restore = installRequestIoForTests(() => {
@@ -347,6 +356,22 @@ await db.query(
   ["c0a11e00-5555-4000-8000-000000000001", a.id],
 );
 await db.query(`UPDATE user_settings SET theme = 'light', inbound_token = 'token-a-secret' WHERE user_id = $1`, [a.id]);
+await db.query(
+  `INSERT INTO calendar_accounts (id, user_id, provider, email, access_token, access_token_expires_at, sync_direction, mirror_calendar_id)
+   VALUES ($1, $2, 'google', 'a@example.test', 'ya29.a-token', $3, 'two_way', 'nuvo-cal-a')`,
+  ["c0a11e00-acca-4000-8000-000000000001", a.id, new Date(Date.now() + 3600_000).toISOString()],
+);
+
+const googleCalls: { method: string; url: string }[] = [];
+const restoreWorkerFetch = installWorkerFetchForTests(async (input, init) => {
+  const url = String(input);
+  const method = (init?.method ?? "GET").toUpperCase();
+  googleCalls.push({ method, url });
+  if (url.includes("/calendars/") && method === "POST") {
+    return new Response(JSON.stringify({ id: `gcal-${googleCalls.length}` }), { status: 200 });
+  }
+  return new Response("", { status: 200 });
+});
 
 async function count(table: string, where: string, params: unknown[]): Promise<number> {
   const result = await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${where}`, params);
@@ -391,6 +416,14 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/api/entitlement", body: { name: "no" } },
   { method: "PATCH", path: "/api/entitlement", body: { name: "no" } },
   { method: "DELETE", path: "/api/entitlement" },
+  { method: "POST", path: "/api/slot-mirror", body: { slotId: A_ROW.slots } },
+  { method: "POST", path: "/api/task-mirror", body: { taskId: A_ROW.tasks } },
+  { method: "POST", path: "/functions/v1/slot-mirror", body: { slotId: A_ROW.slots } },
+  { method: "POST", path: "/functions/v1/task-mirror", body: { taskId: A_ROW.tasks } },
+  { method: "POST", path: "/api/push-dispatch", body: {} },
+  { method: "POST", path: "/functions/v1/push-dispatch", body: {} },
+  { method: "POST", path: "/api/cron/push-dispatch", body: {} },
+  { method: "POST", path: "/api/cron/nuvo-push-dispatch", body: {} },
   { method: "POST", path: "/api/github-activity", body: { action: "sync" } },
   { method: "POST", path: "/functions/v1/github-activity", body: { action: "connect", token: "x" } },
   { method: "POST", path: "/api/cron/github-poll" },
@@ -934,12 +967,51 @@ ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [A_ROW.tasks])
 
 const cronNo = await withTimeout(request("/api/cron/rollover", { method: "POST" }), 8000, "cron unauth");
 ok(cronNo.status === 401, `cron unauth: HTTP ${cronNo.status}`);
+const A_PAST = "c0a11e00-3333-4000-8000-0000000000a3";
+await db.query(
+  `INSERT INTO tasks (id, user_id, title, status, do_date, start_time) VALUES
+    ($1, $2, 'A past for rollover', 'planned', '2026-10-20', '2026-10-20T10:00:00Z')`,
+  [A_PAST, a.id],
+);
+const cronSkipEnv = { ...env, CUTOVER_FLIPPED: "" };
+const cronSkipRoll = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/cron/rollover",
+    { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    cronSkipEnv,
+  ),
+  8000,
+  "cron rollover skip",
+);
+ok(cronSkipRoll.status === 200, `cron rollover before flip: HTTP ${cronSkipRoll.status}`);
+const cronSkipRollBody = await cronSkipRoll.json() as { skipped?: boolean; reason?: string };
+ok(cronSkipRollBody.skipped === true && cronSkipRollBody.reason === "cutover_not_flipped", "cron rollover skips before flip");
+ok((await scalar<string>("SELECT do_date::text FROM tasks WHERE id = $1", [A_PAST])) === "2026-10-20", "cron rollover before flip: past task unmoved");
+const cronSkipPush = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/cron/push-dispatch",
+    { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}`, Origin: origin } },
+    cronSkipEnv,
+  ),
+  8000,
+  "cron push skip",
+);
+ok(cronSkipPush.status === 200, `cron push-dispatch before flip: HTTP ${cronSkipPush.status}`);
+const cronSkipPushBody = await cronSkipPush.json() as { skipped?: boolean; reason?: string };
+ok(cronSkipPushBody.skipped === true && cronSkipPushBody.reason === "cutover_not_flipped", "cron push-dispatch skips before flip");
 const cronOk = await withTimeout(
   request("/api/cron/rollover", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }),
   8000,
   "cron rollover",
 );
 ok(cronOk.status === 200, `cron rollover: HTTP ${cronOk.status}`);
+ok((await scalar<string>("SELECT do_date::text FROM tasks WHERE id = $1", [A_PAST])) !== "2026-10-20", "cron rollover after flip: past task rolled");
+await db.query(
+  `UPDATE tasks
+   SET do_date = '2026-10-26', start_time = '2026-10-26T10:00:00Z', slot_id = $2, status = 'planned'
+   WHERE id = $1`,
+  [A_ROW.tasks, A_ROW.slots],
+);
 
 const A_OLD_TRASH = "c0a11e00-2222-4000-8000-0000000000a1";
 const A_NEW_TRASH = "c0a11e00-2222-4000-8000-0000000000a2";
@@ -993,7 +1065,131 @@ const cronPush = await withTimeout(
   8000,
   "cron push",
 );
-ok(cronPush.status === 501, `cron push-dispatch stays blocked: HTTP ${cronPush.status}`);
+ok(cronPush.status === 200, `cron push-dispatch: HTTP ${cronPush.status}`);
+const cronPushBody = await cronPush.json() as { ok?: boolean; skipped?: boolean };
+ok(cronPushBody.ok === true, "cron push-dispatch: ok");
+ok(cronPushBody.skipped !== true, "cron push-dispatch runs after flip");
+
+const beforeGoogle = googleCalls.length;
+const bSlotA = await withTimeout(
+  request("/api/slot-mirror", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ slotId: A_ROW.slots, tz: "UTC" }),
+  }),
+  8000,
+  "B slot-mirror A",
+);
+const bSlotRand = await withTimeout(
+  request("/api/slot-mirror", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ slotId: RANDOM_ID, tz: "UTC" }),
+  }),
+  8000,
+  "B slot-mirror random",
+);
+ok(bSlotA.status === 404 && bSlotRand.status === 404, `B slot-mirror A's id vs random: ${bSlotA.status} vs ${bSlotRand.status}`);
+ok(JSON.stringify(await bSlotA.json()) === JSON.stringify(await bSlotRand.json()), "B slot-mirror: A's id and random id same body");
+
+const bTaskA = await withTimeout(
+  request("/api/task-mirror", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ taskId: A_ROW.tasks, tz: "UTC" }),
+  }),
+  8000,
+  "B task-mirror A",
+);
+const bTaskRand = await withTimeout(
+  request("/api/task-mirror", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ taskId: RANDOM_ID, tz: "UTC" }),
+  }),
+  8000,
+  "B task-mirror random",
+);
+ok(bTaskA.status === 404 && bTaskRand.status === 404, `B task-mirror A's id vs random: ${bTaskA.status} vs ${bTaskRand.status}`);
+ok(JSON.stringify(await bTaskA.json()) === JSON.stringify(await bTaskRand.json()), "B task-mirror: A's id and random id same body");
+ok(googleCalls.length === beforeGoogle, "B mirror of A's ids: no provider write");
+
+const bDelete = await withTimeout(
+  request("/api/slot-mirror", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ slotId: A_ROW.slots, deleted: true, googleEventId: "evt-a" }),
+  }),
+  8000,
+  "B slot-mirror delete A",
+);
+ok(bDelete.status === 200, `B slot-mirror delete (no B calendar): HTTP ${bDelete.status}`);
+ok((await bDelete.json() as { skipped?: string }).skipped === "no mirror calendar", "B delete uses B's accounts, not A's");
+
+const headerSpoof = await withTimeout(
+  request("/api/task-mirror", {
+    method: "POST",
+    headers: { ...jsonHeaders(b.token), "X-User-Id": a.id },
+    body: JSON.stringify({ taskId: A_ROW.tasks }),
+  }),
+  8000,
+  "B task-mirror spoof",
+);
+ok(denied(headerSpoof.status), `B task-mirror with X-User-Id:A: HTTP ${headerSpoof.status}`);
+
+const aSlot = await withTimeout(
+  request("/api/slot-mirror", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ slotId: A_ROW.slots, tz: "America/New_York" }),
+  }),
+  8000,
+  "A slot-mirror",
+);
+ok(aSlot.status === 200, `A slot-mirror own: HTTP ${aSlot.status}`);
+ok((await aSlot.json() as { ok?: boolean }).ok === true, "A slot-mirror: ok");
+ok((await scalar<string>("SELECT google_event_id FROM slots WHERE id = $1", [A_ROW.slots]))?.startsWith("gcal-"), "A slot-mirror: wrote google_event_id on A");
+ok(googleCalls.some((c) => c.method === "POST" && c.url.includes("nuvo-cal-a")), "A slot-mirror: posted to A's calendar");
+
+const aTask = await withTimeout(
+  request("/functions/v1/task-mirror", {
+    method: "POST",
+    headers: jsonHeaders(a.token),
+    body: JSON.stringify({ taskId: A_ROW.tasks, tz: "UTC" }),
+  }),
+  8000,
+  "A task-mirror",
+);
+ok(aTask.status === 200, `A task-mirror own: HTTP ${aTask.status}`);
+ok((await scalar<string>("SELECT google_event_id FROM tasks WHERE id = $1", [A_ROW.tasks]))?.startsWith("gcal-"), "A task-mirror: wrote google_event_id on A");
+
+const frozenMirror = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/slot-mirror",
+    {
+      method: "POST",
+      headers: { ...jsonHeaders(a.token), Origin: origin },
+      body: JSON.stringify({ slotId: A_ROW.slots, tz: "UTC" }),
+    },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "A slot-mirror frozen",
+);
+ok(frozenMirror.status === 503, `A slot-mirror while frozen: HTTP ${frozenMirror.status}`);
+const frozenMirrorGet = await withTimeout(
+  app.request(
+    "http://localhost:8787/api/slot-mirror",
+    {
+      method: "GET",
+      headers: { ...jsonHeaders(a.token), Origin: origin },
+    },
+    { ...env, MAINTENANCE_WRITE_FREEZE: "1" },
+  ),
+  8000,
+  "A slot-mirror frozen GET",
+);
+ok(frozenMirrorGet.status === 405, `A slot-mirror GET while frozen: HTTP ${frozenMirrorGet.status} (not 503)`);
 
 const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
   const rows: Record<string, SubscriptionColumns> = {
@@ -1173,6 +1369,109 @@ const cronFrozen = await withTimeout(
 );
 ok(cronFrozen.status === 503, `authorized cron while frozen: HTTP ${cronFrozen.status}`);
 
+const ACCOUNT_A = "c0a11e00-eeee-4000-8000-000000000001";
+const ACCOUNT_B = "c0b11e00-eeee-4000-8000-000000000001";
+const EVENT_A = "c0a11e00-ffff-4000-8000-000000000001";
+const UNKNOWN_EVENT = "c0c11e00-0000-4000-8000-00000000ffff";
+
+await db.query(
+  `INSERT INTO calendar_accounts (id, user_id, provider, email, access_token, access_token_expires_at, sync_direction, calendars, needs_reconnect)
+   VALUES ($1, $2, 'google', 'iso-a-cal@example.test', 'ya29.a', '2099-01-01T00:00:00Z', 'two_way',
+     '[{"id":"cal-a@group.calendar.google.com","summary":"A Cal","color":null,"visible":true,"channel_id":"ch-a","resource_id":"res-a"}]'::jsonb, false),
+          ($3, $4, 'google', 'iso-b-cal@example.test', 'ya29.b', '2099-01-01T00:00:00Z', 'two_way',
+     '[{"id":"cal-b@group.calendar.google.com","summary":"B Cal","color":null,"visible":true,"channel_id":"ch-b","resource_id":"res-b"}]'::jsonb, false)`,
+  [ACCOUNT_A, a.id, ACCOUNT_B, b.id],
+);
+await db.query(
+  `INSERT INTO external_events (id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, busy)
+   VALUES ($1, $2, $3, 'evt-a-http', 'cal-a@group.calendar.google.com', 'A private event', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z', false, true)`,
+  [EVENT_A, a.id, ACCOUNT_A],
+);
+
+const restoreOutboundFetch = installOutboundFetchForTests(async (input) => {
+  const url = String(input);
+  if (url.includes("oauth2.googleapis.com/token")) {
+    return new Response(JSON.stringify({ access_token: "ya29.refreshed", expires_in: 3600 }), { status: 200 });
+  }
+  if (url.includes("/calendars/") && url.includes("/events") && !url.includes("/watch")) {
+    return new Response(JSON.stringify({ items: [], nextSyncToken: "sync-1" }), { status: 200 });
+  }
+  if (url.includes("/events/watch") || url.includes("/channels/stop") || url.includes("people.googleapis.com")) {
+    return new Response(JSON.stringify({}), { status: 200 });
+  }
+  return new Response("not mocked", { status: 404 });
+});
+
+const unauthGoogle = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventId: EVENT_A, action: "delete" }),
+  }),
+  8000,
+  "anon google-events",
+);
+ok(unauthGoogle.status === 401, `unauthenticated google-events: HTTP ${unauthGoogle.status}`);
+
+const bDeleteAEvent = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ eventId: EVENT_A, action: "delete" }),
+  }),
+  8000,
+  "B delete A event",
+);
+const bDeleteUnknownEvent = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ eventId: UNKNOWN_EVENT, action: "delete" }),
+  }),
+  8000,
+  "B delete unknown event",
+);
+ok(bDeleteAEvent.status === 404, `B delete A's event: HTTP ${bDeleteAEvent.status}`);
+ok(
+  bDeleteAEvent.status === bDeleteUnknownEvent.status &&
+    (await bDeleteAEvent.text()) === (await bDeleteUnknownEvent.text()),
+  "B delete A vs unknown event: same body (no existence oracle)",
+);
+ok((await scalar<string>("SELECT title FROM external_events WHERE id = $1", [EVENT_A])) === "A private event", "B delete: A event unchanged");
+
+const bSyncAAccount = await withTimeout(
+  request("/functions/v1/google-sync", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({ mode: "incremental", accountId: ACCOUNT_A }),
+  }),
+  8000,
+  "B sync A account",
+);
+ok(bSyncAAccount.status === 404, `B sync A's account: HTTP ${bSyncAAccount.status}`);
+
+const bCreateOnAAccount = await withTimeout(
+  request("/functions/v1/google-events", {
+    method: "POST",
+    headers: jsonHeaders(b.token),
+    body: JSON.stringify({
+      action: "create",
+      accountId: ACCOUNT_A,
+      title: "planted",
+      start_at: "2026-10-26T19:00:00Z",
+      end_at: "2026-10-26T20:00:00Z",
+    }),
+  }),
+  8000,
+  "B create on A account",
+);
+ok(
+  bCreateOnAAccount.status === 400 || denied(bCreateOnAAccount.status),
+  `B create on A's account: HTTP ${bCreateOnAAccount.status}`,
+);
+ok((await count("external_events", "user_id = $1 AND title = $2", [a.id, "planted"])) === 0, "B create: no row planted on A");
+
+restoreOutboundFetch();
 const realFetch = globalThis.fetch;
 let githubApiCalls = 0;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1343,6 +1642,7 @@ ok(cronGhNo.status === 401, `cron github-poll unauth: HTTP ${cronGhNo.status}`);
 const cronTrimNo = await withTimeout(request("/api/cron/trim-sync-log", { method: "POST" }), 8000, "cron trim unauth");
 ok(cronTrimNo.status === 401, `cron trim-sync-log unauth: HTTP ${cronTrimNo.status}`);
 
+await db.query("DELETE FROM sync_log WHERE user_id = $1", [a.id]);
 await db.query(
   `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
    VALUES ($1, 'github', 'sync', 'ok', now() - interval '40 days')`,
@@ -1546,6 +1846,7 @@ ok(((await bearerFlipped.json()) as { skipped?: boolean }).skipped !== true, "gi
 globalThis.fetch = realFetch;
 
 restoreSubs();
+restoreWorkerFetch();
 restore();
 await kysely.destroy();
 await db.close();

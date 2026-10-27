@@ -12,7 +12,8 @@ Sister docs: [`inventory.md`](./inventory.md) (what Supabase does today),
 Billing **writers** (Stripe, StoreKit, webhooks) stay on Supabase and are
 out of this matrix. The Worker **reads** `subscriptions` for
 `GET /api/entitlement` by the verified session user id — never a client
-id, never an email remap.
+id, never an email remap. Google calendar routes are on this Worker
+(PR B); M365 / iCloud / ICS stay on Supabase.
 
 ---
 
@@ -115,10 +116,26 @@ Full table: [`route-inventory.md`](./route-inventory.md).
 | `POST /api/github-activity` · `/functions/v1/github-activity` | Session `requireStore`. `action: "sync"` + `CRON_SECRET` is the poll path: `gateCronBearerRoute(c.env, "github-poll")` **before** `requestIo`. Connect / repos / session sync / theme / disconnect / bind filter `activity_*` by `user_id = store.userId`. PAT sealed with A's `sealToken`. Writes refuse `writeFrozen`. | B sync/bind/disconnect of A's `sourceId` = random id (404 or `{count:0}`); A's units unchanged. Cron-bearer sync skips until `CUTOVER_FLIPPED`. Unauth frozen is still 401. | `accessHttp.check.ts` + `secrets.check.ts` + `cutoverFlip.check.ts` |
 | `POST /api/cron/github-poll` · `nuvo-github-poll` | `CRON_SECRET`. No-op (200 `skipped:true`) unless `CUTOVER_FLIPPED` is an explicit truthy (`1` / `true` / `yes` / `on`); unset / unknown = not flipped. Then iterates `SELECT id FROM users` then `activity_sources WHERE user_id = $id`. | unauth 401; skip before flip; after flip poll does not move A's units onto B | `accessHttp.check.ts` |
 | `POST /api/cron/trim-sync-log` · `nuvo-trim-sync-log` | `CRON_SECRET`. Same `CUTOVER_FLIPPED` allowlist (`1` / `true` / `yes` / `on`). Per-user `DELETE` of `sync_log` older than 30 days. When `sync_log_id_seq.last_value >= 1e6`, also `id < last_value - 1e6 + 1`. Floor keeps recent Neon-origin rows out of trim (~1e6 inserts before it rises past them). Never `setval`. | unauth 401; skip before flip; after flip recent rows kept, Neon-origin ids at/above the floor kept, sequence unchanged | `accessHttp.check.ts` |
-| `ALL /api/cron/:job` | `CRON_SECRET`. `gateCron` before any DB. Ported jobs iterate `users` then `user_id = $id`. Push/calendar 501 after flip | unauth 401; skip until `CUTOVER_FLIPPED`; purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `miniflare.seq.check.ts` |
+| `ALL /api/cron/:job` | `CRON_SECRET`, then fail-closed `CUTOVER_FLIPPED` (`gateCron` in `cutoverFlip.ts`) before the DB opens. Ported jobs iterate `users` then `user_id = $id`. Unset flip → 200 `{ skipped: true, reason: "cutover_not_flipped" }`. After flip: push-dispatch / github-poll / trim-sync-log / rollover / purge / prune / `calendar-dispatch` / `google-renew` / `google-resubscribe` run | unauth 401; skip before flip (nothing sent); purge-trash / reminder-deliveries-prune keep the other user's recent rows | `accessHttp` + `pushDispatch.check.ts` + `cutoverFlip.check.ts` + `miniflare.seq.check.ts` + `googleHttp.check.ts` |
 
-`stripe_*`, `apple_*` writers, calendar tokens, and push tables are
-**not** on this Worker. `subscriptions` is read-only via `/api/entitlement`.
+### Google calendar (PR B)
+
+Owner = session planner id. Cron paths need `CRON_SECRET`. Refresh tokens
+are sealed with PR A's AES-256-GCM (`sealToken` / `openToken`, length-prefixed
+AAD `table` / `row_id` / `user_id`). Never log plaintext or key bytes.
+
+| Route | Scope | Cross-user | Test |
+|---|---|---|---|
+| `ALL /functions/v1/google-oauth` + `/api/google-oauth` | Start: session. Callback: signed OAuth state (no client user id) | start without session → 401 | `googleHttp.check.ts` |
+| `ALL /functions/v1/google-sync` + `/api/google-sync` | Session, or cron. `accountId` must be owned | 404, same body as unknown id | `accessHttp.check.ts` + `googleHttp.check.ts` |
+| `ALL /functions/v1/google-events` + `/api/google-events` | Session (or cron + `actingUserId`). Event/account must be owned | 404, same body as unknown; create on A's account rejected | same |
+| `ALL /functions/v1/google-webhook` + `/api/google-webhook` | Channel id + token must match the stored watch | mismatched channel → 404 | `googleHttp.check.ts` |
+| `ALL /functions/v1/google-contacts` + `/api/google-contacts` | Session or cron; account must be owned | 404 | `googleHttp.check.ts` |
+| `ALL /functions/v1/calendar-refresh` + `/api/calendar-refresh` | Session; Google accounts only | 404 on A's account | same |
+| `ALL /api/cron/google-renew` / `calendar-dispatch` / `google-resubscribe` | `CRON_SECRET`. Per-account iteration; writes stay on that `user_id` | 401 without secret | `googleHttp.check.ts` |
+
+M365 / iCloud / ICS stay 501. `subscriptions` is read-only via `/api/entitlement`.
+Google refresh tokens live in `refresh_token_enc` / `refresh_token_iv` (not Vault).
 
 ---
 
@@ -167,9 +184,12 @@ CI workflow, no new major deps.
 | Check | What it proves |
 |---|---|
 | `worker/src/access.check.ts` | Store-layer: A cannot list/get/update/delete B's row in every planner table; FK planting; bootstrap takeover; settings path-id |
-| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`). B's signed bearer gets 403/404 or an empty payload on read / update / delete. Unauthenticated → **401** on every user-data route. Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log (including parked identity) included. |
+| `worker/src/accessHttp.check.ts` | **HTTP tokens.** Creates user A and user B via OTP. Seeds a row for A in every user-owned table (`PLANNER_TABLES` + `task_labels` + `contacts_directory`) plus a Google account/event. B's signed bearer gets 403/404 or an empty payload on read / update / delete, including Google event delete / sync / create-on-A's-account. Unauthenticated → **401** on every user-data route (and `google-events`). Forged `user_id` and `X-User-Id` do not change the owner. `/api/entitlement` is session-scoped; B cannot read A's tier; POST with A's id is the same 404 as an unknown id. GitHub connect/sync/bind/disconnect + github-poll / trim-sync-log (including parked identity) included. |
 | `worker/src/entitlement.check.ts` | Lookup URL is `user_id=eq.<session>`; Stripe/Apple rows share `isEntitled`; a remapped auth id fails the parity proof |
 | `scripts/check-entitlement-parity.ts` | 1:1 auth copy + per-user tier match. Counts only |
+| `worker/src/googleHttp.check.ts` | Google routes with a mock Calendar/People API: A/B 404 vs unknown same body, unauthenticated 401, cron secret, webhook channel mismatch, owner refresh/sync 200 |
+| `worker/src/secrets.check.ts` | PR A seal/open + AAD move refusal. Never prints tokens |
+| `worker/src/tokenDecrypt.check.ts` | Post-copy Neon check (skips unless `TOKEN_ENC_KEY_V1` + `DATABASE_URL`). Prints `provider ok` / `provider fail` only |
 | `scripts/prove-isolation-mutation.mjs` | Deleting any `user_id = ${store.userId}` clause turns `access.check.ts` red |
 | `worker/src/miniflare.seq.check.ts` | Real workerd + Postgres: task create/read/patch + B 404 + unauthenticated-style raw token 401 |
 | `worker/src/requestReuse.check.ts` | Invalid bearer 401; client-supplied foreign id does not overwrite |

@@ -80,6 +80,7 @@ try {
       BETTER_AUTH_URL: origin,
       ENVIRONMENT: "preview",
       CRON_SECRET: cronSecret,
+      CUTOVER_FLIPPED: "1",
     },
     experimental: {
       disableExperimentalWarning: true,
@@ -483,9 +484,9 @@ try {
     8000,
     "cron",
   );
-  ok(cron.status === 200, `cron authorized: HTTP ${cron.status}`);
-  const cronBody = (await cron.json()) as { skipped?: boolean; reason?: string };
-  ok(cronBody.skipped === true && cronBody.reason === "cutover_not_flipped", "cron authorized skips until flip");
+  ok(cron.status === 200, `cron authorized push-dispatch: HTTP ${cron.status}`);
+  const cronBody = await cron.json() as { ok?: boolean; skipped?: boolean };
+  ok(cronBody.ok === true && cronBody.skipped !== true, "cron push-dispatch runs after flip");
 
   const maintenance = await withTimeout(request("/api/maintenance"), 8000, "maintenance");
   ok(maintenance.status === 200, `GET /api/maintenance: HTTP ${maintenance.status}`);

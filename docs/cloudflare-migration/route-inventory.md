@@ -78,6 +78,9 @@ Calendar **writes** (`create_calendar_event`, `move_event`, …) return
 | `POST /api/inbound-email` · `/functions/v1/inbound-email` | `user_settings` (token), `inbound_emails`, `tasks` | ported+tested | bad sig 401; unknown token 200 ignored + no row; valid sig + A's token writes **A only** |
 | `POST /api/route-events` · `/functions/v1/route-events` | `domains`, `event_domain_routing` | ported+tested | unauth 401; empty batch 200 `{ routed: [] }` (no LLM) |
 | `POST /api/rollover` · `/functions/v1/rollover` | `tasks`, `user_settings` | ported+tested | unauth 401; B session rolls **B only** |
+| `POST /api/slot-mirror` · `/functions/v1/slot-mirror` | `slots` (`google_event_id`) | ported+tested | unauth 401; GET/HEAD 405; session owner; foreign id ≡ random id → 404 |
+| `POST /api/task-mirror` · `/functions/v1/task-mirror` | `tasks` (`google_event_id`) | ported+tested | unauth 401; GET/HEAD 405; session owner; foreign id ≡ random id → 404 |
+| `POST /api/github-activity` · `/functions/v1/github-activity` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | ported+tested | unauth 401; session owner; `action: "sync"` + `CRON_SECRET` uses `gateCronBearerRoute` before `requestIo` |
 
 `iap-catalog` has **no user-data SQL** (product ids from env). It stays
 blocked with the billing group so we do not retarget StoreKit config.
@@ -87,14 +90,19 @@ blocked with the billing group so we do not retarget StoreKit config.
 ## 4 · Cron
 
 `/api/cron/:job` still requires `CRON_SECRET` (constant-time). Unset or
-wrong → 401. No Workers Cron Triggers.
+wrong → 401. After auth, `gateCron` (`CUTOVER_FLIPPED` in
+`worker/src/cutoverFlip.ts`) fail-closes every job — unset / unknown is 200
+`{ skipped: true, reason: "cutover_not_flipped" }` so Worker + pg_cron
+cannot double-fire. Cron Triggers call the same `runCronJob` gate. Bearer
+routes such as `/api/push-dispatch` go through `handleCron` and therefore
+the same gate, before the DB opens.
 
 | Job | Tables | Status | Tests |
 |---|---|---|---|
 | `rollover` / `nuvo-rollover-pst` / `pdt` | `users`, `tasks`, `user_settings` | ported+tested | unauth 401; authorized 200; iterates `SELECT id FROM users` then `WHERE user_id = $id` |
 | `purge-trash` / `nuvo-purge-trash` | `users`, `tasks` | ported+tested | unauth 401; A/B stale trash gone, recent trash + live task kept |
 | `reminder-deliveries-prune` / `nuvo-reminder-deliveries-prune` | `users`, `reminder_deliveries` | ported+tested | unauth 401; A/B stale deliveries gone, recent kept |
-| `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | **blocked** | `accessHttp` + `miniflare.seq` expect 501 |
+| `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | ported+tested | unauth 401; authorized + unset `CUTOVER_FLIPPED` → 200 `{ skipped: true, reason: "cutover_not_flipped" }` (nothing sent); after flip 200 and runs; HTTP ignores caller `nowMs` |
 | `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
 | `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
 | `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | ported+tested | unauth 401; 200 `skipped:true` until `CUTOVER_FLIPPED`; then iterates `users` then `user_id`; A's units stay on A |
@@ -127,14 +135,15 @@ rows staying on Supabase is the existing cutover decision.
 
 ---
 
-## 6 · Blocked — calendar / identity / push (user data + Vault)
+## 6 · Blocked — calendar / identity (user data + Vault)
 
 These read/write user-data tables that **are** moving (`tasks`,
 `external_events`, `calendar_accounts`, `user_settings`, …) and cannot
 run correctly against Neon without the Worker owning the query. They
-are blocked because they need Vault secrets, provider OAuth, or
-web-push — not because they are allowed to keep writing Supabase after
-cutover.
+are blocked because they need Vault secrets or provider OAuth — not
+because they are allowed to keep writing Supabase after cutover.
+`slot-mirror`, `task-mirror`, `push-dispatch`, and `github-activity`
+are ported.
 
 | Route | User-data tables | Blocker |
 |---|---|---|
@@ -143,9 +152,6 @@ cutover.
 | `icloud-connect` / `icloud-sync` / `icloud-events` / `icloud-contacts` | `calendar_accounts`, `external_events`, `user_settings` | Vault + CalDAV/CardDAV |
 | `ics-subscribe` / `ics-sync` | `calendar_accounts`, `external_events` | feed pull + account rows |
 | `calendar-refresh` | `calendar_accounts` | token refresh via Vault |
-| `slot-mirror` / `task-mirror` | `slots` / `tasks` (`google_event_id`) | provider write-back |
-| `push-dispatch` | `push_subscriptions`, `reminders`, `tasks`, `slots`, `external_events`, `user_settings` | VAPID / web-push |
-| `github-activity` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | **ported** — PAT via A's `sealToken` / `openToken` |
 | `apple-identity` | `apple_identities` | GoTrue identity link |
 | `delete-account` | almost every user table + Stripe cancel | Stripe + auth wipe |
 
@@ -158,13 +164,14 @@ cutover.
 | File | Count | What |
 |---|---|---|
 | `access.check.ts` | 230 | Store-layer isolation + FK plant + day window + reminder target table |
-| `accessHttp.check.ts` | 489 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity (CRON_SECRET sync flip-skip before DB) + github-poll / trim-sync-log + maintenance no-store |
+| `accessHttp.check.ts` | 533 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity (CRON_SECRET sync flip-skip before DB) + github-poll / trim-sync-log + maintenance no-store |
 | `authUrl.check.ts` | 99 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
-| `secrets.check.ts` | 139 | A's seal/open + writeFrozen fail-closed non-string + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
-| `cutoverFlip.check.ts` | 370 | Shared allowlist + POST_FLIP_CRON_JOBS + per-function CRON_SECRET scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` + queue no-IO unflipped + maintenance no-store |
+| `secrets.check.ts` | 227 | A's seal/open + writeFrozen fail-closed (typo + non-string) + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
+| `cutoverFlip.check.ts` | 407 | Shared allowlist + POST_FLIP_CRON_JOBS + per-function CRON_SECRET scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` + google-events gate + queue no-IO unflipped + maintenance no-store |
+| `pushDispatch.check.ts` | — | 4-route unflipped skip matrix + sender call-site scan |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` skips until `CUTOVER_FLIPPED` |
 
 `npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.

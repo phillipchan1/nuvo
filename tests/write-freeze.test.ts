@@ -57,9 +57,22 @@ describe("writeFreezeOn", () => {
     }
   });
 
-  it("treats empty and other values as open", () => {
-    for (const raw of [undefined, null, "", "0", "false", "off", "maybe"]) {
+  it("treats any other non-empty value as frozen (fail-closed)", () => {
+    for (const raw of ["maybe", "typo", "TRUEE", "2", "freeze"]) {
+      expect(writeFreezeOn(raw), raw).toBe(true);
+    }
+  });
+
+  it("treats unset, empty, and explicit off as open", () => {
+    for (const raw of [undefined, null, "", "0", "false", "no", "off", " FALSE "]) {
       expect(writeFreezeOn(raw), String(raw)).toBe(false);
+    }
+  });
+
+  it("treats a present non-string as frozen without throwing", () => {
+    for (const raw of [1, true, false, 0, { toString: () => "1" }, ["1"]]) {
+      expect(() => writeFreezeOn(raw)).not.toThrow();
+      expect(writeFreezeOn(raw), String(raw)).toBe(true);
     }
   });
 });
@@ -71,6 +84,8 @@ describe("readWriteFreezeFlag", () => {
     expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "" : "true"))).toBe(true);
     expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "0" : "1"))).toBe(true);
     expect(readWriteFreezeFlag((name) => (name === "WRITE_FREEZE" ? "false" : "on"))).toBe(true);
+    expect(readWriteFreezeFlag(() => "maybe")).toBe(true);
+    expect(readWriteFreezeFlag(() => "no")).toBe(false);
     expect(readWriteFreezeFlag(() => "0")).toBe(false);
     expect(readWriteFreezeFlag(() => undefined)).toBe(false);
   });
@@ -180,5 +195,11 @@ describe("runbook names the edge freeze", () => {
     expect(doc).toMatch(/writeFreeze\.ts/);
     expect(doc).toMatch(/stripe-webhook/);
     expect(doc).toMatch(/apple-webhook/);
+  });
+
+  it("runbook requires preflight-edge-write-freeze before any edge redeploy", () => {
+    expect(doc).toMatch(/preflight-edge-write-freeze\.mjs/);
+    expect(doc).toMatch(/before any Supabase edge-function redeploy/i);
+    expect(doc).toMatch(/`0` \/ `false` \/ `no` \/ `off`/);
   });
 });

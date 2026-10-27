@@ -32,9 +32,9 @@ export interface Env {
   TOKEN_ENC_KEY_V2?: string;
   /** `1` (default) or `2`. Seal uses this version; open accepts any configured version. */
   TOKEN_ENC_CURRENT?: string;
-  /** `1` / `true` freezes Worker writes. The app reads GET /api/maintenance. */
+  /** Any non-empty value other than 0/false/no/off freezes Worker writes. Unset/empty is off. */
   MAINTENANCE_WRITE_FREEZE?: string;
-  /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
+  /** Same fail-closed parse as the write freeze. Arms the copy window. */
   CUTOVER_ARMED?: string;
   /**
    * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
@@ -44,6 +44,14 @@ export interface Env {
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
+  /** Same VAPID pair as today's Supabase function — a new pair breaks every sub. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** SPA origin for OAuth redirects after consent. */
+  APP_URL?: string;
 }
 
 export function databaseUrl(env: Env): string | null {
