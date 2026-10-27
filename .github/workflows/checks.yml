@@ -89,6 +89,7 @@ jobs:
           # match startOfDay(new Date()) when the runner's zone agrees;
           # ubuntu-latest is UTC, which splits the calendar day 00:00–07:00.
           TZ: America/Los_Angeles
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nuvo
         run: npm test
       # The chat's behavioral battery is deliberately NOT here: it calls a live
       # model, so it costs money and its result is sampled. `npm test` already
