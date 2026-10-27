@@ -7,8 +7,8 @@
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune,
  * github-poll, trim-sync-log) iterate `users` then scope by `user_id`.
  * Jobs that must not run beside Supabase `pg_cron` belong in
- * `POST_FLIP_CRON_JOBS` (B/D add theirs). `handleCron` / `runCronJob`
- * skip them until `CUTOVER_FLIPPED` (fail closed).
+ * `POST_FLIP_CRON_JOBS` in `cutoverFlip.ts` (B/D add theirs).
+ * `handleCron` / `runCronJob` call `gateCron` until `CUTOVER_FLIPPED`.
  * Calendar-dispatch fans out one Queue message per due account so a single
  * isolate does not loop every tenant against Google/Graph/CalDAV (Workers
  * Paid CPU). Push / google-renew stay 501. Queue consume is a no-op
@@ -25,9 +25,20 @@ import { OPEN_CORS, json } from "./cors.ts";
 import { bearerToken, cronAuthorized } from "./cron.ts";
 import type { Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { gateCron } from "./cutoverFlip.ts";
 import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
-import { cutoverFlipped, WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
+import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
+
+export {
+  asPostFlipJob,
+  cutoverFlipped,
+  gateCron,
+  gateCronBearerRoute,
+  POST_FLIP_CRON_JOBS,
+  skipUntilCutoverFlip,
+  skippedUntilCutoverFlip,
+} from "./cutoverFlip.ts";
 
 export interface QueueMessage<T> {
   body: T;
@@ -53,30 +64,6 @@ export interface CronResult {
   deleted?: number;
   skipped?: boolean;
   reason?: string;
-}
-
-/**
- * Worker copies of jobs that stay on Supabase `pg_cron` until the flip.
- * B/D add their cron names here — do not invent a second flag.
- */
-export const POST_FLIP_CRON_JOBS: readonly string[] = ["github-poll", "trim-sync-log"];
-
-/** Fail closed: unset / unknown `CUTOVER_FLIPPED` = not flipped. */
-export function skipUntilCutoverFlip(job: string, env: Env): boolean {
-  const name = canonicalCronJob(job);
-  return POST_FLIP_CRON_JOBS.includes(name) && !cutoverFlipped(env.CUTOVER_FLIPPED);
-}
-
-/** HTTP / scheduled no-op for a post-flip job that is not yet flipped. */
-export function skippedUntilCutoverFlip(job: string, env: Env): CronResult | null {
-  if (!skipUntilCutoverFlip(job, env)) return null;
-  return {
-    job: canonicalCronJob(job),
-    status: 200,
-    stay_on_supabase: true,
-    skipped: true,
-    reason: "cutover_not_flipped",
-  };
 }
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
@@ -216,7 +203,7 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
-  const skipped = skippedUntilCutoverFlip(name, env);
+  const skipped = gateCron(name, env);
   if (skipped) return skipped;
   if (name === "calendar-dispatch") {
     if (!sql || !env.CALENDAR_SYNC_QUEUE) return blocked(name);
@@ -285,7 +272,7 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   }
   const job = jobName ?? c.req.param("job") ?? "";
   const name = canonicalCronJob(job);
-  const skipped = skippedUntilCutoverFlip(name, c.env);
+  const skipped = gateCron(name, c.env);
   if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
 
   if (name === "calendar-dispatch") {

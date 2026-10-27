@@ -9,6 +9,7 @@ import { bearerToken, cronAuthorized } from "./cron.ts";
 import { jsonParam, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { BadRequestError, readJson } from "./http.ts";
+import { gateCronBearerRoute } from "./cutoverFlip.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import {
   openToken,
@@ -319,13 +320,15 @@ export async function runGithubPoll(sql: Sql, env: Env): Promise<{ ok: true; syn
  * source ids (OVERRIDING SYSTEM VALUE) and setvals
  * GREATEST(max(id), last_value, 1) — the park never decreases.
  *
- * Supabase-origin ids are all below the floor (`last_value - margin + 1`).
- * The floor only protects Neon-origin rows (ids at or above it). Age
- * trim may delete old Supabase-origin rows; `CUTOVER_FLIPPED` must be
- * set only after the flip and the final resync, or every resync copies
- * those rows back and the next trim deletes them again. Never reset the
- * sequence. Fresh / unparked sequences (last_value < margin) trim by
- * age only.
+ * Copied source ids typically sit below the parked floor
+ * (`last_value - margin + 1`). The floor keeps recent Neon-origin rows
+ * out of age trim; it is not a permanent partition. After about 1e6
+ * further Neon inserts the floor rises past those early Neon ids and
+ * age-trim applies to any row older than 30 days. `CUTOVER_FLIPPED`
+ * must be set only after unschedule → final resync, or every resync
+ * copies old source rows back and the next trim deletes them again.
+ * Never reset the sequence. Fresh / unparked sequences (last_value <
+ * margin) trim by age only.
  */
 export async function parkedSyncLogFloor(sql: Sql): Promise<number | null> {
   const rows = (await sql`SELECT last_value FROM public.sync_log_id_seq`) as { last_value: string | number }[];
@@ -439,12 +442,14 @@ export async function handleGithubActivity(c: Context<AppEnv>): Promise<Response
   }
 
   const action = clean(body.action) || "sync";
-  const io = await requestIo(c);
   const cronToken = bearerToken(c.req.header("authorization"));
   if (action === "sync" && cronAuthorized(cronToken, c.env.CRON_SECRET)) {
+    const skipped = gateCronBearerRoute("github-poll", c.env);
+    if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
     if (writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
       return json({ error: "write_frozen", message: WRITE_FROZEN_MESSAGE }, 503, OPEN_CORS);
     }
+    const io = await requestIo(c);
     return json(await runGithubPoll(io.sql, c.env), 200, OPEN_CORS);
   }
 

@@ -66,10 +66,17 @@ ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: seals with A's secret
 ok(/writeFrozen\(c\.env\.MAINTENANCE_WRITE_FREEZE\)/.test(ghSrc), "github-activity: writeFrozen after auth");
 ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim-sync-log: floor excludes Neon-origin ids (Supabase-origin ids sit below it)");
 ok(/CUTOVER_FLIPPED/.test(ghSrc), "trim-sync-log: comments the post-flip gate");
+ok(/gateCronBearerRoute\("github-poll"/.test(ghSrc), "github-activity: CRON_SECRET sync uses gateCronBearerRoute");
+const cronSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
+const requireStoreAt = ghSrc.indexOf("requireStore(c)");
+const cronSync = cronSyncAt >= 0 && requireStoreAt > cronSyncAt ? ghSrc.slice(cronSyncAt, requireStoreAt) : "";
+ok(cronSync.includes("gateCronBearerRoute"), "github-activity cron sync: flip gate present");
+ok(cronSync.indexOf("gateCronBearerRoute") < cronSync.indexOf("requestIo"), "github-activity cron sync: flip gate before requestIo");
+ok(!/cutoverFlipped\(/.test(readFileSync(join(here, "maintenance.ts"), "utf8")), "maintenance.ts does not own cutoverFlipped");
 const cronJobsSrc = readFileSync(join(here, "cronJobs.ts"), "utf8");
-ok(/export function skipUntilCutoverFlip/.test(cronJobsSrc), "cronJobs: skipUntilCutoverFlip is the shared helper");
-ok(/skippedUntilCutoverFlip\(name, c\.env\)/.test(cronJobsSrc), "handleCron uses the shared post-flip helper");
-ok(/skippedUntilCutoverFlip\(name, env\)/.test(cronJobsSrc), "runCronJob uses the shared post-flip helper");
+ok(/gateCron\(name, c\.env\)/.test(cronJobsSrc), "handleCron uses gateCron");
+ok(/gateCron\(name, env\)/.test(cronJobsSrc), "runCronJob uses gateCron");
+ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers live in cutoverFlip.ts");
 
 const writeFreezeSrc = readFileSync(join(here, "../../supabase/functions/_shared/writeFreeze.ts"), "utf8");
 ok(/export function refuseFrozenWrite/.test(writeFreezeSrc), "writeFreeze: refuseFrozenWrite is the shared helper");
@@ -1506,6 +1513,32 @@ const frozenGhUnauth = await withTimeout(
   "github frozen unauth",
 );
 ok(frozenGhUnauth.status === 401, "unauth github-activity while frozen is still 401");
+
+async function cronGithubSync(extraEnv: Record<string, string> = {}, path = "/api/github-activity") {
+  return app.request(
+    `http://localhost:8787${path}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.CRON_SECRET}`, "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({ action: "sync" }),
+    },
+    { ...env, ...extraEnv },
+  );
+}
+const githubBeforeBearerSkip = githubApiCalls;
+const bearerSyncSkip = await withTimeout(cronGithubSync(), 8000, "github-activity cron sync skip");
+ok(bearerSyncSkip.status === 200, `github-activity CRON_SECRET sync before flip: HTTP ${bearerSyncSkip.status}`);
+const bearerSyncSkipBody = (await bearerSyncSkip.json()) as { skipped?: boolean; reason?: string; job?: string };
+ok(bearerSyncSkipBody.skipped === true, "github-activity CRON_SECRET sync before flip: skipped:true");
+ok(bearerSyncSkipBody.job === "github-poll", "github-activity CRON_SECRET sync before flip: job github-poll");
+ok(githubApiCalls === githubBeforeBearerSkip, "github-activity CRON_SECRET sync before flip: no GitHub API call");
+const fnSyncSkip = await withTimeout(cronGithubSync({}, "/functions/v1/github-activity"), 8000, "functions github-activity cron sync skip");
+ok(fnSyncSkip.status === 200 && ((await fnSyncSkip.json()) as { skipped?: boolean }).skipped === true, "functions/v1 github-activity CRON_SECRET sync before flip: skipped");
+const bearerUnknown = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "maybe" }), 8000, "github-activity cron sync unknown");
+ok(((await bearerUnknown.json()) as { skipped?: boolean }).skipped === true, "github-activity CRON_SECRET sync unknown value: fail-closed skip");
+const bearerFlipped = await withTimeout(cronGithubSync({ CUTOVER_FLIPPED: "1" }), 8000, "github-activity cron sync flipped");
+ok(bearerFlipped.status === 200, `github-activity CRON_SECRET sync after flip: HTTP ${bearerFlipped.status}`);
+ok(((await bearerFlipped.json()) as { skipped?: boolean }).skipped !== true, "github-activity CRON_SECRET sync after flip: not skipped");
 
 globalThis.fetch = realFetch;
 

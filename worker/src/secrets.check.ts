@@ -16,12 +16,18 @@ import {
   jobsForSchedule,
   canonicalCronJob,
   consumeCalendarSyncBatch,
-  POST_FLIP_CRON_JOBS,
   runCronJob,
+} from "./cronJobs.ts";
+import {
+  CUTOVER_FLIPPED_VALUES,
+  cutoverFlipped,
+  gateCron,
+  gateCronBearerRoute,
+  POST_FLIP_CRON_JOBS,
   skipUntilCutoverFlip,
   skippedUntilCutoverFlip,
-} from "./cronJobs.ts";
-import { cutoverFlipped, writeFrozen } from "./maintenance.ts";
+} from "./cutoverFlip.ts";
+import { writeFrozen } from "./maintenance.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -105,10 +111,15 @@ ok(writeFrozen("YES"), "writeFrozen YES");
 ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
 
-ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped truthy");
+ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
+ok(CUTOVER_FLIPPED_VALUES.join(",") === "1,true,yes,on", "cutoverFlipped accepted values are 1/true/yes/on");
 ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
 ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
 ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
+const flipSrc = readFileSync(join(root, "worker/src/cutoverFlip.ts"), "utf8");
+ok(!/writeFrozen/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
+ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
+ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
 ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");
 ok(skipUntilCutoverFlip("github-poll", {}), "skipUntilCutoverFlip unset env");
 ok(skipUntilCutoverFlip("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "maybe" }), "skipUntilCutoverFlip alias + unknown");
@@ -116,6 +127,8 @@ ok(!skipUntilCutoverFlip("github-poll", { CUTOVER_FLIPPED: "1" }), "skipUntilCut
 ok(!skipUntilCutoverFlip("rollover", {}), "skipUntilCutoverFlip does not gate other crons");
 ok(skippedUntilCutoverFlip("trim-sync-log", {})?.skipped === true, "skippedUntilCutoverFlip returns skipped:true");
 ok(skippedUntilCutoverFlip("trim-sync-log", { CUTOVER_FLIPPED: "1" }) === null, "skippedUntilCutoverFlip null after flip");
+ok(gateCron("github-poll", {})?.skipped === true, "gateCron skips before flip");
+ok(gateCronBearerRoute("github-poll", { CUTOVER_FLIPPED: "on" }) === null, "gateCronBearerRoute null after flip");
 const pollSkip = await runCronJob("github-poll", {}, null);
 ok(pollSkip.status === 200 && pollSkip.skipped === true && pollSkip.reason === "cutover_not_flipped", "runCronJob github-poll skips before flip");
 const trimSkip = await runCronJob("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "false" }, null);
@@ -137,7 +150,9 @@ ok(canonicalCronJob("nuvo-trim-sync-log") === "trim-sync-log", "cron alias trim-
 const ghSrc = readFileSync(join(root, "worker/src/githubActivity.ts"), "utf8");
 ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(ghSrc), "trim: parked margin is 1e6");
 ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim: floor excludes Neon-origin ids");
-ok(/Supabase-origin ids are all below the floor/.test(ghSrc), "trim: comments that Supabase-origin ids sit below the floor");
+ok(/about 1e6[\s\S]*further Neon inserts/.test(ghSrc), "trim: floor rises after ~1e6 Neon inserts");
+ok(/gateCronBearerRoute\("github-poll"/.test(ghSrc), "github-activity cron sync uses gateCronBearerRoute");
+ok(ghSrc.indexOf("gateCronBearerRoute") < ghSrc.indexOf("requestIo(c)"), "github-activity cron sync gates before requestIo");
 ok(!/RESTART IDENTITY/.test(ghSrc) && !/setval\(/.test(ghSrc), "trim: never resets the parked identity");
 ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: uses A's secrets.ts");
 ok(!/lib\/secrets/.test(ghSrc), "github-activity: no duplicate secrets module");
@@ -147,9 +162,8 @@ ok(/requireStore\(c\)/.test(ghSrc), "github-activity: owner from session require
 const cronJobsSrc = readFileSync(join(root, "worker/src/cronJobs.ts"), "utf8");
 ok(/runGithubPoll/.test(cronJobsSrc) && /runTrimSyncLog/.test(cronJobsSrc), "cronJobs: github-poll and trim-sync-log are wired");
 ok(/name === "github-poll"/.test(cronJobsSrc) && /name === "trim-sync-log"/.test(cronJobsSrc), "cronJobs: both jobs have runners");
-ok(/export function skipUntilCutoverFlip/.test(cronJobsSrc) && /export function skippedUntilCutoverFlip/.test(cronJobsSrc), "cronJobs: shared post-flip skip helpers");
-ok(/skippedUntilCutoverFlip\(name, env\)/.test(cronJobsSrc) && /skippedUntilCutoverFlip\(name, c\.env\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob share the helper");
-ok(/POST_FLIP_CRON_JOBS/.test(cronJobsSrc) && /B\/D add/.test(cronJobsSrc), "cronJobs: B/D reuse POST_FLIP_CRON_JOBS");
+ok(/gateCron\(name, env\)/.test(cronJobsSrc) && /gateCron\(name, c\.env\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
+ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers imported from cutoverFlip.ts");
 
 const blockedSrc = readFileSync(join(root, "worker/src/blocked.ts"), "utf8");
 ok(!/"github-activity"/.test(blockedSrc), "blocked: github-activity is ported");
@@ -219,7 +233,10 @@ ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(copyPy), "cutover_copy.py parked 
 const cutoverDoc = readFileSync(join(root, "docs/cloudflare-cutover.md"), "utf8");
 ok(/CUTOVER_FLIPPED/.test(cutoverDoc), "cutover.md names CUTOVER_FLIPPED");
 ok(/skipped: true/.test(cutoverDoc), "cutover.md documents skipped: true before flip");
-ok(/Supabase-origin ids are all below the floor/.test(cutoverDoc), "cutover.md: floor only protects Neon-origin rows");
+ok(/`1`, `true`, `yes`, `on`/.test(cutoverDoc), "cutover.md lists accepted CUTOVER_FLIPPED values");
+ok(/unschedule[\s\S]*phase=resync[\s\S]*CUTOVER_FLIPPED/.test(cutoverDoc), "cutover.md step 8 is unschedule → final resync → flag");
+ok(/about 1e6 further Neon inserts/.test(cutoverDoc), "cutover.md notes ~1e6 inserts before Neon rows age-trim");
+ok(!/Supabase-origin ids are all below the floor/.test(cutoverDoc), "cutover.md softened the floor wording");
 ok(!/never deletes ids in the parked identity window/.test(cutoverDoc), "cutover.md no longer says trim keeps the parked window");
 ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(workflow), "cutover-migrate.yml deletes missing push rows before upsert");
 ok(/push_subscriptions upserted/.test(workflow), "cutover-migrate.yml upserts push_subscriptions");

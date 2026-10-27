@@ -194,8 +194,8 @@ External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Ca
 Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
 `/api/cron/:job` still requires `CRON_SECRET`. Ported: rollover,
 purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log
-(no-op until `CUTOVER_FLIPPED`; floor protects Neon-origin ids only —
-Supabase-origin ids sit below it). Unported
+(no-op until `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps
+recent Neon-origin ids out of trim for ~1e6 further inserts). Unported
 jobs stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` —
 see [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
