@@ -704,11 +704,11 @@ function classifyPsql(text: string, script = ""): { retryable: boolean; stop: st
   return { retryable: retryable === "True", table, stop: rest.join("\n") };
 }
 
-function writeLiveResync(dir: string): { script: string; file: string } {
+function writeLiveResync(dir: string, opts?: { pushCsv?: string }): { script: string; file: string } {
   const syncCsv = join(dir, "sync.csv");
   const pushCsv = join(dir, "push.csv");
   writeFileSync(syncCsv, "");
-  writeFileSync(pushCsv, "");
+  writeFileSync(pushCsv, opts?.pushCsv ?? "");
   const script = py(
     [
       "from cutover_copy import compose_resync_script, SYNC_LOG_COLUMNS, PUSH_COLUMNS",
@@ -835,6 +835,53 @@ describe.sequential("live PostgreSQL lock timeout", () => {
         /* session may be aborted */
       }
       await locker.query("SELECT pg_advisory_unlock(88110204)").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+  }, 20_000);
+
+  live("sqlstate verbosity keeps a 23505 unique collision off the public error line", async () => {
+    const locker = await connectLivePg();
+    const dir = mkdtempSync(join(tmpdir(), "cutover-qa-resync-23505-"));
+    const marker = "https://cutover-qa-s5-leak-marker-9f3c2e1a.invalid/push";
+    const user = "33333333-3333-3333-3333-333333333333";
+    const id1 = "44444444-4444-4444-4444-444444444444";
+    const id2 = "55555555-5555-5555-5555-555555555555";
+    const stamp = "2020-01-01 00:00:00+00";
+    const pushCsv = [
+      [id1, user, stamp, stamp, marker, "k", "s", "", "", "", "0"].join(","),
+      [id2, user, stamp, stamp, marker, "k", "s", "", "", "", "0"].join(","),
+      "",
+    ].join("\n");
+    try {
+      await locker.query("SELECT pg_advisory_lock(88110205)");
+      await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+      await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      await locker.query(PUSH_DDL);
+      await locker.query(SYNC_DDL);
+
+      const { script, file } = writeLiveResync(dir, { pushCsv });
+      expect(script).not.toContain(marker);
+
+      const { stderr, status } = psqlResync(file);
+      expect(status, stderr).not.toBe(0);
+      expect(stderr).toMatch(/^psql:[^:\n]+:\d+: ERROR:\s+23505[ \t]*$/m);
+      expect(stderr).not.toContain(marker);
+      expect(stderr).not.toMatch(/DETAIL/);
+      expect(classifyPsql(stderr, script).retryable).toBe(false);
+
+      // Production run() dies with this line on a non-retryable resync psql.
+      const errorLine = `::error::psql failed (${status}): ${stderr}`;
+      expect(errorLine).not.toContain(marker);
+      expect(errorLine).not.toMatch(/DETAIL/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      try {
+        await locker.query("DROP TABLE IF EXISTS public.push_subscriptions CASCADE");
+        await locker.query("DROP TABLE IF EXISTS public.sync_log CASCADE");
+      } catch {
+        /* session may be aborted */
+      }
+      await locker.query("SELECT pg_advisory_unlock(88110205)").catch(() => undefined);
       await locker.end().catch(() => undefined);
     }
   }, 20_000);
