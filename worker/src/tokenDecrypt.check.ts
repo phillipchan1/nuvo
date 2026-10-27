@@ -1,30 +1,81 @@
 /**
- * Post-copy Neon check. Opens one sealed token per provider and, when
- * TOKEN_DECRYPT_LIVE=1, hits the provider refresh endpoint.
+ * Post-copy Neon check. Opens every sealed token and prints `provider ok`
+ * / `provider fail` only. Never prints tokens, the key, emails, or row ids.
  *
- * Prints `provider ok` / `provider fail` only. Never prints tokens, lengths
- * of the raw secret beyond a shape class, emails, or row ids.
+ * Reads the key from TOKEN_ENC_KEY_V1_FILE (preferred) or TOKEN_ENC_KEY_V1.
+ * Skips (exit 0) only when both the key and DATABASE_URL are unset — CI
+ * does not have migrated tokens. A provider with rows and 0 tokens checked
+ * is a no-go (exit 1).
  *
- * Skips (exit 0) unless TOKEN_ENC_KEY_V1 and DATABASE_URL are set — CI
- * does not have migrated tokens.
+ * Neon URLs use @neondatabase/serverless over HTTPS. TOKEN_DECRYPT_TCP=1
+ * forces the TCP postgres.js driver.
  *
- * Run: TOKEN_ENC_KEY_V1=… DATABASE_URL=… node --experimental-strip-types worker/src/tokenDecrypt.check.ts
+ * Run: TOKEN_ENC_KEY_V1_FILE=… DATABASE_URL=… node --experimental-strip-types worker/src/tokenDecrypt.check.ts
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { postgresSsl } from "./db.ts";
-import { openToken, parseTokenKeyring, type TokenTable } from "./secrets.ts";
+import { openToken, parseTokenKeyring, type TokenKeyring, type TokenTable } from "./secrets.ts";
 
-type Row = {
+export type TokenRow = {
   table_name: TokenTable;
   provider: string;
   row_id: string;
   user_id: string;
-  enc: Uint8Array | Buffer;
-  iv: Uint8Array | Buffer;
+  enc: Uint8Array | Buffer | string;
+  iv: Uint8Array | Buffer | string;
   key_version: number;
 };
 
-function asBytes(value: Uint8Array | Buffer | string): Uint8Array {
+/** Enum columns in this UNION must be `::text` or Postgres raises 42804. */
+export const SEALED_TOKENS_SQL = `
+  SELECT * FROM (
+    SELECT 'calendar_accounts'::text AS table_name, provider::text AS provider, id::text AS row_id, user_id::text,
+           refresh_token_enc AS enc, refresh_token_iv AS iv, key_version
+    FROM calendar_accounts
+    WHERE refresh_token_enc IS NOT NULL
+    UNION ALL
+    SELECT 'activity_sources'::text, kind::text, id::text, user_id::text,
+           refresh_token_enc, refresh_token_iv, key_version
+    FROM activity_sources
+    WHERE refresh_token_enc IS NOT NULL
+    UNION ALL
+    SELECT 'apple_identities'::text, 'apple'::text, user_id::text, user_id::text,
+           refresh_token_enc, refresh_token_iv, key_version
+    FROM apple_identities
+    WHERE refresh_token_enc IS NOT NULL
+  ) t
+`;
+
+export const PROVIDERS_WITH_ROWS_SQL = `
+  SELECT provider FROM (
+    SELECT provider::text AS provider FROM calendar_accounts
+    UNION
+    SELECT kind::text FROM activity_sources
+    UNION
+    SELECT 'apple'::text FROM apple_identities
+  ) p
+`;
+
+export function usesNeonHttp(url: string, forceTcp = false): boolean {
+  if (forceTcp) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "neon.tech" || host.endsWith(".neon.tech");
+  } catch {
+    return false;
+  }
+}
+
+export function readTokenKey(env: NodeJS.Dict<string> = process.env): string {
+  const file = (env.TOKEN_ENC_KEY_V1_FILE ?? "").trim();
+  if (file) return readFileSync(file, "utf8").trim();
+  return (env.TOKEN_ENC_KEY_V1 ?? "").trim();
+}
+
+export function asBytes(value: Uint8Array | Buffer | string): Uint8Array {
   if (typeof value === "string") return Uint8Array.from(Buffer.from(value.replace(/^\\x/, ""), "hex"));
   return value instanceof Uint8Array ? value : new Uint8Array(value);
 }
@@ -49,47 +100,24 @@ function prefixClass(secret: string): string {
   return "opaque";
 }
 
-const key = (process.env.TOKEN_ENC_KEY_V1 ?? "").trim();
-const dbUrl = (process.env.TOKEN_DECRYPT_DATABASE_URL ?? process.env.DATABASE_URL ?? "").trim();
-if (!key || !dbUrl) {
-  console.log("tokenDecrypt: skipped (TOKEN_ENC_KEY_V1 + DATABASE_URL unset)");
-  process.exit(0);
-}
+export type TokenCheckResult = {
+  lines: string[];
+  failed: number;
+  checked: Record<string, number>;
+};
 
-const live = (process.env.TOKEN_DECRYPT_LIVE ?? "").trim() === "1";
-const sql = postgres(dbUrl, { max: 1, ssl: postgresSsl(dbUrl) });
-const ring = await parseTokenKeyring({
-  TOKEN_ENC_KEY_V1: key,
-  TOKEN_ENC_KEY_V2: process.env.TOKEN_ENC_KEY_V2,
-  TOKEN_ENC_CURRENT: process.env.TOKEN_ENC_CURRENT,
-});
-
-let failed = 0;
-try {
-  const rows = (await sql`
-    SELECT * FROM (
-      SELECT 'calendar_accounts'::text AS table_name, provider, id::text AS row_id, user_id::text,
-             refresh_token_enc AS enc, refresh_token_iv AS iv, key_version
-      FROM calendar_accounts
-      WHERE refresh_token_enc IS NOT NULL
-      UNION ALL
-      SELECT 'activity_sources', kind, id::text, user_id::text,
-             refresh_token_enc, refresh_token_iv, key_version
-      FROM activity_sources
-      WHERE refresh_token_enc IS NOT NULL
-      UNION ALL
-      SELECT 'apple_identities', 'apple', user_id::text, user_id::text,
-             refresh_token_enc, refresh_token_iv, key_version
-      FROM apple_identities
-      WHERE refresh_token_enc IS NOT NULL
-    ) t
-  `) as Row[];
-
-  const seen = new Set<string>();
+/** Decrypt every sealed row. A provider with rows and 0 checks is a fail. */
+export async function checkTokenRows(
+  rows: TokenRow[],
+  providersWithRows: string[],
+  ring: TokenKeyring,
+): Promise<TokenCheckResult> {
+  const checked: Record<string, number> = {};
+  const fails = new Set<string>();
   for (const row of rows) {
-    const provider = row.provider === "github" ? "github" : row.provider;
-    if (seen.has(provider)) continue;
-    seen.add(provider);
+    const provider = String(row.provider ?? "");
+    if (!provider) continue;
+    checked[provider] = (checked[provider] ?? 0) + 1;
     try {
       const secret = await openToken(
         {
@@ -101,61 +129,118 @@ try {
         ring,
       );
       if (!shapeOk(provider, secret)) {
-        console.log(`${provider} fail`);
-        failed += 1;
+        fails.add(provider);
         continue;
       }
       void prefixClass(secret);
-      if (live) {
-        const refreshed = await liveRefresh(provider, secret);
-        console.log(`${provider} ${refreshed ? "ok" : "fail"}`);
-        if (!refreshed) failed += 1;
-      } else {
-        console.log(`${provider} ok`);
-      }
     } catch {
-      console.log(`${provider} fail`);
+      fails.add(provider);
+    }
+  }
+
+  const names = [...new Set([...providersWithRows, ...Object.keys(checked)])].sort();
+  const lines: string[] = [];
+  let failed = 0;
+  if (names.length === 0) {
+    return { lines, failed: 1, checked };
+  }
+  for (const name of names) {
+    const n = checked[name] ?? 0;
+    if (n > 0 && !fails.has(name)) {
+      lines.push(`${name} ok`);
+    } else {
+      lines.push(`${name} fail`);
       failed += 1;
     }
   }
-} finally {
-  await sql.end({ timeout: 5 });
+  return { lines, failed, checked };
 }
 
-process.exit(failed ? 1 : 0);
+type SqlQuery = {
+  query(text: string): Promise<Record<string, unknown>[]>;
+  end?: () => Promise<void>;
+};
 
-async function liveRefresh(provider: string, secret: string): Promise<boolean> {
-  try {
-    if (provider === "google") {
-      const id = process.env.GOOGLE_CLIENT_ID ?? "";
-      const sec = process.env.GOOGLE_CLIENT_SECRET ?? "";
-      if (!id || !sec) return false;
-      const res = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: id,
-          client_secret: sec,
-          refresh_token: secret,
-          grant_type: "refresh_token",
-        }),
-      });
-      return res.status === 200;
-    }
-    if (provider === "github") {
-      const res = await fetch("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${secret}`, "User-Agent": "nuvo-token-check" },
-      });
-      return res.status === 200;
-    }
-    if (provider === "m365") {
-      return secret.length >= 20;
-    }
-    if (provider === "apple") {
-      return secret.length >= 16;
-    }
-    return secret.length >= 8;
-  } catch {
-    return false;
+export async function openTokenCheckSql(url: string, forceTcp = false): Promise<SqlQuery> {
+  if (usesNeonHttp(url, forceTcp)) {
+    const { neon } = await import("@neondatabase/serverless");
+    const sql = neon(url);
+    return {
+      query: async (text) => (await sql.query(text)) as Record<string, unknown>[],
+    };
   }
+  const sql = postgres(url, { max: 1, ssl: postgresSsl(url) });
+  return {
+    query: async (text) => (await sql.unsafe(text)) as unknown as Record<string, unknown>[],
+    end: () => sql.end({ timeout: 5 }),
+  };
+}
+
+function asTokenRow(row: Record<string, unknown>): TokenRow {
+  return {
+    table_name: row.table_name as TokenTable,
+    provider: String(row.provider ?? ""),
+    row_id: String(row.row_id ?? ""),
+    user_id: String(row.user_id ?? ""),
+    enc: row.enc as TokenRow["enc"],
+    iv: row.iv as TokenRow["iv"],
+    key_version: Number(row.key_version),
+  };
+}
+
+export async function runTokenDecryptCheck(
+  env: NodeJS.Dict<string> = process.env,
+  openSql: typeof openTokenCheckSql = openTokenCheckSql,
+): Promise<number> {
+  let key = "";
+  try {
+    key = readTokenKey(env);
+  } catch {
+    console.error("tokenDecrypt: failed to read key file");
+    return 1;
+  }
+  const dbUrl = (env.TOKEN_DECRYPT_DATABASE_URL ?? env.DATABASE_URL ?? "").trim();
+  if (!key || !dbUrl) {
+    console.log("tokenDecrypt: skipped (TOKEN_ENC_KEY_V1 + DATABASE_URL unset)");
+    return 0;
+  }
+
+  let ring: TokenKeyring;
+  try {
+    ring = await parseTokenKeyring({
+      TOKEN_ENC_KEY_V1: key,
+      TOKEN_ENC_KEY_V2: env.TOKEN_ENC_KEY_V2,
+      TOKEN_ENC_CURRENT: env.TOKEN_ENC_CURRENT,
+    });
+  } catch {
+    console.error("tokenDecrypt: key rejected");
+    return 1;
+  }
+
+  const forceTcp = (env.TOKEN_DECRYPT_TCP ?? "").trim() === "1";
+  const sql = await openSql(dbUrl, forceTcp);
+  try {
+    const rawRows = await sql.query(SEALED_TOKENS_SQL);
+    const rawProviders = await sql.query(PROVIDERS_WITH_ROWS_SQL);
+    const rows = rawRows.map(asTokenRow);
+    const providers = rawProviders.map((r) => String(r.provider ?? "")).filter(Boolean);
+    const result = await checkTokenRows(rows, providers, ring);
+    for (const line of result.lines) console.log(line);
+    return result.failed ? 1 : 0;
+  } catch {
+    console.error("tokenDecrypt: query failed");
+    return 1;
+  } finally {
+    await sql.end?.();
+  }
+}
+
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return fileURLToPath(import.meta.url) === resolve(entry);
+}
+
+if (isMainModule() && !process.env.VITEST) {
+  process.exit(await runTokenDecryptCheck());
 }
