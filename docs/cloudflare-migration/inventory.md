@@ -115,11 +115,11 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `inbound-email` | Svix + inbound token | no | **Worker/Neon** |
 | `m365-oauth` / `m365-sync` | OAuth / service | no | Stay |
 | `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
-| `push-dispatch` | Service role cron | no | Stay |
+| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
 | `referral-code` | User JWT | Stripe | Stay |
 | `rollover` | Session or `CRON_SECRET` | no | **Worker/Neon** (session = that user; cron iterates `users`) |
 | `route-events` | User JWT | no | **Worker/Neon** |
-| `slot-mirror` / `task-mirror` | JWT / service | no | Stay |
+| `slot-mirror` / `task-mirror` | JWT / session | Google / CalDAV | **Ported** — session owner; foreign id ≡ random id → 404 |
 | `stripe-checkout` / `stripe-portal` | User JWT | **Stripe** | **Stay — do not touch** |
 | `stripe-webhook` | Stripe signature | **Stripe** | **Stay — do not touch** |
 
@@ -184,7 +184,7 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 | `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (age + Neon-origin floor; no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` (no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) — **Worker Google claim/poll** (`* * * * *` + `/api/cron/calendar-dispatch`); other providers stay on Supabase |
-| `nuvo-push-dispatch` | `push-dispatch` |
+| `nuvo-push-dispatch` | `push-dispatch` (Worker Cron Trigger `* * * * *` + `/api/cron/push-dispatch`) |
 | `nuvo-reminder-deliveries-prune` | SQL |
 | `nuvo-purge-trash` | SQL |
 
@@ -232,7 +232,9 @@ No automated `supabase db push` or `functions deploy` in CI.
 - `apply_patch`, `contacts`, `rotate_inbound_token`, `claim_reminder`
 - `/functions/v1/agent` and `/functions/v1/mcp` (session / connection scoped on Neon)
 - `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
-- Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune` (iterate `users`)
+- Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune`, `push-dispatch` (iterate `users`)
+- `slot-mirror` / `task-mirror` (session-owned; 404 existence oracle)
+- `push-dispatch` + Worker cron `nuvo-push-dispatch` (same VAPID pair; per-user loop, no Queue)
 - `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Friend-code minting (`referral-code`) is **not** ported; the share block is disabled on the flag-on Billing pane. Live check: [`billing-live-check.md`](./billing-live-check.md)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.
@@ -240,8 +242,7 @@ See [`route-inventory.md`](./route-inventory.md) for the full table.
 **Stay on Supabase until a later cutover**
 
 - Billing webhooks and writers (Stripe, Apple IAP, StoreKit) — **flagged**: they also write `subscriptions` / `stripe_webhook_events` / `apple_webhook_events`, which stay on Supabase and are excluded from the copy set
-- Calendar OAuth, sync, mirrors, Vault refresh tokens — **flagged**: they write `calendar_accounts` / `external_events` / `tasks.google_event_id` that move to Neon (sealed token columns exist; routes still 501 except calendar-dispatch enqueue)
-- Push-dispatch cron — **flagged**: reads user-data tables moving to Neon
+- Calendar OAuth, sync, Vault refresh tokens — **flagged**: they write `calendar_accounts` / `external_events` that move to Neon (sealed token columns exist; routes still 501 except calendar-dispatch enqueue). `slot-mirror` / `task-mirror` are ported.
 - Capture / MCP bearer and inbound email are **ported** (connection hash / inbound token on Neon)
 - Realtime broadcast
 - `handle_new_user` on `auth.users`

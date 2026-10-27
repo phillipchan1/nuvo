@@ -3,12 +3,14 @@
  * Read-only check of Supabase edge secrets before ANY functions redeploy.
  *
  * Calls `supabase secrets list --project-ref <ref> -o json` and compares
- * WRITE_FREEZE / MAINTENANCE_WRITE_FREEZE digests to sha256 hex of the
+ * WRITE_FREEZE / MAINTENANCE_WRITE_FREEZE hashes to sha256 hex of the
  * values writeFreeze.ts treats as unfrozen ('', '0', 'false', 'no', 'off').
- * Absent → PASS. Known-off digest → PASS. Anything else, a missing digest
- * field, or an unexpected JSON shape → FAIL (nonzero).
+ * The CLI emits [{ name, value, updated_at }] (Go SecretResponse; value
+ * is the sha256 hex). We read row.value ?? row.digest. Absent → PASS.
+ * Known-off hash → PASS. Anything else, a missing hash field, or an
+ * unexpected JSON shape → FAIL (nonzero).
  *
- * Prints only secret names and PASS/FAIL. Never digests or values.
+ * Prints only secret names and PASS/FAIL. Never hashes or values.
  * Tests import evaluateSecretsList with fixture JSON — they must not
  * spawn supabase.
  */
@@ -63,12 +65,13 @@ export function evaluateSecretsList(parsed) {
       continue;
     }
     const row = byName.get(name);
-    if (typeof row.digest !== "string" || row.digest.length === 0) {
+    const listed = row.value ?? row.digest;
+    if (typeof listed !== "string" || listed.length === 0) {
       lines.push(`${name} FAIL`);
       ok = false;
       continue;
     }
-    if (off.has(row.digest.toLowerCase())) {
+    if (off.has(listed.toLowerCase())) {
       lines.push(`${name} PASS`);
     } else {
       lines.push(`${name} FAIL`);

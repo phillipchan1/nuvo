@@ -10,9 +10,12 @@ import {
   gateCronBearerRoute,
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
-import { CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
-import type { Sql } from "./db.ts";
+import { PGlite } from "@electric-sql/pglite";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
+import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
+import { applyIsolationSchema } from "./isolationDb.ts";
+import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 
 const fails: string[] = [];
@@ -67,8 +70,8 @@ ok(/gateCron\(env, name\)/.test(cronJobsSrc), "runCronJob calls gateCron");
 ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron calls gateCron");
 ok(/gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer calls gateCron");
 ok(!/false\s*&&\s*gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer gate is not short-circuited");
-ok(/msg\.retry\(\)/.test(cronJobsSrc), "queue consumer retries a failed Google sync");
 ok(!/catch \{\s*continue;\s*\}/.test(cronJobsSrc), "queue consumer does not continue without ack or retry");
+ok(/acks\. Retry only when SQL cannot open/.test(cronJobsSrc), "queue consumer documents ack after runGoogleSync (per-account errors already back off)");
 ok(/gateCronBearerRoute\(c\.env, "google-sync"\)/.test(googleRoutesSrc), "google-sync cron bearer uses gateCronBearerRoute");
 ok(/gateCronBearerRoute\(c\.env, "google-contacts"\)/.test(googleRoutesSrc), "google-contacts cron bearer uses gateCronBearerRoute");
 ok(/gateCronBearerRoute\(c\.env, "google-events"\)/.test(googleRoutesSrc), "google-events cron bearer uses gateCronBearerRoute");
@@ -98,6 +101,31 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const scheduledFn = (
+  app as typeof app & {
+    scheduled(
+      event: { cron: string },
+      env: Record<string, string | undefined>,
+      ctx: { waitUntil(promise: Promise<unknown>): void },
+    ): Promise<void>;
+  }
+).scheduled;
+ok(typeof scheduledFn === "function", "app exports scheduled");
+let scheduledSqlOpens = 0;
+const restoreOpenSql = installOpenSqlForTests(() => {
+  scheduledSqlOpens += 1;
+  throw new Error("openSql used before flip");
+});
+try {
+  for (const cron of ALL_CRON_SCHEDULES) {
+    await scheduledFn({ cron }, {}, { waitUntil() {} });
+    await scheduledFn({ cron }, { CUTOVER_FLIPPED: "garbage" }, { waitUntil() {} });
+  }
+  ok(scheduledSqlOpens === 0, "unflipped scheduled() opens no SQL for every cron");
+} finally {
+  restoreOpenSql();
+}
 
 const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
 ok(
@@ -231,16 +259,52 @@ try {
   globalThis.fetch = origFetch;
 }
 
+{
+  // Per-account Google errors (503 / missing refresh) are isolated inside
+  // runGoogleSync and ack; next_sync_at backoff is the retry. Queue retry
+  // would fight that. Missing refresh on the isolation seed is the same
+  // path as a Google 503 after markSyncResult(false).
+  const db = new PGlite();
+  await applyIsolationSchema(db);
+  const sql = makePgliteSql(db);
+  const ACCOUNT = "aaaaaaaa-eeee-4000-8000-000000000001";
+  const USER = "11111111-1111-1111-1111-111111111111";
+  const before = await db.query<{ sync_failures: number; next_sync_at: string | null }>(
+    "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+    [ACCOUNT],
+  );
+  let failAck = 0;
+  let failRetry = 0;
+  const n = await consumeCalendarSyncBatch(
+    {
+      messages: [
+        {
+          body: { account_id: ACCOUNT, user_id: USER, provider: "google" },
+          ack: () => { failAck += 1; },
+          retry: () => { failRetry += 1; },
+        },
+      ],
+    },
+    { CUTOVER_FLIPPED: "1" },
+    sql,
+  );
+  const after = await db.query<{ sync_failures: number; next_sync_at: string | Date | null }>(
+    "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+    [ACCOUNT],
+  );
+  const nextAt = after.rows[0]?.next_sync_at ? new Date(after.rows[0].next_sync_at).getTime() : 0;
+  ok(n === 1 && failAck === 1 && failRetry === 0, "failed Google account acks (backoff, not queue retry)");
+  ok(
+    Number(after.rows[0]?.sync_failures ?? 0) > Number(before.rows[0]?.sync_failures ?? 0),
+    "failed Google account increments sync_failures",
+  );
+  ok(nextAt > Date.now(), "failed Google account sets next_sync_at in the future");
+  await db.close();
+}
+
 for (const value of flipOn) {
-  const out = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: value }, throwingSql());
-  ok(out.skipped !== true && out.status === 501, `runCronJob push-dispatch runs after ${value} (501 unported)`);
-  const http = await app.request("http://localhost/api/cron/push-dispatch", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${cronSecret}` },
-  }, { CRON_SECRET: cronSecret, CUTOVER_FLIPPED: value });
-  ok(http.status === 501, `handleCron push-dispatch runs after ${value}: HTTP ${http.status}`);
-  const body = (await http.json()) as { stay_on_supabase?: boolean; skipped?: boolean };
-  ok(body.stay_on_supabase === true && body.skipped !== true, `handleCron push-dispatch after ${value} is stay_on_supabase`);
+  const out = await runCronJob("google-renew", { CUTOVER_FLIPPED: value }, null);
+  ok(out.skipped !== true && out.status === 501, `runCronJob google-renew after ${value} is not skipped (needs sql)`);
 }
 
 const bearerSkip = gateCronBearerRoute({}, "github-activity");

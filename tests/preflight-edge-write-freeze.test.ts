@@ -19,6 +19,11 @@ function digestOf(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+/** Real `supabase secrets list -o json` SecretResponse row. `value` is sha256 hex. */
+function cliRow(name: string, raw: string) {
+  return { name, value: digestOf(raw), updated_at: "2026-10-27T15:00:00Z" };
+}
+
 describe("preflight-edge-write-freeze", () => {
   it("matches writeFreeze.ts unfrozen values exactly", () => {
     expect([...UNFROZEN_VALUES]).toEqual(["", "0", "false", "no", "off"]);
@@ -46,13 +51,13 @@ describe("preflight-edge-write-freeze", () => {
   });
 
   it("unrelated secrets are ignored", () => {
-    const out = evaluateSecretsList([{ name: "OPENAI_API_KEY", digest: digestOf("sk-leak") }]);
+    const out = evaluateSecretsList([cliRow("OPENAI_API_KEY", "sk-leak")]);
     expect(out.ok).toBe(true);
-    expect(out.lines.join("\n")).not.toMatch(/OPENAI|sk-leak|digest/i);
+    expect(out.lines.join("\n")).not.toMatch(/OPENAI|sk-leak|digest|value/i);
   });
 
-  it.each(UNFROZEN_VALUES)("known-off %j digest is PASS", (raw) => {
-    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", digest: digestOf(raw) }]);
+  it.each(UNFROZEN_VALUES)("known-off %j value is PASS", (raw) => {
+    const out = evaluateSecretsList([cliRow("WRITE_FREEZE", raw)]);
     expect(out.ok).toBe(true);
     expect(out.lines).toContain("WRITE_FREEZE PASS");
     expect(out.lines).toContain("MAINTENANCE_WRITE_FREEZE PASS");
@@ -60,9 +65,17 @@ describe("preflight-edge-write-freeze", () => {
     if (raw) expect(out.lines.join("\n")).not.toContain(raw);
   });
 
-  it("a frozen digest is FAIL", () => {
+  it.each(["0", "off"] as const)("%j present is PASS", (raw) => {
+    const out = evaluateSecretsList([cliRow("WRITE_FREEZE", raw), cliRow("MAINTENANCE_WRITE_FREEZE", raw)]);
+    expect(out.ok).toBe(true);
+    expect(out.lines).toEqual(["WRITE_FREEZE PASS", "MAINTENANCE_WRITE_FREEZE PASS"]);
+    expect(out.lines.join("\n")).not.toContain(digestOf(raw));
+    expect(out.lines.join("\n")).not.toContain(raw);
+  });
+
+  it("a non-off value is FAIL", () => {
     const digest = digestOf("1");
-    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", digest }]);
+    const out = evaluateSecretsList([cliRow("WRITE_FREEZE", "1")]);
     expect(out.ok).toBe(false);
     expect(out.lines).toContain("WRITE_FREEZE FAIL");
     expect(out.lines.join("\n")).not.toContain(digest);
@@ -71,30 +84,34 @@ describe("preflight-edge-write-freeze", () => {
 
   it("MAINTENANCE_WRITE_FREEZE stray value is FAIL", () => {
     const digest = digestOf("maybe");
-    const out = evaluateSecretsList([
-      { name: "WRITE_FREEZE", digest: digestOf("off") },
-      { name: "MAINTENANCE_WRITE_FREEZE", digest },
-    ]);
+    const out = evaluateSecretsList([cliRow("WRITE_FREEZE", "off"), cliRow("MAINTENANCE_WRITE_FREEZE", "maybe")]);
     expect(out.ok).toBe(false);
     expect(out.lines).toEqual(["WRITE_FREEZE PASS", "MAINTENANCE_WRITE_FREEZE FAIL"]);
     expect(out.lines.join("\n")).not.toContain(digest);
     expect(out.lines.join("\n")).not.toContain("maybe");
   });
 
-  it("missing digest field is FAIL", () => {
-    const out = evaluateSecretsList([{ name: "WRITE_FREEZE" }]);
+  it("missing value field is FAIL", () => {
+    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", updated_at: "2026-10-27T15:00:00Z" }]);
     expect(out.ok).toBe(false);
     expect(out.lines).toContain("WRITE_FREEZE FAIL");
   });
 
-  it("empty digest field is FAIL", () => {
-    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", digest: "" }]);
+  it("empty value field is FAIL", () => {
+    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", value: "", updated_at: "2026-10-27T15:00:00Z" }]);
     expect(out.ok).toBe(false);
     expect(out.lines).toContain("WRITE_FREEZE FAIL");
+  });
+
+  it("leftover digest field still PASSes known-off", () => {
+    const out = evaluateSecretsList([{ name: "WRITE_FREEZE", digest: digestOf("off") }]);
+    expect(out.ok).toBe(true);
+    expect(out.lines).toContain("WRITE_FREEZE PASS");
+    expect(out.lines.join("\n")).not.toContain(digestOf("off"));
   });
 
   it("unexpected JSON shape is FAIL", () => {
-    for (const parsed of [{}, null, "x", { secrets: [] }, [{ digest: "abc" }], [{ name: 1, digest: "abc" }]]) {
+    for (const parsed of [{}, null, "x", { secrets: [] }, [{ value: "abc" }], [{ name: 1, value: "abc" }]]) {
       const out = evaluateSecretsList(parsed);
       expect(out.ok, JSON.stringify(parsed)).toBe(false);
       expect(out.lines.some((l) => l.includes("FAIL"))).toBe(true);
@@ -126,6 +143,7 @@ describe("preflight-edge-write-freeze", () => {
     const doc = readFileSync(join(ROOT, "docs/cloudflare-cutover.md"), "utf8");
     expect(doc).toMatch(/preflight-edge-write-freeze\.mjs/);
     expect(doc).toMatch(/before any Supabase edge-function redeploy/i);
+    expect(doc).toMatch(/SecretResponse/);
     expect(WATCHED_SECRETS).toEqual(["WRITE_FREEZE", "MAINTENANCE_WRITE_FREEZE"]);
   });
 });

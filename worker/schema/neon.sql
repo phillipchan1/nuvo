@@ -304,6 +304,10 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
 ALTER TABLE public.reminder_deliveries ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE public.reminder_deliveries ADD COLUMN IF NOT EXISTS channel TEXT;
 
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS reminder_prefs JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS event_key TEXT;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS leads INTEGER[] NOT NULL DEFAULT '{}'::integer[];
+
 -- ---------------------------------------------------------------------------
 -- Blocked-route tables (calendar / push / activity / identity / ingest).
 -- Owner is public.users(id). The Worker scopes every query by user_id.

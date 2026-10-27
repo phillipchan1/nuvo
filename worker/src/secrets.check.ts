@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/secrets.check.ts
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,12 +12,7 @@ import {
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
 } from "./secrets.ts";
-import {
-  jobsForSchedule,
-  canonicalCronJob,
-  consumeCalendarSyncBatch,
-  runCronJob,
-} from "./cronJobs.ts";
+import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, handleScheduled, runCronJob } from "./cronJobs.ts";
 import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 import { redactSecrets } from "./lib/redact.ts";
@@ -126,6 +121,28 @@ ok(!redactSecrets("client_secret=GOCSPX-leak").includes("GOCSPX"), "redactSecret
 ok(!redactSecrets("https://oauth?code=4/0AanRRrt-secret&scope=email").includes("4/0Aan"), "redactSecrets strips OAuth code=4/…");
 ok(redactSecrets("https://oauth?code=4/0AanRRrt-secret&scope=email").includes("code=[redacted]"), "redactSecrets replaces OAuth code");
 
+const REDACT_CASES: { name: string; input: string; mustNot: string; mustInclude: string }[] = [
+  { name: "JSON id_token", input: '{"id_token":"eyJhbGciOiJIUzI1NiJ9.e30.sig"}', mustNot: "eyJ", mustInclude: "[redacted]" },
+  { name: "JSON client_secret", input: '{"client_secret":"GOCSPX-json"}', mustNot: "GOCSPX", mustInclude: '"client_secret":"[redacted]"' },
+  { name: "JSON refresh_token", input: '{"refresh_token":"1//json-refresh"}', mustNot: "json-refresh", mustInclude: "[redacted]" },
+  { name: "JSON access_token", input: '{"access_token":"ya29.json-access"}', mustNot: "json-access", mustInclude: "[redacted]" },
+  { name: "urlencoded refresh_token", input: "refresh_token%3D1%2F%2Furl-refresh", mustNot: "url-refresh", mustInclude: "refresh_token%3D[redacted]" },
+  { name: "urlencoded access_token", input: "access_token%3Dya29.url-access", mustNot: "url-access", mustInclude: "access_token%3D[redacted]" },
+  { name: "urlencoded client_secret", input: "client_secret%3DGOCSPX-url", mustNot: "GOCSPX-url", mustInclude: "client_secret%3D[redacted]" },
+  { name: "code=4/ in query", input: "https://oauth?state=1&code=4/0Aan-mid&scope=email", mustNot: "0Aan-mid", mustInclude: "code=[redacted]" },
+  { name: "code=4/ after quote", input: 'redirect "code=4/quoted-secret"', mustNot: "quoted-secret", mustInclude: "code=[redacted]" },
+  { name: "2-part JWT", input: "hdr eyJhbGciOiJIUzI1NiJ9.e30 tail", mustNot: "eyJ", mustInclude: "[redacted]" },
+  { name: "Basic auth", input: "Authorization: Basic YWJjOnNlY3JldA==", mustNot: "YWJjOnNlY3JldA", mustInclude: "Basic [redacted]" },
+  { name: "single-quoted client_secret", input: "client_secret='GOCSPX-quoted'", mustNot: "GOCSPX-quoted", mustInclude: "client_secret='[redacted]'" },
+  { name: "single-quoted refresh_token", input: "refresh_token='plain-refresh'", mustNot: "plain-refresh", mustInclude: "refresh_token='[redacted]'" },
+  { name: "client_secret spaced =", input: "client_secret = spaced-secret", mustNot: "spaced-secret", mustInclude: "client_secret = [redacted]" },
+];
+for (const row of REDACT_CASES) {
+  const out = redactSecrets(row.input);
+  ok(!out.includes(row.mustNot), `redact ${row.name} drops secret`);
+  ok(out.includes(row.mustInclude), `redact ${row.name} keeps placeholder`);
+}
+
 ok(writeFrozen("1"), "writeFrozen 1");
 ok(writeFrozen("true"), "writeFrozen true");
 ok(writeFrozen("YES"), "writeFrozen YES");
@@ -138,17 +155,46 @@ ok(!writeFrozen("false"), "writeFrozen false is off");
 ok(!writeFrozen("no"), "writeFrozen no is off");
 ok(!writeFrozen("off"), "writeFrozen off is off");
 
-ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
-ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
-ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
-ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
-const flipSrc = readFileSync(join(root, "worker/src/cutoverFlip.ts"), "utf8");
+ok(cutoverFlipped("1"), "cutoverFlipped 1");
+ok(cutoverFlipped("true"), "cutoverFlipped true");
+ok(cutoverFlipped("YES"), "cutoverFlipped YES");
+ok(cutoverFlipped("on"), "cutoverFlipped on");
+ok(!cutoverFlipped(""), "cutoverFlipped empty is off");
+ok(!cutoverFlipped(undefined), "cutoverFlipped unset is fail-closed");
+ok(!cutoverFlipped("maybe"), "cutoverFlipped unknown is fail-closed");
+ok(!cutoverFlipped("0"), "cutoverFlipped 0 is fail-closed");
+ok(!cutoverFlipped("false"), "cutoverFlipped false is fail-closed");
+ok(!cutoverFlipped("2"), "cutoverFlipped 2 is fail-closed");
+const here = dirname(fileURLToPath(import.meta.url));
+const cronSrc = readFileSync(join(here, "cron.ts"), "utf8");
+const flipSrc = readFileSync(join(here, "cutoverFlip.ts"), "utf8");
+ok(!/export function cutoverFlipped/.test(cronSrc), "cron.ts no longer owns cutoverFlipped");
+ok(/export function cutoverFlipped/.test(flipSrc) && !/writeFrozen\(/.test(flipSrc), "cutoverFlipped lives in cutoverFlip.ts and does not derive from writeFrozen");
 ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
 ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
 ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
-ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");
+ok(
+  !existsSync(join(here, "lib/secrets.ts")),
+  "stub lib/secrets.ts is deleted",
+);
+ok(POST_FLIP_CRON_JOBS.includes("push-dispatch") && POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists Worker copies");
 ok(gateCron({}, "github-poll") instanceof Response, "gateCron skips before flip");
 ok(gateCronBearerRoute({ CUTOVER_FLIPPED: "on" }, "github-poll") === null, "gateCronBearerRoute null after flip");
+
+const skipPush = await runCronJob("push-dispatch", {}, null);
+ok(skipPush.skipped === true && skipPush.status === 200 && skipPush.reason === "cutover_not_flipped", "runCronJob skips push-dispatch before flip");
+ok(skipPush.stay_on_supabase === true, "skipped cron stays on supabase");
+const skipUnknown = await runCronJob("rollover", { CUTOVER_FLIPPED: "maybe" }, null);
+ok(skipUnknown.skipped === true && skipUnknown.reason === "cutover_not_flipped", "unknown CUTOVER_FLIPPED skips rollover");
+const skipCalendar = await runCronJob("calendar-dispatch", { CUTOVER_FLIPPED: "" }, null);
+ok(skipCalendar.skipped === true && skipCalendar.reason === "cutover_not_flipped", "empty CUTOVER_FLIPPED skips calendar-dispatch");
+const scheduledSkip = await handleScheduled({ cron: "* * * * *" }, {}, (job) => runCronJob(job, {}, null));
+ok(
+  scheduledSkip.length === 2 && scheduledSkip.every((r) => r.skipped === true && r.reason === "cutover_not_flipped"),
+  "minute tick skips every job before flip",
+);
+const flippedNoSql = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: "1" }, null);
+ok(flippedNoSql.status === 501 && flippedNoSql.skipped !== true, "flipped push-dispatch without sql is 501");
 const pollSkip = await runCronJob("github-poll", {}, null);
 ok(pollSkip.status === 200 && pollSkip.skipped === true && pollSkip.reason === "cutover_not_flipped", "runCronJob github-poll skips before flip");
 const trimSkip = await runCronJob("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "false" }, null);
@@ -184,6 +230,8 @@ ok(/runGithubPoll/.test(cronJobsSrc) && /runTrimSyncLog/.test(cronJobsSrc), "cro
 ok(/name === "github-poll"/.test(cronJobsSrc) && /name === "trim-sync-log"/.test(cronJobsSrc), "cronJobs: both jobs have runners");
 ok(/gateCron\(env, name\)/.test(cronJobsSrc) && /gateCron\(c\.env, name\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
 ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers imported from cutoverFlip.ts");
+ok(!/nowMs:\s*typeof body\.nowMs/.test(cronJobsSrc), "HTTP cron does not forward caller nowMs");
+ok(!/opts\.nowMs|body\.nowMs/.test(cronJobsSrc), "handleCron never reads body.nowMs");
 
 const blockedSrc = readFileSync(join(root, "worker/src/blocked.ts"), "utf8");
 ok(!/"github-activity"/.test(blockedSrc), "blocked: github-activity is ported");
@@ -337,6 +385,20 @@ ok(/refresh_token_enc BYTEA/.test(neon), "neon.sql has encrypted token columns")
 ok(/access_token_enc BYTEA/.test(neon), "neon.sql has sealed access_token columns");
 ok(/contacts_directory ADD COLUMN IF NOT EXISTS account_id/.test(neon), "neon.sql has contacts_directory.account_id");
 ok(/owner-scoped SQL/.test(neon) && /Postgres RLS/.test(neon), "neon.sql documents owner-scoped SQL, not RLS");
+ok(/reminder_prefs JSONB/.test(neon), "neon.sql has user_settings.reminder_prefs");
+ok(/ADD COLUMN IF NOT EXISTS event_key/.test(neon), "neon.sql has reminders.event_key");
+ok(/ADD COLUMN IF NOT EXISTS leads/.test(neon), "neon.sql has reminders.leads");
+
+const storeSrc = readFileSync(join(root, "worker/src/store.ts"), "utf8");
+ok(
+  /resyncOwnedPushSubscriptions[\s\S]*DELETE FROM push_subscriptions[\s\S]*insertPushSubscription/.test(storeSrc),
+  "store push resync deletes missing rows before upsert",
+);
+ok(
+  /ON CONFLICT \(id\) DO UPDATE SET[\s\S]*WHERE push_subscriptions\.user_id = \$\{store\.userId\}/.test(storeSrc),
+  "store push upsert is full-row and owner-scoped",
+);
+ok(!/console\.(log|info|debug|error|warn)\([^)]*(TOKEN_ENC|VAPID_|plaintext|refresh_token)/.test(storeSrc), "store does not log token material");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

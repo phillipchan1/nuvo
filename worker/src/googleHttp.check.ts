@@ -348,6 +348,17 @@ for (const path of ["/functions/v1/google-events", "/api/google-events"] as cons
 
 {
   const ioBefore = ioOpened;
+  const noActing = await call("/functions/v1/google-events", {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ action: "delete", eventId: EVENT_A }),
+  });
+  ok(noActing.status === 401, `google-events cron bearer without actingUserId is 401 (got ${noActing.status})`);
+  ok(ioOpened === ioBefore, "google-events cron bearer without actingUserId does zero IO");
+}
+
+{
+  const ioBefore = ioOpened;
   const flipped = await call("/functions/v1/google-events", {
     method: "POST",
     headers: { authorization: "Bearer cron-secret" },

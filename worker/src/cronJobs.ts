@@ -5,16 +5,17 @@
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune,
- * github-poll, trim-sync-log) iterate `users` then scope by `user_id`.
- * Jobs that must not run beside Supabase `pg_cron` belong in
- * `POST_FLIP_CRON_JOBS` (`cutoverFlip.ts`). `handleCron` / `runCronJob`
+ * push-dispatch, github-poll, trim-sync-log) iterate `users` then scope
+ * by `user_id`. Jobs that must not run beside Supabase `pg_cron` belong
+ * in `POST_FLIP_CRON_JOBS` (`cutoverFlip.ts`). `handleCron` / `runCronJob`
  * call `gateCron` before any DB / fetch / queue work. Unset
  * `CUTOVER_FLIPPED` skips with 200. Calendar-dispatch fans out one Queue
  * message per due account so a single isolate does not loop every tenant
  * against Google/Graph/CalDAV (Workers Paid CPU). After the flip the
  * consumer polls Google (other providers ack for PR C). `google-renew`
- * re-watches channels. Push stays 501. Without a queue binding, HTTP
- * calendar-dispatch claims Google in-process (PGlite / tests).
+ * re-watches channels. `push-dispatch` runs per user with the same VAPID
+ * pair. Without a queue binding, HTTP calendar-dispatch claims Google
+ * in-process (PGlite / tests).
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -33,6 +34,8 @@ import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
+import { runPushDispatch } from "./pushDispatch.ts";
+import { readJson } from "./http.ts";
 
 export interface QueueMessage<T> {
   body: T;
@@ -231,6 +234,11 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
     const out = await runReminderPrune(sql);
     return { job: name, status: 200, stay_on_supabase: false, deleted: out.deleted };
   }
+  if (name === "push-dispatch") {
+    if (!sql) return blocked(name);
+    await runPushDispatch(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false };
+  }
   if (name === "github-poll") {
     if (!sql) return blocked(name);
     const out = await runGithubPoll(sql, env);
@@ -257,15 +265,22 @@ export async function handleScheduled(
 
 /**
  * One message = one calendar account. After the flip, Google runs poll
- * here. Other providers ack for PR C. Counts only — never log ids,
- * tokens, or row data. `gateCron` skips before any SQL.
+ * here. Other providers ack for PR C. Per-account Google errors are
+ * isolated inside `runGoogleSync` (it marks `next_sync_at` backoff and
+ * returns); this consumer then acks. Retry only when SQL cannot open
+ * (backoff cannot be written) or `runGoogleSync` itself throws.
+ * `opened` is optional for tests — the Worker path opens its own client.
+ * Counts only — never log ids, tokens, or row data. `gateCron` skips
+ * before any SQL.
  */
 export async function consumeCalendarSyncBatch(
   batch: QueueBatch<CalendarSyncMessage>,
   env: Env,
+  opened?: Sql | null,
 ): Promise<number> {
   let n = 0;
-  let sql: Sql | null = null;
+  let sql: Sql | null = opened ?? null;
+  const closeOwned = opened == null;
   if (gateCron(env, "queue-consume")) {
     for (const msg of batch.messages) {
       n += 1;
@@ -303,7 +318,7 @@ export async function consumeCalendarSyncBatch(
       }
     }
   } finally {
-    if (sql) await closeSql(sql);
+    if (closeOwned && sql) await closeSql(sql);
   }
   return n;
 }
@@ -357,6 +372,21 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   if (name === "reminder-deliveries-prune") {
     const out = await runReminderPrune(sql);
     return json({ ok: true, deleted: out.deleted, users: out.users }, 200, OPEN_CORS);
+  }
+
+  if (name === "push-dispatch") {
+    let body: { selfTest?: boolean; clientPublicKey?: string } = {};
+    try {
+      body = await readJson(c);
+    } catch {
+      body = {};
+    }
+    // nowMs is test-only on runPushDispatch — never accepted from HTTP.
+    const result = await runPushDispatch(sql, c.env, {
+      selfTest: body.selfTest === true,
+      clientPublicKey: body.clientPublicKey,
+    });
+    return json(result, 200, OPEN_CORS);
   }
 
   if (name === "github-poll") {

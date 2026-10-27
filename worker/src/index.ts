@@ -42,6 +42,10 @@ import { handleGithubActivity } from "./githubActivity.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
 import { registerGoogleRoutes } from "./google/routes.ts";
+import { handleSlotMirror } from "./slotMirror.ts";
+import { handleTaskMirror } from "./taskMirror.ts";
+import { installPushFetchForTests, workerTestFetch } from "./pushDispatch.ts";
+import type { FetchLike } from "./lib/webpush.ts";
 import {
   applyPatch,
   claimReminder,
@@ -57,10 +61,14 @@ import {
   updateOwned,
   upsertOwned,
   type PlannerTable,
-  type Store,
 } from "./store.ts";
 
 const app = new Hono<AppEnv>();
+
+/** Test-only: mock Google / CalDAV / web-push endpoints. */
+export function installWorkerFetchForTests(fn?: FetchLike): () => void {
+  return installPushFetchForTests(fn);
+}
 
 /** Clone — Workers Response headers are immutable; mutating them becomes a plain-text 500. */
 function withClonedHeaders(res: Response, extra: Record<string, string>): Response {
@@ -442,6 +450,52 @@ app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
 app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
 app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
 app.all("/api/rollover", (c) => handleUserRollover(c));
+
+app.options("/api/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/slot-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/task-mirror", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/api/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+app.options("/functions/v1/push-dispatch", () => new Response("ok", { headers: OPEN_CORS }));
+
+function refuseMirrorGet(c: Context<AppEnv>): Response | null {
+  if (c.req.method === "GET" || c.req.method === "HEAD") {
+    return json({ error: "method not allowed" }, 405, OPEN_CORS);
+  }
+  return null;
+}
+
+app.all("/api/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/functions/v1/slot-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleSlotMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/api/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/functions/v1/task-mirror", async (c) => {
+  const refused = refuseMirrorGet(c);
+  if (refused) return refused;
+  const got = await requireWritableStore(c);
+  if ("error" in got) return got.error;
+  return handleTaskMirror(c, got.store, { env: c.env, fetchImpl: workerTestFetch() });
+});
+app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
+app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
+
 app.all("/functions/v1/:name", (c) => {
   if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
   return stayOnSupabase(c.req.param("name"));

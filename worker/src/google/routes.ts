@@ -153,6 +153,8 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
       if (cronOk && acting) {
         const gated = gateCronBearerRoute(c.env, "google-events");
         if (gated) return gated;
+      } else if (cronOk) {
+        return json({ error: "unauthorized" }, 401, OPEN_CORS);
       }
       const io = await deps.requestIo(c);
       let userId: string;
