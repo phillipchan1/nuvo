@@ -71,6 +71,9 @@
     "preview": {
       "name": "nuvo-preview",
       "workers_dev": true,
+      // Empty array, not omitted — wrangler inherits top-level routes
+      // otherwise and a preview deploy would steal api.nuvo.day.
+      "routes": [],
       // No Hyperdrive here on purpose. Wrangler does not inherit the
       // top-level binding; preview uses the DATABASE_URL secret. The
       // dry-run warning about a missing HYPERDRIVE on preview is expected.
