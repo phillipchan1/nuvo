@@ -55,7 +55,11 @@
 --   BEGIN;
 --   DO $cleanup$
 --   DECLARE rec record;
+--   leftover bigint;
 --   BEGIN
+--     IF to_regclass('migration_tmp.auth_grants') IS NULL THEN
+--       RETURN;
+--     END IF;
 --     -- Loop the recording. REVOKE ALL ON ALL TABLES IN SCHEMA auth can
 --     -- 42501 on hosted postgres (not a superuser / not the table owner).
 --     -- On PG17 a table-level REVOKE also clears that table's column ACLs.
@@ -68,18 +72,51 @@
 --           'REVOKE %s ON SCHEMA %I FROM %I',
 --           rec.privilege, rec.nspname, rec.grantee
 --         );
---       ELSIF rec.objkind = 'table' THEN
---         EXECUTE format(
---           'REVOKE %s ON TABLE %I.%I FROM %I',
---           rec.privilege, rec.nspname, rec.objname, rec.grantee
---         );
---       ELSIF rec.objkind = 'column' THEN
---         EXECUTE format(
---           'REVOKE %s (%I) ON TABLE %I.%I FROM %I',
---           rec.privilege, rec.attname, rec.nspname, rec.objname, rec.grantee
---         );
+--       ELSIF rec.objkind IN ('table', 'column') THEN
+--         IF to_regclass(format('%I.%I', rec.nspname, rec.objname)) IS NULL THEN
+--           CONTINUE;
+--         END IF;
+--         IF rec.objkind = 'table' THEN
+--           EXECUTE format(
+--             'REVOKE %s ON TABLE %I.%I FROM %I',
+--             rec.privilege, rec.nspname, rec.objname, rec.grantee
+--           );
+--         ELSE
+--           EXECUTE format(
+--             'REVOKE %s (%I) ON TABLE %I.%I FROM %I',
+--             rec.privilege, rec.attname, rec.nspname, rec.objname, rec.grantee
+--           );
+--         END IF;
 --       END IF;
 --     END LOOP;
+--     IF has_schema_privilege('migration_reader', 'auth', 'USAGE') THEN
+--       RAISE EXCEPTION 'migration_reader still has USAGE on schema auth';
+--     END IF;
+--     SELECT COUNT(*) INTO leftover
+--     FROM (
+--       SELECT 1
+--       FROM pg_class c
+--       JOIN pg_namespace n ON n.oid = c.relnamespace
+--       CROSS JOIN LATERAL aclexplode(c.relacl) e
+--       JOIN pg_roles r ON r.oid = e.grantee
+--       WHERE n.nspname = 'auth'
+--         AND r.rolname = 'migration_reader'
+--       UNION ALL
+--       SELECT 1
+--       FROM pg_attribute a
+--       JOIN pg_class c ON c.oid = a.attrelid
+--       JOIN pg_namespace n ON n.oid = c.relnamespace
+--       CROSS JOIN LATERAL aclexplode(a.attacl) e
+--       JOIN pg_roles r ON r.oid = e.grantee
+--       WHERE n.nspname = 'auth'
+--         AND a.attnum > 0
+--         AND NOT a.attisdropped
+--         AND r.rolname = 'migration_reader'
+--     ) leftover_acls;
+--     IF leftover > 0 THEN
+--       RAISE EXCEPTION
+--         'migration_reader still holds % ACL entries on auth tables', leftover;
+--     END IF;
 --   END
 --   $cleanup$;
 --   DROP SCHEMA IF EXISTS migration_tmp CASCADE;
