@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/secrets.check.ts
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,12 +12,7 @@ import {
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
 } from "./secrets.ts";
-import {
-  jobsForSchedule,
-  canonicalCronJob,
-  consumeCalendarSyncBatch,
-  runCronJob,
-} from "./cronJobs.ts";
+import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, handleScheduled, runCronJob } from "./cronJobs.ts";
 import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 
@@ -103,17 +98,46 @@ ok(writeFrozen("YES"), "writeFrozen YES");
 ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
 
-ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
-ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
-ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
-ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
-const flipSrc = readFileSync(join(root, "worker/src/cutoverFlip.ts"), "utf8");
+ok(cutoverFlipped("1"), "cutoverFlipped 1");
+ok(cutoverFlipped("true"), "cutoverFlipped true");
+ok(cutoverFlipped("YES"), "cutoverFlipped YES");
+ok(cutoverFlipped("on"), "cutoverFlipped on");
+ok(!cutoverFlipped(""), "cutoverFlipped empty is off");
+ok(!cutoverFlipped(undefined), "cutoverFlipped unset is fail-closed");
+ok(!cutoverFlipped("maybe"), "cutoverFlipped unknown is fail-closed");
+ok(!cutoverFlipped("0"), "cutoverFlipped 0 is fail-closed");
+ok(!cutoverFlipped("false"), "cutoverFlipped false is fail-closed");
+ok(!cutoverFlipped("2"), "cutoverFlipped 2 is fail-closed");
+const here = dirname(fileURLToPath(import.meta.url));
+const cronSrc = readFileSync(join(here, "cron.ts"), "utf8");
+const flipSrc = readFileSync(join(here, "cutoverFlip.ts"), "utf8");
+ok(!/export function cutoverFlipped/.test(cronSrc), "cron.ts no longer owns cutoverFlipped");
+ok(/export function cutoverFlipped/.test(flipSrc) && !/writeFrozen\(/.test(flipSrc), "cutoverFlipped lives in cutoverFlip.ts and does not derive from writeFrozen");
 ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
 ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
 ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
-ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");
+ok(
+  !existsSync(join(here, "lib/secrets.ts")),
+  "stub lib/secrets.ts is deleted",
+);
+ok(POST_FLIP_CRON_JOBS.includes("push-dispatch") && POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists Worker copies");
 ok(gateCron({}, "github-poll") instanceof Response, "gateCron skips before flip");
 ok(gateCronBearerRoute({ CUTOVER_FLIPPED: "on" }, "github-poll") === null, "gateCronBearerRoute null after flip");
+
+const skipPush = await runCronJob("push-dispatch", {}, null);
+ok(skipPush.skipped === true && skipPush.status === 200 && skipPush.reason === "cutover_not_flipped", "runCronJob skips push-dispatch before flip");
+ok(skipPush.stay_on_supabase === true, "skipped cron stays on supabase");
+const skipUnknown = await runCronJob("rollover", { CUTOVER_FLIPPED: "maybe" }, null);
+ok(skipUnknown.skipped === true && skipUnknown.reason === "cutover_not_flipped", "unknown CUTOVER_FLIPPED skips rollover");
+const skipCalendar = await runCronJob("calendar-dispatch", { CUTOVER_FLIPPED: "" }, null);
+ok(skipCalendar.skipped === true && skipCalendar.reason === "cutover_not_flipped", "empty CUTOVER_FLIPPED skips calendar-dispatch");
+const scheduledSkip = await handleScheduled({ cron: "* * * * *" }, {}, (job) => runCronJob(job, {}, null));
+ok(
+  scheduledSkip.length === 2 && scheduledSkip.every((r) => r.skipped === true && r.reason === "cutover_not_flipped"),
+  "minute tick skips every job before flip",
+);
+const flippedNoSql = await runCronJob("push-dispatch", { CUTOVER_FLIPPED: "1" }, null);
+ok(flippedNoSql.status === 501 && flippedNoSql.skipped !== true, "flipped push-dispatch without sql is 501");
 const pollSkip = await runCronJob("github-poll", {}, null);
 ok(pollSkip.status === 200 && pollSkip.skipped === true && pollSkip.reason === "cutover_not_flipped", "runCronJob github-poll skips before flip");
 const trimSkip = await runCronJob("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "false" }, null);
@@ -149,6 +173,8 @@ ok(/runGithubPoll/.test(cronJobsSrc) && /runTrimSyncLog/.test(cronJobsSrc), "cro
 ok(/name === "github-poll"/.test(cronJobsSrc) && /name === "trim-sync-log"/.test(cronJobsSrc), "cronJobs: both jobs have runners");
 ok(/gateCron\(env, name\)/.test(cronJobsSrc) && /gateCron\(c\.env, name\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
 ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers imported from cutoverFlip.ts");
+ok(!/nowMs:\s*typeof body\.nowMs/.test(cronJobsSrc), "HTTP cron does not forward caller nowMs");
+ok(!/opts\.nowMs|body\.nowMs/.test(cronJobsSrc), "handleCron never reads body.nowMs");
 
 const blockedSrc = readFileSync(join(root, "worker/src/blocked.ts"), "utf8");
 ok(!/"github-activity"/.test(blockedSrc), "blocked: github-activity is ported");
@@ -254,6 +280,20 @@ ok(/CREATE TABLE IF NOT EXISTS public\.push_subscriptions/.test(neon), "neon.sql
 ok(/CREATE TABLE IF NOT EXISTS public\.activity_sources/.test(neon), "neon.sql has activity_sources");
 ok(/CREATE TABLE IF NOT EXISTS public\.apple_identities/.test(neon), "neon.sql has apple_identities");
 ok(/refresh_token_enc BYTEA/.test(neon), "neon.sql has encrypted token columns");
+ok(/reminder_prefs JSONB/.test(neon), "neon.sql has user_settings.reminder_prefs");
+ok(/ADD COLUMN IF NOT EXISTS event_key/.test(neon), "neon.sql has reminders.event_key");
+ok(/ADD COLUMN IF NOT EXISTS leads/.test(neon), "neon.sql has reminders.leads");
+
+const storeSrc = readFileSync(join(root, "worker/src/store.ts"), "utf8");
+ok(
+  /resyncOwnedPushSubscriptions[\s\S]*DELETE FROM push_subscriptions[\s\S]*insertPushSubscription/.test(storeSrc),
+  "store push resync deletes missing rows before upsert",
+);
+ok(
+  /ON CONFLICT \(id\) DO UPDATE SET[\s\S]*WHERE push_subscriptions\.user_id = \$\{store\.userId\}/.test(storeSrc),
+  "store push upsert is full-row and owner-scoped",
+);
+ok(!/console\.(log|info|debug|error|warn)\([^)]*(TOKEN_ENC|VAPID_|plaintext|refresh_token)/.test(storeSrc), "store does not log token material");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {
