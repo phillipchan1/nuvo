@@ -11,7 +11,6 @@ import { getAccessToken } from "./google/tokens.ts";
 import { loadGoogleAccountById } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import app from "./index.ts";
-import { POST_FLIP_CRON_JOBS } from "./cronJobs.ts";
 import type { Env } from "./env.ts";
 
 const fails: string[] = [];
@@ -285,7 +284,7 @@ ok(webhookSync.status === 200, "webhook sync handshake is 200");
 
 const skipEnv: Env = { ...env, CUTOVER_FLIPPED: undefined };
 const unknownFlipEnv: Env = { ...env, CUTOVER_FLIPPED: "maybe" };
-for (const job of POST_FLIP_CRON_JOBS) {
+for (const job of ["google-renew", "calendar-dispatch", "google-resubscribe"] as const) {
   const skipped = await call(`/api/cron/${job}`, {
     method: "POST",
     headers: { authorization: "Bearer cron-secret" },
@@ -302,6 +301,24 @@ for (const job of POST_FLIP_CRON_JOBS) {
   ok(unknownFlip.status === 200, `cron ${job} unknown flip is 200 (got ${unknownFlip.status})`);
   ok((unknownFlip.body as { skipped?: boolean }).skipped === true, `cron ${job} unknown flip is skipped:true`);
   ok((unknownFlip.body as { reason?: string }).reason === "cutover_not_flipped", `cron ${job} unknown flip reason`);
+}
+
+for (const path of ["/functions/v1/google-sync", "/functions/v1/google-contacts"] as const) {
+  const skipped = await call(path, {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ mode: "poll" }),
+  }, skipEnv);
+  ok(skipped.status === 200, `${path} cron bearer before flip is 200 (got ${skipped.status})`);
+  ok((skipped.body as { skipped?: boolean }).skipped === true, `${path} cron bearer before flip is skipped`);
+  ok((skipped.body as { reason?: string }).reason === "cutover_not_flipped", `${path} cron bearer before flip reason`);
+
+  const unknownFlip = await call(path, {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ mode: "poll" }),
+  }, unknownFlipEnv);
+  ok(unknownFlip.status === 200 && (unknownFlip.body as { skipped?: boolean }).skipped === true, `${path} cron bearer unknown flip is skipped`);
 }
 
 const cronOk = await call("/api/cron/google-renew", {

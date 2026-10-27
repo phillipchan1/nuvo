@@ -5,15 +5,15 @@
  * `scheduled` export is Cloudflare-authenticated and calls the same runners.
  *
  * Ported user-data jobs (rollover, purge-trash, reminder-deliveries-prune)
- * iterate `users` then scope by `user_id`. Jobs that must not run beside
- * Supabase `pg_cron` belong in `POST_FLIP_CRON_JOBS`. `handleCron` /
- * `runCronJob` skip them until `CUTOVER_FLIPPED` (fail closed).
+ * iterate `users` then scope by `user_id`. Google jobs skip until
+ * `CUTOVER_FLIPPED` (allowlist only — not `writeFrozen`). The shared
+ * `worker/src/cutoverFlip.ts` helper will own the union once it lands.
  * Calendar-dispatch fans out one Queue message per due account so a single
  * isolate does not loop every tenant against Google/Graph/CalDAV (Workers
  * Paid CPU). The consumer runs Google poll (other providers ack for PR C).
- * `google-renew` re-watches channels. Push / github stay 501 after the
- * flip. Without a queue binding, HTTP calendar-dispatch claims Google
- * in-process (PGlite / tests).
+ * `google-renew` re-watches channels. Push / github stay 501. Without a
+ * queue binding, HTTP calendar-dispatch claims Google in-process
+ * (PGlite / tests).
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -57,33 +57,14 @@ export interface CronResult {
   reason?: string;
 }
 
-/**
- * Worker copies of jobs that stay on Supabase `pg_cron` until the flip.
- * Do not invent a second flag.
- */
-export const POST_FLIP_CRON_JOBS: readonly string[] = [
-  "calendar-dispatch",
-  "google-renew",
-  "google-resubscribe",
-  "push-dispatch",
-  "github-poll",
-  "rollover",
-  "purge-trash",
-  "reminder-deliveries-prune",
-  "trim-sync-log",
-];
+/** This PR's Google jobs only. Shared cutoverFlip.ts will own the union. */
+const GOOGLE_CRON_JOBS = new Set(["calendar-dispatch", "google-renew", "google-resubscribe"]);
 
-/** Fail closed: unset / unknown `CUTOVER_FLIPPED` = not flipped. */
-export function skipUntilCutoverFlip(job: string, env: Env): boolean {
+function skipGoogleUntilFlip(job: string, env: Env): CronResult | null {
   const name = canonicalCronJob(job);
-  return POST_FLIP_CRON_JOBS.includes(name) && !cutoverFlipped(env.CUTOVER_FLIPPED);
-}
-
-/** HTTP / scheduled no-op for a post-flip job that is not yet flipped. */
-export function skippedUntilCutoverFlip(job: string, env: Env): CronResult | null {
-  if (!skipUntilCutoverFlip(job, env)) return null;
+  if (!GOOGLE_CRON_JOBS.has(name) || cutoverFlipped(env.CUTOVER_FLIPPED)) return null;
   return {
-    job: canonicalCronJob(job),
+    job: name,
     status: 200,
     stay_on_supabase: true,
     skipped: true,
@@ -229,7 +210,7 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
-  const skipped = skippedUntilCutoverFlip(name, env);
+  const skipped = skipGoogleUntilFlip(name, env);
   if (skipped) return skipped;
   if (name === "calendar-dispatch") {
     if (!sql) return blocked(name);
@@ -332,7 +313,7 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   }
   const job = jobName ?? c.req.param("job") ?? "";
   const name = canonicalCronJob(job);
-  const skipped = skippedUntilCutoverFlip(name, c.env);
+  const skipped = skipGoogleUntilFlip(name, c.env);
   if (skipped) return json({ ok: true, ...skipped }, 200, OPEN_CORS);
 
   if (name === "calendar-dispatch") {

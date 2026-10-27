@@ -214,9 +214,9 @@ ok(cronUnset.status === 401, "cron unset secret: 401");
 const cronOk = await app.request("http://localhost/api/cron/push-dispatch", {
   headers: { Authorization: "Bearer cron-test-secret" },
 }, { ...prodEnv, CRON_SECRET: "cron-test-secret" });
-ok(cronOk.status === 200, `cron matching secret: HTTP ${cronOk.status} (skipped until flip)`);
-const cronBody = await cronOk.json() as { stay_on_supabase?: boolean; skipped?: boolean; reason?: string };
-ok(cronBody.stay_on_supabase === true && cronBody.skipped === true && cronBody.reason === "cutover_not_flipped", "cron matching secret skips until flip");
+ok(cronOk.status === 501, `cron matching secret: HTTP ${cronOk.status} (not ported)`);
+const cronBody = await cronOk.json() as { stay_on_supabase?: boolean };
+ok(cronBody.stay_on_supabase === true, "cron matching secret stays on supabase");
 
 ok(
   !/c\.res\.headers\.set/.test(readFileSync(join(root, "worker/src/index.ts"), "utf8")),
