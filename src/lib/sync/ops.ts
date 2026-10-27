@@ -75,7 +75,8 @@ export interface Op {
   attempts: number;
   lastError?: string;
   /**
-   * Set only on a *coalesced* op: the highest stored `seq` folded into it.
+   * Set only on a *folded* op: the lowest and highest stored `seq` of this row
+   * that it stands for. Stored ops never carry them.
    *
    * A merge deliberately keeps the earliest `seq` so the op holds its place in
    * the replay order (a project insert must not slide behind the task that
@@ -84,8 +85,21 @@ export interface Op {
    * update that merged into it sitting in the queue forever, so the outbox
    * never empties and re-sends the same patch on every drain. `throughSeq` is
    * the other end of that span.
+   *
+   * `fromSeq` is the near end, and it is not always `seq`: a delete that
+   * replaced earlier patches replays at its own seq but retires them too. One
+   * row can fold into several ops (a recreate, a refused fold), so a span
+   * without a floor reached into the row's *earlier* op — sweeping a delete
+   * that had not been sent, or retiring a parked op because a later one landed.
    */
+  fromSeq?: number;
   throughSeq?: number;
+}
+
+/** The stored seqs of one row that an op accounts for. A stored op is its own
+ *  span. */
+export function spanOf(op: Op): { from: number; through: number } {
+  return { from: op.fromSeq ?? op.seq, through: op.throughSeq ?? op.seq };
 }
 
 /** An op before the outbox assigns it durable identity. */
@@ -119,9 +133,35 @@ export function stampFields(
  *   update → delete    = just the delete; the patches are moot
  *   delete → insert    = cannot fold (a genuine recreate of the same id) — both
  *                        are emitted, in order
+ *   … → update naming  = cannot fold (see below) — both are emitted, in order
+ *   a row inserted since
  *
  * Ops for *different* rows never merge, and the emitted list stays in `seq`
  * order so foreign-key dependencies (project before its tasks) still hold.
+ *
+ * **A merge never moves a reference ahead of the insert it points at.** A
+ * merged op replays at its *earlier* member's seq, so the later member's fields
+ * travel back in time with it. That is harmless for a title and fatal for a
+ * reference: rename a task, then drop it with another onto open time, and the
+ * assign (`slot_id` → the new block) folds into the rename and reaches Postgres
+ * ahead of the block's insert — `23503 tasks_slot_id_fkey`, parked. So an update
+ * that names any row inserted after the op it would join is not folded; it is
+ * emitted on its own at its own seq.
+ *
+ * Why refuse rather than slide the merge to the later seq: sliding drags the
+ * *earlier* member's fields forward, past whatever happened in between. Assign
+ * a task to a block, delete the block (its children are re-homed by `on delete
+ * set null`), rename the task — a slid merge re-asserts `slot_id` after the
+ * block is gone, the same 23503 from the other side. And an update folding into
+ * an insert cannot slide at all, or the insert falls behind the rows that
+ * reference it. Refusing reorders nothing, so it is right by construction; the
+ * whole cost is one extra request, and only when the user re-pointed a row at
+ * something they had just made.
+ *
+ * "Names" is deliberately schema-blind: any string anywhere in the patch equal
+ * to the id of a row inserted since. The fold has no foreign-key map to keep in
+ * step with the migrations, and the only way it can be wrong is by sending one
+ * request more than it had to.
  */
 export function coalesce(ops: Op[]): Op[] {
   return fold(ops).send;
@@ -132,6 +172,7 @@ export function coalesce(ops: Op[]): Op[] {
 export interface DeadSpan {
   table: SyncTable;
   rowId: string;
+  fromSeq: number;
   throughSeq: number;
 }
 
@@ -152,13 +193,18 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
   /** Ops that can no longer absorb anything (a recreate closed them off). */
   const sealed: Op[] = [];
   const dead: DeadSpan[] = [];
+  /** The latest seq each id was inserted at, any table — a patch value names
+   *  a row, not its table. */
+  const insertedAt = new Map<string, number>();
+  const alone = (op: Op): Op => ({ ...op, fromSeq: op.seq, throughSeq: op.seq });
 
   for (const op of sorted) {
     const key = `${op.table}:${op.rowId}`;
     const prev = pending.get(key);
+    if (op.kind === "insert") insertedAt.set(op.rowId, op.seq);
 
     if (!prev) {
-      pending.set(key, { ...op, throughSeq: op.seq });
+      pending.set(key, alone(op));
       continue;
     }
 
@@ -166,7 +212,7 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
     // the server before the insert, so seal it rather than merging.
     if (prev.kind === "delete" && op.kind !== "delete") {
       sealed.push(prev);
-      pending.set(key, { ...op, throughSeq: op.seq });
+      pending.set(key, alone(op));
       continue;
     }
 
@@ -176,9 +222,9 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
         // have to be retired, so hand the annihilation to a tombstone the ack
         // can act on rather than forgetting the span outright.
         pending.delete(key);
-        dead.push({ table: op.table, rowId: op.rowId, throughSeq: op.seq });
+        dead.push({ table: op.table, rowId: op.rowId, fromSeq: prev.fromSeq!, throughSeq: op.seq });
       } else {
-        pending.set(key, { ...op, throughSeq: op.seq });
+        pending.set(key, { ...op, fromSeq: prev.fromSeq, throughSeq: op.seq });
       }
       continue;
     }
@@ -186,15 +232,24 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
     if (op.kind === "insert") {
       // insert-after-insert for one id shouldn't happen, but if it does the
       // later one is the user's intent.
-      pending.set(key, { ...op, throughSeq: op.seq });
+      pending.set(key, { ...op, fromSeq: prev.fromSeq, throughSeq: op.seq });
       continue;
     }
 
-    // op.kind === "update", folding into an insert or an earlier update.
+    // op.kind === "update". It points at a row created after `prev` — merged,
+    // it would replay ahead of that row's insert (see the header).
+    if (namesRowInsertedAfter(op.payload, prev.seq, insertedAt)) {
+      sealed.push(prev);
+      pending.set(key, alone(op));
+      continue;
+    }
+
+    // Folding into an insert or an earlier update.
     pending.set(key, {
       ...prev,
       // Keep the earlier op's slot in the replay order: its dependencies (the
-      // parent row it references) were satisfied at that point.
+      // parent row it references) were satisfied at that point, and the check
+      // above guarantees the later fields' are too.
       seq: prev.seq,
       // ...but remember how far the fold reached, so the ack retires the whole
       // span rather than just its head.
@@ -210,6 +265,21 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
   }
 
   return { send: [...sealed, ...pending.values()].sort((a, b) => a.seq - b.seq), dead };
+}
+
+/** Does any string in `value` (nested arrays and objects included) name a row
+ *  whose latest insert came after `seq`? */
+function namesRowInsertedAfter(
+  value: unknown,
+  seq: number,
+  insertedAt: ReadonlyMap<string, number>,
+): boolean {
+  if (typeof value === "string") return (insertedAt.get(value) ?? -Infinity) > seq;
+  if (Array.isArray(value)) return value.some((v) => namesRowInsertedAfter(v, seq, insertedAt));
+  if (value && typeof value === "object") {
+    return Object.values(value).some((v) => namesRowInsertedAfter(v, seq, insertedAt));
+  }
+  return false;
 }
 
 /**

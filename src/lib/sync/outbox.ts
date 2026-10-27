@@ -16,7 +16,7 @@
  * remove.
  */
 
-import { fold, stampFields, type DeadSpan, type NewOp, type Op } from "./ops";
+import { fold, spanOf, stampFields, type DeadSpan, type NewOp, type Op } from "./ops";
 import { idbAllOps, idbAppendOp, idbDeleteOps, idbPutOp, isDurable } from "./idb";
 
 /** Attempts before an op is parked for the user to deal with. */
@@ -108,9 +108,14 @@ export async function pendingOps(): Promise<Op[]> {
 }
 
 async function sweep(all: Op[], dead: DeadSpan[]): Promise<void> {
+  // Bounded below as well as above: delete → recreate → delete annihilates only
+  // the second pair, and the first delete is still owed.
   const doomed = all
     .filter((o) =>
-      dead.some((d) => d.table === o.table && d.rowId === o.rowId && o.seq <= d.throughSeq),
+      dead.some(
+        (d) =>
+          d.table === o.table && d.rowId === o.rowId && o.seq >= d.fromSeq && o.seq <= d.throughSeq,
+      ),
     )
     .map((o) => o.seq);
   if (!doomed.length) return;
@@ -208,25 +213,25 @@ export function resetDeliveryForTests() {
  * Retire delivered work.
  *
  * Coalescing means one sent op can stand for several stored ones, so an ack
- * clears every stored op that folded into it: all ops for the same row whose
- * `seq` is at or below the sent op's. Anything the user queued for that row
- * *after* the drain snapshot has a higher seq and deliberately survives.
+ * clears every stored op that folded into it: the ops for the same row inside
+ * its span (`spanOf`). Anything the user queued for that row *after* the drain
+ * snapshot has a higher seq and deliberately survives — and so does an
+ * *earlier* op of the row that folded separately and was parked, which a
+ * "everything at or below" ceiling used to retire the moment a later op landed.
  */
 export async function ack(sent: Op[]): Promise<void> {
   if (!sent.length) return;
   const all = await idbAllOps<Op>();
-  const ceiling = new Map<string, number>();
+  const spans = new Map<string, { from: number; through: number }[]>();
   for (const op of sent) {
     const key = `${op.table}:${op.rowId}`;
     // `throughSeq`, not `seq` — a coalesced op sits at the seq of its *earliest*
     // member, so acking by `seq` would strand every later edit that folded in.
-    const reach = op.throughSeq ?? op.seq;
-    ceiling.set(key, Math.max(ceiling.get(key) ?? 0, reach));
+    spans.set(key, [...(spans.get(key) ?? []), spanOf(op)]);
   }
-  const retired = all.filter((o) => {
-    const limit = ceiling.get(`${o.table}:${o.rowId}`);
-    return limit != null && o.seq <= limit;
-  });
+  const retired = all.filter((o) =>
+    spans.get(`${o.table}:${o.rowId}`)?.some((s) => o.seq >= s.from && o.seq <= s.through),
+  );
   const doomed = retired.map((o) => o.seq);
   await idbDeleteOps(doomed);
   const now = Date.now();
@@ -242,9 +247,11 @@ export async function ack(sent: Op[]): Promise<void> {
  */
 export async function recordFailure(sent: Op, error: string, fatal: boolean): Promise<void> {
   const all = await idbAllOps<Op>();
-  const reach = sent.throughSeq ?? sent.seq;
+  // Only this op's span: the row's earlier op may have landed earlier in this
+  // same drain, and marking it failed would tell its waiters it never will.
+  const { from, through } = spanOf(sent);
   const affected = all.filter(
-    (o) => o.table === sent.table && o.rowId === sent.rowId && o.seq <= reach,
+    (o) => o.table === sent.table && o.rowId === sent.rowId && o.seq >= from && o.seq <= through,
   );
   for (const op of affected) {
     await idbPutOp({
