@@ -274,8 +274,9 @@ WHERE n.nspname = 'auth' AND a.attnum > 0 AND NOT a.attisdropped
   AND r.rolname = 'migration_reader'
 ORDER BY 1, 2, 3, 4;
 
--- 2. role membership both ways (migration_reader must not inherit anything
---    privileged, and nothing should be a member of it)
+-- 2. role membership both ways. Expected on prod (PG17): one row,
+--    role=migration_reader member=postgres admin_option=true (the creator
+--    grant), and no row where migration_reader is the member.
 SELECT pg_get_userbyid(m.roleid) AS role, pg_get_userbyid(m.member) AS member,
        m.admin_option, m.inherit_option, m.set_option
 FROM pg_auth_members m
@@ -290,8 +291,8 @@ JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'migration_tmp';
 
 Stop if `current_user` is not `postgres`, if the snapshot shows
 `migration_reader` grants in `auth` that are not in `migration_tmp.auth_grants`,
-or if the membership query shows `migration_reader` in a role it should not be
-in. Re-run query 1 after the cleanup; it must return zero rows.
+or if the membership query shows anything beyond the expected creator grant
+(in particular, any row where `migration_reader` is the member). Re-run query 1 after the cleanup; it must return zero rows.
 
 ```sql
 -- Loop migration_tmp.auth_grants for migration_reader (see migration_tmp.sql).
