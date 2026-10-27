@@ -17,9 +17,20 @@ import {
 } from "./store.ts";
 import type { CalendarAccount } from "./types.ts";
 
+function isIcloudAuthFailure(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /\bHTTP 401\b/.test(msg) ||
+    /\bHTTP 403\b/.test(msg) ||
+    /rejected the Apple ID/.test(msg)
+  );
+}
+
 export async function syncIcloudAccount(sql: Sql, account: CalendarAccount, env: Env): Promise<void> {
-  const fail = async (why: string): Promise<never> => {
-    await updateAccount(sql, account.id, account.user_id, { needs_reconnect: true });
+  const fail = async (why: string, err?: unknown): Promise<never> => {
+    if (isIcloudAuthFailure(err ?? why)) {
+      await updateAccount(sql, account.id, account.user_id, { needs_reconnect: true });
+    }
     throw new Error(why);
   };
 
@@ -34,7 +45,7 @@ export async function syncIcloudAccount(sql: Sql, account: CalendarAccount, env:
   try {
     calendars = await discoverCalendars(account.email, password);
   } catch (e) {
-    return await fail(e instanceof Error ? e.message : String(e));
+    return await fail(e instanceof Error ? e.message : String(e), e);
   }
   calendars = withoutMirrorCalendar(calendars, account.mirror_calendar_id);
 
@@ -50,7 +61,12 @@ export async function syncIcloudAccount(sql: Sql, account: CalendarAccount, env:
 
   const rows: ExternalEventRow[] = [];
   for (const cal of calendars) {
-    const events = await fetchEvents(cal.url, account.email, password, windowStart, windowEnd);
+    let events;
+    try {
+      events = await fetchEvents(cal.url, account.email, password, windowStart, windowEnd);
+    } catch (e) {
+      return await fail(e instanceof Error ? e.message : String(e), e);
+    }
     for (const ev of events) {
       const { rows: parsed } = parseIcs(ev.ics, {
         userId: account.user_id,
@@ -98,6 +114,7 @@ export async function runIcloudSync(
   try {
     const accounts = await loadAccountsPaged(sql, "icloud", opts.accountId, opts.userId);
     for (const account of accounts) {
+      if (account.needs_reconnect && !opts.accountId) continue;
       try {
         await syncIcloudAccount(sql, account, env);
         await markSyncResult(sql, account.id, account.user_id, true);

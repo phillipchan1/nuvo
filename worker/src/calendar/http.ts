@@ -14,7 +14,7 @@ import type { RequestIo } from "../requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "../store.ts";
 import { handleIcloudEvents } from "./icloudEvents.ts";
 import { runIcloudContacts, runIcloudSync, syncIcloudAccount } from "./icloud.ts";
-import { assertPublicFeedUrl, runIcsSync, syncIcsAccount } from "./icsFeed.ts";
+import { assertPublicFeedUrl, fetchIcsFeed, runIcsSync, syncIcsAccount } from "./icsFeed.ts";
 import { runM365Sync, syncM365Account } from "./m365.ts";
 import {
   getOwnedAccount,
@@ -346,12 +346,12 @@ async function handleIcsSubscribe(c: Context<AppEnv>, deps: CalendarRouteDeps): 
   const got = await deps.requireUser(c);
   if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
-  const checked = assertPublicFeedUrl(typeof body.url === "string" ? body.url : "");
+  const checked = await assertPublicFeedUrl(typeof body.url === "string" ? body.url : "");
   if (!checked.ok) return clientError("bad_request", 400);
 
-  const res = await fetch(checked.url, { headers: { Accept: "text/calendar" } });
-  if (!res.ok) return clientError("bad_request", 400);
-  const text = await res.text();
+  const fetched = await fetchIcsFeed(checked.url);
+  if (!fetched.ok) return clientError("bad_request", 400);
+  const text = fetched.text;
   if (!text.includes("BEGIN:VCALENDAR")) return clientError("bad_request", 400);
   const calName = (text.match(/X-WR-CALNAME:(.+)/)?.[1] ?? "").trim();
   const email =

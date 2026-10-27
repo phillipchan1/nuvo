@@ -8,6 +8,17 @@ import { loadAccountsPaged, loggedError, logSync, markSyncResult, updateAccount 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
 
+function pinGraphUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || u.hostname !== "graph.microsoft.com") return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
 function mapGraphEvent(account: CalendarAccount, e: Record<string, unknown>): EventRow | null {
   const start = e.start as { dateTime?: string } | undefined;
   const end = e.end as { dateTime?: string } | undefined;
@@ -75,8 +86,8 @@ export async function syncM365Account(sql: Sql, account: CalendarAccount, env: E
       await deleteEventsByProviderIds(sql, account.id, account.user_id, deletes);
     }
 
-    url = body["@odata.nextLink"] ?? null;
-    deltaLink = body["@odata.deltaLink"] ?? deltaLink;
+    url = pinGraphUrl(body["@odata.nextLink"]);
+    deltaLink = pinGraphUrl(body["@odata.deltaLink"]) ?? deltaLink;
   }
 
   if (deltaLink) {

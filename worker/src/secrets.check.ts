@@ -137,6 +137,13 @@ const REDACT_CASES: { name: string; input: string; mustNot: string; mustInclude:
   { name: "single-quoted client_secret", input: "client_secret='GOCSPX-quoted'", mustNot: "GOCSPX-quoted", mustInclude: "client_secret='[redacted]'" },
   { name: "single-quoted refresh_token", input: "refresh_token='plain-refresh'", mustNot: "plain-refresh", mustInclude: "refresh_token='[redacted]'" },
   { name: "client_secret spaced =", input: "client_secret = spaced-secret", mustNot: "spaced-secret", mustInclude: "client_secret = [redacted]" },
+  { name: "camelCase refreshToken", input: '{"refreshToken":"1//camel-refresh"}', mustNot: "camel-refresh", mustInclude: "[redacted]" },
+  { name: "camelCase accessToken", input: "accessToken=ya29.camel-access", mustNot: "camel-access", mustInclude: "accessToken=[redacted]" },
+  { name: "urlencoded camelCase refreshToken", input: "refreshToken%3D1%2F%2Fcamel-url", mustNot: "camel-url", mustInclude: "refreshToken%3D[redacted]" },
+  { name: "Microsoft M.C refresh", input: "refresh_token=M.C512_BAY.0.U.-CjSecretToken", mustNot: "CjSecretToken", mustInclude: "[redacted]" },
+  { name: "password key", input: "password=app-specific-secret", mustNot: "app-specific-secret", mustInclude: "password=[redacted]" },
+  { name: "app_password key", input: '{"app_password":"icloud-app-pass"}', mustNot: "icloud-app-pass", mustInclude: "[redacted]" },
+  { name: "userinfo URL", input: "https://apple:app-specific-pass@caldav.icloud.com/cal", mustNot: "app-specific-pass", mustInclude: "https://[redacted]@caldav.icloud.com/cal" },
 ];
 for (const row of REDACT_CASES) {
   const out = redactSecrets(row.input);

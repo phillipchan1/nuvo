@@ -39,6 +39,21 @@ type EventPatch = {
   recurrence?: string[] | null;
 };
 
+export function pickVisibleCalendar(
+  account: CalendarAccount,
+  hidden: Set<string>,
+  named: string,
+): string | null {
+  const ids = ((account.calendars ?? []) as { id?: string }[])
+    .map((c) => (typeof c.id === "string" ? c.id : ""))
+    .filter((id) => id && !hidden.has(id));
+  if (named) {
+    const want = named.replace(/\/$/, "");
+    return ids.find((id) => id === named || id.replace(/\/$/, "") === want) ?? null;
+  }
+  return ids[0] ?? null;
+}
+
 function editSeries(
   ics: string,
   p: EventPatch,
@@ -132,15 +147,12 @@ export async function handleIcloudEvents(
     const account = accounts.find((a) => !accountId || a.id === accountId);
     if (!account) return { status: 400, body: { error: "no iCloud account connected" } };
 
-    const password = await openAccountSecret(account, env);
-    if (!password) return { status: 400, body: { error: "iCloud credential missing" } };
-
     const hidden = new Set(await hiddenCalendarIds(store));
     const namedCalendar = typeof body.calendarId === "string" ? body.calendarId.trim() : "";
-    const visible = ((account.calendars ?? []) as { id?: string }[]).filter(
-      (c) => typeof c.id === "string" && c.id && !hidden.has(c.id),
-    );
-    const calendarUrl = namedCalendar || visible[0]?.id;
+    const calendarUrl = pickVisibleCalendar(account, hidden, namedCalendar);
+    if (namedCalendar && !calendarUrl) {
+      return { status: 400, body: { error: "calendar not visible" } };
+    }
     if (!calendarUrl) {
       return {
         status: 400,
@@ -150,6 +162,9 @@ export async function handleIcloudEvents(
         },
       };
     }
+
+    const password = await openAccountSecret(account, env);
+    if (!password) return { status: 400, body: { error: "iCloud credential missing" } };
 
     const location = typeof body.location === "string" ? body.location : null;
     const description = typeof body.description === "string" ? body.description : null;
@@ -332,11 +347,14 @@ export async function handleIcloudEvents(
   if (action === "move") {
     const dest = (typeof body.calendarId === "string" ? body.calendarId : "").trim();
     if (!dest) return { status: 400, body: { error: "calendarId required" } };
-    if (dest.replace(/\/$/, "") === String(evt.calendar_id).replace(/\/$/, "")) {
+    const hidden = new Set(await hiddenCalendarIds(store));
+    const destUrl = pickVisibleCalendar(account, hidden, dest);
+    if (!destUrl) return { status: 400, body: { error: "calendar not visible" } };
+    if (destUrl.replace(/\/$/, "") === String(evt.calendar_id).replace(/\/$/, "")) {
       return { status: 200, body: { ok: true } };
     }
     const got = await getEvent(href, account.email, password);
-    const newHref = `${dest.replace(/\/$/, "")}/${uidBase}.ics`;
+    const newHref = `${destUrl.replace(/\/$/, "")}/${uidBase}.ics`;
     const newEtag = await putEvent(newHref, got.ics, account.email, password);
     const status = await deleteEvent(href, account.email, password);
     if (status >= 400 && status !== 404 && status !== 410) {
@@ -345,7 +363,7 @@ export async function handleIcloudEvents(
     }
     await sql`
       UPDATE external_events
-      SET calendar_id = ${dest}
+      SET calendar_id = ${destUrl}
       WHERE account_id = ${String(evt.account_id)}
         AND user_id = ${userId}
         AND (provider_event_id = ${uidBase} OR provider_event_id LIKE ${`${uidBase}::%`})

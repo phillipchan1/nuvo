@@ -11,8 +11,23 @@
 // the Supabase edge runtime has no DOMParser, the responses are small and
 // predictable, and this keeps the function dependency-free.
 
+import { outboundFetch } from "./outboundFetch.ts";
+
 const ICLOUD_BASE = "https://caldav.icloud.com";
 const UA = "Nuvo/1.0";
+
+export function isIcloudDavUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && (u.hostname === "icloud.com" || u.hostname.endsWith(".icloud.com"));
+  } catch {
+    return false;
+  }
+}
+
+function assertIcloudDavUrl(raw: string, kind: "URL" | "redirect" = "URL"): void {
+  if (!isIcloudDavUrl(raw)) throw new Error(`refused non-icloud CalDAV ${kind}`);
+}
 
 export interface CalDavCalendar {
   /** Absolute collection URL — the stable id we store as calendar_id. */
@@ -43,23 +58,29 @@ async function dav(
   url: string,
   init: { method: string; auth: string; depth?: "0" | "1"; body?: string },
 ): Promise<Response> {
+  return icloudFetch(url, {
+    method: init.method,
+    headers: {
+      Authorization: init.auth,
+      "User-Agent": UA,
+      ...(init.depth ? { Depth: init.depth } : {}),
+      ...(init.body ? { "Content-Type": "application/xml; charset=utf-8" } : {}),
+    },
+    ...(init.body ? { body: init.body } : {}),
+  });
+}
+
+async function icloudFetch(url: string, init: RequestInit): Promise<Response> {
   let current = url;
   for (let i = 0; i < 6; i++) {
-    const res = await fetch(current, {
-      method: init.method,
-      redirect: "manual",
-      headers: {
-        Authorization: init.auth,
-        "User-Agent": UA,
-        ...(init.depth ? { Depth: init.depth } : {}),
-        ...(init.body ? { "Content-Type": "application/xml; charset=utf-8" } : {}),
-      },
-      ...(init.body ? { body: init.body } : {}),
-    });
+    assertIcloudDavUrl(current, "URL");
+    const res = await outboundFetch(current, { ...init, redirect: "manual" });
     if ([301, 302, 307, 308].includes(res.status)) {
       const loc = res.headers.get("Location");
       if (!loc) return res;
-      current = new URL(loc, current).toString();
+      const next = new URL(loc, current).toString();
+      assertIcloudDavUrl(next, "redirect");
+      current = next;
       continue;
     }
     return res;
@@ -340,29 +361,18 @@ export async function putEvent(
   password: string,
   ifMatch?: string | null,
 ): Promise<string | null> {
-  let current = href;
-  for (let i = 0; i < 6; i++) {
-    const res = await fetch(current, {
-      method: "PUT",
-      redirect: "manual",
-      headers: {
-        Authorization: basicAuth(username, password),
-        "User-Agent": UA,
-        "Content-Type": "text/calendar; charset=utf-8",
-        ...(ifMatch ? { "If-Match": ifMatch } : {}),
-      },
-      body: ics,
-    });
-    if ([301, 302, 307, 308].includes(res.status)) {
-      const loc = res.headers.get("Location");
-      if (!loc) throw new Error(`put redirected without Location (HTTP ${res.status})`);
-      current = new URL(loc, current).toString();
-      continue;
-    }
-    if (!res.ok) throw new Error(`put event failed: HTTP ${res.status} ${await res.text()}`);
-    return res.headers.get("ETag");
-  }
-  throw new Error("too many CalDAV redirects on PUT");
+  const res = await icloudFetch(href, {
+    method: "PUT",
+    headers: {
+      Authorization: basicAuth(username, password),
+      "User-Agent": UA,
+      "Content-Type": "text/calendar; charset=utf-8",
+      ...(ifMatch ? { "If-Match": ifMatch } : {}),
+    },
+    body: ics,
+  });
+  if (!res.ok) throw new Error(`put event failed: HTTP ${res.status}`);
+  return res.headers.get("ETag");
 }
 
 /** DELETE an event resource. 404/410 are treated as already-gone by the caller. */
@@ -372,24 +382,13 @@ export async function deleteEvent(
   password: string,
   ifMatch?: string | null,
 ): Promise<number> {
-  let current = href;
-  for (let i = 0; i < 6; i++) {
-    const res = await fetch(current, {
-      method: "DELETE",
-      redirect: "manual",
-      headers: {
-        Authorization: basicAuth(username, password),
-        "User-Agent": UA,
-        ...(ifMatch ? { "If-Match": ifMatch } : {}),
-      },
-    });
-    if ([301, 302, 307, 308].includes(res.status)) {
-      const loc = res.headers.get("Location");
-      if (!loc) return res.status;
-      current = new URL(loc, current).toString();
-      continue;
-    }
-    return res.status;
-  }
-  throw new Error("too many CalDAV redirects on DELETE");
+  const res = await icloudFetch(href, {
+    method: "DELETE",
+    headers: {
+      Authorization: basicAuth(username, password),
+      "User-Agent": UA,
+      ...(ifMatch ? { "If-Match": ifMatch } : {}),
+    },
+  });
+  return res.status;
 }
