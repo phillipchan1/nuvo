@@ -107,6 +107,8 @@ ok(!cutoverFlipped(undefined), "cutoverFlipped unset is fail-closed");
 ok(!cutoverFlipped("maybe"), "cutoverFlipped unknown is fail-closed");
 ok(!cutoverFlipped("0"), "cutoverFlipped 0 is fail-closed");
 ok(!cutoverFlipped("false"), "cutoverFlipped false is fail-closed");
+const cronSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "cron.ts"), "utf8");
+ok(/export function cutoverFlipped/.test(cronSrc) && !/writeFrozen\(/.test(cronSrc), "cutoverFlipped does not derive from writeFrozen");
 ok(
   !existsSync(join(dirname(fileURLToPath(import.meta.url)), "lib/secrets.ts")),
   "stub lib/secrets.ts is deleted",
