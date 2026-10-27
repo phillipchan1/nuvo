@@ -2,7 +2,9 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { MutationCache, QueryCache, QueryClient, notifyManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
-import { supabase } from "./lib/supabase";
+import { apiConfigured } from "./lib/backend";
+import { clientBelowMinVersion, launchBackendResolved, resolveLaunchBackend } from "./lib/maintenance";
+import { currentUserId } from "./lib/sessionAuth";
 import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
 import { reportAppError } from "./lib/appError";
@@ -28,6 +30,7 @@ const SpotlightHost = lazy(() =>
   import("./components/SpotlightWindow").then((m) => ({ default: m.SpotlightHost })),
 );
 import UpdateToast from "./components/UpdateToast";
+import MinVersionPrompt from "./components/MinVersionPrompt";
 import LiveRegion from "./components/LiveRegion";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
@@ -231,6 +234,26 @@ const queryClient = new QueryClient({
 });
 installOwingGuards(queryClient);
 
+function BackendGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(() => launchBackendResolved());
+  useEffect(() => {
+    if (ready) return;
+    void resolveLaunchBackend().finally(() => setReady(true));
+  }, [ready]);
+  if (!ready && apiConfigured()) {
+    return <LoadingCanvas showWordmark={false} />;
+  }
+  if (clientBelowMinVersion()) {
+    return (
+      <>
+        <MinVersionPrompt />
+        <AppToaster />
+      </>
+    );
+  }
+  return <>{children}</>;
+}
+
 function Shell() {
   const { session, loading } = useAuth();
   // Keep a paired Apple Watch's credential in step with this session. No-op
@@ -357,10 +380,7 @@ function Shell() {
  */
 function SyncHost({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const transport = createSupabaseTransport(async () => {
-      const { data } = await supabase.auth.getSession();
-      return data.session?.user?.id ?? null;
-    });
+    const transport = createSupabaseTransport(() => currentUserId());
     configureSync(queryClient, transport);
     // A capture from the ⌥Space panel: deliver it from here and show it,
     // rather than waiting on a window that is about to be hidden.
@@ -394,13 +414,15 @@ export default function App() {
         buster: "sync-v2",
       }}
     >
-      <SyncHost>
-        <UndoProvider>
-          <ErrorBoundary>
-            <Shell />
-          </ErrorBoundary>
-        </UndoProvider>
-      </SyncHost>
+      <BackendGate>
+        <SyncHost>
+          <UndoProvider>
+            <ErrorBoundary>
+              <Shell />
+            </ErrorBoundary>
+          </UndoProvider>
+        </SyncHost>
+      </BackendGate>
     </PersistQueryClientProvider>
   );
 }

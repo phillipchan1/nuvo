@@ -18,7 +18,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+import { functionUrl, supabase, supabaseAnonKey } from "../lib/supabase";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
 import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
@@ -71,7 +71,7 @@ const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
 function edgeEndpoint(fn: "mcp" | "capture"): string {
-  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/${fn}`);
+  const url = new URL(functionUrl(fn));
   url.searchParams.set("apikey", supabaseAnonKey);
   return url.toString();
 }
@@ -164,8 +164,8 @@ export function AppsDevicesPane() {
 
   const create = useMutation({
     mutationFn: async ({ label, tokenKind }: { label: string; tokenKind: TokenKind }) => {
-      const { data: session } = await supabase.auth.getSession();
-      const userId = session.session?.user.id;
+      const { currentUserId } = await import("../lib/sessionAuth");
+      const userId = await currentUserId();
       if (!userId) throw new Error("Not signed in");
       const token = mintToken();
       const { error } = await supabase.from("connections").insert({

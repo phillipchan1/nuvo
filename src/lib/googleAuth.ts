@@ -1,3 +1,4 @@
+import { workersEnabled } from "./backend";
 import { supabase } from "./supabase";
 import { authReturnUrl } from "./authRedirect";
 
@@ -33,20 +34,43 @@ function googleAuthOptions() {
   };
 }
 
+function asAuthError(error: { message?: string } | null | undefined): { message: string } | null {
+  if (!error) return null;
+  return { message: error.message || "Google sign-in failed" };
+}
+
 /** Sign in (or sign up) with Google. Prefer linking onto an existing user first. */
 export async function signInWithGoogle() {
-  return supabase.auth.signInWithOAuth({
+  if (workersEnabled) {
+    const { createNuvoAuthClient } = await import("./authClient");
+    const res = await createNuvoAuthClient().signIn.social({
+      provider: "google",
+      callbackURL: authReturnUrl(),
+    });
+    return { data: res.data ?? null, error: asAuthError(res.error) };
+  }
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: googleAuthOptions(),
   });
+  return { data, error: asAuthError(error) };
 }
 
 /** Attach Google to the currently signed-in user (keeps the same auth UUID). */
 export async function linkGoogleIdentity() {
-  return supabase.auth.linkIdentity({
+  if (workersEnabled) {
+    const { createNuvoAuthClient } = await import("./authClient");
+    const res = await createNuvoAuthClient().linkSocial({
+      provider: "google",
+      callbackURL: authReturnUrl(),
+    });
+    return { data: res.data ?? null, error: asAuthError(res.error) };
+  }
+  const { data, error } = await supabase.auth.linkIdentity({
     provider: "google",
     options: googleAuthOptions(),
   });
+  return { data, error: asAuthError(error) };
 }
 
 export function hasGoogleIdentity(

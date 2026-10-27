@@ -65,6 +65,18 @@ import {
 } from "./store.ts";
 import { persistAppleIdentity } from "./appleIdentity.ts";
 import { deleteOwnedAccount } from "./deleteAccount.ts";
+import {
+  deleteExtra,
+  extraBadRequest,
+  extraDeleted,
+  extraNotFound,
+  extraOk,
+  getExtra,
+  isExtraDataTable,
+  listExtra,
+  patchExtra,
+  writeExtra,
+} from "./extraData.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -130,12 +142,19 @@ app.get("/api/health", (c) =>
   }),
 );
 
+function minClientVersion(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  return v || null;
+}
+
 app.get("/api/maintenance", (c) =>
   json(
     {
       write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
       cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
       cutover_flipped: cutoverFlipped(c.env?.CUTOVER_FLIPPED),
+      min_version: minClientVersion(c.env?.MIN_CLIENT_VERSION),
       message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
     },
     200,
@@ -326,6 +345,11 @@ app.delete("/api/data/task_labels", async (c) => {
 
 app.get("/api/data/:table", async (c) => {
   const table = c.req.param("table");
+  if (isExtraDataTable(table)) {
+    const got = await requireStore(c);
+    if ("error" in got) return got.error;
+    return extraOk(await listExtra(got.store, table));
+  }
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
@@ -335,6 +359,13 @@ app.get("/api/data/:table", async (c) => {
 
 app.get("/api/data/:table/:id", async (c) => {
   const table = c.req.param("table");
+  if (isExtraDataTable(table)) {
+    const got = await requireStore(c);
+    if ("error" in got) return got.error;
+    const row = await getExtra(got.store, table, requireUuid(c.req.param("id")));
+    if (!row) return extraNotFound();
+    return extraOk(row);
+  }
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
@@ -345,6 +376,14 @@ app.get("/api/data/:table/:id", async (c) => {
 
 app.post("/api/data/:table", async (c) => {
   const table = c.req.param("table");
+  if (isExtraDataTable(table)) {
+    const got = await requireWritableStore(c);
+    if ("error" in got) return got.error;
+    const body = requireJsonObject(await readJson<unknown>(c));
+    const row = await writeExtra(got.store, table, body);
+    if (!row) return extraBadRequest();
+    return extraOk(row);
+  }
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
@@ -356,6 +395,14 @@ app.post("/api/data/:table", async (c) => {
 
 app.patch("/api/data/:table/:id", async (c) => {
   const table = c.req.param("table");
+  if (isExtraDataTable(table)) {
+    const got = await requireWritableStore(c);
+    if ("error" in got) return got.error;
+    const body = requireJsonObject(await readJson<unknown>(c));
+    const row = await patchExtra(got.store, table, requireUuid(c.req.param("id")), body);
+    if (!row) return extraNotFound();
+    return extraOk(row);
+  }
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
@@ -367,6 +414,15 @@ app.patch("/api/data/:table/:id", async (c) => {
 
 app.delete("/api/data/:table/:id", async (c) => {
   const table = c.req.param("table");
+  if (isExtraDataTable(table)) {
+    const got = await requireWritableStore(c);
+    if ("error" in got) return got.error;
+    const n = await deleteExtra(got.store, table, requireUuid(c.req.param("id")), {
+      endpoint: c.req.query("endpoint"),
+    });
+    if (!n) return extraNotFound();
+    return extraDeleted(n);
+  }
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;

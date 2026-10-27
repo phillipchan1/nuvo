@@ -1472,15 +1472,8 @@ const unauthFrozen = await withTimeout(
 ok(unauthFrozen.status === 401, "POST unauth while frozen is still 401 (no existence oracle)");
 
 const blockedTables = [
-  "calendar_accounts",
-  "external_events",
-  "push_subscriptions",
-  "activity_sources",
-  "activity_bindings",
-  "activity_units",
   "apple_identities",
   "sync_log",
-  "connections",
   "inbound_emails",
 ];
 for (const table of blockedTables) {
@@ -1496,6 +1489,30 @@ for (const table of blockedTables) {
     `POST ${table}`,
   );
   ok(post.status === 404, `POST /api/data/${table} with an id: HTTP ${post.status} (no existence oracle)`);
+}
+
+const extraOwned = [
+  "calendar_accounts",
+  "external_events",
+  "connections",
+  "activity_sources",
+  "activity_bindings",
+  "activity_units",
+  "push_subscriptions",
+];
+for (const table of extraOwned) {
+  const asB = await withTimeout(
+    request(`/api/data/${table}`, { headers: authHeaders(b.token) }),
+    8000,
+    `GET extra ${table} as B`,
+  );
+  ok(asB.status === 200, `GET /api/data/${table} as B: HTTP ${asB.status}`);
+  const payload = (await asB.json()) as { data?: Record<string, unknown>[] };
+  const rows = payload.data ?? [];
+  ok(rows.every((row) => !("access_token" in row) && !("refresh_token" in row) && !("token_hash" in row) && !("p256dh" in row) && !("auth" in row)),
+    `GET /api/data/${table} omits token columns`);
+  ok(rows.every((row) => row.user_id !== a.id),
+    `GET /api/data/${table} as B omits A's rows`);
 }
 
 const cronFrozen = await withTimeout(

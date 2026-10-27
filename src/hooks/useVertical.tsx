@@ -346,9 +346,10 @@ const NEW_DOMAIN_COLOR = "#6B7280";
 const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
 
 async function userId(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) throw new Error("Not signed in");
-  return session.user.id;
+  const { currentUserId } = await import("../lib/sessionAuth");
+  const id = await currentUserId();
+  if (!id) throw new Error("Not signed in");
+  return id;
 }
 
 /** Temp row so a create lands in the UI before the insert round-trips. */

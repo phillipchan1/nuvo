@@ -97,10 +97,12 @@ export function useActivityActions() {
   /** Bind a repo to a project, then pull its merged PRs (the "found N shipped" moment). */
   const bindRepo = useMutation({
     mutationFn: async ({ sourceId, projectId, repo }: { sourceId: string; projectId: string; repo: string }) => {
-      const { data: u } = await supabase.auth.getUser();
+      const { currentUserId } = await import("../lib/sessionAuth");
+      const uid = await currentUserId();
+      if (!uid) throw new Error("Not signed in");
       const { error } = await supabase
         .from("activity_bindings")
-        .upsert({ user_id: u.user!.id, source_id: sourceId, project_id: projectId, selector: repo }, { onConflict: "source_id,selector" });
+        .upsert({ user_id: uid, source_id: sourceId, project_id: projectId, selector: repo }, { onConflict: "source_id,selector" });
       if (error) throw error;
       return invokeGitHub<{ count: number; recent: Array<{ title: string; url: string }> }>({ action: "sync", sourceId, repo });
     },

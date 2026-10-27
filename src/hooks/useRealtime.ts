@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { workersEnabled } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { applyLiveChange, type LiveChange } from "../lib/sync/liveApply";
 import { liveTopic } from "../lib/sync/liveTopic";
@@ -44,6 +45,26 @@ export function useRealtime(enabled: boolean) {
   const qc = useQueryClient();
   useEffect(() => {
     if (!enabled) return;
+    // Worker has no private-broadcast equivalent. Refetch on focus / online
+    // (and a quiet interval) so the Mac window that never blurs still moves.
+    if (workersEnabled) {
+      const pull = () => pullSyncTables(qc);
+      pull();
+      const onWake = () => {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        pull();
+      };
+      const timer = setInterval(pull, 30_000);
+      window.addEventListener("focus", onWake);
+      window.addEventListener("online", onWake);
+      document.addEventListener("visibilitychange", onWake);
+      return () => {
+        clearInterval(timer);
+        window.removeEventListener("focus", onWake);
+        window.removeEventListener("online", onWake);
+        document.removeEventListener("visibilitychange", onWake);
+      };
+    }
 
     // Keys awaiting invalidation, deduped — a burst touching the same table a
     // thousand times still ends as one entry. The source table rides along

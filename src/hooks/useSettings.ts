@@ -94,8 +94,8 @@ export function useSettings() {
       const { data, error } = await supabase.from("user_settings").select("*").maybeSingle();
       if (error) throw error;
       if (data) return normalizeSettingsRow(data);
-      const { data: u } = await supabase.auth.getUser();
-      return { user_id: u.user?.id ?? "", ...DEFAULTS };
+      const { currentUserId } = await import("../lib/sessionAuth");
+      return { user_id: (await currentUserId()) ?? "", ...DEFAULTS };
     },
     // Also on the way out: a row restored from the persisted cache was stored
     // by whichever build wrote it, and may predate the normalizer.

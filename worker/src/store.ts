@@ -1414,7 +1414,8 @@ export async function deleteOwnedCalendarAccount(store: Store, id: string): Prom
 export async function listOwnedExternalEvents(store: Store): Promise<Record<string, unknown>[]> {
   const sql = store.sql;
   return sql`
-    SELECT id, user_id, account_id, title, start_at, end_at, all_day, calendar_id
+    SELECT id, user_id, account_id, provider_event_id, calendar_id, title,
+           start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id, raw
     FROM external_events
     WHERE user_id = ${store.userId}
   `;
@@ -1426,7 +1427,8 @@ export async function getOwnedExternalEvent(
 ): Promise<Record<string, unknown> | null> {
   const sql = store.sql;
   const rows = await sql`
-    SELECT id, user_id, account_id, title, start_at, end_at
+    SELECT id, user_id, account_id, provider_event_id, calendar_id, title,
+           start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id, raw
     FROM external_events
     WHERE id = ${id} AND user_id = ${store.userId}
     LIMIT 1
@@ -1547,10 +1549,36 @@ export async function resyncOwnedPushSubscriptions(
   return { deleted: gone.length, upserted };
 }
 
+export async function updateOwnedExternalEvent(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const current = await getOwnedExternalEvent(store, id);
+  if (!current) return null;
+  const sql = store.sql;
+  const startAt = typeof patch.start_at === "string" ? patch.start_at : (current.start_at as string);
+  const endAt = typeof patch.end_at === "string" ? patch.end_at : (current.end_at as string);
+  const title = typeof patch.title === "string" ? patch.title : (current.title as string | null);
+  const allDay = typeof patch.all_day === "boolean" ? patch.all_day : (current.all_day as boolean | null);
+  const location = typeof patch.location === "string" || patch.location === null
+    ? patch.location
+    : (current.location as string | null);
+  const busy = typeof patch.busy === "boolean" ? patch.busy : (current.busy as boolean | null);
+  const rows = await sql`
+    UPDATE external_events
+    SET start_at = ${startAt}, end_at = ${endAt}, title = ${title},
+        all_day = ${allDay}, location = ${location}, busy = ${busy}
+    WHERE id = ${id} AND user_id = ${store.userId}
+    RETURNING id, user_id, account_id, start_at, end_at, title, all_day, location, busy
+  `;
+  return rows[0] ?? null;
+}
+
 export async function listOwnedActivitySources(store: Store): Promise<Record<string, unknown>[]> {
   const sql = store.sql;
   return sql`
-    SELECT id, user_id, kind, login, needs_reconnect
+    SELECT id, user_id, kind, login, avatar_url, repos, needs_reconnect, last_synced_at
     FROM activity_sources
     WHERE user_id = ${store.userId}
   `;
@@ -1612,7 +1640,7 @@ export async function insertActivityBinding(
 export async function listOwnedActivityUnits(store: Store): Promise<Record<string, unknown>[]> {
   const sql = store.sql;
   return sql`
-    SELECT id, user_id, source_id, title, external_id, project_id
+    SELECT id, user_id, source_id, kind, external_id, title, url, selector, project_id, occurred_at
     FROM activity_units
     WHERE user_id = ${store.userId}
   `;
@@ -1665,7 +1693,7 @@ export async function upsertAppleIdentity(
 export async function listOwnedConnections(store: Store): Promise<Record<string, unknown>[]> {
   const sql = store.sql;
   return sql`
-    SELECT id, user_id, app, name, last_four, revoked_at
+    SELECT id, user_id, app, name, scopes, last_four, created_at, last_used_at, revoked_at
     FROM connections
     WHERE user_id = ${store.userId}
   `;
@@ -1673,16 +1701,71 @@ export async function listOwnedConnections(store: Store): Promise<Record<string,
 
 export async function insertConnection(
   store: Store,
-  row: { id?: string; app: string; name: string; token_hash: string; last_four?: string },
+  row: {
+    id?: string;
+    app: string;
+    name: string;
+    token_hash: string;
+    last_four?: string;
+    scopes?: unknown;
+  },
 ): Promise<Record<string, unknown> | null> {
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
+  const rows = Array.isArray(row.scopes)
+    ? await sql`
+        INSERT INTO connections (id, user_id, app, name, token_hash, last_four, scopes)
+        VALUES (
+          ${id}, ${store.userId}, ${row.app}, ${row.name}, ${row.token_hash},
+          ${row.last_four ?? null}, ${JSON.stringify(row.scopes)}::jsonb
+        )
+        RETURNING id, user_id, app, name, last_four, scopes
+      `
+    : await sql`
+        INSERT INTO connections (id, user_id, app, name, token_hash, last_four)
+        VALUES (${id}, ${store.userId}, ${row.app}, ${row.name}, ${row.token_hash}, ${row.last_four ?? null})
+        RETURNING id, user_id, app, name, last_four, scopes
+      `;
+  return rows[0] ?? null;
+}
+
+export async function updateOwnedConnection(
+  store: Store,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const sql = store.sql;
+  const revoked = typeof patch.revoked_at === "string" || patch.revoked_at === null
+    ? patch.revoked_at
+    : undefined;
+  if (revoked === undefined) return null;
   const rows = await sql`
-    INSERT INTO connections (id, user_id, app, name, token_hash, last_four)
-    VALUES (${id}, ${store.userId}, ${row.app}, ${row.name}, ${row.token_hash}, ${row.last_four ?? null})
-    RETURNING id, user_id, app, name
+    UPDATE connections
+    SET revoked_at = ${revoked}
+    WHERE id = ${id} AND user_id = ${store.userId}
+    RETURNING id, user_id, app, name, revoked_at
   `;
   return rows[0] ?? null;
+}
+
+export async function deleteOwnedActivityBinding(store: Store, id: string): Promise<number> {
+  const sql = store.sql;
+  const rows = await sql`
+    DELETE FROM activity_bindings
+    WHERE id = ${id} AND user_id = ${store.userId}
+    RETURNING id
+  `;
+  return rows.length;
+}
+
+export async function deleteOwnedPushByEndpoint(store: Store, endpoint: string): Promise<number> {
+  const sql = store.sql;
+  const rows = await sql`
+    DELETE FROM push_subscriptions
+    WHERE user_id = ${store.userId} AND endpoint = ${endpoint}
+    RETURNING id
+  `;
+  return rows.length;
 }
 
 export async function listOwnedInboundEmails(store: Store): Promise<Record<string, unknown>[]> {

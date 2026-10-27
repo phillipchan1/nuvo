@@ -17,6 +17,7 @@ vi.mock("../src/hooks/useSettings", () => ({
 vi.mock("../src/lib/supabase", () => ({
   supabaseUrl: "http://localhost",
   supabaseAnonKey: "anon",
+  functionUrl: (fn: string) => `http://localhost/functions/v1/${fn}`,
   supabase: {
     from: () => ({
       select: () => ({

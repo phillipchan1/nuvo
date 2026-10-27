@@ -35,6 +35,8 @@ import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
+import { useAuth } from "../hooks/useAuth";
+import { workersEnabled } from "../lib/backend";
 import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
@@ -711,12 +713,12 @@ function ConnectionsPane({
 }) {
   const qc = useQueryClient();
   const connect = async (provider: "google" | "m365") => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const { currentAccessToken } = await import("../lib/sessionAuth");
+    const token = await currentAccessToken();
     if (!token) return;
-    const base = import.meta.env.VITE_SUPABASE_URL;
+    const { functionUrl } = await import("../lib/supabase");
     const redirect = encodeURIComponent(window.location.origin);
-    window.location.href = `${base}/functions/v1/${provider === "google" ? "google-oauth" : "m365-oauth"}?action=start&token=${token}&redirect=${redirect}`;
+    window.location.href = `${functionUrl(provider === "google" ? "google-oauth" : "m365-oauth")}?action=start&token=${token}&redirect=${redirect}`;
   };
   const disconnect = async (id: string) => {
     await supabase.from("calendar_accounts").delete().eq("id", id);
@@ -1521,6 +1523,7 @@ function LabelsPane() {
 }
 
 function AccountPane() {
+  const { session } = useAuth();
   const { subscription } = useSubscription();
   const [email, setEmail] = useState("");
   const [methods, setMethods] = useState<SignInMethod[]>([]);
@@ -1544,10 +1547,20 @@ function AccountPane() {
   };
 
   useEffect(() => {
+    // After the flip, GoTrue has no session — the account row is the one useAuth holds.
+    if (workersEnabled) {
+      setEmail(session?.user?.email ?? "");
+      setMethods(
+        readSignInMethods(session?.user?.identities, session?.user?.app_metadata?.provider, {
+          apple: appleLinkAvailable(),
+        }),
+      );
+      return;
+    }
     refresh();
     const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
     return () => sub.subscription.unsubscribe();
-  }, []);
+  }, [session]);
 
   // Linking — rather than a second sign-in — is what keeps the same auth UUID.
   // Supabase folds two identities onto one account only when they share a

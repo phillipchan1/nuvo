@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { workersEnabled } from "../lib/backend";
+import { rememberClientSession } from "../lib/sessionAuth";
 import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
 import { writeWasEntitled } from "../lib/subscription";
@@ -67,6 +68,10 @@ function sessionFromBetterAuth(user: { id: string; email?: string | null; update
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    rememberClientSession(session);
+  }, [session]);
 
   useEffect(() => {
     if (workersEnabled) {

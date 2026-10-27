@@ -40,9 +40,10 @@ function normalize(row: CommentRow): RecordComment {
 }
 
 async function userId(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) throw new Error("Not signed in");
-  return session.user.id;
+  const { currentUserId } = await import("../lib/sessionAuth");
+  const id = await currentUserId();
+  if (!id) throw new Error("Not signed in");
+  return id;
 }
 
 const column = (kind: RecordKind) => (kind === "project" ? "project_id" : "initiative_id");

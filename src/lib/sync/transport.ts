@@ -25,6 +25,7 @@
  * degraded, and `conflictResolutionAvailable()` reports which mode is live.
  */
 
+import { workersEnabled } from "../backend";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "../maintenance";
 import { supabase } from "../supabase";
 import { classifyError, type SendResult, type Transport } from "./engine";
@@ -224,7 +225,9 @@ async function sendUpdate(
   const match = await resolveMatch(op, getUserId);
   if (!match) return { ok: false, retriable: true, error: "Not signed in yet" };
 
-  if (patchRpcAvailable !== false) {
+  // Worker apply_patch only covers title/name/theme. Other fields would
+  // return 200 matched:0 and swallow the write — PATCH the row instead.
+  if (patchRpcAvailable !== false && !workersEnabled) {
     const { error } = await supabase.rpc("apply_patch", {
       p_table: op.table,
       p_match: match,

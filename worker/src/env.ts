@@ -55,6 +55,8 @@ export interface Env {
    * CRON_SECRET github-activity `action: "sync"` skip with 200.
    */
   CUTOVER_FLIPPED?: string;
+  /** Optional semver. Clients below this show the update prompt and refuse writes. */
+  MIN_CLIENT_VERSION?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
   /** Same VAPID pair as today's Supabase function — a new pair breaks every sub. */

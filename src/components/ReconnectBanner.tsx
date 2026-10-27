@@ -1,5 +1,4 @@
 import type { CalendarAccount } from "../lib/types";
-import { supabase } from "../lib/supabase";
 
 const LABEL: Record<CalendarAccount["provider"], string> = {
   google: "Google",
@@ -25,12 +24,12 @@ export default function ReconnectBanner({
       onManualReconnect?.();
       return;
     }
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const { currentAccessToken } = await import("../lib/sessionAuth");
+    const token = await currentAccessToken();
     if (!token) return;
-    const base = import.meta.env.VITE_SUPABASE_URL;
+    const { functionUrl } = await import("../lib/supabase");
     const fn = a.provider === "google" ? "google-oauth" : "m365-oauth";
-    window.location.href = `${base}/functions/v1/${fn}?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
+    window.location.href = `${functionUrl(fn)}?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
   };
 
   return (

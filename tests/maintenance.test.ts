@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../src/lib/backend", () => ({
   workersEnabled: true,
   apiBaseUrl: () => "https://nuvo-preview.example/api",
+  apiConfigured: () => false,
+  setWorkersEnabled: () => undefined,
+  resetWorkersEnabledForTests: () => undefined,
 }));
 
 const { writeFrozen, resetMaintenanceCacheForTests, maintenanceUrl } = await import("../src/lib/maintenance");

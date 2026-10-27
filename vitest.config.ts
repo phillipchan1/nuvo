@@ -15,6 +15,9 @@ export const ALIASES = [
 ];
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify("0.1.0"),
+  },
   resolve: { alias: ALIASES },
   test: {
     // Node is still the default — the kernel, agent and sync-core suites need no

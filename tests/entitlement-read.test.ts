@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { entitlementUrl } from "../src/lib/backend";
+import { entitlementUrl, resetWorkersEnabledForTests, setWorkersEnabled } from "../src/lib/backend";
 import {
   ENTITLEMENT_TIMEOUT_MS,
   VERIFY_ERROR,
@@ -87,10 +87,15 @@ describe("entitlementUrl follows the Worker flag", () => {
   });
 
   it("is GET /api/entitlement when the auth base points at the Worker", () => {
-    expect(entitlementUrl("/api")).toBe("/api/entitlement");
-    expect(entitlementUrl("https://nuvo-preview.example.workers.dev/api")).toBe(
-      "https://nuvo-preview.example.workers.dev/api/entitlement",
-    );
+    setWorkersEnabled(true);
+    try {
+      expect(entitlementUrl("/api")).toBe("/api/entitlement");
+      expect(entitlementUrl("https://nuvo-preview.example.workers.dev/api")).toBe(
+        "https://nuvo-preview.example.workers.dev/api/entitlement",
+      );
+    } finally {
+      resetWorkersEnabledForTests();
+    }
   });
 });
 

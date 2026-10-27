@@ -112,8 +112,8 @@ export async function subscribeToPush(): Promise<SubscribeOutcome> {
     const auth = json.keys?.auth ?? keyToBase64(sub.getKey("auth"));
     if (!p256dh || !auth) return { ok: false, reason: "failed", detail: "no encryption keys" };
 
-    const { data: u } = await supabase.auth.getUser();
-    const userId = u.user?.id;
+    const { currentUserId } = await import("./sessionAuth");
+    const userId = await currentUserId();
     if (!userId) return { ok: false, reason: "failed", detail: "not signed in" };
 
     const { error } = await supabase.from("push_subscriptions").upsert(

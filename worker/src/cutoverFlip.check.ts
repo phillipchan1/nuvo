@@ -511,8 +511,8 @@ ok(maintUnsetBody.write_freeze === false && maintUnsetBody.cutover_armed === fal
 ok(!("CUTOVER_FLIPPED" in maintUnsetBody), "maintenance does not echo CUTOVER_FLIPPED");
 const maintKeys = Object.keys(maintUnsetBody).sort();
 ok(
-  maintKeys.join(",") === "cutover_armed,cutover_flipped,message,write_freeze",
-  `maintenance keys are only the four flags: ${maintKeys.join(",")}`,
+  maintKeys.join(",") === "cutover_armed,cutover_flipped,message,min_version,write_freeze",
+  `maintenance keys are only the five flags: ${maintKeys.join(",")}`,
 );
 
 const maintOn = await app.request("http://localhost/api/maintenance", {}, { CUTOVER_FLIPPED: "1" });

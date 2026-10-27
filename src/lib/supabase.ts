@@ -1,13 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
-import { edgeFunctionUrl, workersEnabled } from "./backend";
+import { BILLING_FUNCTION_NAMES, edgeFunctionUrl, workersEnabled } from "./backend";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance";
 import { isSpotlightWindow } from "./platform";
+import { currentAccessToken } from "./sessionAuth";
+import { workerFrom, workerInvoke, workerRpc } from "./workerData";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-export const supabaseConfigured = Boolean((url && anonKey) || workersEnabled);
+export const supabaseConfigured = Boolean(url && anonKey);
 
 // Exported so callers that need to stream an edge function (the agent replies
 // over SSE, which `functions.invoke` can't consume) can build the request URL
@@ -95,6 +97,23 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+const rawFrom = supabase.from.bind(supabase);
+const rawRpc = typeof supabase.rpc === "function" ? supabase.rpc.bind(supabase) : supabase.rpc;
+const rawInvoke = typeof supabase.functions?.invoke === "function"
+  ? supabase.functions.invoke.bind(supabase.functions)
+  : supabase.functions?.invoke;
+
+// Runtime switch: after cutover_flipped, table/RPC/function calls hit the Worker.
+// Billing functions stay on Supabase — see BILLING_FUNCTION_NAMES.
+supabase.from = ((table: string) =>
+  workersEnabled ? workerFrom(table) : rawFrom(table)) as typeof supabase.from;
+supabase.rpc = ((fn: string, args?: Record<string, unknown>) =>
+  workersEnabled ? workerRpc(fn, args) : rawRpc(fn, args)) as typeof supabase.rpc;
+supabase.functions.invoke = ((fn: string, opts?: { body?: Record<string, unknown> }) => {
+  if (!workersEnabled || BILLING_FUNCTION_NAMES.has(fn)) return rawInvoke(fn, opts);
+  return workerInvoke(fn, opts?.body);
+}) as typeof supabase.functions.invoke;
+
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {
   const report = (message: string) => {
@@ -104,12 +123,15 @@ export function invokeQuiet(fn: string, body: Record<string, unknown>) {
     console.warn(`[nuvo] edge fn ${fn} failed:`, message);
   };
   if (workersEnabled) {
-    fetch(functionUrl(fn), {
+    void currentAccessToken().then((token) => fetch(functionUrl(fn), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       credentials: "include",
       body: JSON.stringify(body),
-    }).then(async (res) => {
+    })).then(async (res) => {
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
         report(`${res.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);

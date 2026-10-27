@@ -75,11 +75,12 @@ export function useEventRoutingMutations() {
   const qc = useQueryClient();
   const upsert = useMutation({
     mutationFn: async ({ eventKey, domainId }: { eventKey: string; domainId: string }) => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) throw new Error("Not signed in");
+      const { currentUserId } = await import("../lib/sessionAuth");
+      const uid = await currentUserId();
+      if (!uid) throw new Error("Not signed in");
       const { error } = await supabase.from("event_domain_routing").upsert(
         {
-          user_id: u.user.id,
+          user_id: uid,
           event_key: eventKey,
           manual_domain_id: domainId,
           routed_at: new Date().toISOString(),

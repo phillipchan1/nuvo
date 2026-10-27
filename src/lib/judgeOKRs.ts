@@ -6,7 +6,8 @@
 // never mutates; the human reads the critique and sharpens the number themselves.
 
 import { assertWritable } from "./maintenance";
-import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
+import { currentAccessToken } from "./sessionAuth";
+import { functionUrl, supabaseAnonKey } from "./supabase";
 import { domainById, type Initiative, type KeyResult, type VerticalData } from "./vertical";
 
 export type KRRating = "strong" | "fair" | "weak";
@@ -21,9 +22,8 @@ export interface KRVerdict {
 
 async function callAgentJSON(prompt: string): Promise<unknown> {
   await assertWritable();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token ?? supabaseAnonKey;
-  const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {
+  const token = (await currentAccessToken()) ?? supabaseAnonKey;
+  const res = await fetch(functionUrl("agent"), {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
     body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
