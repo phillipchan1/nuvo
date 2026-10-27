@@ -41,6 +41,16 @@ ok(!cutoverFlipped("  "), "cutoverFlipped whitespace is not flipped");
 for (const value of ["garbage", "maybe", "2", "flipped", "false", "0"]) {
   ok(!cutoverFlipped(value), `cutoverFlipped ${JSON.stringify(value)} is not flipped`);
 }
+for (const value of [1, true, false, 0, 2, { toString: () => "1" }, ["1"]]) {
+  let threw = false;
+  let flipped = true;
+  try {
+    flipped = cutoverFlipped(value);
+  } catch {
+    threw = true;
+  }
+  ok(!threw && flipped === false, `cutoverFlipped non-string ${typeof value} skips without throwing`);
+}
 
 const dispatched = [...new Set(Object.values(CRON_BY_SCHEDULE).flat())];
 ok(dispatched.length > 0, "cron dispatcher lists at least one job");
@@ -116,7 +126,12 @@ try {
   for (const job of POST_FLIP_CRON_JOBS) {
     const scheduled = await runCronJob(job, {}, throwingSql());
     ok(
-      scheduled.status === 200 && scheduled.skipped === true && scheduled.reason === CUTOVER_NOT_FLIPPED && scheduled.job === job,
+      scheduled.status === 200 &&
+        scheduled.ok === true &&
+        scheduled.skipped === true &&
+        scheduled.reason === CUTOVER_NOT_FLIPPED &&
+        scheduled.job === job &&
+        !("stay_on_supabase" in scheduled),
       `runCronJob ${job} skips when unset`,
     );
 
@@ -180,6 +195,28 @@ const bearerSkip = gateCronBearerRoute({}, "github-activity");
 ok(bearerSkip !== null && bearerSkip.status === 200, "gateCronBearerRoute skips before any DB");
 const bearerBody = (await bearerSkip!.json()) as { job?: string; skipped?: boolean };
 ok(bearerBody.job === "github-activity" && bearerBody.skipped === true, "gateCronBearerRoute names the route");
+
+const maintUnset = await app.request("http://localhost/api/maintenance", {}, {});
+ok(maintUnset.status === 200, "GET /api/maintenance unset: 200");
+const maintUnsetBody = (await maintUnset.json()) as Record<string, unknown>;
+ok(maintUnsetBody.cutover_flipped === false, "maintenance cutover_flipped is false when unset");
+ok(maintUnsetBody.write_freeze === false && maintUnsetBody.cutover_armed === false, "maintenance other flags stay booleans");
+ok(!("CUTOVER_FLIPPED" in maintUnsetBody), "maintenance does not echo CUTOVER_FLIPPED");
+const maintKeys = Object.keys(maintUnsetBody).sort();
+ok(
+  maintKeys.join(",") === "cutover_armed,cutover_flipped,message,write_freeze",
+  `maintenance keys are only the four flags: ${maintKeys.join(",")}`,
+);
+
+const maintOn = await app.request("http://localhost/api/maintenance", {}, { CUTOVER_FLIPPED: "1" });
+const maintOnBody = (await maintOn.json()) as Record<string, unknown>;
+ok(maintOnBody.cutover_flipped === true, "maintenance cutover_flipped is true after allowlist");
+ok(typeof maintOnBody.cutover_flipped === "boolean", "maintenance cutover_flipped is a boolean");
+ok(!Object.values(maintOnBody).includes("1"), "maintenance does not echo the env string");
+
+const doc = readFileSync(join(here, "../../docs/cloudflare-cutover.md"), "utf8");
+ok(/cutover_flipped: true/.test(doc), "runbook confirms GET /api/maintenance cutover_flipped");
+ok(/non-skipped/.test(doc) && /cutover_not_flipped/.test(doc), "runbook confirms one job actually ran");
 
 restoreIo();
 

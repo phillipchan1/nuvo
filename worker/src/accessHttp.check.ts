@@ -1066,9 +1066,10 @@ ok(aEntAgain.status === 200 && aEntAgainBody.plan === "active", "B write attempt
 
 const maint = await withTimeout(request("/api/maintenance"), 8000, "GET maintenance");
 ok(maint.status === 200, `GET /api/maintenance unauth: HTTP ${maint.status}`);
-const maintBody = (await maint.json()) as { write_freeze?: boolean; cutover_armed?: boolean };
+const maintBody = (await maint.json()) as { write_freeze?: boolean; cutover_armed?: boolean; cutover_flipped?: boolean };
 ok(maintBody.write_freeze === false, "maintenance default is off");
 ok(maintBody.cutover_armed === false, "maintenance default is not armed");
+ok(maintBody.cutover_flipped === true, "maintenance reports cutover_flipped from env");
 
 const frozenFlag = await withTimeout(
   app.request("http://localhost:8787/api/maintenance", {}, { ...env, MAINTENANCE_WRITE_FREEZE: "1" }),

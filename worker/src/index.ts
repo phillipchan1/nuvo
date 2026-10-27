@@ -122,6 +122,7 @@ app.get("/api/maintenance", (c) =>
     {
       write_freeze: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE),
       cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
+      cutover_flipped: cutoverFlipped(c.env?.CUTOVER_FLIPPED),
       message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
     },
     200,
