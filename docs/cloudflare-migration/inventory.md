@@ -99,16 +99,16 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
 | `apple-identity` | User JWT | no | Stay |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
-| `calendar-refresh` | User JWT | no | Stay |
+| `calendar-refresh` | User JWT | no | **Worker (Google only)** — other providers stay 501 |
 | `capture` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `day` | User JWT | no | **Worker/Neon** |
 | `delete-account` | User JWT + confirm | Stripe cancel | Stay |
 | `github-activity` | JWT or `CRON_SECRET` | no | Worker + Neon (A's sealed PAT). Supabase fn stays for rollback. |
-| `google-contacts` | JWT / service | no | Stay |
-| `google-events` | JWT | no | Stay |
-| `google-oauth` | OAuth state | no | Stay |
-| `google-sync` | Service role | no | Stay |
-| `google-webhook` | Channel token | no | **Stay — do not touch** |
+| `google-contacts` | JWT / service | no | **Worker** |
+| `google-events` | JWT | no | **Worker** |
+| `google-oauth` | OAuth state | no | **Worker** |
+| `google-sync` | Service role / JWT | no | **Worker** |
+| `google-webhook` | Channel token | no | **Worker** (re-subscribe at flip; poll fallback) |
 | `iap-catalog` | Public | no | Stay |
 | `icloud-*` | JWT / service | no | Stay |
 | `ics-subscribe` / `ics-sync` | JWT / service | no | Stay |
@@ -180,24 +180,29 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 | Job | Target |
 |---|---|
 | `nuvo-rollover-pst` / `pdt` | `rollover` |
-| `nuvo-google-renew` | `google-sync` |
+| `nuvo-google-renew` | `google-sync` — **Worker** (`15 9 * * *` + `/api/cron/google-renew`; no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (age + Neon-origin floor; no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` (no-op until `CUTOVER_FLIPPED`) |
-| `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) |
+| `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) — **Worker Google claim/poll** (`* * * * *` + `/api/cron/calendar-dispatch`); other providers stay on Supabase |
 | `nuvo-push-dispatch` | `push-dispatch` (Worker Cron Trigger `* * * * *` + `/api/cron/push-dispatch`) |
 | `nuvo-reminder-deliveries-prune` | SQL |
 | `nuvo-purge-trash` | SQL |
 
-External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Calendar, Resend.
+External webhooks: Stripe, Apple ASN, and Resend stay on Supabase. Google
+Calendar push channels re-subscribe to the Worker at flip
+(`/api/cron/google-resubscribe`); `calendar-dispatch` is the poll fallback
+when watch setup fails (unverified domain).
 
 **Vercel crons:** none (`vercel.json` has no `crons`). The Worker now has
 Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
 `/api/cron/:job` still requires `CRON_SECRET`. Ported: rollover,
-purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log
-(no-op until `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps
-recent Neon-origin ids out of trim for ~1e6 further inserts). Unported
-jobs stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` —
-see [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
+purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log,
+`google-renew`, `calendar-dispatch`, `google-resubscribe` (no-op until
+`CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps recent
+Neon-origin ids out of trim for ~1e6 further inserts). Unported jobs
+stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` (Google
+consume here; other providers ack for PR C). See
+[`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---
 

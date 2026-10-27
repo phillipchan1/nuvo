@@ -69,13 +69,60 @@ INSERT INTO public.event_domain_routing (id, user_id, event_key, domain_id) VALU
   ('aaaaaaaa-dddd-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'evt-a', 'aaaaaaaa-0000-4000-8000-000000000001'),
   ('bbbbbbbb-dddd-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'evt-b', 'bbbbbbbb-0000-4000-8000-000000000001');
 
-INSERT INTO public.calendar_accounts (id, user_id, provider, email, sync_direction) VALUES
-  ('aaaaaaaa-eeee-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'google', 'a@example.test', 'two_way'),
-  ('bbbbbbbb-eeee-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'google', 'b@example.test', 'two_way');
+INSERT INTO public.calendar_accounts (
+  id, user_id, provider, email, access_token, access_token_expires_at,
+  sync_direction, calendars, needs_reconnect
+) VALUES
+  (
+    'aaaaaaaa-eeee-4000-8000-000000000001',
+    '11111111-1111-1111-1111-111111111111',
+    'google',
+    'a-cal@example.test',
+    'ya29.a-access',
+    '2099-01-01T00:00:00Z',
+    'two_way',
+    '[{"id":"cal-a@group.calendar.google.com","summary":"A Cal","color":null,"visible":true,"channel_id":"ch-a","resource_id":"res-a"}]'::jsonb,
+    false
+  ),
+  (
+    'bbbbbbbb-eeee-4000-8000-000000000001',
+    '22222222-2222-2222-2222-222222222222',
+    'google',
+    'b-cal@example.test',
+    'ya29.b-access',
+    '2099-01-01T00:00:00Z',
+    'two_way',
+    '[{"id":"cal-b@group.calendar.google.com","summary":"B Cal","color":null,"visible":true,"channel_id":"ch-b","resource_id":"res-b"}]'::jsonb,
+    false
+  );
 
-INSERT INTO public.external_events (id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at) VALUES
-  ('aaaaaaaa-ffff-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-eeee-4000-8000-000000000001', 'evt-a-1', 'primary', 'A meeting', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z'),
-  ('bbbbbbbb-ffff-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-eeee-4000-8000-000000000001', 'evt-b-1', 'primary', 'B meeting', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z');
+INSERT INTO public.external_events (
+  id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, busy
+) VALUES
+  (
+    'aaaaaaaa-ffff-4000-8000-000000000001',
+    '11111111-1111-1111-1111-111111111111',
+    'aaaaaaaa-eeee-4000-8000-000000000001',
+    'evt-a-1',
+    'cal-a@group.calendar.google.com',
+    'A private event',
+    '2026-10-26T17:00:00Z',
+    '2026-10-26T18:00:00Z',
+    false,
+    true
+  ),
+  (
+    'bbbbbbbb-ffff-4000-8000-000000000001',
+    '22222222-2222-2222-2222-222222222222',
+    'bbbbbbbb-eeee-4000-8000-000000000001',
+    'evt-b-1',
+    'cal-b@group.calendar.google.com',
+    'B private event',
+    '2026-10-26T17:00:00Z',
+    '2026-10-26T18:00:00Z',
+    false,
+    true
+  );
 
 INSERT INTO public.push_subscriptions (id, user_id, endpoint, p256dh, auth, label) VALUES
   ('aaaaaaaa-0101-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'https://push.example/a', 'p256-a', 'auth-a', 'A phone'),
