@@ -2,6 +2,7 @@
 
 import { admin, logSync } from "./admin.ts";
 import { sendWebPush, webPushConfigured, type PushSubscriptionRow } from "./webpush.ts";
+import { workerUserEmail } from "./workerUser.ts";
 
 const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const MAIL_FROM = Deno.env.get("RESEND_FROM") ?? "Nuvo <hello@nuvo.day>";
@@ -79,9 +80,13 @@ async function emailNotify(
 ): Promise<void> {
   if (!RESEND_KEY) return;
   try {
-    const { data, error } = await admin.auth.admin.getUserById(userId);
-    const to = data?.user?.email;
-    if (error || !to) return;
+    // Neon-only users are not in GoTrue. Look them up on the Worker
+    // with the existing service-role key (NUVO_API_URL = Worker origin).
+    const to = await workerUserEmail(userId, {
+      apiBase: Deno.env.get("NUVO_API_URL") ?? "",
+      serviceRole: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    });
+    if (!to) return;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

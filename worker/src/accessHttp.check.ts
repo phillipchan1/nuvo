@@ -24,7 +24,7 @@ import { installRequestIoForTests } from "./requestIo.ts";
 import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { installBillingReaderForTests } from "./lib/billingRead.ts";
-import { installBillingProxyFetchForTests } from "./billingProxy.ts";
+import { BILLING_PROXY_FUNCTIONS, installBillingProxyFetchForTests } from "./billingProxy.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
 import { mapAuthIdentityToAccount } from "./lib/authMap.ts";
@@ -2121,6 +2121,30 @@ ok(billingCalls[0]?.url === "https://example.supabase.co/functions/v1/stripe-che
 ok(billingCalls[0]?.acting === a.id, "A stripe-checkout acting user is A's session id");
 ok(billingCalls[0]?.acting !== b.id, "A stripe-checkout does not forward B's id from the body");
 ok(billingCalls[0]?.auth === "Bearer service-role-test", "A stripe-checkout uses the service-role bearer");
+
+for (const name of BILLING_PROXY_FUNCTIONS) {
+  if (name === "stripe-checkout") continue;
+  const before = billingCalls.length;
+  const spoof = await withTimeout(
+    billingRequest(`/api/${name}`, a.token, {
+      plan: "monthly",
+      user_id: b.id,
+      actingUserId: b.id,
+      productId: "NUVO_IAP_MONTHLY",
+      originalTransactionId: "tx",
+    }),
+    8000,
+    `A ${name} client user_id`,
+  );
+  ok(spoof.status === 200, `A ${name}: HTTP ${spoof.status}`);
+  ok(billingCalls.length === before + 1, `A ${name} made one outbound call`);
+  ok(billingCalls.at(-1)?.acting === a.id, `A ${name} acting user is A's session id`);
+  ok(billingCalls.at(-1)?.acting !== b.id, `A ${name} ignores a client-supplied user id`);
+  ok(
+    billingCalls.at(-1)?.url === `https://example.supabase.co/functions/v1/${name}`,
+    `A ${name} hits the existing edge function`,
+  );
+}
 
 const dSpoof = await withTimeout(
   billingRequest(

@@ -84,6 +84,7 @@ import {
   proxyBillingFunction,
   withBillingCors,
 } from "./billingProxy.ts";
+import { handleInternalUserEmail } from "./internalUser.ts";
 
 function isBillingCorsPath(path: string): boolean {
   return BILLING_PROXY_FUNCTIONS.some(
@@ -167,6 +168,8 @@ function missingAsset(): Response {
     },
   });
 }
+
+app.get("/api/internal/user-email", (c) => handleInternalUserEmail(c));
 
 app.get("/api/health", (c) =>
   c.json({

@@ -59,7 +59,8 @@ export function workerApiRoot(): string {
 /**
  * After the flip, user-authenticated billing calls go through the Worker
  * proxy (`apple-iap`, `stripe-checkout`, `stripe-portal`, `referral-code`)
- * via `invokeBilling`. Webhooks stay on Supabase and are not rewritten.
+ * via `invokeBilling`. Same predicate as #117's `workersEnabled`. Webhooks
+ * stay on Supabase and are not rewritten.
  */
 export function billingViaWorker(): boolean {
   return workersEnabled;

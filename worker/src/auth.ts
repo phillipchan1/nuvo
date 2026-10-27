@@ -89,9 +89,12 @@ export function createAuth(env: Env, database: AuthDatabase) {
       user: {
         create: {
           after: async (user) => {
-            // Option (b): trial row on Supabase. Do not throw — a miss is
-            // recovered by applyPlanUpdate's upsert on first purchase.
-            await ensureDefaultSubscription(env, user.id);
+            // Option (b): trial row on Supabase. 409 / 23503 / non-2xx is
+            // a failure (retried inside ensureDefaultSubscription). Do not
+            // throw — a miss is recovered by applyPlanUpdate's upsert on
+            // first purchase. The result is surfaced, never treated as void success.
+            const result = await ensureDefaultSubscription(env, user.id);
+            if (!result.ok) return;
           },
         },
       },

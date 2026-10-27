@@ -61,7 +61,7 @@ describe("fresh signup after the flip", () => {
       { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "svc" },
       USER,
     );
-    expect(ok).toBe(true);
+    expect(ok).toEqual({ ok: true });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toContain("/rest/v1/subscriptions?on_conflict=user_id");
     expect(calls[0]?.prefer).toMatch(/ignore-duplicates/);
@@ -77,8 +77,22 @@ describe("fresh signup after the flip", () => {
       called = true;
       return new Response(null, { status: 201 });
     });
-    expect(await ensureDefaultSubscription({}, USER)).toBe(false);
+    expect(await ensureDefaultSubscription({}, USER)).toEqual({ ok: false, retry: true });
     expect(called).toBe(false);
+  });
+
+  it("treats 409 / 23503 as a failure and retries", async () => {
+    let n = 0;
+    installSubscriptionInsertFetchForTests(async () => {
+      n += 1;
+      return new Response(JSON.stringify({ code: "23503", message: "fk" }), { status: 409 });
+    });
+    const got = await ensureDefaultSubscription(
+      { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "svc" },
+      USER,
+    );
+    expect(got).toEqual({ ok: false, status: 409, code: "23503", retry: true });
+    expect(n).toBe(3);
   });
 
   it("auth.ts hooks user.create.after and applyPlanUpdate upserts", () => {
@@ -86,6 +100,7 @@ describe("fresh signup after the flip", () => {
     expect(auth).toMatch(/user:\s*\{/);
     expect(auth).toMatch(/after:\s*async \(user\)/);
     expect(auth).toContain("ensureDefaultSubscription");
+    expect(auth).toMatch(/result\.ok/);
     expect(auth).toContain("trustedAuthOrigins(env)");
 
     const plan = readFileSync(join(ROOT, "supabase/functions/_shared/plan.ts"), "utf8");

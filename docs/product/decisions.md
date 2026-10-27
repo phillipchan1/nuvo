@@ -6316,7 +6316,9 @@ Better Auth sessions are not GoTrue JWTs, so `apple-iap` / `stripe-checkout` / `
 
 **Option (b), not (a).** Billing tables (`subscriptions` and the webhook ledgers) stay writable on Supabase, exempt from `freeze.sql`, and `GET /api/entitlement` already reads them. Repointing writers to Neon would change the DB client on every rail and on both webhooks without changing Stripe/StoreKit signatures — larger, and rollback would need those webhooks moved back. Stripe rehearsal stays TEST. Friend-code minting is proxied (D-166's "share block disabled on the flag-on pane" is superseded).
 
+Post-flip signups exist only in Neon, so `subscriptions.user_id` and `subscriptions.referred_by` FKs to `auth.users` are dropped by a hand-applied pre-flip SQL (`docs/cloudflare-migration/drop-billing-auth-fk.sql`) **only after Phil's yes on #120, never earlier**. `subscriptions_pkey` stays as the `user_id` index. Rollback re-adds both FKs as **NOT VALID**. No shadow GoTrue users. `ensureDefaultSubscription` treats `409` / `23503` as a failure and retries; `stripe-webhook` keeps its ledger row on a transient miss. Stripe takes payer email from the Stripe object; referral notify looks the user up through the Worker (`GET /api/internal/user-email`, existing service-role key).
+
 **Anchor.** No Question Ledger row — infrastructure, same as D-166. Four no's: no pool, no new user-facing name, works with a missing token (webhook ignores), not builder-only.
 
-*Status: standing — rehearsal. Tests: `tests/acting-user.test.ts`, `tests/apple-account-token.test.ts`, `tests/billing-proxy.test.ts`, `tests/cutover-auth-ids.test.ts`, `worker/src/billingProxy.check.ts`, `worker/src/accessHttp.check.ts`.*
+*Status: standing — rehearsal. Tests: `tests/acting-user.test.ts`, `tests/apple-account-token.test.ts`, `tests/billing-proxy.test.ts`, `tests/cutover-auth-ids.test.ts`, `tests/default-subscription.test.ts`, `tests/stripe-webhook-neon.test.ts`, `tests/worker-user-email.test.ts`, `worker/src/billingProxy.check.ts`, `worker/src/billingFk.check.ts`, `worker/src/accessHttp.check.ts`.*
 

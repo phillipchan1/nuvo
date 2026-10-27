@@ -12,6 +12,7 @@ import {
 import { applyPlanUpdate } from "../_shared/plan.ts";
 import { stripeStatusToPlan } from "../_shared/planRules.ts";
 import { stripe } from "../_shared/stripe.ts";
+import { stripePayerEmail } from "../_shared/stripePayer.ts";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -123,25 +124,27 @@ function acceptPromo(
 }
 
 /** Trial sharers may never have checked out — create a Stripe customer so
- *  Customer Balance credit has somewhere to land until they subscribe. */
-async function ensureStripeCustomer(userId: string, existingId: string | null): Promise<string | null> {
+ *  Customer Balance credit has somewhere to land until they subscribe.
+ *  Email comes from the Stripe customer / session object, never GoTrue
+ *  (Neon-only users are not in auth.users). Missing email is not a miss —
+ *  Stripe accepts a customer with only metadata. */
+async function ensureStripeCustomer(
+  userId: string,
+  existingId: string | null,
+  emailFromStripe?: string | null,
+): Promise<string | null> {
+  let email = emailFromStripe?.trim() || undefined;
   if (existingId) {
     try {
       const cust = await stripe.customers.retrieve(existingId);
       if (!cust.deleted) return existingId;
+      email = email ?? stripePayerEmail(cust);
     } catch {
       /* recreate below */
     }
   }
-
-  const { data, error } = await admin.auth.admin.getUserById(userId);
-  if (error || !data.user) {
-    await logSync("stripe", "referral_ensure_customer", "error", "user not found", userId);
-    return null;
-  }
-
   const customer = await stripe.customers.create({
-    email: data.user.email ?? undefined,
+    email,
     metadata: { app: "nuvo", user_id: userId },
   });
   await admin
@@ -261,6 +264,9 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
     return;
   }
 
+  // Referrer email is not on the friend's invoice. Existing Stripe
+  // customer is reused; a first-time sharer is created without a
+  // GoTrue lookup (Neon-only users are not in auth.users).
   const stripeCustomerId = await ensureStripeCustomer(
     referrer.user_id,
     referrer.stripe_customer_id,
@@ -433,7 +439,9 @@ Deno.serve(async (req) => {
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await admin.from("stripe_webhook_events").delete().eq("event_id", event.id);
+    // Keep the ledger row. Deleting it made Stripe retry forever:
+    // the next delivery re-inserted, the handler failed again, we
+    // deleted again. A transient applyPlanUpdate miss is not a new event.
     await logSync("stripe", event.type, "error", msg);
     return json({ error: "handler failed" }, 500);
   }

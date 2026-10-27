@@ -24,7 +24,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Same flag flip |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / Stripe / StoreKit | Supabase edge | **Still Supabase writes (option b).** After the flip, `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` go Worker → service-role acting-user → the same Supabase functions. Webhooks stay pointed at Supabase. Entitlement is read from those same Supabase rows (`GET /api/entitlement`). Billing tables stay writable (exempt from the freeze); we do not repoint writers to Neon. | n/a |
+| Billing / Stripe / StoreKit | Supabase edge | **Still Supabase writes (option b).** After the flip, `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` go Worker → service-role acting-user → the same Supabase functions. Webhooks stay pointed at Supabase. Entitlement is read from those same Supabase rows (`GET /api/entitlement`). Billing tables stay writable (exempt from the freeze); we do not repoint writers to Neon. Pre-flip, after Phil's yes on #120 and **never earlier**, apply `drop-billing-auth-fk.sql` so a Neon-only user can get a `subscriptions` row. | `drop-billing-auth-fk.rollback.sql` (re-adds the FKs as **NOT VALID**) |
 | Calendar + OAuth (Google, M365, iCloud, ICS) | Supabase edge + pg_cron | Worker `/functions/v1/:name` **and** `/api/:name` for `google-oauth`, `google-events`, `calendar-refresh`, `m365-oauth`, `icloud-connect`, `ics-subscribe`. Crons `google-renew` / `calendar-dispatch` / `m365-sync` / `icloud-sync` / `ics-sync` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
@@ -65,7 +65,7 @@ None of these belong in the Vite bundle.
 | `MIN_CLIENT_VERSION` | var | Floor the SPA reads as `min_version` from `GET /api/maintenance`. Unset / empty → clients **fail open** (no update wall). Set on the Worker deploy (below) when a shipped binary must stop writing |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read + the billing-function proxy. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id. The proxy POSTs `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` at `${SUPABASE_URL}/functions/v1/<name>` |
-| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read (`user_id=eq.<session id>`) and the proxy's service-role bearer + `X-Nuvo-Acting-User` (the verified Better Auth id — never a client-supplied id). **Not** a Stripe key; do not add `STRIPE_SECRET_KEY`. Stripe stays in TEST mode for rehearsal |
+| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read (`user_id=eq.<session id>`) and the proxy's service-role bearer + `X-Nuvo-Acting-User` (the verified Better Auth id — never a client-supplied id). Also the bearer for `GET /api/internal/user-email` (referral notify). **Not** a Stripe key; do not add `STRIPE_SECRET_KEY`. Stripe stays in TEST mode for rehearsal |
 | `APP_URL` | var | SPA origin for the post-consent redirect |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
@@ -275,10 +275,24 @@ watch setup failures (unverified domain).
 
 ### Flip runbook (order is load-bearing)
 
-Do **not** set `CUTOVER_FLIPPED` until both of these have landed. The
+Do **not** set `CUTOVER_FLIPPED` until these have landed. The
 Worker copies must not run beside `pg_cron`, and they must not run
 against a Neon that is still missing the last billing / `sync_log` rows.
+A Neon-only Better Auth user also cannot get a `subscriptions` row until
+the billing FKs to `auth.users` are dropped.
 
+0. **Drop billing FKs to `auth.users` — only after Phil's yes on #120,
+   never earlier.** Apply
+   [`cloudflare-migration/drop-billing-auth-fk.sql`](./cloudflare-migration/drop-billing-auth-fk.sql)
+   as postgres on the isolated (then production) Supabase. Hand-applied.
+   Do **not** apply on merge, CI, `db push`, the Worker, or
+   `cutover-migrate.yml`. Drops `subscriptions.user_id` and
+   `subscriptions.referred_by` FKs to `auth.users`. Keeps
+   `subscriptions_pkey` as the `user_id` index. Without this, a post-flip
+   signup insert fails `23503` / REST `409`, `ensureDefaultSubscription`
+   used to treat that as success, and `stripe-webhook` deleted its ledger
+   row and retried forever. Set edge secret `NUVO_API_URL` to the Worker
+   origin so referral notify can look up a Neon-only user.
 1. **`cron.unschedule` the Supabase `pg_cron` jobs** (`nuvo-*` in
    `00000000000002_cron.sql`). Reversible: reschedule from that file.
 2. **Final `phase=resync`** — one more `cutover-migrate` resync after
@@ -293,6 +307,15 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    `/api/cron/calendar-dispatch`, not `github-poll` or `trim-sync-log` —
    and check it actually ran: a non-skipped JSON body, or a log line
    from the runner — not `{ skipped: true, reason: "cutover_not_flipped" }`.
+
+### Billing FK rollback
+
+To undo step 0, apply
+[`cloudflare-migration/drop-billing-auth-fk.rollback.sql`](./cloudflare-migration/drop-billing-auth-fk.rollback.sql)
+as postgres. It re-adds both FKs as **NOT VALID** so existing Neon-only
+rows are not scanned. `VALIDATE CONSTRAINT` later only if every
+`user_id` / `referred_by` is back in `auth.users`. Do not apply this
+before the matching drop.
 
 ## Write freeze
 
@@ -479,6 +502,11 @@ Order:
       200 `{ skipped: true }` on `github-poll`, `trim-sync-log`, and
       github-activity `action: "sync"` with `CRON_SECRET`. The freeze
       is not enough.
+   The billing FK drop (`drop-billing-auth-fk.sql`) is **not** part of
+   this copy-window order. It is flip-runbook step 0, applied as
+   postgres only after Phil's yes on #120, never earlier. Rollback of
+   that drop is `drop-billing-auth-fk.rollback.sql` (NOT VALID), not
+   `unfreeze.sql`.
 
 ---
 
@@ -628,7 +656,10 @@ schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a
 `fields` map. `npm run check:worker` drives those four routes through real
 Better Auth on PGlite. Billing `subscriptions` stays on Supabase — it is not
 in the Neon rehearsal schema (**option (b)**: tables stay writable, exempt
-from the freeze; the Worker reads them). The cutover copy inserts Better
+from the freeze; the Worker reads them). Post-flip signups exist only in
+Neon, so `subscriptions.user_id` / `referred_by` FKs to `auth.users` must
+be dropped as a pre-flip step after Phil's yes on #120 (`drop-billing-auth-fk.sql`;
+rollback re-adds them **NOT VALID**). The cutover copy inserts Better
 Auth `"user".id` as the GoTrue `auth.users.id` — they are equal, not
 remapped. The Worker entitlement check (`GET /api/entitlement`) reads that
 table by the preserved session user id. After the flip, user-authenticated

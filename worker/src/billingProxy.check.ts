@@ -93,6 +93,26 @@ ok(evil.headers.get("access-control-allow-credentials") == null, "unknown origin
 const authSrc = readFileSync(join(here, "auth.ts"), "utf8");
 ok(authSrc.includes("trustedAuthOrigins(env)"), "Better Auth trustedOrigins is the #117 list");
 ok(authSrc.includes("ensureDefaultSubscription"), "user.create.after inserts the default subscriptions row");
+ok(/result\.ok/.test(authSrc), "user.create.after surfaces the ensure result");
+
+const ensureSrc = readFileSync(join(here, "lib/ensureSubscription.ts"), "utf8");
+ok(!/res\.ok \|\| res\.status === 409/.test(ensureSrc), "ensureSubscription does not treat 409 as success");
+
+ok(indexSrc.includes("handleInternalUserEmail"), "Worker mounts GET /api/internal/user-email");
+ok(indexSrc.includes('/api/internal/user-email'), "internal user-email is a GET route");
+
+const noKey = await app.fetch(
+  new Request("http://localhost/api/internal/user-email?id=11111111-1111-4111-8111-111111111111"),
+  corsEnv,
+);
+ok(noKey.status === 401, `internal user-email without service-role: HTTP ${noKey.status}`);
+const badId = await app.fetch(
+  new Request("http://localhost/api/internal/user-email?id=nope", {
+    headers: { Authorization: "Bearer service-role-test" },
+  }),
+  { ...corsEnv, SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
+);
+ok(badId.status === 400, `internal user-email with a non-UUID: HTTP ${badId.status}`);
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

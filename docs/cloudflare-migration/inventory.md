@@ -38,7 +38,7 @@ Identity: almost every tenant row is `user_id uuid NOT NULL REFERENCES auth.user
 | `calendar_accounts` | `user_id` | `"own calendar_accounts"` + **column revoke** | delete / `calendars` update | Tokens not granted to anon/authenticated |
 | `external_events` | `user_id` | `"own external_events"` ALL | no (sync writes) | |
 | `sync_log` | `user_id` | SELECT only | no | |
-| `subscriptions` | `user_id` PK | SELECT only | no | Service-role writers; `entitled()` / `plan()` |
+| `subscriptions` | `user_id` PK | SELECT only | no | Service-role writers; `entitled()` / `plan()`. Pre-flip after Phil's yes on #120: drop `user_id` / `referred_by` FKs to `auth.users` (`drop-billing-auth-fk.sql`). Keep `subscriptions_pkey`. |
 | `stripe_webhook_events` | — | RLS, **no policies** | no | Service-role idempotency |
 | `apple_notification_events` | — | RLS, **no policies** | no | |
 | `apple_webhook_events` | — | RLS, **no policies** | no | |

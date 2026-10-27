@@ -10,9 +10,17 @@ Sister docs: [`../cloudflare-cutover.md`](../cloudflare-cutover.md) · [`access-
 > **Entitlement writes stay on Supabase (option b).** `subscriptions` /
 > webhook ledgers are exempt from `freeze.sql`. The Worker SELECTs those
 > rows. We did not repoint billing to Neon.
+>
+> **FK drop is a pre-flip hand apply**, only after Phil's yes on #120,
+> never earlier: [`drop-billing-auth-fk.sql`](./drop-billing-auth-fk.sql).
+> Rollback re-adds the FKs as **NOT VALID**
+> ([`drop-billing-auth-fk.rollback.sql`](./drop-billing-auth-fk.rollback.sql)).
+> `subscriptions_pkey` stays as the `user_id` index.
 
 > Auth ids are copied 1:1 (`auth.users.id` = Better Auth `"user".id`). A
-> remapped id looks like a missing subscription — fail-closed.
+> remapped id looks like a missing subscription — fail-closed. A
+> **Neon-only** post-flip signup is *not* in `auth.users`; the FK drop
+> is what lets that user get a `subscriptions` row.
 
 ---
 
@@ -25,6 +33,7 @@ Sister docs: [`../cloudflare-cutover.md`](../cloudflare-cutover.md) · [`access-
 - [ ] You are **not** on production DNS. Preview only.
 - [ ] Stripe is **TEST** mode. The TEST webhook endpoint is a **preview or scratch Supabase**. Do not retarget production webhooks. Do not use live keys.
 - [ ] Apple is a **sandbox** Apple ID, `VITE_IAP_ONLY=1` binary, talking to the same preview Worker.
+- [ ] On the isolated Supabase used for this check: `drop-billing-auth-fk.sql` has been applied as postgres, **only after Phil's yes on #120**, never earlier, never on production before that yes. `\d public.subscriptions` still shows `subscriptions_pkey` on `user_id`.
 
 Confirm the flag-on build is on the Worker path before buying anything:
 
@@ -47,8 +56,9 @@ Use a **never-subscribed** or **expired-trial** account, **or a brand-new Better
 | 2. Start checkout | Settings → Billing → subscribe monthly or annual. | Network: `POST https://<worker>/api/stripe-checkout` (or `/functions/v1/stripe-checkout`) with the Better Auth bearer. **Not** `*.supabase.co/functions/v1/stripe-checkout` from the browser. Response `{ url }` to Stripe TEST Checkout. |
 | 3. Pay | Complete TEST Checkout (`4242…`). Wait for the isolated `stripe-webhook` to write `status = active`. | Isolated `subscriptions` row for **that** `user_id` is `active`, `plan_source = stripe`. |
 | 4. Visible in the app | Reload the flag-on SPA. | `GET /api/entitlement` → `entitled: true`, `status: "active"`, `current_period_end` set. Planner opens. Billing shows **Renews \<date\>**. This is the gate — a row in the table that the paywall still blocks is a fail. |
-| 5. Fresh signup after the flip | Create a **new** Better Auth account on the flag-on preview. Confirm `GET /api/entitlement` returns a trial row (not 404 / `present: false`). Buy monthly TEST. | Hook inserted `subscriptions`. After webhook: `entitled: true`, planner opens. **Fail** if checkout or the webhook 404s `no subscription row`. |
-| 6. Cancel (optional) | Isolated Customer Portal → cancel at period end. | `cancel_at_period_end: true` still entitled until the period ends; Billing shows **Ends \<date\>**. |
+| 5. Fresh signup after the flip | Create a **new** Better Auth account on the flag-on preview (**Neon-only** — no GoTrue / `auth.users` row). | **The `subscriptions` row exists right after signup** (`user.create.after` insert). `GET /api/entitlement` returns a trial row (not 404 / `present: false`). **Fail** if the row is missing before you buy. |
+| 6. Neon-only Stripe TEST | On that same Neon-only account, buy monthly TEST (`4242…`). | Isolated row becomes `active`, `plan_source = stripe`. `GET /api/entitlement` → `entitled: true`, planner opens. **Fail** if checkout or the webhook 404s `no subscription row` or 500s `23503`. |
+| 7. Cancel (optional) | Isolated Customer Portal → cancel at period end. | `cancel_at_period_end: true` still entitled until the period ends; Billing shows **Ends \<date\>**. |
 
 **Fail** if the browser called Supabase `stripe-checkout` directly, if Checkout charged **live** mode, if entitlement stayed `false` after the webhook, or if the planner did not open.
 
@@ -63,11 +73,14 @@ Sandbox Apple ID. Flag-on iOS binary (`VITE_API_BASE_URL` set, `VITE_IAP_ONLY=1`
 | 1. Baseline | Sign in. Confirm `GET /api/entitlement` | `entitled: false` → `IapChooser`, not Stripe Checkout. |
 | 2. Subscribe | Buy `NUVO_IAP_MONTHLY` or `NUVO_IAP_ANNUAL` in the sandbox. | StoreKit purchase options include `appAccountToken` = this account's Nuvo user id (UUID). After the sheet, Network: `POST https://<worker>/api/apple-iap` with the Better Auth bearer. **Not** a GoTrue JWT to `*.supabase.co`. |
 | 3. Visible in the app | Cold-launch. | `GET /api/entitlement` → `entitled: true`, `plan_source = apple`. Planner opens. Restore Purchases on a second device (same Apple ID + same Nuvo account) also confirms through `/api/apple-iap` and stays entitled. |
-| 4. Fresh signup after the flip buys and gets entitlement | Create a **new** Better Auth account on the flag-on iOS binary (no prior GoTrue / `subscriptions` row). Confirm `GET /api/entitlement` shows the trial row. Buy. | Hook inserted the default row. After `POST /api/apple-iap` (or the webhook if confirm is dropped): `entitled: true`, `plan_source = apple`, planner opens. **Fail** if confirm 404s `no subscription row`. |
-| 5. New-buyer webhook | On a **second** never-subscribed sandbox account: buy, then **kill the app before confirm** (or drop the confirm request). Wait for `apple-webhook`. | The notification's `appAccountToken` maps to that user. Isolated row becomes `active` (upsert if the hook missed). Cold-launch: entitled, planner opens. This is the case confirm used to 401 after the flip. |
-| 6. Expire (optional) | Sandbox manage → cancel, or wait out the accelerated renewal. Cold-launch. | Not entitled. Paywall. |
+| 4. Fresh signup after the flip — row exists | Create a **new** Better Auth account on the flag-on iOS binary (**Neon-only**, no GoTrue / `auth.users` row). | **The `subscriptions` row exists right after signup.** `GET /api/entitlement` shows the trial row. **Fail** if the row is missing before you buy. |
+| 5. Neon-only Apple sandbox | On that same Neon-only account, buy `NUVO_IAP_MONTHLY` or `NUVO_IAP_ANNUAL`. | After `POST /api/apple-iap` (or the webhook if confirm is dropped): `entitled: true`, `plan_source = apple`, planner opens. **Fail** if confirm 404s `no subscription row` or 500s `23503`. |
+| 6. New-buyer webhook | On a **second** never-subscribed sandbox account: buy, then **kill the app before confirm** (or drop the confirm request). Wait for `apple-webhook`. | The notification's `appAccountToken` maps to that user. Isolated row becomes `active` (upsert if the hook missed). Cold-launch: entitled, planner opens. This is the case confirm used to 401 after the flip. |
+| 7. Expire (optional) | Sandbox manage → cancel, or wait out the accelerated renewal. Cold-launch. | Not entitled. Paywall. |
 
-A Stripe-TEST-paid account on the isolated project must still unlock the iOS binary (one row, two rails). After §1 step 4, sign the **same** `user_id` into the sandbox build: entitlement shows without a second purchase.
+A Stripe-TEST-paid account on the isolated project must still unlock the iOS binary (one row, two rails). After §1 step 6, sign the **same** `user_id` into the sandbox build: entitlement shows without a second purchase.
+
+A **Neon-only** user (new Better Auth signup, not in `auth.users`) must complete **both** rails on isolated preview: §1 step 6 (Stripe TEST) on one account and §2 step 5 (Apple sandbox) on another. Same isolated `subscriptions` table, same Worker entitlement read. **Fail** either purchase if the FK is still in place (`23503` / REST `409`).
 
 **Fail** if confirm went to Supabase with a GoTrue JWT (it will 401 after the flip), if `appAccountToken` was missing, if entitlement stayed `false`, or if the planner did not open.
 
@@ -86,7 +99,7 @@ A Stripe-TEST-paid account on the isolated project must still unlock the iOS bin
 
 ## 4 · Friend-codes
 
-`referral-code` is proxied the same way as checkout. Settings → Billing **Share Nuvo** mints through `POST /api/referral-code`.
+`referral-code` is proxied the same way as checkout. Settings → Billing **Share Nuvo** mints through `POST /api/referral-code`. Referral email for a Neon-only user goes Worker `GET /api/internal/user-email` (edge secret `NUVO_API_URL` = Worker origin, existing `SUPABASE_SERVICE_ROLE_KEY`).
 
 - [ ] Flag-on Billing: share block calls the Worker; Network has `POST /api/referral-code` (or `/functions/v1/referral-code`), not a failing Supabase invoke.
 - [ ] Flag-off Billing (no Worker URL): share block still mints on today's path.
@@ -110,6 +123,7 @@ These are **rebuilds** (or, once #117 lands, a launch-time `cutover_flipped` swi
 2. Confirm DevTools: `GET /rest/v1/subscriptions` is back; billing POSTs hit `*.supabase.co/functions/v1/<name>`.
 3. Re-check one entitled and one free account.
 4. Leave Stripe / Apple webhooks where they were.
+5. If the billing FKs were dropped: apply [`drop-billing-auth-fk.rollback.sql`](./drop-billing-auth-fk.rollback.sql) as postgres. It re-adds `subscriptions.user_id` and `subscriptions.referred_by` → `auth.users` as **NOT VALID**. Do not `VALIDATE` while Neon-only rows exist.
 
 ---
 
