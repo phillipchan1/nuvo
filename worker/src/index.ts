@@ -16,6 +16,7 @@ import {
 } from "./cronJobs.ts";
 import { closeSql, CONNECT_TIMEOUT_MS, openSql, raceTimeout, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import type { RequestIo } from "./requestIo.ts";
 import type { AppEnv } from "./session.ts";
@@ -37,6 +38,7 @@ import { handleDay } from "./dayHttp.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
+import { handleGithubActivity } from "./githubActivity.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
 import {
@@ -407,6 +409,8 @@ function refuseIfFrozen(c: Context<AppEnv>): Response | null {
 }
 
 app.all("/api/cron/:job", (c) => handleCron(c));
+app.all("/api/github-activity", (c) => handleGithubActivity(c));
+app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
 app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
 app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
 app.all("/api/day", (c) => handleDay(c));
@@ -422,7 +426,10 @@ app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));
 app.all("/functions/v1/route-events", (c) => handleRouteEvents(c));
 app.all("/functions/v1/rollover", (c) => handleUserRollover(c));
 app.all("/api/rollover", (c) => handleUserRollover(c));
-app.all("/functions/v1/:name", (c) => stayOnSupabase(c.req.param("name")));
+app.all("/functions/v1/:name", (c) => {
+  if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
+  return stayOnSupabase(c.req.param("name"));
+});
 
 function hasFileExtension(path: string): boolean {
   return /\.[A-Za-z0-9]{1,16}$/.test(path);
@@ -451,10 +458,12 @@ async function scheduled(
   if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
   let sql: Sql | null = null;
   try {
-    try {
-      sql = openSql(env);
-    } catch {
-      sql = null;
+    if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
+      try {
+        sql = openSql(env);
+      } catch {
+        sql = null;
+      }
     }
     await handleScheduled(event, env, (job) => runCronJob(job, env, sql));
   } finally {
@@ -462,8 +471,8 @@ async function scheduled(
   }
 }
 
-function queue(batch: QueueBatch<CalendarSyncMessage>): void {
-  consumeCalendarSyncBatch(batch);
+function queue(batch: QueueBatch<CalendarSyncMessage>, env: Env): void {
+  consumeCalendarSyncBatch(batch, env);
 }
 
 Object.assign(app, { scheduled, queue });

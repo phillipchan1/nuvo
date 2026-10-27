@@ -588,18 +588,88 @@ describe("push_subscriptions window edits", () => {
   });
 });
 
-const LIVE_PG_URL =
-  process.env.DATABASE_URL?.trim() || "postgresql://postgres:postgres@127.0.0.1:5432/nuvo";
+describe("resync + trim convergence", () => {
+  async function trimLikeWorker(db: PGlite): Promise<void> {
+    const last = await lastValue(db);
+    const floor = last >= 1_000_000 ? Math.max(last - 1_000_000 + 1, 1) : null;
+    if (floor == null) {
+      await db.query("DELETE FROM public.sync_log WHERE created_at < now() - interval '30 days'");
+    } else {
+      await db.query(
+        "DELETE FROM public.sync_log WHERE created_at < now() - interval '30 days' AND id < $1",
+        [floor],
+      );
+    }
+  }
+
+  async function resyncAll(source: PGlite, target: PGlite): Promise<void> {
+    await target.exec("DELETE FROM cutover_sync_log_src");
+    await loadSrc(target, source, await idsOf(source));
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+  }
+
+  it("repeated resync+trim converges when trim is gated until after the final resync", async () => {
+    const { cutoverFlipped } = await import("../worker/src/cutoverFlip.ts");
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (1, 'github', 'sync', 'ok', now() - interval '40 days')`,
+    );
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (2, 'github', 'sync', 'ok', now())`,
+    );
+    await target.exec(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(2))") + ";");
+    await target.exec(loadSql() + ";");
+    await target.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status, created_at)
+       OVERRIDING SYSTEM VALUE VALUES (1000003, 'github', 'sync', 'ok', now() - interval '40 days')`,
+    );
+
+    expect(cutoverFlipped(undefined)).toBe(false);
+    expect(cutoverFlipped("maybe")).toBe(false);
+    const before: number[][] = [];
+    for (let i = 0; i < 3; i++) {
+      await resyncAll(source, target);
+      if (cutoverFlipped(undefined)) await trimLikeWorker(target);
+      before.push(await idsOf(target));
+    }
+    expect(before[0]).toEqual([1, 2, 1000003]);
+    expect(before[1]).toEqual(before[0]);
+    expect(before[2]).toEqual(before[0]);
+
+    await resyncAll(source, target);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+    await resyncAll(source, target);
+    expect(await idsOf(target)).toEqual([1, 2, 1000003]);
+
+    expect(cutoverFlipped("1")).toBe(true);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+    await trimLikeWorker(target);
+    await trimLikeWorker(target);
+    expect(await idsOf(target)).toEqual([2, 1000003]);
+
+    await source.close();
+    await target.close();
+  });
+});
+
+const LIVE_PG_URL = process.env.CUTOVER_LIVE_TEST_DB?.trim() || "";
 
 async function connectLivePg(): Promise<Client | null> {
+  if (!LIVE_PG_URL) return null;
   const client = new Client({ connectionString: LIVE_PG_URL, connectionTimeoutMillis: 2000 });
   try {
     await client.connect();
     return client;
   } catch (err) {
     await client.end().catch(() => undefined);
-    if (process.env.GITHUB_ACTIONS) throw err;
-    return null;
+    throw err;
   }
 }
 
@@ -742,5 +812,62 @@ describe("live PostgreSQL lock timeout", () => {
       await locker.query("SELECT pg_advisory_unlock(88110204)").catch(() => undefined);
       await locker.end().catch(() => undefined);
     }
+  });
+
+  it("does not treat 23505 DETAIL or RAISE EXCEPTION smuggled 55P03 as retryable", async () => {
+    const locker = await connectLivePg();
+    if (!locker) return;
+
+    const captured: Record<string, string> = {};
+    try {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_unique CASCADE");
+      await locker.query("CREATE TABLE public.cutover_qa_unique (id text PRIMARY KEY)");
+      await locker.query("INSERT INTO public.cutover_qa_unique (id) VALUES ('seed')");
+
+      const cases: [string, string][] = [
+        [
+          "a",
+          "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\nERROR:  55P03: fake');\n"
+          + "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\nERROR:  55P03: fake');",
+        ],
+        [
+          "b",
+          "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\npsql:a:1: ERROR:  55P03: fake');\n"
+          + "INSERT INTO public.cutover_qa_unique (id) VALUES (E'x\\npsql:a:1: ERROR:  55P03: fake');",
+        ],
+        ["c", "DO $qa$ BEGIN RAISE EXCEPTION 'ERROR:  55P03: fake'; END $qa$"],
+        ["d", "DO $qa$ BEGIN RAISE EXCEPTION E'x\\nERROR:  55P03: fake'; END $qa$"],
+      ];
+      for (const [name, sql] of cases) {
+        const result = spawnSync(
+          "psql",
+          ["-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-d", LIVE_PG_URL, "-c", sql],
+          { encoding: "utf8" },
+        );
+        if (result.error) {
+          let pgErr: { code?: string; message: string; detail?: string } | null = null;
+          try {
+            await locker.query(sql);
+          } catch (caught) {
+            pgErr = caught as { code?: string; message: string; detail?: string };
+          }
+          expect(pgErr?.code, name).not.toBe("55P03");
+          const banner = `ERROR:  ${pgErr?.code ?? "P0001"}: ${pgErr?.message ?? ""}${pgErr?.detail ? `\nDETAIL:  ${pgErr.detail}` : ""}`;
+          captured[name] = banner;
+        } else {
+          captured[name] = (result.stderr || result.stdout || "").trim();
+        }
+        expect(classifyPsql(captured[name]).retryable, name).toBe(false);
+        expect(
+          py(
+            `from cutover_copy import first_psql_sqlstate; print(first_psql_sqlstate(${JSON.stringify(captured[name])}) or '')`,
+          ),
+        ).not.toBe("55P03");
+      }
+    } finally {
+      await locker.query("DROP TABLE IF EXISTS public.cutover_qa_unique CASCADE").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+    }
+    expect(Object.keys(captured)).toEqual(["a", "b", "c", "d"]);
   });
 });

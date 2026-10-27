@@ -18,8 +18,9 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
-  /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503. */
+  /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503; github theme falls back to null. */
   OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
   /** Supabase origin for the billing read. Subscriptions stay there. */
@@ -35,6 +36,12 @@ export interface Env {
   MAINTENANCE_WRITE_FREEZE?: string;
   /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
   CUTOVER_ARMED?: string;
+  /**
+   * Allowlist only: `1` / `true` / `yes` / `on` (trimmed, case-insensitive).
+   * Unset, empty, and anything else is not flipped — Worker crons and
+   * CRON_SECRET github-activity `action: "sync"` skip with 200.
+   */
+  CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
 }

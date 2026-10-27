@@ -343,12 +343,12 @@ def sync_log_collision_guard_sql() -> str:
     )
 
 
-# Anchored to the psql error banner so a mention of 55P03 in a message,
-# DETAIL, or hint is not retryable. Covers `ERROR:  55P03:` and
-# `psql:file:line: ERROR:  55P03:` (N1).
-RETRYABLE_LOCK_TIMEOUT_BANNER = re.compile(
-    r"^(psql:[^\n]*: )?ERROR:\s+55P03:",
-    re.MULTILINE,
+# SQLSTATE from the first psql ERROR line only. Not MULTILINE: a later
+# DETAIL, hint, or row value that happens to contain `ERROR:  55P03:` is
+# ignored. The optional prefix is `psql:<file>:<line>: ` — not a greedy
+# `psql:…:` that can skip past `ERROR:  P0001:` to a 55P03 in the message.
+FIRST_PSQL_ERROR_SQLSTATE = re.compile(
+    r"^(?:psql:[^:\n]+:\d+: )?ERROR:\s+([0-9A-Z]{5}):"
 )
 
 # Prefer the failing statement / CONTEXT over a loose name match.
@@ -371,9 +371,18 @@ def table_from_lock_error(text: str) -> str | None:
     return None
 
 
+def first_psql_sqlstate(text: str) -> str | None:
+    """SQLSTATE on the first `ERROR:` banner line; ignore later lines."""
+    for raw in (text or "").splitlines():
+        match = FIRST_PSQL_ERROR_SQLSTATE.match(raw)
+        if match:
+            return match.group(1)
+    return None
+
+
 def is_retryable_lock_timeout(text: str) -> bool:
-    """Retryable only on an anchored `ERROR:  55P03:` banner, not message text."""
-    return bool(RETRYABLE_LOCK_TIMEOUT_BANNER.search(text or ""))
+    """Retryable only when the first ERROR line's SQLSTATE is 55P03."""
+    return first_psql_sqlstate(text) == LOCK_TIMEOUT_SQLSTATE
 
 
 def retryable_lock_timeout_stop(

@@ -114,12 +114,16 @@ describe("cutover_copy helpers", () => {
       + "print(is_retryable_lock_timeout('psql:resync.sql:24: ERROR:  55P03: canceling statement due to lock timeout')); "
       + "print(is_retryable_lock_timeout('DETAIL:  SQLSTATE 55P03 is mentioned')); "
       + "print(is_retryable_lock_timeout('prefix ERROR:  55P03: not at line start')); "
+      + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\nERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('ERROR:  23505: duplicate key value violates unique constraint \"t_pkey\"\\nDETAIL:  Key (id)=(x\\npsql:a:1: ERROR:  55P03: fake) already exists.')); "
+      + "print(is_retryable_lock_timeout('psql:f:2: ERROR:  P0001: ERROR:  55P03: fake')); "
+      + "print(is_retryable_lock_timeout(\"ERROR:  P0001: x\\nERROR:  55P03: fake\")); "
       + "print(LOCK_TIMEOUT_SQLSTATE); "
       + "print(SYNC_LOG_LOCK_TIMEOUT_MESSAGE); "
       + "print(PUSH_LOCK_TIMEOUT_MESSAGE)",
     );
     expect(out).toBe(
-      "True\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\n55P03\n"
+      "True\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\nTrue\nFalse\nFalse\nFalse\nFalse\nFalse\nFalse\n55P03\n"
       + "sync_log lock timed out after 10s — retry the resync (retryable) [55P03]\n"
       + "push_subscriptions lock timed out after 10s — retry the resync (retryable) [55P03]",
     );
@@ -356,6 +360,13 @@ describe("runbook", () => {
     expect(DOC).toMatch(/ERROR:  55P03:/);
     expect(DOC).toMatch(/no automatic retry/);
     expect(DOC).toMatch(/re-dispatch `cutover-migrate` with `phase=resync` by hand/);
+    expect(DOC).toMatch(/CUTOVER_FLIPPED/);
+    expect(DOC).toMatch(/skipped: true/);
+    expect(DOC).toMatch(/`1`, `true`, `yes`, `on`/);
+    expect(DOC).toMatch(/unschedule[\s\S]*phase=resync[\s\S]*CUTOVER_FLIPPED/);
+    expect(DOC).toMatch(/about 1e6 further Neon inserts/);
+    expect(DOC).not.toMatch(/Supabase-origin ids are all below the floor/);
+    expect(DOC).not.toMatch(/never deletes ids in the parked identity window/);
   });
 
   it("documents aclexplode restore and idempotent unfreeze", () => {
