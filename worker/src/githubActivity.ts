@@ -319,9 +319,13 @@ export async function runGithubPoll(sql: Sql, env: Env): Promise<{ ok: true; syn
  * source ids (OVERRIDING SYSTEM VALUE) and setvals
  * GREATEST(max(id), last_value, 1) — the park never decreases.
  *
- * Trim must not delete rows newer than that reserved window (ids at or
- * above last_value - margin + 1), and must never reset the sequence.
- * Fresh / unparked sequences (last_value < margin) trim by age only.
+ * Supabase-origin ids are all below the floor (`last_value - margin + 1`).
+ * The floor only protects Neon-origin rows (ids at or above it). Age
+ * trim may delete old Supabase-origin rows; `CUTOVER_FLIPPED` must be
+ * set only after the flip and the final resync, or every resync copies
+ * those rows back and the next trim deletes them again. Never reset the
+ * sequence. Fresh / unparked sequences (last_value < margin) trim by
+ * age only.
  */
 export async function parkedSyncLogFloor(sql: Sql): Promise<number | null> {
   const rows = (await sql`SELECT last_value FROM public.sync_log_id_seq`) as { last_value: string | number }[];

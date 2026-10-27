@@ -97,8 +97,8 @@ wrong → 401. No Workers Cron Triggers.
 | `push-dispatch` / `nuvo-push-dispatch` | `user_settings`, `tasks`, `slots`, `external_events`, `push_subscriptions`, `reminders`, `reminder_deliveries` | **blocked** | `accessHttp` + `miniflare.seq` expect 501 |
 | `google-renew` / `nuvo-google-renew` | `calendar_accounts` | **blocked** | 501 |
 | `calendar-dispatch` / `nuvo-calendar-dispatch` | `calendar_accounts`, `external_events` | **blocked** | 501 |
-| `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | ported+tested | unauth 401; iterates `users` then `user_id`; A's units stay on A |
-| `nuvo-trim-sync-log` / `trim-sync-log` | `sync_log` | ported+tested | unauth 401; age > 30d deleted; parked-range ids kept; sequence unchanged |
+| `github-poll` / `nuvo-github-poll` | `activity_sources`, `activity_bindings`, `activity_units`, `projects` | ported+tested | unauth 401; 200 `skipped:true` until `CUTOVER_FLIPPED`; then iterates `users` then `user_id`; A's units stay on A |
+| `nuvo-trim-sync-log` / `trim-sync-log` | `sync_log` | ported+tested | unauth 401; 200 `skipped:true` until `CUTOVER_FLIPPED`; after flip, age > 30d deleted only below the floor (Supabase-origin); Neon-origin ids at/above the floor kept; sequence unchanged |
 
 Calendar mirror teardown during rollover is **skipped** (Vault + Google /
 iCloud). The Neon row still loses `start_time` / `do_date` as the
@@ -158,14 +158,14 @@ cutover.
 | File | Count | What |
 |---|---|---|
 | `access.check.ts` | 230 | Store-layer isolation + FK plant + day window + reminder target table |
-| `accessHttp.check.ts` | 440 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity + github-poll / trim-sync-log (parked identity) |
+| `accessHttp.check.ts` | 475 | HTTP A/B + unauth 401 + POST-id body leak + PATCH FK + purge/prune + github-activity + github-poll / trim-sync-log (CUTOVER_FLIPPED skip + Neon-origin floor + resync converge) |
 | `authUrl.check.ts` | 99 | auth URL / local fallback |
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
-| `secrets.check.ts` | 103 | A's seal/open + writeFrozen + cron aliases + github PAT AAD + trim parked margin |
+| `secrets.check.ts` | 128 | A's seal/open + writeFrozen + cutoverFlipped + cron aliases + github PAT AAD + shared post-flip skip + trim floor |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` still 501 |
 
 `npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.
 
-SPA: `npm run typecheck` clean · `npm test` **2229** passed (167 files).
+SPA: `npm run typecheck` clean · `npm test` **2232** passed (167 files).

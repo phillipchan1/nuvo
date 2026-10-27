@@ -54,6 +54,7 @@ None of these belong in the Vite bundle.
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
 | `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
+| `CUTOVER_FLIPPED` | var | `1` / `true` after the flip and the final `phase=resync`. Unset / unknown = not flipped (fail closed). `github-poll` and `trim-sync-log` then return 200 `{ skipped: true }` so they cannot double-fire with Supabase `pg_cron` or delete rows the next resync would copy back |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
@@ -179,16 +180,20 @@ same runners. Ported jobs (`rollover`, `purge-trash`,
 then scope by `user_id`. Calendar-dispatch enqueues due accounts onto
 `CALENDAR_SYNC_QUEUE`. Push / google-renew stay 501 / `stay_on_supabase`.
 `trim-sync-log` deletes by `created_at < now() - 30 days` and, when the
-identity is parked (`last_value >= 1e6`), also `id < last_value - 1e6 + 1`
-so it never deletes rows in A's resync window or resets `sync_log_id_seq`.
+identity is parked (`last_value >= 1e6`), also `id < last_value - 1e6 + 1`.
+Supabase-origin ids are all below the floor; the floor only protects
+Neon-origin rows. Age trim will delete old Supabase-origin rows, so this
+cron (and `github-poll`) stay no-ops until `CUTOVER_FLIPPED` is set after
+the flip and the final resync. Unset / unknown = not flipped = 200
+`{ skipped: true }`. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
 | `* * * * *` | `calendar-dispatch` + `push-dispatch` | dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE` (consumer is a no-op scaffold). push-dispatch 501 |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | ported — iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | 501 |
-| `20 9 * * *` | `github-poll` | ported — iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken` |
-| `0 10 * * 0` | `trim-sync-log` | ported — per-user age delete; never deletes ids in the parked identity window |
+| `20 9 * * *` | `github-poll` | ported — no-op until `CUTOVER_FLIPPED`; then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken` |
+| `0 10 * * 0` | `trim-sync-log` | ported — no-op until `CUTOVER_FLIPPED`; then per-user age delete. Floor protects Neon-origin ids only (Supabase-origin ids sit below it) |
 | `30 4 * * *` | `reminder-deliveries-prune` | ported — iterates `users`, scopes `DELETE` by `user_id` |
 | `0 4 * * *` | `purge-trash` | ported — iterates `users`, scopes `DELETE` by `user_id` |
 
@@ -197,7 +202,11 @@ account per minute. At the current ~12 accounts that is ~35k ops/day, inside
 Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 
 `pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
-`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`).
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`). Do **not**
+set `CUTOVER_FLIPPED` until that unschedule and the final `phase=resync`
+have landed — otherwise Worker `github-poll` double-fires with
+`nuvo-github-poll` and Worker trim deletes the old Supabase-origin rows
+the next resync copies back.
 
 ## Write freeze
 
@@ -313,6 +322,13 @@ Order:
    **unfreeze** — apply `unfreeze.sql`, which restores the recorded
    ACLs and each job's prior `active` exactly (idempotent), then clear
    `CUTOVER_ARMED` and `WRITE_FREEZE`.
+8. **Flip Worker crons** — only after that final resync, set
+   `CUTOVER_FLIPPED=1` on the Worker and `cron.unschedule` Supabase
+   `nuvo-github-poll` / `nuvo-trim-sync-log`. Until then both Worker
+   jobs return 200 `{ skipped: true }` (fail closed: unknown values =
+   not flipped). The freeze is not enough: an unfrozen Worker would
+   otherwise poll GitHub beside `pg_cron` and trim the old
+   Supabase-origin `sync_log` rows the next resync copies back.
 
 ---
 

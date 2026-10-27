@@ -181,8 +181,8 @@ Extensions: `pg_cron`, `pg_net`. Invoker: `public.invoke_edge` → `{SUPABASE_UR
 |---|---|
 | `nuvo-rollover-pst` / `pdt` | `rollover` |
 | `nuvo-google-renew` | `google-sync` |
-| `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (age + parked identity) |
-| `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` |
+| `nuvo-trim-sync-log` | SQL on Supabase; Worker `/api/cron/trim-sync-log` (age + Neon-origin floor; no-op until `CUTOVER_FLIPPED`) |
+| `nuvo-github-poll` | `github-activity` on Supabase; Worker `/api/cron/github-poll` (no-op until `CUTOVER_FLIPPED`) |
 | `nuvo-calendar-dispatch` | per-account `*-sync` (every minute) |
 | `nuvo-push-dispatch` | `push-dispatch` |
 | `nuvo-reminder-deliveries-prune` | SQL |
@@ -194,7 +194,8 @@ External webhooks (do **not** retarget in this PR): Stripe, Apple ASN, Google Ca
 Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
 `/api/cron/:job` still requires `CRON_SECRET`. Ported: rollover,
 purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log
-(parked identity — never deletes ids in the resync window). Unported
+(no-op until `CUTOVER_FLIPPED`; floor protects Neon-origin ids only —
+Supabase-origin ids sit below it). Unported
 jobs stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` —
 see [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
