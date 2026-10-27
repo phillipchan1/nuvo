@@ -97,12 +97,12 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 |---|---|---|---|
 | `agent` | User JWT | no | **Worker/Neon** (session scoped) |
 | `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
-| `apple-identity` | User JWT | no | Stay |
+| `apple-identity` | User JWT | no | Dual-path (Worker + Better Auth Apple provider) |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
 | `calendar-refresh` | User JWT | no | **Worker (Google only)** — other providers stay 501 |
 | `capture` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `day` | User JWT | no | **Worker/Neon** |
-| `delete-account` | User JWT + confirm | Stripe cancel | Stay |
+| `delete-account` | User JWT + confirm | Stripe status **read** (no Stripe secret on the Worker; refuse if it still bills) | Dual-path |
 | `github-activity` | JWT or `CRON_SECRET` | no | Worker + Neon (A's sealed PAT). Supabase fn stays for rollback. |
 | `google-contacts` | JWT / service | no | **Worker** |
 | `google-events` | JWT | no | **Worker** |

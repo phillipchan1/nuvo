@@ -49,10 +49,23 @@ export function makePgliteSql(db: PGlite): Sql {
     return result.rows;
   }) as Sql;
 
+  async function begin<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
+    await db.query("BEGIN");
+    try {
+      const result = await fn(query as Sql);
+      await db.query("COMMIT");
+      return result;
+    } catch (err) {
+      await db.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    }
+  }
+
   Object.assign(query, {
     json(value: unknown) {
       return { [JSON_MARK]: true, value } satisfies JsonParam;
     },
+    begin,
   });
   return query;
 }

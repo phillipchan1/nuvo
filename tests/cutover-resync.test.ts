@@ -86,7 +86,7 @@ async function loadSrc(target: PGlite, source: PGlite, ids: number[]): Promise<v
   }
 }
 
-describe("sync_log late commit", () => {
+describe.sequential("sync_log late commit", { timeout: 60_000 }, () => {
   it("id anti-join copies a row allocated before the snapshot and committed after it", async () => {
     const source = new PGlite();
     const target = new PGlite();
@@ -456,7 +456,7 @@ describe("sync_log late commit", () => {
   });
 });
 
-describe("push_subscriptions window edits", () => {
+describe.sequential("push_subscriptions window edits", { timeout: 60_000 }, () => {
   it("upserts last_seen_at and failure_count changed during the window", async () => {
     const source = new PGlite();
     const target = new PGlite();

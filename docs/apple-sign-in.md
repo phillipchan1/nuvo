@@ -98,6 +98,12 @@ APPLE_SIWA_PRIVATE_KEY=<the whole .p8 file contents, BEGIN/END lines included>
 # APPLE_SIWA_CLIENT_ID=day.nuvo.app
 ```
 
+The Worker Better Auth web issuer is a different name: `APPLE_CLIENT_ID`
+(then `APPLE_SIWA_CLIENT_ID`, then `APPLE_BUNDLE_ID`). Those two chains can
+disagree. Delete-account revoke uses the issuer that minted the token
+(`appleIssuedClientId` / `source: "web" | "native"`) — never one client_id
+for both.
+
 `APPLE_BUNDLE_ID` is already set for StoreKit (`docs/billing-setup.md` §11).
 
 ## 4 · Deploy

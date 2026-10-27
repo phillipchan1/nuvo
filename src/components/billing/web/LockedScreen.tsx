@@ -48,7 +48,7 @@ export default function WebLockedScreen({
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource={subscription?.plan_source ?? null} />
         </div>
       </div>
     </div>
@@ -100,7 +100,7 @@ function PastDue() {
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource="stripe" />
         </div>
       </div>
     </div>

@@ -5,6 +5,8 @@
  * each of those clauses.
  */
 import type { Sql } from "./db.ts";
+import { openAccountRefreshToken } from "./lib/accountTokens.ts";
+import type { Env } from "./env.ts";
 
 export const PLANNER_TABLES = [
   "tasks",
@@ -1643,17 +1645,6 @@ export async function insertActivityUnit(
   return rows[0] ?? null;
 }
 
-export async function getOwnedAppleIdentity(store: Store): Promise<Record<string, unknown> | null> {
-  const sql = store.sql;
-  const rows = await sql`
-    SELECT user_id, apple_user_id, email, given_name, family_name, is_private_relay
-    FROM apple_identities
-    WHERE user_id = ${store.userId}
-    LIMIT 1
-  `;
-  return rows[0] ?? null;
-}
-
 export async function upsertAppleIdentity(
   store: Store,
   row: { apple_user_id?: string; email?: string; is_private_relay?: boolean },
@@ -1744,4 +1735,180 @@ async function ensureSettingsAndDomains(store: Store): Promise<void> {
       (${store.userId}, 'Health', '#0D9488'),
       (${store.userId}, 'Family', '#DB2777')
   `;
+}
+
+export type AppleIdentityRow = {
+  user_id: string;
+  apple_user_id: string | null;
+  email: string | null;
+  given_name: string | null;
+  family_name: string | null;
+  is_private_relay: boolean;
+  refresh_token_enc: Uint8Array | null;
+  refresh_token_iv: Uint8Array | null;
+  key_version: number | null;
+};
+
+export async function getOwnedAppleIdentity(store: Store): Promise<AppleIdentityRow | null> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT user_id, apple_user_id, email, given_name, family_name, is_private_relay,
+           refresh_token_enc, refresh_token_iv, key_version
+    FROM apple_identities
+    WHERE user_id = ${store.userId}
+    ORDER BY apple_user_id DESC NULLS LAST
+    LIMIT 1
+  `;
+  return (rows[0] as AppleIdentityRow | undefined) ?? null;
+}
+
+export async function appleUserIdTakenByOther(store: Store, appleUserId: string): Promise<boolean> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT user_id FROM apple_identities
+    WHERE apple_user_id = ${appleUserId}
+      AND user_id <> ${store.userId}
+    LIMIT 1
+  `;
+  return Boolean(rows[0]);
+}
+
+export async function upsertOwnedAppleIdentity(
+  store: Store,
+  profile: {
+    apple_user_id: string | null;
+    email: string | null;
+    given_name: string | null;
+    family_name: string | null;
+    is_private_relay: boolean;
+  },
+  sealed?: { enc: Uint8Array; iv: Uint8Array; keyVersion: number } | null,
+): Promise<void> {
+  const sql = store.sql;
+  if (sealed) {
+    await sql`
+      INSERT INTO apple_identities (
+        user_id, apple_user_id, email, given_name, family_name, is_private_relay,
+        refresh_token_enc, refresh_token_iv, key_version, updated_at
+      )
+      VALUES (
+        ${store.userId}, ${profile.apple_user_id}, ${profile.email},
+        ${profile.given_name}, ${profile.family_name}, ${profile.is_private_relay},
+        ${sealed.enc}, ${sealed.iv}, ${sealed.keyVersion}, now()
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        apple_user_id = EXCLUDED.apple_user_id,
+        email = EXCLUDED.email,
+        given_name = EXCLUDED.given_name,
+        family_name = EXCLUDED.family_name,
+        is_private_relay = EXCLUDED.is_private_relay,
+        refresh_token_enc = EXCLUDED.refresh_token_enc,
+        refresh_token_iv = EXCLUDED.refresh_token_iv,
+        key_version = EXCLUDED.key_version,
+        updated_at = now()
+    `;
+    return;
+  }
+  await sql`
+    INSERT INTO apple_identities (
+      user_id, apple_user_id, email, given_name, family_name, is_private_relay, updated_at
+    )
+    VALUES (
+      ${store.userId}, ${profile.apple_user_id}, ${profile.email},
+      ${profile.given_name}, ${profile.family_name}, ${profile.is_private_relay}, now()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      apple_user_id = EXCLUDED.apple_user_id,
+      email = EXCLUDED.email,
+      given_name = EXCLUDED.given_name,
+      family_name = EXCLUDED.family_name,
+      is_private_relay = EXCLUDED.is_private_relay,
+      updated_at = now()
+  `;
+}
+
+export async function linkOwnedAppleAccount(
+  sql: Store["sql"],
+  authUserId: string,
+  appleUserId: string,
+): Promise<void> {
+  const existing = await sql`
+    SELECT id FROM account
+    WHERE "userId" = ${authUserId}
+      AND "providerId" = 'apple'
+      AND "accountId" = ${appleUserId}
+    LIMIT 1
+  `;
+  if ((existing[0] as { id?: string } | undefined)?.id) return;
+  const taken = await sql`
+    SELECT id FROM account
+    WHERE "providerId" = 'apple' AND "accountId" = ${appleUserId}
+    LIMIT 1
+  `;
+  if (taken[0]) return;
+  await sql`
+    INSERT INTO account (id, "accountId", "providerId", "userId", "createdAt", "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${appleUserId}, 'apple', ${authUserId}, now(), now())
+  `;
+}
+
+export type OwnedAppleAccountToken = {
+  id: string;
+  userId: string;
+  refreshToken: string;
+};
+
+export async function ownedAppleAccountTokenRow(
+  sql: Store["sql"],
+  authUserId: string,
+  appleUserId?: string,
+): Promise<OwnedAppleAccountToken | null> {
+  const rows = appleUserId
+    ? await sql`
+        SELECT id, "userId", "refreshToken" FROM account
+        WHERE "userId" = ${authUserId}
+          AND "providerId" = 'apple'
+          AND "accountId" = ${appleUserId}
+        LIMIT 1
+      `
+    : await sql`
+        SELECT id, "userId", "refreshToken" FROM account
+        WHERE "userId" = ${authUserId}
+          AND "providerId" = 'apple'
+        LIMIT 1
+      `;
+  const row = rows[0] as
+    | { id?: string; userId?: string; refreshToken?: string | null }
+    | undefined;
+  if (!row?.id || !row.userId || typeof row.refreshToken !== "string" || !row.refreshToken) {
+    return null;
+  }
+  return { id: row.id, userId: row.userId, refreshToken: row.refreshToken };
+}
+
+export async function ownedAppleRefreshToken(
+  sql: Store["sql"],
+  env: Env,
+  authUserId: string,
+  appleUserId?: string,
+): Promise<string | null> {
+  const row = await ownedAppleAccountTokenRow(sql, authUserId, appleUserId);
+  if (!row) return null;
+  return openAccountRefreshToken(env, row.refreshToken, { id: row.id, userId: row.userId });
+}
+
+/** Planner `users` + Better Auth `"user"` (session, account cascade) in one txn. */
+export async function wipeOwnedAccount(
+  sql: Store["sql"],
+  ids: { plannerUserId: string; authUserId: string },
+): Promise<{ planner: number; auth: number }> {
+  return sql.begin(async (tx) => {
+    const planner = await tx`
+      DELETE FROM users WHERE id = ${ids.plannerUserId} RETURNING id
+    `;
+    const auth = await tx`
+      DELETE FROM "user" WHERE id = ${ids.authUserId} RETURNING id
+    `;
+    return { planner: planner.length, auth: auth.length };
+  });
 }

@@ -49,7 +49,7 @@ export default function IapLockedScreen({
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource={subscription?.plan_source ?? "apple"} />
         </div>
       </div>
     </div>
@@ -123,7 +123,7 @@ function PastDue() {
               Need help?
             </a>
           </div>
-          <DeleteAccount compact />
+          <DeleteAccount compact planSource="apple" />
         </div>
       </div>
     </div>
