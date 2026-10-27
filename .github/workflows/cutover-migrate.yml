@@ -128,12 +128,23 @@ jobs:
       WRITE_FREEZE_PREFLIGHT_URL: ${{ vars.WRITE_FREEZE_PREFLIGHT_URL }}
       CUTOVER_SYNC_LOG_WATERMARK_ID: ${{ inputs.sync_log_watermark_id }}
       CUTOVER_SYNC_LOG_WATERMARK_AT: ${{ inputs.sync_log_watermark_at }}
-      CUTOVER_DUMP_DIR: ${{ runner.temp }}/nuvo-cutover
-      CUTOVER_LOG_DIR: ${{ runner.temp }}/nuvo-cutover-logs
     steps:
       - id: checkout
         name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # runner.temp is not available in jobs.<id>.env (GitHub rejects the
+      # workflow as unparseable). Fixed paths from $RUNNER_TEMP only —
+      # nothing from inputs. always() so later always() readers still see
+      # the same vars if checkout failed.
+      - id: cutover-dirs
+        name: Set cutover dump and log dirs
+        if: ${{ always() }}
+        run: |
+          set +x
+          set -eu
+          echo "CUTOVER_DUMP_DIR=$RUNNER_TEMP/nuvo-cutover" >> "$GITHUB_ENV"
+          echo "CUTOVER_LOG_DIR=$RUNNER_TEMP/nuvo-cutover-logs" >> "$GITHUB_ENV"
 
       - id: setup-node
         name: Setup Node (token seal, same module as the Worker)

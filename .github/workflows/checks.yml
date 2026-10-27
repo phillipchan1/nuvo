@@ -1,5 +1,6 @@
-# The cheap gate: typecheck, the conformance suite, and a parse of the edge
-# functions (which `tsc` can't see — they're Deno, with remote imports).
+# The cheap gate: actionlint on every workflow, typecheck, the conformance
+# suite, and a parse of the edge functions (which `tsc` can't see — they're
+# Deno, with remote imports).
 # Never upload pg_dump, CSV, or row-data artifacts. scripts/guard-public-ci.mjs
 # fails the job if any workflow uploads anything other than
 # artifacts/cutover-report.md (counts + md5 only).
@@ -11,7 +12,6 @@ name: checks
 
 on:
   push:
-    branches-ignore: []
   pull_request:
 
 concurrency:
@@ -38,6 +38,18 @@ jobs:
     steps:
       - id: checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - id: actionlint
+        name: Lint GitHub Actions workflows
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint -color
       - id: setup-node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
