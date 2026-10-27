@@ -4,7 +4,7 @@ import { handleAgent } from "./agentHttp.ts";
 import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
-import { API_SECURITY, apiCors, beginAuthCors, json, needsCredentialedCors, OPEN_CORS, reflectAllowOrigin } from "./cors.ts";
+import { API_SECURITY, apiCors, beginAuthCors, json, needsCredentialedCors, OPEN_CORS, reflectAllowOrigin, reflectedCredentialedCors } from "./cors.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -79,9 +79,17 @@ import {
 } from "./extraData.ts";
 import {
   BILLING_PROXY_FUNCTIONS,
+  billingCors,
   isBillingProxyName,
   proxyBillingFunction,
+  withBillingCors,
 } from "./billingProxy.ts";
+
+function isBillingCorsPath(path: string): boolean {
+  return BILLING_PROXY_FUNCTIONS.some(
+    (name) => path === `/api/${name}` || path === `/functions/v1/${name}` || path.startsWith(`/api/${name}/`) || path.startsWith(`/functions/v1/${name}/`),
+  );
+}
 
 const app = new Hono<AppEnv>();
 
@@ -111,7 +119,11 @@ app.use("*", async (c, next) => {
     let replaceCors = false;
     if (needsCredentialedCors(path)) {
       try {
-        Object.assign(extra, apiCors(c.req.header("Origin"), c.env));
+        const origin = c.req.header("Origin");
+        Object.assign(
+          extra,
+          isBillingCorsPath(path) ? reflectedCredentialedCors(origin, c.env) : apiCors(origin, c.env),
+        );
         replaceCors = true;
       } catch {
         // BETTER_AUTH_URL unset — leave the handler's OPEN_CORS.
@@ -620,13 +632,14 @@ app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 
 async function handleBillingProxy(c: Context<AppEnv>, name: string): Promise<Response> {
-  if (c.req.method === "OPTIONS") return new Response("ok", { headers: OPEN_CORS });
+  const cors = billingCors(c);
+  if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (c.req.method === "GET" || c.req.method === "HEAD") {
-    return json({ error: "method not allowed" }, 405, OPEN_CORS);
+    return json({ error: "method not allowed" }, 405, cors);
   }
-  if (!isBillingProxyName(name)) return stayOnSupabase(name);
+  if (!isBillingProxyName(name)) return withBillingCors(stayOnSupabase(name), cors);
   const got = await requireSession(c);
-  if ("error" in got) return got.error;
+  if ("error" in got) return withBillingCors(got.error, cors);
   return proxyBillingFunction(c, name, got.user);
 }
 

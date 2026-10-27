@@ -39,7 +39,7 @@ If (2), (3), or (4) fails, stop. You are still on today's path.
 
 ## 1 · Stripe TEST checkout through the Worker (web / Mac)
 
-Use a **never-subscribed** or **expired-trial** account that already has a `subscriptions` row (the 14-day trial from signup). Isolated Stripe **TEST** only. Test card `4242…`.
+Use a **never-subscribed** or **expired-trial** account, **or a brand-new Better Auth signup after the flip** (no prior GoTrue / `subscriptions` row — `user.create.after` inserts the default trial on Supabase). Isolated Stripe **TEST** only. Test card `4242…`.
 
 | Step | Do | Expect |
 |---|---|---|
@@ -47,7 +47,8 @@ Use a **never-subscribed** or **expired-trial** account that already has a `subs
 | 2. Start checkout | Settings → Billing → subscribe monthly or annual. | Network: `POST https://<worker>/api/stripe-checkout` (or `/functions/v1/stripe-checkout`) with the Better Auth bearer. **Not** `*.supabase.co/functions/v1/stripe-checkout` from the browser. Response `{ url }` to Stripe TEST Checkout. |
 | 3. Pay | Complete TEST Checkout (`4242…`). Wait for the isolated `stripe-webhook` to write `status = active`. | Isolated `subscriptions` row for **that** `user_id` is `active`, `plan_source = stripe`. |
 | 4. Visible in the app | Reload the flag-on SPA. | `GET /api/entitlement` → `entitled: true`, `status: "active"`, `current_period_end` set. Planner opens. Billing shows **Renews \<date\>**. This is the gate — a row in the table that the paywall still blocks is a fail. |
-| 5. Cancel (optional) | Isolated Customer Portal → cancel at period end. | `cancel_at_period_end: true` still entitled until the period ends; Billing shows **Ends \<date\>**. |
+| 5. Fresh signup after the flip | Create a **new** Better Auth account on the flag-on preview. Confirm `GET /api/entitlement` returns a trial row (not 404 / `present: false`). Buy monthly TEST. | Hook inserted `subscriptions`. After webhook: `entitled: true`, planner opens. **Fail** if checkout or the webhook 404s `no subscription row`. |
+| 6. Cancel (optional) | Isolated Customer Portal → cancel at period end. | `cancel_at_period_end: true` still entitled until the period ends; Billing shows **Ends \<date\>**. |
 
 **Fail** if the browser called Supabase `stripe-checkout` directly, if Checkout charged **live** mode, if entitlement stayed `false` after the webhook, or if the planner did not open.
 
@@ -62,8 +63,9 @@ Sandbox Apple ID. Flag-on iOS binary (`VITE_API_BASE_URL` set, `VITE_IAP_ONLY=1`
 | 1. Baseline | Sign in. Confirm `GET /api/entitlement` | `entitled: false` → `IapChooser`, not Stripe Checkout. |
 | 2. Subscribe | Buy `NUVO_IAP_MONTHLY` or `NUVO_IAP_ANNUAL` in the sandbox. | StoreKit purchase options include `appAccountToken` = this account's Nuvo user id (UUID). After the sheet, Network: `POST https://<worker>/api/apple-iap` with the Better Auth bearer. **Not** a GoTrue JWT to `*.supabase.co`. |
 | 3. Visible in the app | Cold-launch. | `GET /api/entitlement` → `entitled: true`, `plan_source = apple`. Planner opens. Restore Purchases on a second device (same Apple ID + same Nuvo account) also confirms through `/api/apple-iap` and stays entitled. |
-| 4. New-buyer webhook | On a **second** never-subscribed sandbox account: buy, then **kill the app before confirm** (or drop the confirm request). Wait for `apple-webhook`. | The notification's `appAccountToken` maps to that user. Isolated row becomes `active`. Cold-launch: entitled, planner opens. This is the case confirm used to 401 after the flip. |
-| 5. Expire (optional) | Sandbox manage → cancel, or wait out the accelerated renewal. Cold-launch. | Not entitled. Paywall. |
+| 4. Fresh signup after the flip buys and gets entitlement | Create a **new** Better Auth account on the flag-on iOS binary (no prior GoTrue / `subscriptions` row). Confirm `GET /api/entitlement` shows the trial row. Buy. | Hook inserted the default row. After `POST /api/apple-iap` (or the webhook if confirm is dropped): `entitled: true`, `plan_source = apple`, planner opens. **Fail** if confirm 404s `no subscription row`. |
+| 5. New-buyer webhook | On a **second** never-subscribed sandbox account: buy, then **kill the app before confirm** (or drop the confirm request). Wait for `apple-webhook`. | The notification's `appAccountToken` maps to that user. Isolated row becomes `active` (upsert if the hook missed). Cold-launch: entitled, planner opens. This is the case confirm used to 401 after the flip. |
+| 6. Expire (optional) | Sandbox manage → cancel, or wait out the accelerated renewal. Cold-launch. | Not entitled. Paywall. |
 
 A Stripe-TEST-paid account on the isolated project must still unlock the iOS binary (one row, two rails). After §1 step 4, sign the **same** `user_id` into the sandbox build: entitlement shows without a second purchase.
 

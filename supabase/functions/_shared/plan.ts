@@ -1,7 +1,9 @@
 // The one writer both billing rails call. Stripe's webhook and Apple's
 // (StoreKit verify + App Store Server Notifications) must not update
 // `subscriptions` ad hoc — they build a PlanWrite and hand it here.
+import { isUuid } from "./actingUser.ts";
 import { admin } from "./admin.ts";
+import { defaultSubscriptionRow } from "./defaultSubscription.ts";
 import {
   planOf,
   planRowPatch,
@@ -54,13 +56,27 @@ async function findRow(incoming: PlanWrite & { userId?: string }): Promise<SubLo
   return null;
 }
 
+/** Default trial row. Idempotent — ON CONFLICT DO NOTHING. Used when a
+ *  post-flip Better Auth user has no `handle_new_user` row yet. */
+async function ensureDefaultRow(userId: string): Promise<void> {
+  const { error } = await admin.from("subscriptions").upsert(defaultSubscriptionRow(userId), {
+    onConflict: "user_id",
+    ignoreDuplicates: true,
+  });
+  if (error) throw error;
+}
+
 /** Apply a rail's verdict to the one entitlement row. Returns whether a row
- *  was found and updated. Caller logs; this does not invent a row — trials
- *  are created by `handle_new_user`, never by a webhook. */
+ *  was found and updated. If we have a verified user id and no row (fresh
+ *  post-flip signup), insert the default trial first, then patch. */
 export async function applyPlanUpdate(
   incoming: PlanWrite & { userId?: string },
 ): Promise<{ applied: boolean; userId?: string }> {
-  const existing = await findRow(incoming);
+  let existing = await findRow(incoming);
+  if (!existing && incoming.userId && isUuid(incoming.userId)) {
+    await ensureDefaultRow(incoming.userId);
+    existing = await findRow(incoming);
+  }
   if (!existing) return { applied: false };
 
   const patch = planRowPatch(

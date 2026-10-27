@@ -9,6 +9,13 @@ import {
   ACTING_EMAIL_HEADER,
   ACTING_USER_HEADER,
 } from "../../supabase/functions/_shared/actingUser.ts";
+import app from "./index.ts";
+import {
+  CLIENT_ORIGINS,
+  needsCredentialedCors,
+  reflectedCredentialedCors,
+  trustedAuthOrigins,
+} from "./cors.ts";
 import {
   BILLING_PROXY_FUNCTIONS,
   actingHeadersFor,
@@ -50,6 +57,42 @@ ok(!/getUserById/.test(src), "proxy does not look the user up in GoTrue");
 
 ok(/handleBillingProxy/.test(indexSrc), "index mounts the billing proxy");
 ok(/\/api\/\$\{name\}/.test(indexSrc) && /\/functions\/v1\/\$\{name\}/.test(indexSrc), "proxy is mounted on /api and /functions/v1");
+
+const corsEnv = { BETTER_AUTH_URL: "https://api.nuvo.day" };
+const origins = trustedAuthOrigins(corsEnv);
+ok(CLIENT_ORIGINS.includes("https://app.nuvo.day"), "allowlist includes the web app");
+ok(CLIENT_ORIGINS.includes("tauri://localhost"), "allowlist includes the Tauri / iOS origin");
+ok(origins.includes("https://app.nuvo.day") && origins.includes("tauri://localhost"), "trustedOrigins is the #117 allowlist");
+ok(needsCredentialedCors("/api/stripe-checkout") && needsCredentialedCors("/api/apple-iap"), "billing routes use credentialed CORS");
+ok(needsCredentialedCors("/functions/v1/referral-code"), "functions/v1 billing uses credentialed CORS");
+ok(!needsCredentialedCors("/api/entitlement"), "entitlement stays off the credentialed list");
+
+const reflected = reflectedCredentialedCors("https://app.nuvo.day", corsEnv);
+ok(reflected["Access-Control-Allow-Origin"] === "https://app.nuvo.day", "allowed origin is reflected");
+ok(reflected["Access-Control-Allow-Credentials"] === "true", "allowed origin sends credentials");
+ok(reflected["Vary"] === "Origin", "credentialed CORS varies on Origin");
+const unknown = reflectedCredentialedCors("https://evil.example", corsEnv);
+ok(unknown["Access-Control-Allow-Origin"] == null, "unknown origin is not reflected");
+ok(unknown["Access-Control-Allow-Credentials"] == null, "unknown origin gets no credentials");
+
+const allowed = await app.request("http://localhost/api/stripe-checkout", {
+  method: "OPTIONS",
+  headers: { Origin: "https://app.nuvo.day" },
+}, corsEnv);
+ok(allowed.headers.get("access-control-allow-origin") === "https://app.nuvo.day", "credentialed billing OPTIONS reflects allowlisted Origin");
+ok(allowed.headers.get("access-control-allow-credentials") === "true", "credentialed billing OPTIONS sends credentials");
+ok(allowed.headers.get("access-control-allow-origin") !== "*", "credentialed billing never uses ACAO *");
+
+const evil = await app.request("http://localhost/api/apple-iap", {
+  method: "OPTIONS",
+  headers: { Origin: "https://evil.example" },
+}, corsEnv);
+ok(evil.headers.get("access-control-allow-origin") == null, "unknown origin billing OPTIONS gets no ACAO");
+ok(evil.headers.get("access-control-allow-credentials") == null, "unknown origin billing OPTIONS gets no credentials");
+
+const authSrc = readFileSync(join(here, "auth.ts"), "utf8");
+ok(authSrc.includes("trustedAuthOrigins(env)"), "Better Auth trustedOrigins is the #117 list");
+ok(authSrc.includes("ensureDefaultSubscription"), "user.create.after inserts the default subscriptions row");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

@@ -3,8 +3,8 @@
  * on the signed transaction so apple-webhook can attach a first purchase
  * when confirmApplePurchase never ran (Better Auth session, no GoTrue JWT).
  *
- * Does not invent a subscriptions row. applyPlanUpdate still only updates
- * an existing row (trial from handle_new_user, or a later confirm).
+ * applyPlanUpdate upserts the default trial row when none exists
+ * (post-flip signup, or confirm never ran).
  */
 import { isUuid, UUID_RE } from "./actingUser.ts";
 

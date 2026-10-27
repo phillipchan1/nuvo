@@ -2114,6 +2114,8 @@ const aCheckout = await withTimeout(
   "A stripe-checkout",
 );
 ok(aCheckout.status === 200, `A stripe-checkout: HTTP ${aCheckout.status}`);
+ok(aCheckout.headers.get("access-control-allow-origin") === origin, "A stripe-checkout reflects the allowlisted Origin");
+ok(aCheckout.headers.get("access-control-allow-credentials") === "true", "A stripe-checkout sends credentials");
 ok(billingCalls.length === 1, "A stripe-checkout made one outbound call");
 ok(billingCalls[0]?.url === "https://example.supabase.co/functions/v1/stripe-checkout", "A stripe-checkout hits the existing edge function");
 ok(billingCalls[0]?.acting === a.id, "A stripe-checkout acting user is A's session id");
@@ -2133,6 +2135,14 @@ const dSpoof = await withTimeout(
 ok(dSpoof.status === 200, `D apple-iap: HTTP ${dSpoof.status}`);
 ok(billingCalls.at(-1)?.acting === d.id, "D apple-iap acting user is D — client body/header is ignored");
 ok(billingCalls.at(-1)?.acting !== a.id, "D apple-iap does not take A's id from the client");
+
+const evilOrigin = await withTimeout(
+  billingRequest("/api/stripe-checkout", a.token, { plan: "monthly" }, { Origin: "https://evil.example" }),
+  8000,
+  "stripe-checkout unknown origin",
+);
+ok(evilOrigin.headers.get("access-control-allow-origin") == null, "unknown origin billing call gets no ACAO");
+ok(evilOrigin.headers.get("access-control-allow-credentials") == null, "unknown origin billing call gets no credentials");
 
 const noSecrets = await withTimeout(
   billingRequest("/api/referral-code", a.token, {}, {}, { SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }),

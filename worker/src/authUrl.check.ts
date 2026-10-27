@@ -208,6 +208,7 @@ ok(needsCredentialedCors("/api/data/tasks"), "data routes use credentialed CORS"
 ok(needsCredentialedCors("/api/google-oauth"), "google-oauth uses credentialed CORS");
 ok(needsCredentialedCors("/api/icloud-events"), "icloud-events uses credentialed CORS");
 ok(needsCredentialedCors("/api/agent"), "agent uses credentialed CORS");
+ok(needsCredentialedCors("/api/stripe-checkout"), "billing proxy uses credentialed CORS");
 ok(!needsCredentialedCors("/api/entitlement"), "entitlement stays off the credentialed list");
 
 const health = await app.request("http://localhost/api/health");

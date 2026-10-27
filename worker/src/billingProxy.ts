@@ -16,9 +16,27 @@ import {
   ACTING_EMAIL_HEADER,
   ACTING_USER_HEADER,
 } from "../../supabase/functions/_shared/actingUser.ts";
-import { OPEN_CORS, json } from "./cors.ts";
+import { json, reflectedCredentialedCors } from "./cors.ts";
 import { isUuid } from "./http.ts";
 import type { AppEnv } from "./session.ts";
+
+export function billingCors(c: Context<AppEnv>): Record<string, string> {
+  try {
+    return reflectedCredentialedCors(c.req.header("Origin"), c.env);
+  } catch {
+    return { Vary: "Origin" };
+  }
+}
+
+export function withBillingCors(res: Response, cors: Record<string, string>): Response {
+  const headers = new Headers();
+  res.headers.forEach((value, key) => {
+    if (key.toLowerCase().startsWith("access-control-")) return;
+    headers.set(key, value);
+  });
+  for (const [key, value] of Object.entries(cors)) headers.set(key, value);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 export const BILLING_PROXY_FUNCTIONS = [
   "apple-iap",
@@ -64,13 +82,14 @@ export async function proxyBillingFunction(
   name: BillingProxyName,
   user: { id: string; email?: string | null },
 ): Promise<Response> {
+  const cors = billingCors(c);
   if (!isUuid(user.id)) {
-    return json({ error: "unauthorized" }, 401, OPEN_CORS);
+    return json({ error: "unauthorized" }, 401, cors);
   }
   const base = c.env.SUPABASE_URL?.trim() ?? "";
   const key = c.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
   if (!base || !key) {
-    return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    return json({ error: "service unavailable" }, 503, cors);
   }
 
   const headers = new Headers();
@@ -90,11 +109,12 @@ export async function proxyBillingFunction(
       body: raw.byteLength ? raw : undefined,
     });
   } catch {
-    return json({ error: "service unavailable" }, 503, OPEN_CORS);
+    return json({ error: "service unavailable" }, 503, cors);
   }
 
   const text = await res.text();
-  const out = new Headers(OPEN_CORS);
+  const out = new Headers();
+  for (const [key, value] of Object.entries(cors)) out.set(key, value);
   const contentType = res.headers.get("content-type");
   if (contentType) out.set("Content-Type", contentType);
   return new Response(text, { status: res.status, headers: out });

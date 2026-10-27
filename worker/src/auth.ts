@@ -7,6 +7,7 @@ import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
 import { appleIssuedClientId } from "../../supabase/functions/_shared/appleIdentity.ts";
 import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { ensureDefaultSubscription } from "./lib/ensureSubscription.ts";
 import { parseRawKey } from "./secrets.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
@@ -85,6 +86,15 @@ export function createAuth(env: Env, database: AuthDatabase) {
       encryptOAuthTokens: true,
     },
     databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            // Option (b): trial row on Supabase. Do not throw — a miss is
+            // recovered by applyPlanUpdate's upsert on first purchase.
+            await ensureDefaultSubscription(env, user.id);
+          },
+        },
+      },
       account: {
         create: {
           before: async (account, ctx) => {
