@@ -312,15 +312,19 @@ ok(flippedConsumed === 2 && flippedRetry === 2 && flippedAck === 0, "flipped que
 
 const vaultSql = readFileSync(join(root, "docs/cloudflare-migration/vault_tokens.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(vaultSql), "vault_tokens.sql is SECURITY DEFINER");
-ok(/search_path\s*=\s*''/.test(vaultSql), "vault_tokens.sql search_path is empty");
+ok(/SET search_path = pg_catalog, pg_temp/.test(vaultSql), "vault_tokens.sql search_path is pg_catalog, pg_temp");
+ok(!/search_path\s*=\s*''/.test(vaultSql) && !/SET search_path TO ''/.test(vaultSql), "vault_tokens.sql search_path is not empty");
 ok(/OWNER TO postgres/.test(vaultSql), "vault_tokens.sql owner is postgres");
 ok(/GRANT EXECUTE ON FUNCTION migration_tmp\.vault_tokens\(\) TO migration_reader/.test(vaultSql), "vault_tokens.sql EXECUTE for migration_reader");
 const authSql = readFileSync(join(root, "docs/cloudflare-migration/migration_tmp.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(authSql), "migration_tmp.sql auth readers are SECURITY DEFINER");
 ok(/GRANT EXECUTE ON FUNCTION migration_tmp\.auth_users\(\) TO migration_reader/.test(authSql), "migration_tmp.sql EXECUTE for migration_reader");
-ok(/GRANT USAGE ON SCHEMA auth TO postgres/.test(authSql), "migration_tmp.sql grants auth USAGE to the DEFINER");
-ok(/ON TABLE auth\.users TO postgres/.test(authSql) && /ON TABLE auth\.identities TO postgres/.test(authSql), "migration_tmp.sql column SELECT is for the DEFINER only");
+ok(/SET search_path = pg_catalog, pg_temp/.test(authSql), "migration_tmp.sql search_path is pg_catalog, pg_temp");
+ok(!/GRANT USAGE ON SCHEMA auth TO postgres/.test(authSql), "migration_tmp.sql does not grant auth USAGE to postgres");
+ok(!/GRANT SELECT[\s\S]*ON TABLE auth\.users TO postgres/.test(authSql) && !/GRANT SELECT[\s\S]*ON TABLE auth\.identities TO postgres/.test(authSql), "migration_tmp.sql does not grant auth column SELECT to postgres");
+ok(!/supabase_admin/.test(authSql), "migration_tmp.sql does not name supabase_admin");
 ok(!/GRANT USAGE ON SCHEMA auth TO migration_reader/.test(authSql), "migration_tmp.sql never grants auth USAGE to migration_reader");
+ok(/REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader/.test(authSql), "migration_tmp.sql cleanup revokes leftover auth table grants from migration_reader");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM PUBLIC/.test(vaultSql), "vault_tokens.sql revokes PUBLIC");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM anon/.test(vaultSql), "vault_tokens.sql revokes anon");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM authenticated/.test(vaultSql), "vault_tokens.sql revokes authenticated");

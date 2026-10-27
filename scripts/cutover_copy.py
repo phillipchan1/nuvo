@@ -6,6 +6,7 @@ Never prints row data. Counts, hashes, and watermarks only.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -62,6 +63,22 @@ def dump_exclude_args() -> list[str]:
     args = [f"--exclude-table=public.{name}" for name in sorted(BILLING_TABLES)]
     args.append("--exclude-table-data=public.sync_log")
     return args
+
+
+def is_dry_run_mode(mode: str | None = None) -> bool:
+    """True when CUTOVER_MODE is dry-run. Default reads the env."""
+    raw = (os.environ.get("CUTOVER_MODE") or "") if mode is None else mode
+    return str(raw).strip().lower() == "dry-run"
+
+
+def dump_requires_freeze(mode: str | None = None) -> bool:
+    """Armed + WRITE_FREEZE preflight is cutover-only. Dry-run never arms or 503s."""
+    return not is_dry_run_mode(mode)
+
+
+def source_snapshot_is_fatal(mode: str | None = None) -> bool:
+    """Source vs dump-time snapshot fails the job only on cutover (prod is frozen)."""
+    return not is_dry_run_mode(mode)
 
 
 def maintenance_is_armed(payload: Any) -> bool:

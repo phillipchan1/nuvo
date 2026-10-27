@@ -6,10 +6,13 @@
 -- Same trust model as migration_tmp.auth_users():
 --   owner postgres
 --   SECURITY DEFINER
---   search_path = ''
+--   search_path = pg_catalog, pg_temp (pg_catalog first so pg_temp cannot hijack types)
 --   EXECUTE for migration_reader only
 --   revoked from PUBLIC, anon, authenticated, service_role
 --   not in PostgREST db_schema
+--
+-- Prod already has this function. Re-apply (CREATE OR REPLACE) as postgres
+-- before the next dry run so the search_path fix lands.
 --
 -- Returns the minimal columns the copy job needs. Joins only on the three
 -- Vault id columns. Never grant this to a browser role.
@@ -39,7 +42,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT
     'calendar_accounts'::text AS table_name,

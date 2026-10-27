@@ -148,35 +148,49 @@ post-cutover drop) is
 [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 It is **not** under `supabase/migrations` and must not be `db push`ed.
 
-**Wrappers applied on Supabase prod** by Engineer 3 via the management API
-SQL editor. Verified 2026-10-26 (PT) from live `pg_get_functiondef` + the
-grant catalog: owner `postgres`, `SECURITY DEFINER`, `search_path=""`,
-`EXECUTE` for `migration_reader` only. PostgREST `db_schema` is
-`public,graphql_public`, so `migration_tmp` is not exposed.
+**Wrappers already on Supabase prod** (Engineer 3, management API SQL
+editor). Verified 2026-10-26 (PT) from live `pg_get_functiondef` + the
+grant catalog; re-checked 2026-10-27 (PG 17.6, as `postgres`): owner
+`postgres`, `SECURITY DEFINER`, `search_path=""`, `EXECUTE` for
+`migration_reader` only. `postgres` already has `USAGE` on `auth` and
+`SELECT` on every COPY column of `auth.users` / `auth.identities`
+(hosted defaults — do not grant, do not revoke). PostgREST `db_schema`
+is `public,graphql_public`, so `migration_tmp` is not exposed.
 
-The Oct 26 dry runs (`workflow_dispatch` 40380281025 / 40380492458)
-failed with `permission denied for schema auth` because the job `COPY`ed
-`auth.users` directly as `migration_reader`. The workflow now `COPY`s
-`migration_tmp.auth_users()` / `migration_tmp.auth_identities()` — same
-pattern as `vault_tokens()`. Bodies project only `name` / `full_name`
-(and identity `sub` / `provider_id`) through `pg_catalog.jsonb_build_object`
-+ `jsonb_strip_nulls`. Password hashes, recovery tokens, and other GoTrue
+The Oct 26 dry runs (`workflow_dispatch` 40380281025 / 40380492458 at
+SHA `3398470`, before #99) failed with `permission denied for schema auth`
+because the job `COPY`ed `auth.users` directly as `migration_reader`.
+#99 already moved those reads onto `migration_tmp.auth_users()` /
+`migration_tmp.auth_identities()` — same pattern as `vault_tokens()`.
+Bodies project only `name` / `full_name` (and identity `sub` /
+`provider_id`) through `pg_catalog.jsonb_build_object` +
+`jsonb_strip_nulls`. Password hashes, recovery tokens, and other GoTrue
 secrets never leave `auth`. **Never `GRANT USAGE` on `auth` to
 `migration_reader`.**
 
-The DEFINER is `postgres`, which on hosted Supabase is not a superuser
-and has no `USAGE` on `auth` either. Re-apply
-[`migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql) and the
-`GRANT` block at the bottom **as `supabase_admin`** (auth schema owner)
-before the next dry run — column `SELECT` only, for the COPY columns.
+**Re-apply before the next dry run** (as `postgres`, `CREATE OR REPLACE`)
+so the `search_path = pg_catalog, pg_temp` fix lands on the existing
+functions:
 
-After cutover is signed off and `SOURCE_DATABASE_URL` is deleted:
+1. [`migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql)
+2. [`vault_tokens.sql`](./cloudflare-migration/vault_tokens.sql)
+
+That apply also records leftover `migration_reader` `SELECT` on all 16
+`auth` tables (harmless today only because the role lacks `USAGE` on
+`auth`). Nothing new is granted on `auth`.
+
+After cutover is signed off and `SOURCE_DATABASE_URL` is deleted,
+revoke those leftovers, then drop (see the block in
+`migration_tmp.sql` next to this):
 
 ```sql
+REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader;
+-- plus column-level REVOKEs as needed (attacl survives table REVOKE)
 DROP SCHEMA migration_tmp CASCADE;
 ```
 
-That drop is a source-side cleanup, not a rollback step. Supabase itself
+That cleanup is a source-side restore of pre-state, not a rollback
+step. Do not revoke `postgres`'s own `auth` grants. Supabase itself
 stays up (clear `VITE_API_BASE_URL`) until you decide otherwise.
 
 Client build-time:
@@ -313,13 +327,15 @@ Fail-open if the flag URL is unreachable — unless a cutover is **armed**
 `cutover_armed: true` on the last successful payload). Armed + unreachable
 is fail-closed.
 
-**Ship the armed build first.** Before you flip `CUTOVER_ARMED` on the
-Worker, ship a build with `VITE_MAINTENANCE_URL` (the Worker
-`GET /api/maintenance` URL) and `VITE_CUTOVER_ARMED=1` baked in. The
-copy job reads that same endpoint (`MAINTENANCE_URL` / `VITE_MAINTENANCE_URL`
-Actions variable) and **refuses to start dump** unless the payload reports
-`cutover_armed: true`. An unarmed SPA would keep writing through the
-window; the job will not copy against that.
+**Ship the armed build first** before a `mode=cutover` copy. Before you
+flip `CUTOVER_ARMED` on the Worker, ship a build with
+`VITE_MAINTENANCE_URL` (the Worker `GET /api/maintenance` URL) and
+`VITE_CUTOVER_ARMED=1` baked in. `mode=cutover` reads that same
+endpoint (`MAINTENANCE_URL` / `VITE_MAINTENANCE_URL` Actions variable)
+and **refuses to start dump** unless the payload reports
+`cutover_armed: true`. `mode=dry-run` skips the armed / freeze / 503
+preflight and does not freeze prod. An unarmed SPA would keep writing
+through a cutover window; the cutover job will not copy against that.
 
 Non-billing Supabase edge functions that write with `service_role` also
 read `WRITE_FREEZE` **or** `MAINTENANCE_WRITE_FREEZE`
@@ -412,10 +428,19 @@ already gone). Partitioned tables, views, and column-level grants
 (`attacl`) are out of scope: Nuvo public app tables are ordinary
 relations.
 
-Order:
+`mode=dry-run` does **not** use this freeze. Re-apply
+[`migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql) and
+[`vault_tokens.sql`](./cloudflare-migration/vault_tokens.sql) as
+`postgres` (`CREATE OR REPLACE`) first, then dispatch
+`mode=dry-run` `phase=copy`. Dump skips armed / freeze / 503
+preflight. Source-vs-snapshot drift is report-only; target-vs-snapshot
+still fails.
+
+The order below is **`mode=cutover` only**. Freeze / arm / 503 do not
+apply to a dry run.
 
 0. **Ship the armed build** — `VITE_MAINTENANCE_URL` + `VITE_CUTOVER_ARMED=1`.
-   The copy job will refuse to start until that endpoint reports armed.
+   `mode=cutover` will refuse to start until that endpoint reports armed.
 0b. **Preflight edge secrets** — `node scripts/preflight-edge-write-freeze.mjs --project-ref <ref>`
    before any Supabase edge-function redeploy (and again before arming).
    PASS only when `WRITE_FREEZE` / `MAINTENANCE_WRITE_FREEZE` are absent
@@ -424,13 +449,14 @@ Order:
 1. **Arm** — set `CUTOVER_ARMED=1` on the Worker, `WRITE_FREEZE=1` on
    the non-billing edge functions, and `MAINTENANCE_WRITE_FREEZE=1` if
    you want Worker writes frozen too.
-2. **Freeze** — apply `freeze.sql` by hand. Records `aclexplode` write
-   ACLs (including `PUBLIC`), then revokes `INSERT`/`UPDATE`/`DELETE`
-   on public app tables from `PUBLIC`, `anon`, and `authenticated`
-   (SELECT stays). Pauses every `nuvo-*` `pg_cron` job via
-   `cron.alter_job(..., active := false)` after recording the prior
-   `active` flag. `service_role` and the billing tables are untouched.
-3. **Snapshot** — `cutover-migrate` `dump` first GETs the maintenance
+2. **Freeze** — apply `freeze.sql` by hand (`mode=cutover` only). Records
+   `aclexplode` write ACLs (including `PUBLIC`), then revokes
+   `INSERT`/`UPDATE`/`DELETE` on public app tables from `PUBLIC`,
+   `anon`, and `authenticated` (SELECT stays). Pauses every `nuvo-*`
+   `pg_cron` job via `cron.alter_job(..., active := false)` after
+   recording the prior `active` flag. `service_role` and the billing
+   tables are untouched.
+3. **Snapshot** — `mode=cutover` `dump` first GETs the maintenance
    endpoint and dies unless `cutover_armed` is true, POSTs one gated
    edge function (`calendar-refresh`) and dies unless it 503s, and
    checks `has_table_privilege(anon, sync_log, INSERT)` is false.
@@ -442,8 +468,10 @@ Order:
    `setval`s the empty identity past source `max(id)` + 1e6 so any
    pre-resync Neon insert cannot collide with a Supabase id.
 5. **Verify** — `verify` recomputes source and target hashes against the
-   snapshot and dies if either drifted (writes leaked, or the copy is short).
-   Parity covers only the frozen tables (`sync_log` excluded).
+   snapshot. `mode=cutover` dies if either drifted (writes leaked, or
+   the copy is short). `mode=dry-run` treats source-vs-snapshot drift
+   as report-only; target-vs-snapshot still fails. Parity covers only
+   the frozen tables (`sync_log` excluded).
 6. **First resync** — the same job copies every `sync_log` id missing
    on Neon (aborts on a content collision), `setval`s
    `GREATEST(max(id), last_value, 1)` in that transaction so the park
