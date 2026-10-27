@@ -29,7 +29,7 @@ describe("DeleteAccount two-step", () => {
   it("stays closed until asked, then requires DELETE before the wipe is live", async () => {
     const user = await openPanel();
 
-    expect(screen.getByText(APPLE_DELETE_NOTICE)).toBeTruthy();
+    expect(screen.queryByText(APPLE_DELETE_NOTICE)).toBeNull();
     expect(screen.queryByText(/Stripe/i)).toBeNull();
 
     const wipe = screen.getByRole("button", { name: "Delete forever" });

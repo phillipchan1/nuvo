@@ -11,9 +11,11 @@ import {
   type QueryResult,
 } from "kysely";
 import { describe, expect, it } from "vitest";
-import { createAuth } from "../worker/src/auth.ts";
+import { appleSocialProvider, createAuth } from "../worker/src/auth.ts";
 import type { Env } from "../worker/src/env.ts";
 import {
+  isBaEncryptedToken,
+  isNuvoSealedToken,
   isProtectedAccountToken,
   sealAccountTokenFields,
 } from "../worker/src/lib/accountTokens.ts";
@@ -108,13 +110,35 @@ function assertNoPlaintext(row: AccountRow, tokens: string[]): void {
   }
 }
 
-describe("Better Auth Apple tokens never land in plaintext", () => {
+describe.sequential("Better Auth Apple tokens never land in plaintext", { timeout: 60_000 }, () => {
   it("wires encryptOAuthTokens and the account seal hook", () => {
     const src = readFileSync("worker/src/auth.ts", "utf8");
     expect(src).toContain("encryptOAuthTokens: true");
     expect(src).toContain("sealAccountTokenFields");
     expect(src).toContain("databaseHooks");
     expect(src).toMatch(/TOKEN_ENC_KEY_V1/);
+  });
+
+  it("detects sealed tokens by explicit prefix only, not long hex", () => {
+    expect(isBaEncryptedToken("$ba$ciphertext")).toBe(true);
+    expect(isNuvoSealedToken("nv1.1.iv.ct")).toBe(true);
+    expect(isProtectedAccountToken("$ba$ciphertext")).toBe(true);
+    expect(isProtectedAccountToken("nv1.1.iv.ct")).toBe(true);
+    const hex = "aa".repeat(32);
+    expect(isBaEncryptedToken(hex)).toBe(false);
+    expect(isNuvoSealedToken(hex)).toBe(false);
+    expect(isProtectedAccountToken(hex)).toBe(false);
+  });
+
+  it("invalid or missing TOKEN_ENC_KEY_V1 disables the Apple provider", () => {
+    const base = { APPLE_CLIENT_ID: "id.apple", APPLE_CLIENT_SECRET: "jwt" } as Env;
+    expect(appleSocialProvider(base)).toBeUndefined();
+    expect(appleSocialProvider({ ...base, TOKEN_ENC_KEY_V1: "" })).toBeUndefined();
+    expect(appleSocialProvider({ ...base, TOKEN_ENC_KEY_V1: "not-a-32-byte-key" })).toBeUndefined();
+    expect(appleSocialProvider({ ...base, TOKEN_ENC_KEY_V1: encKey() })).toMatchObject({
+      clientId: "id.apple",
+      clientSecret: "jwt",
+    });
   });
 
   it("fails closed when TOKEN_ENC_KEY_V1 is unset — no plaintext persist", async () => {

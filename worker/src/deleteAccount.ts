@@ -2,11 +2,14 @@
  * Wipe the caller's Nuvo account on Neon + Better Auth.
  *
  * Body: `{ confirm: "DELETE" }`. Owner is the verified session — a client
- * `user_id` is ignored. Billing is read by the session user.id (entitlement
- * contract). A Stripe row that is active, past_due, or unrecognized blocks
- * the wipe. StoreKit / no-card trials do not. Apple users can delete
- * and are told to cancel in Apple Account settings — never a Stripe
- * message. Wipe is one transaction.
+ * `user_id` is ignored. Billing is read by the session user.id through
+ * the delete-gate reader (not the shared entitlement SELECT). A Stripe
+ * subscription that is active, past_due, or unpaid blocks the wipe —
+ * even when plan_source is now apple. Customer id alone does not.
+ * StoreKit-only / no-card trials do not.
+ * Apple users can delete and are told to cancel in Apple Account
+ * settings — never a Stripe message. Wipe is one transaction; Apple
+ * revoke runs only after that commit.
  */
 import {
   isAccountDeleteConfirm,
@@ -30,6 +33,7 @@ export async function deleteOwnedAccount(
   user: SessionUser,
   body: unknown,
   env: Env,
+  fetchImpl?: typeof fetch,
 ): Promise<Response> {
   const confirm = body && typeof body === "object" && !Array.isArray(body)
     ? (body as { confirm?: unknown }).confirm
@@ -40,7 +44,7 @@ export async function deleteOwnedAccount(
 
   let billing;
   try {
-    billing = await readBillingSubscription(env, user.id);
+    billing = await readBillingSubscription(env, user.id, fetchImpl);
   } catch (err) {
     if (err instanceof BillingLookupError) {
       return json({ error: "Could not verify billing status. Try again." }, 502, OPEN_CORS);
@@ -51,8 +55,18 @@ export async function deleteOwnedAccount(
     return json({ error: ACTIVE_STRIPE_DELETE_MESSAGE }, 409, OPEN_CORS);
   }
 
-  let appleRevoked: boolean | null = null;
+  // Load the refresh token before wipe — the row is gone after commit.
   const token = await loadOwnedAppleRefreshToken(store, user.id, env).catch(() => null);
+
+  const { planner, auth } = await wipeOwnedAccount(store.sql, {
+    plannerUserId: store.userId,
+    authUserId: user.id,
+  });
+  if (planner === 0 && auth === 0) {
+    return json({ error: "not found" }, 404, OPEN_CORS);
+  }
+
+  let appleRevoked: boolean | null = null;
   if (token) {
     const config = readAppleAuthConfig({
       APPLE_SIWA_TEAM_ID: env.APPLE_SIWA_TEAM_ID,
@@ -66,14 +80,6 @@ export async function deleteOwnedAccount(
     } else {
       appleRevoked = false;
     }
-  }
-
-  const { planner, auth } = await wipeOwnedAccount(store.sql, {
-    plannerUserId: store.userId,
-    authUserId: user.id,
-  });
-  if (planner === 0 && auth === 0) {
-    return json({ error: "not found" }, 404, OPEN_CORS);
   }
   const payload: { ok: true; appleRevoked: boolean | null; notice?: string } = { ok: true, appleRevoked };
   if (billingPlanSource(billing) === "apple") {

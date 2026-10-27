@@ -6261,7 +6261,7 @@ account. Pre-flip live check:
 
 **D-167 · 2026-10-27 · Delete-account on the Worker does not cancel Stripe; it blocks a charging Stripe row and names Apple.**
 
-D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret and must not call the Stripe API (port rule). So the wipe **refuses** while the session user's `subscriptions` row is `plan_source = stripe` **and** status is `active` / `past_due` **and** a Stripe customer or period is visible on the readable columns (`stripe_customer_id` / `current_period_end` / `cancel_at_period_end`). An unknown stripe status fails closed. `unpaid` is not in the status CHECK. A no-card trial (`plan_source` null) and a StoreKit row (`apple`) can delete. Apple copy is Settings → your name → Subscriptions — never a Stripe sentence.
+D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret and must not call the Stripe API (port rule). So the wipe **refuses** while the session user's `subscriptions` row is a Stripe subscription (`plan_source = stripe`, or leftover `stripe_subscription_id`) **and** status is `active` / `past_due` / `unpaid` — even if `plan_source` is now `apple`. Period end and customer-id-alone are not a gate. An unknown stripe status fails closed. A no-card trial and a StoreKit-only row can delete. Apple copy is Settings → your name → Subscriptions — never a Stripe sentence.
 
 **Anchor.** Same leave path as D-117 (O4 stays ○). Strains **P8** (Account still holds identity *and* leave). Four no's: no pool, no new name, works with a missing or empty billing row, not builder-only.
 

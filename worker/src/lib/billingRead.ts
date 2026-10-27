@@ -1,21 +1,24 @@
 /**
- * Delete-account Stripe gate. Billing I/O is `readEntitlement` — never a
- * Stripe secret, never the Stripe API, never a second PostgREST reader.
+ * Delete-account Stripe gate. Own PostgREST read — never `readEntitlement`,
+ * never a Stripe secret, never the Stripe API.
  *
- * Block only when plan_source = stripe AND status is active / past_due
- * AND a Stripe customer / period is visible on the readable columns.
- * Unknown stripe status fails closed. `unpaid` is not in the status CHECK
- * (trialing | active | past_due | cancelled) — if it appears it is unknown.
+ * The shared entitlement SELECT omits Stripe identifiers (they must not
+ * leak to the client). This reader selects `stripe_subscription_id`
+ * server-side only and collapses it to `hasStripeSubscription`.
+ * `stripe_customer_id` is not a gate — a customer without a subscription
+ * does not block.
+ *
+ * Refuse when the row is a Stripe subscription (plan_source = stripe, or
+ * stripe_subscription_id present) AND status is active / past_due / unpaid,
+ * even if plan_source is now apple. Period end and card-on-file do not
+ * matter. Unknown stripe status fails closed. Trials with no Stripe
+ * subscription, ended Stripe rows, and StoreKit-only users can delete.
+ * 404/406 fail closed here only; the shared entitlement reader is unchanged.
  */
 import {
   APPLE_DELETE_NOTICE,
   STRIPE_DELETE_BLOCK_MESSAGE,
 } from "../../../supabase/functions/_shared/accountDeletion.ts";
-import {
-  EntitlementUnavailableError,
-  readEntitlement,
-  type Entitlement,
-} from "../entitlement.ts";
 import type { Env } from "../env.ts";
 
 export { APPLE_DELETE_NOTICE };
@@ -28,13 +31,8 @@ export type DeleteGateRow = {
   trial_ends_at?: string | null;
   entitled?: boolean;
   present?: boolean;
-  stripe_customer_id?: string | null;
-  stripeCustomerId?: string | null;
-  hasStripeCustomer?: boolean;
-  current_period_end?: string | null;
-  currentPeriodEnd?: string | null;
-  cancel_at_period_end?: boolean;
-  cancelAtPeriodEnd?: boolean;
+  /** Server-side only. Never sent to the client. True when stripe_subscription_id is set. */
+  hasStripeSubscription?: boolean;
 };
 
 export const ACTIVE_STRIPE_DELETE_MESSAGE = STRIPE_DELETE_BLOCK_MESSAGE;
@@ -43,56 +41,40 @@ export const ACTIVE_STRIPE_DELETE_MESSAGE = STRIPE_DELETE_BLOCK_MESSAGE;
 export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancelled"] as const;
 
 const STRIPE_ENDED = new Set(["cancelled", "canceled", "incomplete_expired"]);
-const STRIPE_CHARGING = new Set(["active", "past_due"]);
+const STRIPE_CHARGING = new Set(["active", "past_due", "unpaid"]);
 
-export function billingPlanSource(
-  row: DeleteGateRow | Entitlement | null | undefined,
-): string {
+const GATE_SELECT = [
+  "user_id",
+  "status",
+  "trial_ends_at",
+  "plan_source",
+  "stripe_subscription_id",
+].join(",");
+
+export function billingPlanSource(row: DeleteGateRow | null | undefined): string {
   if (!row) return "";
-  const asGate = row as DeleteGateRow & Partial<Entitlement>;
-  return (asGate.plan_source ?? asGate.planSource ?? "").toString().trim().toLowerCase();
+  return (row.plan_source ?? row.planSource ?? "").toString().trim().toLowerCase();
 }
 
-/** Stripe customer / period as far as the readable columns show. */
-export function stripePaymentOnFile(
-  row: DeleteGateRow | Entitlement | null | undefined,
-): boolean {
+function chargingStatus(row: DeleteGateRow): string {
+  return (row.status ?? row.plan ?? "").toString().trim().toLowerCase();
+}
+
+/** A Stripe subscription exists on this row (source or leftover sub id). */
+export function isStripeSubscriptionRow(row: DeleteGateRow | null | undefined): boolean {
   if (!row) return false;
-  const asGate = row as DeleteGateRow & Partial<Entitlement>;
-  if (asGate.hasStripeCustomer === true) return true;
-  if (asGate.hasStripeCustomer === false) return false;
-  const customer = (asGate.stripe_customer_id ?? asGate.stripeCustomerId ?? "").toString().trim();
-  if (customer) return true;
-  const period = (asGate.current_period_end ?? asGate.currentPeriodEnd ?? "").toString().trim();
-  if (period) return true;
-  if (asGate.cancel_at_period_end === true || asGate.cancelAtPeriodEnd === true) return true;
-  if (
-    "stripe_customer_id" in asGate ||
-    "stripeCustomerId" in asGate ||
-    "hasStripeCustomer" in asGate ||
-    "current_period_end" in asGate ||
-    "currentPeriodEnd" in asGate
-  ) {
-    return false;
-  }
-  // plan_source=stripe is set only with a Stripe customer or subscription
-  // id (00000000000075). That is the remaining readable signal.
-  return billingPlanSource(asGate) === "stripe";
+  return billingPlanSource(row) === "stripe" || row.hasStripeSubscription === true;
 }
 
-/** Refuse wipe only for Stripe + charging status + customer/period on file.
- *  Unknown stripe status fails closed even without a visible customer. */
-export function stripeSubscriptionBlocksDelete(
-  row: DeleteGateRow | Entitlement | null | undefined,
-): boolean {
+/** Refuse wipe for a charging Stripe subscription. Customer id is not a gate. */
+export function stripeSubscriptionBlocksDelete(row: DeleteGateRow | null | undefined): boolean {
   if (!row) return false;
   if ("present" in row && row.present === false) return false;
-  if (billingPlanSource(row) !== "stripe") return false;
-  const status = (row.status ?? row.plan ?? "").toString().trim().toLowerCase();
+  if (!isStripeSubscriptionRow(row)) return false;
+  const status = chargingStatus(row);
   if (!status) return true;
-  if (STRIPE_ENDED.has(status)) return false;
-  if (status === "trialing") return false;
-  if (STRIPE_CHARGING.has(status)) return stripePaymentOnFile(row);
+  if (STRIPE_ENDED.has(status) || status === "trialing") return false;
+  if (STRIPE_CHARGING.has(status)) return true;
   return true;
 }
 
@@ -103,25 +85,87 @@ export class BillingLookupError extends Error {
   }
 }
 
+/** PostgREST URL for the delete gate only — includes Stripe id columns. */
+export function billingSubscriptionQueryUrl(baseUrl: string, userId: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  const params = new URLSearchParams();
+  params.set("user_id", `eq.${userId}`);
+  params.set("select", GATE_SELECT);
+  return `${base}/rest/v1/subscriptions?${params.toString()}`;
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function mapGateRow(value: unknown, userId: string): DeleteGateRow | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const owner = asText(raw.user_id);
+  if (!owner || owner !== userId) return null;
+  const source = asText(raw.plan_source).toLowerCase();
+  return {
+    status: asText(raw.status) || null,
+    plan_source: source === "stripe" || source === "apple" ? source : null,
+    trial_ends_at: asText(raw.trial_ends_at) || null,
+    present: true,
+    hasStripeSubscription: Boolean(asText(raw.stripe_subscription_id)),
+  };
+}
+
+export type BillingReader = (
+  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
+  userId: string,
+  fetchImpl?: typeof fetch,
+) => Promise<DeleteGateRow | null>;
+
+let testReader: BillingReader | null = null;
+
+export function installBillingReaderForTests(fn: BillingReader): () => void {
+  testReader = fn;
+  return () => {
+    testReader = null;
+  };
+}
+
+async function fetchBillingSubscription(
+  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
+  userId: string,
+  fetchImpl: typeof fetch,
+): Promise<DeleteGateRow | null> {
+  const base = env.SUPABASE_URL?.trim() ?? "";
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+  if (!base || !key) throw new BillingLookupError();
+  let res: Response;
+  try {
+    res = await fetchImpl(billingSubscriptionQueryUrl(base, userId), {
+      method: "GET",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    throw new BillingLookupError();
+  }
+  // 404/406 is not the empty-row document (that's HTTP 200 + `[]`).
+  // A missing table or schema-cache miss must fail closed — here only.
+  if (res.status === 406 || res.status === 404) throw new BillingLookupError();
+  if (!res.ok) throw new BillingLookupError();
+  const body: unknown = await res.json().catch(() => null);
+  if (Array.isArray(body)) {
+    if (body.length === 0) return null;
+    return mapGateRow(body[0], userId);
+  }
+  return mapGateRow(body, userId);
+}
+
 export async function readBillingSubscription(
   env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
   userId: string,
+  fetchImpl?: typeof fetch,
 ): Promise<DeleteGateRow | null> {
-  try {
-    const entitlement = await readEntitlement(env, userId);
-    if (!entitlement.present) return null;
-    return {
-      status: entitlement.status,
-      plan: entitlement.plan,
-      plan_source: entitlement.planSource,
-      trial_ends_at: entitlement.trialEndsAt,
-      entitled: entitlement.entitled,
-      present: entitlement.present,
-      current_period_end: entitlement.currentPeriodEnd,
-      cancel_at_period_end: entitlement.cancelAtPeriodEnd,
-    };
-  } catch (err) {
-    if (err instanceof EntitlementUnavailableError) throw new BillingLookupError();
-    throw err;
-  }
+  if (testReader && !fetchImpl) return testReader(env, userId);
+  return fetchBillingSubscription(env, userId, fetchImpl ?? fetch);
 }

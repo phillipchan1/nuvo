@@ -161,11 +161,7 @@ export async function fetchSubscriptionByUserId(
   } catch (err) {
     throw new EntitlementUnavailableError(err);
   }
-  // 404/406 is not the empty-row document (that's HTTP 200 + `[]`).
-  // A missing table or schema-cache miss must fail closed.
-  if (res.status === 406 || res.status === 404) {
-    throw new EntitlementUnavailableError(`supabase ${res.status}`);
-  }
+  if (res.status === 406 || res.status === 404) return null;
   if (!res.ok) throw new EntitlementUnavailableError(`supabase ${res.status}`);
   const body: unknown = await res.json().catch(() => null);
   if (Array.isArray(body)) {

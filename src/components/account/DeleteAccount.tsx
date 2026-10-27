@@ -73,9 +73,10 @@ export function DeleteAccount({
           plans, projects, calendar connections, and settings. You will not be
           able to sign back in.
         </p>
-        {planSource === "stripe" ? (
+        {planSource === "stripe" && (
           <p className="mt-2 text-caption leading-snug text-muted">{STRIPE_DELETE_BLOCK_MESSAGE}</p>
-        ) : (
+        )}
+        {planSource === "apple" && (
           <p className="mt-2 text-caption leading-snug text-muted">{APPLE_DELETE_NOTICE}</p>
         )}
         <label htmlFor={inputId} className="mt-3 block text-caption text-ink">

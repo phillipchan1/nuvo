@@ -8,168 +8,224 @@ import {
   ACTIVE_STRIPE_DELETE_MESSAGE,
   APPLE_DELETE_NOTICE,
   BillingLookupError,
+  billingSubscriptionQueryUrl,
+  installBillingReaderForTests,
   readBillingSubscription,
-  stripePaymentOnFile,
   stripeSubscriptionBlocksDelete,
 } from "../worker/src/lib/billingRead.ts";
-import { EntitlementUnavailableError, fetchSubscriptionByUserId, installSubscriptionFetcherForTests } from "../worker/src/entitlement.ts";
+import { fetchSubscriptionByUserId } from "../worker/src/entitlement.ts";
 import { makePgliteSql } from "../worker/src/pgliteSql.ts";
 import { wipeOwnedAccount, type Store } from "../worker/src/store.ts";
 import type { Sql } from "../worker/src/db.ts";
 
 const SESSION = "aaaaaaaa-aaaa-4000-8000-000000000001";
 const PLANNER = "11111111-1111-1111-1111-111111111111";
+const ENV = { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" };
+
+function postgrest(status: number, body: unknown): typeof fetch {
+  return async () =>
+    new Response(typeof body === "string" ? body : JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+}
+
+function stripeRow(overrides: Record<string, unknown> = {}) {
+  return {
+    user_id: SESSION,
+    status: "active",
+    plan_source: "stripe",
+    stripe_subscription_id: "sub_live",
+    stripe_customer_id: "cus_live",
+    current_period_end: null,
+    ...overrides,
+  };
+}
 
 describe("Worker delete-account Stripe gate", () => {
   afterEach(() => {
-    installSubscriptionFetcherForTests(fetchSubscriptionByUserId);
+    installBillingReaderForTests(async () => null)();
   });
 
-  it("blocks Stripe active / past_due only when a customer or period is on file", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "active",
-        plan_source: "stripe",
-        stripe_customer_id: "cus_live",
-        present: true,
-      }),
-    ).toBe(true);
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "past_due",
-        plan_source: "stripe",
-        current_period_end: "2026-12-01T00:00:00Z",
-        present: true,
-      }),
-    ).toBe(true);
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "active",
-        plan_source: "stripe",
-        stripe_customer_id: null,
-        present: true,
-      }),
-    ).toBe(false);
-    expect(stripePaymentOnFile({ plan_source: "stripe", stripe_customer_id: "cus_live" })).toBe(true);
-    expect(stripePaymentOnFile({ plan_source: "stripe", stripe_customer_id: null })).toBe(false);
+  it("reads through readBillingSubscription and never puts Stripe ids on the row", async () => {
+    const url = billingSubscriptionQueryUrl(ENV.SUPABASE_URL, SESSION);
+    expect(url).toContain("user_id=eq." + SESSION);
+    expect(url).toContain("stripe_subscription_id");
+    expect(url).not.toContain("stripe_customer_id");
+
+    const row = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [stripeRow({ current_period_end: null })]),
+    );
+    expect(row?.hasStripeSubscription).toBe(true);
+    expect(row).not.toHaveProperty("stripe_subscription_id");
+    expect(row).not.toHaveProperty("stripe_customer_id");
+    expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
   });
 
-  it("fails closed on an unknown stripe status even without a visible customer", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({ status: "paused", plan_source: "stripe", present: true }),
-    ).toBe(true);
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "unpaid",
-        plan_source: "stripe",
-        stripe_customer_id: null,
-        present: true,
-      }),
-    ).toBe(true);
+  it("active / past_due / unpaid Stripe subscriptions refuse, even with a null period end", async () => {
+    for (const status of ["active", "past_due", "unpaid"] as const) {
+      const row = await readBillingSubscription(
+        ENV,
+        SESSION,
+        postgrest(200, [stripeRow({ status, current_period_end: null })]),
+      );
+      expect(stripeSubscriptionBlocksDelete(row), status).toBe(true);
+    }
   });
 
-  it("does not block a live no-card trial (plan_source null)", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "trialing",
-        plan_source: null,
-        trial_ends_at: "2099-01-01T00:00:00Z",
-        present: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("does not block a lapsed no-card trial (plan_source null)", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "trialing",
-        plan_source: null,
-        trial_ends_at: "2020-01-01T00:00:00Z",
-        present: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("does not block an active StoreKit subscription", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({ status: "active", plan_source: "apple", present: true }),
-    ).toBe(false);
-  });
-
-  it("does not block cancelled / incomplete_expired / no row", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({ status: "cancelled", plan_source: "stripe", present: true }),
-    ).toBe(false);
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "incomplete_expired",
-        plan_source: "stripe",
-        present: true,
-      }),
-    ).toBe(false);
+  it("canceled / incomplete_expired / no row all allow", async () => {
+    for (const status of ["cancelled", "canceled", "incomplete_expired"] as const) {
+      const row = await readBillingSubscription(
+        ENV,
+        SESSION,
+        postgrest(200, [stripeRow({ status })]),
+      );
+      expect(stripeSubscriptionBlocksDelete(row), status).toBe(false);
+    }
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, []))).resolves.toBeNull();
     expect(stripeSubscriptionBlocksDelete(null)).toBe(false);
     expect(stripeSubscriptionBlocksDelete({ present: false })).toBe(false);
   });
 
-  it("does not block a Stripe trial", () => {
-    expect(
-      stripeSubscriptionBlocksDelete({
-        status: "trialing",
-        plan_source: "stripe",
-        trial_ends_at: "2099-01-01T00:00:00Z",
-        present: true,
-      }),
-    ).toBe(false);
+  it("an apple-labeled user with an active Stripe subscription refuses", async () => {
+    const row = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [
+        stripeRow({
+          plan_source: "apple",
+          status: "active",
+          stripe_subscription_id: "sub_still_live",
+        }),
+      ]),
+    );
+    expect(row?.plan_source).toBe("apple");
+    expect(row?.hasStripeSubscription).toBe(true);
+    expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
+  });
+
+  it("an apple user without a Stripe subscription allows", async () => {
+    const row = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [
+        {
+          user_id: SESSION,
+          status: "active",
+          plan_source: "apple",
+          stripe_subscription_id: null,
+          stripe_customer_id: "cus_leftover",
+        },
+      ]),
+    );
+    expect(row?.plan_source).toBe("apple");
+    expect(row?.hasStripeSubscription).toBe(false);
+    expect(stripeSubscriptionBlocksDelete(row)).toBe(false);
+  });
+
+  it("does not gate on stripe_customer_id alone", async () => {
+    const row = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [
+        {
+          user_id: SESSION,
+          status: "active",
+          plan_source: "apple",
+          stripe_customer_id: "cus_only",
+          stripe_subscription_id: null,
+        },
+      ]),
+    );
+    expect(row?.hasStripeSubscription).toBe(false);
+    expect(stripeSubscriptionBlocksDelete(row)).toBe(false);
+  });
+
+  it("a no-card trial with no Stripe subscription can delete", async () => {
+    const live = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [
+        {
+          user_id: SESSION,
+          status: "trialing",
+          plan_source: null,
+          trial_ends_at: "2099-01-01T00:00:00Z",
+          stripe_subscription_id: null,
+        },
+      ]),
+    );
+    const lapsed = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [
+        {
+          user_id: SESSION,
+          status: "trialing",
+          plan_source: null,
+          trial_ends_at: "2020-01-01T00:00:00Z",
+          stripe_subscription_id: null,
+        },
+      ]),
+    );
+    expect(stripeSubscriptionBlocksDelete(live)).toBe(false);
+    expect(stripeSubscriptionBlocksDelete(lapsed)).toBe(false);
+  });
+
+  it("fails closed on an unknown stripe status", async () => {
+    const row = await readBillingSubscription(
+      ENV,
+      SESSION,
+      postgrest(200, [stripeRow({ status: "paused" })]),
+    );
+    expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
   });
 
   it("Apple users can delete and are told to cancel in Apple Settings, with no Stripe wording", async () => {
-    const restore = installSubscriptionFetcherForTests(async (_env, userId) => ({
-      user_id: userId,
-      status: "active",
-      trial_ends_at: null,
-      plan_source: "apple",
-    }));
-    try {
-      const res = await deleteOwnedAccount(
-        dummyStore(),
-        { id: SESSION },
-        { confirm: ACCOUNT_DELETE_CONFIRM },
-        { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
-      );
-      expect(res.status).not.toBe(409);
-      const body = (await res.json()) as { error?: string; notice?: string; ok?: boolean };
-      expect(JSON.stringify(body)).not.toMatch(/Stripe/i);
-      expect(body.notice).toBe(APPLE_DELETE_NOTICE);
-      expect(body.notice).toMatch(/Apple Account settings/i);
-    } finally {
-      restore();
-    }
+    const res = await deleteOwnedAccount(
+      dummyStore(),
+      { id: SESSION },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      ENV,
+      postgrest(200, [
+        {
+          user_id: SESSION,
+          status: "active",
+          plan_source: "apple",
+          stripe_subscription_id: null,
+        },
+      ]),
+    );
+    expect(res.status).not.toBe(409);
+    const body = (await res.json()) as { error?: string; notice?: string; ok?: boolean };
+    expect(JSON.stringify(body)).not.toMatch(/Stripe/i);
+    expect(body.notice).toBe(APPLE_DELETE_NOTICE);
+    expect(body.notice).toMatch(/Apple Account settings/i);
   });
 
   it("reads billing by the session user.id, not the adopted planner id", async () => {
-    const restore = installSubscriptionFetcherForTests(async (_env, userId) => {
-      if (userId !== SESSION) return null;
-      return {
-        user_id: SESSION,
-        status: "active",
-        trial_ends_at: null,
-        plan_source: "stripe",
-        current_period_end: "2026-12-01T00:00:00Z",
-      };
-    });
-    try {
-      const res = await deleteOwnedAccount(
-        dummyStore(PLANNER),
-        { id: SESSION },
-        { confirm: ACCOUNT_DELETE_CONFIRM },
-        { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
-      );
-      expect(res.status).toBe(409);
-      const body = (await res.json()) as { error?: string };
-      expect(body.error).toBe(ACTIVE_STRIPE_DELETE_MESSAGE);
-    } finally {
-      restore();
-    }
+    const seen: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      seen.push(href);
+      return new Response(JSON.stringify([stripeRow()]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const res = await deleteOwnedAccount(
+      dummyStore(PLANNER),
+      { id: SESSION },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      ENV,
+      fetchImpl,
+    );
+    expect(res.status).toBe(409);
+    expect(seen.some((u) => u.includes(SESSION) && !u.includes(PLANNER))).toBe(true);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe(ACTIVE_STRIPE_DELETE_MESSAGE);
   });
 
   it("tells Stripe subscribers to cancel in Billing first", () => {
@@ -180,32 +236,35 @@ describe("Worker delete-account Stripe gate", () => {
 
   it("fails closed when the Supabase billing reader is unconfigured", async () => {
     await expect(
-      readBillingSubscription({ SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }, SESSION),
+      readBillingSubscription({ SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }, SESSION, postgrest(200, [])),
     ).rejects.toBeInstanceOf(BillingLookupError);
   });
 
-  it("treats PostgREST 404/406 as fail-closed, and 200 [] as no row", async () => {
+  it("treats PostgREST 404/406 as fail-closed on the delete-gate read only", async () => {
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(404, "no"))).rejects.toBeInstanceOf(
+      BillingLookupError,
+    );
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(406, "no"))).rejects.toBeInstanceOf(
+      BillingLookupError,
+    );
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, []))).resolves.toBeNull();
+
     await expect(
-      fetchSubscriptionByUserId(
-        { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
-        SESSION,
-        async () => new Response("no", { status: 404 }),
-      ),
-    ).rejects.toBeInstanceOf(EntitlementUnavailableError);
-    await expect(
-      fetchSubscriptionByUserId(
-        { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
-        SESSION,
-        async () => new Response("no", { status: 406 }),
-      ),
-    ).rejects.toBeInstanceOf(EntitlementUnavailableError);
-    await expect(
-      fetchSubscriptionByUserId(
-        { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
-        SESSION,
-        async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
-      ),
+      fetchSubscriptionByUserId(ENV, SESSION, postgrest(404, "no")),
     ).resolves.toBeNull();
+    await expect(
+      fetchSubscriptionByUserId(ENV, SESSION, postgrest(406, "no")),
+    ).resolves.toBeNull();
+  });
+
+  it("revokes Apple only after the wipe transaction commits", () => {
+    const src = readFileSync("worker/src/deleteAccount.ts", "utf8");
+    const load = src.indexOf("loadOwnedAppleRefreshToken");
+    const wipe = src.indexOf("wipeOwnedAccount");
+    const revoke = src.indexOf("revokeAppleToken");
+    expect(load).toBeGreaterThan(-1);
+    expect(wipe).toBeGreaterThan(load);
+    expect(revoke).toBeGreaterThan(wipe);
   });
 
   it("the Worker wipe never holds a Stripe secret or calls Stripe", () => {
@@ -221,6 +280,7 @@ describe("Worker delete-account Stripe gate", () => {
     expect(src).not.toMatch(/api\.stripe\.com/);
     expect(src).toContain("user.id");
     expect(src).toContain("wipeOwnedAccount");
+    expect(src).not.toMatch(/hasStripeBilling/);
   });
 });
 

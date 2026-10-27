@@ -22,6 +22,7 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
+import { installBillingReaderForTests } from "./lib/billingRead.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
 import { mapAuthIdentityToAccount } from "./lib/authMap.ts";
@@ -152,14 +153,13 @@ const restore = installRequestIoForTests(() => {
   return { sql, auth, close: async () => {} };
 });
 const stripeHolders = new Set<string>();
-installSubscriptionFetcherForTests(async (_env, userId) => {
+installBillingReaderForTests(async (_env, userId) => {
   if (!stripeHolders.has(userId)) return null;
   return {
-    user_id: userId,
     status: "active",
-    trial_ends_at: null,
     plan_source: "stripe",
-    current_period_end: "2026-12-01T00:00:00Z",
+    hasStripeSubscription: true,
+    present: true,
   };
 });
 

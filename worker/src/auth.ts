@@ -5,6 +5,7 @@ import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
 import { sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { parseRawKey } from "./secrets.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
 export type AuthInstance = ReturnType<typeof createAuth>;
@@ -45,12 +46,18 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
   }
 }
 
-function appleSocialProvider(env: Env) {
+export function appleSocialProvider(env: Env) {
   const clientId = (env.APPLE_CLIENT_ID ?? env.APPLE_SIWA_CLIENT_ID ?? env.APPLE_BUNDLE_ID)?.trim();
   const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
-  // Fail closed: without TOKEN_ENC_KEY_V1 the Apple provider would persist
-  // tokens and we refuse to wire the route that writes them.
-  if (!clientId || !clientSecret || !(env.TOKEN_ENC_KEY_V1 ?? "").trim()) return undefined;
+  // Fail closed: missing or invalid TOKEN_ENC_KEY_V1 would persist tokens
+  // we cannot seal. Do not wire a sign-in that cannot persist.
+  const v1 = (env.TOKEN_ENC_KEY_V1 ?? "").trim();
+  if (!clientId || !clientSecret || !v1) return undefined;
+  try {
+    parseRawKey(v1);
+  } catch {
+    return undefined;
+  }
   const bundle = env.APPLE_BUNDLE_ID?.trim();
   return {
     clientId,

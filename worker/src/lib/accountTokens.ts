@@ -30,8 +30,7 @@ export type AccountTokenFields = {
 };
 
 export function isBaEncryptedToken(value: string): boolean {
-  if (value.startsWith("$ba$")) return true;
-  return value.length % 2 === 0 && value.length >= 32 && /^[0-9a-f]+$/i.test(value);
+  return value.startsWith("$ba$");
 }
 
 export function isNuvoSealedToken(value: string): boolean {
