@@ -4,6 +4,9 @@
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-01-15",
   "compatibility_flags": ["nodejs_compat"],
+  // Production custom domain. Already attached to the placeholder `nuvo`
+  // script — keep it on the real Worker `nuvo` deploy. Preview has no routes.
+  "routes": [{ "pattern": "api.nuvo.day", "custom_domain": true }],
   // Static Vite build. Deep links fall back to index.html (same as Vercel SPA).
   "assets": {
     "directory": "./dist",
@@ -20,14 +23,14 @@
   // localhost fallback) and BETTER_AUTH_URL to the public Worker origin
   // (docs/cloudflare-cutover.md). Production omits ENVIRONMENT.
   "vars": {
-    "RESEND_FROM": "Nuvo <noreply@localhost>"
+    "RESEND_FROM": "Nuvo <noreply@inbox.nuvo.day>"
   },
   // Production / `wrangler dev` only. Preview uses DATABASE_URL (see env.preview).
-  // Replace `id` with a real Hyperdrive config before a production deploy.
+  // Cloudflare Hyperdrive config `nuvo-neon`.
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "00000000000000000000000000000000",
+      "id": "2c52343139524c4e9ba39f8c1c9b0795",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
     }
   ],
@@ -68,6 +71,9 @@
     "preview": {
       "name": "nuvo-preview",
       "workers_dev": true,
+      // Empty array, not omitted — wrangler inherits top-level routes
+      // otherwise and a preview deploy would steal api.nuvo.day.
+      "routes": [],
       // No Hyperdrive here on purpose. Wrangler does not inherit the
       // top-level binding; preview uses the DATABASE_URL secret. The
       // dry-run warning about a missing HYPERDRIVE on preview is expected.
