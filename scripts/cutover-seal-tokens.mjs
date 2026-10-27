@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Stream Vault plaintext from migration_tmp.vault_tokens(), seal with
- * TOKEN_ENC_KEY_V1, UPDATE Neon. Counts only. No files, no artifacts, no
- * logging of secrets or ciphertext.
+ * TOKEN_ENC_KEY_V1, UPDATE Neon. Then seal+NULL any leftover plaintext
+ * calendar_accounts.access_token copied from the dump. Counts only. No
+ * files, no artifacts, no logging of secrets or ciphertext.
  *
  * This script never applies vault_tokens.sql.
  */
@@ -83,6 +84,8 @@ try {
   await target.unsafe(`
     ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
     ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
+    ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS access_token_enc BYTEA;
+    ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS access_token_iv BYTEA;
     ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS key_version SMALLINT;
     ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
     ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
@@ -150,6 +153,48 @@ try {
     console.log(`${table}: source=${n.source} encrypted=${n.encrypted} mismatches=${n.mismatches}`);
   }
   if (mismatches) die("token copy mismatches — abort");
+
+  // Plaintext access_token is copied from Supabase. Seal it (same AAD as
+  // the live Worker), then NULL the column. Counts only — never print values.
+  const accessRows = await target`
+    SELECT id, user_id, access_token
+    FROM calendar_accounts
+    WHERE access_token IS NOT NULL AND btrim(access_token) <> ''
+  `;
+  let accessSealed = 0;
+  for (const row of accessRows) {
+    const secret = typeof row.access_token === "string" ? row.access_token : "";
+    if (!secret || !row.id || !row.user_id) continue;
+    const sealed = await sealToken(
+      secret,
+      { table: "calendar_accounts", rowId: String(row.id), userId: String(row.user_id) },
+      ring,
+    );
+    const updated = await target`
+      UPDATE calendar_accounts
+      SET access_token_enc = ${sealed.ciphertext},
+          access_token_iv = ${sealed.iv},
+          access_token = NULL,
+          key_version = COALESCE(key_version, ${sealed.keyVersion})
+      WHERE id = ${row.id}::uuid
+        AND user_id = ${row.user_id}::uuid
+      RETURNING id
+    `;
+    if (updated.length === 1) accessSealed += 1;
+  }
+  await target`
+    UPDATE calendar_accounts
+    SET access_token = NULL
+    WHERE access_token IS NOT NULL AND btrim(access_token) = ''
+  `;
+  const leftover = await target`
+    SELECT count(*)::int AS n
+    FROM calendar_accounts
+    WHERE access_token IS NOT NULL AND btrim(access_token) <> ''
+  `;
+  const leftoverN = leftover[0]?.n ?? 0;
+  console.log(`calendar_accounts access_token: sealed=${accessSealed} leftover=${leftoverN}`);
+  if (leftoverN > 0) die("plaintext access_token remains — abort");
   console.log("token copy ok");
 } finally {
   await Promise.allSettled([source.end({ timeout: 5 }), target.end({ timeout: 5 })]);

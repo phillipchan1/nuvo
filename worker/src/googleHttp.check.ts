@@ -11,6 +11,7 @@ import { getAccessToken } from "./google/tokens.ts";
 import { loadGoogleAccountById } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import app from "./index.ts";
+import { POST_FLIP_CRON_JOBS } from "./cronJobs.ts";
 import type { Env } from "./env.ts";
 
 const fails: string[] = [];
@@ -283,21 +284,25 @@ const webhookSync = await call("/functions/v1/google-webhook", {
 ok(webhookSync.status === 200, "webhook sync handshake is 200");
 
 const skipEnv: Env = { ...env, CUTOVER_FLIPPED: undefined };
-for (const job of ["google-renew", "calendar-dispatch", "google-resubscribe"] as const) {
+const unknownFlipEnv: Env = { ...env, CUTOVER_FLIPPED: "maybe" };
+for (const job of POST_FLIP_CRON_JOBS) {
   const skipped = await call(`/api/cron/${job}`, {
     method: "POST",
     headers: { authorization: "Bearer cron-secret" },
   }, skipEnv);
   ok(skipped.status === 200, `cron ${job} before flip is 200 (got ${skipped.status})`);
   ok((skipped.body as { skipped?: boolean }).skipped === true, `cron ${job} before flip is skipped:true`);
+  ok((skipped.body as { reason?: string }).reason === "cutover_not_flipped", `cron ${job} before flip reason`);
   ok((skipped.body as { stay_on_supabase?: boolean }).stay_on_supabase === true, `cron ${job} before flip stays on supabase`);
-}
 
-const unknownFlip = await call("/api/cron/google-renew", {
-  method: "POST",
-  headers: { authorization: "Bearer cron-secret" },
-}, { ...env, CUTOVER_FLIPPED: "maybe" });
-ok((unknownFlip.body as { skipped?: boolean }).skipped === true, "cron google-renew unknown flip value is skipped");
+  const unknownFlip = await call(`/api/cron/${job}`, {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+  }, unknownFlipEnv);
+  ok(unknownFlip.status === 200, `cron ${job} unknown flip is 200 (got ${unknownFlip.status})`);
+  ok((unknownFlip.body as { skipped?: boolean }).skipped === true, `cron ${job} unknown flip is skipped:true`);
+  ok((unknownFlip.body as { reason?: string }).reason === "cutover_not_flipped", `cron ${job} unknown flip reason`);
+}
 
 const cronOk = await call("/api/cron/google-renew", {
   method: "POST",

@@ -124,6 +124,7 @@ const env = {
   BETTER_AUTH_SECRET: "access-http-secret-32-bytes-long!!",
   BETTER_AUTH_URL: "http://localhost:8787",
   CRON_SECRET: "access-http-cron-secret",
+  CUTOVER_FLIPPED: "1",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
   TOKEN_ENC_KEY_V1: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),

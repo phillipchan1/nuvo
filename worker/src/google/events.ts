@@ -1,6 +1,7 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
+import { redactSecrets } from "../lib/redact.ts";
 import {
   googleStartEnd,
   masterToAllDay,
@@ -298,7 +299,7 @@ export async function handleGoogleEvents(
           if (status === "failure") break;
         }
       } catch (e) {
-        await logSync(sql, "google", "event-create-meet-poll", "error", String(e), userId);
+        await logSync(sql, "google", "event-create-meet-poll", "error", redactSecrets(e instanceof Error ? e.message : String(e)), userId);
       }
     }
 
@@ -310,7 +311,7 @@ export async function handleGoogleEvents(
           anchorMs: new Date(start_at).getTime(),
         });
       } catch (e) {
-        await logSync(sql, "google", "event-create-instances", "error", String(e), userId);
+        await logSync(sql, "google", "event-create-instances", "error", redactSecrets(e instanceof Error ? e.message : String(e)), userId);
       }
       await logSync(sql, "google", "event-create", "ok", undefined, userId);
       return { status: 200, data: { ok: true, event, meetUrl: joinUrl(created) } };
@@ -321,7 +322,7 @@ export async function handleGoogleEvents(
       try {
         event = await upsertMapped(sql, userId, row);
       } catch (e) {
-        await logSync(sql, "google", "event-create-upsert", "error", String(e), userId);
+        await logSync(sql, "google", "event-create-upsert", "error", redactSecrets(e instanceof Error ? e.message : String(e)), userId);
       }
     }
     await logSync(sql, "google", "event-create", "ok", undefined, userId);
@@ -441,7 +442,7 @@ export async function handleGoogleEvents(
         updated = (await again.json()) as Record<string, unknown>;
       }
     } catch (e) {
-      await logSync(sql, "google", "event-add-meet-poll", "error", String(e), userId);
+      await logSync(sql, "google", "event-add-meet-poll", "error", redactSecrets(e instanceof Error ? e.message : String(e)), userId);
     }
     await sql`
       UPDATE external_events SET raw = ${jsonParam(sql, updated)}
@@ -789,7 +790,7 @@ export async function handleGoogleEvents(
         rowId: eventId,
         anchorMs: new Date(evt.start_at).getTime() + startDelta,
       }).catch(async (e) => {
-        await logSync(sql, "google", "event-writeback-all-instances", "error", String(e), userId);
+        await logSync(sql, "google", "event-writeback-all-instances", "error", redactSecrets(e instanceof Error ? e.message : String(e)), userId);
         await shiftLocalSeries(sql, userId, evt, recurringEventId, patch);
         return null;
       });

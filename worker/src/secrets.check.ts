@@ -12,8 +12,18 @@ import {
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
 } from "./secrets.ts";
-import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, cutoverFlipped, skipUnlessCutoverFlipped } from "./cronJobs.ts";
-import { writeFrozen } from "./maintenance.ts";
+import {
+  CRON_BY_SCHEDULE,
+  jobsForSchedule,
+  canonicalCronJob,
+  consumeCalendarSyncBatch,
+  POST_FLIP_CRON_JOBS,
+  runCronJob,
+  skipUntilCutoverFlip,
+  skippedUntilCutoverFlip,
+} from "./cronJobs.ts";
+import { cutoverFlipped, writeFrozen } from "./maintenance.ts";
+import type { Env } from "./env.ts";
 import { redactSecrets } from "./lib/redact.ts";
 
 const fails: string[] = [];
@@ -127,9 +137,28 @@ ok(!writeFrozen("off"), "writeFrozen off is off");
 ok(!cutoverFlipped(undefined) && !cutoverFlipped("") && !cutoverFlipped("maybe"), "CUTOVER_FLIPPED unset/unknown is not flipped");
 ok(!cutoverFlipped("0") && !cutoverFlipped("false") && !cutoverFlipped("off"), "CUTOVER_FLIPPED explicit off is not flipped");
 ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("On"), "CUTOVER_FLIPPED 1/true/yes/on is flipped");
-ok(skipUnlessCutoverFlipped("google-renew", {}).skipped === true, "skipUnlessCutoverFlipped skips when unset");
-ok(skipUnlessCutoverFlipped("calendar-dispatch", { CUTOVER_FLIPPED: "maybe" })?.skipped === true, "skipUnlessCutoverFlipped skips unknown");
-ok(skipUnlessCutoverFlipped("google-resubscribe", { CUTOVER_FLIPPED: "1" }) === null, "skipUnlessCutoverFlipped is null after flip");
+
+const scheduledCronJobs = [...new Set(Object.values(CRON_BY_SCHEDULE).flat())];
+ok(scheduledCronJobs.every((job) => POST_FLIP_CRON_JOBS.includes(job)), "POST_FLIP_CRON_JOBS covers every scheduled cron");
+ok(POST_FLIP_CRON_JOBS.includes("google-resubscribe"), "POST_FLIP_CRON_JOBS includes google-resubscribe");
+
+const unknownFlipEnv = { CUTOVER_FLIPPED: "maybe" } as Env;
+const unsetFlipEnv = {} as Env;
+const flippedEnv = { CUTOVER_FLIPPED: "1" } as Env;
+for (const job of POST_FLIP_CRON_JOBS) {
+  ok(skipUntilCutoverFlip(job, unsetFlipEnv), `skipUntilCutoverFlip ${job} unset`);
+  ok(skipUntilCutoverFlip(job, unknownFlipEnv), `skipUntilCutoverFlip ${job} unknown`);
+  ok(!skipUntilCutoverFlip(job, flippedEnv), `skipUntilCutoverFlip ${job} after flip`);
+  const unset = skippedUntilCutoverFlip(job, unsetFlipEnv);
+  const unknown = skippedUntilCutoverFlip(job, unknownFlipEnv);
+  ok(unset?.status === 200 && unset.skipped === true && unset.reason === "cutover_not_flipped", `skippedUntilCutoverFlip ${job} unset`);
+  ok(unknown?.status === 200 && unknown.skipped === true && unknown.reason === "cutover_not_flipped", `skippedUntilCutoverFlip ${job} unknown`);
+  ok(skippedUntilCutoverFlip(job, flippedEnv) === null, `skippedUntilCutoverFlip ${job} after flip is null`);
+  const scheduledUnset = await runCronJob(job, unsetFlipEnv, null);
+  const scheduledUnknown = await runCronJob(job, unknownFlipEnv, null);
+  ok(scheduledUnset.status === 200 && scheduledUnset.skipped === true && scheduledUnset.reason === "cutover_not_flipped", `runCronJob ${job} unset`);
+  ok(scheduledUnknown.status === 200 && scheduledUnknown.skipped === true && scheduledUnknown.reason === "cutover_not_flipped", `runCronJob ${job} unknown`);
+}
 
 ok(canonicalCronJob("nuvo-calendar-dispatch") === "calendar-dispatch", "cron alias calendar-dispatch");
 ok(canonicalCronJob("nuvo-rollover-pdt") === "rollover", "cron alias rollover");
@@ -211,6 +240,17 @@ ok(/already unfrozen/.test(unfreezeSql), "unfreeze.sql is idempotent");
 ok(!/RAISE EXCEPTION/.test(unfreezeSql), "unfreeze.sql does not fail when already unfrozen");
 ok(/cron\.alter_job/.test(unfreezeSql) && /was_active/.test(unfreezeSql), "unfreeze.sql restores cron.active exactly");
 ok(!/GRANT[^\n]+anon, authenticated/.test(unfreezeSql), "unfreeze.sql does not invent direct grants to anon/authenticated");
+
+const eventsSrc = readFileSync(join(root, "worker/src/google/events.ts"), "utf8");
+ok(!/,\s*"error",\s*String\(e\)/.test(eventsSrc), "events.ts does not write raw String(e) to sync_log");
+ok(eventsSrc.includes("redactSecrets"), "events.ts redacts sync_log errors");
+
+const sealSrc = readFileSync(join(root, "scripts/cutover-seal-tokens.mjs"), "utf8");
+ok(/access_token_enc BYTEA/.test(sealSrc), "cutover-seal-tokens.mjs adds access_token_enc");
+ok(/access_token = NULL/.test(sealSrc), "cutover-seal-tokens.mjs nulls plaintext access_token");
+ok(/btrim\(access_token\)/.test(sealSrc) && /leftover/.test(sealSrc), "cutover-seal-tokens.mjs counts leftover plaintext");
+ok(/plaintext access_token remains/.test(sealSrc), "cutover-seal-tokens.mjs fails if plaintext remains");
+ok(!/console\.(log|error|info)\([^\n]*access_token[^\n]*\$\{/.test(sealSrc), "cutover-seal-tokens.mjs never interpolates access_token into logs");
 
 const neon = readFileSync(join(root, "worker/schema/neon.sql"), "utf8");
 ok(/CREATE TABLE IF NOT EXISTS public\.calendar_accounts/.test(neon), "neon.sql has calendar_accounts");
