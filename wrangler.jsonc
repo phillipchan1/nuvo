@@ -23,7 +23,7 @@
   // localhost fallback) and BETTER_AUTH_URL to the public Worker origin
   // (docs/cloudflare-cutover.md). Production omits ENVIRONMENT.
   "vars": {
-    "RESEND_FROM": "Nuvo <noreply@localhost>"
+    "RESEND_FROM": "Nuvo <noreply@inbox.nuvo.day>"
   },
   // Production / `wrangler dev` only. Preview uses DATABASE_URL (see env.preview).
   // Cloudflare Hyperdrive config `nuvo-neon`.
