@@ -1533,6 +1533,7 @@ ok(cronGhNo.status === 401, `cron github-poll unauth: HTTP ${cronGhNo.status}`);
 const cronTrimNo = await withTimeout(request("/api/cron/trim-sync-log", { method: "POST" }), 8000, "cron trim unauth");
 ok(cronTrimNo.status === 401, `cron trim-sync-log unauth: HTTP ${cronTrimNo.status}`);
 
+await db.query("DELETE FROM sync_log WHERE user_id = $1", [a.id]);
 await db.query(
   `INSERT INTO sync_log (user_id, provider, operation, status, created_at)
    VALUES ($1, 'github', 'sync', 'ok', now() - interval '40 days')`,
