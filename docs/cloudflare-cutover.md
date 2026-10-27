@@ -248,8 +248,8 @@ revoke those leftovers, then drop (see the block in
 `migration_tmp.sql` next to this):
 
 Run the cleanup block **as the `postgres` role** (Supabase SQL editor or
-the Management API `database/query`, which both run as `postgres`). Not as
-`supabase_admin`, not as `migration_reader`, and never from CI or
+the Management API `database/query`, which both run as `postgres`). Not as any
+other Supabase admin role, not as `migration_reader`, and never from CI or
 `cutover-migrate.yml`. **First take a fresh snapshot** (catalog only, no row
 data) and keep it with the run notes, so the revoke can be checked against
 what was there at that moment rather than at first apply:
