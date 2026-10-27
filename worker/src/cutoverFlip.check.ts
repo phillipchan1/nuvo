@@ -68,11 +68,16 @@ ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron calls gateCron");
 ok(/gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer calls gateCron");
 ok(/gateCronBearerRoute\(c\.env, "google-sync"\)/.test(googleRoutesSrc), "google-sync cron bearer uses gateCronBearerRoute");
 ok(/gateCronBearerRoute\(c\.env, "google-contacts"\)/.test(googleRoutesSrc), "google-contacts cron bearer uses gateCronBearerRoute");
-ok(
-  googleRoutesSrc.indexOf('gateCronBearerRoute(c.env, "google-sync")') <
-    googleRoutesSrc.indexOf("runGoogleSync"),
-  "google-sync gates before the handler runs",
-);
+const syncWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-sync")'), googleRoutesSrc.indexOf('paths("google-events")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+const contactsWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-contacts")'), googleRoutesSrc.indexOf('paths("calendar-refresh")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+ok(syncWrite.indexOf("gateCronBearerRoute") < syncWrite.indexOf("requestIo"), "google-sync gates before requestIo");
+ok(contactsWrite.indexOf("gateCronBearerRoute") < contactsWrite.indexOf("requestIo"), "google-contacts gates before requestIo");
 const runIdx = cronJobsSrc.indexOf("export async function runCronJob");
 const runGate = cronJobsSrc.indexOf("gateCron(env, name)", runIdx);
 const runSql = cronJobsSrc.indexOf("enqueueDueCalendarAccounts", runIdx);
