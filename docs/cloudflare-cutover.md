@@ -246,10 +246,12 @@ its rows stay out of snapshot/parity (billing webhooks insert via
 `logSync`). After the switch, `phase=resync` copies **every** source
 row whose `id` is missing on the target. An incoming id that already
 exists on Neon with **different content** aborts (count only — no row
-data). Then, in the **same transaction** (table + sequence locked),
-`setval`s `GREATEST(max(id), last_value, 1)` so the parked identity
-never decreases — `--exclude-table-data` drops sequence data and
-`OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
+data). Then, in the **same transaction** (`SET LOCAL lock_timeout = '10s'`
+then `LOCK TABLE` SHARE ROW EXCLUSIVE — a stuck writer times out with
+`sync_log lock timed out after 10s — retry the resync (retryable)`
+rather than hanging the job), `setval`s `GREATEST(max(id), last_value, 1)`
+so the parked identity never decreases — `--exclude-table-data` drops
+sequence data and `OVERRIDING SYSTEM VALUE` does not advance it. After restore (empty
 `sync_log`), the job `setval`s to source `max(id)` plus a 1e6 margin
 and keeps Neon ids in that parked range for the whole switch window,
 so they cannot overlap Supabase ids below the park. A dump-time
@@ -301,8 +303,9 @@ Order:
 6. **First resync** — the same job copies every `sync_log` id missing
    on Neon (aborts on a content collision), `setval`s
    `GREATEST(max(id), last_value, 1)` in that transaction so the park
-   never drops, then deletes missing `push_subscriptions` ids and
-   upserts the rest.
+   never drops (`SET LOCAL lock_timeout = '10s'` before `LOCK TABLE`;
+   timeout is retryable), then deletes missing `push_subscriptions`
+   ids and upserts the rest.
 7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
    `cutover-migrate` with `phase=resync` so post-switch billing
    inserts/updates/deletes land (id anti-join + setval + delete-then-upsert). Or

@@ -352,6 +352,34 @@ describe("sync_log late commit", () => {
     await source.close();
     await target.close();
   });
+
+  it("SET LOCAL lock_timeout = 10s is in effect before LOCK TABLE", async () => {
+    const source = new PGlite();
+    const target = new PGlite();
+    await source.exec(SYNC_DDL);
+    await target.exec(SYNC_DDL);
+    await source.query(
+      `INSERT INTO public.sync_log (id, provider, operation, status)
+       OVERRIDING SYSTEM VALUE VALUES (1, 'google', 'sync', 'ok')`,
+    );
+    await target.query(py("from cutover_copy import sync_log_reserve_sequence_sql; print(sync_log_reserve_sequence_sql(1))"));
+
+    const lock = py("from cutover_copy import sync_log_lock_sql; print(sync_log_lock_sql())");
+    await target.exec("BEGIN");
+    await target.exec(lock);
+    const shown = await target.query<{ lock_timeout: string }>("SHOW lock_timeout");
+    expect(String(shown.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
+    await target.exec("COMMIT");
+
+    await target.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    await loadSrc(target, source, [1]);
+    await target.exec(py("from cutover_copy import sync_log_resync_txn_sql; print(sync_log_resync_txn_sql())"));
+    expect(await idsOf(target)).toEqual([1]);
+    expect(await lastValue(target)).toBeGreaterThanOrEqual(1_000_001);
+
+    await source.close();
+    await target.close();
+  });
 });
 
 describe("push_subscriptions window edits", () => {
