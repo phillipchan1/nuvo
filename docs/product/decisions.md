@@ -6454,7 +6454,7 @@ at — it declines the merge instead of moving it.**
 result at the *earlier* seq. A later member that added a reference took it back in time: rename a
 task, then drop it with another onto open time, and the assign (`slot_id` → the new block) folded
 into the rename and reached Postgres ahead of the block's insert — `23503 tasks_slot_id_fkey`,
-parked. Seen on the dummy account via a D-165 combine; that caller was reordered, the queue was
+parked. Seen on the dummy account via a D-170 combine; that caller was reordered, the queue was
 not. So an update is **not folded** when any string in its patch is the id of a row inserted after
 the op it would join; it goes out on its own, at its own seq.
 
