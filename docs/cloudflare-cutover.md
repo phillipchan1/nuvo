@@ -247,6 +247,52 @@ After cutover is signed off and `SOURCE_DATABASE_URL` is deleted,
 revoke those leftovers, then drop (see the block in
 `migration_tmp.sql` next to this):
 
+Run the cleanup block **as the `postgres` role** (Supabase SQL editor or
+the Management API `database/query`, which both run as `postgres`). Not as
+`supabase_admin`, not as `migration_reader`, and never from CI or
+`cutover-migrate.yml`. **First take a fresh snapshot** (catalog only, no row
+data) and keep it with the run notes, so the revoke can be checked against
+what was there at that moment rather than at first apply:
+
+```sql
+-- 1. migration_reader grants in auth (schema, table, column)
+SELECT 'schema' AS kind, n.nspname AS obj, '' AS col, e.privilege_type, pg_get_userbyid(e.grantor) AS grantor
+FROM pg_namespace n CROSS JOIN LATERAL aclexplode(n.nspacl) e
+JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND r.rolname = 'migration_reader'
+UNION ALL
+SELECT 'table', c.relname, '', e.privilege_type, pg_get_userbyid(e.grantor)
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL aclexplode(c.relacl) e JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND r.rolname = 'migration_reader'
+UNION ALL
+SELECT 'column', c.relname, a.attname, e.privilege_type, pg_get_userbyid(e.grantor)
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL aclexplode(a.attacl) e JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND a.attnum > 0 AND NOT a.attisdropped
+  AND r.rolname = 'migration_reader'
+ORDER BY 1, 2, 3, 4;
+
+-- 2. role membership both ways (migration_reader must not inherit anything
+--    privileged, and nothing should be a member of it)
+SELECT pg_get_userbyid(m.roleid) AS role, pg_get_userbyid(m.member) AS member,
+       m.admin_option, m.inherit_option, m.set_option
+FROM pg_auth_members m
+WHERE m.roleid = 'migration_reader'::regrole OR m.member = 'migration_reader'::regrole;
+
+-- 3. what the cleanup will act on
+SELECT current_user;                       -- must be postgres
+SELECT objkind, privilege, count(*) FROM migration_tmp.auth_grants GROUP BY 1, 2;
+SELECT p.proname, p.proacl::text FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'migration_tmp';
+```
+
+Stop if `current_user` is not `postgres`, if the snapshot shows
+`migration_reader` grants in `auth` that are not in `migration_tmp.auth_grants`,
+or if the membership query shows `migration_reader` in a role it should not be
+in. Re-run query 1 after the cleanup; it must return zero rows.
+
 ```sql
 -- Loop migration_tmp.auth_grants for migration_reader (see migration_tmp.sql).
 -- Do not REVOKE ALL ON ALL TABLES IN SCHEMA auth — hosted postgres can 42501.
