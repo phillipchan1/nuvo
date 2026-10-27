@@ -4,7 +4,7 @@
  * Body: `{ confirm: "DELETE" }`. Owner is the verified session — a client
  * `user_id` is ignored. Billing is read by the session user.id through
  * the delete-gate reader (not the shared entitlement SELECT). A Stripe
- * subscription that is active, past_due, or unpaid blocks the wipe —
+ * subscription that is active, past_due, unpaid, or trialing blocks the wipe —
  * even when plan_source is now apple. Customer id alone does not.
  * StoreKit-only / no-card trials do not.
  * Apple users can delete and are told to cancel in Apple Account

@@ -64,8 +64,8 @@ describe("Worker delete-account Stripe gate", () => {
     expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
   });
 
-  it("active / past_due / unpaid Stripe subscriptions refuse, even with a null period end", async () => {
-    for (const status of ["active", "past_due", "unpaid"] as const) {
+  it("active / past_due / unpaid / trialing Stripe subscriptions refuse, even with a null period end", async () => {
+    for (const status of ["active", "past_due", "unpaid", "trialing"] as const) {
       const row = await readBillingSubscription(
         ENV,
         SESSION,
@@ -234,6 +234,17 @@ describe("Worker delete-account Stripe gate", () => {
     expect(ACTIVE_STRIPE_DELETE_MESSAGE).toMatch(/Stripe/);
   });
 
+  it("returns 502 when the delete-gate billing read fail-closes", async () => {
+    const res = await deleteOwnedAccount(
+      dummyStore(),
+      { id: SESSION },
+      { confirm: ACCOUNT_DELETE_CONFIRM },
+      ENV,
+      postgrest(200, [stripeRow({ user_id: PLANNER })]),
+    );
+    expect(res.status).toBe(502);
+  });
+
   it("fails closed when the Supabase billing reader is unconfigured", async () => {
     await expect(
       readBillingSubscription({ SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }, SESSION, postgrest(200, [])),
@@ -248,6 +259,19 @@ describe("Worker delete-account Stripe gate", () => {
       BillingLookupError,
     );
     await expect(readBillingSubscription(ENV, SESSION, postgrest(200, []))).resolves.toBeNull();
+
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, "not-json"))).rejects.toBeInstanceOf(
+      BillingLookupError,
+    );
+    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, null))).rejects.toBeInstanceOf(
+      BillingLookupError,
+    );
+    await expect(
+      readBillingSubscription(ENV, SESSION, postgrest(200, [{ status: "active", plan_source: "stripe" }])),
+    ).rejects.toBeInstanceOf(BillingLookupError);
+    await expect(
+      readBillingSubscription(ENV, SESSION, postgrest(200, [stripeRow({ user_id: PLANNER })])),
+    ).rejects.toBeInstanceOf(BillingLookupError);
 
     await expect(
       fetchSubscriptionByUserId(ENV, SESSION, postgrest(404, "no")),

@@ -1,16 +1,17 @@
 /**
  * Seal / open Better Auth `account` OAuth tokens.
  *
- * BA 1.7.13 writes access/refresh/id tokens in plaintext unless
- * `account.encryptOAuthTokens` is on (XChaCha via BETTER_AUTH_SECRET).
- * We also seal leftover plaintext with A's keyring so a token never
- * lands on `account.*` in the clear. TOKEN_ENC_KEY_V1 unset → throw.
+ * BA 1.7.13 with only BETTER_AUTH_SECRET sets `secretConfig` to that
+ * string, so `encryptOAuthTokens` writes **bare hex** (no `$ba$` prefix).
+ * Classification is decrypt-based: if BA's own decrypt succeeds, the
+ * value is already ciphertext — never re-seal it. Open unwraps a legacy
+ * nv1. wrapper first, then BA-decrypts the inner value so revoke and
+ * BA's own token reads both see plaintext.
  */
-import { formatEnvelope, symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import {
   openToken,
   parseTokenKeyring,
-  sealToken,
   TokenCryptoError,
   type SealedToken,
 } from "../secrets.ts";
@@ -29,14 +30,8 @@ export type AccountTokenFields = {
   idToken?: string | null;
 };
 
-export function isBaEncryptedToken(value: string): boolean {
-  return value.startsWith("$ba$");
-}
-
-/** BA string-key encrypt is bare hex. Envelope it so detection stays prefix-only. */
-export function envelopeBaToken(value: string): string {
-  if (value.startsWith("$ba$") || value.startsWith(NUVO_PREFIX)) return value;
-  return formatEnvelope(0, value);
+export function isNuvoSealedToken(value: string): boolean {
+  return value.startsWith(NUVO_PREFIX);
 }
 
 export function baCiphertext(value: string): string {
@@ -46,12 +41,34 @@ export function baCiphertext(value: string): string {
   return sep === -1 ? value : rest.slice(sep + 1);
 }
 
-export function isNuvoSealedToken(value: string): boolean {
-  return value.startsWith(NUVO_PREFIX);
+/**
+ * Attempt BA's own decrypt (string secret = bare hex; `$ba$<v>$` envelope
+ * is unwrapped then decrypted the same way). Success ⇒ BA ciphertext.
+ */
+export async function tryDecryptBaToken(secret: string, value: string): Promise<string | null> {
+  if (!secret || !value) return null;
+  try {
+    const plain = await symmetricDecrypt({ key: secret, data: value });
+    if (typeof plain === "string" && plain.length > 0) return plain;
+  } catch {
+    /* not bare-hex BA ciphertext */
+  }
+  if (value.startsWith("$ba$")) {
+    const hex = baCiphertext(value);
+    if (hex !== value) {
+      try {
+        const plain = await symmetricDecrypt({ key: secret, data: hex });
+        if (typeof plain === "string" && plain.length > 0) return plain;
+      } catch {
+        /* not an envelope we can open */
+      }
+    }
+  }
+  return null;
 }
 
-export function isProtectedAccountToken(value: string): boolean {
-  return isBaEncryptedToken(value) || isNuvoSealedToken(value);
+export async function isBaEncryptedToken(secret: string, value: string): Promise<boolean> {
+  return (await tryDecryptBaToken(secret, value)) !== null;
 }
 
 function bytesToB64(bytes: Uint8Array): string {
@@ -114,34 +131,38 @@ function accountAadCandidates(account: AccountTokenFields): AccountAad[] {
   return out;
 }
 
-/** Replace plaintext token fields. Already-protected values pass through. */
+async function alreadyProtected(
+  secret: string | undefined,
+  value: string,
+): Promise<boolean> {
+  if (isNuvoSealedToken(value)) return true;
+  if (!secret) return false;
+  return (await tryDecryptBaToken(secret, value)) !== null;
+}
+
+/** Replace plaintext token fields. BA ciphertext and nv1. wrappers pass through. */
 export async function sealAccountTokenFields(
   env: Pick<Env, "TOKEN_ENC_KEY_V1" | "TOKEN_ENC_KEY_V2" | "TOKEN_ENC_CURRENT" | "BETTER_AUTH_SECRET">,
   account: AccountTokenFields,
 ): Promise<AccountTokenFields> {
-  const pending = ACCOUNT_TOKEN_KEYS.filter((key) => {
+  const secret = env.BETTER_AUTH_SECRET?.trim();
+  const pending: AccountTokenKey[] = [];
+  for (const key of ACCOUNT_TOKEN_KEYS) {
     const value = account[key];
-    return typeof value === "string" && value.length > 0 && !isProtectedAccountToken(value);
-  });
+    if (typeof value !== "string" || value.length === 0) continue;
+    if (await alreadyProtected(secret, value)) continue;
+    pending.push(key);
+  }
   if (pending.length === 0) return account;
   if (!(env.TOKEN_ENC_KEY_V1 ?? "").trim()) {
     throw new TokenCryptoError("TOKEN_ENC_KEY_V1 missing");
   }
   const next: AccountTokenFields = { ...account };
-  const aad = accountAad(next);
-  if (aad) {
-    const keyring = await parseTokenKeyring(env);
-    for (const key of pending) {
-      next[key] = formatNuvoSealedToken(await sealToken(account[key] as string, aad, keyring));
-    }
-    return next;
-  }
-  // linkSocial's update hook is a patch: tokens, no id/userId. Seal with
-  // BA's own XChaCha so leftover plaintext (idToken) never lands in the clear.
-  const secret = env.BETTER_AUTH_SECRET?.trim();
-  if (!secret) throw new TokenCryptoError("account id and userId required to seal");
+  // Leftover plaintext: encrypt the same way BA does (string secret → hex)
+  // so BA's own decryptOAuthToken can read it. Do not nv1-wrap BA hex.
+  if (!secret) throw new TokenCryptoError("BETTER_AUTH_SECRET missing");
   for (const key of pending) {
-    next[key] = envelopeBaToken(await symmetricEncrypt({ key: secret, data: account[key] as string }));
+    next[key] = await symmetricEncrypt({ key: secret, data: account[key] as string });
   }
   return next;
 }
@@ -152,24 +173,30 @@ export async function openAccountRefreshToken(
   account: AccountTokenFields,
 ): Promise<string | null> {
   if (!stored) return null;
+  const secret = env.BETTER_AUTH_SECRET?.trim();
+  let inner = stored;
   if (isNuvoSealedToken(stored)) {
     const keyring = await parseTokenKeyring(env);
     const sealed = parseNuvoSealedToken(stored);
     let last: unknown;
+    let opened: string | null = null;
     for (const aad of accountAadCandidates(account)) {
       try {
-        return await openToken(sealed, aad, keyring);
+        opened = await openToken(sealed, aad, keyring);
+        last = null;
+        break;
       } catch (err) {
         last = err;
       }
     }
-    throw last instanceof TokenCryptoError ? last : new TokenCryptoError("decrypt failed");
+    if (opened == null) {
+      throw last instanceof TokenCryptoError ? last : new TokenCryptoError("decrypt failed");
+    }
+    inner = opened;
   }
-  if (isBaEncryptedToken(stored)) {
-    const secret = env.BETTER_AUTH_SECRET?.trim();
-    if (!secret) throw new TokenCryptoError("BETTER_AUTH_SECRET missing");
-    return symmetricDecrypt({ key: secret, data: baCiphertext(stored) });
+  if (secret) {
+    const ba = await tryDecryptBaToken(secret, inner);
+    if (ba !== null) return ba;
   }
-  // Legacy leftover — do not treat as a successful sealed store.
-  return stored;
+  return inner;
 }

@@ -9,11 +9,12 @@
  * does not block.
  *
  * Refuse when the row is a Stripe subscription (plan_source = stripe, or
- * stripe_subscription_id present) AND status is active / past_due / unpaid,
- * even if plan_source is now apple. Period end and card-on-file do not
- * matter. Unknown stripe status fails closed. Trials with no Stripe
+ * stripe_subscription_id present) AND status is active / past_due / unpaid
+ * / trialing, even if plan_source is now apple. Period end and card-on-file
+ * do not matter. Unknown stripe status fails closed. Trials with no Stripe
  * subscription, ended Stripe rows, and StoreKit-only users can delete.
- * 404/406 fail closed here only; the shared entitlement reader is unchanged.
+ * 404/406 and a 200 that is not a documented empty `[]` fail closed here
+ * only; the shared entitlement reader is unchanged.
  */
 import {
   APPLE_DELETE_NOTICE,
@@ -41,7 +42,7 @@ export const ACTIVE_STRIPE_DELETE_MESSAGE = STRIPE_DELETE_BLOCK_MESSAGE;
 export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancelled"] as const;
 
 const STRIPE_ENDED = new Set(["cancelled", "canceled", "incomplete_expired"]);
-const STRIPE_CHARGING = new Set(["active", "past_due", "unpaid"]);
+const STRIPE_CHARGING = new Set(["active", "past_due", "unpaid", "trialing"]);
 
 const GATE_SELECT = [
   "user_id",
@@ -73,7 +74,7 @@ export function stripeSubscriptionBlocksDelete(row: DeleteGateRow | null | undef
   if (!isStripeSubscriptionRow(row)) return false;
   const status = chargingStatus(row);
   if (!status) return true;
-  if (STRIPE_ENDED.has(status) || status === "trialing") return false;
+  if (STRIPE_ENDED.has(status)) return false;
   if (STRIPE_CHARGING.has(status)) return true;
   return true;
 }
@@ -98,11 +99,13 @@ function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function mapGateRow(value: unknown, userId: string): DeleteGateRow | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+function mapGateRow(value: unknown, userId: string): DeleteGateRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new BillingLookupError();
+  }
   const raw = value as Record<string, unknown>;
   const owner = asText(raw.user_id);
-  if (!owner || owner !== userId) return null;
+  if (!owner || owner !== userId) throw new BillingLookupError();
   const source = asText(raw.plan_source).toLowerCase();
   return {
     status: asText(raw.status) || null,
@@ -153,7 +156,13 @@ async function fetchBillingSubscription(
   // A missing table or schema-cache miss must fail closed — here only.
   if (res.status === 406 || res.status === 404) throw new BillingLookupError();
   if (!res.ok) throw new BillingLookupError();
-  const body: unknown = await res.json().catch(() => null);
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new BillingLookupError();
+  }
+  if (body == null) throw new BillingLookupError();
   if (Array.isArray(body)) {
     if (body.length === 0) return null;
     return mapGateRow(body[0], userId);
