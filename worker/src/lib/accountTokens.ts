@@ -6,7 +6,7 @@
  * We also seal leftover plaintext with A's keyring so a token never
  * lands on `account.*` in the clear. TOKEN_ENC_KEY_V1 unset → throw.
  */
-import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { formatEnvelope, symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import {
   openToken,
   parseTokenKeyring,
@@ -31,6 +31,19 @@ export type AccountTokenFields = {
 
 export function isBaEncryptedToken(value: string): boolean {
   return value.startsWith("$ba$");
+}
+
+/** BA string-key encrypt is bare hex. Envelope it so detection stays prefix-only. */
+export function envelopeBaToken(value: string): string {
+  if (value.startsWith("$ba$") || value.startsWith(NUVO_PREFIX)) return value;
+  return formatEnvelope(0, value);
+}
+
+export function baCiphertext(value: string): string {
+  if (!value.startsWith("$ba$")) return value;
+  const rest = value.slice(4);
+  const sep = rest.indexOf("$");
+  return sep === -1 ? value : rest.slice(sep + 1);
 }
 
 export function isNuvoSealedToken(value: string): boolean {
@@ -128,7 +141,7 @@ export async function sealAccountTokenFields(
   const secret = env.BETTER_AUTH_SECRET?.trim();
   if (!secret) throw new TokenCryptoError("account id and userId required to seal");
   for (const key of pending) {
-    next[key] = await symmetricEncrypt({ key: secret, data: account[key] as string });
+    next[key] = envelopeBaToken(await symmetricEncrypt({ key: secret, data: account[key] as string }));
   }
   return next;
 }
@@ -155,7 +168,7 @@ export async function openAccountRefreshToken(
   if (isBaEncryptedToken(stored)) {
     const secret = env.BETTER_AUTH_SECRET?.trim();
     if (!secret) throw new TokenCryptoError("BETTER_AUTH_SECRET missing");
-    return symmetricDecrypt({ key: secret, data: stored });
+    return symmetricDecrypt({ key: secret, data: baCiphertext(stored) });
   }
   // Legacy leftover — do not treat as a successful sealed store.
   return stored;

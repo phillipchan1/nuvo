@@ -259,9 +259,10 @@ describe("Worker delete-account Stripe gate", () => {
 
   it("revokes Apple only after the wipe transaction commits", () => {
     const src = readFileSync("worker/src/deleteAccount.ts", "utf8");
-    const load = src.indexOf("loadOwnedAppleRefreshToken");
-    const wipe = src.indexOf("wipeOwnedAccount");
-    const revoke = src.indexOf("revokeAppleToken");
+    const body = src.slice(src.indexOf("export async function deleteOwnedAccount"));
+    const load = body.indexOf("await loadOwnedAppleRefreshToken");
+    const wipe = body.indexOf("await wipeOwnedAccount");
+    const revoke = body.indexOf("await revokeAppleToken");
     expect(load).toBeGreaterThan(-1);
     expect(wipe).toBeGreaterThan(load);
     expect(revoke).toBeGreaterThan(wipe);
