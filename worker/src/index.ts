@@ -77,6 +77,11 @@ import {
   patchExtra,
   writeExtra,
 } from "./extraData.ts";
+import {
+  BILLING_PROXY_FUNCTIONS,
+  isBillingProxyName,
+  proxyBillingFunction,
+} from "./billingProxy.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -614,9 +619,27 @@ app.all("/functions/v1/task-mirror", async (c) => {
 app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 
+async function handleBillingProxy(c: Context<AppEnv>, name: string): Promise<Response> {
+  if (c.req.method === "OPTIONS") return new Response("ok", { headers: OPEN_CORS });
+  if (c.req.method === "GET" || c.req.method === "HEAD") {
+    return json({ error: "method not allowed" }, 405, OPEN_CORS);
+  }
+  if (!isBillingProxyName(name)) return stayOnSupabase(name);
+  const got = await requireSession(c);
+  if ("error" in got) return got.error;
+  return proxyBillingFunction(c, name, got.user);
+}
+
+for (const name of BILLING_PROXY_FUNCTIONS) {
+  app.all(`/api/${name}`, (c) => handleBillingProxy(c, name));
+  app.all(`/functions/v1/${name}`, (c) => handleBillingProxy(c, name));
+}
+
 app.all("/functions/v1/:name", (c) => {
   if (c.req.param("name") === "github-activity") return handleGithubActivity(c);
-  return stayOnSupabase(c.req.param("name"));
+  const name = c.req.param("name");
+  if (isBillingProxyName(name)) return handleBillingProxy(c, name);
+  return stayOnSupabase(name);
 });
 
 function hasFileExtension(path: string): boolean {

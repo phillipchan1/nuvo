@@ -13,6 +13,7 @@ import {
 } from "../_shared/apple.ts";
 import { applyPlanUpdate } from "../_shared/plan.ts";
 import { appleNotificationToPlan, isOurIapProduct } from "../_shared/planRules.ts";
+import { appleWebhookUserId } from "../_shared/appleAccount.ts";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -74,7 +75,22 @@ Deno.serve(async (req) => {
     const originalTransactionId = asString(tx.originalTransactionId);
     if (!originalTransactionId) return json({ received: true, ignored: true });
 
+    let existingUserIdByOriginalTransaction: string | null = null;
+    {
+      const { data: linked } = await admin
+        .from("subscriptions")
+        .select("user_id")
+        .eq("apple_original_transaction_id", originalTransactionId)
+        .maybeSingle();
+      existingUserIdByOriginalTransaction = (linked?.user_id as string | undefined) ?? null;
+    }
+    const userId = appleWebhookUserId({
+      existingUserIdByOriginalTransaction,
+      appAccountToken: tx.appAccountToken,
+    });
+
     const result = await applyPlanUpdate({
+      userId,
       plan: mapped.plan,
       planSource: "apple",
       currentPeriodEnd: appleDateToIso(tx.expiresDate),

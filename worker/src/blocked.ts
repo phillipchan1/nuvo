@@ -1,13 +1,15 @@
 import { OPEN_CORS, json } from "./cors.ts";
+import { BILLING_PROXY_FUNCTIONS as PROXY_NAMES } from "./billingProxy.ts";
 
-/** Billing / Stripe / StoreKit — do not port. */
+/** Billing / Stripe / StoreKit — do not port the writers.
+ *  User-authenticated names are proxied (Better Auth → service-role).
+ *  Apple/Stripe webhooks and the catalog stay on Supabase directly. */
+export const BILLING_PROXY_FUNCTIONS = new Set<string>(PROXY_NAMES);
+
 export const BILLING_FUNCTIONS = new Set([
-  "apple-iap",
+  ...BILLING_PROXY_FUNCTIONS,
   "apple-webhook",
   "iap-catalog",
-  "referral-code",
-  "stripe-checkout",
-  "stripe-portal",
   "stripe-webhook",
 ]);
 

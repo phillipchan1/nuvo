@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// iap.ts imports the real Supabase client for `confirmApplePurchase`; the
+// iap.ts pulls in billingInvoke → supabase for `confirmApplePurchase`; the
 // catalog half is pure and is what's under test here.
 vi.mock("../src/lib/supabase", () => ({
+  functionUrl: (name: string) => `https://example.supabase.co/functions/v1/${name}`,
   supabase: { functions: { invoke: vi.fn() } },
+}));
+vi.mock("../src/lib/sessionAuth", () => ({
+  currentUserId: async () => null,
+  currentAccessToken: async () => null,
 }));
 
 const { catalogProductIds, fetchIapCatalog, iapErrorMessage } = await import("../src/lib/iap");

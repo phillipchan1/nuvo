@@ -8,10 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchReferralCode = vi.fn();
 
-vi.mock("../src/lib/backend", () => ({
-  workersEnabled: true,
-}));
-
 vi.mock("../src/hooks/useSubscription", () => ({
   useSubscription: () => ({
     subscription: {
@@ -48,12 +44,13 @@ vi.mock("../src/components/billing/web/UpgradeModal", () => ({
 
 import { WebBillingPane } from "../src/components/billing/web/BillingPane";
 
-describe("Share Nuvo on the Worker path", () => {
+describe("Share Nuvo after the billing proxy", () => {
   let root: Root;
   let host: HTMLDivElement;
 
   beforeEach(() => {
     fetchReferralCode.mockReset();
+    fetchReferralCode.mockResolvedValue("PHIL-TEST");
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -64,12 +61,12 @@ describe("Share Nuvo on the Worker path", () => {
     host.remove();
   });
 
-  it("disables the share block with a clear message and does not call referral-code", async () => {
+  it("mints through referral-code (Worker proxy after flip)", async () => {
     await act(async () => {
       root.render(createElement(WebBillingPane));
     });
-    expect(host.textContent).toMatch(/Friend-codes still mint on today’s billing path/i);
-    expect(host.textContent).not.toMatch(/Getting your code/i);
-    expect(fetchReferralCode).not.toHaveBeenCalled();
+    expect(fetchReferralCode).toHaveBeenCalled();
+    expect(host.textContent).toMatch(/PHIL-TEST|Getting your code/i);
+    expect(host.textContent).not.toMatch(/aren’t available while this build talks to the Worker/i);
   });
 });

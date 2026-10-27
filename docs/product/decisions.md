@@ -6309,3 +6309,14 @@ D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret an
 **Anchor.** Same leave path as D-117 (O4 stays ○). Strains **P8** (Account still holds identity *and* leave). Four no's: no pool, no new name, works with a missing or empty billing row, not builder-only.
 
 *Status: built — `tests/delete-account-worker.test.ts`, `tests/delete-account-ui.test.tsx`.*
+
+**D-169 · 2026-10-27 · After the flip, billing calls go Worker → service-role acting-user → the same Supabase functions. Entitlement writes stay on Supabase (option b).**
+
+Better Auth sessions are not GoTrue JWTs, so `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` 401 from `requireUser` after cutover. The Worker verifies the BA session and calls those functions with the service-role key plus `X-Nuvo-Acting-User` set to the **verified** user id — never a client-supplied id. Cutover copies `auth.users.id` onto Better Auth `"user".id` unchanged, so no remap. StoreKit sets `appAccountToken` to that UUID; `apple-webhook` uses it only when no `apple_original_transaction_id` link exists.
+
+**Option (b), not (a).** Billing tables (`subscriptions` and the webhook ledgers) stay writable on Supabase, exempt from `freeze.sql`, and `GET /api/entitlement` already reads them. Repointing writers to Neon would change the DB client on every rail and on both webhooks without changing Stripe/StoreKit signatures — larger, and rollback would need those webhooks moved back. Stripe rehearsal stays TEST. Friend-code minting is proxied (D-166's "share block disabled on the flag-on pane" is superseded).
+
+**Anchor.** No Question Ledger row — infrastructure, same as D-166. Four no's: no pool, no new user-facing name, works with a missing token (webhook ignores), not builder-only.
+
+*Status: standing — rehearsal. Tests: `tests/acting-user.test.ts`, `tests/apple-account-token.test.ts`, `tests/billing-proxy.test.ts`, `tests/cutover-auth-ids.test.ts`, `worker/src/billingProxy.check.ts`, `worker/src/accessHttp.check.ts`.*
+

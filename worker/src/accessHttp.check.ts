@@ -24,6 +24,7 @@ import { installRequestIoForTests } from "./requestIo.ts";
 import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
 import { installSubscriptionFetcherForTests, type SubscriptionColumns } from "./entitlement.ts";
 import { installBillingReaderForTests } from "./lib/billingRead.ts";
+import { installBillingProxyFetchForTests } from "./billingProxy.ts";
 import { PLANNER_TABLES, type PlannerTable } from "./store.ts";
 import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/accountDeletion.ts";
 import { mapAuthIdentityToAccount } from "./lib/authMap.ts";
@@ -48,7 +49,7 @@ const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
 const routeSrc = [
   indexSrc,
   sessionSrc,
-  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "slotMirror.ts", "taskMirror.ts", "pushDispatch.ts", "mirrorTargets.ts", "githubActivity.ts", "calendar/http.ts"].map(
+  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "slotMirror.ts", "taskMirror.ts", "pushDispatch.ts", "mirrorTargets.ts", "githubActivity.ts", "calendar/http.ts", "billingProxy.ts"].map(
     (name) => readFileSync(join(here, name), "utf8"),
   ),
 ].join("\n");
@@ -462,6 +463,12 @@ const unauth: { method: string; path: string; body?: Record<string, unknown> }[]
   { method: "POST", path: "/functions/v1/github-activity", body: { action: "connect", token: "x" } },
   { method: "POST", path: "/api/cron/github-poll" },
   { method: "POST", path: "/api/cron/trim-sync-log" },
+  { method: "POST", path: "/api/apple-iap", body: { productId: "NUVO_IAP_MONTHLY" } },
+  { method: "POST", path: "/api/stripe-checkout", body: { plan: "monthly" } },
+  { method: "POST", path: "/api/stripe-portal", body: {} },
+  { method: "POST", path: "/api/referral-code", body: {} },
+  { method: "POST", path: "/functions/v1/apple-iap", body: { productId: "NUVO_IAP_MONTHLY" } },
+  { method: "POST", path: "/functions/v1/stripe-checkout", body: { plan: "monthly" } },
 ];
 
 for (const route of unauth) {
@@ -2048,6 +2055,107 @@ ok((await count("users", "id = $1", [c.id])) === 0, "C delete: planner user gone
 ok((await count('"user"', "id = $1", [c.id])) === 0, "C delete: Better Auth user gone");
 ok((await count("users", "id = $1", [a.id])) === 1, "C delete: A planner untouched");
 
+// B and C were wiped above. A fresh session is the spoof actor so we
+// prove the proxy takes the verified Better Auth id, not a body/header.
+const d = await signInOtp("iso-d@example.test");
+
+const billingCalls: { url: string; method: string; acting?: string | null; auth?: string | null }[] = [];
+const restoreBillingFetch = installBillingProxyFetchForTests(async (input, init) => {
+  const headers = new Headers(init?.headers);
+  billingCalls.push({
+    url: String(input),
+    method: (init?.method ?? "GET").toUpperCase(),
+    acting: headers.get("x-nuvo-acting-user"),
+    auth: headers.get("Authorization"),
+  });
+  return new Response(JSON.stringify({ ok: true, url: "https://checkout.test/ok" }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+
+const billingEnv = {
+  ...env,
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
+};
+
+async function billingRequest(
+  path: string,
+  token: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+  extraEnv: Record<string, string> = {},
+): Promise<Response> {
+  return app.request(
+    `http://localhost:8787${path}`,
+    {
+      method: "POST",
+      headers: { ...jsonHeaders(token), Origin: origin, ...extraHeaders },
+      body: JSON.stringify(body),
+    },
+    { ...billingEnv, ...extraEnv },
+  );
+}
+
+ok(/proxyBillingFunction\(c, name, got\.user\)/.test(indexSrc), "billing proxy owner is the verified session");
+
+const unauthBilling = await withTimeout(
+  request("/api/stripe-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: "monthly" }) }),
+  8000,
+  "unauth stripe-checkout",
+);
+ok(unauthBilling.status === 401, `unauth stripe-checkout: HTTP ${unauthBilling.status}`);
+ok(billingCalls.length === 0, "unauth stripe-checkout does not call Supabase");
+
+const aCheckout = await withTimeout(
+  billingRequest("/api/stripe-checkout", a.token, { plan: "monthly", user_id: b.id, actingUserId: b.id }),
+  8000,
+  "A stripe-checkout",
+);
+ok(aCheckout.status === 200, `A stripe-checkout: HTTP ${aCheckout.status}`);
+ok(billingCalls.length === 1, "A stripe-checkout made one outbound call");
+ok(billingCalls[0]?.url === "https://example.supabase.co/functions/v1/stripe-checkout", "A stripe-checkout hits the existing edge function");
+ok(billingCalls[0]?.acting === a.id, "A stripe-checkout acting user is A's session id");
+ok(billingCalls[0]?.acting !== b.id, "A stripe-checkout does not forward B's id from the body");
+ok(billingCalls[0]?.auth === "Bearer service-role-test", "A stripe-checkout uses the service-role bearer");
+
+const dSpoof = await withTimeout(
+  billingRequest(
+    "/api/apple-iap",
+    d.token,
+    { productId: "NUVO_IAP_MONTHLY", originalTransactionId: "tx", user_id: a.id, actingUserId: a.id },
+    { "X-User-Id": a.id },
+  ),
+  8000,
+  "D apple-iap spoof",
+);
+ok(dSpoof.status === 200, `D apple-iap: HTTP ${dSpoof.status}`);
+ok(billingCalls.at(-1)?.acting === d.id, "D apple-iap acting user is D — client body/header is ignored");
+ok(billingCalls.at(-1)?.acting !== a.id, "D apple-iap does not take A's id from the client");
+
+const noSecrets = await withTimeout(
+  billingRequest("/api/referral-code", a.token, {}, {}, { SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }),
+  8000,
+  "referral-code no secrets",
+);
+ok(noSecrets.status === 503, `referral-code without secrets: HTTP ${noSecrets.status}`);
+
+const webhookStay = await withTimeout(
+  request("/functions/v1/apple-webhook", { method: "POST", headers: jsonHeaders(a.token), body: "{}" }),
+  8000,
+  "apple-webhook on Worker",
+);
+ok(webhookStay.status === 501, `apple-webhook stays on Supabase: HTTP ${webhookStay.status}`);
+
+const getBilling = await withTimeout(
+  request("/api/apple-iap", { headers: authHeaders(a.token) }),
+  8000,
+  "GET apple-iap",
+);
+ok(getBilling.status === 405, `GET apple-iap: HTTP ${getBilling.status}`);
+
+restoreBillingFetch();
 restoreWorkerFetch();
 restore();
 await kysely.destroy();

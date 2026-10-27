@@ -56,7 +56,16 @@ export function workerApiRoot(): string {
   return `${raw}/api`;
 }
 
-/** Billing / Stripe / StoreKit stay on Supabase. Do not rewrite these. */
+/**
+ * After the flip, user-authenticated billing calls go through the Worker
+ * proxy (`apple-iap`, `stripe-checkout`, `stripe-portal`, `referral-code`)
+ * via `invokeBilling`. Webhooks stay on Supabase and are not rewritten.
+ */
+export function billingViaWorker(): boolean {
+  return workersEnabled;
+}
+
+/** Leftover `functions.invoke` names that must not be rewritten. */
 export const BILLING_FUNCTION_NAMES = new Set([
   "apple-iap",
   "apple-webhook",

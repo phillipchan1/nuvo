@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { invokeBilling } from "./billingInvoke";
 import { isDesktopTauri } from "./platform";
 import { clearPendingReferralCode, readPendingReferralCode } from "./referral";
 
@@ -15,8 +15,10 @@ function returnOrigin(): string | undefined {
 
 export async function startCheckout(plan: CheckoutPlan): Promise<string> {
   const code = readPendingReferralCode() ?? undefined;
-  const { data, error } = await supabase.functions.invoke<{ url: string }>("stripe-checkout", {
-    body: { plan, origin: returnOrigin(), code },
+  const { data, error } = await invokeBilling<{ url: string }>("stripe-checkout", {
+    plan,
+    origin: returnOrigin(),
+    code,
   });
   if (error || !data?.url) throw new Error(error?.message ?? "Could not start checkout");
   // Applied (or offered) at Checkout — don't keep re-applying on a later attempt
@@ -28,9 +30,9 @@ export async function startCheckout(plan: CheckoutPlan): Promise<string> {
 /** Mint or fetch this account's personal share code. BillingPane is the only
  *  caller — quiet, no counts, no theater. */
 export async function fetchReferralCode(): Promise<string> {
-  const { data, error } = await supabase.functions.invoke<{ code?: string; error?: string }>(
+  const { data, error } = await invokeBilling<{ code?: string; error?: string }>(
     "referral-code",
-    { body: {} },
+    {},
   );
   if (error || !data?.code) {
     throw new Error(data?.error ?? error?.message ?? "Could not load your code");
@@ -39,8 +41,8 @@ export async function fetchReferralCode(): Promise<string> {
 }
 
 export async function fetchPortalUrl(): Promise<string> {
-  const { data, error } = await supabase.functions.invoke<{ url: string }>("stripe-portal", {
-    body: { origin: returnOrigin() },
+  const { data, error } = await invokeBilling<{ url: string }>("stripe-portal", {
+    origin: returnOrigin(),
   });
   if (error || !data?.url) throw new Error(error?.message ?? "Could not open billing portal");
   return data.url;

@@ -36,9 +36,13 @@ export interface Env {
   OPENAI_MODEL?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
-  /** Supabase origin for the billing read. Subscriptions stay there. */
+  /** Supabase origin for the billing read and the billing-function proxy. Subscriptions stay there. */
   SUPABASE_URL?: string;
-  /** Service-role key used only to SELECT subscriptions by session user_id. Never a Stripe secret. */
+  /**
+   * Service-role key. Used to SELECT subscriptions by session user_id and
+   * to call apple-iap / stripe-checkout / stripe-portal / referral-code
+   * server-to-server with `X-Nuvo-Acting-User`. Never a Stripe secret.
+   */
   SUPABASE_SERVICE_ROLE_KEY?: string;
   /** AES-256-GCM key (32-byte hex or base64). Required to seal/open tokens. Unset → fail closed. */
   TOKEN_ENC_KEY_V1?: string;

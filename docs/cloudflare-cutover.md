@@ -24,7 +24,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Same flag flip |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / Stripe / StoreKit | Supabase edge | **Still Supabase.** A separate agent owns entitlement. Do not move it here | n/a |
+| Billing / Stripe / StoreKit | Supabase edge | **Still Supabase writes (option b).** After the flip, `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` go Worker → service-role acting-user → the same Supabase functions. Webhooks stay pointed at Supabase. Entitlement is read from those same Supabase rows (`GET /api/entitlement`). Billing tables stay writable (exempt from the freeze); we do not repoint writers to Neon. | n/a |
 | Calendar + OAuth (Google, M365, iCloud, ICS) | Supabase edge + pg_cron | Worker `/functions/v1/:name` **and** `/api/:name` for `google-oauth`, `google-events`, `calendar-refresh`, `m365-oauth`, `icloud-connect`, `ics-subscribe`. Crons `google-renew` / `calendar-dispatch` / `m365-sync` / `icloud-sync` / `ics-sync` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
@@ -64,8 +64,8 @@ None of these belong in the Vite bundle.
 | `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `MIN_CLIENT_VERSION` | var | Floor the SPA reads as `min_version` from `GET /api/maintenance`. Unset / empty → clients **fail open** (no update wall). Set on the Worker deploy (below) when a shipped binary must stop writing |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
-| `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id |
-| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
+| `SUPABASE_URL` | secret | Billing read + the billing-function proxy. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id. The proxy POSTs `apple-iap` / `stripe-checkout` / `stripe-portal` / `referral-code` at `${SUPABASE_URL}/functions/v1/<name>` |
+| `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read (`user_id=eq.<session id>`) and the proxy's service-role bearer + `X-Nuvo-Acting-User` (the verified Better Auth id — never a client-supplied id). **Not** a Stripe key; do not add `STRIPE_SECRET_KEY`. Stripe stays in TEST mode for rehearsal |
 | `APP_URL` | var | SPA origin for the post-consent redirect |
 | `CLOUDFLARE_API_TOKEN` | (optional, later) | Only if someone later adds a manual deploy workflow |
 | `CLOUDFLARE_ACCOUNT_ID` | (optional, later) | Same |
@@ -350,7 +350,11 @@ subscribe, icloud-connect / sync / events / contacts, calendar-refresh,
 slot-mirror, task-mirror, route-events, rollover, push-dispatch,
 github-activity, apple-identity. **Not** covered — do not add it:
 `stripe-webhook`, `apple-webhook`, stripe-checkout / portal, apple-iap,
-iap-catalog, referral-code. Those keep writing billing tables.
+iap-catalog, referral-code. Those keep writing billing tables on
+Supabase — **option (b)**. The tables stay writable (exempt from
+`freeze.sql`) and the Worker reads entitlement from them. We did not
+repoint those writers to Neon: smaller, no Stripe/StoreKit signature
+change, and rollback is still "leave the webhooks where they are."
 
 ## Copy-window freeze (hand-applied, not CI)
 
@@ -623,13 +627,21 @@ camelCase columns (`emailVerified`, `userId`, `expiresAt`, …). A snake_case
 schema 500s on OTP send, OTP sign-in, sign-up and get-session even with a
 `fields` map. `npm run check:worker` drives those four routes through real
 Better Auth on PGlite. Billing `subscriptions` stays on Supabase — it is not
-in the Neon rehearsal schema. The Worker entitlement check
-(`GET /api/entitlement`) reads that table by the preserved session user id
-(Better Auth `user.id` = `auth.users.id`). Stripe / StoreKit writers are
-unchanged. `scripts/check-entitlement-parity.ts` proves the 1:1 auth copy
-and that every subscription keeps the same tier. The SPA's paid gate
-(`useSubscription`) reads `GET /api/entitlement` when `VITE_API_BASE_URL`
-is set, and keeps today's PostgREST select when it is not. Live Stripe +
+in the Neon rehearsal schema (**option (b)**: tables stay writable, exempt
+from the freeze; the Worker reads them). The cutover copy inserts Better
+Auth `"user".id` as the GoTrue `auth.users.id` — they are equal, not
+remapped. The Worker entitlement check (`GET /api/entitlement`) reads that
+table by the preserved session user id. After the flip, user-authenticated
+billing calls (`apple-iap`, `stripe-checkout`, `stripe-portal`,
+`referral-code`) go through the Worker proxy (Better Auth session →
+service-role + `X-Nuvo-Acting-User`); Apple/Stripe webhooks stay on
+Supabase. StoreKit purchases set `appAccountToken` to that UUID so a new
+buyer is attached even if confirm never ran. Stripe / StoreKit pricing,
+product ids, and webhook signatures are unchanged. Stripe rehearsal is
+TEST mode only. `scripts/check-entitlement-parity.ts` proves the 1:1 auth
+copy and that every subscription keeps the same tier. The SPA's paid gate
+(`useSubscription`) reads `GET /api/entitlement` when the backend is
+flipped, and keeps today's PostgREST select when it is not. Live Stripe +
 StoreKit proof before a flip:
 [`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 

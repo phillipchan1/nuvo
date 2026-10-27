@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { actingUserFromRequest, type ActingUser } from "./actingUser.ts";
 
 /** Service-role client. All edge functions run with full DB access; RLS
  *  protects the browser, not these functions. */
@@ -17,7 +18,8 @@ export function json(data: unknown, status = 200): Response {
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-nuvo-acting-user, x-nuvo-acting-email",
 };
 
 export function handleOptions(req: Request): Response | null {
@@ -41,13 +43,21 @@ export async function logSync(
   });
 }
 
-/** Resolve the authenticated user from a request's Authorization header. */
-export async function requireUser(req: Request) {
+/** Resolve the authenticated user from a request's Authorization header.
+ *  Service-role + `X-Nuvo-Acting-User` (Worker billing proxy) is accepted
+ *  without a GoTrue lookup — the id is the verified Better Auth session. */
+export async function requireUser(req: Request): Promise<ActingUser> {
+  const acting = actingUserFromRequest(req, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
+  if (acting) return acting;
   const auth = req.headers.get("Authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new Response("Unauthorized", { status: 401 });
-  return data.user;
+  return {
+    id: data.user.id,
+    email: data.user.email ?? undefined,
+    user_metadata: (data.user.user_metadata ?? {}) as Record<string, unknown>,
+  };
 }
 
 /**

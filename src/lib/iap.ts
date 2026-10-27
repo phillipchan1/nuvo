@@ -2,11 +2,13 @@
 // Connect strings NUVO_IAP_MONTHLY / NUVO_IAP_ANNUAL — never Apple internal
 // IDs, never prices. Localized price strings exist only on StoreKit product
 // objects the native plugin returns.
-import { supabase } from "./supabase";
+import { UUID_RE } from "../../supabase/functions/_shared/actingUser.ts";
 import {
   configuredIapProductIds,
   storeKitProductIds,
 } from "../../supabase/functions/_shared/planRules.ts";
+import { invokeBilling } from "./billingInvoke";
+import { currentUserId } from "./sessionAuth";
 
 export type IapProduct = {
   id: string;
@@ -119,7 +121,11 @@ export function iapErrorMessage(error: unknown, fallback: string): string {
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
   const [id] = storeKitProductIds([productId]);
   if (!id) throw new Error("Unknown App Store product");
-  return invokeIap<IapPurchase>("purchase", { payload: { productId: id } });
+  const appAccountToken = await currentUserId();
+  if (!appAccountToken || !UUID_RE.test(appAccountToken)) {
+    throw new Error("Sign in before buying from the App Store");
+  }
+  return invokeIap<IapPurchase>("purchase", { payload: { productId: id, appAccountToken } });
 }
 
 export async function restoreIap(): Promise<IapPurchase[]> {
@@ -144,13 +150,11 @@ export async function confirmApplePurchase(purchase: IapPurchase): Promise<void>
   if (!purchase.originalTransactionId || !purchase.productId) {
     throw new Error("That App Store purchase is missing its transaction.");
   }
-  const { error } = await supabase.functions.invoke("apple-iap", {
-    body: {
-      productId: purchase.productId,
-      transactionId: purchase.transactionId,
-      originalTransactionId: purchase.originalTransactionId,
-      expiresDate: purchase.expiresDate ?? null,
-    },
+  const { error } = await invokeBilling("apple-iap", {
+    productId: purchase.productId,
+    transactionId: purchase.transactionId,
+    originalTransactionId: purchase.originalTransactionId,
+    expiresDate: purchase.expiresDate ?? null,
   });
   if (error) throw new Error(error.message ?? "Could not confirm the App Store purchase");
 }

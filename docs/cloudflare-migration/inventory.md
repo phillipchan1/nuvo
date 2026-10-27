@@ -96,7 +96,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | Function | Auth | Billing / webhook | Dual-path this PR? |
 |---|---|---|---|
 | `agent` | User JWT | no | **Worker/Neon** (session scoped) |
-| `apple-iap` | User JWT | **IAP write** | **Stay on Supabase** |
+| `apple-iap` | User JWT **or** Worker proxy (BA session → service-role + `X-Nuvo-Acting-User`) | **IAP write** | **Stay on Supabase** (proxied after flip) |
 | `apple-identity` | User JWT | no | Dual-path (Worker + Better Auth Apple provider) |
 | `apple-webhook` | Apple signed payload | **Apple billing** | **Stay — do not touch** |
 | `calendar-refresh` | User JWT | no | **Worker** — Google + M365 + iCloud + ICS |
@@ -116,11 +116,11 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `m365-oauth` / `m365-sync` | OAuth / service | no | **Worker** — cron-bearer skipped until `CUTOVER_FLIPPED` |
 | `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
 | `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
-| `referral-code` | User JWT | Stripe | Stay |
+| `referral-code` | User JWT **or** Worker proxy | Stripe | Stay (proxied after flip) |
 | `rollover` | Session or `CRON_SECRET` | no | **Worker/Neon** (session = that user; cron iterates `users`) |
 | `route-events` | User JWT | no | **Worker/Neon** |
 | `slot-mirror` / `task-mirror` | JWT / session | Google / CalDAV | **Ported** — session owner; foreign id ≡ random id → 404 |
-| `stripe-checkout` / `stripe-portal` | User JWT | **Stripe** | **Stay — do not touch** |
+| `stripe-checkout` / `stripe-portal` | User JWT **or** Worker proxy | **Stripe** | **Stay — pricing/signature untouched; proxied after flip** |
 | `stripe-webhook` | Stripe signature | **Stripe** | **Stay — do not touch** |
 
 ---
@@ -235,7 +235,8 @@ No automated `supabase db push` or `functions deploy` in CI.
 - Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune`, `push-dispatch` (iterate `users`)
 - `slot-mirror` / `task-mirror` (session-owned; 404 existence oracle)
 - `push-dispatch` + Worker cron `nuvo-push-dispatch` (same VAPID pair; per-user loop, no Queue)
-- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Friend-code minting (`referral-code`) is **not** ported; the share block is disabled on the flag-on Billing pane. Live check: [`billing-live-check.md`](./billing-live-check.md)
+- `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay on Supabase — **option (b)**, tables exempt from the freeze). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the backend is flipped; PostgREST when it is not.
+- `/api/apple-iap`, `/api/stripe-checkout`, `/api/stripe-portal`, `/api/referral-code` — Worker **proxy** after the flip. Verifies Better Auth, forwards service-role + `X-Nuvo-Acting-User` (session id only) to the existing Supabase function. Pricing, products, and webhook signatures unchanged. Live check: [`billing-live-check.md`](./billing-live-check.md)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.
 

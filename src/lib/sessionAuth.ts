@@ -1,6 +1,7 @@
 /**
  * Session id + bearer for call sites that used to read supabase.auth.
  * After the Worker flip, Better Auth holds the session — GoTrue does not.
+ * One reader: billing, StoreKit, and Worker fetches all use these.
  */
 import { workersEnabled } from "./backend";
 

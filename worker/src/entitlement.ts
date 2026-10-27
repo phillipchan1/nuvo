@@ -1,6 +1,7 @@
 /**
- * Worker entitlement check. Billing rows stay on Supabase; this module
- * only SELECTs `subscriptions` by the session's preserved user id
+ * Worker entitlement check. Billing rows stay on Supabase (option b —
+ * tables stay writable, exempt from the freeze); this module only
+ * SELECTs `subscriptions` by the session's preserved user id
  * (Better Auth `user.id` = GoTrue `auth.users.id` after the auth copy).
  *
  * Never looks up by email, a remapped planner id, or a client-supplied

@@ -94,7 +94,29 @@ const CREDENTIALED_CORS_PREFIXES = [
   "/functions/v1/route-events",
   "/functions/v1/rollover",
   "/functions/v1/day",
+  "/api/apple-iap",
+  "/api/stripe-checkout",
+  "/api/stripe-portal",
+  "/api/referral-code",
+  "/functions/v1/apple-iap",
+  "/functions/v1/stripe-checkout",
+  "/functions/v1/stripe-portal",
+  "/functions/v1/referral-code",
 ];
+
+/**
+ * Billing (and other credentialed browser routes): reflect only when the
+ * request Origin is on the allowlist. Unknown origins get no ACAO — Chrome
+ * rejects `credentials: include` against `*` or a mismatched echo.
+ */
+export function reflectedCredentialedCors(
+  origin: string | null | undefined,
+  env: Env,
+): Record<string, string> {
+  const allowed = trustedAuthOrigins(env);
+  if (origin && allowed.includes(origin)) return credentialedCors(origin);
+  return { ...API_SECURITY, Vary: "Origin" };
+}
 
 export function needsCredentialedCors(path: string): boolean {
   return CREDENTIALED_CORS_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
