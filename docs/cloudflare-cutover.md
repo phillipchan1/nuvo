@@ -171,15 +171,16 @@ DROP SCHEMA migration_tmp CASCADE;
 ```
 
 That drop is a source-side cleanup, not a rollback step. Supabase itself
-stays up. Rollback is `CUTOVER_FLIPPED=false` (see below), not clearing
-`VITE_API_BASE_URL`.
+stays up. Baked clients keep asking `GET /api/maintenance`; rollback is the
+runtime `cutover_flipped` flag (see the 24h section below), not un-baking
+or clearing `VITE_API_BASE_URL`.
 
 Client build-time:
 
 | Name | Notes |
 |---|---|
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Keep until PostgREST is retired |
-| `VITE_API_BASE_URL` | Empty = today's path. Worker: `/api` (same origin) or `https://<worker>/api`. iOS TestFlight reads this from a **repo variable** — see below |
+| `VITE_API_BASE_URL` | Hardcoded public literal `https://api.nuvo.day` in `release.yml` / `ios-release.yml` (this PR). Lets one binary ask `GET /api/maintenance` at launch. **Not** a repo variable, and **not** the live switch or rollback — that is `cutover_flipped` from the maintenance payload (#117) |
 
 Replace the placeholder Hyperdrive `id` in the **top-level** `wrangler.jsonc`
 `hyperdrive` block before a production deploy. Preview does not use it.
@@ -518,19 +519,23 @@ and will not be on Supabase.
 
 ## iOS TestFlight at cutover
 
-`.github/workflows/ios-release.yml` and `release.yml` bake
-`VITE_API_BASE_URL=https://api.nuvo.day` only after Phil signs the
-small dedicated PR for those two workflows. That bake is **not** the
-live switch: the binary still talks to Supabase until
-`GET /api/maintenance` returns `cutover_flipped`.
+`.github/workflows/ios-release.yml` and `release.yml` bake the
+**hardcoded public literal** `VITE_API_BASE_URL=https://api.nuvo.day`
+(this PR; needs Phil's yes). It is not a GitHub Actions variable and
+clearing a repo var does nothing to a binary that already shipped.
+The bake is **not** the live switch: the binary still talks to Supabase
+until `GET /api/maintenance` returns `cutover_flipped`.
+The **only rollback** is #117's runtime flag — set
+`CUTOVER_FLIPPED=false` (plus unfreeze). The next launch reads that
+from `/api/maintenance` and stays on Supabase. No rebuild.
 It does **not** skip `VITE_SUPABASE_*` — those stay baked so a rollback
-(`CUTOVER_FLIPPED=false`) and any unported function still have a target.
+and any unported function still have a target.
 
-| When | `VITE_API_BASE_URL` variable | What the IPA talks to |
-|---|---|---|
-| Before cutover (today) | unset / empty | Supabase, same as now |
-| Workers preview | `https://nuvo-preview.<account>.workers.dev/api` | Worker `/api/auth`, `/api/data`, `/api/rpc`. Absolute URL — the IPA is a WKWebView loading local files, so `/api` will not resolve |
-| Rollback (24h window) | leave the bake | Set `CUTOVER_FLIPPED=false`. Clients already baked ask `GET /api/maintenance` and stay on Supabase. Do not clear the variable |
+| When | What the IPA talks to |
+|---|---|
+| Before `cutover_flipped` | Supabase (same as now). `VITE_API_BASE_URL` is already baked; launch still asks `/api/maintenance` |
+| After `CUTOVER_FLIPPED=1` and a relaunch | Worker at `https://api.nuvo.day` (`/api/auth`, `/api/data`, `/api/rpc`) |
+| Rollback (24h window) | `CUTOVER_FLIPPED=false`, then freeze Neon via `MAINTENANCE_WRITE_FREEZE`. Next launch stays on Supabase. Do not clear a variable, rebuild, or drop Neon |
 
 ### Signing (current target)
 
