@@ -380,6 +380,51 @@ describe("sync_log late commit", () => {
     await source.close();
     await target.close();
   });
+
+  it("rewrites lock_not_available lock timeout as the retryable message", async () => {
+    const db = new PGlite();
+    const probe = py(
+      "from cutover_copy import sync_log_lock_timeout_probe_sql; print(sync_log_lock_timeout_probe_sql())",
+    );
+    let message = "";
+    try {
+      await db.exec(probe + ";");
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toMatch(/sync_log lock timed out after 10s — retry the resync \(retryable\)/);
+    expect(message).not.toMatch(/canceling statement due to lock timeout/);
+
+    const missed = py(
+      "from cutover_copy import sync_log_lock_timeout_probe_sql; print(sync_log_lock_timeout_probe_sql(errcode='query_canceled'))",
+    );
+    let raw = "";
+    try {
+      await db.exec(missed + ";");
+    } catch (err) {
+      raw = err instanceof Error ? err.message : String(err);
+    }
+    expect(raw).toMatch(/canceling statement due to lock timeout/);
+    expect(raw).not.toMatch(/retry the resync \(retryable\)/);
+    await db.close();
+  });
+
+  it("session lock_timeout is armed for the temp-table load before BEGIN", async () => {
+    const db = new PGlite();
+    await db.exec(SYNC_DDL);
+    const before = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
+    expect(String(before.rows[0]?.lock_timeout)).toMatch(/^(0|0s|0ms|-1)$/);
+
+    await db.exec(py("from cutover_copy import sync_log_load_sql; print(sync_log_load_sql())") + ";");
+    const afterLoad = await db.query<{ lock_timeout: string }>("SHOW lock_timeout");
+    expect(String(afterLoad.rows[0]?.lock_timeout)).toMatch(/^(10s|10\.0s|10000ms|00:00:10)$/);
+
+    const temps = await db.query<{ n: string }>(
+      "SELECT COUNT(*)::text AS n FROM pg_class WHERE relname = 'cutover_sync_log_src'",
+    );
+    expect(Number(temps.rows[0]?.n)).toBeGreaterThanOrEqual(1);
+    await db.close();
+  });
 });
 
 describe("push_subscriptions window edits", () => {
