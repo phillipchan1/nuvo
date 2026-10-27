@@ -222,8 +222,7 @@ onto `CALENDAR_SYNC_QUEUE`. Unported jobs (push / google-renew) then
 `created_at < now() - 30 days` and, when the identity is parked
 (`last_value >= 1e6`), also `id < last_value - 1e6 + 1`. Copied source
 ids typically sit below that floor. The floor keeps recent Neon-origin
-rows out of age trim; it is not a permanent partition — after about 1e6
-further Neon inserts the floor rises past those early Neon ids and any
+rows out of age trim; it is not a permanent partition — after about 1e6 further Neon inserts the floor rises past those early Neon ids and any
 row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |

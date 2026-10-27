@@ -108,7 +108,7 @@ ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
 ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
 ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
 const flipSrc = readFileSync(join(root, "worker/src/cutoverFlip.ts"), "utf8");
-ok(!/writeFrozen/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
+ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
 ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
 ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
 ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");

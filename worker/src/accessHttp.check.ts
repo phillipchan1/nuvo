@@ -1458,7 +1458,7 @@ async function resyncFromSnapshot() {
 await resyncFromSnapshot();
 let convergeIds = "";
 for (let i = 0; i < 3; i++) {
-  const skippedTrim = await withTimeout(cronRequest("/api/cron/trim-sync-log"), 8000, `converge trim skip ${i}`);
+  const skippedTrim = await withTimeout(cronRequest("/api/cron/trim-sync-log", { CUTOVER_FLIPPED: "" }), 8000, `converge trim skip ${i}`);
   const skippedBody = (await skippedTrim.json()) as { skipped?: boolean };
   ok(skippedBody.skipped === true, `converge before flip ${i}: trim skipped`);
   await resyncFromSnapshot();

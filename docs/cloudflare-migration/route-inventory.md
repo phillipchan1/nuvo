@@ -163,7 +163,8 @@ cutover.
 | `authAdapter.check.ts` | 29 | Better Auth adapter |
 | `db.check.ts` | 55 | Hyperdrive / connect timeout |
 | `requestReuse.check.ts` | 156 | per-request IO; POST foreign id = new owned row |
-| `secrets.check.ts` | 140 | A's seal/open + writeFrozen + allowlist cutoverFlipped + gateCron / gateCronBearerRoute + cron aliases + github PAT AAD + trim floor |
+| `secrets.check.ts` | 133 | A's seal/open + writeFrozen + allowlist cutoverFlipped + gateCron(env, job) + github PAT AAD + trim floor + docs |
+| `cutoverFlip.check.ts` | 290 | Shared allowlist + POST_FLIP_CRON_JOBS + cronAuthorized source-scan + github-activity `gateCronBearerRoute(c.env, 'github-poll')` before requestIo |
 | `miniflare.seq.check.ts` | 61 | workerd + Postgres; authorized cron `push-dispatch` skips until `CUTOVER_FLIPPED` |
 
 `npm run check:isolation-mutation`: **80/80** owner filters in `store.ts`.
