@@ -31,6 +31,9 @@ export const POST_FLIP_CRON_JOBS: readonly string[] = [
   "purge-trash",
   "reminder-deliveries-prune",
   "queue-consume",
+  "m365-sync",
+  "icloud-sync",
+  "ics-sync",
 ];
 
 export const CUTOVER_NOT_FLIPPED = "cutover_not_flipped";

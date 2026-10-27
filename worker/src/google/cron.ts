@@ -1,3 +1,7 @@
+import { claimDueAccounts } from "../calendar/store.ts";
+import { runIcloudContacts, runIcloudSync } from "../calendar/icloud.ts";
+import { runIcsSync } from "../calendar/icsFeed.ts";
+import { runM365Sync } from "../calendar/m365.ts";
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
 import { claimDueGoogleAccounts } from "./owned.ts";
@@ -21,8 +25,8 @@ export async function runGoogleResubscribe(sql: Sql, env: Env, reqUrl?: string) 
 }
 
 /**
- * Per-minute dispatcher. Claims due Google accounts and runs poll (stale calendars
- * only). Other providers stay on Supabase until PR C.
+ * Per-minute dispatcher. Claims due accounts and runs poll (stale calendars
+ * only). Queue fan-out is preferred when CALENDAR_SYNC_QUEUE is bound.
  *
  * Projection: DISPATCH_BATCH=50/min. A stale incremental is usually an empty
  * sync-token delta. Past ~200 due Google accounts/min, fan-out should move to
@@ -30,10 +34,11 @@ export async function runGoogleResubscribe(sql: Sql, env: Env, reqUrl?: string) 
  * Paid is 15 min wall; 50 × ~2s worst-case stays inside that.
  */
 export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string) {
-  const claimed = await claimDueGoogleAccounts(sql, DISPATCH_BATCH);
+  const google = await claimDueGoogleAccounts(sql, DISPATCH_BATCH);
+  const others = await claimDueAccounts(sql, ["m365", "icloud", "ics"], DISPATCH_BATCH);
   let ran = 0;
   const failures: string[] = [];
-  for (const row of claimed) {
+  for (const row of google) {
     try {
       await runGoogleSync(sql, env, {
         mode: "poll",
@@ -46,7 +51,19 @@ export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string) {
       failures.push(row.id);
     }
   }
-  return { ok: true, claimed: claimed.length, ran, failures: failures.length };
+  for (const account of others) {
+    try {
+      if (account.provider === "m365") await runM365Sync(sql, env, { accountId: account.id, userId: account.user_id });
+      else if (account.provider === "icloud") {
+        await runIcloudSync(sql, env, { accountId: account.id, userId: account.user_id });
+        await runIcloudContacts(sql, env, { accountId: account.id, userId: account.user_id });
+      } else await runIcsSync(sql, env, { accountId: account.id, userId: account.user_id });
+      ran++;
+    } catch {
+      failures.push(account.id);
+    }
+  }
+  return { ok: true, claimed: google.length + others.length, ran, failures: failures.length };
 }
 
 export const GOOGLE_CRON_JOBS = ["google-renew", "calendar-dispatch", "google-resubscribe"] as const;

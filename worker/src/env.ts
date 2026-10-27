@@ -63,6 +63,8 @@ export interface Env {
   VAPID_SUBJECT?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  MS_CLIENT_ID?: string;
+  MS_CLIENT_SECRET?: string;
   /** SPA origin for OAuth redirects after consent. */
   APP_URL?: string;
 }

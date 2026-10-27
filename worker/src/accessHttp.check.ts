@@ -48,7 +48,7 @@ const storeSrc = readFileSync(join(here, "store.ts"), "utf8");
 const routeSrc = [
   indexSrc,
   sessionSrc,
-  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "slotMirror.ts", "taskMirror.ts", "pushDispatch.ts", "mirrorTargets.ts", "githubActivity.ts"].map(
+  ...["agentHttp.ts", "mcpHttp.ts", "dayHttp.ts", "captureHttp.ts", "inboundHttp.ts", "routeEventsHttp.ts", "cronJobs.ts", "agentExec.ts", "slotMirror.ts", "taskMirror.ts", "pushDispatch.ts", "mirrorTargets.ts", "githubActivity.ts", "calendar/http.ts"].map(
     (name) => readFileSync(join(here, name), "utf8"),
   ),
 ].join("\n");

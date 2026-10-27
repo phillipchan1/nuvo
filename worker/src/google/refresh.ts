@@ -1,3 +1,4 @@
+import { runCalendarRefreshOthers } from "../calendar/http.ts";
 import type { Env } from "../env.ts";
 import { logServerError } from "../lib/redact.ts";
 import { listOwnedGoogleAccounts, makeCalendarStore } from "./owned.ts";
@@ -31,7 +32,11 @@ export async function runCalendarRefreshGoogle(
     }
     await runGoogleContacts(sql, env, { accountId: account.id, userId }).catch(() => undefined);
   }
-  if (errors.length === accounts.length && errors.length > 0) {
+  const others = await runCalendarRefreshOthers(sql, env, userId);
+  synced += others.synced;
+  errors.push(...others.errors);
+  const total = accounts.length + (others.synced + others.errors.length);
+  if (errors.length === total && errors.length > 0) {
     throw new Error(errors.join("; "));
   }
   return { ok: true, synced, errors: errors.length ? errors : undefined };

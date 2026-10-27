@@ -11,20 +11,8 @@ export const BILLING_FUNCTIONS = new Set([
   "stripe-webhook",
 ]);
 
-/**
- * Non-Google calendar OAuth / sync / mirrors. Google routes are on this
- * Worker. These still need provider APIs (PR C) and stay 501.
- */
-export const CALENDAR_FUNCTIONS = new Set([
-  "icloud-connect",
-  "icloud-contacts",
-  "icloud-events",
-  "icloud-sync",
-  "ics-subscribe",
-  "ics-sync",
-  "m365-oauth",
-  "m365-sync",
-]);
+/** Calendar routes ported in PRs B/C. Empty — names stay 501 only if re-added. */
+export const CALENDAR_FUNCTIONS = new Set<string>([]);
 
 /** User-data jobs that need Vault / GoTrue — flagged, not ported. */
 export const BLOCKED_USERDATA_FUNCTIONS = new Set([

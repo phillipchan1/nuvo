@@ -16,6 +16,7 @@ import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, handleSche
 import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 import { redactSecrets } from "./lib/redact.ts";
+import { tokenShapeOk } from "./lib/ms.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -136,6 +137,13 @@ const REDACT_CASES: { name: string; input: string; mustNot: string; mustInclude:
   { name: "single-quoted client_secret", input: "client_secret='GOCSPX-quoted'", mustNot: "GOCSPX-quoted", mustInclude: "client_secret='[redacted]'" },
   { name: "single-quoted refresh_token", input: "refresh_token='plain-refresh'", mustNot: "plain-refresh", mustInclude: "refresh_token='[redacted]'" },
   { name: "client_secret spaced =", input: "client_secret = spaced-secret", mustNot: "spaced-secret", mustInclude: "client_secret = [redacted]" },
+  { name: "camelCase refreshToken", input: '{"refreshToken":"1//camel-refresh"}', mustNot: "camel-refresh", mustInclude: "[redacted]" },
+  { name: "camelCase accessToken", input: "accessToken=ya29.camel-access", mustNot: "camel-access", mustInclude: "accessToken=[redacted]" },
+  { name: "urlencoded camelCase refreshToken", input: "refreshToken%3D1%2F%2Fcamel-url", mustNot: "camel-url", mustInclude: "refreshToken%3D[redacted]" },
+  { name: "Microsoft M.C refresh", input: "refresh_token=M.C512_BAY.0.U.-CjSecretToken", mustNot: "CjSecretToken", mustInclude: "[redacted]" },
+  { name: "password key", input: "password=app-specific-secret", mustNot: "app-specific-secret", mustInclude: "password=[redacted]" },
+  { name: "app_password key", input: '{"app_password":"icloud-app-pass"}', mustNot: "icloud-app-pass", mustInclude: "[redacted]" },
+  { name: "userinfo URL", input: "https://apple:app-specific-pass@caldav.icloud.com/cal", mustNot: "app-specific-pass", mustInclude: "https://[redacted]@caldav.icloud.com/cal" },
 ];
 for (const row of REDACT_CASES) {
   const out = redactSecrets(row.input);
@@ -261,6 +269,22 @@ try {
   ok(true, "github PAT: AAD user mismatch fails");
 }
 
+for (const row of [
+  { provider: "m365", secret: "M.R3_BAY.offline-m365-refresh-token-xx" },
+  { provider: "icloud", secret: "abcd-efgh-ijkl-mnop" },
+  { provider: "ics", secret: "https://cal.example.test/feed.ics" },
+] as const) {
+  const sealedRow = await sealToken(row.secret, aad, ringV1);
+  const openedRow = await openToken(sealedRow, aad, ringV1);
+  ok(openedRow === row.secret && tokenShapeOk(row.provider, openedRow), `${row.provider} offline decrypt shape`);
+  try {
+    await openToken(sealedRow, otherUser, ringV1);
+    ok(false, `${row.provider} offline decrypt rejects the wrong user`);
+  } catch {
+    ok(true, `${row.provider} offline decrypt rejects the wrong user`);
+  }
+}
+
 let acked = 0;
 let retried = 0;
 const consumed = await consumeCalendarSyncBatch(
@@ -284,7 +308,7 @@ const flippedConsumed = await consumeCalendarSyncBatch(
   },
   { CUTOVER_FLIPPED: "1" },
 );
-ok(flippedConsumed === 2 && flippedRetry === 1 && flippedAck === 1, "flipped queue: google without sql retries; other providers ack");
+ok(flippedConsumed === 2 && flippedRetry === 2 && flippedAck === 0, "flipped queue: google and ics without sql retry");
 
 const vaultSql = readFileSync(join(root, "docs/cloudflare-migration/vault_tokens.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(vaultSql), "vault_tokens.sql is SECURITY DEFINER");

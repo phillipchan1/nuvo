@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/cutoverFlip.check.ts
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -73,6 +73,9 @@ for (const required of [
   "purge-trash",
   "reminder-deliveries-prune",
   "queue-consume",
+  "m365-sync",
+  "icloud-sync",
+  "ics-sync",
 ]) {
   ok(POST_FLIP_CRON_JOBS.includes(required), `POST_FLIP_CRON_JOBS includes ${required}`);
 }
@@ -226,6 +229,51 @@ for (const file of walkProdTs(here)) {
 }
 ok(cronSecretFns >= 2, "per-function CRON_SECRET scan found handleCron and github-activity");
 
+const calendarHttpSrc = readFileSync(join(here, "calendar/http.ts"), "utf8");
+ok(/const BEARER_SYNC = \["m365-sync", "icloud-sync", "icloud-contacts", "ics-sync"\]/.test(calendarHttpSrc), "calendar bearer sync list is m365/icloud/ics");
+for (const name of ["m365-sync", "icloud-sync", "icloud-contacts", "ics-sync"] as const) {
+  ok(calendarHttpSrc.includes(`"${name}"`), `calendar BEARER_SYNC includes ${name}`);
+}
+ok(/gateCronBearerRoute\(c\.env, name\)/.test(calendarHttpSrc), "calendar bearer sync uses gateCronBearerRoute(c.env, name)");
+const bearerSyncFn = functionsIn(calendarHttpSrc).find((fn) => fn.name === "handleBearerSync");
+ok(Boolean(bearerSyncFn), "handleBearerSync is the calendar cron-bearer function");
+if (bearerSyncFn) {
+  ok(isFlipGated(bearerSyncFn.body), "handleBearerSync is flip-gated");
+  ok(
+    bearerSyncFn.body.indexOf("gateCronBearerRoute") >= 0 &&
+      bearerSyncFn.body.indexOf("gateCronBearerRoute") < bearerSyncFn.body.indexOf("requestIo"),
+    "handleBearerSync gates before requestIo",
+  );
+}
+
+function proveGateMutation(path: string, mutate: (src: string) => string, stillGreen: (src: string) => boolean, label: string): void {
+  const orig = readFileSync(path, "utf8");
+  try {
+    const next = mutate(orig);
+    ok(next !== orig, `${label}: mutation changed the file`);
+    writeFileSync(path, next);
+    ok(!stillGreen(readFileSync(path, "utf8")), `${label}: removing the gate fails the scan`);
+  } finally {
+    writeFileSync(path, orig);
+  }
+}
+
+proveGateMutation(
+  join(here, "calendar/http.ts"),
+  (src) => src.replace("gateCronBearerRoute(c.env, name)", "null"),
+  (src) => {
+    const fn = functionsIn(src).find((f) => f.name === "handleBearerSync");
+    return Boolean(fn && isFlipGated(fn.body));
+  },
+  "gateCronBearerRoute mutation",
+);
+proveGateMutation(
+  join(here, "cronJobs.ts"),
+  (src) => src.replace("if (gateCron(env, name))", "if (false)"),
+  (src) => /gateCron\(env, name\)/.test(src),
+  "gateCron mutation",
+);
+
 const consumeStart = cronJobsSrc.search(/export async function consumeCalendarSyncBatch/);
 ok(consumeStart >= 0, "queue consumer is consumeCalendarSyncBatch");
 const consumeNext = cronJobsSrc.indexOf("\nexport ", consumeStart + 1);
@@ -248,7 +296,7 @@ for (let i = unflippedBrace; i < consumeFn.length; i++) {
 const unflippedBlock = unflippedEnd > 0 ? consumeFn.slice(unflippedGate, unflippedEnd + 1) : "";
 ok(/return\s+\w+/.test(unflippedBlock), "queue consumer returns without work when unflipped");
 ok(
-  !/\b(?:openSql|requestIo|fetch|runGoogleSync)\s*\(/.test(unflippedBlock),
+  !/\b(?:openSql|requestIo|fetch|runGoogleSync|runM365Sync|runIcloudSync|runIcsSync)\s*\(/.test(unflippedBlock),
   "queue consumer unflipped path does no IO",
 );
 
@@ -396,6 +444,51 @@ try {
     "failed Google account increments sync_failures",
   );
   ok(nextAt > Date.now(), "failed Google account sets next_sync_at in the future");
+  await db.close();
+}
+
+{
+  const db = new PGlite();
+  await applyIsolationSchema(db);
+  const sql = makePgliteSql(db);
+  const USER = "11111111-1111-1111-1111-111111111111";
+  const accounts = [
+    { provider: "m365", id: "aaaaaaaa-eeee-4000-8000-000000000011" },
+    { provider: "icloud", id: "aaaaaaaa-eeee-4000-8000-000000000012" },
+    { provider: "ics", id: "aaaaaaaa-eeee-4000-8000-000000000013" },
+  ] as const;
+  for (const account of accounts) {
+    const before = await db.query<{ sync_failures: number; next_sync_at: string | null }>(
+      "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+      [account.id],
+    );
+    let failAck = 0;
+    let failRetry = 0;
+    const n = await consumeCalendarSyncBatch(
+      {
+        messages: [
+          {
+            body: { account_id: account.id, user_id: USER, provider: account.provider },
+            ack: () => { failAck += 1; },
+            retry: () => { failRetry += 1; },
+          },
+        ],
+      },
+      { CUTOVER_FLIPPED: "1" },
+      sql,
+    );
+    const after = await db.query<{ sync_failures: number; next_sync_at: string | Date | null }>(
+      "SELECT sync_failures, next_sync_at FROM calendar_accounts WHERE id = $1",
+      [account.id],
+    );
+    const nextAt = after.rows[0]?.next_sync_at ? new Date(after.rows[0].next_sync_at).getTime() : 0;
+    ok(n === 1 && failAck === 1 && failRetry === 0, `failed ${account.provider} account acks (backoff, not queue retry)`);
+    ok(
+      Number(after.rows[0]?.sync_failures ?? 0) > Number(before.rows[0]?.sync_failures ?? 0),
+      `failed ${account.provider} account increments sync_failures`,
+    );
+    ok(nextAt > Date.now(), `failed ${account.provider} account sets next_sync_at in the future`);
+  }
   await db.close();
 }
 

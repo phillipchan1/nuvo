@@ -12,10 +12,10 @@
  * `CUTOVER_FLIPPED` skips with 200. Calendar-dispatch fans out one Queue
  * message per due account so a single isolate does not loop every tenant
  * against Google/Graph/CalDAV (Workers Paid CPU). After the flip the
- * consumer polls Google (other providers ack for PR C). `google-renew`
+ * consumer polls Google, M365, iCloud, and ICS. `google-renew`
  * re-watches channels. `push-dispatch` runs per user with the same VAPID
- * pair. Without a queue binding, HTTP calendar-dispatch claims Google
- * in-process (PGlite / tests).
+ * pair. Without a queue binding, HTTP calendar-dispatch claims due
+ * accounts in-process (PGlite / tests).
  *
  * Projection (flag, not a spend): one send + one consume per due account
  * per minute. At the current ~12 accounts that is ~35k ops/day, inside
@@ -30,6 +30,9 @@ import { cutoverSkipBody, gateCron } from "./cutoverFlip.ts";
 import { closeSql, openSql, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
+import { runIcloudContacts, runIcloudSync } from "./calendar/icloud.ts";
+import { runIcsSync } from "./calendar/icsFeed.ts";
+import { runM365Sync } from "./calendar/m365.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
@@ -91,6 +94,9 @@ const JOB_ALIASES: Record<string, string> = {
   "nuvo-rollover-pst": "rollover",
   "nuvo-rollover-pdt": "rollover",
   "prune-reminder-deliveries": "reminder-deliveries-prune",
+  "nuvo-m365-poll": "m365-sync",
+  "nuvo-icloud-poll": "icloud-sync",
+  "nuvo-ics-poll": "ics-sync",
 };
 
 export function canonicalCronJob(name: string): string {
@@ -250,6 +256,22 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
     const out = await runTrimSyncLog(sql);
     return { job: name, status: 200, stay_on_supabase: false, deleted: out.deleted };
   }
+  if (name === "m365-sync") {
+    if (!sql) return blocked(name);
+    await runM365Sync(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false };
+  }
+  if (name === "icloud-sync") {
+    if (!sql) return blocked(name);
+    await runIcloudSync(sql, env);
+    await runIcloudContacts(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false };
+  }
+  if (name === "ics-sync") {
+    if (!sql) return blocked(name);
+    await runIcsSync(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false };
+  }
   return blocked(name);
 }
 
@@ -265,11 +287,11 @@ export async function handleScheduled(
 }
 
 /**
- * One message = one calendar account. After the flip, Google runs poll
- * here. Other providers ack for PR C. Per-account Google errors are
- * isolated inside `runGoogleSync` (it marks `next_sync_at` backoff and
+ * One message = one calendar account. After the flip, Google / M365 /
+ * iCloud / ICS run poll here. Unknown providers ack. Per-account errors
+ * are isolated inside the runner (it marks `next_sync_at` backoff and
  * returns); this consumer then acks. Retry only when SQL cannot open
- * (backoff cannot be written) or `runGoogleSync` itself throws.
+ * (backoff cannot be written) or the runner itself throws.
  * `opened` is optional for tests — the Worker path opens its own client.
  * Counts only — never log ids, tokens, or row data. `gateCron` skips
  * before any SQL.
@@ -292,7 +314,8 @@ export async function consumeCalendarSyncBatch(
   try {
     for (const msg of batch.messages) {
       n += 1;
-      if (msg.body.provider !== "google") {
+      const provider = msg.body.provider;
+      if (provider !== "google" && provider !== "m365" && provider !== "icloud" && provider !== "ics") {
         msg.ack();
         continue;
       }
@@ -308,11 +331,18 @@ export async function consumeCalendarSyncBatch(
         continue;
       }
       try {
-        await runGoogleSync(sql, env, {
-          mode: "poll",
-          accountId: msg.body.account_id,
-          userId: msg.body.user_id,
-        });
+        const accountId = msg.body.account_id;
+        const userId = msg.body.user_id;
+        if (provider === "google") {
+          await runGoogleSync(sql, env, { mode: "poll", accountId, userId });
+        } else if (provider === "m365") {
+          await runM365Sync(sql, env, { accountId, userId });
+        } else if (provider === "icloud") {
+          await runIcloudSync(sql, env, { accountId, userId });
+          await runIcloudContacts(sql, env, { accountId, userId });
+        } else {
+          await runIcsSync(sql, env, { accountId, userId });
+        }
         msg.ack();
       } catch {
         msg.retry();
@@ -398,6 +428,20 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   if (name === "trim-sync-log") {
     const out = await runTrimSyncLog(sql);
     return json(out, 200, OPEN_CORS);
+  }
+
+  if (name === "m365-sync") {
+    await runM365Sync(sql, c.env);
+    return json({ ok: true, job: name, stay_on_supabase: false }, 200, OPEN_CORS);
+  }
+  if (name === "icloud-sync") {
+    await runIcloudSync(sql, c.env);
+    await runIcloudContacts(sql, c.env);
+    return json({ ok: true, job: name, stay_on_supabase: false }, 200, OPEN_CORS);
+  }
+  if (name === "ics-sync") {
+    await runIcsSync(sql, c.env);
+    return json({ ok: true, job: name, stay_on_supabase: false }, 200, OPEN_CORS);
   }
 
   return stayOnSupabase(job || name);
