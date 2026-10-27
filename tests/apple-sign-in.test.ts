@@ -19,6 +19,7 @@ import {
 } from "../src/lib/authProviders.ts";
 import {
   appleDisplayName,
+  appleIssuedClientId,
   isPrivateRelayEmail,
   mergeAppleProfile,
   pkcs8FromPem,
@@ -112,6 +113,22 @@ describe("readAppleAuthConfig", () => {
       APPLE_SIWA_CLIENT_ID: "day.nuvo.app.web",
     });
     expect(config?.clientId).toBe("day.nuvo.app.web");
+  });
+
+  it("web revoke uses APPLE_CLIENT_ID — the Better Auth issuer — when it differs from SIWA", () => {
+    const env = {
+      ...full,
+      APPLE_CLIENT_ID: "day.nuvo.app.web",
+      APPLE_SIWA_CLIENT_ID: "day.nuvo.app.siwa",
+      APPLE_BUNDLE_ID: "day.nuvo.app",
+    };
+    expect(appleIssuedClientId(env, "web")).toBe("day.nuvo.app.web");
+    expect(appleIssuedClientId(env, "native")).toBe("day.nuvo.app.siwa");
+    expect(readAppleAuthConfig(env, "web")?.clientId).toBe("day.nuvo.app.web");
+    expect(readAppleAuthConfig(env, "native")?.clientId).toBe("day.nuvo.app.siwa");
+    // Native default never reads APPLE_CLIENT_ID — a web token revoked
+    // with that default would present the wrong client_id to Apple.
+    expect(readAppleAuthConfig(env)?.clientId).toBe("day.nuvo.app.siwa");
   });
 
   it("returns null rather than a half-config — callers treat that as 'cannot revoke'", () => {
@@ -287,6 +304,10 @@ describe("deleting the account revokes Apple's grant (guideline 5.1.1(v))", () =
     expect(auth).toContain("socialProviders");
     expect(auth).toContain("appleSocialProvider");
     expect(auth).toContain("{ apple }");
+    expect(auth).toContain('appleIssuedClientId(env, "web")');
+    const wipe = read("worker/src/deleteAccount.ts");
+    expect(wipe).toContain("loaded.source");
+    expect(wipe).toContain("APPLE_CLIENT_ID");
     const spa = read("src/lib/appleAuth.ts");
     expect(spa).toContain("workersEnabled");
     expect(spa).toContain("signIn.social");

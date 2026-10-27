@@ -56,7 +56,7 @@ export async function deleteOwnedAccount(
   }
 
   // Load the refresh token before wipe — the row is gone after commit.
-  const token = await loadOwnedAppleRefreshToken(store, user.id, env).catch(() => null);
+  const loaded = await loadOwnedAppleRefreshToken(store, user.id, env).catch(() => null);
 
   const { planner, auth } = await wipeOwnedAccount(store.sql, {
     plannerUserId: store.userId,
@@ -67,16 +67,17 @@ export async function deleteOwnedAccount(
   }
 
   let appleRevoked: boolean | null = null;
-  if (token) {
+  if (loaded?.token) {
     const config = readAppleAuthConfig({
+      APPLE_CLIENT_ID: env.APPLE_CLIENT_ID,
       APPLE_SIWA_TEAM_ID: env.APPLE_SIWA_TEAM_ID,
       APPLE_SIWA_KEY_ID: env.APPLE_SIWA_KEY_ID,
       APPLE_SIWA_PRIVATE_KEY: env.APPLE_SIWA_PRIVATE_KEY,
       APPLE_SIWA_CLIENT_ID: env.APPLE_SIWA_CLIENT_ID,
       APPLE_BUNDLE_ID: env.APPLE_BUNDLE_ID,
-    });
+    }, loaded.source);
     if (config) {
-      appleRevoked = await revokeAppleToken(config, token).catch(() => false);
+      appleRevoked = await revokeAppleToken(config, loaded.token).catch(() => false);
     } else {
       appleRevoked = false;
     }

@@ -79,25 +79,53 @@ export type AppleAuthConfig = {
   clientId: string;
 };
 
+/** Where the refresh token was issued. Web and native can use different client ids. */
+export type AppleTokenSource = "web" | "native";
+
+/**
+ * The client_id Apple issued this token against.
+ *
+ * Web Better Auth (`auth.ts` Apple provider) uses
+ * `APPLE_CLIENT_ID` → `APPLE_SIWA_CLIENT_ID` → `APPLE_BUNDLE_ID`.
+ * Native exchange / default revoke uses
+ * `APPLE_SIWA_CLIENT_ID` → `APPLE_BUNDLE_ID` and never reads
+ * `APPLE_CLIENT_ID`. Those two chains can disagree; revoke must use
+ * the issuer chain for the token's source.
+ */
+export function appleIssuedClientId(
+  env: {
+    APPLE_CLIENT_ID?: string;
+    APPLE_SIWA_CLIENT_ID?: string;
+    APPLE_BUNDLE_ID?: string;
+  },
+  source: AppleTokenSource,
+): string | null {
+  if (source === "web") {
+    return clean(env.APPLE_CLIENT_ID) ?? clean(env.APPLE_SIWA_CLIENT_ID) ?? clean(env.APPLE_BUNDLE_ID);
+  }
+  return clean(env.APPLE_SIWA_CLIENT_ID) ?? clean(env.APPLE_BUNDLE_ID);
+}
+
 /**
  * The four values the token exchange and the revoke both need.
  *
- * `clientId` must be the SAME client the code was issued to, or Apple rejects
+ * `clientId` must be the SAME client the token was issued to, or Apple rejects
  * both calls. Native Sign in with Apple issues against the **bundle id**, so
  * that is the default (APPLE_BUNDLE_ID is already set for StoreKit); the web
- * redirect flow issues against the Services ID, which is what
- * APPLE_SIWA_CLIENT_ID overrides it with.
+ * redirect flow issues against the Services ID. Pass `source: "web"` so revoke
+ * uses `APPLE_CLIENT_ID` (the Better Auth issuer) when that name is set.
  *
  * Returns null when unconfigured — every caller treats that as "cannot revoke",
  * never as an error worth failing a sign-in or blocking a deletion.
  */
 export function readAppleAuthConfig(
   env: Record<string, string | undefined>,
+  source: AppleTokenSource = "native",
 ): AppleAuthConfig | null {
   const teamId = clean(env.APPLE_SIWA_TEAM_ID);
   const keyId = clean(env.APPLE_SIWA_KEY_ID);
   const privateKey = clean(env.APPLE_SIWA_PRIVATE_KEY);
-  const clientId = clean(env.APPLE_SIWA_CLIENT_ID) ?? clean(env.APPLE_BUNDLE_ID);
+  const clientId = appleIssuedClientId(env, source);
   if (!teamId || !keyId || !privateKey || !clientId) return null;
   return { teamId, keyId, privateKey, clientId };
 }

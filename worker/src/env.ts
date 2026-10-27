@@ -11,6 +11,11 @@ export interface Env {
   HYPERDRIVE?: HyperdriveBinding;
   DATABASE_URL?: string;
   BETTER_AUTH_SECRET?: string;
+  /**
+   * Optional BA keyring: `2:<current>,1:<previous>`. First entry is the
+   * write version. `BETTER_AUTH_SECRET` stays the legacy bare-hex key.
+   */
+  BETTER_AUTH_SECRETS?: string;
   BETTER_AUTH_URL?: string;
   /** wrangler / `.dev.vars` only: `local` allows a localhost auth fallback. `preview` enables OTP log delivery. Never `local` on workers.dev. */
   ENVIRONMENT?: string;

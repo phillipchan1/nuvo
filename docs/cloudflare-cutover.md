@@ -42,7 +42,8 @@ None of these belong in the Vite bundle.
 |---|---|---|
 | `HYPERDRIVE` | Worker binding | **Production / `wrangler dev` only.** Preview does not bind it |
 | `DATABASE_URL` | secret | **Required on preview.** Optional local fallback when Hyperdrive is set |
-| `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes) |
+| `BETTER_AUTH_SECRET` | secret | Yes (32+ random bytes). Legacy key for bare-hex BA tokens after a keyring rotation |
+| `BETTER_AUTH_SECRETS` | secret (optional) | BA keyring `2:<current>,1:<previous>`. First entry is the write version. Unset → `secretConfig` is the string `BETTER_AUTH_SECRET` |
 | `BETTER_AUTH_URL` | **prod/preview var** | Preview is committed as `https://nuvo-preview.nq-morning-briefing.workers.dev`. Unset outside local → JSON 500 |
 | `ENVIRONMENT` | var | `local` in `.dev.vars` for `wrangler dev`. Preview commits `preview` (OTP log path). Must not be `local` on workers.dev. Never `production` for console OTP |
 | `RESEND_API_KEY` | secret | OTP email + inbound-email body fetch. Unset → codes logged only when `ENVIRONMENT` is `local` or `preview` — never production |

@@ -4,7 +4,8 @@ import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
-import { sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { appleIssuedClientId } from "../../supabase/functions/_shared/appleIdentity.ts";
+import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
 import { parseRawKey } from "./secrets.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
@@ -47,7 +48,7 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
 }
 
 export function appleSocialProvider(env: Env) {
-  const clientId = (env.APPLE_CLIENT_ID ?? env.APPLE_SIWA_CLIENT_ID ?? env.APPLE_BUNDLE_ID)?.trim();
+  const clientId = appleIssuedClientId(env, "web");
   const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
   // Fail closed: missing or invalid TOKEN_ENC_KEY_V1 would persist tokens
   // we cannot seal. Do not wire a sign-in that cannot persist.
@@ -69,10 +70,12 @@ export function appleSocialProvider(env: Env) {
 export function createAuth(env: Env, database: AuthDatabase) {
   const secret = env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
+  const secrets = parseBetterAuthSecrets(env.BETTER_AUTH_SECRETS);
   const baseURL = resolveAuthBaseURL(env);
   const apple = appleSocialProvider(env);
   return betterAuth({
     secret,
+    ...(secrets ? { secrets } : {}),
     baseURL,
     basePath: "/api/auth",
     database,
@@ -83,14 +86,14 @@ export function createAuth(env: Env, database: AuthDatabase) {
     databaseHooks: {
       account: {
         create: {
-          before: async (account) => {
-            const sealed = await sealAccountTokenFields(env, account);
+          before: async (account, ctx) => {
+            const sealed = await sealAccountTokenFields(env, account, ctx?.context.secretConfig);
             return { data: { ...account, ...sealed } };
           },
         },
         update: {
-          before: async (account) => {
-            const sealed = await sealAccountTokenFields(env, account);
+          before: async (account, ctx) => {
+            const sealed = await sealAccountTokenFields(env, account, ctx?.context.secretConfig);
             return { data: { ...account, ...sealed } };
           },
         },

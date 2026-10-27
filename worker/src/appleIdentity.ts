@@ -14,6 +14,7 @@ import {
   mergeAppleProfile,
   readAppleAuthConfig,
   type AppleProfile,
+  type AppleTokenSource,
 } from "../../supabase/functions/_shared/appleIdentity.ts";
 import {
   openToken,
@@ -143,18 +144,20 @@ async function writeAppleProfile(
   }
 }
 
+export type OwnedAppleRefresh = { token: string; source: AppleTokenSource };
+
 export async function loadOwnedAppleRefreshToken(
   store: Store,
   authUserId: string,
   env: Env,
-): Promise<string | null> {
+): Promise<OwnedAppleRefresh | null> {
   const fromAccount = await ownedAppleRefreshToken(store.sql, env, authUserId);
-  if (fromAccount) return fromAccount;
+  if (fromAccount) return { token: fromAccount, source: "web" };
   const row = await getOwnedAppleIdentity(store);
   if (!row?.refresh_token_enc || !row.refresh_token_iv) return null;
   try {
     const keyring = await parseTokenKeyring(env);
-    return await openToken(
+    const token = await openToken(
       {
         ciphertext: row.refresh_token_enc,
         iv: row.refresh_token_iv,
@@ -163,10 +166,11 @@ export async function loadOwnedAppleRefreshToken(
       appleTokenAad(store.userId),
       keyring,
     );
+    return token ? { token, source: "native" } : null;
   } catch (err) {
     if (err instanceof TokenCryptoError) return null;
     throw err;
   }
 }
 
-export type { AppleProfile };
+export type { AppleProfile, AppleTokenSource };
