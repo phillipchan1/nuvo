@@ -81,6 +81,11 @@ def source_snapshot_is_fatal(mode: str | None = None) -> bool:
     return not is_dry_run_mode(mode)
 
 
+def auth_parity_is_fatal(mode: str | None = None) -> bool:
+    """Live source vs Better Auth must match on cutover. Dry-run sign-ins are report-only."""
+    return not is_dry_run_mode(mode)
+
+
 def maintenance_is_armed(payload: Any) -> bool:
     if not isinstance(payload, dict):
         return False

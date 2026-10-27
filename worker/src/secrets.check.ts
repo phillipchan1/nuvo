@@ -324,7 +324,11 @@ ok(!/GRANT USAGE ON SCHEMA auth TO postgres/.test(authSql), "migration_tmp.sql d
 ok(!/GRANT SELECT[\s\S]*ON TABLE auth\.users TO postgres/.test(authSql) && !/GRANT SELECT[\s\S]*ON TABLE auth\.identities TO postgres/.test(authSql), "migration_tmp.sql does not grant auth column SELECT to postgres");
 ok(!/supabase_admin/.test(authSql), "migration_tmp.sql does not name supabase_admin");
 ok(!/GRANT USAGE ON SCHEMA auth TO migration_reader/.test(authSql), "migration_tmp.sql never grants auth USAGE to migration_reader");
-ok(/REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader/.test(authSql), "migration_tmp.sql cleanup revokes leftover auth table grants from migration_reader");
+ok(!/REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader/.test(authSql), "migration_tmp.sql cleanup does not REVOKE ALL ON ALL TABLES IN SCHEMA auth");
+ok(/SELECT \* FROM migration_tmp\.auth_grants/.test(authSql) && /WHERE grantee = 'migration_reader'/.test(authSql), "migration_tmp.sql cleanup loops recorded migration_reader grants");
+ok(/aclexplode\(n\.nspacl\)/.test(authSql) && /aclexplode\(c\.relacl\)/.test(authSql) && /aclexplode\(a\.attacl\)/.test(authSql), "migration_tmp.sql aclexplode is called on nullable ACLs directly");
+ok(!/COALESCE\([^;]*aclitem\[\]/.test(authSql), "migration_tmp.sql does not COALESCE ACL arrays to '{}'");
+ok(!/GRANT USAGE ON SCHEMA migration_tmp TO postgres/.test(vaultSql), "vault_tokens.sql does not grant schema USAGE to postgres");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM PUBLIC/.test(vaultSql), "vault_tokens.sql revokes PUBLIC");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM anon/.test(vaultSql), "vault_tokens.sql revokes anon");
 ok(/REVOKE ALL ON FUNCTION migration_tmp\.vault_tokens\(\) FROM authenticated/.test(vaultSql), "vault_tokens.sql revokes authenticated");

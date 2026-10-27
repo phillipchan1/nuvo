@@ -381,18 +381,23 @@ describe("cutover-migrate.yml", () => {
   it("dry-run dump needs no freeze and never arms or 503s", () => {
     expect(
       py(
-        "from cutover_copy import is_dry_run_mode, dump_requires_freeze, source_snapshot_is_fatal; "
+        "from cutover_copy import is_dry_run_mode, dump_requires_freeze, source_snapshot_is_fatal, auth_parity_is_fatal; "
         + "print(is_dry_run_mode('dry-run'), is_dry_run_mode('cutover'), is_dry_run_mode('DRY-RUN'), is_dry_run_mode(''), "
         + "dump_requires_freeze('dry-run'), dump_requires_freeze('cutover'), "
-        + "source_snapshot_is_fatal('dry-run'), source_snapshot_is_fatal('cutover'))",
+        + "source_snapshot_is_fatal('dry-run'), source_snapshot_is_fatal('cutover'), "
+        + "auth_parity_is_fatal('dry-run'), auth_parity_is_fatal('cutover'))",
       ),
-    ).toBe("True False True False False True False True");
+    ).toBe("True False True False False True False True False True");
     expect(COPY_PY).toMatch(/def dump_requires_freeze/);
     expect(COPY_PY).toMatch(/def source_snapshot_is_fatal/);
+    expect(COPY_PY).toMatch(/def auth_parity_is_fatal/);
     expect(WORKFLOW).toMatch(/dump_requires_freeze/);
     expect(WORKFLOW).toMatch(/source_snapshot_is_fatal/);
+    expect(WORKFLOW).toMatch(/auth_parity_is_fatal/);
     expect(WORKFLOW).toMatch(/dry-run: skipping armed\/freeze preflight/);
     expect(WORKFLOW).toMatch(/dry-run: source vs snapshot \(report only\)/);
+    expect(WORKFLOW).toMatch(/dry-run: auth parity \(report only\)/);
+    expect(DOC).toMatch(/Auth parity[\s\S]*report-only in dry-run/);
     const dumpIdx = WORKFLOW.indexOf("def cmd_dump()");
     const nextDef = WORKFLOW.indexOf("\n          def ", dumpIdx + 1);
     expect(dumpIdx).toBeGreaterThan(0);

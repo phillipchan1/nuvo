@@ -184,9 +184,10 @@ revoke those leftovers, then drop (see the block in
 `migration_tmp.sql` next to this):
 
 ```sql
-REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader;
--- plus column-level REVOKEs as needed (attacl survives table REVOKE)
-DROP SCHEMA migration_tmp CASCADE;
+-- Loop migration_tmp.auth_grants for migration_reader (see migration_tmp.sql).
+-- Do not REVOKE ALL ON ALL TABLES IN SCHEMA auth — hosted postgres can 42501.
+-- On PG17 a table-level REVOKE also clears that table's column ACLs.
+DROP SCHEMA IF EXISTS migration_tmp CASCADE;
 ```
 
 That cleanup is a source-side restore of pre-state, not a rollback
@@ -470,8 +471,10 @@ apply to a dry run.
 5. **Verify** — `verify` recomputes source and target hashes against the
    snapshot. `mode=cutover` dies if either drifted (writes leaked, or
    the copy is short). `mode=dry-run` treats source-vs-snapshot drift
-   as report-only; target-vs-snapshot still fails. Parity covers only
-   the frozen tables (`sync_log` excluded).
+   as report-only; target-vs-snapshot still fails. Auth parity (source
+   vs Better Auth) is the same: report-only in dry-run so a sign-in
+   during the run does not abort. Parity covers only the frozen tables
+   (`sync_log` excluded).
 6. **First resync** — the same job copies every `sync_log` id missing
    on Neon (aborts on a content collision), `setval`s
    `GREATEST(max(id), last_value, 1)` in that transaction so the park

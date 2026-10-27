@@ -29,7 +29,6 @@ $$;
 
 REVOKE ALL ON SCHEMA migration_tmp FROM PUBLIC;
 REVOKE ALL ON SCHEMA migration_tmp FROM anon, authenticated, service_role;
-GRANT USAGE ON SCHEMA migration_tmp TO postgres;
 GRANT USAGE ON SCHEMA migration_tmp TO migration_reader;
 
 CREATE OR REPLACE FUNCTION migration_tmp.vault_tokens()

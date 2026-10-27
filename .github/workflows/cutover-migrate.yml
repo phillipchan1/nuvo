@@ -53,7 +53,8 @@
 # mode=cutover dump refuses unless GET MAINTENANCE_URL reports
 # cutover_armed, a gated edge POST returns 503, and anon INSERT on a
 # frozen table is denied. mode=dry-run skips those preflights (no arm,
-# no freeze, no 503) and treats source-vs-snapshot drift as report-only.
+# no freeze, no 503) and treats source-vs-snapshot drift and auth
+# parity (sign-ins during the run) as report-only.
 # freeze.sql / unfreeze.sql are hand-applied; this job never -f them.
 #
 # Does not retarget Stripe, StoreKit, or Apple webhooks. Does not add an
@@ -311,6 +312,7 @@ jobs:
               anon_insert_privilege_sql,
               assert_cutover_armed,
               dump_exclude_args,
+              auth_parity_is_fatal,
               dump_requires_freeze,
               edge_preflight_frozen,
               is_dry_run_mode,
@@ -1272,6 +1274,7 @@ jobs:
               psql(target, PUBLIC_USERS_SQL)
               print("auth parity (count + ordered md5 of exported columns)…", flush=True)
               auth_problems: list[str] = []
+              mode = os.environ.get("CUTOVER_MODE")
               for name, src, dst in auth_parity(source, target):
                   src_n, dst_n = src.get("n"), dst.get("n")
                   src_h, dst_h = src.get("hash"), dst.get("hash")
@@ -1280,9 +1283,11 @@ jobs:
                       flush=True,
                   )
                   if src_n != dst_n or not src_h or not dst_h or src_h != dst_h:
-                      auth_problems.append(
-                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
-                      )
+                      item = f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      if auth_parity_is_fatal(mode):
+                          auth_problems.append(item)
+                      else:
+                          print(f"dry-run: auth parity (report only) {item}", flush=True)
               if auth_problems:
                   die("auth count or content-hash mismatch — abort:\n  " + "\n  ".join(auth_problems))
               mark = load_sync_log_watermark(work)
@@ -1388,9 +1393,11 @@ jobs:
                       and src_h == dst_h
                   )
                   if not ok:
-                      problems.append(
-                          f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
-                      )
+                      item = f"{name}: source={src_n}/{src_h} target={dst_n}/{dst_h}"
+                      if auth_parity_is_fatal(mode):
+                          problems.append(item)
+                      else:
+                          print(f"dry-run: auth parity (report only) {item}", flush=True)
                   lines.append(
                       f"| {name} | {src_n if src_n is not None else '?'} | {dst_n if dst_n is not None else '?'} | {src_h or '?'} | {dst_h or '?'} | {'yes' if ok else 'NO'} |"
                   )

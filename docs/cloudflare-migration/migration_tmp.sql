@@ -53,33 +53,36 @@
 -- restore pre-state (revoke the leftovers, then drop):
 --
 --   BEGIN;
---   REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM migration_reader;
 --   DO $cleanup$
 --   DECLARE rec record;
 --   BEGIN
+--     -- Loop the recording. REVOKE ALL ON ALL TABLES IN SCHEMA auth can
+--     -- 42501 on hosted postgres (not a superuser / not the table owner).
+--     -- On PG17 a table-level REVOKE also clears that table's column ACLs.
 --     FOR rec IN
---       SELECT n.nspname, c.relname, a.attname
---       FROM pg_attribute a
---       JOIN pg_class c ON c.oid = a.attrelid
---       JOIN pg_namespace n ON n.oid = c.relnamespace
---       WHERE n.nspname = 'auth'
---         AND a.attnum > 0 AND NOT a.attisdropped
---         AND a.attacl IS NOT NULL
---         AND EXISTS (
---           SELECT 1
---           FROM aclexplode(a.attacl) e
---           JOIN pg_roles r ON r.oid = e.grantee
---           WHERE r.rolname = 'migration_reader'
---         )
+--       SELECT * FROM migration_tmp.auth_grants
+--       WHERE grantee = 'migration_reader'
 --     LOOP
---       EXECUTE format(
---         'REVOKE ALL (%I) ON TABLE %I.%I FROM migration_reader',
---         rec.attname, rec.nspname, rec.relname
---       );
+--       IF rec.objkind = 'schema' THEN
+--         EXECUTE format(
+--           'REVOKE %s ON SCHEMA %I FROM %I',
+--           rec.privilege, rec.nspname, rec.grantee
+--         );
+--       ELSIF rec.objkind = 'table' THEN
+--         EXECUTE format(
+--           'REVOKE %s ON TABLE %I.%I FROM %I',
+--           rec.privilege, rec.nspname, rec.objname, rec.grantee
+--         );
+--       ELSIF rec.objkind = 'column' THEN
+--         EXECUTE format(
+--           'REVOKE %s (%I) ON TABLE %I.%I FROM %I',
+--           rec.privilege, rec.attname, rec.nspname, rec.objname, rec.grantee
+--         );
+--       END IF;
 --     END LOOP;
 --   END
 --   $cleanup$;
---   DROP SCHEMA migration_tmp CASCADE;
+--   DROP SCHEMA IF EXISTS migration_tmp CASCADE;
 --   COMMIT;
 --
 -- Verification (privileged role; counts + ACLs, not rows). Do not SET ROLE
@@ -144,6 +147,9 @@ COMMENT ON TABLE migration_tmp.auth_grants IS
   'Pre-copy leftover migration_reader auth ACLs. Cleanup revokes them; postgres defaults stay.';
 
 -- First apply only — do not overwrite a prior recording.
+-- aclexplode(NULL) yields 0 rows. Do not COALESCE to '{}'::aclitem[] —
+-- that raises "ACL arrays must be one-dimensional" on a NULL acl, which
+-- on prod is every auth column.
 INSERT INTO migration_tmp.auth_grants (
   nspname, objkind, objname, attname, grantee, privilege
 )
@@ -157,7 +163,7 @@ FROM (
     'migration_reader'::text AS grantee,
     e.privilege_type AS privilege
   FROM pg_namespace n
-  CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl, '{}'::aclitem[])) e
+  CROSS JOIN LATERAL aclexplode(n.nspacl) e
   JOIN pg_roles r ON r.oid = e.grantee
   WHERE n.nspname = 'auth'
     AND r.rolname = 'migration_reader'
@@ -173,7 +179,7 @@ FROM (
     e.privilege_type
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
-  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, '{}'::aclitem[])) e
+  CROSS JOIN LATERAL aclexplode(c.relacl) e
   JOIN pg_roles r ON r.oid = e.grantee
   WHERE n.nspname = 'auth'
     AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
@@ -191,7 +197,7 @@ FROM (
   FROM pg_attribute a
   JOIN pg_class c ON c.oid = a.attrelid
   JOIN pg_namespace n ON n.oid = c.relnamespace
-  CROSS JOIN LATERAL aclexplode(COALESCE(a.attacl, '{}'::aclitem[])) e
+  CROSS JOIN LATERAL aclexplode(a.attacl) e
   JOIN pg_roles r ON r.oid = e.grantee
   WHERE n.nspname = 'auth'
     AND a.attnum > 0
