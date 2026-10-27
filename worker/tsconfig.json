@@ -25,5 +25,5 @@
     "../supabase/functions/agent/sanitizeReply.ts",
     "../supabase/functions/agent/contextShape.ts"
   ],
-  "exclude": ["src/*.check.ts", "src/isolationDb.ts", "src/pgliteSql.ts"]
+  "exclude": ["src/**/*.check.ts", "src/isolationDb.ts", "src/pgliteSql.ts"]
 }

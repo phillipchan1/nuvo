@@ -158,17 +158,21 @@ export async function sealToken(
   plaintext: string,
   aad: TokenAad,
   keyring: TokenKeyring,
+  version?: number,
 ): Promise<SealedToken> {
   if (typeof plaintext !== "string") throw new TokenCryptoError("plaintext required");
+  const keyVersion = version ?? keyring.current.version;
+  const key = keyring.byVersion.get(keyVersion);
+  if (!key) throw new TokenCryptoError("unknown key version");
   const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv, additionalData: tokenAadBytes(aad), tagLength: GCM_TAG_BITS },
-      keyring.current.key,
+      key,
       new TextEncoder().encode(plaintext),
     ),
   );
-  return { ciphertext, iv, keyVersion: keyring.current.version };
+  return { ciphertext, iv, keyVersion };
 }
 
 export async function openToken(
