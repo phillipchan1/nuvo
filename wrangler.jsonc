@@ -4,6 +4,9 @@
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-01-15",
   "compatibility_flags": ["nodejs_compat"],
+  // Production custom domain. Already attached to the placeholder `nuvo`
+  // script — keep it on the real Worker `nuvo` deploy. Preview has no routes.
+  "routes": [{ "pattern": "api.nuvo.day", "custom_domain": true }],
   // Static Vite build. Deep links fall back to index.html (same as Vercel SPA).
   "assets": {
     "directory": "./dist",
@@ -23,11 +26,11 @@
     "RESEND_FROM": "Nuvo <noreply@localhost>"
   },
   // Production / `wrangler dev` only. Preview uses DATABASE_URL (see env.preview).
-  // Replace `id` with a real Hyperdrive config before a production deploy.
+  // Cloudflare Hyperdrive config `nuvo-neon`.
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "00000000000000000000000000000000",
+      "id": "2c52343139524c4e9ba39f8c1c9b0795",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
     }
   ],
