@@ -929,6 +929,12 @@ ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [A_ROW.tasks])
 
 const cronNo = await withTimeout(request("/api/cron/rollover", { method: "POST" }), 8000, "cron unauth");
 ok(cronNo.status === 401, `cron unauth: HTTP ${cronNo.status}`);
+const A_PAST = "c0a11e00-3333-4000-8000-0000000000a3";
+await db.query(
+  `INSERT INTO tasks (id, user_id, title, status, do_date, start_time) VALUES
+    ($1, $2, 'A past for rollover', 'planned', '2026-10-20', '2026-10-20T10:00:00Z')`,
+  [A_PAST, a.id],
+);
 const cronSkipEnv = { ...env, CUTOVER_FLIPPED: "" };
 const cronSkipRoll = await withTimeout(
   app.request(
@@ -941,6 +947,7 @@ const cronSkipRoll = await withTimeout(
 );
 ok(cronSkipRoll.status === 200, `cron rollover before flip: HTTP ${cronSkipRoll.status}`);
 ok((await cronSkipRoll.json() as { skipped?: boolean }).skipped === true, "cron rollover skips before flip");
+ok((await scalar<string>("SELECT do_date::text FROM tasks WHERE id = $1", [A_PAST])) === "2026-10-20", "cron rollover before flip: past task unmoved");
 const cronSkipPush = await withTimeout(
   app.request(
     "http://localhost:8787/api/cron/push-dispatch",
@@ -958,6 +965,13 @@ const cronOk = await withTimeout(
   "cron rollover",
 );
 ok(cronOk.status === 200, `cron rollover: HTTP ${cronOk.status}`);
+ok((await scalar<string>("SELECT do_date::text FROM tasks WHERE id = $1", [A_PAST])) !== "2026-10-20", "cron rollover after flip: past task rolled");
+await db.query(
+  `UPDATE tasks
+   SET do_date = '2026-10-26', start_time = '2026-10-26T10:00:00Z', slot_id = $2, status = 'planned'
+   WHERE id = $1`,
+  [A_ROW.tasks, A_ROW.slots],
+);
 
 const A_OLD_TRASH = "c0a11e00-2222-4000-8000-0000000000a1";
 const A_NEW_TRASH = "c0a11e00-2222-4000-8000-0000000000a2";
