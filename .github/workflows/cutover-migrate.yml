@@ -532,7 +532,13 @@ jobs:
               if not text or text in EXTRA_MASKS:
                   return
               EXTRA_MASKS.append(text)
-              print(f"::add-mask::{text}", flush=True)
+              # fd 3 is the runner (exec 3>&1 before tee). Must not go to
+              # stdout/stderr — those are 2>&1 | tee'd into *.log.
+              line = f"::add-mask::{text}\n"
+              try:
+                  os.write(3, line.encode())
+              except OSError:
+                  print(line, end="", file=sys.stderr, flush=True)
 
           def secrets() -> list[str]:
               out: list[str] = []
@@ -1552,6 +1558,7 @@ jobs:
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           mkdir -p "$CUTOVER_LOG_DIR"
+          exec 3>&1
           python3 "${RUNNER_TEMP}/cutover.py" dump 2>&1 | tee "${CUTOVER_LOG_DIR}/dump.log"
 
       - id: restore
@@ -1564,6 +1571,7 @@ jobs:
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           mkdir -p "$CUTOVER_LOG_DIR"
+          exec 3>&1
           python3 "${RUNNER_TEMP}/cutover.py" restore 2>&1 | tee "${CUTOVER_LOG_DIR}/restore.log"
 
       - id: verify
@@ -1578,6 +1586,7 @@ jobs:
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           mkdir -p "$CUTOVER_LOG_DIR"
+          exec 3>&1
           python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
 
       - id: assert-logs
@@ -1625,6 +1634,7 @@ jobs:
           unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
           unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
           mkdir -p "$CUTOVER_LOG_DIR"
+          exec 3>&1
           python3 "${RUNNER_TEMP}/cutover.py" resync 2>&1 | tee "${CUTOVER_LOG_DIR}/resync.log"
 
       - id: upload

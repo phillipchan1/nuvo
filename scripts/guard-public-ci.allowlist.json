@@ -131,7 +131,7 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "write-helper",
-      "sha256": "cc022826d8064ace9afd0500fae7132c5b70f82afba8034bc9452b9a3fc24697"
+      "sha256": "ddbf1d590ceaac9375090089e0f769d18be6c2fe8ce4d91b3596c3ca5076f08f"
     },
     {
       "file": "cutover-migrate.yml",
@@ -143,19 +143,19 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "dump",
-      "sha256": "bb029aa98cb017ca6f24cd6454adc21b49aa8745d3cfbe8666ed95db0b269078"
+      "sha256": "5566129c4b12e87b08421894f91504968f42d652ffc24480d15879e45173ec71"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "restore",
-      "sha256": "10acb8e932a412c332e03d741ef1fdf19a9e7b7d1c76f6e2b1f4921c111f76f2"
+      "sha256": "460118db9411a21400675ed98a3af2311ea49ba6f6f3b81e9caec1a1a0cb16b4"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "verify",
-      "sha256": "d2bf5b4ab4cd06deee73d202c346216727d60e0914866bad3fac1c48b665cd15"
+      "sha256": "74912dbcb3c38ee17d300b0c1f607d0e26c06a2faf0f011ba37f48ff27a05ab6"
     },
     {
       "file": "cutover-migrate.yml",
@@ -179,7 +179,7 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "resync",
-      "sha256": "3c3cba9b4c496be19e23c781d7851f9353eaa8b11023d1fcdd5f7829c9b7a759"
+      "sha256": "07b20362748af8d7fc1083e0d63175dcd037cdcd0e61c453e49330626e69e53b"
     },
     {
       "file": "cutover-migrate.yml",

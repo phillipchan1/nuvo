@@ -1146,6 +1146,34 @@ describe("public-repo CI guard", () => {
     expect(() => assertCutoverLogDir(dir)).toThrow(/row data/);
   });
 
+  it("keeps ::add-mask:: off teed logs and still fails a real row-shaped dump.log", () => {
+    const workflow = readFileSync(join(ROOT, ".github/workflows/cutover-migrate.yml"), "utf8");
+    expect(workflow).toMatch(/os\.write\(3, line\.encode\(\)\)/);
+    expect(workflow.match(/^\s+exec 3>&1\s*$/gm)?.length).toBe(4);
+    expect(workflow).toMatch(/\|\s*tee "/);
+
+    const dir = tmp();
+    const dumpLog = join(dir, "dump.log");
+    const script = [
+      "set -o pipefail",
+      "exec 3>&1",
+      `python3 -c ${JSON.stringify(
+        "import os,sys; os.write(3, b'::add-mask::phil@example.com\\n'); print('exported 2 auth.users', flush=True)",
+      )} 2>&1 | tee ${JSON.stringify(dumpLog)}`,
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("::add-mask::phil@example.com");
+    expect(result.stdout).toContain("exported 2 auth.users");
+    const dumped = readFileSync(dumpLog, "utf8");
+    expect(dumped).toBe("exported 2 auth.users\n");
+    expect(dumped).not.toMatch(/::add-mask::/);
+    expect(dumped).not.toMatch(/phil@example.com/);
+    expect(assertCutoverLogDir(dir)).toEqual(["dump.log"]);
+    writeFileSync(dumpLog, "auth map leaked phil@example.com\n");
+    expect(() => assertCutoverLogDir(dir)).toThrow(/row data/);
+  });
+
   it("exits non-zero when --check-log is pointed at a missing dir", () => {
     const missing = join(tmp(), "no-such-logs");
     const result = spawnSync(process.execPath, [join(ROOT, "scripts/guard-public-ci.mjs"), "--check-log", missing], {
