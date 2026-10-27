@@ -2,91 +2,240 @@
 // every one is friction. So `slot.title` is treated as an optional *override*:
 // when it's blank we derive a display title from what the slot actually holds —
 // its project, its children's shared domain, or just the hour of day.
+//
+// And the drop rules for blocks that hold work: what letting go on a task or a
+// slot does, decided once here so the drag tracker (what it shows) and the drop
+// handlers (what they write) can't disagree.
 
 import type { Slot, Task } from "./types";
-import { snapMinutes } from "./dates";
 import { domainById, projectById, taskDomainId, type VerticalData } from "./vertical";
+// One rule for "how big is this block", shared with the chat's `create_slot`.
+import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 
-/** How wide the left/right "place beside" bands are on a slot block (px). */
-export const SLOT_DROP_EDGE_PX = 28;
+/** How wide the left/right "place beside" bands are on a block (px). */
+export const BLOCK_DROP_EDGE_PX = 28;
 
-export type SlotDropZone = "inside" | "before" | "after";
+/** Below this a block has no edges to aim at — all of it is middle (px). */
+const BLOCK_DROP_NARROW_PX = 64;
 
-export type SlotDropIntent = { slotId: string; zone: SlotDropZone };
+/**
+ * How long the pointer rests in a task's middle before letting go there makes
+ * a slot of the two.
+ *
+ * Joining a slot makes nothing, so it arms at once. Combining *makes* a block,
+ * and a drag swept across a busy Tuesday must not offer that on every block it
+ * passes over — the same beat a phone's home screen waits before it makes a
+ * folder.
+ */
+export const COMBINE_DWELL_MS = 300;
 
-export type ResolvedSlotDrop =
-  | { kind: "join"; slot: Slot }
-  | { kind: "adjacent"; slot: Slot; zone: "before" | "after"; start: Date };
+/** Where on a block the pointer is: the middle gathers, the edges place beside. */
+export type BlockDropZone = "inside" | "beside";
 
-/** Classify pointer position within a slot block's screen rect. */
-export function slotDropZoneFromPointer(
-  slotRect: DOMRect,
+/**
+ * What letting go in the MIDDLE of a block does.
+ *
+ *  - `join`    — work dropped on a slot goes in it (unchanged since D-098).
+ *  - `combine` — work dropped on a task: the two become one new slot, at the
+ *                task's time.
+ *  - `absorb`  — a slot dropped on a task: the slot moves to the task's time
+ *                and takes it in.
+ *  - `merge`   — a slot dropped on a slot: the target takes the other's work,
+ *                and the other goes. Never nesting — a slot holds tasks, not
+ *                slots (P10: no second container, no new noun).
+ *
+ * The rule under all four: **the block you drop on doesn't move; what you
+ * carry comes to it.**
+ */
+export type GatherAct = "join" | "combine" | "absorb" | "merge";
+
+/** What's in hand, as far as gathering cares. */
+export type DragPayload =
+  | { kind: "tasks"; tasks: readonly Task[] }
+  | { kind: "slot"; slot: Slot; children: readonly Task[] }
+  | { kind: "project" }
+  | { kind: "other" };
+
+/** The block under the pointer. */
+export type DropTarget =
+  | { kind: "task"; task: Pick<Task, "id" | "status" | "start_time"> }
+  | { kind: "slot"; slot: Slot };
+
+/**
+ * The block under the pointer, frozen for the drop handler. `act` is null when
+ * the drop lands **beside** it — the pointer was on an edge, the middle of a
+ * task hadn't armed yet, or the middle can't gather what's in hand. A null act
+ * is still an answer: it stops the time-range fallback from joining the slot
+ * the pointer was deliberately placed beside.
+ */
+export type BlockDropIntent = { kind: "task" | "slot"; id: string; act: GatherAct | null };
+
+/** Classify pointer position within a block's screen rect. */
+export function blockDropZoneFromPointer(
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom" | "width">,
   clientX: number,
   clientY: number,
-): SlotDropZone | null {
-  if (clientY < slotRect.top || clientY > slotRect.bottom) return null;
-  if (clientX < slotRect.left || clientX > slotRect.right) return null;
-  const edge = Math.min(SLOT_DROP_EDGE_PX, Math.max(12, slotRect.width * 0.22));
-  if (slotRect.width <= edge * 2 + 4) return "inside";
-  if (clientX < slotRect.left + edge) return "before";
-  if (clientX > slotRect.right - edge) return "after";
+): BlockDropZone | null {
+  if (clientY < rect.top || clientY > rect.bottom) return null;
+  if (clientX < rect.left || clientX > rect.right) return null;
+  // A block already sharing its hour three ways is too narrow to aim at an
+  // edge of — all of it is middle. (On a task the pause still guards it.)
+  if (rect.width < BLOCK_DROP_NARROW_PX) return "inside";
+  const edge = Math.min(BLOCK_DROP_EDGE_PX, Math.max(12, rect.width * 0.22));
+  if (clientX < rect.left + edge || clientX > rect.right - edge) return "beside";
   return "inside";
 }
 
-function slotEndTime(slot: Pick<Slot, "start_time" | "duration_minutes">): Date {
-  return new Date(new Date(slot.start_time).getTime() + slot.duration_minutes * 60_000);
-}
+/**
+ * What the middle of `target` would do with `payload` — or null, when the only
+ * honest drop there is beside it. Each null is a thing that would be lost:
+ *
+ *  - **A finished task** is a record of what happened, not a container.
+ *  - **An event** is never anyone's child: slots hold tasks.
+ *  - **A project** dragged whole lands as its own sitting; D-109's offer already
+ *    asks about its work that sits elsewhere.
+ *  - **Merging an empty slot** would be deleting it by drop.
+ *  - **A repeating slot's occurrence** can't be merged away — removing one is a
+ *    "this or the series?" question, never a drop's side effect.
+ *  - **Another project's sitting** can't be merged in: the project would be left
+ *    with no time this week, and the week would plan it a second one.
+ */
+export function gatherActFor(payload: DragPayload, target: DropTarget): GatherAct | null {
+  if (payload.kind === "other") return null;
 
-/** Start time for a block placed immediately before or after a slot. */
-export function adjacentBlockStart(
-  slot: Pick<Slot, "start_time" | "duration_minutes">,
-  zone: "before" | "after",
-  durationMins: number,
-): Date {
-  const slotStart = new Date(slot.start_time);
-  if (zone === "after") return snapMinutes(slotEndTime(slot));
-  return snapMinutes(new Date(slotStart.getTime() - durationMins * 60_000));
-}
-
-/** Screen rect for the dragged item's landing zone beside a slot. */
-export function adjacentPreviewRect(
-  slotRect: DOMRect,
-  slotDurationMins: number,
-  dragDurationMins: number,
-  zone: "before" | "after",
-): { top: number; left: number; width: number; height: number } {
-  const pxPerMin = slotRect.height / Math.max(slotDurationMins, 1);
-  const height = Math.max(pxPerMin * dragDurationMins, 8);
-  const top = zone === "after" ? slotRect.bottom : slotRect.top - height;
-  return { top, left: slotRect.left, width: slotRect.width, height };
-}
-
-/** Resolve whether a drop joins a slot or lands beside it. */
-export function resolveSlotDrop(
-  dropStart: Date,
-  intent: SlotDropIntent | null,
-  slots: Slot[],
-  durationMins: number,
-): ResolvedSlotDrop | null {
-  if (intent) {
-    const slot = slots.find((s) => s.id === intent.slotId);
-    if (!slot) return null;
-    if (intent.zone === "inside") return { kind: "join", slot };
-    return {
-      kind: "adjacent",
-      slot,
-      zone: intent.zone,
-      start: adjacentBlockStart(slot, intent.zone, durationMins),
-    };
+  if (target.kind === "slot") {
+    if (payload.kind === "tasks" || payload.kind === "project") return "join";
+    const from = payload.slot;
+    const into = target.slot;
+    if (from.id === into.id) return null;
+    if (!payload.children.some((t) => t.status !== "trashed")) return null;
+    if (from.recurrence_id) return null;
+    if (from.project_id && from.project_id !== into.project_id) return null;
+    return "merge";
   }
-  // No pointer intent — only join when the drop time actually falls inside the slot.
+
+  const task = target.task;
+  if (task.status === "done" || task.status === "trashed" || !task.start_time) return null;
+  if (payload.kind === "project") return null;
+  if (payload.kind === "slot") return "absorb";
+  const carried = payload.tasks.filter((t) => t.id !== task.id);
+  if (carried.length === 0) return null;
+  if (carried.some((t) => t.status === "done")) return null;
+  return "combine";
+}
+
+/** Minutes from `start` to the next midnight — a slot is one day's row. */
+export function minutesLeftInDay(start: Date): number {
+  const midnight = new Date(start);
+  midnight.setHours(24, 0, 0, 0);
+  return Math.round((midnight.getTime() - start.getTime()) / 60_000);
+}
+
+/**
+ * How long a block that holds these pieces runs from `start` — the kernel's
+ * size (sum, 30m floor, quarter hour), cut at midnight, and never shorter than
+ * `atLeast`: a block you sized by hand is a reason to make room, never a reason
+ * to take it away (D-109).
+ */
+export function slotMinutesFor(
+  durations: (number | null | undefined)[],
+  start: Date,
+  atLeast = 0,
+): number {
+  const sized = Math.min(sizeSlotToContents(durations), Math.max(15, minutesLeftInDay(start)));
+  return Math.max(atLeast, sized);
+}
+
+export type ResolvedBlockDrop =
+  | { kind: "join"; slot: Slot }
+  | { kind: "merge"; slot: Slot }
+  | { kind: "combine"; task: Task }
+  | { kind: "absorb"; task: Task }
+  | { kind: "beside" };
+
+/**
+ * Resolve a drop against the block the pointer was over.
+ *
+ * The intent wins — it's what lit up under the cursor. With no intent at all
+ * (a drop the pointer watch didn't see), a task dropped at a time inside a slot
+ * still joins it; that fallback is never consulted when the pointer was
+ * deliberately put beside a block.
+ */
+export function resolveBlockDrop(
+  dropStart: Date,
+  intent: BlockDropIntent | null,
+  slots: readonly Slot[],
+  findTask: (id: string) => Task | undefined,
+): ResolvedBlockDrop | null {
+  if (intent) {
+    if (!intent.act) return { kind: "beside" };
+    if (intent.kind === "slot") {
+      const slot = slots.find((s) => s.id === intent.id);
+      if (!slot) return { kind: "beside" };
+      return intent.act === "merge" ? { kind: "merge", slot } : { kind: "join", slot };
+    }
+    const task = findTask(intent.id);
+    if (!task?.start_time) return { kind: "beside" };
+    return intent.act === "absorb" ? { kind: "absorb", task } : { kind: "combine", task };
+  }
   const t0 = dropStart.getTime();
   const slot = slots.find((s) => {
     const ss = new Date(s.start_time).getTime();
     return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
   });
-  if (!slot) return null;
-  return { kind: "join", slot };
+  return slot ? { kind: "join", slot } : null;
+}
+
+export type MakeSlotPlan =
+  | { kind: "create"; tasks: Task[]; start: Date }
+  | { kind: "gather"; slot: Slot; tasks: Task[] }
+  | { kind: "merge"; into: Slot; from: Slot }
+  | { kind: "none"; reason: string };
+
+/**
+ * **⌘G — what a selection of blocks becomes**, the keyboard's twin of dropping
+ * one onto another (the drag can't be the only way to an act).
+ *
+ *  - Tasks only → one new slot holding them, at the earliest time among them.
+ *  - Tasks and one slot → the tasks go into that slot.
+ *  - Two slots → one, by `gatherActFor`'s merge guards, in whichever direction
+ *    they allow (the earlier receives when both do).
+ *
+ * Finished tasks and events stay where they are — they're never anyone's
+ * children — and anything else is said rather than guessed at.
+ */
+export function planMakeSlot(
+  pick: { tasks: readonly Task[]; slots: readonly Slot[] },
+  childrenOf: (slotId: string) => readonly Task[],
+): MakeSlotPlan {
+  const tasks = pick.tasks.filter((t) => t.status !== "done" && t.status !== "trashed");
+  const slots = [...pick.slots].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+  if (slots.length === 0) {
+    if (tasks.length < 2) return { kind: "none", reason: "Select two or more tasks to make a slot" };
+    const times = tasks.filter((t) => t.start_time).map((t) => new Date(t.start_time!).getTime());
+    if (!times.length) return { kind: "none", reason: "A slot starts at a time — select a block that has one" };
+    return { kind: "create", tasks, start: new Date(Math.min(...times)) };
+  }
+
+  if (slots.length === 1) {
+    if (!tasks.length) return { kind: "none", reason: "Select tasks with the slot to put them in it" };
+    return { kind: "gather", slot: slots[0], tasks };
+  }
+
+  if (slots.length === 2 && tasks.length === 0) {
+    const [early, late] = slots;
+    const merges = (from: Slot, into: Slot) =>
+      gatherActFor({ kind: "slot", slot: from, children: childrenOf(from.id) }, { kind: "slot", slot: into }) === "merge";
+    if (merges(late, early)) return { kind: "merge", into: early, from: late };
+    if (merges(early, late)) return { kind: "merge", into: late, from: early };
+    return {
+      kind: "none",
+      reason: "These two stay apart — one is empty, repeats, or holds another project's time",
+    };
+  }
+
+  return { kind: "none", reason: "Make a slot takes tasks and one slot, or two slots" };
 }
 
 /** Morning / Midday / Afternoon / Evening from a start instant. */

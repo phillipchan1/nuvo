@@ -2279,6 +2279,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-17** | A public **affiliate marketplace** / partner portal, commission payouts, or in-app referral leaderboard | Wrong identity (P9 — quiet steward, not optimizer theater) and wrong scale (a handful of operators who love Nuvo need a personal **code**, not PartnerStack). Commissions imply Stripe Connect / tax forms / a second program for content partners who aren't customers. D-113 is the yes to personal codes; this row is the no to the marketplace wearing the same coat | A real non-customer partner is driving paid signups — then a *separate* affiliate program (Rewardful or equivalent), never folded into Settings or gamified |
 | **N-18** | A **Download for Mac** CTA in the phone Settings | A DMG is not a phone act. Settings → About on the phone was offering a Mac installer because the About pane treated "not the Tauri Mac app" as "web", and the iOS PWA / TestFlight shell is web. The marketing site already is the download door (D-018, D-124). Same smell as D-123's upkeep-in-the-chrome: a desktop-rank act living on a phone surface because it was easy to put there | Someone on a phone is regularly the person who installs the Mac app for themselves — evidence, not a guess. Even then the door stays on nuvo.day, not in Settings |
 | **N-19** | **Search, commands or a chat inside the capture door** (⌘K / ⌥Space) | Every one of them cost the one job. Search moved Enter onto any record your words *resembled*, so "call mom" opened an old task called "call mom about…" instead of adding yours; a leading space flipped the line into a chat; the command list made the empty state a menu. The door now does one thing — Task · Event · Slot — and reports "added" only once the write is queued (D-149). Navigation keeps its own keys and the spine; Nuvo keeps ⌘J; the phone keeps its Search screen | Desktop search comes back as **its own** door with its own key — never by re-sharing the capture line. A single line cannot both *add what I typed* and *find what I typed* without guessing which one you meant |
+| **N-20** | **Pulling a task into the week because its domain has gone quiet** — the app picking the shortest open task in a quiet domain and offering it in Plan the week | It is the one pick with **no owner**: you never slated it, owed it (it didn't slip) or dated it. It chose by *length* and ignored *age*, so an old, small, loose backlog task — *"review metrics WR expectancy"* — arrived in the week from nowhere, and the person's first question was "where did that come from?" That is the app deciding (P4) and the week carrying something the operator can't account for (W1, A4). A quiet domain is already *named* by the Week's Plan conscience read (W5, D-061), which is the honest hand-off; D-062 already decided that naming needs no auto-pulled work behind it | A quiet domain becomes something you can **act on from the read itself** ("slot something here" — you pick the task), with a reader for it (D-062's trigger). Even then: you choose the task; the app never does |
 
 ---
 
@@ -6309,3 +6310,139 @@ D-117 said "Stripe we cancel; Apple we name." The Worker has no Stripe secret an
 **Anchor.** Same leave path as D-117 (O4 stays ○). Strains **P8** (Account still holds identity *and* leave). Four no's: no pool, no new name, works with a missing or empty billing row, not builder-only.
 
 *Status: built — `tests/delete-account-worker.test.ts`, `tests/delete-account-ui.test.tsx`.*
+
+---
+
+**D-169 · 2026-10-27 · Plan the week pulls only work somebody owns — the quiet-domain top-up
+is gone.** *(Supersedes the quiet-domain clause of D-034's "Leftovers" lane.)*
+
+Origin ⓟ: *"plan the week brought in a task that was from God knows where — review metrics wr
+expectancy — where tf did that come from. it should only be from projects slated and inbox right?"*
+
+The pull (`suggestPull`, `lib/pull.ts`) had five sources, and the fifth — **presence** — took
+one task from each domain that had gone quiet: the *shortest* open task in it, of any age, that
+wasn't a recurring occurrence. It was the only pick with no owner. The other four each have one: a
+project you slated (On Deck), a bet you starred (lead), work you already owe (it slipped, `↻Nd`),
+and work with a date inside the week. Presence had nothing but "this domain is quiet" and "this is
+small", so an old loose backlog task in a quiet domain walked into the week unannounced and read, on
+the row, only as a `quiet` badge. *(Inferred: the live task's source was not observed — the dev app
+could not reach the account's data — but it is the one pick that fits.)*
+
+- **Removed:** source 5 and the `quiet` `PullKind`/badge. **Kept, on purpose:** carried work and
+  deadlines. They are debt and dates you already have; dropping them would let a deadline fall off
+  the week silently, which is a worse silent failure than a stray task.
+- **"The rest" now holds three things, not four** — *Carried over · Due this week · New captures*.
+  The group *Due, or going quiet* is renamed **Due this week**, on both shells (it was half false).
+- **A quiet domain is still named**, by the Week's Plan conscience read (W5, D-061) — that was
+  always the honest answer; the top-up was a second, silent one. The read still hands nothing
+  forward (D-062); the rejected shape is logged as **N-20**.
+- **The rule going forward:** nothing enters the pull that the person cannot account for in one
+  clause — *"you slated it · you starred it · you owe it · it's due."* A new source has to be
+  able to say which clause it is.
+
+Closes the trust half of **W1** (the load the funnel measures is work the operator recognises) and
+keeps **A4** honest. Strains **P3** in the right direction — it was a proposal in form but not in
+spirit, with nobody's decision behind it — and **P4**, which it restores. Not **P7**/**P16**: the
+rule holds with an empty account and a stranger's backlog. No pool, no new name.
+
+Stale and left alone: `docs/execution-flows.md` (§ Sunday step 4) and `docs/commitment-model.md` are
+June design proposals that still say the pull is "showing up-balanced". Not the live mechanism.
+
+*Status: built — `tests/plan-week-defaults.test.ts` (4 tests; all four fail against the old
+`pull.ts`), full suite (156 files, 2096 tests), typecheck, `npm run build`. Driven: the phone's
+The rest step at `?planweek`, 375px — reads Slots · Carried over · Due this week, no quiet row.
+**Not driven:** the desktop `SundayRitual` (same one-line label change; it needs the account's
+data) and a real account's pull — Plan the week on the real data is the check that matters.*
+
+---
+
+**D-170 · 2026-10-27 · Work dropped on a block goes INTO it or BESIDE it — the middle
+gathers, the edges place beside, and a task's middle waits a beat before it makes a slot.**
+
+Origin ⓟ: *"when dragging inbox items etc onto another task on the calendar we create a slot of
+those items. have intelligence draft what to call the slot … right and left edges for side by
+side and most of middle with hover interaction for slot combination."* D-098 made several
+things dropped on **open time** one slot, but only from work not yet on the grid: if one of the
+pieces was already placed, the only route was to drag it back to the rail first. And dropping on
+a task did one thing — stand beside it — with no way to say *these belong together*.
+
+- **One target grammar for every block that holds work.** A task block and a slot both have
+  two edge bands (≤28px, 22% of the width; a block under 64px is all middle) and a middle.
+  **Edges place beside** — the ordinary drop, at the pointer's time. **The middle gathers.**
+  There are no top or bottom bands: open time above or below a block already means before or
+  after. Which *side* a block lands on is FullCalendar's ordering, not the edge you used, so
+  both edges mean the same thing and say so (`Beside "…"`, a caret on that side).
+- **This replaces the slot edges `241b1e0` added (Aug 18, never logged).** Those bands meant
+  *before / after in time* — a sideways gesture with an up-or-down result, which needed a
+  stacked dashed preview to explain itself. Logged here so it doesn't come back.
+- **The block you drop on doesn't move; what you carry comes to it.** `gatherActFor`
+  (`lib/slots`) decides the middle, once, for the tracker (what it shows) and the handlers
+  (what they write): work on a slot **joins** (D-098, unchanged); work on a task **combines**
+  into a new slot at the task's hour; a slot on a task **absorbs** it (the slot moves to that
+  hour); a slot on a slot **merges** (the target keeps its name, project and series, grows,
+  and the other goes). Each is one undo. Sizes come from the kernel (`sizeSlotToContents`)
+  via `slotMinutesFor` — cut at midnight, never shrinking a block sized by hand.
+- **A task's middle waits ~300ms before it arms** (`COMBINE_DWELL_MS`; its bar widens across
+  the wait). Joining a slot makes nothing, so a slot arms at once; combining *makes* a slot,
+  and a drag swept across a busy day must not offer that on every block it passes. Let go
+  mid-pause and the drop is the ordinary one. Armed, the target lifts and a dashed preview
+  draws the slot it becomes, at its real size — so one that will now run over your 10:00
+  says so first (D-109's rule: the ghost is the block you'll get).
+- **What never gathers, and why** — each a thing that would be lost: a finished task (a
+  record, not a container), an event (never anyone's child — dragging one is a move and stays
+  quiet), a project dragged whole (its sitting lands beside; D-109's offer already asks about
+  its placed work), an empty slot (merging it is deleting it by drop), a repeating slot's
+  occurrence as the one merged away (that's a this-or-series question), and another project's
+  sitting (the project would be left with no time this week).
+- **No super-slot.** A slot inside a slot is a second container and a new noun (P10); a slot
+  mirrors to the calendar as one busy block, and the busy and week rules would all need to
+  learn nesting. Slot on slot merges, flat.
+- **Nuvo drafts the name; you take it.** A slot is named the moment it exists
+  (`deriveSlotTitle`, P7). A drop-made slot's popover opens on the name with Nuvo's draft
+  already asked for (`nameSlot`, the shared rubric) — it waits *under* the field as
+  `✦ Launch prep ⇥`, and only Tab or a tap puts it on the block. Typing first wins; closing
+  keeps the derived name. The manual "suggest a name" now lands there too: it used to fill the
+  field itself, where blurring away quietly saved it. A slot its project names asks nothing.
+- **⌘G is the drag's twin** (`planMakeSlot`): lit tasks become one slot at the earliest of
+  their times; tasks and one slot go into it; two slots merge by the same guards. A block's
+  menu offers **Make one slot** when it opens on a lit selection — so the right-click on a
+  selected block no longer collapses the selection.
+
+**Principles strained, named.** **P3** — the AI name is a proposal with a one-key promote,
+never a write. **Golden rule 4** (no hidden-only affordance) — the pause is discoverable only
+by doing it, which is why ⌘G and the menu exist. **P10** held: no new noun; *slot* already
+named all four outcomes. Not built: the **phone** has no drag on its calendar and no slot act
+on its task sheet, so it shows these slots but can't make one this way — a "Put in a slot…"
+picker on `MobileTaskSheet` is the follow-up. **Join** still doesn't grow its slot (D-098's
+behaviour, left alone); merge and absorb do.
+
+Ledger: **D3** ("I have 40 minutes — what fits?") — claiming a window with several pieces,
+some already placed, is now one gesture. Not re-scored: same reason as D-098.
+
+*Status: built — `tests/block-drop.test.ts` (36: zones, every guard, sizing, the resolver,
+⌘G's plan), full suite (157 files, 2132 tests), typecheck, `npm run build`. Driven with a
+pointer at `?gather` (`GatherHarness` — the real `CalendarPane` and `SlotPopover` over
+fixtures): edge → beside at the pointer's time; middle released mid-pause → beside; middle
+held → pending, armed, preview, `Make a slot with "Email Sam"`, a 45m slot, popover on the
+name, the draft under it, Tab took it; Esc kept the derived name; typing first dropped the
+draft; a two-row group → one 75m slot; a block onto a block → 60m; a slot onto a task →
+absorbed at 9:00; slot onto slot → merged; the repeating, empty and other-project slots and a
+finished task → quiet; an event → quiet; Esc mid-drag → nothing written; ⌘G and the menu.
+**And on the local dummy account, against a real database:** a rail row onto a block → one
+slot, one ⌘Z restoring both; a slot onto a slot → merged in Postgres, and ⌘Z brought the
+removed slot back under its own id with its tasks. That run found a real bug, fixed before
+this landed: the combine marked a repeating occurrence `recurrence_overridden` BEFORE making
+the slot, the outbox folded the later `slot_id` into that earlier op at its place in line, and
+Postgres refused it (`tasks_slot_id_fkey`) — the occurrence never joined. The mark now comes
+after the act. **The fold itself is a latent hazard** (an update can carry a new reference
+backward past the insert it needs — read from `fold` in `sync/ops.ts`, not reproduced: D-098's multi-drop should hit it offline on a task with an
+unsent edit) — logged as a follow-up, not fixed here. Not driven: the name draft against a
+live `nameSlot` (the local stack has no edge runtime; the harness stubs it), and the Mac app
+(WKWebView). **`npm run perf`** on the dummy account: both drags (`drag a block +1h`, `drop a
+rail task on the grid`) and 14 more within budget; **`draw-create a task ↵` is over (139 > 100
+renders) on `HEAD` too**, identical numbers before and after this change on two runs each —
+a standing miss, not this one's. **From the all-day row** (driven at `?gather`, 2026-10-27): a
+chip onto a slot's middle joins it, held on a task's middle makes the slot (preview, 60m, the
+name opens), and onto a slot's edge lands beside it as a timed block. ⌘G with a chip selected
+takes the slot's hour from a timed block in the selection, and with only chips selected it says
+a slot needs a time. Those last two are unit-tested, not driven (3 more tests, 39).*

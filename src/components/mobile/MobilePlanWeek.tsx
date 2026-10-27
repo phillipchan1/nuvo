@@ -5,7 +5,7 @@
 // it's deciding what the week carries, by source, and then when each piece happens.
 //
 //   1 · Projects   — the projects you're moving, and the work that moves them
-//   2 · Leftovers  — what you already owed: carried over, due, or going quiet
+//   2 · Leftovers  — what you already owed: carried over, or due
 //   3 · Inbox      — raw captures, grouped into named runs
 //   4 · The week   — where it all lands, day by day, and whether it fits. Commit.
 //
@@ -587,7 +587,7 @@ function ProjectChip({
   );
 }
 
-// ── 2 · leftovers — carried over, due, or going quiet ────────────────────────
+// ── 2 · leftovers — carried over, or due ────────────────────────────────────
 
 /**
  * Step 3 · everything the week carries that isn't a project — one pool.
@@ -677,7 +677,7 @@ export function CarriedStep({
       {slotErr && <p className="mt-1 text-meta text-signal">{slotErr}</p>}
 
       {group("Carried over", rolled)}
-      {group("Due, or going quiet", rest)}
+      {group("Due this week", rest)}
       {group("New captures", captures)}
 
       {carried.length === 0 && captures.length === 0 && (

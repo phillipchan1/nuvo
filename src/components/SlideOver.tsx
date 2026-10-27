@@ -2473,6 +2473,9 @@ export function SlotPopover({
 }) {
   const [title, setTitle] = useState(slot.title);
   const [naming, setNaming] = useState(false);
+  // Nuvo's name for the block, waiting under the field — never in it, and never
+  // on the grid, until a Tab or a tap takes it (P3).
+  const [draft, setDraft] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<TaskComposerHandle>(null);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -2531,12 +2534,17 @@ export function SlotPopover({
   /**
    * Ask Nuvo for the through-line of what's inside.
    *
-   * The suggestion lands in the INPUT, not the row — nothing AI-written reaches
-   * the calendar until you accept it (P3). The block already has a name before
-   * this is ever tapped, so a failure here costs nothing.
+   * The answer is a DRAFT: it waits under the field, and only a Tab or a tap
+   * puts it on the block — nothing AI-written reaches the calendar until you
+   * take it (P3). It never lands in the field itself, where blurring away would
+   * have quietly saved it. The block already has a name before this is ever
+   * asked, so a failure costs nothing; and a name you started typing first
+   * wins — the draft is dropped, never written over you.
    */
-  const suggestName = async () => {
+  const askedFor = useRef<string | null>(null);
+  const suggestName = async (quiet = false) => {
     if (naming || childTasks.length === 0) return;
+    askedFor.current = slot.id;
     setNaming(true);
     try {
       const { data, error } = await supabase.functions.invoke("agent", {
@@ -2545,15 +2553,31 @@ export function SlotPopover({
       if (error) throw error;
       const name = String(data?.name ?? "").trim();
       if (!name) throw new Error("Nothing came back");
-      setTitle(name);
-      titleRef.current?.focus();
-      titleRef.current?.select();
+      if (titleRef.current?.value.trim()) return;
+      setDraft(name);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't think of a name");
+      if (!quiet) toast.error(e instanceof Error ? e.message : "Couldn't think of a name");
     } finally {
       setNaming(false);
     }
   };
+  /** Take Nuvo's draft — the one promote step (P3). */
+  const takeDraft = () => {
+    if (!draft) return;
+    setTitle(draft);
+    slotMutations.updateSlot({ id: slot.id, patch: { title: draft } });
+    setDraft(null);
+  };
+  // A block a drop just MADE is asked about at once: the draft is usually back
+  // by the time you've read the derived name. A block its project names isn't
+  // asked about, and offline nothing is — the derived name stands (P7).
+  const hasChildren = childTasks.length > 0;
+  useEffect(() => {
+    if (!focusTitle || askedFor.current === slot.id) return;
+    if (slot.title.trim() || slot.project_id || !hasChildren || !navigator.onLine) return;
+    void suggestName(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTitle, slot.id, hasChildren]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2766,17 +2790,33 @@ export function SlotPopover({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
-            onKeyDown={(e) => e.key === "Enter" && commitTitle()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitTitle();
+              else if (e.key === "Tab" && !e.shiftKey && draft && !title.trim()) {
+                e.preventDefault();
+                takeDraft();
+              }
+            }}
             className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted/70"
             placeholder={derivedTitle}
             aria-label="Slot name"
           />
-          {!slot.title.trim() && (
+          {!slot.title.trim() && draft && !title.trim() ? (
+            <button
+              onClick={takeDraft}
+              className="fast mt-0.5 flex max-w-full items-center gap-2 rounded text-left text-meta text-accent hover:text-ink"
+              title="Use Nuvo's name for this block"
+              aria-label={`Use Nuvo's name: ${draft}`}
+            >
+              <span className="truncate">✦ {draft}</span>
+              <kbd className="mono shrink-0 rounded border border-line px-1 text-micro text-muted">⇥</kbd>
+            </button>
+          ) : !slot.title.trim() && (
             <div className="mono mt-0.5 flex items-center gap-2 text-meta text-muted/70">
               <span>✦ auto-named — type to override</span>
               {childTasks.length > 0 && (
                 <button
-                  onClick={suggestName}
+                  onClick={() => void suggestName()}
                   disabled={naming}
                   className="fast rounded text-meta text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
                   title="Ask Nuvo for the through-line of what's inside"

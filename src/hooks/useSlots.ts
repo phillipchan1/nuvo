@@ -8,9 +8,9 @@ import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useStableActions } from "./useStableActions";
-// One rule for "how big is this block", shared with the chat's `create_slot` —
-// see docs/planning-kernel.md §3.
-import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
+// One rule for "how big is this block" (the kernel's, shared with the chat's
+// `create_slot` — docs/planning-kernel.md §3), cut at midnight.
+import { slotMinutesFor } from "../lib/slots";
 
 const SLOT_COLS =
   "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden";
@@ -124,6 +124,9 @@ export function putSlotInCaches(qc: QueryClient, id: string, next: Slot | null) 
 }
 
 export interface NewSlotInput {
+  /** Only to bring a removed slot back as itself (undo of a merge) — a new
+   *  slot always mints its own. */
+  id?: string;
   title: string;
   do_date: string;
   start_time: string;
@@ -148,8 +151,8 @@ export function useSlotMutations() {
    * existed because Postgres named the row. A slot dragged onto the grid with
    * no network now stays there.
    */
-  const createSlot = (input: NewSlotInput): Slot => {
-    const id = crypto.randomUUID();
+  const createSlot = ({ id: givenId, ...input }: NewSlotInput): Slot => {
+    const id = givenId ?? crypto.randomUUID();
     const optimistic: Slot = {
       id,
       user_id: "",
@@ -295,8 +298,9 @@ export function useSlotMutations() {
       start_time: start.toISOString(),
       // An empty sitting still has to be a real piece of time — the floor, not
       // a zero-height sliver you can't aim at.
-      duration_minutes: sizeSlotToContents(
+      duration_minutes: slotMinutesFor(
         tasks.length > 0 ? tasks.map((t) => t.duration_minutes) : [DEFAULT_DURATION_MINUTES],
+        start,
       ),
       project_id: projectId,
       domain_id: domainId,
@@ -318,45 +322,137 @@ export function useSlotMutations() {
     return slot;
   };
 
-  /**
-   * **Gather work that already has a time into a sitting** — one act, one undo.
-   *
-   * The reconcile half of placing a project by hand: the drop takes the loose
-   * pieces, and what was already blocked elsewhere is *offered*, never moved
-   * behind your back (P3). Two rules it must not break:
-   *
-   *  - **The sitting grows to cover what it now holds** (`sizeSlotToContents`),
-   *    the same top-up-in-place rule a mid-week re-plan follows — a sitting that
-   *    silently keeps its old 30 minutes while swallowing four tasks is the
-   *    calendar lying about the week (D-084).
-   *  - **It never shrinks.** You may have sized this block by hand; gathering is
-   *    a reason to make room, never a reason to take it away.
-   */
-  const gatherIntoSlot = (slot: Slot, tasks: Task[], alreadyHeld: Task[] = []) => {
-    if (tasks.length === 0) return;
-    const before = tasks.map((t) => ({
+  /** Where each task was BEFORE anything moves — the same four fields every
+   *  other place-act restores (D-063a). */
+  const placeSnaps = (tasks: Task[]) =>
+    tasks.map((t) => ({
       id: t.id,
       status: t.status,
       do_date: t.do_date,
       start_time: t.start_time,
       slot_id: t.slot_id,
     }));
-    const wasMins = slot.duration_minutes;
-    const grown = sizeSlotToContents(
+
+  /**
+   * **Gather work into a slot that already exists** — one act, one undo, and
+   * optionally a move first.
+   *
+   * Two rules it must not break:
+   *
+   *  - **The slot grows to cover what it now holds** (`slotMinutesFor`), the
+   *    same top-up-in-place rule a mid-week re-plan follows — a sitting that
+   *    silently keeps its old 30 minutes while swallowing four tasks is the
+   *    calendar lying about the week (D-084).
+   *  - **It never shrinks.** You may have sized this block by hand; gathering is
+   *    a reason to make room, never a reason to take it away.
+   *
+   * `to` moves the slot before it gathers — a slot dropped on a task goes to
+   * the task's hour and takes it in (the block you drop on doesn't move).
+   */
+  const gather = (
+    slot: Slot,
+    tasks: Task[],
+    alreadyHeld: Task[],
+    undo: { label: string; shortLabel: string },
+    to?: Date,
+  ) => {
+    if (tasks.length === 0 && !to) return;
+    const before = placeSnaps(tasks);
+    const was = {
+      start_time: slot.start_time,
+      do_date: slot.do_date,
+      duration_minutes: slot.duration_minutes,
+      recurrence_overridden: slot.recurrence_overridden,
+    };
+    const start = to ?? new Date(slot.start_time);
+    const grown = slotMinutesFor(
       [...alreadyHeld, ...tasks].map((t) => t.duration_minutes),
+      start,
+      slot.duration_minutes,
     );
+    const patch: Partial<Slot> = {
+      ...(to
+        ? {
+            start_time: to.toISOString(),
+            do_date: toDateISO(to),
+            // A repeating slot's occurrence moved by hand keeps its new hour.
+            ...(slot.recurrence_id ? { recurrence_overridden: true } : {}),
+          }
+        : {}),
+      ...(grown !== slot.duration_minutes ? { duration_minutes: grown } : {}),
+    };
+    // Move first, so each child lands on the slot's new day.
+    const moved: Slot = { ...slot, ...patch };
+    if (Object.keys(patch).length) updateSlot({ id: slot.id, patch });
+    tasks.forEach((t) => taskMutations.assignToSlot(t, moved, { undo: false }));
 
-    tasks.forEach((t) => taskMutations.assignToSlot(t, slot, { undo: false }));
-    if (grown > wasMins) updateSlot({ id: slot.id, patch: { duration_minutes: grown } });
-
-    const n = tasks.length;
     recordUndo({
-      label: `Moved ${n} piece${n === 1 ? "" : "s"} into the sitting`,
-      shortLabel: "Moved in",
+      ...undo,
       tier: "toast",
       undo: () => {
         before.forEach(({ id, ...snap }) => taskMutations.patchTask(id, snap, { undo: false }));
-        if (grown > wasMins) updateSlot({ id: slot.id, patch: { duration_minutes: wasMins } });
+        if (Object.keys(patch).length) updateSlot({ id: slot.id, patch: was });
+      },
+    });
+  };
+
+  /** The reconcile half of placing a project by hand: work that already had a
+   *  time is offered, never moved behind your back (P3) — this is the press. */
+  const gatherIntoSlot = (slot: Slot, tasks: Task[], alreadyHeld: Task[] = []) => {
+    const n = tasks.length;
+    gather(slot, tasks, alreadyHeld, {
+      label: `Moved ${n} piece${n === 1 ? "" : "s"} into the sitting`,
+      shortLabel: "Moved in",
+    });
+  };
+
+  /** A slot dropped on a task: it moves to the task's hour and takes it in. */
+  const absorbIntoSlot = (slot: Slot, tasks: Task[], alreadyHeld: Task[], to: Date) =>
+    gather(slot, tasks, alreadyHeld, { label: "Moved the slot and took the task in", shortLabel: "Slotted" }, to);
+
+  /**
+   * **Two slots become one** — `from`'s work joins `into`, and `from` goes.
+   *
+   * Never nesting: a slot holds tasks, not slots, and mirrors to the calendar
+   * as ONE busy block — a slot inside a slot would be a second container and a
+   * new noun (P10). `into` keeps everything that makes it itself — its name,
+   * project, series — and grows to fit (never shrinks). The guards for what may
+   * merge at all are `gatherActFor`'s.
+   *
+   * One undo brings `from` back as itself (same id) and puts each task back in it.
+   */
+  const mergeSlots = (into: Slot, intoChildren: Task[], from: Slot, fromChildren: Task[]) => {
+    const moving = fromChildren.filter((t) => t.status !== "trashed");
+    const before = placeSnaps(moving);
+    const wasMins = into.duration_minutes;
+    const grown = slotMinutesFor(
+      [...intoChildren, ...moving].map((t) => t.duration_minutes),
+      new Date(into.start_time),
+      wasMins,
+    );
+    if (grown !== wasMins) updateSlot({ id: into.id, patch: { duration_minutes: grown } });
+    moving.forEach((t) => taskMutations.assignToSlot(t, into, { undo: false }));
+    removeSlot(from);
+
+    const n = moving.length;
+    recordUndo({
+      label: `Merged ${n} task${n === 1 ? "" : "s"} into one slot`,
+      shortLabel: "Merged",
+      tier: "toast",
+      undo: () => {
+        // Back first, so the tasks have their own slot to return to.
+        createSlot({
+          id: from.id,
+          title: from.title,
+          do_date: from.do_date,
+          start_time: from.start_time,
+          duration_minutes: from.duration_minutes,
+          project_id: from.project_id,
+          domain_id: from.domain_id,
+          color: from.color,
+        });
+        before.forEach(({ id, ...snap }) => taskMutations.patchTask(id, snap, { undo: false }));
+        if (grown !== wasMins) updateSlot({ id: into.id, patch: { duration_minutes: wasMins } });
       },
     });
   };
@@ -394,5 +490,5 @@ export function useSlotMutations() {
     invalidateWhenSafe(qc, "tasks", ["tasks"]); // orphaned children
   };
 
-  return useStableActions({ createSlot, createSlotWith, gatherIntoSlot, updateSlot, removeSlot });
+  return useStableActions({ createSlot, createSlotWith, gatherIntoSlot, absorbIntoSlot, mergeSlots, updateSlot, removeSlot });
 }

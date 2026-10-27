@@ -72,7 +72,6 @@ const PROJECT_WORK: PullSuggestion[] = [
 const LEFTOVERS: PullSuggestion[] = [
   { task: TASKS[0], reason: "slipped 10× — give it a new time", kind: "carried", projectId: "p1" },
   { task: TASKS[5], reason: "due in 2d", kind: "due", projectId: null },
-  { task: TASKS[4], reason: "Family has been quiet 9d", kind: "quiet", projectId: null },
 ];
 
 const KEPT = new Set(["t1", "t2", "t3", "t6"]);

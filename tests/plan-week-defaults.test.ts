@@ -240,27 +240,52 @@ describe("a missed block from a past week is placed fresh", () => {
   });
 });
 
-describe("the pull never offers a repeating occurrence as presence work", () => {
+describe("the pull only offers work somebody owns (D-169)", () => {
+  // Every pick has an owner: a project you slated, a bet you starred, something you
+  // already owe (it slipped) or something with a date on it. There used to be a
+  // fifth — the shortest open task in any domain that had gone quiet — and it
+  // surfaced "review metrics WR expectancy": a task nobody had slated, owed or dated,
+  // of any age, picked only because it was small and its domain had gone quiet.
   const vt = (id: string, mins: number, o: Record<string, unknown> = {}) => ({
-    id, title: id, projectId: null, initiativeId: null, domainId: "fam", keyResultId: null,
+    id, title: id, projectId: null, initiativeId: null, domainId: "trading", keyResultId: null,
     bigRockId: null, energy: null, durationMins: mins, deadlineDaysAway: null, status: "backlog",
     doDate: null, startTime: null, slotId: null, createdAt: null, completedAt: null,
     assignee: "me", rollCount: 0, sprint: false, inbox: false, ...o,
   });
   const data = (tasks: unknown[]) =>
     ({
-      domains: [{ id: "fam", name: "Family", lastTouchedDays: 20, investedThisWeek: 0, weeklyTargetHours: 2, lastShip: null }],
+      domains: [{ id: "trading", name: "Trading", lastTouchedDays: 20, investedThisWeek: 0, weeklyTargetHours: 2, lastShip: null }],
       initiatives: [],
       projects: [],
       tasks,
       focusInitiativeIds: [],
     }) as unknown as VerticalData;
 
-  it("offers the domain's one-off task even when an occurrence is smaller", () => {
-    // the 15-minute occurrence used to win "the smallest task" and was offered
-    // as presence — then it duplicated a block the series already had
-    const out = suggestPull(data([vt("shutdown", 15, { recurring: true }), vt("call-mom", 30)]));
-    const quiet = out.filter((s) => s.kind === "quiet").map((s) => s.task.id);
-    expect(quiet).toEqual(["call-mom"]);
+  it("offers nothing for a domain that has merely gone quiet", () => {
+    // an old, small, loose backlog task in a quiet domain — slated by no one
+    const out = suggestPull(data([vt("review-metrics", 20), vt("journal", 45)]));
+    expect(out).toEqual([]);
+  });
+
+  it("offers no 'quiet' pick under any shape of data, with or without a week", () => {
+    const tasks = [
+      vt("review-metrics", 20),
+      vt("recurring-review", 15, { recurring: true }),
+      vt("old-capture", 10, { inbox: true, status: "inbox" }),
+    ];
+    for (const week of [undefined, WEEK]) {
+      const kinds = suggestPull(data(tasks), week).map((s) => s.kind as string);
+      expect(kinds).not.toContain("quiet");
+    }
+  });
+
+  it("still brings back what you already owe", () => {
+    const out = suggestPull(data([vt("slipped", 30, { status: "ready", rollCount: 3 }), vt("review-metrics", 20)]));
+    expect(out.map((s) => [s.task.id, s.kind])).toEqual([["slipped", "carried"]]);
+  });
+
+  it("still brings in what has a date inside the week", () => {
+    const out = suggestPull(data([vt("file-return", 30, { deadlineDaysAway: 3 }), vt("review-metrics", 20)]));
+    expect(out.map((s) => [s.task.id, s.kind])).toEqual([["file-return", "due"]]);
   });
 });

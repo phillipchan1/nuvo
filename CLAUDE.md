@@ -224,6 +224,14 @@ it needs to work on a phone.
   fields on every way out (iOS never blurs a field when ✕ is tapped) and compare writes against
   *what was last sent*, not the open-time snapshot. Verify at `?sheets=<state>`
   (`mobile/SheetsHarness.tsx`, fourteen fixtures), then resize to 320.
+- **What a drop onto a block does is decided once** (D-170) — `gatherActFor` /
+  `resolveBlockDrop` in `lib/slots`. A block's edges place beside; its middle gathers (join ·
+  combine · absorb · merge), a task's only after `COMBINE_DWELL_MS`. The Schedule's drag
+  tracker shows that answer and the drop handlers write it — **never re-decide it in a
+  handler**. Verify every pair at `?gather` (`GatherHarness`). One sync trap it hit: the
+  outbox folds a row's later patch into its EARLIEST queued op, at that op's place in line —
+  so queue anything that points at a new row (a `slot_id`) only after that row's insert, and
+  never patch a row first "to prepare it".
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
   *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses the **mobile Calendar** instead.

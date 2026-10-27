@@ -168,7 +168,11 @@ tray — owes the user **two things at all times**, or it feels lost:
    indicator** (a 2px `--accent` bar at the target gap, for reorder/insert), the
    **vacated slot** (`.is-dragging`, dashed + faded, for move-between-containers), or the
    live target cell highlight (calendar). Never leave the user guessing where a release
-   lands.
+   lands. **On the Schedule, a block that holds work has two answers** (D-170): its
+   **edges place beside** (a 3px `--accent` caret on the side you're on, chip
+   `Beside "…"`), its **middle gathers** — a slot lifts at once; a task's bar widens through
+   a ~300ms pause, then the task lifts and a dashed `--slot` preview (`.block-gather-preview`)
+   draws the slot it becomes, at its real size. Never a ring on the target: it lifts.
 3. **Only where it will hold, and never by moving the list.** Two failure modes, both
    found in the Schedule rail (**D-063**). *(a)* A drop indicator is a promise — show it
    only where the new position is genuinely ours to store. A row ordered by its clock (a
