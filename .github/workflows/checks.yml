@@ -36,19 +36,25 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      - id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - id: setup-node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           # 22, not 20: @supabase/supabase-js and @testing-library/jest-dom both
           # declare `node >= 22`, and 20 logged EBADENGINE on every run.
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Public-repo artifact allowlist
+      - id: npm-ci
+        run: npm ci
+      - id: guard
+        name: Public-repo artifact allowlist
         run: node scripts/guard-public-ci.mjs
-      - name: Typecheck (SPA)
+      - id: typecheck
+        name: Typecheck (SPA)
         run: npm run typecheck
-      - name: Conformance suite (app ↔ agent must agree)
+      - id: test
+        name: Conformance suite (app ↔ agent must agree)
         env:
           # APP_TZ is America/Los_Angeles. Capture "Tomorrow" labels only
           # match startOfDay(new Date()) when the runner's zone agrees;
@@ -60,29 +66,37 @@ jobs:
       # runs the deterministic half (tools ↔ handlers ↔ prompt ↔ snapshot, and
       # the turn loop) plus any recorded runs. Run `npm run eval` by hand before
       # shipping a prompt, a tool or a model change — docs/agent-conformance.md.
-      - name: Parse the edge functions
+      - id: parse-fns
+        name: Parse the edge functions
         run: |
           set -e
           find supabase/functions -name '*.ts' -print0 \
             | xargs -0 -n1 npx esbuild --bundle=false --outfile=/dev/null
-      - name: Worker typecheck
+      - id: worker-typecheck
+        name: Worker typecheck
         run: npm run typecheck:worker
-      - name: Worker auth + isolation + adapter checks
+      - id: worker-check
+        name: Worker auth + isolation + adapter checks
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nuvo
         run: npm run check:worker
-      - name: Wrangler preview dry-run
+      - id: cf-preview
+        name: Wrangler preview dry-run
         run: npm run cf:preview:dry-run
 
   isolation-mutation:
     name: isolation-mutation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      - id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - id: setup-node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Isolation mutation proof
+      - id: npm-ci
+        run: npm ci
+      - id: isolation-mutation
+        name: Isolation mutation proof
         run: npm run check:isolation-mutation
