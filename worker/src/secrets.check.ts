@@ -148,7 +148,7 @@ ok(/SYNC_LOG_LOCK_TIMEOUT = "10s"/.test(copyPy) && /sync_log_set_lock_timeout_sq
 ok(/sync_log_set_lock_timeout_sql\(\)/.test(copyPy) && copyPy.indexOf("sync_log_set_lock_timeout_sql()") < copyPy.indexOf("CREATE TEMP TABLE cutover_sync_log_src"), "cutover_copy.py sets session lock_timeout before the temp-table load");
 ok(/WHEN lock_not_available/.test(copyPy) && !/WHEN query_canceled/.test(copyPy), "cutover_copy.py catches lock_not_available (55P03), not query_canceled");
 ok(/LOCK_TIMEOUT_SQLSTATE = "55P03"/.test(copyPy) && /55P03/.test(copyPy) && !/SQLERRM ILIKE/.test(copyPy), "cutover_copy.py keys retryable lock timeout on SQLSTATE 55P03, not message text");
-ok(/push_subscriptions lock timed out/.test(copyPy) && /LOCK TABLE public\.push_subscriptions/.test(copyPy), "cutover_copy.py names push_subscriptions on that table's lock timeout");
+ok(/lock_timeout_message\("push_subscriptions"\)/.test(copyPy) && /LOCK TABLE public\.push_subscriptions/.test(copyPy), "cutover_copy.py names push_subscriptions on that table's lock timeout");
 ok(/retry the resync \(retryable\)/.test(copyPy), "cutover_copy.py lock timeout is retryable");
 ok(/retryable_lock_timeout_stop\(err\)/.test(workflow), "cutover-migrate.yml includes the redacted psql error on lock timeout");
 ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");

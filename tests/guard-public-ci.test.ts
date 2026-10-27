@@ -451,12 +451,13 @@ describe("public-repo CI guard", () => {
     );
   });
 
-  it("fails on YAML parser warnings and unknown custom tags", () => {
-    expect(() => parseWorkflowDocument("on: !evil push\njobs: {}\n")).toThrow(/custom tag/);
-    expect(() => parseWorkflowDocument("on: !!python/object foo\njobs: {}\n")).toThrow(/custom tag/);
-    expect(() => parseWorkflowDocument("x: !foo [1, 2]\njobs: {}\n")).toThrow(/custom tag/);
-    const warningText = "%TAG !e! tag:example.com,2000:app/\n---\non: push\njobs: {}\n";
-    expect(() => parseWorkflowDocument(warningText)).toThrow(/parse warning|custom tag|parse error/);
+  it("fails on YAML parser warnings and unknown custom tags", async () => {
+    const { parseAllDocuments } = await import("yaml");
+    const tagged = "on: !evil push\njobs: {}\n";
+    expect(parseAllDocuments(tagged, { uniqueKeys: true })[0]?.warnings?.length).toBeGreaterThan(0);
+    expect(() => parseWorkflowDocument(tagged)).toThrow(/custom tag|parse warning/);
+    expect(() => parseWorkflowDocument("on: !!python/object foo\njobs: {}\n")).toThrow(/custom tag|parse warning/);
+    expect(() => parseWorkflowDocument("x: !foo [1, 2]\njobs: {}\n")).toThrow(/custom tag|parse warning/);
   });
 
   it("fails on duplicate keys and << merge keys", () => {

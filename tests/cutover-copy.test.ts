@@ -146,7 +146,7 @@ describe("cutover_copy helpers", () => {
   });
 
   it("push resync deletes missing ids before upserting every column", () => {
-    const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql())");
+    const sql = py("from cutover_copy import push_upsert_sql, push_anti_join_delete_sql, push_full_copy_sql, push_lock_sql; print(push_full_copy_sql()); print('---'); print(push_upsert_sql()); print('---'); print(push_anti_join_delete_sql()); print('---'); print(push_lock_sql())");
     expect(sql).toMatch(/FROM public\.push_subscriptions/);
     expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE SET/);
     expect(sql).toMatch(/last_seen_at = EXCLUDED\.last_seen_at/);

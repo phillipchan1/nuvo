@@ -465,9 +465,6 @@ def push_upsert_sql() -> str:
     cols = ", ".join(PUSH_COLUMNS)
     assignments = ",\n    ".join(f"{c} = EXCLUDED.{c}" for c in PUSH_COLUMNS if c != "id")
     return (
-        "BEGIN;\n"
-        + push_lock_sql()
-        + ";\n"
         "WITH upserted AS (\n"
         f"  INSERT INTO public.push_subscriptions ({cols})\n"
         f"  SELECT {cols} FROM cutover_push_rows\n"
@@ -475,8 +472,7 @@ def push_upsert_sql() -> str:
         f"    {assignments}\n"
         "  RETURNING 1\n"
         ")\n"
-        "SELECT COUNT(*) FROM upserted;\n"
-        "COMMIT;"
+        "SELECT COUNT(*) FROM upserted"
     )
 
 
@@ -521,14 +517,10 @@ def push_lock_timeout_probe_sql(
 
 def push_anti_join_delete_sql() -> str:
     return (
-        "BEGIN;\n"
-        + push_lock_sql()
-        + ";\n"
         "WITH gone AS (\n"
         "  DELETE FROM public.push_subscriptions t\n"
         "  WHERE NOT EXISTS (SELECT 1 FROM cutover_push_rows s WHERE s.id = t.id)\n"
         "  RETURNING 1\n"
         ")\n"
-        "SELECT COUNT(*) FROM gone;\n"
-        "COMMIT;"
+        "SELECT COUNT(*) FROM gone"
     )

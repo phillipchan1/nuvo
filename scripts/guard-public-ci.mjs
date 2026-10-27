@@ -57,10 +57,10 @@
  *  13. Every .yml/.yaml under .github is listed recursively, matching
  *      case-insensitively, including directories and symlinks. Only
  *      top-level lowercase .github/workflows/*.yml|*.yaml regular files
- *      and .github/actions/**/action.yml|action.yaml regular files are
- *      scanned; any other workflow-like or action file (wrong place or
- *      wrong case) fails closed. Composite action steps are hashed and
- *      allowlisted the same way as workflow steps.
+ *      and .github/actions/<path>/action.yml (or action.yaml) regular
+ *      files are scanned; any other workflow-like or action file (wrong
+ *      place or wrong case) fails closed. Composite action steps are
+ *      hashed and allowlisted the same way as workflow steps.
  *
  * ## Limits
  *
@@ -238,10 +238,10 @@ export function parseWorkflowDocument(text) {
   if (doc.errors?.length) {
     throw new Error(`workflow YAML parse error: ${doc.errors.map((e) => e.message).join("; ")}`);
   }
+  rejectUnknownTags(doc);
   if (doc.warnings?.length) {
     throw new Error(`workflow YAML parse warning: ${doc.warnings.map((e) => e.message).join("; ")}`);
   }
-  rejectUnknownTags(doc);
   rejectMergeKeys(doc);
   const js = doc.toJS({ maxAliasCount: -1 });
   if (js == null || typeof js !== "object" || Array.isArray(js)) {
@@ -1341,7 +1341,7 @@ export function listGithubEntries(githubDir) {
 
 /**
  * Fail closed: only top-level lowercase workflow files and
- * actions/**/action.yml|action.yaml regular files. Any other
+ * action.yml / action.yaml under .github/actions. Any other
  * workflow-like or action file (wrong case, subdirectory, symlink)
  * is a problem. Symlinks are never followed.
  */
