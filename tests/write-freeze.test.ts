@@ -189,4 +189,10 @@ describe("runbook names the edge freeze", () => {
     expect(doc).toMatch(/stripe-webhook/);
     expect(doc).toMatch(/apple-webhook/);
   });
+
+  it("runbook requires preflight-edge-write-freeze before any edge redeploy", () => {
+    expect(doc).toMatch(/preflight-edge-write-freeze\.mjs/);
+    expect(doc).toMatch(/before any Supabase edge-function redeploy/i);
+    expect(doc).toMatch(/`0` \/ `false` \/ `no` \/ `off`/);
+  });
 });

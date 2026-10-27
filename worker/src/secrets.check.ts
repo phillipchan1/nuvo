@@ -16,7 +16,9 @@ import {
   jobsForSchedule,
   canonicalCronJob,
   consumeCalendarSyncBatch,
+  runCronJob,
 } from "./cronJobs.ts";
+import { cutoverFlipped, gateCron, gateCronBearerRoute, POST_FLIP_CRON_JOBS } from "./cutoverFlip.ts";
 import { writeFrozen } from "./maintenance.ts";
 import { redactSecrets } from "./lib/redact.ts";
 
@@ -115,6 +117,14 @@ ok(tokenAadBytes(aad)[0] === 0 && tokenAadBytes(aad)[1] === "calendar_accounts".
 ok(redactSecrets("Bearer ya29.abc-token 1//refresh-xyz") === "Bearer [redacted] [redacted]", "redactSecrets strips bearer and google tokens");
 ok(redactSecrets("access_token=ya29.leak refresh_token=1//leak").includes("[redacted]"), "redactSecrets strips token query pairs");
 ok(!redactSecrets("boom ya29.secret-value").includes("ya29."), "redactSecrets drops ya29 material");
+ok(!redactSecrets("id_token=eyJhbGciOiJIUzI1NiJ9.e30.abc").includes("eyJ"), "redactSecrets strips id_token");
+ok(redactSecrets("id_token=eyJhbGciOiJIUzI1NiJ9.e30.abc").includes("id_token=[redacted]"), "redactSecrets replaces id_token value");
+const jwt = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.signature";
+ok(!redactSecrets(`jwt ${jwt} leftover`).includes("eyJ"), "redactSecrets strips compact JWTs");
+ok(redactSecrets("client_secret=GOCSPX-leak").includes("client_secret=[redacted]"), "redactSecrets strips client_secret");
+ok(!redactSecrets("client_secret=GOCSPX-leak").includes("GOCSPX"), "redactSecrets drops client_secret material");
+ok(!redactSecrets("https://oauth?code=4/0AanRRrt-secret&scope=email").includes("4/0Aan"), "redactSecrets strips OAuth code=4/…");
+ok(redactSecrets("https://oauth?code=4/0AanRRrt-secret&scope=email").includes("code=[redacted]"), "redactSecrets replaces OAuth code");
 
 ok(writeFrozen("1"), "writeFrozen 1");
 ok(writeFrozen("true"), "writeFrozen true");
@@ -128,24 +138,94 @@ ok(!writeFrozen("false"), "writeFrozen false is off");
 ok(!writeFrozen("no"), "writeFrozen no is off");
 ok(!writeFrozen("off"), "writeFrozen off is off");
 
+ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("on"), "cutoverFlipped allowlist");
+ok(!cutoverFlipped(""), "cutoverFlipped empty is not flipped");
+ok(!cutoverFlipped(undefined), "cutoverFlipped unset is not flipped");
+ok(!cutoverFlipped("maybe") && !cutoverFlipped("2") && !cutoverFlipped("false") && !cutoverFlipped("0"), "cutoverFlipped unknown is not flipped");
+const flipSrc = readFileSync(join(root, "worker/src/cutoverFlip.ts"), "utf8");
+ok(!/\bwriteFrozen\s*\(/.test(flipSrc), "cutoverFlipped does not call writeFrozen");
+ok(!/from "\.\/maintenance/.test(flipSrc), "cutoverFlip.ts is independent of maintenance.ts");
+ok(/export function gateCron/.test(flipSrc) && /export function gateCronBearerRoute/.test(flipSrc), "cutoverFlip exports gateCron + gateCronBearerRoute");
+ok(POST_FLIP_CRON_JOBS.includes("github-poll") && POST_FLIP_CRON_JOBS.includes("trim-sync-log"), "POST_FLIP_CRON_JOBS lists both Worker copies");
+ok(gateCron({}, "github-poll") instanceof Response, "gateCron skips before flip");
+ok(gateCronBearerRoute({ CUTOVER_FLIPPED: "on" }, "github-poll") === null, "gateCronBearerRoute null after flip");
+const pollSkip = await runCronJob("github-poll", {}, null);
+ok(pollSkip.status === 200 && pollSkip.skipped === true && pollSkip.reason === "cutover_not_flipped", "runCronJob github-poll skips before flip");
+const trimSkip = await runCronJob("nuvo-trim-sync-log", { CUTOVER_FLIPPED: "false" }, null);
+ok(trimSkip.status === 200 && trimSkip.skipped === true, "runCronJob trim skips unknown value");
+const pollFlippedNoSql = await runCronJob("github-poll", { CUTOVER_FLIPPED: "1" }, null);
+ok(pollFlippedNoSql.status === 501, "runCronJob after flip still needs sql");
+
 ok(canonicalCronJob("nuvo-calendar-dispatch") === "calendar-dispatch", "cron alias calendar-dispatch");
 ok(canonicalCronJob("nuvo-rollover-pdt") === "rollover", "cron alias rollover");
 ok(jobsForSchedule("* * * * *").includes("calendar-dispatch"), "minute tick includes calendar-dispatch");
 ok(jobsForSchedule("* * * * *").includes("push-dispatch"), "minute tick includes push-dispatch");
 ok(jobsForSchedule("15 9 * * *").includes("google-renew"), "09:15 UTC is google-renew");
 ok(jobsForSchedule("0 4 * * *").includes("purge-trash"), "04:00 UTC is purge-trash");
+ok(jobsForSchedule("20 9 * * *").includes("github-poll"), "09:20 UTC is github-poll");
+ok(jobsForSchedule("0 10 * * 0").includes("trim-sync-log"), "Sunday 10:00 UTC is trim-sync-log");
+ok(canonicalCronJob("nuvo-github-poll") === "github-poll", "cron alias github-poll");
+ok(canonicalCronJob("nuvo-trim-sync-log") === "trim-sync-log", "cron alias trim-sync-log");
+
+const ghSrc = readFileSync(join(root, "worker/src/githubActivity.ts"), "utf8");
+ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(ghSrc), "trim: parked margin is 1e6");
+ok(/id < \$\{parkedFloor\}/.test(ghSrc), "trim: floor excludes Neon-origin ids");
+ok(/about 1e6[\s\S]*further Neon inserts/.test(ghSrc), "trim: floor rises after ~1e6 Neon inserts");
+ok(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc), "github-activity cron sync uses gateCronBearerRoute(c.env, 'github-poll')");
+ok(ghSrc.indexOf("gateCronBearerRoute") < ghSrc.indexOf("requestIo(c)"), "github-activity cron sync gates before requestIo");
+ok(!/RESTART IDENTITY/.test(ghSrc) && !/setval\(/.test(ghSrc), "trim: never resets the parked identity");
+ok(/from "\.\/secrets\.ts"/.test(ghSrc), "github-activity: uses A's secrets.ts");
+ok(!/lib\/secrets/.test(ghSrc), "github-activity: no duplicate secrets module");
+ok(/writeFrozen\(c\.env\.MAINTENANCE_WRITE_FREEZE\)/.test(ghSrc), "github-activity: writeFrozen after auth");
+ok(/requireStore\(c\)/.test(ghSrc), "github-activity: owner from session requireStore");
+
+const cronJobsSrc = readFileSync(join(root, "worker/src/cronJobs.ts"), "utf8");
+ok(/runGithubPoll/.test(cronJobsSrc) && /runTrimSyncLog/.test(cronJobsSrc), "cronJobs: github-poll and trim-sync-log are wired");
+ok(/name === "github-poll"/.test(cronJobsSrc) && /name === "trim-sync-log"/.test(cronJobsSrc), "cronJobs: both jobs have runners");
+ok(/gateCron\(env, name\)/.test(cronJobsSrc) && /gateCron\(c\.env, name\)/.test(cronJobsSrc), "cronJobs: handleCron and runCronJob use gateCron");
+ok(/from "\.\/cutoverFlip\.ts"/.test(cronJobsSrc), "cronJobs: flip helpers imported from cutoverFlip.ts");
+
+const blockedSrc = readFileSync(join(root, "worker/src/blocked.ts"), "utf8");
+ok(!/"github-activity"/.test(blockedSrc), "blocked: github-activity is ported");
+ok(!/"github-poll"/.test(blockedSrc), "blocked: github-poll is ported");
+
+const pat = "github_pat_11AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const ghAad = { table: "activity_sources", rowId: aad.rowId, userId: aad.userId };
+const sealedGh = await sealToken(pat, ghAad, ringV1);
+const openedGh = await openToken(sealedGh, ghAad, ringV1);
+ok(openedGh.startsWith("github_pat_") && openedGh.length === pat.length, "github PAT: open prefix/length only");
+ok(openedGh === pat, "github PAT: round-trip");
+try {
+  await openToken(sealedGh, { ...ghAad, userId: otherUser.userId }, ringV1);
+  ok(false, "github PAT: AAD user mismatch fails");
+} catch {
+  ok(true, "github PAT: AAD user mismatch fails");
+}
 
 let acked = 0;
+let retried = 0;
 const consumed = await consumeCalendarSyncBatch(
   {
     messages: [
-      { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; } },
-      { body: { account_id: "x2", user_id: "y2", provider: "ics" }, ack: () => { acked += 1; } },
+      { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; }, retry: () => { retried += 1; } },
+      { body: { account_id: "x2", user_id: "y2", provider: "ics" }, ack: () => { acked += 1; }, retry: () => { retried += 1; } },
     ],
   },
   {},
 );
-ok(consumed === 2 && acked === 2, "queue consumer acks Google (no sql) and other providers");
+ok(consumed === 2 && acked === 2 && retried === 0, "queue consumer acks when not flipped (no IO)");
+let flippedAck = 0;
+let flippedRetry = 0;
+const flippedConsumed = await consumeCalendarSyncBatch(
+  {
+    messages: [
+      { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { flippedAck += 1; }, retry: () => { flippedRetry += 1; } },
+      { body: { account_id: "x2", user_id: "y2", provider: "ics" }, ack: () => { flippedAck += 1; }, retry: () => { flippedRetry += 1; } },
+    ],
+  },
+  { CUTOVER_FLIPPED: "1" },
+);
+ok(flippedConsumed === 2 && flippedRetry === 1 && flippedAck === 1, "flipped queue: google without sql retries; other providers ack");
 
 const vaultSql = readFileSync(join(root, "docs/cloudflare-migration/vault_tokens.sql"), "utf8");
 ok(/SECURITY DEFINER/i.test(vaultSql), "vault_tokens.sql is SECURITY DEFINER");
@@ -185,6 +265,15 @@ ok(/retry the resync \(retryable\)/.test(copyPy), "cutover_copy.py lock timeout 
 ok(/retryable_lock_timeout_stop\(err\)/.test(workflow), "cutover-migrate.yml includes the redacted psql error on lock timeout");
 ok(/incoming row\(s\) differ on Neon/.test(copyPy), "cutover_copy.py aborts sync_log content collisions with a count");
 ok(/sync_log_reserve_sequence_sql/.test(workflow) && /SYNC_LOG_SEQUENCE_MARGIN/.test(copyPy), "cutover-migrate.yml reserves sync_log identity past source max after restore");
+ok(/SYNC_LOG_SEQUENCE_MARGIN = 1_000_000/.test(copyPy), "cutover_copy.py parked margin is 1e6 (trim must match)");
+const cutoverDoc = readFileSync(join(root, "docs/cloudflare-cutover.md"), "utf8");
+ok(/CUTOVER_FLIPPED/.test(cutoverDoc), "cutover.md names CUTOVER_FLIPPED");
+ok(/skipped: true/.test(cutoverDoc), "cutover.md documents skipped: true before flip");
+ok(/`1`, `true`, `yes`, `on`/.test(cutoverDoc), "cutover.md lists accepted CUTOVER_FLIPPED values");
+ok(/unschedule[\s\S]*phase=resync[\s\S]*CUTOVER_FLIPPED/.test(cutoverDoc), "cutover.md step 8 is unschedule → final resync → flag");
+ok(/about 1e6 further Neon inserts/.test(cutoverDoc), "cutover.md notes ~1e6 inserts before Neon rows age-trim");
+ok(!/Supabase-origin ids are all below the floor/.test(cutoverDoc), "cutover.md softened the floor wording");
+ok(!/never deletes ids in the parked identity window/.test(cutoverDoc), "cutover.md no longer says trim keeps the parked window");
 ok(/push_anti_join_delete_sql\(\) \+ ";"[\s\S]*push_upsert_sql/.test(workflow), "cutover-migrate.yml deletes missing push rows before upsert");
 ok(/push_subscriptions upserted/.test(workflow), "cutover-migrate.yml upserts push_subscriptions");
 ok(/sync_log_watermark/.test(workflow), "cutover-migrate.yml records a sync_log watermark");
@@ -220,6 +309,10 @@ const syncChunk = syncWrite.slice(syncWrite.indexOf("freezeWrite"));
 const contactsChunk = contactsWrite.slice(contactsWrite.indexOf("freezeWrite"));
 ok(syncChunk.indexOf("gateCronBearerRoute") < syncChunk.indexOf("requestIo") && syncChunk.includes('gateCronBearerRoute(c.env, "google-sync")'), "google-sync cron bearer uses gateCronBearerRoute before requestIo");
 ok(contactsChunk.indexOf("gateCronBearerRoute") < contactsChunk.indexOf("requestIo") && contactsChunk.includes('gateCronBearerRoute(c.env, "google-contacts")'), "google-contacts cron bearer uses gateCronBearerRoute before requestIo");
+const eventsWrite = routesSrc.slice(routesSrc.indexOf('paths("google-events")'), routesSrc.indexOf('paths("google-webhook")'));
+const eventsChunk = eventsWrite.slice(eventsWrite.indexOf("freezeWrite"));
+ok(eventsChunk.includes('gateCronBearerRoute(c.env, "google-events")'), "google-events cron bearer uses gateCronBearerRoute(c.env, 'google-events')");
+ok(eventsChunk.indexOf("gateCronBearerRoute") >= 0 && eventsChunk.indexOf("gateCronBearerRoute") < eventsChunk.indexOf("requestIo"), "google-events cron bearer gates before requestIo");
 
 const eventsSrc = readFileSync(join(root, "worker/src/google/events.ts"), "utf8");
 ok(!/,\s*"error",\s*String\(e\)/.test(eventsSrc), "events.ts does not write raw String(e) to sync_log");
@@ -231,6 +324,8 @@ ok(/access_token = NULL/.test(sealSrc), "cutover-seal-tokens.mjs nulls plaintext
 ok(/btrim\(access_token\)/.test(sealSrc) && /leftover/.test(sealSrc), "cutover-seal-tokens.mjs counts leftover plaintext");
 ok(/plaintext access_token remains/.test(sealSrc), "cutover-seal-tokens.mjs fails if plaintext remains");
 ok(!/console\.(log|error|info)\([^\n]*(row\.access_token|\$\{secret\})/.test(sealSrc), "cutover-seal-tokens.mjs never logs access_token values");
+ok(/GITHUB_ACTIONS === ["']true["']/.test(sealSrc), "cutover-seal-tokens.mjs emits ::add-mask:: only in GitHub Actions");
+ok(/::add-mask::/.test(sealSrc) && /if \(process\.env\.GITHUB_ACTIONS === ["']true["']\)/.test(sealSrc), "cutover-seal-tokens.mjs gates add-mask on GITHUB_ACTIONS");
 
 const neon = readFileSync(join(root, "worker/schema/neon.sql"), "utf8");
 ok(/CREATE TABLE IF NOT EXISTS public\.calendar_accounts/.test(neon), "neon.sql has calendar_accounts");

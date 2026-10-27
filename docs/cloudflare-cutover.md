@@ -50,11 +50,11 @@ None of these belong in the Vite bundle.
 | `RESEND_FROM` | var | e.g. `Nuvo <noreply@yourdomain>` |
 | `RESEND_WEBHOOK_SECRET` | secret | Svix verify for `/api/inbound-email`. Unset → inbound 500 |
 | `OPENAI_API_KEY` | secret | Direct OpenAI (no AI Gateway). Unset → agent chat / route-events LLM 503. Snapshot + tools still work |
-| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Until `CUTOVER_FLIPPED`, every cron and cron-bearer route returns 200 `{ skipped: true, reason: "cutover_not_flipped" }` and does not open the DB. After flip: rollover, purge-trash, reminder-deliveries-prune, `google-renew`, `calendar-dispatch`, `google-resubscribe` run; push / github stay 501 |
-| `CUTOVER_FLIPPED` | var | **Allowlist only:** `1` / `true` / `yes` / `on` (trimmed, case-insensitive). Unset, empty, and anything else (`garbage`, `maybe`, `2`, `false`, `0`) is not flipped. Worker crons stay skipped until this is set |
+| `CRON_SECRET` | secret (optional) | Bearer for `/api/cron/:job`, compared in constant time. Unset or mismatch → 401. Until `CUTOVER_FLIPPED`, every cron and cron-bearer route (including github-activity `action: "sync"` and google-sync / google-contacts / google-events) returns 200 `{ skipped: true, reason: "cutover_not_flipped" }` and does not open the DB. After flip: rollover, purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log, `google-renew`, `calendar-dispatch`, `google-resubscribe` run. Calendar-dispatch enqueues when `CALENDAR_SYNC_QUEUE` is bound. Push stays 501 |
+| `CUTOVER_FLIPPED` | var | **Allowlist only:** `1` / `true` / `yes` / `on` (trimmed, case-insensitive). Unset, empty, and anything else (`garbage`, `maybe`, `2`, `false`, `0`) is not flipped. Set only after runbook step 8. Until then Worker crons, github-activity `action: "sync"` with `CRON_SECRET`, and google-sync / google-contacts / google-events cron-bearer routes stay skipped |
 | `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id` |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
-| `MAINTENANCE_WRITE_FREEZE` | var | `1` / `true` freezes Worker writes. `GET /api/maintenance` is what the app reads |
+| `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` SELECTs `subscriptions` here by the session user id |
 | `SUPABASE_SERVICE_ROLE_KEY` | secret | Same read. Used only as `user_id=eq.<session id>`. **Not** a Stripe key; do not add `STRIPE_SECRET_KEY` |
@@ -217,23 +217,30 @@ Calendar push channels re-subscribe to the Worker at the flip
 or wrong). The scheduled handler is Cloudflare-authenticated and calls the
 same runners. **One flip gate** (`worker/src/cutoverFlip.ts`): until
 `CUTOVER_FLIPPED` is an allowlisted value (`1` / `true` / `yes` / `on`),
-every post-flip job returns **200 `{ ok: true, skipped: true, reason:
-"cutover_not_flipped", job }`** on both the scheduled path and
-`/api/cron/:job`, with no DB, fetch, or queue work. After the flip,
-ported jobs (`rollover`, `purge-trash`, `reminder-deliveries-prune`)
-iterate `users` then scope by `user_id`. Calendar-dispatch enqueues due
-accounts onto `CALENDAR_SYNC_QUEUE` and the consumer polls Google
-(other providers ack). `google-renew` re-watches channels that expire
-within 48h. Flip tooling: `POST /api/cron/google-resubscribe`. Push /
-github stay 501 / `stay_on_supabase`.
+every post-flip job — and github-activity `action: "sync"` with
+`CRON_SECRET`, and google-sync / google-contacts / google-events
+cron-bearer routes — returns **200 `{ ok: true, skipped: true, reason:
+"cutover_not_flipped", job }`** with no DB, fetch, or queue work. After
+the flip, ported jobs (`rollover`, `purge-trash`,
+`reminder-deliveries-prune`, `github-poll`, `trim-sync-log`) iterate
+`users` then scope by `user_id`. Calendar-dispatch enqueues due accounts
+onto `CALENDAR_SYNC_QUEUE` and the consumer polls Google (other
+providers ack). `google-renew` re-watches channels that expire within
+48h. Flip tooling: `POST /api/cron/google-resubscribe`. Push stays
+501 / `stay_on_supabase`. `trim-sync-log` deletes by
+`created_at < now() - 30 days` and, when the identity is parked
+(`last_value >= 1e6`), also `id < last_value - 1e6 + 1`. Copied source
+ids typically sit below that floor. The floor keeps recent Neon-origin
+rows out of age trim; it is not a permanent partition — after about 1e6 further Neon inserts the floor rises past those early Neon ids and any
+row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
 | `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch 501 after flip |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
-| `20 9 * * *` | `github-poll` | skip until flip, then 501 |
-| `0 10 * * 0` | `trim-sync-log` | skip until flip, then 501 |
+| `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
+| `0 10 * * 0` | `trim-sync-log` | skip until flip, then per-user age delete. Floor keeps recent Neon-origin ids out of trim until ~1e6 further inserts |
 | `30 4 * * *` | `reminder-deliveries-prune` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 | `0 4 * * *` | `purge-trash` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 
@@ -242,10 +249,15 @@ account per minute. At the current ~12 accounts that is ~35k ops/day, inside
 Workers Paid's included Queue operations. Revisit past a few hundred accounts.
 
 `pg_cron` stays scheduled on Supabase until the flip (`cron.unschedule` the
-`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`). Flip
-tooling: `POST /api/cron/google-resubscribe` re-watches every Google
-channel onto the Worker webhook; `calendar-dispatch` poll covers watch
-setup failures (unverified domain).
+`nuvo-*` jobs then; reversible via `00000000000002_cron.sql`). Follow
+step 8 in order: unschedule, final resync, then set `CUTOVER_FLIPPED`.
+Doing it earlier lets Worker `github-poll` (and github-activity
+`CRON_SECRET` sync) double-fire with `nuvo-github-poll`, lets
+`google-renew` / `calendar-dispatch` double-fire with the Supabase
+jobs, and lets trim delete old copied rows the next resync copies back.
+Flip tooling: `POST /api/cron/google-resubscribe` re-watches every
+Google channel onto the Worker webhook; `calendar-dispatch` poll covers
+watch setup failures (unverified domain).
 
 ### Flip runbook (order is load-bearing)
 
@@ -259,7 +271,8 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    the `VITE_API_BASE_URL` switch so every post-switch source row lands.
 3. **Set `CUTOVER_FLIPPED=1`** on the Worker. Accepted values are only
    `1`, `true`, `yes`, `on` (trimmed, case-insensitive). Anything else
-   stays skipped.
+   stays skipped — including github-activity `action: "sync"` with
+   `CRON_SECRET`.
 
 ## Write freeze
 
@@ -286,7 +299,26 @@ window; the job will not copy against that.
 Non-billing Supabase edge functions that write with `service_role` also
 read `WRITE_FREEZE` **or** `MAINTENANCE_WRITE_FREEZE`
 (`supabase/functions/_shared/writeFreeze.ts`) and 503 if either is
-truthy. Set one of them as an edge-function secret when you arm.
+frozen. Frozen is **any non-empty value other than** `0` / `false` /
+`no` / `off` (trimmed, case-insensitive). Unset and empty stay open —
+same as the Worker `MAINTENANCE_WRITE_FREEZE` row above. Set one of
+them as an edge-function secret when you arm.
+
+### Preflight before any edge-function redeploy
+
+Before **any** `supabase functions deploy` (or dashboard redeploy), run:
+
+```bash
+node scripts/preflight-edge-write-freeze.mjs --project-ref <ref>
+```
+
+The script calls `supabase secrets list --project-ref <ref> -o json`
+and checks `WRITE_FREEZE` and `MAINTENANCE_WRITE_FREEZE` only. Absent
+→ PASS. Present with a digest matching sha256 hex of an unfrozen
+value (`''`, `0`, `false`, `no`, `off`) → PASS. Any other digest, a
+missing digest field, or an unexpected JSON shape → FAIL (nonzero).
+It prints only secret names and PASS/FAIL — never digests or values.
+Do not redeploy on FAIL. This does not change the secrets.
 Covered: agent, capture (POST only; GET is a poll), mcp, inbound-email,
 google-webhook, delete-account,
 google-sync / oauth / events / contacts, m365-oauth / sync, ics-sync /
@@ -343,6 +375,10 @@ Order:
 
 0. **Ship the armed build** — `VITE_MAINTENANCE_URL` + `VITE_CUTOVER_ARMED=1`.
    The copy job will refuse to start until that endpoint reports armed.
+0b. **Preflight edge secrets** — `node scripts/preflight-edge-write-freeze.mjs --project-ref <ref>`
+   before any Supabase edge-function redeploy (and again before arming).
+   PASS only when `WRITE_FREEZE` / `MAINTENANCE_WRITE_FREEZE` are absent
+   or digest-match an unfrozen value. Do not redeploy on FAIL.
 1. **Arm** — set `CUTOVER_ARMED=1` on the Worker, `WRITE_FREEZE=1` on
    the non-billing edge functions, and `MAINTENANCE_WRITE_FREEZE=1` if
    you want Worker writes frozen too.
@@ -374,12 +410,22 @@ Order:
    retryable and includes the redacted psql error), then deletes
    missing `push_subscriptions`
    ids and upserts the rest.
-7. **Switch** — flip `VITE_API_BASE_URL`. Then re-dispatch
-   `cutover-migrate` with `phase=resync` so post-switch billing
-   inserts/updates/deletes land (id anti-join + setval + delete-then-upsert). Or
-   **unfreeze** — apply `unfreeze.sql`, which restores the recorded
-   ACLs and each job's prior `active` exactly (idempotent), then clear
-   `CUTOVER_ARMED` and `WRITE_FREEZE`.
+7. **Switch** — flip `VITE_API_BASE_URL`. Or **unfreeze** — apply
+   `unfreeze.sql`, which restores the recorded ACLs and each job's
+   prior `active` exactly (idempotent), then clear `CUTOVER_ARMED`
+   and `WRITE_FREEZE`.
+8. **Flip Worker crons** — in this order, and not before:
+   1. `cron.unschedule` Supabase `nuvo-github-poll` and
+      `nuvo-trim-sync-log` (and any other `nuvo-*` job that would
+      double-fire).
+   2. Final `cutover-migrate` `phase=resync` so post-switch billing
+      inserts/updates/deletes land (id anti-join + setval +
+      delete-then-upsert).
+   3. Set `CUTOVER_FLIPPED` to one of `1`, `true`, `yes`, `on`
+      (case-insensitive). Unset or any other value = not flipped =
+      200 `{ skipped: true }` on `github-poll`, `trim-sync-log`, and
+      github-activity `action: "sync"` with `CRON_SECRET`. The freeze
+      is not enough.
 
 ---
 

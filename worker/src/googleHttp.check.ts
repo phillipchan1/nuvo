@@ -48,11 +48,15 @@ const fakeAuth = {
   handler: async () => new Response("not used"),
 };
 
-installRequestIoForTests(() => ({
-  sql,
-  auth: fakeAuth as never,
-  close: async () => undefined,
-}));
+let ioOpened = 0;
+installRequestIoForTests(() => {
+  ioOpened += 1;
+  return {
+    sql,
+    auth: fakeAuth as never,
+    close: async () => undefined,
+  };
+});
 
 const restoreFetch = installOutboundFetchForTests(async (input) => {
   const url = String(input);
@@ -319,6 +323,39 @@ for (const path of ["/functions/v1/google-sync", "/functions/v1/google-contacts"
     body: JSON.stringify({ mode: "poll" }),
   }, unknownFlipEnv);
   ok(unknownFlip.status === 200 && (unknownFlip.body as { skipped?: boolean }).skipped === true, `${path} cron bearer unknown flip is skipped`);
+}
+
+for (const path of ["/functions/v1/google-events", "/api/google-events"] as const) {
+  const ioBefore = ioOpened;
+  const skipped = await call(path, {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ action: "delete", eventId: EVENT_A, actingUserId: A }),
+  }, skipEnv);
+  ok(skipped.status === 200, `${path} cron bearer before flip is 200 (got ${skipped.status})`);
+  ok((skipped.body as { skipped?: boolean }).skipped === true, `${path} cron bearer before flip is skipped`);
+  ok((skipped.body as { reason?: string }).reason === "cutover_not_flipped", `${path} cron bearer before flip reason`);
+  ok((skipped.body as { job?: string }).job === "google-events", `${path} cron bearer before flip names google-events`);
+  ok(ioOpened === ioBefore, `${path} cron bearer before flip does zero IO`);
+
+  const unknownFlip = await call(path, {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ action: "delete", eventId: EVENT_A, actingUserId: A }),
+  }, unknownFlipEnv);
+  ok(unknownFlip.status === 200 && (unknownFlip.body as { skipped?: boolean }).skipped === true, `${path} cron bearer unknown flip is skipped`);
+}
+
+{
+  const ioBefore = ioOpened;
+  const flipped = await call("/functions/v1/google-events", {
+    method: "POST",
+    headers: { authorization: "Bearer cron-secret" },
+    body: JSON.stringify({ action: "delete", eventId: UNKNOWN, actingUserId: A }),
+  });
+  ok(flipped.status === 404 || flipped.status === 200, `google-events cron bearer after flip runs (got ${flipped.status})`);
+  ok((flipped.body as { skipped?: boolean }).skipped !== true, "google-events cron bearer after flip is not skipped");
+  ok(ioOpened > ioBefore, "google-events cron bearer after flip opens IO");
 }
 
 const cronOk = await call("/api/cron/google-renew", {

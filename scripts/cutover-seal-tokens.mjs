@@ -16,7 +16,9 @@ const KEY = (process.env.TOKEN_ENC_KEY_V1 || "").trim();
 
 function mask(value) {
   if (!value) return;
-  console.log(`::add-mask::${value}`);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    console.log(`::add-mask::${value}`);
+  }
 }
 
 function die(message) {

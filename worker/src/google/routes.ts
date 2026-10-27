@@ -150,6 +150,10 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
       const body = await readJson<Record<string, unknown>>(c).catch(() => ({} as Record<string, unknown>));
       const cronOk = cronAuthorized(bearerToken(c.req.header("authorization")), c.env.CRON_SECRET);
       const acting = typeof body.actingUserId === "string" ? body.actingUserId : "";
+      if (cronOk && acting) {
+        const gated = gateCronBearerRoute(c.env, "google-events");
+        if (gated) return gated;
+      }
       const io = await deps.requestIo(c);
       let userId: string;
       if (cronOk && acting) {

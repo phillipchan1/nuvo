@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types worker/src/cutoverFlip.check.ts
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -66,18 +66,28 @@ for (const required of [
 ok(/gateCron\(env, name\)/.test(cronJobsSrc), "runCronJob calls gateCron");
 ok(/gateCron\(c\.env, name\)/.test(cronJobsSrc), "handleCron calls gateCron");
 ok(/gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer calls gateCron");
+ok(!/false\s*&&\s*gateCron\(env, "queue-consume"\)/.test(cronJobsSrc), "queue consumer gate is not short-circuited");
+ok(/msg\.retry\(\)/.test(cronJobsSrc), "queue consumer retries a failed Google sync");
+ok(!/catch \{\s*continue;\s*\}/.test(cronJobsSrc), "queue consumer does not continue without ack or retry");
 ok(/gateCronBearerRoute\(c\.env, "google-sync"\)/.test(googleRoutesSrc), "google-sync cron bearer uses gateCronBearerRoute");
 ok(/gateCronBearerRoute\(c\.env, "google-contacts"\)/.test(googleRoutesSrc), "google-contacts cron bearer uses gateCronBearerRoute");
+ok(/gateCronBearerRoute\(c\.env, "google-events"\)/.test(googleRoutesSrc), "google-events cron bearer uses gateCronBearerRoute");
 const syncWrite = (() => {
   const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-sync")'), googleRoutesSrc.indexOf('paths("google-events")'));
+  return chunk.slice(chunk.indexOf("freezeWrite"));
+})();
+const eventsWrite = (() => {
+  const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-events")'), googleRoutesSrc.indexOf('paths("google-webhook")'));
   return chunk.slice(chunk.indexOf("freezeWrite"));
 })();
 const contactsWrite = (() => {
   const chunk = googleRoutesSrc.slice(googleRoutesSrc.indexOf('paths("google-contacts")'), googleRoutesSrc.indexOf('paths("calendar-refresh")'));
   return chunk.slice(chunk.indexOf("freezeWrite"));
 })();
-ok(syncWrite.indexOf("gateCronBearerRoute") < syncWrite.indexOf("requestIo"), "google-sync gates before requestIo");
-ok(contactsWrite.indexOf("gateCronBearerRoute") < contactsWrite.indexOf("requestIo"), "google-contacts gates before requestIo");
+ok(syncWrite.indexOf("gateCronBearerRoute") >= 0 && syncWrite.indexOf("gateCronBearerRoute") < syncWrite.indexOf("requestIo"), "google-sync gates before requestIo");
+ok(eventsWrite.indexOf("gateCronBearerRoute") >= 0 && eventsWrite.indexOf("gateCronBearerRoute") < eventsWrite.indexOf("requestIo"), "google-events gates before requestIo");
+ok(contactsWrite.indexOf("gateCronBearerRoute") >= 0 && contactsWrite.indexOf("gateCronBearerRoute") < contactsWrite.indexOf("requestIo"), "google-contacts gates before requestIo");
+ok(/cronOk && acting/.test(eventsWrite) && eventsWrite.includes('gateCronBearerRoute(c.env, "google-events")'), "google-events gates the cronOk && acting branch");
 const runIdx = cronJobsSrc.indexOf("export async function runCronJob");
 const runGate = cronJobsSrc.indexOf("gateCron(env, name)", runIdx);
 const runSql = cronJobsSrc.indexOf("enqueueDueCalendarAccounts", runIdx);
@@ -88,6 +98,39 @@ const httpIo = cronJobsSrc.indexOf("requestIo(c)", httpIdx);
 ok(httpGate > httpIdx && httpGate < httpIo, "handleCron gates before requestIo");
 ok(/cutoverFlipped\(env\.CUTOVER_FLIPPED\)/.test(indexSrc), "scheduled path checks the flip before openSql");
 ok(indexSrc.indexOf("if (cutoverFlipped(env.CUTOVER_FLIPPED))") < indexSrc.indexOf("sql = openSql(env)"), "scheduled opens SQL only after flip");
+
+const ghSrc = readFileSync(join(here, "githubActivity.ts"), "utf8");
+ok(
+  /gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/.test(ghSrc),
+  "github-activity CRON_SECRET sync calls gateCronBearerRoute(c.env, 'github-poll')",
+);
+const ghSyncAt = ghSrc.indexOf('action === "sync" && cronAuthorized');
+const ghIoAt = ghSrc.indexOf("requestIo(c)", ghSyncAt);
+const ghGateAt = ghSrc.search(/gateCronBearerRoute\(\s*c\.env\s*,\s*["']github-poll["']\s*\)/);
+ok(ghSyncAt >= 0 && ghGateAt > ghSyncAt && ghGateAt < ghIoAt, "github-activity CRON_SECRET sync gates before requestIo");
+
+function walkProdTs(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkProdTs(p));
+    else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".check.ts")) out.push(p);
+  }
+  return out;
+}
+
+for (const file of walkProdTs(here)) {
+  const src = readFileSync(file, "utf8");
+  const rel = file.slice(here.length + 1);
+  if (rel === "cron.ts") continue;
+  const cronAuth = /\bcronAuthorized\s*\(/.test(src);
+  const cronBearer = /CRON_SECRET/.test(src) && /\bbearerToken\s*\(/.test(src);
+  if (!cronAuth && !cronBearer) continue;
+  ok(
+    /\bgateCron\s*\(/.test(src) || /\bgateCronBearerRoute\s*\(/.test(src),
+    `${rel}: cronAuthorized / CRON_SECRET-bearer caller is gated by gateCron or gateCronBearerRoute`,
+  );
+}
 
 const skipRes = skippedUntilCutoverFlip("rollover");
 ok(skipRes.status === 200, "skippedUntilCutoverFlip is HTTP 200");
@@ -165,15 +208,25 @@ try {
   ok(ioOpened === 0, "HTTP skip never opened the DB");
 
   let acked = 0;
+  let retried = 0;
+  let queueIo = 0;
   const consumed = await consumeCalendarSyncBatch(
     {
       messages: [
-        { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; } },
+        { body: { account_id: "x", user_id: "y", provider: "google" }, ack: () => { acked += 1; }, retry: () => { retried += 1; } },
       ],
     },
-    {},
+    {
+      HYPERDRIVE: {
+        get connectionString() {
+          queueIo += 1;
+          return "postgres://probe.invalid/nuvo";
+        },
+      },
+    },
   );
-  ok(consumed === 1 && acked === 1, "queue consumer acks when not flipped");
+  ok(consumed === 1 && acked === 1 && retried === 0, "queue consumer acks when not flipped");
+  ok(queueIo === 0, "queue consumer before flip does no IO (false && gateCron would open SQL)");
 } finally {
   globalThis.fetch = origFetch;
 }
