@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { Label, Task } from "../../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../../lib/types";
-import type { useTaskMutations } from "../../hooks/useTasks";
+import { useScheduledTasks, type useTaskMutations } from "../../hooks/useTasks";
+import { useSlotTasks, useSlots, type useSlotMutations } from "../../hooks/useSlots";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO } from "../../lib/dates";
-import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../../lib/vertical";
+import { blockDesignation, deriveSlotTitle, slotPickDay, slotPicksFor, type SlotPick } from "../../lib/slots";
+import {
+  domainById,
+  initiativeById,
+  isProjectComplete,
+  projectById,
+  taskDomainColor,
+  taskDomainId,
+  taskInitiativeId,
+} from "../../lib/vertical";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
@@ -25,6 +36,7 @@ import {
   FactRow,
   MetaDot,
   PickSheet,
+  type PickRow,
   RowList,
   SHEET_BODY,
   SHEET_SCROLL,
@@ -35,7 +47,10 @@ import {
 } from "./sheetKit";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
+type SlotMutations = ReturnType<typeof useSlotMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
+
+const pickId = (p: SlotPick) => (p.kind === "slot" ? `slot:${p.slot.id}` : `task:${p.task.id}`);
 
 /** Explicit triage on phone — toast is the only undo path (no ⌘Z). */
 const TRIAGE_UNDO = { undo: "toast" as const };
@@ -56,6 +71,7 @@ export default function MobileTaskSheet({
   labels,
   vertical,
   mutations,
+  slotMutations,
   accent,
   onClose,
   onAskNuvo,
@@ -64,6 +80,8 @@ export default function MobileTaskSheet({
   labels: Label[];
   vertical: Vertical;
   mutations: Mutations;
+  /** Put in a slot — the desktop's drop-on-a-block acts, by tap (D-172). */
+  slotMutations: SlotMutations;
   accent?: string | null;
   onClose: () => void;
   onAskNuvo?: (seed: string, say?: string) => void;
@@ -73,7 +91,7 @@ export default function MobileTaskSheet({
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
-  const [picker, setPicker] = useState<"project" | "domain" | null>(null);
+  const [picker, setPicker] = useState<"project" | "domain" | "slot" | null>(null);
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const { data: recurrences = [] } = useRecurrences();
@@ -213,6 +231,88 @@ export default function MobileTaskSheet({
   };
 
   const openProjects = vertical.projects.filter((p) => !isProjectComplete(p.status) || p.id === task.project_id);
+
+  // ── Put in a slot ── The phone's calendar has no drag, so this is how a task
+  // gets onto another block: the desktop's drop, by tap (D-172). WHAT gathers is
+  // `slotPicksFor`'s call, made from `gatherActFor` — never decided here.
+  const pickDay = slotPickDay(task, todayISO());
+  const [dayStartISO, dayEndISO] = useMemo(() => {
+    const s = parseDateISO(pickDay);
+    const e = new Date(s);
+    e.setDate(e.getDate() + 1);
+    return [s.toISOString(), e.toISOString()];
+  }, [pickDay]);
+  const { data: daySlots = [] } = useSlots(dayStartISO, dayEndISO);
+  const { data: dayTasks = [] } = useScheduledTasks(dayStartISO, dayEndISO);
+  const daySlotIds = useMemo(() => daySlots.map((s) => s.id), [daySlots]);
+  const { data: daySlotChildren = [] } = useSlotTasks(daySlotIds);
+  const childrenOf = useMemo(() => {
+    const by = new Map<string, Task[]>();
+    for (const c of daySlotChildren) {
+      if (!c.slot_id) continue;
+      const list = by.get(c.slot_id);
+      if (list) list.push(c);
+      else by.set(c.slot_id, [c]);
+    }
+    return (slotId: string) => by.get(slotId) ?? [];
+  }, [daySlotChildren]);
+  const slotPicks = useMemo(
+    () => slotPicksFor(task, pickDay, { slots: daySlots, tasks: dayTasks }),
+    [task, pickDay, daySlots, dayTasks],
+  );
+  const inSlot = task.slot_id ? daySlots.find((s) => s.id === task.slot_id) ?? null : null;
+
+  const slotRows: PickRow[] = slotPicks.map((p) => {
+    if (p.kind === "slot") {
+      const s = p.slot;
+      const held = childrenOf(s.id).filter((c) => c.status !== "trashed");
+      const from = new Date(s.start_time);
+      return {
+        id: pickId(p),
+        name: deriveSlotTitle(s, held, vertical),
+        sub: `${blockDesignation({ kind: s.project_id ? "project" : "slot", holds: held.length })} · ${span(from, new Date(from.getTime() + s.duration_minutes * 60_000))}`,
+        color: s.color ?? taskDomainColor(vertical, { domain_id: s.domain_id, project_id: s.project_id, initiative_id: null }) ?? "var(--slot)",
+      };
+    }
+    const t = p.task;
+    const from = new Date(t.start_time!);
+    return {
+      id: pickId(p),
+      name: t.title,
+      sub: `${blockDesignation({ kind: "task" })} · ${span(from, new Date(from.getTime() + (t.duration_minutes ?? defaultDurationMins) * 60_000))}`,
+      color: taskDomainColor(vertical, t),
+    };
+  });
+  const pickDayWord = dayWord(parseDateISO(pickDay));
+  const slotNote = `Blocks ${pickDayWord === "Today" || pickDayWord === "Tomorrow" ? pickDayWord.toLowerCase() : `on ${pickDayWord}`}. A slot takes this in. A task makes one slot of the two, at that task’s time.`;
+
+  /** A repeating occurrence placed by hand keeps its new place, as the
+   *  Schedule's drop does — and only AFTER the act: the outbox folds a row's
+   *  later patch into its earliest queued op, so a mark queued first would carry
+   *  `slot_id` to the server ahead of the slot's own insert (D-170). */
+  const keepPlaced = (placed: Task[]) =>
+    placed.forEach((t) => {
+      if (t.recurrence_id && !t.recurrence_overridden) mutations.patchTask(t.id, { recurrence_overridden: true });
+    });
+
+  const putInSlot = (id: string) => {
+    const pick = slotPicks.find((p) => pickId(p) === id);
+    if (!pick) return;
+    if (pick.kind === "slot") {
+      slotMutations.gatherIntoSlot(pick.slot, [task], childrenOf(pick.slot.id));
+      keepPlaced([task]);
+    } else {
+      // The block you pick doesn't move: the new slot starts at its time.
+      void slotMutations
+        .createSlotWith([pick.task, task], new Date(pick.task.start_time!), (t) => taskDomainId(vertical, t))
+        .catch((e) => {
+          console.warn("[nuvo] make-a-slot failed:", e);
+          toast.error("Couldn't make that slot — the tasks are unchanged");
+        });
+      keepPlaced([pick.task, task]);
+    }
+    close();
+  };
 
   return (
     <>
@@ -433,10 +533,21 @@ export default function MobileTaskSheet({
             </SheetSection>
           )}
 
-          {(task.start_time || onAskNuvo) && (
+          {(task.start_time || onAskNuvo || slotRows.length > 0) && (
             <SheetSection>
               <RowList>
                 {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={askNuvo} />}
+                {/* Only when there is something to put it with — a row that
+                    opens an empty list is a dead end. It names the slot the
+                    task is in now, which nothing else on this sheet says. */}
+                {slotRows.length > 0 && (
+                  <FactRow
+                    icon="clock"
+                    label="Put in a slot"
+                    value={inSlot ? deriveSlotTitle(inSlot, childrenOf(inSlot.id), vertical) : undefined}
+                    onClick={() => setPicker("slot")}
+                  />
+                )}
                 {task.start_time && (
                   <ActionRow
                     quiet
@@ -491,6 +602,16 @@ export default function MobileTaskSheet({
           value={domain?.id ?? null}
           noneLabel="No domain"
           onPick={setDomain}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {picker === "slot" && (
+        <PickSheet
+          title="Put in a slot"
+          note={slotNote}
+          rows={slotRows}
+          value={null}
+          onPick={putInSlot}
           onClose={() => setPicker(null)}
         />
       )}

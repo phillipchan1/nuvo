@@ -18,6 +18,7 @@ import {
 } from "../../hooks/useTasks";
 import { useLabels, useCalendarAccounts } from "../../hooks/useCalendar";
 import { useRecurrenceMutations } from "../../hooks/useRecurrence";
+import { useSlotMutations } from "../../hooks/useSlots";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
@@ -410,6 +411,7 @@ export default function MobileShell() {
   const { labels } = useLabels();
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
+  const slotMutations = useSlotMutations();
   const recurrenceMutations = useRecurrenceMutations();
   const { agent, setRange, setNavFocus } = useAgentContext();
   useEffect(() => {
@@ -899,6 +901,7 @@ export default function MobileShell() {
           labels={labels}
           vertical={vertical}
           mutations={mutations}
+          slotMutations={slotMutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
           onAskNuvo={openChat}

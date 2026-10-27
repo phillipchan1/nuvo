@@ -6413,7 +6413,7 @@ never a write. **Golden rule 4** (no hidden-only affordance) — the pause is di
 by doing it, which is why ⌘G and the menu exist. **P10** held: no new noun; *slot* already
 named all four outcomes. Not built: the **phone** has no drag on its calendar and no slot act
 on its task sheet, so it shows these slots but can't make one this way — a "Put in a slot…"
-picker on `MobileTaskSheet` is the follow-up. **Join** still doesn't grow its slot (D-098's
+picker on `MobileTaskSheet` is the follow-up (*built the same day as D-172*). **Join** still doesn't grow its slot (D-098's
 behaviour, left alone); merge and absorb do.
 
 Ledger: **D3** ("I have 40 minutes — what fits?") — claiming a window with several pieces,
@@ -6485,3 +6485,72 @@ on the local dummy account (2026-10-27), offline. Rename "Call the plumber", the
 "Order printer ink" onto 4pm: the fold sends the rename (106), the block's insert (107), then
 both assigns (108, 109). Back online, the queue drained with nothing parked, and Postgres had both
 tasks in the new slot. Then restored to the seed.*
+
+---
+
+**D-172 · 2026-10-27 · The phone puts a task in a slot by tap: one row on the task sheet, a
+list of that day's blocks, and the Schedule's own acts behind it.**
+
+D-170 gave the Schedule drop-on-a-block and ⌘G, and left the phone able to see the slots they
+make but not make one. Its calendar has no drag, and `MobileTaskSheet` had no slot act at all.
+Golden rule 4 says a gesture is never the only path to an act, and on a phone the gesture
+didn't even exist.
+
+- **One row, `Put in a slot`**, in the task sheet's act list beside Ask Nuvo and Remove from
+  calendar. It wears a chevron because it opens something (the kit's rule), and its value
+  names the slot the task is in now, which nothing else on the sheet said. **It appears only
+  when there is something to put the task with**, because a row that opens an empty list is a
+  dead end.
+- **It opens a `PickSheet`** (golden rule 3, never a popover): that day's slots and timed
+  tasks, earliest first, each with the calendar's designation and its span (`Slot · 2 tasks ·
+  1–3pm`, `Task · 11–11:30am`). Picking a slot puts the task in it (`gatherIntoSlot`).
+  Picking a task makes one slot of the two at **that task's** time (`createSlotWith([that,
+  this], that.start_time)`): the block you pick doesn't move, the same rule as the drop. Each
+  is one undo, through the toast.
+- **What's listed is `slotPicksFor` (`lib/slots`), built on `gatherActFor`.** Every row is one
+  the drop would also gather, with the same act, and `tests/put-in-slot.test.ts` pins that
+  the two agree. Left out: a finished task (it gets no list at all, as `planMakeSlot` filters
+  it), a finished or untimed target, events, the slot it's already in, and other days. A
+  repeating slot and another project's sitting **are** offered to join. D-170's guards on
+  those are about merging a slot away, which a single task can't do.
+- **The day** is the one the task sits on (`slotPickDay`), or today for work with no day yet,
+  where a drag from the rail would land it.
+- **The whole day, not a window "near" the task's time.** A window would hide the evening slot
+  you meant. A day's blocks are a short list, and time order already puts the neighbours next
+  to each other.
+- **Join grows the slot here, where the Schedule's drop-join doesn't** (D-098's behaviour,
+  left alone by D-170). The phone takes ⌘G's act, `gatherIntoSlot`, which grows the slot to
+  cover what it holds and never shrinks it. The phone has no way to make a slot longer
+  afterwards: no edge to drag, and no length on the block sheet. A slot that kept its 30
+  minutes while holding two hours would stay wrong (D-084).
+- **A repeating occurrence keeps its new place** (`recurrence_overridden`), marked *after*
+  the act. That is the order D-170 found the hard way (the outbox folds a later patch into
+  the earliest queued op).
+- **Not built: Nuvo's name draft.** On the desktop a drop-made slot opens its popover with
+  Nuvo's draft waiting under the name. On the phone the slot is named by `deriveSlotTitle` the
+  moment it exists (P7), and it can be renamed from its block sheet. Opening a second sheet
+  after every pick to ask about a name would put a step between the tap and being done.
+
+**Anchor.** Ledger **D3** ("I have 40 minutes — what fits?"): the phone half of D-170's
+claim. Not re-scored, for the same reason as D-098. Altitude: Day. Story step: land. Failure
+prevented: none of `brandscript.md` §6's five directly. It is parity, a block the phone could
+see but not make, and ranked as such. Strains **P8** a little: one more row on the task
+sheet. The mitigation is that it shows only when the act has somewhere to go, and sits with
+the acts, not the properties. **P10** held: no new noun, since *Put in a slot* is a verb over
+*slot*. The four no's: no pool, no new noun, an empty day simply has no row (P7), and nothing
+depends on the builder's account.
+
+*Status: built. `tests/put-in-slot.test.ts` (11 tests: the list, its agreement with
+`gatherActFor`, every exclusion, the day). Driven at `?sheets` at 375 and 320 (new fixture
+`task-in-slot`, plus a seeded day behind every Task fixture): `task-block` lists Studio block
+· Call the bank · Marketing site v2 · Admin hour, without the finished Stand-up or the task
+itself. A pick wrote `createSlotWith [t-call, t-block] at 11:00`, and the sheets closed.
+`task-in-slot` names Studio block on the row, leaves it out of the list, and wrote
+`gatherIntoSlot s-proj [t-inslot] [c1, c2]`. done / tomorrow → no row; inbox / untimed today →
+row. No overflow at 320, rows ≥44px. **On the local dummy account, against Postgres:** "Write
+case study: Fernwood" (9am) picked onto "Review billing cutover plan" (11:30) gave one
+135-minute slot at 11:30 with a derived name, both tasks inside it with their own times
+cleared, and the "Blocked 2 tasks together" toast. **Not driven:** the toast's Undo (it had
+closed by the time I reached it, so the rows were restored by SQL), a join on real data (the
+dummy account has no slot today; harness only), a repeating occurrence's override mark
+(follows `CalendarPane`'s order, no test), and an iPhone, in the PWA or the Tauri shell.*
