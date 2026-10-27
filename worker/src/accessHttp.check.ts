@@ -363,7 +363,7 @@ await db.query(
 );
 
 const googleCalls: { method: string; url: string }[] = [];
-const restoreFetch = installWorkerFetchForTests(async (input, init) => {
+const restoreWorkerFetch = installWorkerFetchForTests(async (input, init) => {
   const url = String(input);
   const method = (init?.method ?? "GET").toUpperCase();
   googleCalls.push({ method, url });
@@ -1386,7 +1386,7 @@ await db.query(
   [EVENT_A, a.id, ACCOUNT_A],
 );
 
-const restoreFetch = installOutboundFetchForTests(async (input) => {
+const restoreOutboundFetch = installOutboundFetchForTests(async (input) => {
   const url = String(input);
   if (url.includes("oauth2.googleapis.com/token")) {
     return new Response(JSON.stringify({ access_token: "ya29.refreshed", expires_in: 3600 }), { status: 200 });
@@ -1469,7 +1469,7 @@ ok(
 );
 ok((await count("external_events", "user_id = $1 AND title = $2", [a.id, "planted"])) === 0, "B create: no row planted on A");
 
-restoreFetch();
+restoreOutboundFetch();
 const realFetch = globalThis.fetch;
 let githubApiCalls = 0;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1844,7 +1844,7 @@ ok(((await bearerFlipped.json()) as { skipped?: boolean }).skipped !== true, "gi
 globalThis.fetch = realFetch;
 
 restoreSubs();
-restoreFetch();
+restoreWorkerFetch();
 restore();
 await kysely.destroy();
 await db.close();
