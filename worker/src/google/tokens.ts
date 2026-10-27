@@ -3,13 +3,45 @@ import type { Sql } from "../db.ts";
 import { outboundFetch } from "../lib/outboundFetch.ts";
 import { openToken, parseTokenKeyring } from "../secrets.ts";
 import { GOOGLE_API, GOOGLE_TOKEN_URL, type GoogleAccount } from "./types.ts";
-import { logSync, markReconnect, saveAccessToken } from "./owned.ts";
+import { calendarAccountAad, logSync, markReconnect, saveAccessToken } from "./owned.ts";
+
+function accessStillValid(expiresAtIso: string | null): boolean {
+  if (!expiresAtIso) return false;
+  return new Date(expiresAtIso).getTime() > Date.now() + 60_000;
+}
+
+async function unsealAccessToken(env: Env, account: GoogleAccount): Promise<string | null> {
+  if (!account.access_token_enc || !account.access_token_iv || account.key_version == null) {
+    return null;
+  }
+  const ring = await parseTokenKeyring(env);
+  return openToken(
+    {
+      ciphertext: account.access_token_enc,
+      iv: account.access_token_iv,
+      keyVersion: account.key_version,
+    },
+    calendarAccountAad(account),
+    ring,
+  );
+}
 
 export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount): Promise<string> {
-  const expiresAt = account.access_token_expires_at
-    ? new Date(account.access_token_expires_at).getTime()
-    : 0;
-  if (account.access_token && expiresAt > Date.now() + 60_000) return account.access_token;
+  if (account.access_token && accessStillValid(account.access_token_expires_at)) {
+    return account.access_token;
+  }
+
+  if (accessStillValid(account.access_token_expires_at)) {
+    try {
+      const opened = await unsealAccessToken(env, account);
+      if (opened) {
+        account.access_token = opened;
+        return opened;
+      }
+    } catch {
+      // Fall through to refresh. AAD/key mismatch is not a client-facing leak.
+    }
+  }
 
   if (!account.refresh_token_enc || !account.refresh_token_iv || account.key_version == null) {
     await markReconnect(sql, account.id, account.user_id);
@@ -24,11 +56,7 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
       iv: account.refresh_token_iv,
       keyVersion: account.key_version,
     },
-    {
-      table: "calendar_accounts",
-      rowId: account.id,
-      userId: account.user_id,
-    },
+    calendarAccountAad(account),
     ring,
   );
 
@@ -51,7 +79,7 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
   const accessToken = tok.access_token;
   if (!accessToken) throw new Error("google token refresh failed");
   const expires = new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString();
-  await saveAccessToken(sql, account, accessToken, expires);
+  await saveAccessToken(sql, env, account, accessToken, expires);
   return accessToken;
 }
 

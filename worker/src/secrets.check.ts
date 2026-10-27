@@ -12,8 +12,9 @@ import {
   TOKEN_KEY_VERSION_V1,
   TOKEN_KEY_VERSION_V2,
 } from "./secrets.ts";
-import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch } from "./cronJobs.ts";
+import { jobsForSchedule, canonicalCronJob, consumeCalendarSyncBatch, cutoverFlipped, skipUnlessCutoverFlipped } from "./cronJobs.ts";
 import { writeFrozen } from "./maintenance.ts";
+import { redactSecrets } from "./lib/redact.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -63,6 +64,22 @@ try {
   ok(true, "open rejects moved user AAD");
 }
 
+const tamperedCipher = new Uint8Array(sealed.ciphertext);
+tamperedCipher[0] ^= 0xff;
+try {
+  await openToken({ ...sealed, ciphertext: tamperedCipher }, aad, ringV1);
+  ok(false, "open rejects tampered ciphertext");
+} catch {
+  ok(true, "open rejects tampered ciphertext");
+}
+
+try {
+  await openToken(sealed, { ...aad, table: "activity_sources" }, ringV1);
+  ok(false, "open rejects tampered AAD table");
+} catch {
+  ok(true, "open rejects tampered AAD table");
+}
+
 const ringWrong = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: keyHex2 });
 try {
   await openToken(sealed, aad, ringWrong);
@@ -91,11 +108,28 @@ try {
 }
 ok(tokenAadBytes(aad)[0] === 0 && tokenAadBytes(aad)[1] === "calendar_accounts".length, "AAD bytes are length-prefixed");
 
+ok(redactSecrets("Bearer ya29.abc-token 1//refresh-xyz") === "Bearer [redacted] [redacted]", "redactSecrets strips bearer and google tokens");
+ok(redactSecrets("access_token=ya29.leak refresh_token=1//leak").includes("[redacted]"), "redactSecrets strips token query pairs");
+ok(!redactSecrets("boom ya29.secret-value").includes("ya29."), "redactSecrets drops ya29 material");
+
 ok(writeFrozen("1"), "writeFrozen 1");
 ok(writeFrozen("true"), "writeFrozen true");
 ok(writeFrozen("YES"), "writeFrozen YES");
+ok(writeFrozen("maybe"), "writeFrozen maybe is frozen (fail-closed)");
+ok(writeFrozen("typo"), "writeFrozen typo is frozen");
 ok(!writeFrozen(""), "writeFrozen empty is off");
 ok(!writeFrozen(undefined), "writeFrozen unset is off");
+ok(!writeFrozen("0"), "writeFrozen 0 is off");
+ok(!writeFrozen("false"), "writeFrozen false is off");
+ok(!writeFrozen("no"), "writeFrozen no is off");
+ok(!writeFrozen("off"), "writeFrozen off is off");
+
+ok(!cutoverFlipped(undefined) && !cutoverFlipped("") && !cutoverFlipped("maybe"), "CUTOVER_FLIPPED unset/unknown is not flipped");
+ok(!cutoverFlipped("0") && !cutoverFlipped("false") && !cutoverFlipped("off"), "CUTOVER_FLIPPED explicit off is not flipped");
+ok(cutoverFlipped("1") && cutoverFlipped("true") && cutoverFlipped("YES") && cutoverFlipped("On"), "CUTOVER_FLIPPED 1/true/yes/on is flipped");
+ok(skipUnlessCutoverFlipped("google-renew", {}).skipped === true, "skipUnlessCutoverFlipped skips when unset");
+ok(skipUnlessCutoverFlipped("calendar-dispatch", { CUTOVER_FLIPPED: "maybe" })?.skipped === true, "skipUnlessCutoverFlipped skips unknown");
+ok(skipUnlessCutoverFlipped("google-resubscribe", { CUTOVER_FLIPPED: "1" }) === null, "skipUnlessCutoverFlipped is null after flip");
 
 ok(canonicalCronJob("nuvo-calendar-dispatch") === "calendar-dispatch", "cron alias calendar-dispatch");
 ok(canonicalCronJob("nuvo-rollover-pdt") === "rollover", "cron alias rollover");
@@ -183,6 +217,9 @@ ok(/CREATE TABLE IF NOT EXISTS public\.push_subscriptions/.test(neon), "neon.sql
 ok(/CREATE TABLE IF NOT EXISTS public\.activity_sources/.test(neon), "neon.sql has activity_sources");
 ok(/CREATE TABLE IF NOT EXISTS public\.apple_identities/.test(neon), "neon.sql has apple_identities");
 ok(/refresh_token_enc BYTEA/.test(neon), "neon.sql has encrypted token columns");
+ok(/access_token_enc BYTEA/.test(neon), "neon.sql has sealed access_token columns");
+ok(/contacts_directory ADD COLUMN IF NOT EXISTS account_id/.test(neon), "neon.sql has contacts_directory.account_id");
+ok(/owner-scoped SQL/.test(neon) && /Postgres RLS/.test(neon), "neon.sql documents owner-scoped SQL, not RLS");
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

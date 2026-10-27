@@ -4,6 +4,7 @@ import { jsonParam } from "../db.ts";
 import { outboundFetch } from "../lib/outboundFetch.ts";
 import { signState, verifyState } from "../lib/oauthState.ts";
 import { parseTokenKeyring, sealToken } from "../secrets.ts";
+import { logServerError } from "../lib/redact.ts";
 import {
   MIRROR_CALENDAR_DESCRIPTION,
   MIRROR_CALENDAR_NAME,
@@ -68,7 +69,10 @@ export async function handleGoogleOauthCallback(
     refresh_token?: string;
     expires_in?: number;
   };
-  if (!tok.access_token) throw new Error("token exchange failed");
+  if (!tok.access_token) {
+    logServerError("google-oauth", "token exchange missing access_token");
+    throw new Error("token exchange failed");
+  }
 
   const meRes = await outboundFetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${tok.access_token}` },
@@ -86,20 +90,19 @@ export async function handleGoogleOauthCallback(
   `;
   const accountId = (existing[0] as { id?: string } | undefined)?.id ?? crypto.randomUUID();
 
+  const ring = await parseTokenKeyring(env);
+  const aad = { table: "calendar_accounts" as const, rowId: accountId, userId };
   let enc: Uint8Array | null = null;
   let iv: Uint8Array | null = null;
   let keyVersion: number | null = null;
   if (tok.refresh_token) {
-    const ring = await parseTokenKeyring(env);
-    const sealed = await sealToken(tok.refresh_token, {
-      table: "calendar_accounts",
-      rowId: accountId,
-      userId,
-    }, ring);
+    const sealed = await sealToken(tok.refresh_token, aad, ring);
     enc = sealed.ciphertext;
     iv = sealed.iv;
     keyVersion = sealed.keyVersion;
   }
+  const accessSealed = await sealToken(tok.access_token, aad, ring, keyVersion ?? undefined);
+  keyVersion = accessSealed.keyVersion;
 
   const calRes = await outboundFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
     headers: { Authorization: `Bearer ${tok.access_token}` },
@@ -125,6 +128,8 @@ export async function handleGoogleOauthCallback(
       refresh_token_iv: iv,
       key_version: keyVersion,
       access_token: tok.access_token,
+      access_token_enc: accessSealed.ciphertext,
+      access_token_iv: accessSealed.iv,
       access_token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),
       calendars: [],
       mirror_calendar_id: null,
@@ -154,46 +159,29 @@ export async function handleGoogleOauthCallback(
     }));
 
   const expires = new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString();
-  if (enc && iv) {
-    await sql`
-      INSERT INTO calendar_accounts (
-        id, user_id, provider, email, access_token, access_token_expires_at,
-        sync_direction, calendars, mirror_calendar_id, needs_reconnect,
-        refresh_token_enc, refresh_token_iv, key_version
-      ) VALUES (
-        ${accountId}, ${userId}, 'google', ${email}, ${tok.access_token}, ${expires},
-        'two_way', ${jsonParam(sql, calendars)}, ${mirror?.id ?? null}, false,
-        ${enc}, ${iv}, ${keyVersion}
-      )
-      ON CONFLICT (user_id, provider, email) DO UPDATE SET
-        access_token = EXCLUDED.access_token,
-        access_token_expires_at = EXCLUDED.access_token_expires_at,
-        calendars = EXCLUDED.calendars,
-        mirror_calendar_id = EXCLUDED.mirror_calendar_id,
-        needs_reconnect = false,
-        refresh_token_enc = EXCLUDED.refresh_token_enc,
-        refresh_token_iv = EXCLUDED.refresh_token_iv,
-        key_version = EXCLUDED.key_version,
-        updated_at = now()
-    `;
-  } else {
-    await sql`
-      INSERT INTO calendar_accounts (
-        id, user_id, provider, email, access_token, access_token_expires_at,
-        sync_direction, calendars, mirror_calendar_id, needs_reconnect
-      ) VALUES (
-        ${accountId}, ${userId}, 'google', ${email}, ${tok.access_token}, ${expires},
-        'two_way', ${jsonParam(sql, calendars)}, ${mirror?.id ?? null}, false
-      )
-      ON CONFLICT (user_id, provider, email) DO UPDATE SET
-        access_token = EXCLUDED.access_token,
-        access_token_expires_at = EXCLUDED.access_token_expires_at,
-        calendars = EXCLUDED.calendars,
-        mirror_calendar_id = EXCLUDED.mirror_calendar_id,
-        needs_reconnect = false,
-        updated_at = now()
-    `;
-  }
+  await sql`
+    INSERT INTO calendar_accounts (
+      id, user_id, provider, email, access_token, access_token_enc, access_token_iv,
+      access_token_expires_at, sync_direction, calendars, mirror_calendar_id, needs_reconnect,
+      refresh_token_enc, refresh_token_iv, key_version
+    ) VALUES (
+      ${accountId}, ${userId}, 'google', ${email}, ${null}, ${accessSealed.ciphertext}, ${accessSealed.iv},
+      ${expires}, 'two_way', ${jsonParam(sql, calendars)}, ${mirror?.id ?? null}, false,
+      ${enc}, ${iv}, ${keyVersion}
+    )
+    ON CONFLICT (user_id, provider, email) DO UPDATE SET
+      access_token = NULL,
+      access_token_enc = EXCLUDED.access_token_enc,
+      access_token_iv = EXCLUDED.access_token_iv,
+      access_token_expires_at = EXCLUDED.access_token_expires_at,
+      calendars = EXCLUDED.calendars,
+      mirror_calendar_id = EXCLUDED.mirror_calendar_id,
+      needs_reconnect = false,
+      refresh_token_enc = COALESCE(EXCLUDED.refresh_token_enc, calendar_accounts.refresh_token_enc),
+      refresh_token_iv = COALESCE(EXCLUDED.refresh_token_iv, calendar_accounts.refresh_token_iv),
+      key_version = COALESCE(EXCLUDED.key_version, calendar_accounts.key_version),
+      updated_at = now()
+  `
 
   await logSync(sql, "google", "oauth-connect", "ok", undefined, userId);
   await runGoogleSync(sql, env, { mode: "full", accountId, userId, reqUrl }).catch(() => undefined);

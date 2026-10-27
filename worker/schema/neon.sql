@@ -358,6 +358,8 @@ CREATE TABLE IF NOT EXISTS public.calendar_accounts (
   refresh_token_iv BYTEA,
   key_version SMALLINT,
   access_token TEXT,
+  access_token_enc BYTEA,
+  access_token_iv BYTEA,
   access_token_expires_at TIMESTAMPTZ,
   sync_direction TEXT NOT NULL DEFAULT 'read_only',
   calendars JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -374,6 +376,10 @@ CREATE TABLE IF NOT EXISTS public.calendar_accounts (
   UNIQUE (user_id, provider, email)
 );
 
+-- Isolation is owner-scoped SQL in the Worker (`user_id = session`), not
+-- Postgres RLS. The Worker uses a privileged connection; generic /api/data
+-- does not expose this table (token columns). prove-isolation-mutation
+-- deletes those WHERE clauses.
 CREATE INDEX IF NOT EXISTS calendar_accounts_user_idx ON public.calendar_accounts (user_id);
 CREATE INDEX IF NOT EXISTS calendar_accounts_due_idx
   ON public.calendar_accounts (next_sync_at)
@@ -411,6 +417,9 @@ ALTER TABLE public.external_events ADD COLUMN IF NOT EXISTS recurring_event_id T
 CREATE UNIQUE INDEX IF NOT EXISTS external_events_account_cal_event_uidx
   ON public.external_events (account_id, calendar_id, provider_event_id)
   WHERE account_id IS NOT NULL AND calendar_id IS NOT NULL AND provider_event_id IS NOT NULL;
+-- Non-partial twin so ON CONFLICT (account_id, calendar_id, provider_event_id) can infer a target.
+CREATE UNIQUE INDEX IF NOT EXISTS external_events_account_cal_event_conflict_uidx
+  ON public.external_events (account_id, calendar_id, provider_event_id);
 CREATE INDEX IF NOT EXISTS external_events_user_range_idx
   ON public.external_events (user_id, start_at, end_at);
 CREATE INDEX IF NOT EXISTS external_events_user_idx ON public.external_events (user_id, start_at);
@@ -520,6 +529,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS apple_identities_apple_user_id_uidx
 ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
 ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
 ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS key_version SMALLINT;
+ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS access_token_enc BYTEA;
+ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS access_token_iv BYTEA;
+ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES public.calendar_accounts (id) ON DELETE CASCADE;
+ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS display_name TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_directory_account_email_uidx
+  ON public.contacts_directory (account_id, email);
 ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
 ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
 ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS key_version SMALLINT;

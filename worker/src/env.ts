@@ -31,10 +31,16 @@ export interface Env {
   TOKEN_ENC_KEY_V2?: string;
   /** `1` (default) or `2`. Seal uses this version; open accepts any configured version. */
   TOKEN_ENC_CURRENT?: string;
-  /** `1` / `true` freezes Worker writes. The app reads GET /api/maintenance. */
+  /** Any non-empty value other than 0/false/no/off freezes Worker writes. Unset/empty is off. */
   MAINTENANCE_WRITE_FREEZE?: string;
-  /** `1` / `true` arms the copy window. The app fail-closes the freeze while armed. */
+  /** Same fail-closed parse as the write freeze. Arms the copy window. */
   CUTOVER_ARMED?: string;
+  /**
+   * Post-flip switch (shared with PRs D and E). Only 1/true/yes/on means
+   * flipped. Unset, empty, or any unknown value = not flipped — Worker
+   * Google crons no-op 200 `{ skipped: true }`.
+   */
+  CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
   GOOGLE_CLIENT_ID?: string;

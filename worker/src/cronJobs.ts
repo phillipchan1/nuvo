@@ -47,10 +47,26 @@ export interface CronResult {
   job: string;
   status: number;
   stay_on_supabase: boolean;
+  skipped?: boolean;
   enqueued?: number;
   rolled?: number;
   deleted?: number;
 }
+
+/** Explicit on only. Unset / empty / unknown = not flipped (Supabase still owns the job). */
+const FLIPPED_ON = new Set(["1", "true", "yes", "on"]);
+
+export function cutoverFlipped(value: string | undefined | null): boolean {
+  return FLIPPED_ON.has((value ?? "").trim().toLowerCase());
+}
+
+/** Shared by Google (this PR) and later D/E crons. 200 + skipped when the flip is off. */
+export function skipUnlessCutoverFlipped(job: string, env: Pick<Env, "CUTOVER_FLIPPED">): CronResult | null {
+  if (cutoverFlipped(env.CUTOVER_FLIPPED)) return null;
+  return { job, status: 200, stay_on_supabase: true, skipped: true };
+}
+
+const GOOGLE_FLIP_CRONS = new Set(["calendar-dispatch", "google-renew", "google-resubscribe"]);
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
 export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
@@ -190,6 +206,10 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
 
 export async function runCronJob(job: string, env: Env, sql: Sql | null): Promise<CronResult> {
   const name = canonicalCronJob(job);
+  if (GOOGLE_FLIP_CRONS.has(name)) {
+    const skip = skipUnlessCutoverFlipped(name, env);
+    if (skip) return skip;
+  }
   if (name === "calendar-dispatch") {
     if (!sql) return blocked(name);
     if (env.CALENDAR_SYNC_QUEUE) {
@@ -243,6 +263,13 @@ export async function consumeCalendarSyncBatch(
 ): Promise<number> {
   let n = 0;
   let sql: Sql | null = null;
+  if (!cutoverFlipped(env.CUTOVER_FLIPPED)) {
+    for (const msg of batch.messages) {
+      n += 1;
+      msg.ack();
+    }
+    return n;
+  }
   try {
     for (const msg of batch.messages) {
       n += 1;
@@ -284,6 +311,11 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   }
   const job = jobName ?? c.req.param("job") ?? "";
   const name = canonicalCronJob(job);
+
+  if (GOOGLE_FLIP_CRONS.has(name)) {
+    const skip = skipUnlessCutoverFlipped(name, c.env);
+    if (skip) return json({ ok: true, ...skip }, 200, OPEN_CORS);
+  }
 
   if (name === "calendar-dispatch") {
     const io = await requestIo(c);

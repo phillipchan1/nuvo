@@ -5,7 +5,9 @@
  */
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
-import type { CalendarEntry, GoogleAccount } from "./types.ts";
+import type { Env } from "../env.ts";
+import { parseTokenKeyring, sealToken } from "../secrets.ts";
+import type { CalendarEntry, GoogleAccount, GoogleAccountStatus, GoogleEventListItem } from "./types.ts";
 
 /** postgres.js / PGlite may return BYTEA as Uint8Array, Buffer, or \\x hex. */
 function bytesFromUnknown(value: unknown): Uint8Array | null {
@@ -57,7 +59,9 @@ function mapAccount(row: Record<string, unknown>): GoogleAccount {
     refresh_token_enc: bytesFromUnknown(row.refresh_token_enc),
     refresh_token_iv: bytesFromUnknown(row.refresh_token_iv),
     key_version: row.key_version == null ? null : Number(row.key_version),
-    access_token: (row.access_token as string | null) ?? null,
+    access_token: null,
+    access_token_enc: bytesFromUnknown(row.access_token_enc),
+    access_token_iv: bytesFromUnknown(row.access_token_iv),
     access_token_expires_at: row.access_token_expires_at
       ? new Date(row.access_token_expires_at as string | Date).toISOString()
       : null,
@@ -68,6 +72,25 @@ function mapAccount(row: Record<string, unknown>): GoogleAccount {
       : null,
     needs_reconnect: Boolean(row.needs_reconnect),
   };
+}
+
+export function publicGoogleAccount(account: GoogleAccount): GoogleAccountStatus {
+  return {
+    id: account.id,
+    email: account.email,
+    needs_reconnect: account.needs_reconnect,
+    webhook_expires_at: account.webhook_expires_at,
+    calendars: account.calendars.map((c) => ({
+      id: c.id,
+      summary: c.summary,
+      visible: c.visible,
+      last_synced_at: c.last_synced_at ?? null,
+    })),
+  };
+}
+
+export function calendarAccountAad(account: { id: string; user_id: string }) {
+  return { table: "calendar_accounts" as const, rowId: account.id, userId: account.user_id };
 }
 
 export async function getOwnedGoogleAccount(
@@ -148,22 +171,58 @@ export async function markReconnect(sql: Sql, accountId: string, userId: string)
 
 export async function saveAccessToken(
   sql: Sql,
+  env: Env,
   account: GoogleAccount,
   accessToken: string,
   expiresAt: string,
 ): Promise<void> {
+  const ring = await parseTokenKeyring(env);
+  const sealed = await sealToken(
+    accessToken,
+    calendarAccountAad(account),
+    ring,
+    account.key_version ?? undefined,
+  );
   await sql`
     UPDATE calendar_accounts
-    SET access_token = ${accessToken},
+    SET access_token = NULL,
+        access_token_enc = ${sealed.ciphertext},
+        access_token_iv = ${sealed.iv},
         access_token_expires_at = ${expiresAt},
+        key_version = ${sealed.keyVersion},
         needs_reconnect = false,
         updated_at = now()
     WHERE id = ${account.id}
       AND user_id = ${account.user_id}
   `;
   account.access_token = accessToken;
+  account.access_token_enc = sealed.ciphertext;
+  account.access_token_iv = sealed.iv;
   account.access_token_expires_at = expiresAt;
+  account.key_version = sealed.keyVersion;
   account.needs_reconnect = false;
+}
+
+export async function listOwnedGoogleEvents(store: CalendarStore): Promise<GoogleEventListItem[]> {
+  const sql = store.sql;
+  const rows = await sql`
+    SELECT e.id, e.title, e.start_at, e.end_at, e.calendar_id
+    FROM external_events e
+    JOIN calendar_accounts a ON a.id = e.account_id AND a.user_id = e.user_id
+    WHERE e.user_id = ${store.userId}
+      AND a.provider = 'google'
+    ORDER BY e.start_at NULLS LAST, e.id
+  `;
+  return rows.map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      id: String(r.id),
+      title: String(r.title ?? "(no title)"),
+      start_at: r.start_at ? new Date(r.start_at as string | Date).toISOString() : null,
+      end_at: r.end_at ? new Date(r.end_at as string | Date).toISOString() : null,
+      calendar_id: r.calendar_id == null ? null : String(r.calendar_id),
+    };
+  });
 }
 
 export async function logSync(

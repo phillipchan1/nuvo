@@ -1,4 +1,5 @@
 import type { Env } from "../env.ts";
+import { logServerError } from "../lib/redact.ts";
 import { listOwnedGoogleAccounts, makeCalendarStore } from "./owned.ts";
 import { runGoogleContacts } from "./contacts.ts";
 import { runGoogleSync } from "./sync.ts";
@@ -25,7 +26,8 @@ export async function runCalendarRefreshGoogle(
       });
       synced++;
     } catch (e) {
-      errors.push(`google: ${e instanceof Error ? e.message : "sync failed"}`);
+      logServerError("calendar-refresh", e);
+      errors.push("google: sync failed");
     }
     await runGoogleContacts(sql, env, { accountId: account.id, userId }).catch(() => undefined);
   }

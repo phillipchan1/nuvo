@@ -17,13 +17,37 @@ export interface GoogleAccount {
   refresh_token_enc: Uint8Array | null;
   refresh_token_iv: Uint8Array | null;
   key_version: number | null;
+  /** In-memory only after unseal. Never mapped from the plaintext column. */
   access_token: string | null;
+  access_token_enc: Uint8Array | null;
+  access_token_iv: Uint8Array | null;
   access_token_expires_at: string | null;
   calendars: CalendarEntry[];
   mirror_calendar_id: string | null;
   webhook_expires_at: string | null;
   needs_reconnect: boolean;
 }
+
+export type GoogleAccountStatus = {
+  id: string;
+  email: string;
+  needs_reconnect: boolean;
+  webhook_expires_at: string | null;
+  calendars: Array<{
+    id: string;
+    summary: string;
+    visible: boolean;
+    last_synced_at: string | null;
+  }>;
+};
+
+export type GoogleEventListItem = {
+  id: string;
+  title: string;
+  start_at: string | null;
+  end_at: string | null;
+  calendar_id: string | null;
+};
 
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GOOGLE_API = "https://www.googleapis.com/calendar/v3";

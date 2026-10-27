@@ -1,5 +1,6 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
+import { logServerError, redactSecrets } from "../lib/redact.ts";
 import { PEOPLE_API, type GoogleAccount } from "./types.ts";
 import { listGoogleAccountIds, loadGoogleAccountById, logSync } from "./owned.ts";
 import { gFetch } from "./tokens.ts";
@@ -91,9 +92,10 @@ export async function runGoogleContacts(
     try {
       total += await syncAccount(sql, env, account);
     } catch (e) {
+      logServerError("google-contacts", e);
       const msg = e instanceof Error ? e.message : String(e);
-      failures.push(`${account.email}: ${msg}`);
-      await logSync(sql, "google", "contacts", "error", msg, account.user_id);
+      failures.push("sync_failed");
+      await logSync(sql, "google", "contacts", "error", redactSecrets(msg), account.user_id);
     }
   }
   if (!failures.length) await logSync(sql, "google", "contacts", "ok");

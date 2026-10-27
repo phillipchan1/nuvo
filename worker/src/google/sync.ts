@@ -1,5 +1,6 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
+import { redactSecrets } from "../lib/redact.ts";
 import {
   SYNC_WINDOW_FUTURE_DAYS,
   SYNC_WINDOW_PAST_DAYS,
@@ -165,14 +166,14 @@ async function syncCalendar(
   cal.last_synced_at = new Date().toISOString();
 }
 
-/** Create or renew the push channel. `force` re-watches even when unexpired (cutover flip). */
+/** Create or renew the push channel. Returns false when watch fails (caller polls). */
 export async function watchCalendar(
   sql: Sql,
   env: Env,
   account: GoogleAccount,
   cal: CalendarEntry,
   reqUrl?: string,
-): Promise<void> {
+): Promise<boolean> {
   if (cal.channel_id && cal.resource_id) {
     await gFetch(sql, env, account, "/channels/stop", {
       method: "POST",
@@ -195,12 +196,13 @@ export async function watchCalendar(
     cal.channel_id = null;
     cal.resource_id = null;
     cal.channel_expires_at = null;
-    return;
+    return false;
   }
   const body = (await res.json()) as { resourceId?: string; expiration?: string | number };
   cal.channel_id = channelId;
   cal.resource_id = body.resourceId ?? null;
   cal.channel_expires_at = body.expiration ? new Date(Number(body.expiration)).toISOString() : null;
+  return true;
 }
 
 async function runOneAccount(
@@ -244,7 +246,8 @@ async function runOneAccount(
       for (const cal of visible) {
         const exp = cal.channel_expires_at ? new Date(cal.channel_expires_at).getTime() : 0;
         if (exp < Date.now() + CHANNEL_RENEW_AHEAD_MS) {
-          await watchCalendar(sql, env, account, cal, reqUrl);
+          const watched = await watchCalendar(sql, env, account, cal, reqUrl);
+          if (!watched) await syncCalendar(sql, env, account, cal);
           touched = true;
         }
       }
@@ -253,8 +256,23 @@ async function runOneAccount(
     } else if (mode === "resubscribe") {
       // Cutover flip: re-watch every visible calendar onto the Worker webhook.
       // Watch setup can fail (unverified domain); poll fallback still covers them.
+      // Persist the cleared channel even if poll throws so we do not keep a dead watch.
       for (const cal of visible) {
-        await watchCalendar(sql, env, account, cal, reqUrl);
+        const watched = await watchCalendar(sql, env, account, cal, reqUrl);
+        if (!watched) {
+          try {
+            await syncCalendar(sql, env, account, cal);
+          } catch (e) {
+            await logSync(
+              sql,
+              "google",
+              "watch-poll-fallback",
+              "error",
+              redactSecrets(e instanceof Error ? e.message : String(e)),
+              account.user_id,
+            );
+          }
+        }
       }
       await saveCalendars(sql, account);
       await logSync(sql, "google", "resubscribe-channels", "ok", undefined, account.user_id);
@@ -271,7 +289,7 @@ async function runOneAccount(
       "google",
       `sync-${mode}`,
       "error",
-      e instanceof Error ? e.message : String(e),
+      redactSecrets(e instanceof Error ? e.message : String(e)),
       account.user_id,
     );
     throw e;
