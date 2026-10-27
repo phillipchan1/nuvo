@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
+import { sealAccountTokenFields } from "./lib/accountTokens.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
 export type AuthInstance = ReturnType<typeof createAuth>;
@@ -47,7 +48,9 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
 function appleSocialProvider(env: Env) {
   const clientId = (env.APPLE_CLIENT_ID ?? env.APPLE_SIWA_CLIENT_ID ?? env.APPLE_BUNDLE_ID)?.trim();
   const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return undefined;
+  // Fail closed: without TOKEN_ENC_KEY_V1 the Apple provider would persist
+  // tokens and we refuse to wire the route that writes them.
+  if (!clientId || !clientSecret || !(env.TOKEN_ENC_KEY_V1 ?? "").trim()) return undefined;
   const bundle = env.APPLE_BUNDLE_ID?.trim();
   return {
     clientId,
@@ -66,6 +69,26 @@ export function createAuth(env: Env, database: AuthDatabase) {
     baseURL,
     basePath: "/api/auth",
     database,
+    account: {
+      // 1.7.13 stores OAuth tokens in plaintext unless this is set.
+      encryptOAuthTokens: true,
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => {
+            const sealed = await sealAccountTokenFields(env, account);
+            return { data: { ...account, ...sealed } };
+          },
+        },
+        update: {
+          before: async (account) => {
+            const sealed = await sealAccountTokenFields(env, account);
+            return { data: { ...account, ...sealed } };
+          },
+        },
+      },
+    },
     ...(apple ? { socialProviders: { apple } } : {}),
     // Password stays for App Review / already-verified accounts. Sign-up
     // must not auto-sign-in: an unverified email+password account would

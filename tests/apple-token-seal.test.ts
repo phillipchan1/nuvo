@@ -92,7 +92,9 @@ describe("Apple refresh token is never stored in plaintext", () => {
     expect(apple).not.toMatch(/linkOwnedAppleAccount\([^;]*refreshToken/);
     expect(secrets).toContain("TOKEN_ENC_KEY_V1 missing");
     const start = store.indexOf("export async function linkOwnedAppleAccount");
-    const end = store.indexOf("export async function ownedAppleRefreshToken");
+    const end = store.indexOf("export type OwnedAppleAccountToken");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
     expect(store.slice(start, end)).not.toMatch(/refreshToken/);
   });
 });

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  EntitlementUnavailableError,
   entitlementOf,
   entitlementResponseBody,
   fetchSubscriptionByUserId,
@@ -117,6 +118,25 @@ const rejected = await fetchSubscriptionByUserId(
   wrongUserFetch,
 );
 ok(rejected === null, "a row for a different user_id is dropped (no cross-user leak)");
+
+for (const status of [404, 406] as const) {
+  try {
+    await fetchSubscriptionByUserId(
+      { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
+      A,
+      async () => new Response("nope", { status }),
+    );
+    ok(false, `fetch ${status}: must fail closed`);
+  } catch (err) {
+    ok(err instanceof EntitlementUnavailableError, `fetch ${status}: fail closed, not empty row`);
+  }
+}
+const emptyOk = await fetchSubscriptionByUserId(
+  { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
+  A,
+  async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+);
+ok(emptyOk === null, "fetch 200 + [] is the documented empty result");
 
 const body = entitlementResponseBody(entitlementOf(stripeActive, A, now));
 ok(body.entitled === true && body.plan === "active", "response body carries the tier");

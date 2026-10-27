@@ -117,7 +117,7 @@ export async function persistAppleProfileAndToken(
 
   await writeAppleProfile(store, user, profile, sealed);
   const revocable = Boolean(sealed) || Boolean(
-    profile.apple_user_id && (await ownedAppleRefreshToken(store.sql, user.id, profile.apple_user_id)),
+    profile.apple_user_id && (await ownedAppleRefreshToken(store.sql, env, user.id, profile.apple_user_id)),
   );
   return json({ ok: true, revocable }, 200, OPEN_CORS);
 }
@@ -148,7 +148,7 @@ export async function loadOwnedAppleRefreshToken(
   authUserId: string,
   env: Env,
 ): Promise<string | null> {
-  const fromAccount = await ownedAppleRefreshToken(store.sql, authUserId);
+  const fromAccount = await ownedAppleRefreshToken(store.sql, env, authUserId);
   if (fromAccount) return fromAccount;
   const row = await getOwnedAppleIdentity(store);
   if (!row?.refresh_token_enc || !row.refresh_token_iv) return null;

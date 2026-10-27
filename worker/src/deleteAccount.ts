@@ -2,10 +2,10 @@
  * Wipe the caller's Nuvo account on Neon + Better Auth.
  *
  * Body: `{ confirm: "DELETE" }`. Owner is the verified session — a client
- * `user_id` is ignored. While a Stripe subscription is still active (read
- * from Supabase `subscriptions`, never via the Stripe API) the wipe is
- * refused while that Stripe subscription would still bill (active, trialing,
- * past_due, unpaid, incomplete). Apple revoke is best-effort (guideline 5.1.1(v)).
+ * `user_id` is ignored. Billing is read by the session user.id (entitlement
+ * contract). A Stripe row that is active, past_due, or unrecognized blocks
+ * the wipe. StoreKit / no-card trials do not. Apple users never see a
+ * Stripe message. Wipe is one transaction.
  */
 import {
   isAccountDeleteConfirm,
@@ -20,7 +20,7 @@ import {
   stripeSubscriptionBlocksDelete,
 } from "./lib/billingRead.ts";
 import { loadOwnedAppleRefreshToken, type SessionUser } from "./appleIdentity.ts";
-import { wipeBetterAuthUser, wipePlannerUser, type Store } from "./store.ts";
+import { wipeOwnedAccount, type Store } from "./store.ts";
 
 export async function deleteOwnedAccount(
   store: Store,
@@ -37,7 +37,7 @@ export async function deleteOwnedAccount(
 
   let billing;
   try {
-    billing = await readBillingSubscription(env, store.userId);
+    billing = await readBillingSubscription(env, user.id);
   } catch (err) {
     if (err instanceof BillingLookupError) {
       return json({ error: "Could not verify billing status. Try again." }, 502, OPEN_CORS);
@@ -65,8 +65,10 @@ export async function deleteOwnedAccount(
     }
   }
 
-  const planner = await wipePlannerUser(store);
-  const auth = await wipeBetterAuthUser(store.sql, user.id);
+  const { planner, auth } = await wipeOwnedAccount(store.sql, {
+    plannerUserId: store.userId,
+    authUserId: user.id,
+  });
   if (planner === 0 && auth === 0) {
     return json({ error: "not found" }, 404, OPEN_CORS);
   }

@@ -1,12 +1,11 @@
 /**
  * Delete-account Stripe gate. Billing I/O is `readEntitlement` — never a
  * Stripe secret, never the Stripe API, never a second PostgREST reader.
+ *
+ * Block only a Stripe row that would keep charging: `plan_source = stripe`
+ * and status `active` / `past_due` / unrecognized (fail closed).
+ * `subscriptions.status` CHECK allows trialing | active | past_due | cancelled.
  */
-import {
-  isEntitled,
-  stripeStatusToPlan,
-  type EntitlementRow,
-} from "../../../supabase/functions/_shared/planRules.ts";
 import {
   EntitlementUnavailableError,
   readEntitlement,
@@ -26,33 +25,30 @@ export type DeleteGateRow = {
 export const ACTIVE_STRIPE_DELETE_MESSAGE =
   "Cancel your Stripe subscription in Settings → Billing first, then delete your account.";
 
+/** Physical CHECK on public.subscriptions.status (00000000000041_billing.sql). */
+export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancelled"] as const;
+
 const STRIPE_ENDED = new Set(["cancelled", "canceled", "incomplete_expired"]);
-const STRIPE_STILL_BILLS = new Set(["active", "trialing", "past_due", "unpaid", "incomplete"]);
+const STRIPE_BLOCKS = new Set(["active", "past_due"]);
 
-function asEntitlementRow(row: DeleteGateRow): EntitlementRow {
-  return {
-    status: (row.status ?? row.plan ?? null) as EntitlementRow["status"],
-    trial_ends_at: row.trial_ends_at ?? null,
-  };
-}
-
-function statusKeepsBilling(row: DeleteGateRow): boolean {
-  if (isEntitled(asEntitlementRow(row))) return true;
-  const raw = (row.status ?? row.plan ?? "").trim();
-  if (!raw) return false;
-  const lower = raw.toLowerCase();
-  if (STRIPE_ENDED.has(lower)) return false;
-  if (STRIPE_STILL_BILLS.has(lower)) return true;
-  return stripeStatusToPlan(raw) !== "cancelled";
-}
-
-/** Refuse wipe while a subscription would still bill. */
+/** Refuse wipe only for a Stripe sub that is active, past_due, or unknown. */
 export function stripeSubscriptionBlocksDelete(
   row: DeleteGateRow | Entitlement | null | undefined,
 ): boolean {
   if (!row) return false;
   if ("present" in row && row.present === false) return false;
-  return statusKeepsBilling(row);
+  const asGate = row as DeleteGateRow & Partial<Entitlement>;
+  const source = (asGate.plan_source ?? asGate.planSource ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  if (source !== "stripe") return false;
+  const status = (row.status ?? row.plan ?? "").toString().trim().toLowerCase();
+  if (!status) return true;
+  if (STRIPE_ENDED.has(status)) return false;
+  if (STRIPE_BLOCKS.has(status)) return true;
+  if (status === "trialing") return false;
+  return true;
 }
 
 export class BillingLookupError extends Error {

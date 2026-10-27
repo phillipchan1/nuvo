@@ -5,6 +5,8 @@
  * each of those clauses.
  */
 import type { Sql } from "./db.ts";
+import { openAccountRefreshToken } from "./lib/accountTokens.ts";
+import type { Env } from "./env.ts";
 
 export const PLANNER_TABLES = [
   "tasks",
@@ -1788,40 +1790,63 @@ export async function linkOwnedAppleAccount(
   `;
 }
 
-export async function ownedAppleRefreshToken(
+export type OwnedAppleAccountToken = {
+  id: string;
+  userId: string;
+  refreshToken: string;
+};
+
+export async function ownedAppleAccountTokenRow(
   sql: Store["sql"],
   authUserId: string,
   appleUserId?: string,
-): Promise<string | null> {
+): Promise<OwnedAppleAccountToken | null> {
   const rows = appleUserId
     ? await sql`
-        SELECT "refreshToken" FROM account
+        SELECT id, "userId", "refreshToken" FROM account
         WHERE "userId" = ${authUserId}
           AND "providerId" = 'apple'
           AND "accountId" = ${appleUserId}
         LIMIT 1
       `
     : await sql`
-        SELECT "refreshToken" FROM account
+        SELECT id, "userId", "refreshToken" FROM account
         WHERE "userId" = ${authUserId}
           AND "providerId" = 'apple'
         LIMIT 1
       `;
-  const token = (rows[0] as { refreshToken?: string | null } | undefined)?.refreshToken;
-  return typeof token === "string" && token ? token : null;
+  const row = rows[0] as
+    | { id?: string; userId?: string; refreshToken?: string | null }
+    | undefined;
+  if (!row?.id || !row.userId || typeof row.refreshToken !== "string" || !row.refreshToken) {
+    return null;
+  }
+  return { id: row.id, userId: row.userId, refreshToken: row.refreshToken };
 }
 
-export async function wipePlannerUser(store: Store): Promise<number> {
-  const sql = store.sql;
-  const rows = await sql`
-    DELETE FROM users WHERE id = ${store.userId} RETURNING id
-  `;
-  return rows.length;
+export async function ownedAppleRefreshToken(
+  sql: Store["sql"],
+  env: Env,
+  authUserId: string,
+  appleUserId?: string,
+): Promise<string | null> {
+  const row = await ownedAppleAccountTokenRow(sql, authUserId, appleUserId);
+  if (!row) return null;
+  return openAccountRefreshToken(env, row.refreshToken, { id: row.id, userId: row.userId });
 }
 
-export async function wipeBetterAuthUser(sql: Store["sql"], authUserId: string): Promise<number> {
-  const rows = await sql`
-    DELETE FROM "user" WHERE id = ${authUserId} RETURNING id
-  `;
-  return rows.length;
+/** Planner `users` + Better Auth `"user"` (session, account cascade) in one txn. */
+export async function wipeOwnedAccount(
+  sql: Store["sql"],
+  ids: { plannerUserId: string; authUserId: string },
+): Promise<{ planner: number; auth: number }> {
+  return sql.begin(async (tx) => {
+    const planner = await tx`
+      DELETE FROM users WHERE id = ${ids.plannerUserId} RETURNING id
+    `;
+    const auth = await tx`
+      DELETE FROM "user" WHERE id = ${ids.authUserId} RETURNING id
+    `;
+    return { planner: planner.length, auth: auth.length };
+  });
 }
