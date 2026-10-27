@@ -144,6 +144,7 @@ const env = {
   CRON_SECRET: "access-http-cron-secret",
   ENVIRONMENT: "local",
   RESEND_WEBHOOK_SECRET: "whsec_dGVzdC1pbmJvdW5kLXN2aXgtc2VjcmV0",
+  CUTOVER_FLIPPED: "1",
 };
 
 const restore = installRequestIoForTests(() => {
