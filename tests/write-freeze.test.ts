@@ -68,6 +68,13 @@ describe("writeFreezeOn", () => {
       expect(writeFreezeOn(raw), String(raw)).toBe(false);
     }
   });
+
+  it("treats a present non-string as frozen without throwing", () => {
+    for (const raw of [1, true, false, 0, { toString: () => "1" }, ["1"]]) {
+      expect(() => writeFreezeOn(raw)).not.toThrow();
+      expect(writeFreezeOn(raw), String(raw)).toBe(true);
+    }
+  });
 });
 
 describe("readWriteFreezeFlag", () => {

@@ -6,10 +6,11 @@
  * Fail-closed: unset/empty is off; only an explicit 0/false/no/off stays
  * open. Any other non-empty value (including a typo) freezes. Same rule
  * as `writeFreezeOn` so the Worker and the edge functions agree.
+ * A present non-string also freezes (never throws).
  */
 import { writeFreezeOn } from "../../supabase/functions/_shared/writeFreeze.ts";
 
-export function writeFrozen(value: string | undefined | null): boolean {
+export function writeFrozen(value: unknown): boolean {
   return writeFreezeOn(value);
 }
 
