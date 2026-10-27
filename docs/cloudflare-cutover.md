@@ -85,14 +85,78 @@ also requires the confirm input exactly `CUTOVER nuvo`.
 | `TARGET_DATABASE_URL` | `mode=cutover` | Neon URI. Hyperdrive is later; this job talks to Neon directly |
 | `TOKEN_ENC_KEY_V1` | token copy (after restore) | Same AES-256-GCM key as the Worker. The job calls `migration_tmp.vault_tokens()` (applied by hand — never by this workflow), seals in-process, `UPDATE`s Neon. Counts only; no token files or artifacts |
 
-Set them for the run, then **delete them**:
+They live in the **`nuvo-cutover` GitHub Environment**, not at repo level
+(the job has `environment: nuvo-cutover`). Set them for the run, then
+**delete them**. Every secret the cleanup deletes has a restore source on the
+ops box. Paths only; never paste, echo, log, or commit a value.
+
+| Secret | Restore source (ops box) | Value |
+|---|---|---|
+| `SOURCE_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-migration-reader` | the `MIGRATION_READER_URL` line (migration_reader, session pooler) |
+| `SCRATCH_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon-scratch-url` | whole file (Neon direct URL, database `nuvo_dryrun_scratch`; must be empty before a dry run) |
+| `TARGET_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon.env` | the `NEON_DIRECT_URL` line (database `neondb`) |
+| `TOKEN_ENC_KEY_V1` | `/home/box/agent-data/secrets/nuvo-token-enc-key-v1` | whole file (64 hex chars, mode 0600). **Same file** the `nuvo` Worker secret was set from. Never regenerate it once tokens are sealed |
+
+Restore (values go file → stdin → `gh`; nothing hits stdout or shell history):
 
 ```bash
-gh secret delete SOURCE_DATABASE_URL
-gh secret delete SCRATCH_DATABASE_URL
-gh secret delete TARGET_DATABASE_URL
-gh secret delete TOKEN_ENC_KEY_V1
+S=/home/box/agent-data/secrets
+E="--env nuvo-cutover -R phillipchan1/nuvo"
+envval() { python3 -c 'import sys
+for l in open(sys.argv[1]):
+    k, _, v = l.strip().partition("=")
+    if k == sys.argv[2]: sys.stdout.write(v.strip().strip("\"\x27")); break
+else: sys.exit("missing " + sys.argv[2])' "$1" "$2"; }
+envval "$S/nuvo-migration-reader" MIGRATION_READER_URL | gh secret set SOURCE_DATABASE_URL $E
+gh secret set SCRATCH_DATABASE_URL $E < "$S/nuvo-neon-scratch-url"
+envval "$S/nuvo-neon.env" NEON_DIRECT_URL | gh secret set TARGET_DATABASE_URL $E
+gh secret set TOKEN_ENC_KEY_V1 $E < "$S/nuvo-token-enc-key-v1"
+gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.secrets[].name'   # names only
 ```
+
+Delete after the run, then verify the count is 0:
+
+```bash
+E="--env nuvo-cutover -R phillipchan1/nuvo"
+gh secret delete SOURCE_DATABASE_URL $E
+gh secret delete SCRATCH_DATABASE_URL $E
+gh secret delete TARGET_DATABASE_URL $E
+gh secret delete TOKEN_ENC_KEY_V1 $E
+gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.total_count'   # expect 0
+```
+
+`MAINTENANCE_URL` and `WRITE_FREEZE_PREFLIGHT_URL` are **variables**, not
+secrets, and `mode=dry-run` skips both preflights. They are not deleted by the
+cleanup. Set them only for `mode=cutover`.
+
+#### Go/no-go: Worker and copy job use the same `TOKEN_ENC_KEY_V1`
+
+A key mismatch is silent until the Worker tries to open a sealed token (Apple
+revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
+
+1. Set the Worker secret and the environment secret from the **same file**,
+   `/home/box/agent-data/secrets/nuvo-token-enc-key-v1`
+   (`wrangler secret put TOKEN_ENC_KEY_V1 --name nuvo < "$S/nuvo-token-enc-key-v1"`).
+   Record `sha256sum` of the file (the digest only, never the key) in the
+   run notes each time either side is set; the digests must match.
+2. After a dry run (or cutover) whose "Re-encrypt vault tokens in-runner" step
+   succeeded, open the sealed tokens with the box key file. Dry run: point
+   `DATABASE_URL` at the scratch database. Cutover: point it at Neon `neondb`.
+
+   ```bash
+   TOKEN_ENC_KEY_V1="$(cat "$S/nuvo-token-enc-key-v1")" \
+   DATABASE_URL="$(cat "$S/nuvo-neon-scratch-url")" \
+     node --experimental-strip-types worker/src/tokenDecrypt.check.ts
+   ```
+
+   It prints only `provider ok` / `provider fail`. **Go** = every provider
+   that has sealed rows prints `ok` and none prints `fail`. A skip (exit 0
+   with nothing opened) is **not** a go: it means the key or URL was unset,
+   or no tokens were sealed.
+3. Because the Worker secret cannot be read back, step 1's matching digest is
+   what ties the Worker to the key step 2 just proved. If the digests differ,
+   or anyone re-ran `wrangler secret put` from another source, re-set the
+   Worker from the box file before the flip.
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
 redacted before it is printed. The custom-format dump is verified on the
@@ -182,6 +246,53 @@ That apply also records leftover `migration_reader` `SELECT` on all 16
 After cutover is signed off and `SOURCE_DATABASE_URL` is deleted,
 revoke those leftovers, then drop (see the block in
 `migration_tmp.sql` next to this):
+
+Run the cleanup block **as the `postgres` role** (Supabase SQL editor or
+the Management API `database/query`, which both run as `postgres`). Not as any
+other Supabase admin role, not as `migration_reader`, and never from CI or
+`cutover-migrate.yml`. **First take a fresh snapshot** (catalog only, no row
+data) and keep it with the run notes, so the revoke can be checked against
+what was there at that moment rather than at first apply:
+
+```sql
+-- 1. migration_reader grants in auth (schema, table, column)
+SELECT 'schema' AS kind, n.nspname AS obj, '' AS col, e.privilege_type, pg_get_userbyid(e.grantor) AS grantor
+FROM pg_namespace n CROSS JOIN LATERAL aclexplode(n.nspacl) e
+JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND r.rolname = 'migration_reader'
+UNION ALL
+SELECT 'table', c.relname, '', e.privilege_type, pg_get_userbyid(e.grantor)
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL aclexplode(c.relacl) e JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND r.rolname = 'migration_reader'
+UNION ALL
+SELECT 'column', c.relname, a.attname, e.privilege_type, pg_get_userbyid(e.grantor)
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL aclexplode(a.attacl) e JOIN pg_roles r ON r.oid = e.grantee
+WHERE n.nspname = 'auth' AND a.attnum > 0 AND NOT a.attisdropped
+  AND r.rolname = 'migration_reader'
+ORDER BY 1, 2, 3, 4;
+
+-- 2. role membership both ways. Expected on prod (PG17): one row,
+--    role=migration_reader member=postgres admin_option=true (the creator
+--    grant), and no row where migration_reader is the member.
+SELECT pg_get_userbyid(m.roleid) AS role, pg_get_userbyid(m.member) AS member,
+       m.admin_option, m.inherit_option, m.set_option
+FROM pg_auth_members m
+WHERE m.roleid = 'migration_reader'::regrole OR m.member = 'migration_reader'::regrole;
+
+-- 3. what the cleanup will act on
+SELECT current_user;                       -- must be postgres
+SELECT objkind, privilege, count(*) FROM migration_tmp.auth_grants GROUP BY 1, 2;
+SELECT p.proname, p.proacl::text FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'migration_tmp';
+```
+
+Stop if `current_user` is not `postgres`, if the snapshot shows
+`migration_reader` grants in `auth` that are not in `migration_tmp.auth_grants`,
+or if the membership query shows anything beyond the expected creator grant
+(in particular, any row where `migration_reader` is the member). Re-run query 1 after the cleanup; it must return zero rows.
 
 ```sql
 -- Loop migration_tmp.auth_grants for migration_reader (see migration_tmp.sql).
