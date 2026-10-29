@@ -39,6 +39,7 @@ import { handleInboundEmail } from "./inboundHttp.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
 import { handleGithubActivity } from "./githubActivity.ts";
+import { handleRest, REST_CORS, REST_PREFIX } from "./rest.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
 import { registerCalendarRoutes } from "./calendar/http.ts";
@@ -415,6 +416,11 @@ app.post("/api/rpc/claim_reminder", async (c) => {
   const ok = await claimReminder(got.store, body.reminder_key, body.fire_at);
   return json({ data: ok }, ok ? 200 : 404, OPEN_CORS);
 });
+
+// The SPA's own supabase-js builder, re-pointed here when VITE_API_BASE_URL is
+// set (src/lib/supabase.ts). Owner-scoped PostgREST subset — see rest.ts.
+app.options(`${REST_PREFIX}/*`, () => new Response(null, { status: 204, headers: REST_CORS }));
+app.all(`${REST_PREFIX}/*`, (c) => handleRest(c));
 
 function refuseIfFrozen(c: Context<AppEnv>): Response | null {
   if (!writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) return null;

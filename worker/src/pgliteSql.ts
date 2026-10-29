@@ -61,11 +61,17 @@ export function makePgliteSql(db: PGlite): Sql {
     }
   }
 
+  async function unsafe(text: string, params: unknown[] = []) {
+    const result = await db.query(text, params);
+    return result.rows;
+  }
+
   Object.assign(query, {
     json(value: unknown) {
       return { [JSON_MARK]: true, value } satisfies JsonParam;
     },
     begin,
+    unsafe,
   });
   return query;
 }
