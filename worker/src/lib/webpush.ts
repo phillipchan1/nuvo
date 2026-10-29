@@ -2,7 +2,7 @@
  * Web Push — VAPID auth and aes128gcm payload encryption (RFC 8291 / 8292).
  *
  * Port of `supabase/functions/_shared/webpush.ts`. Secrets come from the
- * Worker env (same VAPID pair as today — a new pair breaks every sub).
+ * Worker env (a new VAPID pair, D-173 — clients re-subscribe on a key change).
  * `fetchImpl` is injectable so tests can mock the push endpoint.
  */
 

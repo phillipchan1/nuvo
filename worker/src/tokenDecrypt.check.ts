@@ -4,8 +4,8 @@
  *
  * Reads the key from TOKEN_ENC_KEY_V1_FILE (preferred) or TOKEN_ENC_KEY_V1.
  * Skips (exit 0) only when both the key and DATABASE_URL are unset — CI
- * does not have migrated tokens. A provider with rows and 0 tokens checked
- * is a no-go (exit 1).
+ * does not have migrated tokens. A provider that opens fewer tokens than it
+ * had Vault pointers at the source is a no-go (exit 1).
  *
  * Neon URLs use @neondatabase/serverless over HTTPS. TOKEN_DECRYPT_TCP=1
  * forces the TCP postgres.js driver.
@@ -49,14 +49,24 @@ export const SEALED_TOKENS_SQL = `
   ) t
 `;
 
-export const PROVIDERS_WITH_ROWS_SQL = `
-  SELECT provider FROM (
+/**
+ * How many sealed tokens each provider owes: one per row that carried a Vault
+ * token at the source. A row without a Vault pointer never had a token to seal
+ * (an Apple identity from ID-token-only sign-in, a Google account that never
+ * granted offline access), so it isn't counted.
+ */
+export const EXPECTED_TOKENS_SQL = `
+  SELECT provider, count(*)::int AS n FROM (
     SELECT provider::text AS provider FROM calendar_accounts
-    UNION
+    WHERE refresh_token_secret_id IS NOT NULL
+    UNION ALL
     SELECT kind::text FROM activity_sources
-    UNION
+    WHERE token_secret_id IS NOT NULL
+    UNION ALL
     SELECT 'apple'::text FROM apple_identities
+    WHERE refresh_token_secret_id IS NOT NULL
   ) p
+  GROUP BY provider
 `;
 
 export function usesNeonHttp(url: string, forceTcp = false): boolean {
@@ -106,10 +116,10 @@ export type TokenCheckResult = {
   checked: Record<string, number>;
 };
 
-/** Decrypt every sealed row. A provider with rows and 0 checks is a fail. */
+/** Decrypt every sealed row. A provider that opens fewer tokens than it owes is a fail. */
 export async function checkTokenRows(
   rows: TokenRow[],
-  providersWithRows: string[],
+  expected: Record<string, number>,
   ring: TokenKeyring,
 ): Promise<TokenCheckResult> {
   const checked: Record<string, number> = {};
@@ -138,7 +148,7 @@ export async function checkTokenRows(
     }
   }
 
-  const names = [...new Set([...providersWithRows, ...Object.keys(checked)])].sort();
+  const names = [...new Set([...Object.keys(expected), ...Object.keys(checked)])].sort();
   const lines: string[] = [];
   let failed = 0;
   if (names.length === 0) {
@@ -146,7 +156,7 @@ export async function checkTokenRows(
   }
   for (const name of names) {
     const n = checked[name] ?? 0;
-    if (n > 0 && !fails.has(name)) {
+    if (n > 0 && n >= (expected[name] ?? 0) && !fails.has(name)) {
       lines.push(`${name} ok`);
     } else {
       lines.push(`${name} fail`);
@@ -221,10 +231,14 @@ export async function runTokenDecryptCheck(
   const sql = await openSql(dbUrl, forceTcp);
   try {
     const rawRows = await sql.query(SEALED_TOKENS_SQL);
-    const rawProviders = await sql.query(PROVIDERS_WITH_ROWS_SQL);
+    const rawExpected = await sql.query(EXPECTED_TOKENS_SQL);
     const rows = rawRows.map(asTokenRow);
-    const providers = rawProviders.map((r) => String(r.provider ?? "")).filter(Boolean);
-    const result = await checkTokenRows(rows, providers, ring);
+    const expected: Record<string, number> = {};
+    for (const r of rawExpected) {
+      const provider = String(r.provider ?? "");
+      if (provider) expected[provider] = Number(r.n ?? 0);
+    }
+    const result = await checkTokenRows(rows, expected, ring);
     for (const line of result.lines) console.log(line);
     return result.failed ? 1 : 0;
   } catch {

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parseTokenKeyring, sealToken } from "../worker/src/secrets.ts";
 import {
   SEALED_TOKENS_SQL,
-  PROVIDERS_WITH_ROWS_SQL,
+  EXPECTED_TOKENS_SQL,
   checkTokenRows,
   readTokenKey,
   runTokenDecryptCheck,
@@ -42,9 +42,11 @@ describe("tokenDecrypt.check query shape", () => {
     expect(SEALED_TOKENS_SQL).toMatch(/'apple'::text/);
     expect(SEALED_TOKENS_SQL).not.toMatch(/table_name,\s*provider,/);
     expect(SEALED_TOKENS_SQL).toMatch(/UNION ALL/);
-    expect(PROVIDERS_WITH_ROWS_SQL).toMatch(/provider::text/);
-    expect(PROVIDERS_WITH_ROWS_SQL).toMatch(/kind::text/);
-    expect(PROVIDERS_WITH_ROWS_SQL).toMatch(/'apple'::text/);
+    expect(EXPECTED_TOKENS_SQL).toMatch(/provider::text/);
+    expect(EXPECTED_TOKENS_SQL).toMatch(/kind::text/);
+    expect(EXPECTED_TOKENS_SQL).toMatch(/'apple'::text/);
+    // Only rows that carried a Vault token owe a sealed one.
+    expect(EXPECTED_TOKENS_SQL.match(/secret_id IS NOT NULL/g)).toHaveLength(3);
   });
 
   it("uses Neon HTTPS unless TOKEN_DECRYPT_TCP=1", () => {
@@ -59,7 +61,7 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
   it("prints provider ok when every sealed token opens", async () => {
     const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
     const google = await sealedRow("1//google-refresh-token-value", "google");
-    const result = await checkTokenRows([google], ["google"], ring);
+    const result = await checkTokenRows([google], { google: 1 }, ring);
     expect(result.lines).toEqual(["google ok"]);
     expect(result.failed).toBe(0);
     expect(result.checked.google).toBe(1);
@@ -69,14 +71,14 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
     const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
     const other = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: "11".repeat(32) });
     const google = await sealedRow("1//google-refresh-token-value", "google");
-    const result = await checkTokenRows([google], ["google"], other);
+    const result = await checkTokenRows([google], { google: 1 }, other);
     expect(result.lines).toEqual(["google fail"]);
     expect(result.failed).toBe(1);
   });
 
-  it("fails when a provider has rows but 0 tokens were checked", async () => {
+  it("fails when a provider owes tokens but 0 were checked", async () => {
     const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
-    const result = await checkTokenRows([], ["google"], ring);
+    const result = await checkTokenRows([], { google: 1 }, ring);
     expect(result.lines).toEqual(["google fail"]);
     expect(result.failed).toBe(1);
     expect(result.checked).toEqual({});
@@ -87,10 +89,27 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
     const good = await sealedRow("1//google-refresh-token-value", "google");
     const bad: TokenRow = { ...good, enc: new Uint8Array(good.enc as Uint8Array) };
     (bad.enc as Uint8Array)[0] ^= 0xff;
-    const result = await checkTokenRows([good, bad], ["google"], ring);
+    const result = await checkTokenRows([good, bad], { google: 2 }, ring);
     expect(result.checked.google).toBe(2);
     expect(result.lines).toEqual(["google fail"]);
     expect(result.failed).toBe(1);
+  });
+
+  it("fails when fewer tokens open than had a Vault pointer", async () => {
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const google = await sealedRow("1//google-refresh-token-value", "google");
+    const result = await checkTokenRows([google], { google: 2 }, ring);
+    expect(result.lines).toEqual(["google fail"]);
+    expect(result.failed).toBe(1);
+  });
+
+  it("passes when a provider's rows never had a token to seal", async () => {
+    // Prod 2026-10-29: two Apple identities from ID-token-only sign-in, no Vault pointer.
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const google = await sealedRow("1//google-refresh-token-value", "google");
+    const result = await checkTokenRows([google], { google: 1 }, ring);
+    expect(result.lines).toEqual(["google ok"]);
+    expect(result.failed).toBe(0);
   });
 
   it("reads the key from a file path and never returns env when the file is set", () => {
@@ -100,7 +119,7 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
     expect(readTokenKey({ TOKEN_ENC_KEY_V1_FILE: file, TOKEN_ENC_KEY_V1: "should-not-win" })).toBe(KEY);
   });
 
-  it("runs against a mock DB (no network) and fails a provider with rows but 0 tokens", async () => {
+  it("runs against a mock DB (no network) and fails a provider that owes tokens but has 0", async () => {
     const seen: string[] = [];
     const code = await runTokenDecryptCheck(
       { TOKEN_ENC_KEY_V1: KEY, DATABASE_URL: "postgresql://mock" },
@@ -108,13 +127,13 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
         query: async (text) => {
           seen.push(text);
           if (text.includes("refresh_token_enc")) return [];
-          return [{ provider: "google" }];
+          return [{ provider: "google", n: 1 }];
         },
       }),
     );
     expect(code).toBe(1);
     expect(seen.some((q) => /provider::text/.test(q))).toBe(true);
     expect(seen.some((q) => q === SEALED_TOKENS_SQL)).toBe(true);
-    expect(seen.some((q) => q === PROVIDERS_WITH_ROWS_SQL)).toBe(true);
+    expect(seen.some((q) => q === EXPECTED_TOKENS_SQL)).toBe(true);
   });
 });
