@@ -15,6 +15,28 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 
 ---
 
+## Not ready to flip (found 2026-10-27)
+
+Read from the code while setting the Worker's secrets; none of these were driven.
+
+1. **The SPA never calls the Worker's data API.** With `VITE_API_BASE_URL` set, `useAuth`
+   builds a Supabase-shaped session from Better Auth, but the `supabase` client itself
+   has none — every `supabase.from()` / `.rpc()` (the sync outbox in
+   `src/lib/sync/transport.ts`, `push.ts`, the hooks) still goes to PostgREST as `anon`.
+   `/api/data/*` and `/api/rpc/*` exist on the Worker; nothing in `src/` calls them.
+   The "Planner CRUD" row below is the server half only.
+2. **Google sign-in isn't ported.** Better Auth wires Apple only (`worker/src/auth.ts`);
+   `src/lib/googleAuth.ts` ignores the flag.
+3. **The desktop build never gets the flag.** `release.yml` doesn't pass
+   `VITE_API_BASE_URL`, so auto-updated Macs keep writing Supabase after the switch.
+4. **Realtime has no Worker path.** `useRealtime.ts` listens for Supabase broadcasts, which
+   fire only on Supabase writes.
+5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
+   caching disabled. A read right after a write can be stale.
+6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
+
+---
+
 ## What moves (eventually)
 
 | Piece | Today | After cutover | Rollback |
@@ -24,7 +46,7 @@ Shape follows `phillipchan1/zeroed` PRs #11–#13.
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; same VAPID pair). Supabase copies stay until flip | n/a |
+| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; new VAPID pair, D-173). Supabase copies stay until flip | n/a |
 | Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
@@ -59,8 +81,8 @@ None of these belong in the Vite bundle.
 | `APPLE_SIWA_TEAM_ID` / `APPLE_SIWA_KEY_ID` / `APPLE_SIWA_PRIVATE_KEY` / `APPLE_SIWA_CLIENT_ID` | secrets | Authorization-code exchange + Apple `/auth/revoke` (guideline 5.1.1(v)) |
 | `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id`. Unset or invalid → fail closed (Apple refresh token is not stored; 503, no plaintext) |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **Same pair as today's Supabase function** — a new pair breaks every existing subscription |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **A new pair** (D-173), already on Worker `nuvo`. Supabase's private key can't be read back. Its public key ships only in the switch build — § Key rotation at cutover |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh. The secret **rotates inside the freeze window** — § Key rotation at cutover |
 | `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id |
@@ -435,7 +457,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, same VAPID pair, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
@@ -482,6 +504,118 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    `/api/cron/calendar-dispatch`, not `github-poll` or `trim-sync-log` —
    and check it actually ran: a non-skipped JSON body, or a log line
    from the runner — not `{ skipped: true, reason: "cutover_not_flipped" }`.
+
+## Key rotation at cutover (D-173)
+
+Two production secrets can't be copied to the Worker, because nothing will give
+their values back. Supabase returns a sha256 of every edge secret, and its auth-config
+API doesn't return the Google secret either. Google stopped showing client secrets
+after creation. **Both rotate.**
+
+### Worker `nuvo` secrets — state on 2026-10-29
+
+| Secret | Source |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase CLI, piped straight to `wrangler` |
+| `GOOGLE_CLIENT_ID`, `RESEND_WEBHOOK_SECRET` | Copied; sha256 matches Supabase's |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | **New pair**, below. Keychain `nuvo-worker/VAPID_*` |
+| `BETTER_AUTH_SECRET`, `CRON_SECRET` | Generated. Keychain `nuvo-worker/…` |
+| `BETTER_AUTH_URL` = `https://api.nuvo.day`, `APP_URL` = `https://app.nuvo.day` (sha256 matches Supabase's), `VAPID_SUBJECT`, `APPLE_BUNDLE_ID` = `day.nuvo.app` | Config |
+| `RESEND_API_KEY`, `OPENAI_API_KEY` | **New keys, 2026-10-29**, both named `nuvo-worker`. Phil created them and pasted them into a hidden prompt that piped them to `wrangler`, so no copy exists anywhere else. Resend is Full access: inbound email reads `/emails/receiving` |
+| `TOKEN_ENC_KEY_V1` | **Replaced 2026-10-28** from the Mac, by mistake: the branch it ran on predated #122, so the box file `nuvo-token-enc-key-v1` looked like no copy at all. The Worker now holds Keychain `nuvo-worker/TOKEN_ENC_KEY_V1`, and the box file holds something else. See **Out of step with the ops box**, below |
+
+**Out of step with the ops box since 2026-10-28.** #122 made the box's files the restore
+source for the cutover secrets. A rehearsal run from a Mac checkout cut before #122 replaced two
+of those values without updating the files:
+
+| Value | What's live now | Box file | Effect |
+|---|---|---|---|
+| `TOKEN_ENC_KEY_V1` | Worker `nuvo` = Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` | `nuvo-token-enc-key-v1`: the old key | The go/no-go's step 1 (both sides from one file) fails. A cutover sealed with the box key would leave the Worker unable to open a single token |
+| `migration_reader` password | Reset; the URI is in Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | `nuvo-migration-reader`: the old password | `SOURCE_DATABASE_URL` restored from the box no longer logs in |
+
+**Repair from one side only, before the next dry run.** Either write the two Keychain values
+into the box files (mode 0600) and record the key's `sha256sum`, or re-set the Worker from the
+box key file and reset the password again from the box. Then delete the copies that lost. No real
+token is sealed with either key outside `nuvo_dryrun_scratch`, which gets reset anyway, so neither
+choice strands data.
+
+**Still missing:**
+- `GOOGLE_CLIENT_SECRET` — below.
+- The Apple set. Nuvo has no Sign in with Apple key: Supabase only verifies the ID token,
+  but Better Auth needs a client-secret JWT. Create a key for `day.nuvo.app` and download
+  the `.p8` once. The JWT lasts at most 6 months.
+- `MS_*` — M365 isn't carried over this round.
+
+`RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
+Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
+
+### Data — state on 2026-10-28
+
+**A full rehearsal copy of production is on Neon `nuvo_dryrun_scratch`**, as of
+2026-10-28. It ran with Supabase live, and Supabase wasn't frozen or written. `neondb` (what
+Hyperdrive serves) still holds only the synthetic A/B seed, 2 users. **That copy breaks
+§ Reset scratch's "no prod copy stays on Neon between runs"**, and the next dry run's restore
+aborts on it. Run the guarded reset first.
+
+| What | Result |
+|---|---|
+| Accounts | 12 `auth.users` → `"user"`, 13 identities → `account`. Auth parity hashes match |
+| Planner tables | 26 copied. 25 match Supabase by count + md5 |
+| `calendar_accounts` | 11 = 11. The md5 differs on `calendars`, `next_sync_at`, `sync_failures`, `updated_at`: the every-minute calendar poll wrote between the dump and the snapshot. **Live drift, not a copy bug.** The freeze pauses `pg_cron`, which removes it |
+| Tokens | 10 calendar refresh tokens + 1 activity source sealed with the new key, 0 mismatches. 5 plaintext access tokens sealed and NULLed |
+| `sync_log` | 87,472 rows by id anti-join. Identity parked at 1,250,355 |
+| Dump | 2.6 MB, on the Mac only, shredded after the run |
+
+The source credential: `migration_reader` (login, `default_transaction_read_only=on`)
+and all three `migration_tmp` readers already existed. Its password was reset 2026-10-28
+with a SCRAM verifier, never the plaintext. That reset is what left the box's
+`nuvo-migration-reader` stale (above).
+
+How it ran: the workflow's own helper on the Mac, extracted from the YAML, with the arm and
+freeze gates skipped. That checkout still gated `dump` on the freeze even for `mode=dry-run`;
+#116 has since dropped the gate for dry runs, so **the next rehearsal runs through
+`cutover-migrate` itself**, not a local copy. A write that lands mid-run shows up as `verify`
+drift, which is expected. The real copy still runs frozen (§ the copy steps above), because a
+live copy goes stale the moment it finishes.
+
+### VAPID — already rotated on the Worker
+
+- New public key: `BMdUziU09i52gETKWH1D8J9sLKHWHpAZEdj-ix6ePW4Ht7aL7-wLwMBORC8CiQp6MW6DKGZfSOUMI2yFm1xQH6A`.
+  **Never ship it in a build that still talks to Supabase.** Supabase's `push-dispatch`
+  signs with the old private key, so a phone that re-subscribed early would go silent
+  until the flip.
+- **At the switch (step 7):** the build that sets `VITE_API_BASE_URL` also sets
+  `VITE_VAPID_PUBLIC_KEY` to the key above.
+- **On first launch**, `subscribeToPush` finds the subscription made with the old key. It
+  unsubscribes, deletes that row, and re-subscribes (`tests/push-key-rotation.test.ts`).
+  Only the installed PWA and desktop browsers have Web Push; the Tauri shells never did.
+- **A device that never reopens** keeps an old-key row. Sends to it fail with an auth
+  error, not 404/410, so D-167's prune won't remove it. After two weeks, delete the rows
+  that are still failing.
+- `push.ts` still writes through `supabase.from(...)`. Its re-subscribe reaches Neon only
+  once blocker 1 lands.
+
+### Google client secret — rotate inside the freeze window
+
+Client `917673962447-p2if…` (project `nuvo-499002`) holds two enabled secrets:
+`****kC0F` (2026-06-12) and `****A-lJ` (2026-07-24). Both slots are full. Nobody knows
+which one Supabase's Auth provider uses, or which its edge functions use — possibly both.
+
+1. **Inside the freeze**, writes already 503, so a minute of Google errors on Supabase
+   costs nothing. A person deletes `****kC0F`, clicks **Add secret**, and copies the new one.
+2. **Set it everywhere at once:**
+
+   ```bash
+   read -rs -p "new Google client secret: " G; echo
+   printf '%s' "$G" | npx wrangler secret put GOOGLE_CLIENT_SECRET
+   supabase secrets set --project-ref ebibzojtkzkphykznomv GOOGLE_CLIENT_SECRET="$G"
+   unset G
+   ```
+
+   Then paste the same value into Supabase → Authentication → Providers → Google.
+3. Supabase now runs on either the new secret or `****A-lJ`, and both are valid. Refresh
+   tokens belong to the client, not the secret, so calendar connections survive.
+   Delete `****A-lJ` once the Worker has run for a day.
 
 ## Write freeze
 

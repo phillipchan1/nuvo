@@ -7,7 +7,9 @@ real device; see §4's checklist and §6.
 [D-138](./product/decisions.md) (several leads; all-day; horizon may be a day or a week)
 **Rules:** [`_shared/reminderRules.ts`](../supabase/functions/_shared/reminderRules.ts)
 **Worker port (rehearsal):** `worker/src/pushDispatch.ts` + `worker/src/lib/webpush.ts`.
-Same VAPID pair as the Supabase function — a new pair breaks every sub. Cron
+The Worker uses a **new** VAPID pair (D-173) — Supabase's private key can't be read
+back. Clients re-subscribe on their first launch after the switch
+(`subscribedWithOtherKey` in `src/lib/push.ts`). Cron
 is a Worker Cron Trigger (`* * * * *`) and `/api/cron/push-dispatch`. The kernel
 is still this file; do not re-implement fire instants on the Worker.
 
