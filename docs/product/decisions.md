@@ -6587,3 +6587,36 @@ nothing that only holds in the builder's account.
 `tests/push-key-rotation.test.ts` (the rotation case fails on the old reuse path). The new pair is
 on the Worker. Runbook: [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Key rotation at
 cutover.*
+
+---
+
+**D-174 · 2026-10-29 · On the Worker path the SPA keeps its own supabase-js queries; the Worker
+speaks the slice of PostgREST they use, scoped by the session.**
+
+With `VITE_API_BASE_URL` set, every `supabase.from()` / `.rpc()` still went to PostgREST as
+`anon` — the Worker's `/api/data` existed and nothing called it (cutover blocker 1). Two ways to
+close it. A client shim over `/api/data/:table` (PR #117) lists the whole table and filters in
+the browser: every task on every query, a request per task for `task_labels(label_id)`, and no
+`.or()`. Or keep the stock query builder and change only the wire. **We took the wire.** The
+client's own `fetch` re-points `/rest/v1/*` and `/functions/v1/*` at the Worker with the Better
+Auth bearer (`src/lib/workerRoute.ts`), and `supabase.auth.getSession/getUser` answer from Better
+Auth, so ~60 call sites, the outbox and the hooks are unchanged. The Worker (`worker/src/rest.ts`)
+parses that PostgREST subset into SQL: identifiers checked against the live catalog, values bound
+as text and cast by Postgres, every statement ANDed with the owner clause. Because the cutover
+restore carries no functions or triggers, it also re-says `apply_patch`, `claim_reminder`,
+`contacts` and `rotate_inbound_token`, and the trigger rules the SPA's writes relied on
+(`updated_at`, `field_ts` stamping, steps one level deep, `inbound_token` guarded).
+
+**Consequence.** The flag stays build-time (`vars.VITE_API_BASE_URL`, now passed by `release.yml`
+as `ios-release.yml` already did); the launch-time flip in #117/#118 is a separate call. Realtime is
+off on the flag until the Worker has its own channel (design in the cutover doc, not built).
+
+**Anchor.** No Question Ledger row — infrastructure, like D-164. Strains nothing in the product
+grammar. The four no's: no pool, no new user-facing name, no clean-data requirement, nothing that
+only holds in the builder's account.
+
+*Status: built — `worker/src/rest.check.ts` (the real builder through the route map, A/B, LWW,
+freeze), the isolation mutation proof over `rest.ts`, `tests/worker-seam.test.ts`; driven in the
+dev app against a local `wrangler dev` on a prod-shaped restore, desktop and 375px, flag on and
+off. **Not driven:** the `nuvo-preview` Worker (the #90-era build — no `/api/rest/v1` until it is
+redeployed). Open items: [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Not ready to flip.*

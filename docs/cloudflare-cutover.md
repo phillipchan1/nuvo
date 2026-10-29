@@ -12,6 +12,92 @@ Cutover-night route table: [`cloudflare-migration/route-inventory.md`](./cloudfl
 Pre-flip billing read: [`cloudflare-migration/billing-live-check.md`](./cloudflare-migration/billing-live-check.md).
 Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
+Client data calls → Worker routes: [`cloudflare-migration/client-data-inventory.md`](./cloudflare-migration/client-data-inventory.md).
+
+---
+
+## Not ready to flip (found 2026-10-27 · updated 2026-10-29)
+
+Items 1–6 were read from the code while setting the Worker's secrets. On 2026-10-29,
+items 1, 8 and 9 were driven in the dev app against a local `wrangler dev` on a Postgres
+restored the way `cutover-migrate.yml` restores (public schema + data, no
+functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 were read.
+
+1. ~~**The SPA never calls the Worker's data API.**~~ **Closed** (client-data-inventory.md).
+   With `VITE_API_BASE_URL` set, the supabase client's own `fetch` re-points `/rest/v1/*`
+   and `/functions/v1/*` at the Worker with the Better Auth bearer (`src/lib/workerRoute.ts`),
+   and `supabase.auth.getSession/getUser` answer from Better Auth
+   (`src/lib/workerSession.ts`). The Worker speaks the PostgREST subset the app uses, every
+   statement owner-scoped (`worker/src/rest.ts`; `rest.check.ts` + the isolation mutation
+   proof). Flag unset: nothing is installed (`tests/worker-seam.test.ts`). Driven: OTP
+   sign-in, Schedule and phone Calendar, capture, complete, priority, label, step, trash,
+   parked-change retry, reload — every data request on the Worker.
+   **Still open:** `nuvo-preview` is the #90-era build. It has no `/api/rest/v1` (it answers
+   with the SPA's HTML) and its auth CORS allows only its own origin, so this client cannot
+   be driven there until the preview is redeployed from this branch
+   (`wrangler deploy --env preview` — not run). PR #117 routes the same calls through a
+   browser-side shim over `/api/data` (whole-table reads, a request per task for labels, no
+   `.or()`); this branch supersedes its client half.
+2. **Google sign-in isn't ported.** Better Auth wires Apple only (`worker/src/auth.ts`);
+   `src/lib/googleAuth.ts` ignores the flag.
+3. ~~**The desktop build never gets the flag.**~~ **Closed.** `release.yml` passes
+   `VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}`, the line `ios-release.yml` already
+   had. Unset repo variable → empty → Supabase, as today. Setting it is the switch for the
+   next desktop and iOS build; the PWA reads the same name from Vercel's project env, set
+   there at the flip. (#118 bakes a literal instead and leans on #117's launch-time flip —
+   one model has to win before either merges.)
+4. **Realtime has no Worker path.** Now, with the flag on, realtime is a **known no-op**:
+   only the client's `fetch` is re-pointed, so `supabase.channel()` would still dial
+   Supabase — and both of its callers (`useRealtime`, `useSubscription`) skip on the flag.
+   That socket would hear nothing (Supabase broadcasts only Supabase writes) and its private
+   topics reject a Better Auth bearer. Other devices converge on window focus (15s stale,
+   `App.tsx`). **Smallest honest design (not built):**
+   - One Durable Object per account (`idFromName(userId)`) holding hibernatable WebSockets —
+     an idle socket costs nothing, a message costs one request.
+   - `GET /api/live` upgrades after the Worker verifies the Better Auth bearer, sent as
+     `Sec-WebSocket-Protocol: bearer.<token>` (never a query string, which lands in logs),
+     and forwards to that account's room.
+   - Every Worker write to a synced table calls one helper, `announce(env, userId, changes)`,
+     after commit via `ctx.waitUntil`: `rest.ts`'s four write paths and `apply_patch`, then
+     the agent, MCP, capture, calendar-sync and cron writers. One helper because Neon has no
+     `rt_broadcast` trigger to do it (item 7).
+   - The payload is the `LiveChange` shape `useRealtime` already consumes
+     (`lib/sync/liveApply.ts`), so the client swaps only its transport —
+     `supabase.channel(...)` → `new WebSocket(...)`; coalescing, outbox gating and
+     `applyLiveChange` stay as they are.
+   - Not LISTEN/NOTIFY: Hyperdrive pools by transaction and LISTEN needs a session. Not Neon
+     logical replication: a Worker cannot hold a replication slot.
+5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
+   caching disabled. The SPA's own reads are safe by construction: every data `SELECT`
+   `rest.ts` sends calls `now()`, and Hyperdrive never caches a query that calls a STABLE
+   or VOLATILE function (`rest.check.ts` fails if one doesn't). **Every other Worker route
+   still reads through the cache** (agent snapshot, day, mirrors, `/api/data`), so a read
+   right after a write can be up to `max_age` old there. Disable caching on `nuvo-neon`
+   before the flip.
+6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
+7. **Neon has no functions or triggers.** The restore skips them (`SKIP_TOC_HEAD`), so
+   `set_updated_at`, `stamp_unstamped_field_ts`, `tasks_steps_are_flat`,
+   `guard_inbound_token`, `sync_self_rsvp`, `rt_broadcast` and the four RPCs are gone, and
+   `auth.uid()` is a stub. `rest.ts` re-says the RPCs and the first four rules for the
+   SPA's writes. **The other Worker writers (agent, MCP, capture, calendar sync, crons) do
+   not stamp `field_ts` or bump `updated_at`** — read, not driven — so an older offline edit
+   can overwrite what they write. Whether the Worker's calendar sync derives `self_rsvp`
+   itself was not checked.
+8. **A sign-up after the flip cannot write.** Planner tables keep Supabase's FKs to
+   `auth.users` — the copy's stub — and a Better Auth user created after the copy has no row
+   there. Driven: a fresh OTP sign-up on the restored DB gets `23503
+   user_settings_user_id_fkey` on every data request (from `bootstrapUser`). Either insert
+   the stub row in Better Auth's `user.create` hook or repoint the FKs to `public.users` in
+   the copy. #120 handles the billing FKs only.
+9. **The entitlement read is CORS-blocked.** `GET /api/entitlement` is credentialed but
+   answered with `Access-Control-Allow-Origin: *`; Chrome refuses it (seen in the dev
+   app's console). #120's `reflectAllowOrigin` fixes this.
+10. **The Better Auth bearer may not survive a relaunch** (inferred, not driven).
+    `authClient.ts` keeps it in `sessionStorage`, which outlives a reload (seen) but not a
+    closed Tauri window or a killed iOS PWA. The cookie fallback (`credentials: "include"`)
+    is third-party from `tauri://localhost`, which WKWebView blocks by default. GoTrue's
+    session lives in `localStorage` today, so a Mac or phone would likely ask for a code
+    on every launch after the flip. Check on a built app before the flip.
 
 ---
 
@@ -42,7 +128,7 @@ Read from the code while setting the Worker's secrets; none of these were driven
 | Piece | Today | After cutover | Rollback |
 |---|---|---|---|
 | Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
-| Planner CRUD | Supabase PostgREST + RLS | Hono `/api/data/*` + `/api/rpc/*`; owner filters in the Worker | Clear `VITE_API_BASE_URL` |
+| Planner CRUD | Supabase PostgREST + RLS | The SPA's own PostgREST calls at `/api/rest/v1/*` (`worker/src/rest.ts`); also `/api/data/*` + `/api/rpc/*`. Owner filters in the Worker | Clear `VITE_API_BASE_URL` |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |

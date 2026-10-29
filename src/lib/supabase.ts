@@ -1,8 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
-import { edgeFunctionUrl, workersEnabled } from "./backend";
+import { authBaseUrl, edgeFunctionUrl, workersEnabled } from "./backend";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance";
 import { isSpotlightWindow } from "./platform";
+import { workerRoute } from "./workerRoute";
+import { workerSession } from "./workerSession";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -66,6 +68,21 @@ const innerFetch: typeof fetch = import.meta.env.DEV
     }
   : fetch;
 
+/**
+ * The Worker path's one seam. The query builder, filters, upserts and
+ * `.single()` stay supabase-js's own; only the wire changes — `/rest/v1/*` and
+ * the edge functions go to the Worker (`workerRoute`), carrying the Better
+ * Auth bearer instead of a GoTrue JWT. Never reached with the flag unset.
+ */
+async function toWorker(routed: string, input: RequestInfo | URL, init?: RequestInit): Promise<Request> {
+  const req = new Request(routed, input instanceof Request ? input : init);
+  const { signedBearerToken } = await import("./authClient");
+  const token = signedBearerToken();
+  if (token) req.headers.set("Authorization", `Bearer ${token}`);
+  req.headers.delete("apikey");
+  return req;
+}
+
 /** Freeze data writes on the live Supabase path. Auth refresh stays allowed. */
 const guardedFetch: typeof fetch = async (input, init) => {
   const method = requestMethod(input, init);
@@ -75,6 +92,10 @@ const guardedFetch: typeof fetch = async (input, init) => {
       status: 503,
       headers: { "Content-Type": "application/json" },
     });
+  }
+  if (workersEnabled) {
+    const routed = workerRoute(url, supabaseUrl, authBaseUrl());
+    if (routed) return innerFetch(await toWorker(routed, input, init));
   }
   return innerFetch(input, init);
 };
@@ -95,6 +116,21 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+if (workersEnabled) {
+  // GoTrue never holds a session on the Worker path — Better Auth does. Answer
+  // the two questions every caller asks (`useAuth` publishes the answer), so the
+  // outbox's owner key, push, the agent's bearer and the hooks need no fork.
+  const auth = supabase.auth;
+  auth.getSession = (async () => ({
+    data: { session: await workerSession() },
+    error: null,
+  })) as typeof auth.getSession;
+  auth.getUser = (async () => ({
+    data: { user: (await workerSession())?.user ?? null },
+    error: null,
+  })) as unknown as typeof auth.getUser;
+}
+
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {
   const report = (message: string) => {
@@ -103,22 +139,7 @@ export function invokeQuiet(fn: string, body: Record<string, unknown>) {
     });
     console.warn(`[nuvo] edge fn ${fn} failed:`, message);
   };
-  if (workersEnabled) {
-    fetch(functionUrl(fn), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        report(`${res.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);
-      }
-    }).catch((err: unknown) => {
-      report(err instanceof Error ? err.message : String(err));
-    });
-    return;
-  }
+  // On the Worker path too: guardedFetch routes it, with the bearer.
   supabase.functions.invoke(fn, { body }).then(({ error }) => {
     if (!error) return;
     report(error.message);

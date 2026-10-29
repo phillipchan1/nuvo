@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { workersEnabled } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
+import { setWorkerSession } from "../lib/workerSession";
 import { writeWasEntitled } from "../lib/subscription";
 import { isSpotlightWindow, isTauri } from "../lib/platform";
 import { rememberAuthProvider } from "../lib/authProviders";
@@ -71,7 +72,8 @@ export function useAuth() {
   useEffect(() => {
     if (workersEnabled) {
       let cancelled = false;
-      void import("../lib/authClient").then(async ({ createNuvoAuthClient, persistSignedBearer, signedBearerToken }) => {
+      let unlisten: (() => void) | undefined;
+      void import("../lib/authClient").then(async ({ AUTH_SESSION_CHANGED, createNuvoAuthClient, persistSignedBearer, signedBearerToken }) => {
         if (cancelled) return;
         const client = createNuvoAuthClient();
         const applyBa = (data: {
@@ -87,6 +89,7 @@ export function useAuth() {
           const token = signedBearerToken() ?? signed;
           if (token) persistSignedBearer(token);
           if (!data?.user || !token) {
+            setWorkerSession(null);
             setSession((prev) => {
               if (prev) writeWasEntitled(false);
               return null;
@@ -94,10 +97,9 @@ export function useAuth() {
             return;
           }
           const expiresAt = data.session?.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-          setSession((prev) => {
-            const next = sessionFromBetterAuth(data.user!, token, expiresAt);
-            return sameSession(prev, next) ? prev : next;
-          });
+          const next = sessionFromBetterAuth(data.user, token, expiresAt);
+          setWorkerSession(next);
+          setSession((prev) => (sameSession(prev, next) ? prev : next));
         };
         const { data } = await client.getSession();
         applyBa(data);
@@ -109,10 +111,25 @@ export function useAuth() {
             applyBa(signed.data ?? null);
           }
         }
+        // A code verified on the login screen (or a sign-out) changes the
+        // bearer; GoTrue's onAuthStateChange has no Better Auth twin, so read
+        // the session again. Serialized: one read at a time, in order.
+        let reading = Promise.resolve();
+        const reread = () => {
+          reading = reading.then(async () => {
+            if (cancelled) return;
+            const { data: next } = await client.getSession();
+            applyBa(next);
+          }).catch(() => undefined);
+        };
+        if (cancelled) return;
+        window.addEventListener(AUTH_SESSION_CHANGED, reread);
+        unlisten = () => window.removeEventListener(AUTH_SESSION_CHANGED, reread);
         if (!cancelled) setLoading(false);
       });
       return () => {
         cancelled = true;
+        unlisten?.();
       };
     }
 

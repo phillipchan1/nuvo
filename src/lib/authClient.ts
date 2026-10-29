@@ -27,6 +27,9 @@ export function signedBearerToken(): string | null {
 
 function rememberSignedBearer(token: string) {
   try {
+    // Unchanged is not a change: useAuth re-reads the session on this event,
+    // and get-session hands the same token back.
+    if (sessionStorage.getItem(SIGNED_BEARER_KEY) === token) return;
     sessionStorage.setItem(SIGNED_BEARER_KEY, token);
   } catch {
     /* private mode / SSR */

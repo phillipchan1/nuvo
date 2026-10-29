@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { workersEnabled } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { applyLiveChange, type LiveChange } from "../lib/sync/liveApply";
 import { liveTopic } from "../lib/sync/liveTopic";
@@ -43,7 +44,11 @@ const COALESCE_MS = 120;
 export function useRealtime(enabled: boolean) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (!enabled) return;
+    // Supabase only broadcasts Supabase writes, and its private topics reject a
+    // Better Auth bearer — on the Worker path this socket would be dead weight.
+    // The Worker's own live channel is not built yet; the design is in
+    // docs/cloudflare-cutover.md § Not ready to flip (realtime).
+    if (!enabled || workersEnabled) return;
 
     // Keys awaiting invalidation, deduped — a burst touching the same table a
     // thousand times still ends as one entry. The source table rides along

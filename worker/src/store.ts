@@ -1162,7 +1162,9 @@ export async function applyPatch(
 
 export async function rotateInboundToken(store: Store): Promise<string | null> {
   const sql = store.sql;
-  const token = crypto.randomUUID().replace(/-/g, "");
+  // Same shape as Supabase's rotate_inbound_token (migration 77): 12 hex chars,
+  // so an address minted on either side reads the same.
+  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   const rows = await sql`
     UPDATE user_settings
     SET inbound_token = ${token}, updated_at = now()

@@ -30,6 +30,8 @@ data that is moving to Neon.
 
 | Route | Tables | Status | Tests |
 |---|---|---|---|
+| `GET/HEAD/POST/PATCH/DELETE /api/rest/v1/:table` | planner set + `task_labels`, `external_events`, `calendar_accounts`, `connections`, `activity_*`, `push_subscriptions` | ported+tested | `rest.check` (supabase-js through `workerRoute`, A/B, FK plants, forged `user_id`) + mutation proof. The SPA's own calls — [`client-data-inventory.md`](./client-data-inventory.md) |
+| `POST /api/rest/v1/rpc/:fn` | `apply_patch`, `claim_reminder`, `contacts`, `rotate_inbound_token` | ported+tested | `rest.check` (LWW, B `matched: 0`, contacts A/B) |
 | `GET/POST /api/data/:table` | planner set below | ported+tested | `accessHttp` list / POST-id body leak / forged `user_id` |
 | `GET/PATCH/DELETE /api/data/:table/:id` | planner set | ported+tested | `accessHttp` 403/404 + FK plant on PATCH |
 | `GET/POST/DELETE /api/data/task_labels` | `task_labels` via `tasks`/`labels` | ported+tested | `accessHttp` |
