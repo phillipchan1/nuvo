@@ -465,8 +465,41 @@ function parseCount(raw: string | null, label: string): number | null {
   return Number(raw);
 }
 
+/** The Prefer tokens the builder sends for the calls the app makes. Anything else is refused. */
+const KNOWN_PREFER = new Set([
+  "return=representation",
+  "return=minimal",
+  "resolution=merge-duplicates",
+  "resolution=ignore-duplicates",
+  "count=exact",
+  "count=planned",
+  "count=estimated",
+]);
+
 function preferences(header: string | undefined): Set<string> {
-  return new Set((header ?? "").split(",").map((p) => p.trim().toLowerCase()).filter(Boolean));
+  const tokens = (header ?? "").split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+  for (const token of tokens) {
+    if (!KNOWN_PREFER.has(token)) throw new RestError(400, "PGRST122", `Prefer "${token.slice(0, 40)}" is not supported`);
+  }
+  return new Set(tokens);
+}
+
+/**
+ * Array or one object. Anything else (csv, nulls=stripped, a plan) is a 406
+ * rather than JSON the caller did not ask for.
+ */
+function singularFrom(header: string | undefined): boolean {
+  const types = (header ?? "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  if (!types.length) return false;
+  if (types.includes("application/vnd.pgrst.object+json")) return true;
+  if (types.some((t) => t.split(";")[0] === "*/*" || t === "application/json" || t === "application/*")) return false;
+  throw new RestError(406, "PGRST107", "None of these media types are available");
+}
+
+/** postgrest-js names a bulk insert's columns; every one must be a column we would write. */
+function checkColumnsParam(target: Target, raw: string | null): void {
+  if (raw == null) return;
+  for (const part of splitTop(raw)) requireColumn(target, ident(unquote(part.trim())), false);
 }
 
 // ---------------------------------------------------------------------------
@@ -610,12 +643,20 @@ function orderSql(target: Target, orders: Order[]): string {
 }
 
 /**
+ * Every data read here selects this. Hyperdrive never caches a query that calls
+ * a STABLE or VOLATILE function (`now()` included, since its 2026-02 change),
+ * so the refetch right after a write reads Neon, not a 60-second-old answer.
+ * The catalog reads leave it out on purpose: those may cache.
+ */
+const UNCACHED = "now() AS read_at";
+
+/**
  * Wrap a row source as the response body: an array, or the one object asked
  * for. A CTE, because INSERT/UPDATE/DELETE … RETURNING cannot be a subquery.
  */
 function bodySql(source: string, singular: boolean): string {
   const body = singular ? "(json_agg(_r) -> 0)::text" : "COALESCE(json_agg(_r), '[]'::json)::text";
-  return `WITH _r AS (${source}) SELECT ${body} AS body, count(*)::int AS n FROM _r`;
+  return `WITH _r AS (${source}) SELECT ${body} AS body, count(*)::int AS n, ${UNCACHED} FROM _r`;
 }
 
 async function run(sql: Sql, text: string, params: Params): Promise<{ body: string | null; n: number }> {
@@ -648,7 +689,7 @@ async function assertOwnedRefs(
     const params = new Params();
     const flat = target.table === "tasks" && col === "parent_task_id" ? ` AND r."parent_task_id" IS NULL` : "";
     const owned = await sql.unsafe<{ n: number }[]>(
-      `SELECT count(DISTINCT r.${q(ref.column)})::int AS n FROM public.${q(ref.table)} r
+      `SELECT count(DISTINCT r.${q(ref.column)})::int AS n, ${UNCACHED} FROM public.${q(ref.table)} r
         WHERE r."user_id" = ${params.typed(target.uid, "uuid")}
           AND r.${q(ref.column)}::text = ANY (${params.typed(literalArray(values), "text[]")})${flat}`,
       params.values as never[],
@@ -679,7 +720,7 @@ async function assertOwnedReminderTargets(sql: Sql, target: Target, rows: Record
     if (!table || typeof r.target_id !== "string") throw denied("target_id cannot be set for this target_kind");
     const params = new Params();
     const hit = await sql.unsafe(
-      `SELECT 1 FROM public.${q(table)} r WHERE r."id"::text = ${params.add(r.target_id)}
+      `SELECT ${UNCACHED} FROM public.${q(table)} r WHERE r."id"::text = ${params.add(r.target_id)}
           AND r."user_id" = ${params.typed(target.uid, "uuid")} LIMIT 1`,
       params.values as never[],
     );
@@ -782,14 +823,31 @@ function requireTarget(cat: Catalog, table: string, uid: string, op: Op): Target
   return { table, policy, info, uid };
 }
 
-function finish(req: RestRequest, result: { body: string | null; n: number }, okStatus: number): Response {
+function wantsCount(req: RestRequest): boolean {
+  return [...req.prefer].some((p) => p.startsWith("count="));
+}
+
+/**
+ * The response, as PostgREST shapes it: `Content-Range: first-last/total`
+ * (total only when a count was asked for — planned and estimated are exact here),
+ * 204 for a minimal write, 406 PGRST116 when one object was asked for and the
+ * rows are not exactly one.
+ */
+function finish(
+  req: RestRequest,
+  result: { body: string | null; n: number },
+  okStatus: number,
+  page: { offset: number; total: number | null } = { offset: 0, total: null },
+): Response {
   const wantsRows = req.method === "GET" || req.method === "HEAD" || req.prefer.has("return=representation");
   if (req.singular && wantsRows && result.n !== 1) {
     return errorResponse(
       new RestError(406, "PGRST116", "JSON object requested, multiple (or no) rows returned", `The result contains ${result.n} rows`),
     );
   }
-  const range = result.n ? `0-${result.n - 1}/*` : "*/*";
+  const total = page.total ?? (wantsCount(req) && req.method !== "GET" && req.method !== "HEAD" ? result.n : null);
+  const span = result.n ? `${page.offset}-${page.offset + result.n - 1}` : "*";
+  const range = `${span}/${total ?? "*"}`;
   if (!wantsRows) return restResponse(okStatus === 200 ? 204 : okStatus, null, { "Content-Range": range });
   return restResponse(okStatus, req.method === "HEAD" ? null : result.body ?? (req.singular ? "null" : "[]"), {
     "Content-Range": range,
@@ -802,7 +860,8 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   const spec = parseSelect(req.params.get("select"));
   const cols = [...columnList(target, spec), ...(await embedSql(target, spec, params, cat))];
   if (!cols.length) throw bad("select names no columns");
-  const where = whereSql(target, parseFilters(req.params), params);
+  const conds = parseFilters(req.params);
+  const where = whereSql(target, conds, params);
   const limit = parseCount(req.params.get("limit"), "limit");
   const offset = parseCount(req.params.get("offset"), "offset");
   const source =
@@ -810,7 +869,18 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     orderSql(target, parseOrder(req.params.get("order"))) +
     (limit != null ? ` LIMIT ${limit}` : "") +
     (offset != null ? ` OFFSET ${offset}` : "");
-  return finish(req, await run(sql, bodySql(source, req.singular), params), 200);
+  const result = await run(sql, bodySql(source, req.singular), params);
+  let total: number | null = null;
+  if (wantsCount(req)) {
+    // Its own params: a statement may not carry a parameter it never reads.
+    const countParams = new Params();
+    const rows = await sql.unsafe<{ n: number }[]>(
+      `SELECT count(*)::int AS n, ${UNCACHED} FROM public.${q(target.table)} t WHERE ${whereSql(target, conds, countParams)}`,
+      countParams.values as never[],
+    );
+    total = Number(rows[0]?.n ?? 0);
+  }
+  return finish(req, result, 200, { offset: offset ?? 0, total });
 }
 
 async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
@@ -819,6 +889,7 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   if (!list.every((r) => r && typeof r === "object" && !Array.isArray(r))) throw bad("body must be an object or an array of objects");
   const rows = (list as Record<string, unknown>[]).map((r) => ({ ...r }));
   if (!rows.length) return finish(req, { body: "[]", n: 0 }, 201);
+  checkColumnsParam(target, req.params.get("columns"));
   const spec = parseSelect(req.params.get("select"));
   const merge = req.prefer.has("resolution=merge-duplicates");
   const ignore = req.prefer.has("resolution=ignore-duplicates");
@@ -1045,7 +1116,7 @@ async function contactsRpc(store: Store, cat: Catalog, args: Record<string, unkn
   const like = params.add(`%${search}%`);
   const exact = params.add(search);
   const text =
-    `SELECT COALESCE(json_agg(_r), '[]'::json)::text AS body, count(*)::int AS n FROM (
+    `SELECT COALESCE(json_agg(_r), '[]'::json)::text AS body, count(*)::int AS n, ${UNCACHED} FROM (
        SELECT a.email,
               COALESCE(mode() WITHIN GROUP (ORDER BY nullif(lower(a.display_name), a.email)), a.email) AS display_name,
               max(a.freq) AS freq,
@@ -1060,7 +1131,20 @@ async function contactsRpc(store: Store, cat: Catalog, args: Record<string, unkn
   return restResponse(200, body ?? "[]");
 }
 
+/** Each RPC's signature. An argument it does not take is PostgREST's "no such function". */
+const RPC_ARGS: Readonly<Record<string, readonly string[]>> = {
+  apply_patch: ["p_table", "p_match", "p_patch", "p_field_ts"],
+  claim_reminder: ["p_key", "p_fire_at", "p_channel"],
+  contacts: ["search"],
+  rotate_inbound_token: [],
+};
+
 async function handleRpc(store: Store, cat: Catalog, fn: string, args: Record<string, unknown>): Promise<Response> {
+  const signature = RPC_ARGS[fn];
+  const extra = signature ? Object.keys(args).find((k) => !signature.includes(k)) : undefined;
+  if (extra) {
+    throw new RestError(404, "PGRST202", `Could not find the function public.${fn}(${extra.slice(0, 40)})`);
+  }
   switch (fn) {
     case "apply_patch":
       return applyPatchRpc(store, cat, args);
@@ -1100,6 +1184,11 @@ export async function handleRest(c: Context<AppEnv>): Promise<Response> {
     const method = c.req.method.toUpperCase();
     const profile = c.req.header("Accept-Profile") ?? c.req.header("Content-Profile");
     if (profile && profile !== "public") throw new RestError(406, "PGRST106", "only the public schema is exposed");
+    // Grammar the app never sends is refused, never half-honoured: a dropped
+    // limit or range returns more rows than were asked for.
+    if (c.req.header("Range")) throw bad("Range headers are not supported; use limit/offset");
+    const prefer = preferences(c.req.header("Prefer"));
+    const singular = singularFrom(c.req.header("Accept"));
 
     const rpc = /^rpc\/([a-z_][a-z0-9_]*)$/.exec(path);
     const table = /^([a-z_][a-z0-9_]*)$/.exec(path);
@@ -1127,15 +1216,19 @@ export async function handleRest(c: Context<AppEnv>): Promise<Response> {
       return await handleRpc(got.store, cat, rpc[1], args);
     }
 
-    const accept = (c.req.header("Accept") ?? "").toLowerCase();
     const req: RestRequest = {
       method,
       table: table![1],
       params: url.searchParams,
-      prefer: preferences(c.req.header("Prefer")),
-      singular: accept.includes("application/vnd.pgrst.object+json"),
+      prefer,
+      singular,
       body: method === "POST" || method === "PATCH" ? await readBody(c) : null,
     };
+    if (method !== "POST") {
+      const postOnly = ["columns", "on_conflict"].find((p) => url.searchParams.has(p))
+        ?? [...prefer].find((p) => p.startsWith("resolution="));
+      if (postOnly) throw bad(`${postOnly} applies to inserts only`);
+    }
     const uid = got.store.userId;
     switch (method) {
       case "GET":

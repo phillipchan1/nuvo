@@ -46,8 +46,10 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
    next desktop and iOS build; the PWA reads the same name from Vercel's project env, set
    there at the flip. (#118 bakes a literal instead and leans on #117's launch-time flip —
    one model has to win before either merges.)
-4. **Realtime has no Worker path.** Now, with the flag on, `useRealtime` opens no Supabase
-   socket — it would hear nothing (Supabase broadcasts only Supabase writes) and its private
+4. **Realtime has no Worker path.** Now, with the flag on, realtime is a **known no-op**:
+   only the client's `fetch` is re-pointed, so `supabase.channel()` would still dial
+   Supabase — and both of its callers (`useRealtime`, `useSubscription`) skip on the flag.
+   That socket would hear nothing (Supabase broadcasts only Supabase writes) and its private
    topics reject a Better Auth bearer. Other devices converge on window focus (15s stale,
    `App.tsx`). **Smallest honest design (not built):**
    - One Durable Object per account (`idFromName(userId)`) holding hibernatable WebSockets —
@@ -66,9 +68,12 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
    - Not LISTEN/NOTIFY: Hyperdrive pools by transaction and LISTEN needs a session. Not Neon
      logical replication: a Worker cannot hold a replication slot.
 5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
-   caching disabled. **Now load-bearing:** every SPA read is a cacheable `SELECT` through
-   Hyperdrive, so the refetch right after a write can return the rows from before it.
-   Disable caching on `nuvo-neon` before the flip.
+   caching disabled. The SPA's own reads are safe by construction: every data `SELECT`
+   `rest.ts` sends calls `now()`, and Hyperdrive never caches a query that calls a STABLE
+   or VOLATILE function (`rest.check.ts` fails if one doesn't). **Every other Worker route
+   still reads through the cache** (agent snapshot, day, mirrors, `/api/data`), so a read
+   right after a write can be up to `max_age` old there. Disable caching on `nuvo-neon`
+   before the flip.
 6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
 7. **Neon has no functions or triggers.** The restore skips them (`SKIP_TOC_HEAD`), so
    `set_updated_at`, `stamp_unstamped_field_ts`, `tasks_steps_are_flat`,

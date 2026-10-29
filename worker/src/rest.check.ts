@@ -81,6 +81,15 @@ await db.exec(`
 `);
 resetRestCatalogForTests();
 const sql = makePgliteSql(db);
+// rest.ts sends every statement through `unsafe`; keep them to hold the cache rule below.
+const sent: string[] = [];
+const rawUnsafe = (sql as unknown as { unsafe: (text: string, params?: unknown[]) => Promise<unknown> }).unsafe;
+Object.assign(sql, {
+  unsafe: (text: string, params?: unknown[]) => {
+    sent.push(text);
+    return rawUnsafe(text, params);
+  },
+});
 const kysely = new Kysely({
   dialect: {
     createAdapter: () => new PostgresAdapter(),
@@ -344,6 +353,44 @@ const stepId = crypto.randomUUID();
   ok((gone.data ?? []).length === 0, "deleted");
 }
 
+// --- response shapes, and grammar we don't speak fails closed ----------------
+{
+  const all = await A.from("tasks").select("id", { count: "exact" }).range(0, 0);
+  ok(all.data?.length === 1 && typeof all.count === "number" && all.count >= 1, `count=exact → Content-Range total (${all.count})`);
+  const head = await A.from("tasks").select("id", { count: "exact", head: true });
+  ok(head.data === null && head.count === all.count, "head + count: no body, same total");
+  const mine = await B.from("tasks").select("id", { count: "exact", head: true }).eq("id", taskId);
+  ok(mine.count === 0, "count is owner-scoped too");
+
+  const rep = await A.from("labels").insert({ name: "rep" }).select("id, name");
+  ok(Array.isArray(rep.data) && rep.data[0]?.name === "rep", "return=representation → the rows written");
+  const minimal = await A.from("labels").update({ name: "rep2" }).eq("name", "rep");
+  ok(!minimal.error && minimal.status === 204 && minimal.data === null, `return=minimal → 204 (${minimal.status})`);
+
+  const raw = async (path: string, headers: Record<string, string>) =>
+    (await call(path, { headers: { Authorization: `Bearer ${a.token}`, ...headers } })).json() as Promise<{ code?: string }>;
+  const refusals: [string, string, Record<string, string>, string][] = [
+    ["unknown operator", "/api/rest/v1/tasks?title=cs.%7Bx%7D", {}, "PGRST100"],
+    ["unknown Prefer", "/api/rest/v1/tasks?select=id", { Prefer: "handling=strict" }, "PGRST122"],
+    ["missing=default", "/api/rest/v1/tasks?select=id", { Prefer: "missing=default" }, "PGRST122"],
+    ["csv Accept", "/api/rest/v1/tasks?select=id", { Accept: "text/csv" }, "PGRST107"],
+    ["nulls=stripped", "/api/rest/v1/tasks?select=id", { Accept: "application/vnd.pgrst.array+json;nulls=stripped" }, "PGRST107"],
+    ["Range header", "/api/rest/v1/tasks?select=id", { Range: "0-9" }, "PGRST100"],
+    ["embed hint", "/api/rest/v1/tasks?select=id,task_labels!inner(label_id)", {}, "PGRST100"],
+    ["alias", "/api/rest/v1/tasks?select=t:title", {}, "PGRST100"],
+    ["cast", "/api/rest/v1/tasks?select=title::text", {}, "PGRST100"],
+    ["embedded filter", "/api/rest/v1/tasks?select=*,task_labels(label_id)&task_labels.label_id=eq.x", {}, "PGRST100"],
+    ["unknown embed", "/api/rest/v1/tasks?select=*,projects(name)", {}, "PGRST200"],
+    ["on_conflict on GET", "/api/rest/v1/tasks?select=id&on_conflict=id", {}, "PGRST100"],
+  ];
+  for (const [label, path, headers, code] of refusals) {
+    const body = await raw(path, headers);
+    ok(body.code === code, `fails closed — ${label}: ${body.code}`);
+  }
+  const extraArg = await A.rpc("contacts", { search: "", user_id: b.id });
+  ok(extraArg.error?.code === "PGRST202", `rpc with an argument it does not take: PGRST202 (${extraArg.error?.code})`);
+}
+
 // --- freeze ------------------------------------------------------------------
 frozen = true;
 {
@@ -367,6 +414,14 @@ frozen = false;
   });
   const allow = pre.headers.get("access-control-allow-headers") ?? "";
   ok(pre.status === 204 && ["prefer", "content-profile", "accept-profile", "authorization"].every((h) => allow.includes(h)), "preflight allows the builder's headers");
+}
+
+// --- Hyperdrive: no data read may be cacheable --------------------------------
+{
+  const reads = sent.filter((t) => /^\s*(SELECT|WITH)\b/i.test(t) && !/pg_attribute|pg_index|pg_constraint/.test(t));
+  const cacheable = reads.filter((t) => !/\bnow\(\)/i.test(t));
+  ok(reads.length > 20, `recorded the route's reads (${reads.length})`);
+  ok(cacheable.length === 0, `every data read calls now(), so Hyperdrive will not cache it: ${cacheable[0]?.slice(0, 120) ?? ""}`);
 }
 
 restoreIo();

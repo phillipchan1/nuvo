@@ -15,10 +15,11 @@ Sisters: [`../cloudflare-cutover.md`](../cloudflare-cutover.md) § Not ready to 
 
 ## 1 · Why a PostgREST subset, not per-table routes
 
-The other shape — a client shim over `/api/data/:table` (PR #117) — lists the whole table
-and filters in the browser. On a lived-in account that is every task on every query, one
-extra request **per task** for `task_labels(label_id)` (it is in `TASK_COLS`), and no
-`.or()` at all (event search). Speaking PostgREST's wire instead keeps the filters, order,
+The other shape — a client shim over `/api/data/:table` (PR #117's `src/lib/workerData.ts`)
+— loads the whole table (`listTable`) and filters and sorts it in the browser
+(`applyFilters` / `applyOrder`). On a lived-in account that is every task on every query,
+one extra request **per row** for `task_labels(label_id)` (its `nestEmbeds`; the embed is in
+`TASK_COLS`), and no `.or()` at all (event search). Speaking PostgREST's wire instead keeps the filters, order,
 limit, embeds and upsert semantics in SQL, where they were, and leaves ~60 call sites
 untouched. The cost is a strict parser on the Worker; `rest.check.ts` drives the real
 supabase-js builder through it.
@@ -81,7 +82,11 @@ Re-pointed to the Worker's twin of the same path. A name the Worker hasn't porte
 ## 6 · Proof
 
 - `node --experimental-strip-types worker/src/rest.check.ts` — the app's own queries through
-  `workerRoute`, A/B isolation, LWW, natural-key upserts, freeze, preflight (in `check:worker`).
+  `workerRoute`, A/B isolation, LWW, natural-key upserts, freeze, preflight; response shapes
+  (406 PGRST116, `Content-Range` with `count`, `return=representation` / 204 minimal); grammar
+  it doesn't speak refused, never half-honoured (unknown operator / `Prefer` / `Accept` /
+  `Range`, embed hints, aliases, casts, embedded filters, unknown rpc arguments); and every
+  data read uncacheable by Hyperdrive (in `check:worker`).
 - `npm run check:isolation-mutation` — each `rest.ts` owner clause, deleted alone, fails `rest.check`.
 - `tests/worker-seam.test.ts` — the route map, and that the flag-off client is untouched.
 - Driven 2026-10-29, dev app → local `wrangler dev` → Postgres 17 restored the way
@@ -89,6 +94,23 @@ Re-pointed to the Worker's twin of the same path. A name the Worker hasn't porte
   auth stub): OTP sign-in; Schedule and phone Calendar load; capture (desktop and phone),
   complete, priority, label, add a step, trash, retry a parked change, reload. Every data
   request went to `:8787`. Flag off on the same build: every request to Supabase, none to the Worker.
+
+### What `nuvo-preview` can't serve today (probed 2026-10-29)
+
+`nuvo-preview` is the #90-era build. None of this was driven there; all of it is covered by
+`rest.check.ts` and the local run above.
+
+| Route the flag-on client calls | Preview answers |
+|---|---|
+| `GET/POST/PATCH/DELETE /api/rest/v1/:table` | `200 text/html` (the SPA) |
+| `POST /api/rest/v1/rpc/*` | `405` |
+| `/functions/v1/` `task-mirror` · `slot-mirror` · `google-events` · `icloud-events` · `calendar-refresh` · `rollover` · `route-events` · `agent` · `github-activity` · `apple-identity` | `501 stay_on_supabase` |
+| `GET /api/entitlement` · `GET /api/maintenance` | `200 text/html` |
+| `/api/auth/*` from any origin but its own | CORS refuses (`trustedOrigins` is the preview origin only) |
+
+Not driven locally either: the mirrors (`task-mirror` 500s on the local restore, which skips
+`scripts/cutover-seal-tokens.mjs`'s sealed-token columns) and anything that needs an OpenAI
+key (`agent`, `route-events` 503).
 
 ### Drive it locally (until the preview is redeployed)
 
