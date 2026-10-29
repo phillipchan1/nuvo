@@ -13,7 +13,8 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/nuvo
 # TOKEN_ENC_KEY_V1=
 # TOKEN_ENC_KEY_V2=
 # TOKEN_ENC_CURRENT=1
-# Same VAPID pair as Supabase — a new pair breaks every existing subscription.
+# Prod uses a new pair, not Supabase's (D-173). Generate a local one with
+# `npx web-push generate-vapid-keys`; never reuse prod's.
 # VAPID_PUBLIC_KEY=
 # VAPID_PRIVATE_KEY=
 # VAPID_SUBJECT=mailto:support@nuvo.app

@@ -61,6 +61,21 @@ function keyToBase64(key: ArrayBuffer | null): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * Was this browser's subscription made with a different VAPID key than the one
+ * this build carries? After a rotation the push service refuses every send
+ * signed with the new key, so the old subscription is dead weight: replace it,
+ * don't reuse it (D-173). A browser that doesn't report the key keeps its
+ * subscription — guessing "stale" there would churn every launch.
+ */
+export function subscribedWithOtherKey(
+  subscriptionKey: ArrayBuffer | null | undefined,
+  publicKey: string,
+): boolean {
+  if (!subscriptionKey || !publicKey) return false;
+  return keyToBase64(subscriptionKey) !== publicKey.replace(/=+$/, "");
+}
+
 /** "iPhone · Safari" — cosmetic, for the Settings list of where reminders go. */
 function describeDevice(): string {
   const ua = navigator.userAgent;
@@ -86,7 +101,9 @@ export type SubscribeOutcome =
  *
  * Idempotent: an existing subscription is reused rather than replaced, and the
  * row is upserted on `(user_id, endpoint)` — re-running this on every launch is
- * cheap and is what keeps `time_zone` fresh when someone travels.
+ * cheap and is what keeps `time_zone` fresh when someone travels. The one
+ * exception is a subscription made with another VAPID key: that is replaced,
+ * which is how every installed phone heals on its first launch after a rotation.
  */
 export async function subscribeToPush(): Promise<SubscribeOutcome> {
   if (!pushSupported()) return { ok: false, reason: "unsupported" };
@@ -97,7 +114,13 @@ export async function subscribeToPush(): Promise<SubscribeOutcome> {
 
   try {
     const registration = await navigator.serviceWorker.ready;
-    const existing = await registration.pushManager.getSubscription();
+    let existing = await registration.pushManager.getSubscription();
+    if (existing && subscribedWithOtherKey(existing.options?.applicationServerKey, VAPID_PUBLIC_KEY)) {
+      const stale = existing.endpoint;
+      await existing.unsubscribe().catch(() => {});
+      await supabase.from("push_subscriptions").delete().eq("endpoint", stale);
+      existing = null;
+    }
     const sub =
       existing ??
       (await registration.pushManager.subscribe({

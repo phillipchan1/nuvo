@@ -101,6 +101,28 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 
 ---
 
+## Not ready to flip (found 2026-10-27)
+
+Read from the code while setting the Worker's secrets; none of these were driven.
+
+1. **The SPA never calls the Worker's data API.** With `VITE_API_BASE_URL` set, `useAuth`
+   builds a Supabase-shaped session from Better Auth, but the `supabase` client itself
+   has none — every `supabase.from()` / `.rpc()` (the sync outbox in
+   `src/lib/sync/transport.ts`, `push.ts`, the hooks) still goes to PostgREST as `anon`.
+   `/api/data/*` and `/api/rpc/*` exist on the Worker; nothing in `src/` calls them.
+   The "Planner CRUD" row below is the server half only.
+2. **Google sign-in isn't ported.** Better Auth wires Apple only (`worker/src/auth.ts`);
+   `src/lib/googleAuth.ts` ignores the flag.
+3. **The desktop build never gets the flag.** `release.yml` doesn't pass
+   `VITE_API_BASE_URL`, so auto-updated Macs keep writing Supabase after the switch.
+4. **Realtime has no Worker path.** `useRealtime.ts` listens for Supabase broadcasts, which
+   fire only on Supabase writes.
+5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
+   caching disabled. A read right after a write can be stale.
+6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
+
+---
+
 ## What moves (eventually)
 
 | Piece | Today | After cutover | Rollback |
@@ -110,7 +132,7 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; same VAPID pair). Supabase copies stay until flip | n/a |
+| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; new VAPID pair, D-173). Supabase copies stay until flip | n/a |
 | Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
@@ -145,8 +167,8 @@ None of these belong in the Vite bundle.
 | `APPLE_SIWA_TEAM_ID` / `APPLE_SIWA_KEY_ID` / `APPLE_SIWA_PRIVATE_KEY` / `APPLE_SIWA_CLIENT_ID` | secrets | Authorization-code exchange + Apple `/auth/revoke` (guideline 5.1.1(v)) |
 | `TOKEN_ENC_KEY_V1` | secret | 32-byte AES-256-GCM key (hex or base64). Seals refresh tokens / PATs / app passwords into Neon `refresh_token_enc` columns. AAD is length-prefixed `table` / `row_id` / `user_id`. Unset or invalid → fail closed (Apple refresh token is not stored; 503, no plaintext) |
 | `TOKEN_ENC_KEY_V2` | secret (optional) | Next key for rotation. `TOKEN_ENC_CURRENT=2` seals with v2; open still accepts v1 |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **Same pair as today's Supabase function** — a new pair breaks every existing subscription |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | secret | **A new pair** (D-173), already on Worker `nuvo`. Supabase's private key can't be read back. Its public key ships only in the switch build — § Key rotation at cutover |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | Google OAuth + token refresh. The secret **rotates inside the freeze window** — § Key rotation at cutover |
 | `MAINTENANCE_WRITE_FREEZE` | var | Same parse as `supabase/functions/_shared/writeFreeze.ts`: unset / empty / `0` / `false` / `no` / `off` (trimmed, case-insensitive) stay open. **Any other non-empty value** (`1`, `true`, `yes`, `on`, a typo, `maybe`, `2`) freezes Worker writes. `GET /api/maintenance` is what the app reads |
 | `CUTOVER_ARMED` | var | `1` / `true` arms the copy window. The app fail-closes the freeze while armed |
 | `SUPABASE_URL` | secret | Billing read only. `GET /api/entitlement` and delete-account SELECTs `subscriptions` here by the session user id |
@@ -173,41 +195,41 @@ also requires the confirm input exactly `CUTOVER nuvo`.
 
 They live in the **`nuvo-cutover` GitHub Environment**, not at repo level
 (the job has `environment: nuvo-cutover`). Set them for the run, then
-**delete them**. Every secret the cleanup deletes has a restore source on the
-ops box. Paths only; never paste, echo, log, or commit a value.
+**delete them**. Every secret the cleanup deletes has a restore source on
+**Phil's Mac**: the login Keychain, or `neonctl` for the two Neon URLs, which mints
+them from the signed-in CLI, so there is no stored copy to go stale. Names only;
+never paste, echo, log, or commit a value. *(Until 2026-10-29 the restore source was
+the ops box's `/home/box/agent-data/secrets/`. Those files are stale and retired:
+§ Key rotation at cutover → Source of truth.)*
 
-| Secret | Restore source (ops box) | Value |
+| Secret | Restore source (Mac) | Value |
 |---|---|---|
-| `SOURCE_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-migration-reader` | the `MIGRATION_READER_URL` line (migration_reader, session pooler) |
-| `SCRATCH_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon-scratch-url` | whole file (Neon direct URL, database `nuvo_dryrun_scratch`; must be empty before a dry run) |
-| `TARGET_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon.env` | the `NEON_DIRECT_URL` line (database `neondb`) |
-| `TOKEN_ENC_KEY_V1` | `/home/box/agent-data/secrets/nuvo-token-enc-key-v1` | whole file (64 hex chars, mode 0600). **Same file** the `nuvo` Worker secret was set from. Never regenerate it once tokens are sealed |
+| `SOURCE_DATABASE_URL` | Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | migration_reader URI, session pooler |
+| `SCRATCH_DATABASE_URL` | `neonctl connection-string`, database `nuvo_dryrun_scratch` | Neon direct URL; must be empty before a dry run |
+| `TARGET_DATABASE_URL` | `neonctl connection-string`, database `neondb` | Neon direct URL |
+| `TOKEN_ENC_KEY_V1` | Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` | 64 hex chars. **Same item** the `nuvo` Worker secret was set from (sha256 `baa57583…`). Never regenerate it once tokens are sealed |
 
-Restore (values go file → stdin → `gh`; nothing hits stdout or shell history):
+Restore (values go Keychain / `neonctl` → stdin → `gh`; nothing hits stdout or shell
+history). The flags are spelled out on every line because zsh, the Mac's shell, does
+not word-split a `$E`:
 
 ```bash
-S=/home/box/agent-data/secrets
-E="--env nuvo-cutover -R phillipchan1/nuvo"
-envval() { python3 -c 'import sys
-for l in open(sys.argv[1]):
-    k, _, v = l.strip().partition("=")
-    if k == sys.argv[2]: sys.stdout.write(v.strip().strip("\"\x27")); break
-else: sys.exit("missing " + sys.argv[2])' "$1" "$2"; }
-envval "$S/nuvo-migration-reader" MIGRATION_READER_URL | gh secret set SOURCE_DATABASE_URL $E
-gh secret set SCRATCH_DATABASE_URL $E < "$S/nuvo-neon-scratch-url"
-envval "$S/nuvo-neon.env" NEON_DIRECT_URL | gh secret set TARGET_DATABASE_URL $E
-gh secret set TOKEN_ENC_KEY_V1 $E < "$S/nuvo-token-enc-key-v1"
+kc() { security find-generic-password -s "$1" -w | tr -d '\n'; }
+neonurl() { neonctl connection-string main --project-id frosty-snow-66931204 --role-name neondb_owner --database-name "$1" | tr -d '\n'; }
+kc nuvo-migrate/SOURCE_DATABASE_URL | gh secret set SOURCE_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+neonurl nuvo_dryrun_scratch | gh secret set SCRATCH_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+neonurl neondb | gh secret set TARGET_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+kc nuvo-worker/TOKEN_ENC_KEY_V1 | gh secret set TOKEN_ENC_KEY_V1 --env nuvo-cutover -R phillipchan1/nuvo
 gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.secrets[].name'   # names only
 ```
 
 Delete after the run, then verify the count is 0:
 
 ```bash
-E="--env nuvo-cutover -R phillipchan1/nuvo"
-gh secret delete SOURCE_DATABASE_URL $E
-gh secret delete SCRATCH_DATABASE_URL $E
-gh secret delete TARGET_DATABASE_URL $E
-gh secret delete TOKEN_ENC_KEY_V1 $E
+gh secret delete SOURCE_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete SCRATCH_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete TARGET_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete TOKEN_ENC_KEY_V1 --env nuvo-cutover -R phillipchan1/nuvo
 gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.total_count'   # expect 0
 ```
 
@@ -229,81 +251,74 @@ So reset it twice per dry run:
 The reset connects to `neondb` (the database it must never touch), proves
 that, records `neondb`'s table count, drops and recreates only
 `nuvo_dryrun_scratch`, then checks `neondb` is unchanged and scratch has 0
-tables. It runs over HTTPS (443) with `@neondatabase/serverless`, since the
-box cannot speak Postgres on 5432. URLs are read from the box files and never
-printed:
+tables. It runs from the Mac over Postgres (5432) with Homebrew's `postgresql@17`.
+URLs come from `neonctl` and are never printed:
 
 ```bash
-# one-time on the box: pinned driver outside the repo (not a repo dependency)
-T=/home/box/agent-data/tools/neon
-[ -d "$T/node_modules/@neondatabase/serverless" ] || {
-  mkdir -p "$T" && echo '{"private":true,"type":"module"}' > "$T/package.json" &&
-  npm i --prefix "$T" --no-fund --no-audit @neondatabase/serverless@1.0.2; }
-cd "$T"
-node --input-type=module <<'EOF'
-import { neon } from "@neondatabase/serverless";
-import fs from "node:fs";
-const S = "/home/box/agent-data/secrets";
-const TARGET = "nuvo_dryrun_scratch";
-const line = fs.readFileSync(`${S}/nuvo-neon.env`, "utf8").split("\n")
-  .find((l) => l.trim().startsWith("NEON_DIRECT_URL="));
-if (!line) throw new Error("missing NEON_DIRECT_URL");
-const mainUrl = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
-const scratchUrl = fs.readFileSync(`${S}/nuvo-neon-scratch-url`, "utf8").trim();
-if (new URL(scratchUrl).pathname.slice(1) !== TARGET) throw new Error("scratch file is not " + TARGET);
-const tables = async (q) => (await q`select count(*)::int n from information_schema.tables
-  where table_schema not in ('pg_catalog','information_schema')`)[0].n;
-const main = neon(mainUrl);
-const db = (await main`select current_database() db`)[0].db;
-if (db !== "neondb") throw new Error("ABORT: connected db is not neondb");
-if (TARGET === db) throw new Error("ABORT: target is the connected db");
-const before = await tables(main);
-console.log(`connected=neondb neondb_tables_before=${before}`);
-await main.query(`DROP DATABASE IF EXISTS "${TARGET}" WITH (FORCE)`);
-await main.query(`CREATE DATABASE "${TARGET}"`);
-const after = await tables(main);
-if (after !== before) throw new Error(`neondb table count changed ${before} -> ${after}`);
-const scr = neon(scratchUrl);
-console.log(`neondb_tables_after=${after} scratch=${(await scr`select current_database() db`)[0].db} tables=${await tables(scr)}`);
+bash <<'EOF'
+set -euo pipefail
+PSQL=/opt/homebrew/opt/postgresql@17/bin/psql
+TARGET=nuvo_dryrun_scratch
+NEON=(--project-id frosty-snow-66931204 --role-name neondb_owner)
+MAIN=$(neonctl connection-string main "${NEON[@]}" --database-name neondb)
+SCRATCH=$(neonctl connection-string main "${NEON[@]}" --database-name "$TARGET")
+q() { "$PSQL" "$1" -X -q -v ON_ERROR_STOP=1 -tA -c "$2"; }
+TABLES="select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')"
+db=$(q "$MAIN" "select current_database()")
+[ "$db" = neondb ] || { echo "ABORT: connected db is not neondb"; exit 1; }
+[ "$TARGET" != "$db" ] || { echo "ABORT: target is the connected db"; exit 1; }
+before=$(q "$MAIN" "$TABLES")
+echo "connected=neondb neondb_tables_before=$before"
+q "$MAIN" "DROP DATABASE IF EXISTS \"$TARGET\" WITH (FORCE)"
+q "$MAIN" "CREATE DATABASE \"$TARGET\""
+after=$(q "$MAIN" "$TABLES")
+[ "$after" = "$before" ] || { echo "neondb table count changed $before -> $after"; exit 1; }
+echo "neondb_tables_after=$after scratch=$(q "$SCRATCH" "select current_database()") tables=$(q "$SCRATCH" "$TABLES")"
 EOF
 ```
 
 Expect `neondb_tables_before=22`, `neondb_tables_after=22`, and
 `scratch=nuvo_dryrun_scratch tables=0`. Stop if the connected database is not
 `neondb`, if the `neondb` count moves, or if scratch is not at 0 tables. Never
-point this at any other database name.
+point this at any other database name. Last run 2026-10-29: `neondb` 22 → 22,
+scratch 34 tables → 0.
 
 #### Go/no-go: Worker and copy job use the same `TOKEN_ENC_KEY_V1`
 
 A key mismatch is silent until the Worker tries to open a sealed token (Apple
 revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
 
-1. Set the Worker secret and the environment secret from the **same file**,
-   `/home/box/agent-data/secrets/nuvo-token-enc-key-v1`
-   (`wrangler secret put TOKEN_ENC_KEY_V1 --name nuvo < "$S/nuvo-token-enc-key-v1"`).
-   Record `sha256sum` of the file (the digest only, never the key) in the
-   run notes each time either side is set; the digests must match.
+1. Set the Worker secret and the environment secret from the **same Keychain
+   item**, `nuvo-worker/TOKEN_ENC_KEY_V1`
+   (`security find-generic-password -s nuvo-worker/TOKEN_ENC_KEY_V1 -w | tr -d '\n' | npx wrangler secret put TOKEN_ENC_KEY_V1 --name nuvo`).
+   Record the value's sha256 (the digest only, never the key) in the run notes
+   each time either side is set; the digests must match. The Worker was last set
+   2026-10-28: `baa57583…`.
 2. After a dry run (or cutover) whose "Re-encrypt vault tokens in-runner" step
-   succeeded, open the sealed tokens with the box key file. Dry run: point
-   `DATABASE_URL` at the scratch database. Cutover: point it at Neon `neondb`.
+   succeeded, open the sealed tokens with the Keychain key. Dry run: point
+   `DATABASE_URL` at the scratch database. Cutover: at Neon `neondb`.
 
    ```bash
-   TOKEN_ENC_KEY_V1_FILE="$S/nuvo-token-enc-key-v1" \
-   DATABASE_URL="$(cat "$S/nuvo-neon-scratch-url")" \
-     node --experimental-strip-types worker/src/tokenDecrypt.check.ts
+   TOKEN_ENC_KEY_V1="$(security find-generic-password -s nuvo-worker/TOKEN_ENC_KEY_V1 -w)" \
+   DATABASE_URL="$(neonctl connection-string main --project-id frosty-snow-66931204 --role-name neondb_owner --database-name nuvo_dryrun_scratch)" \
+   TOKEN_DECRYPT_TCP=1 node --experimental-strip-types worker/src/tokenDecrypt.check.ts
    ```
 
-   The check reads the key from that file (never prints it) and talks to Neon
-   over HTTPS (`@neondatabase/serverless`), because the box cannot reach
-   Postgres on 5432. It decrypts every sealed token. It prints only
-   `provider ok` / `provider fail`. **Go** = every provider that has rows
-   prints `ok` and none prints `fail`. A skip (exit 0 with nothing opened)
-   is **not** a go: it means the key or URL was unset. A provider with rows
-   and 0 tokens checked is a no-go (exit 1).
+   The check never prints the key. `TOKEN_DECRYPT_TCP=1` uses the repo's
+   `postgres` driver over 5432; the HTTPS driver the box needed isn't a repo
+   dependency. It decrypts every sealed token and prints only `provider ok` /
+   `provider fail`. **Go** = every provider that owes tokens prints `ok` and none
+   prints `fail`. A provider owes one sealed token per row that had a Vault
+   pointer at the source (`refresh_token_secret_id` / `token_secret_id`). A row
+   without one never had a token: prod's two Apple identities came from
+   ID-token-only sign-in, so Apple owes none. Opening fewer than owed is a no-go
+   (exit 1). A skip (exit 0 with nothing opened) is **not** a go: it means the key
+   or URL was unset. Last run 2026-10-29, against the 2026-10-28 scratch copy:
+   `github ok`, `google ok`, `icloud ok`, `ics ok` (11 tokens).
 3. Because the Worker secret cannot be read back, step 1's matching digest is
    what ties the Worker to the key step 2 just proved. If the digests differ,
    or anyone re-ran `wrangler secret put` from another source, re-set the
-   Worker from the box file before the flip.
+   Worker from the Keychain item before the flip.
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
 redacted before it is printed. The custom-format dump is verified on the
@@ -521,7 +536,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, same VAPID pair, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
@@ -568,6 +583,116 @@ against a Neon that is still missing the last billing / `sync_log` rows.
    `/api/cron/calendar-dispatch`, not `github-poll` or `trim-sync-log` —
    and check it actually ran: a non-skipped JSON body, or a log line
    from the runner — not `{ skipped: true, reason: "cutover_not_flipped" }`.
+
+## Key rotation at cutover (D-173)
+
+Two production secrets can't be copied to the Worker, because nothing will give
+their values back. Supabase returns a sha256 of every edge secret, and its auth-config
+API doesn't return the Google secret either. Google stopped showing client secrets
+after creation. **Both rotate.**
+
+### Worker `nuvo` secrets — state on 2026-10-29
+
+| Secret | Source |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase CLI, piped straight to `wrangler` |
+| `GOOGLE_CLIENT_ID`, `RESEND_WEBHOOK_SECRET` | Copied; sha256 matches Supabase's |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | **New pair**, below. Keychain `nuvo-worker/VAPID_*` |
+| `BETTER_AUTH_SECRET`, `CRON_SECRET` | Generated. Keychain `nuvo-worker/…` |
+| `BETTER_AUTH_URL` = `https://api.nuvo.day`, `APP_URL` = `https://app.nuvo.day` (sha256 matches Supabase's), `VAPID_SUBJECT`, `APPLE_BUNDLE_ID` = `day.nuvo.app` | Config |
+| `RESEND_API_KEY`, `OPENAI_API_KEY` | **New keys, 2026-10-29**, both named `nuvo-worker`. Phil created them and pasted them into a hidden prompt that piped them to `wrangler`, so no copy exists anywhere else. Resend is Full access: inbound email reads `/emails/receiving` |
+| `TOKEN_ENC_KEY_V1` | **Replaced 2026-10-28.** Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` (sha256 `baa57583…`). The go/no-go opened every token sealed with it, 2026-10-29 |
+
+**Source of truth: Phil's Mac, since 2026-10-29.** #122 had made the ops box's
+`/home/box/agent-data/secrets/` files the restore source. A rehearsal from a Mac checkout cut
+before #122 then replaced two of those values without updating the box, so the two copies
+disagreed. Phil chose the Mac. The restore, reset and go/no-go steps above now read from it:
+
+| Value | Source | Retired box file (stale; delete it) |
+|---|---|---|
+| `TOKEN_ENC_KEY_V1` | Keychain `nuvo-worker/TOKEN_ENC_KEY_V1`, which is also what Worker `nuvo` holds | `nuvo-token-enc-key-v1`: the pre-2026-10-28 key, which the Worker no longer has |
+| `SOURCE_DATABASE_URL` | Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | `nuvo-migration-reader`: the password was reset 2026-10-28, so it no longer logs in |
+| `SCRATCH_` / `TARGET_DATABASE_URL` | `neonctl connection-string`, minted per run | `nuvo-neon-scratch-url`, `nuvo-neon.env` |
+
+No real token was ever sealed with the old key outside a scratch copy, so retiring it strands
+nothing.
+
+**Still missing:**
+- `GOOGLE_CLIENT_SECRET` — below.
+- The Apple set. Nuvo has no Sign in with Apple key: Supabase only verifies the ID token,
+  but Better Auth needs a client-secret JWT. Create a key for `day.nuvo.app` and download
+  the `.p8` once. The JWT lasts at most 6 months.
+- `MS_*` — M365 isn't carried over this round.
+
+`RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
+Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
+
+### Data — rehearsal on 2026-10-28
+
+**A full rehearsal copy of production went into Neon `nuvo_dryrun_scratch`** on
+2026-10-28. It ran with Supabase live, and Supabase wasn't frozen or written. The go/no-go
+passed on it, then it was **reset 2026-10-29** (§ Reset scratch), so no prod copy stays on Neon.
+`neondb` (what Hyperdrive serves) still holds only the synthetic A/B seed, 2 users.
+
+| What | Result |
+|---|---|
+| Accounts | 12 `auth.users` → `"user"`, 13 identities → `account`. Auth parity hashes match |
+| Planner tables | 26 copied. 25 match Supabase by count + md5 |
+| `calendar_accounts` | 11 = 11. The md5 differs on `calendars`, `next_sync_at`, `sync_failures`, `updated_at`: the every-minute calendar poll wrote between the dump and the snapshot. **Live drift, not a copy bug.** The freeze pauses `pg_cron`, which removes it |
+| Tokens | 10 calendar refresh tokens + 1 activity source sealed with the new key, 0 mismatches. 5 plaintext access tokens sealed and NULLed |
+| `sync_log` | 87,472 rows by id anti-join. Identity parked at 1,250,355 |
+| Dump | 2.6 MB, on the Mac only, shredded after the run |
+
+The source credential: `migration_reader` (login, `default_transaction_read_only=on`)
+and all three `migration_tmp` readers already existed. Its password was reset 2026-10-28
+with a SCRAM verifier, never the plaintext. That reset is what left the box's
+`nuvo-migration-reader` stale (above).
+
+How it ran: the workflow's own helper on the Mac, extracted from the YAML, with the arm and
+freeze gates skipped. That checkout still gated `dump` on the freeze even for `mode=dry-run`;
+#116 has since dropped the gate for dry runs, so **the next rehearsal runs through
+`cutover-migrate` itself**, not a local copy. A write that lands mid-run shows up as `verify`
+drift, which is expected. The real copy still runs frozen (§ the copy steps above), because a
+live copy goes stale the moment it finishes.
+
+### VAPID — already rotated on the Worker
+
+- New public key: `BMdUziU09i52gETKWH1D8J9sLKHWHpAZEdj-ix6ePW4Ht7aL7-wLwMBORC8CiQp6MW6DKGZfSOUMI2yFm1xQH6A`.
+  **Never ship it in a build that still talks to Supabase.** Supabase's `push-dispatch`
+  signs with the old private key, so a phone that re-subscribed early would go silent
+  until the flip.
+- **At the switch (step 7):** the build that sets `VITE_API_BASE_URL` also sets
+  `VITE_VAPID_PUBLIC_KEY` to the key above.
+- **On first launch**, `subscribeToPush` finds the subscription made with the old key. It
+  unsubscribes, deletes that row, and re-subscribes (`tests/push-key-rotation.test.ts`).
+  Only the installed PWA and desktop browsers have Web Push; the Tauri shells never did.
+- **A device that never reopens** keeps an old-key row. Sends to it fail with an auth
+  error, not 404/410, so D-167's prune won't remove it. After two weeks, delete the rows
+  that are still failing.
+- `push.ts` still writes through `supabase.from(...)`. Its re-subscribe reaches Neon only
+  once blocker 1 lands.
+
+### Google client secret — rotate inside the freeze window
+
+Client `917673962447-p2if…` (project `nuvo-499002`) holds two enabled secrets:
+`****kC0F` (2026-06-12) and `****A-lJ` (2026-07-24). Both slots are full. Nobody knows
+which one Supabase's Auth provider uses, or which its edge functions use — possibly both.
+
+1. **Inside the freeze**, writes already 503, so a minute of Google errors on Supabase
+   costs nothing. A person deletes `****kC0F`, clicks **Add secret**, and copies the new one.
+2. **Set it everywhere at once:**
+
+   ```bash
+   read -rs -p "new Google client secret: " G; echo
+   printf '%s' "$G" | npx wrangler secret put GOOGLE_CLIENT_SECRET
+   supabase secrets set --project-ref ebibzojtkzkphykznomv GOOGLE_CLIENT_SECRET="$G"
+   unset G
+   ```
+
+   Then paste the same value into Supabase → Authentication → Providers → Google.
+3. Supabase now runs on either the new secret or `****A-lJ`, and both are valid. Refresh
+   tokens belong to the client, not the secret, so calendar connections survive.
+   Delete `****A-lJ` once the Worker has run for a day.
 
 ## Write freeze
 

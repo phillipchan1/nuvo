@@ -6283,6 +6283,7 @@ Fan-out is a per-user SQL loop — no Queue. 404/410 deletes that device's
 subscription only. `push_subscriptions` writes match A's cutover resync:
 delete-missing, then a full-row `ON CONFLICT (id)` upsert, never another
 user's row. **The VAPID pair is the same pair as today's Supabase function.**
+*(Superseded by D-173 — that pair can't be read back, so it rotates at cutover.)*
 Every Worker cron — push-dispatch included — is gated on fail-closed
 `CUTOVER_FLIPPED` (`gateCron` / `gateCronBearerRoute` in
 `worker/src/cutoverFlip.ts`). Unset / unknown → HTTP 200
@@ -6554,6 +6555,40 @@ cleared, and the "Blocked 2 tasks together" toast. **Not driven:** the toast's U
 closed by the time I reached it, so the rows were restored by SQL), a join on real data (the
 dummy account has no slot today; harness only), a repeating occurrence's override mark
 (follows `CalendarPane`'s order, no test), and an iPhone, in the PWA or the Tauri shell.*
+
+---
+
+**D-173 · 2026-10-28 · The VAPID pair and the Google client secret rotate at the Cloudflare
+cutover — neither value can be read back.** *(Supersedes D-167's "the VAPID pair does not change".)*
+
+D-167 kept the VAPID pair because a new one breaks every subscription. That assumed the private key
+could be copied, and it can't. It only ever lived as a Supabase edge secret, Supabase returns a
+sha256 and never the value, and no other copy was kept in August. The Google client secret has the
+same problem twice over. Supabase hashes it, and Google stopped showing secrets after creation. The
+client already holds two secrets, and nobody knows which one each Supabase path uses.
+
+- **VAPID:** a new pair, generated and verified 2026-10-27, is on Worker `nuvo`. The operator's
+  Keychain holds a copy (`nuvo-worker/VAPID_*`) — the copy that was missing last time. Its public
+  key ships only in the switch build. A Supabase-backed build carrying it would silence any phone
+  that re-subscribed early.
+- **Healing:** `subscribeToPush` now replaces a subscription made with another key
+  (`subscribedWithOtherKey`) and deletes its row. It runs on every launch, so an installed phone
+  heals on its first open after the switch. Until then it does nothing, because the keys match.
+- **Google:** rotated inside the freeze window. Delete the older secret, add a new one, and set it
+  on the Worker *and* on both Supabase paths, so whichever one used the deleted secret moves over.
+  Delete the remaining old secret after a day.
+
+**Anchor.** No Question Ledger row — infrastructure, like D-166 / D-167. Strains nothing in the
+product grammar. The cost: a phone that never reopens gets no background reminders until it does.
+The four no's: no pool, no new user-facing name, works with any number of stale subscriptions,
+nothing that only holds in the builder's account.
+
+*Status: built, not yet shipped in a build. `src/lib/push.ts` +
+`tests/push-key-rotation.test.ts` (the rotation case fails on the old reuse path). The new pair is
+on the Worker. Runbook: [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Key rotation at
+cutover.*
+
+---
 
 **D-174 · 2026-10-29 · On the Worker path the SPA keeps its own supabase-js queries; the Worker
 speaks the slice of PostgREST they use, scoped by the session.**

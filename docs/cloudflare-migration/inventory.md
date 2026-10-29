@@ -115,7 +115,7 @@ Private **broadcast**, not `postgres_changes` (`tests/realtime-broadcast.test.ts
 | `inbound-email` | Svix + inbound token | no | **Worker/Neon** |
 | `m365-oauth` / `m365-sync` | OAuth / service | no | **Worker** — cron-bearer skipped until `CUTOVER_FLIPPED` |
 | `mcp` | Connection bearer | no | **Worker/Neon** (connection hash) |
-| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (same pair) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
+| `push-dispatch` | Service role cron / Worker `CRON_SECRET` | VAPID (new pair at cutover, D-173) | **Ported** — Worker + Neon; Worker crons no-op until `CUTOVER_FLIPPED`; pg_cron stays until flip |
 | `referral-code` | User JWT | Stripe | Stay |
 | `rollover` | Session or `CRON_SECRET` | no | **Worker/Neon** (session = that user; cron iterates `users`) |
 | `route-events` | User JWT | no | **Worker/Neon** |
@@ -234,7 +234,7 @@ No automated `supabase db push` or `functions deploy` in CI.
 - `day`, `capture`, `inbound-email`, `route-events`, user `rollover`
 - Cron: `rollover`, `purge-trash`, `reminder-deliveries-prune`, `push-dispatch` (iterate `users`)
 - `slot-mirror` / `task-mirror` (session-owned; 404 existence oracle)
-- `push-dispatch` + Worker cron `nuvo-push-dispatch` (same VAPID pair; per-user loop, no Queue)
+- `push-dispatch` + Worker cron `nuvo-push-dispatch` (new VAPID pair at cutover, D-173; per-user loop, no Queue)
 - `/api/entitlement` — **read** Supabase `subscriptions` by the preserved session user id (writers stay). Body is the tier plus `current_period_end`, `cancel_at_period_end`, and referral **display** fields — no Stripe / Apple ids. SPA `useSubscription` uses this GET when the flag is on; PostgREST when it is not. Friend-code minting (`referral-code`) is **not** ported; the share block is disabled on the flag-on Billing pane. Live check: [`billing-live-check.md`](./billing-live-check.md)
 
 See [`route-inventory.md`](./route-inventory.md) for the full table.

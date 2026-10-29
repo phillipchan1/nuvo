@@ -57,7 +57,7 @@ export interface Env {
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
-  /** Same VAPID pair as today's Supabase function — a new pair breaks every sub. */
+  /** A new pair, not Supabase's (D-173 — its private key can't be read back). Clients re-subscribe on a key change. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
