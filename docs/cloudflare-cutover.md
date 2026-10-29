@@ -109,41 +109,41 @@ also requires the confirm input exactly `CUTOVER nuvo`.
 
 They live in the **`nuvo-cutover` GitHub Environment**, not at repo level
 (the job has `environment: nuvo-cutover`). Set them for the run, then
-**delete them**. Every secret the cleanup deletes has a restore source on the
-ops box. Paths only; never paste, echo, log, or commit a value.
+**delete them**. Every secret the cleanup deletes has a restore source on
+**Phil's Mac**: the login Keychain, or `neonctl` for the two Neon URLs, which mints
+them from the signed-in CLI, so there is no stored copy to go stale. Names only;
+never paste, echo, log, or commit a value. *(Until 2026-10-29 the restore source was
+the ops box's `/home/box/agent-data/secrets/`. Those files are stale and retired:
+§ Key rotation at cutover → Source of truth.)*
 
-| Secret | Restore source (ops box) | Value |
+| Secret | Restore source (Mac) | Value |
 |---|---|---|
-| `SOURCE_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-migration-reader` | the `MIGRATION_READER_URL` line (migration_reader, session pooler) |
-| `SCRATCH_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon-scratch-url` | whole file (Neon direct URL, database `nuvo_dryrun_scratch`; must be empty before a dry run) |
-| `TARGET_DATABASE_URL` | `/home/box/agent-data/secrets/nuvo-neon.env` | the `NEON_DIRECT_URL` line (database `neondb`) |
-| `TOKEN_ENC_KEY_V1` | `/home/box/agent-data/secrets/nuvo-token-enc-key-v1` | whole file (64 hex chars, mode 0600). **Same file** the `nuvo` Worker secret was set from. Never regenerate it once tokens are sealed |
+| `SOURCE_DATABASE_URL` | Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | migration_reader URI, session pooler |
+| `SCRATCH_DATABASE_URL` | `neonctl connection-string`, database `nuvo_dryrun_scratch` | Neon direct URL; must be empty before a dry run |
+| `TARGET_DATABASE_URL` | `neonctl connection-string`, database `neondb` | Neon direct URL |
+| `TOKEN_ENC_KEY_V1` | Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` | 64 hex chars. **Same item** the `nuvo` Worker secret was set from (sha256 `baa57583…`). Never regenerate it once tokens are sealed |
 
-Restore (values go file → stdin → `gh`; nothing hits stdout or shell history):
+Restore (values go Keychain / `neonctl` → stdin → `gh`; nothing hits stdout or shell
+history). The flags are spelled out on every line because zsh, the Mac's shell, does
+not word-split a `$E`:
 
 ```bash
-S=/home/box/agent-data/secrets
-E="--env nuvo-cutover -R phillipchan1/nuvo"
-envval() { python3 -c 'import sys
-for l in open(sys.argv[1]):
-    k, _, v = l.strip().partition("=")
-    if k == sys.argv[2]: sys.stdout.write(v.strip().strip("\"\x27")); break
-else: sys.exit("missing " + sys.argv[2])' "$1" "$2"; }
-envval "$S/nuvo-migration-reader" MIGRATION_READER_URL | gh secret set SOURCE_DATABASE_URL $E
-gh secret set SCRATCH_DATABASE_URL $E < "$S/nuvo-neon-scratch-url"
-envval "$S/nuvo-neon.env" NEON_DIRECT_URL | gh secret set TARGET_DATABASE_URL $E
-gh secret set TOKEN_ENC_KEY_V1 $E < "$S/nuvo-token-enc-key-v1"
+kc() { security find-generic-password -s "$1" -w | tr -d '\n'; }
+neonurl() { neonctl connection-string main --project-id frosty-snow-66931204 --role-name neondb_owner --database-name "$1" | tr -d '\n'; }
+kc nuvo-migrate/SOURCE_DATABASE_URL | gh secret set SOURCE_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+neonurl nuvo_dryrun_scratch | gh secret set SCRATCH_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+neonurl neondb | gh secret set TARGET_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+kc nuvo-worker/TOKEN_ENC_KEY_V1 | gh secret set TOKEN_ENC_KEY_V1 --env nuvo-cutover -R phillipchan1/nuvo
 gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.secrets[].name'   # names only
 ```
 
 Delete after the run, then verify the count is 0:
 
 ```bash
-E="--env nuvo-cutover -R phillipchan1/nuvo"
-gh secret delete SOURCE_DATABASE_URL $E
-gh secret delete SCRATCH_DATABASE_URL $E
-gh secret delete TARGET_DATABASE_URL $E
-gh secret delete TOKEN_ENC_KEY_V1 $E
+gh secret delete SOURCE_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete SCRATCH_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete TARGET_DATABASE_URL --env nuvo-cutover -R phillipchan1/nuvo
+gh secret delete TOKEN_ENC_KEY_V1 --env nuvo-cutover -R phillipchan1/nuvo
 gh api repos/phillipchan1/nuvo/environments/nuvo-cutover/secrets --jq '.total_count'   # expect 0
 ```
 
@@ -165,81 +165,74 @@ So reset it twice per dry run:
 The reset connects to `neondb` (the database it must never touch), proves
 that, records `neondb`'s table count, drops and recreates only
 `nuvo_dryrun_scratch`, then checks `neondb` is unchanged and scratch has 0
-tables. It runs over HTTPS (443) with `@neondatabase/serverless`, since the
-box cannot speak Postgres on 5432. URLs are read from the box files and never
-printed:
+tables. It runs from the Mac over Postgres (5432) with Homebrew's `postgresql@17`.
+URLs come from `neonctl` and are never printed:
 
 ```bash
-# one-time on the box: pinned driver outside the repo (not a repo dependency)
-T=/home/box/agent-data/tools/neon
-[ -d "$T/node_modules/@neondatabase/serverless" ] || {
-  mkdir -p "$T" && echo '{"private":true,"type":"module"}' > "$T/package.json" &&
-  npm i --prefix "$T" --no-fund --no-audit @neondatabase/serverless@1.0.2; }
-cd "$T"
-node --input-type=module <<'EOF'
-import { neon } from "@neondatabase/serverless";
-import fs from "node:fs";
-const S = "/home/box/agent-data/secrets";
-const TARGET = "nuvo_dryrun_scratch";
-const line = fs.readFileSync(`${S}/nuvo-neon.env`, "utf8").split("\n")
-  .find((l) => l.trim().startsWith("NEON_DIRECT_URL="));
-if (!line) throw new Error("missing NEON_DIRECT_URL");
-const mainUrl = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
-const scratchUrl = fs.readFileSync(`${S}/nuvo-neon-scratch-url`, "utf8").trim();
-if (new URL(scratchUrl).pathname.slice(1) !== TARGET) throw new Error("scratch file is not " + TARGET);
-const tables = async (q) => (await q`select count(*)::int n from information_schema.tables
-  where table_schema not in ('pg_catalog','information_schema')`)[0].n;
-const main = neon(mainUrl);
-const db = (await main`select current_database() db`)[0].db;
-if (db !== "neondb") throw new Error("ABORT: connected db is not neondb");
-if (TARGET === db) throw new Error("ABORT: target is the connected db");
-const before = await tables(main);
-console.log(`connected=neondb neondb_tables_before=${before}`);
-await main.query(`DROP DATABASE IF EXISTS "${TARGET}" WITH (FORCE)`);
-await main.query(`CREATE DATABASE "${TARGET}"`);
-const after = await tables(main);
-if (after !== before) throw new Error(`neondb table count changed ${before} -> ${after}`);
-const scr = neon(scratchUrl);
-console.log(`neondb_tables_after=${after} scratch=${(await scr`select current_database() db`)[0].db} tables=${await tables(scr)}`);
+bash <<'EOF'
+set -euo pipefail
+PSQL=/opt/homebrew/opt/postgresql@17/bin/psql
+TARGET=nuvo_dryrun_scratch
+NEON=(--project-id frosty-snow-66931204 --role-name neondb_owner)
+MAIN=$(neonctl connection-string main "${NEON[@]}" --database-name neondb)
+SCRATCH=$(neonctl connection-string main "${NEON[@]}" --database-name "$TARGET")
+q() { "$PSQL" "$1" -X -q -v ON_ERROR_STOP=1 -tA -c "$2"; }
+TABLES="select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')"
+db=$(q "$MAIN" "select current_database()")
+[ "$db" = neondb ] || { echo "ABORT: connected db is not neondb"; exit 1; }
+[ "$TARGET" != "$db" ] || { echo "ABORT: target is the connected db"; exit 1; }
+before=$(q "$MAIN" "$TABLES")
+echo "connected=neondb neondb_tables_before=$before"
+q "$MAIN" "DROP DATABASE IF EXISTS \"$TARGET\" WITH (FORCE)"
+q "$MAIN" "CREATE DATABASE \"$TARGET\""
+after=$(q "$MAIN" "$TABLES")
+[ "$after" = "$before" ] || { echo "neondb table count changed $before -> $after"; exit 1; }
+echo "neondb_tables_after=$after scratch=$(q "$SCRATCH" "select current_database()") tables=$(q "$SCRATCH" "$TABLES")"
 EOF
 ```
 
 Expect `neondb_tables_before=22`, `neondb_tables_after=22`, and
 `scratch=nuvo_dryrun_scratch tables=0`. Stop if the connected database is not
 `neondb`, if the `neondb` count moves, or if scratch is not at 0 tables. Never
-point this at any other database name.
+point this at any other database name. Last run 2026-10-29: `neondb` 22 → 22,
+scratch 34 tables → 0.
 
 #### Go/no-go: Worker and copy job use the same `TOKEN_ENC_KEY_V1`
 
 A key mismatch is silent until the Worker tries to open a sealed token (Apple
 revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
 
-1. Set the Worker secret and the environment secret from the **same file**,
-   `/home/box/agent-data/secrets/nuvo-token-enc-key-v1`
-   (`wrangler secret put TOKEN_ENC_KEY_V1 --name nuvo < "$S/nuvo-token-enc-key-v1"`).
-   Record `sha256sum` of the file (the digest only, never the key) in the
-   run notes each time either side is set; the digests must match.
+1. Set the Worker secret and the environment secret from the **same Keychain
+   item**, `nuvo-worker/TOKEN_ENC_KEY_V1`
+   (`security find-generic-password -s nuvo-worker/TOKEN_ENC_KEY_V1 -w | tr -d '\n' | npx wrangler secret put TOKEN_ENC_KEY_V1 --name nuvo`).
+   Record the value's sha256 (the digest only, never the key) in the run notes
+   each time either side is set; the digests must match. The Worker was last set
+   2026-10-28: `baa57583…`.
 2. After a dry run (or cutover) whose "Re-encrypt vault tokens in-runner" step
-   succeeded, open the sealed tokens with the box key file. Dry run: point
-   `DATABASE_URL` at the scratch database. Cutover: point it at Neon `neondb`.
+   succeeded, open the sealed tokens with the Keychain key. Dry run: point
+   `DATABASE_URL` at the scratch database. Cutover: at Neon `neondb`.
 
    ```bash
-   TOKEN_ENC_KEY_V1_FILE="$S/nuvo-token-enc-key-v1" \
-   DATABASE_URL="$(cat "$S/nuvo-neon-scratch-url")" \
-     node --experimental-strip-types worker/src/tokenDecrypt.check.ts
+   TOKEN_ENC_KEY_V1="$(security find-generic-password -s nuvo-worker/TOKEN_ENC_KEY_V1 -w)" \
+   DATABASE_URL="$(neonctl connection-string main --project-id frosty-snow-66931204 --role-name neondb_owner --database-name nuvo_dryrun_scratch)" \
+   TOKEN_DECRYPT_TCP=1 node --experimental-strip-types worker/src/tokenDecrypt.check.ts
    ```
 
-   The check reads the key from that file (never prints it) and talks to Neon
-   over HTTPS (`@neondatabase/serverless`), because the box cannot reach
-   Postgres on 5432. It decrypts every sealed token. It prints only
-   `provider ok` / `provider fail`. **Go** = every provider that has rows
-   prints `ok` and none prints `fail`. A skip (exit 0 with nothing opened)
-   is **not** a go: it means the key or URL was unset. A provider with rows
-   and 0 tokens checked is a no-go (exit 1).
+   The check never prints the key. `TOKEN_DECRYPT_TCP=1` uses the repo's
+   `postgres` driver over 5432; the HTTPS driver the box needed isn't a repo
+   dependency. It decrypts every sealed token and prints only `provider ok` /
+   `provider fail`. **Go** = every provider that owes tokens prints `ok` and none
+   prints `fail`. A provider owes one sealed token per row that had a Vault
+   pointer at the source (`refresh_token_secret_id` / `token_secret_id`). A row
+   without one never had a token: prod's two Apple identities came from
+   ID-token-only sign-in, so Apple owes none. Opening fewer than owed is a no-go
+   (exit 1). A skip (exit 0 with nothing opened) is **not** a go: it means the key
+   or URL was unset. Last run 2026-10-29, against the 2026-10-28 scratch copy:
+   `github ok`, `google ok`, `icloud ok`, `ics ok` (11 tokens).
 3. Because the Worker secret cannot be read back, step 1's matching digest is
    what ties the Worker to the key step 2 just proved. If the digests differ,
    or anyone re-ran `wrangler secret put` from another source, re-set the
-   Worker from the box file before the flip.
+   Worker from the Keychain item before the flip.
 
 Values are masked (`::add-mask::`) and never echoed. A failed step's stderr is
 redacted before it is printed. The custom-format dump is verified on the
@@ -522,22 +515,21 @@ after creation. **Both rotate.**
 | `BETTER_AUTH_SECRET`, `CRON_SECRET` | Generated. Keychain `nuvo-worker/…` |
 | `BETTER_AUTH_URL` = `https://api.nuvo.day`, `APP_URL` = `https://app.nuvo.day` (sha256 matches Supabase's), `VAPID_SUBJECT`, `APPLE_BUNDLE_ID` = `day.nuvo.app` | Config |
 | `RESEND_API_KEY`, `OPENAI_API_KEY` | **New keys, 2026-10-29**, both named `nuvo-worker`. Phil created them and pasted them into a hidden prompt that piped them to `wrangler`, so no copy exists anywhere else. Resend is Full access: inbound email reads `/emails/receiving` |
-| `TOKEN_ENC_KEY_V1` | **Replaced 2026-10-28** from the Mac, by mistake: the branch it ran on predated #122, so the box file `nuvo-token-enc-key-v1` looked like no copy at all. The Worker now holds Keychain `nuvo-worker/TOKEN_ENC_KEY_V1`, and the box file holds something else. See **Out of step with the ops box**, below |
+| `TOKEN_ENC_KEY_V1` | **Replaced 2026-10-28.** Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` (sha256 `baa57583…`). The go/no-go opened every token sealed with it, 2026-10-29 |
 
-**Out of step with the ops box since 2026-10-28.** #122 made the box's files the restore
-source for the cutover secrets. A rehearsal run from a Mac checkout cut before #122 replaced two
-of those values without updating the files:
+**Source of truth: Phil's Mac, since 2026-10-29.** #122 had made the ops box's
+`/home/box/agent-data/secrets/` files the restore source. A rehearsal from a Mac checkout cut
+before #122 then replaced two of those values without updating the box, so the two copies
+disagreed. Phil chose the Mac. The restore, reset and go/no-go steps above now read from it:
 
-| Value | What's live now | Box file | Effect |
-|---|---|---|---|
-| `TOKEN_ENC_KEY_V1` | Worker `nuvo` = Keychain `nuvo-worker/TOKEN_ENC_KEY_V1` | `nuvo-token-enc-key-v1`: the old key | The go/no-go's step 1 (both sides from one file) fails. A cutover sealed with the box key would leave the Worker unable to open a single token |
-| `migration_reader` password | Reset; the URI is in Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | `nuvo-migration-reader`: the old password | `SOURCE_DATABASE_URL` restored from the box no longer logs in |
+| Value | Source | Retired box file (stale; delete it) |
+|---|---|---|
+| `TOKEN_ENC_KEY_V1` | Keychain `nuvo-worker/TOKEN_ENC_KEY_V1`, which is also what Worker `nuvo` holds | `nuvo-token-enc-key-v1`: the pre-2026-10-28 key, which the Worker no longer has |
+| `SOURCE_DATABASE_URL` | Keychain `nuvo-migrate/SOURCE_DATABASE_URL` | `nuvo-migration-reader`: the password was reset 2026-10-28, so it no longer logs in |
+| `SCRATCH_` / `TARGET_DATABASE_URL` | `neonctl connection-string`, minted per run | `nuvo-neon-scratch-url`, `nuvo-neon.env` |
 
-**Repair from one side only, before the next dry run.** Either write the two Keychain values
-into the box files (mode 0600) and record the key's `sha256sum`, or re-set the Worker from the
-box key file and reset the password again from the box. Then delete the copies that lost. No real
-token is sealed with either key outside `nuvo_dryrun_scratch`, which gets reset anyway, so neither
-choice strands data.
+No real token was ever sealed with the old key outside a scratch copy, so retiring it strands
+nothing.
 
 **Still missing:**
 - `GOOGLE_CLIENT_SECRET` — below.
@@ -549,13 +541,12 @@ choice strands data.
 `RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
 Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
 
-### Data — state on 2026-10-28
+### Data — rehearsal on 2026-10-28
 
-**A full rehearsal copy of production is on Neon `nuvo_dryrun_scratch`**, as of
-2026-10-28. It ran with Supabase live, and Supabase wasn't frozen or written. `neondb` (what
-Hyperdrive serves) still holds only the synthetic A/B seed, 2 users. **That copy breaks
-§ Reset scratch's "no prod copy stays on Neon between runs"**, and the next dry run's restore
-aborts on it. Run the guarded reset first.
+**A full rehearsal copy of production went into Neon `nuvo_dryrun_scratch`** on
+2026-10-28. It ran with Supabase live, and Supabase wasn't frozen or written. The go/no-go
+passed on it, then it was **reset 2026-10-29** (§ Reset scratch), so no prod copy stays on Neon.
+`neondb` (what Hyperdrive serves) still holds only the synthetic A/B seed, 2 users.
 
 | What | Result |
 |---|---|
