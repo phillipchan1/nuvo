@@ -5,6 +5,7 @@ Never prints row data. Counts, hashes, and watermarks only.
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -216,6 +217,13 @@ def sync_log_watermark_sql() -> str:
 def sync_log_copy_sql() -> str:
     cols = ", ".join(SYNC_LOG_COLUMNS)
     return f"COPY (SELECT {cols} FROM public.sync_log) TO STDOUT WITH CSV"
+
+
+def csv_record_count(path: str | os.PathLike[str]) -> int:
+    """Records in a `COPY … WITH CSV` file. A quoted field may hold newlines
+    (five sync_log `error` texts do), so counting lines over-reports."""
+    with open(path, newline="", encoding="utf-8") as fh:
+        return sum(1 for row in csv.reader(fh) if row)
 
 
 def sync_log_set_lock_timeout_sql(*, local: bool = False) -> str:
