@@ -329,6 +329,7 @@ jobs:
               SYNC_LOG_SEQUENCE_MARGIN,
               parse_labeled_count,
               compose_resync_script,
+              csv_record_count,
               is_retryable_lock_timeout,
               retryable_lock_timeout_stop,
               sync_log_anti_join_insert_sql,
@@ -1458,14 +1459,14 @@ jobs:
                   sync_path,
                   source=True,
               )
-              sync_n = sum(1 for line in sync_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              sync_n = csv_record_count(sync_path)
               print(f"sync_log rows from source: {sync_n}", flush=True)
               run_to_file(
                   ["psql", "-v", "ON_ERROR_STOP=1", "-d", source, "-c", push_full_copy_sql()],
                   push_path,
                   source=True,
               )
-              push_n = sum(1 for line in push_path.read_text(encoding="utf-8").splitlines() if line.strip())
+              push_n = csv_record_count(push_path)
               print(f"push_subscriptions rows from source: {push_n}", flush=True)
               sync_cols = ", ".join(SYNC_LOG_COLUMNS)
               push_cols = ", ".join(PUSH_COLUMNS)

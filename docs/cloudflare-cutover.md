@@ -1,6 +1,6 @@
 # Nuvo Cloudflare cutover + rollback
 
-**Status:** draft rehearsal · 2026-10-26  
+**Status:** draft · `cutover-migrate` dry run green 2026-10-30  
 **Do not deploy, change DNS, or touch prod data** until Phil signs off.
 
 Live Nuvo stays on Vercel + Supabase. This branch adds a Worker that is inert
@@ -98,28 +98,6 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
     is third-party from `tauri://localhost`, which WKWebView blocks by default. GoTrue's
     session lives in `localStorage` today, so a Mac or phone would likely ask for a code
     on every launch after the flip. Check on a built app before the flip.
-
----
-
-## Not ready to flip (found 2026-10-27)
-
-Read from the code while setting the Worker's secrets; none of these were driven.
-
-1. **The SPA never calls the Worker's data API.** With `VITE_API_BASE_URL` set, `useAuth`
-   builds a Supabase-shaped session from Better Auth, but the `supabase` client itself
-   has none — every `supabase.from()` / `.rpc()` (the sync outbox in
-   `src/lib/sync/transport.ts`, `push.ts`, the hooks) still goes to PostgREST as `anon`.
-   `/api/data/*` and `/api/rpc/*` exist on the Worker; nothing in `src/` calls them.
-   The "Planner CRUD" row below is the server half only.
-2. **Google sign-in isn't ported.** Better Auth wires Apple only (`worker/src/auth.ts`);
-   `src/lib/googleAuth.ts` ignores the flag.
-3. **The desktop build never gets the flag.** `release.yml` doesn't pass
-   `VITE_API_BASE_URL`, so auto-updated Macs keep writing Supabase after the switch.
-4. **Realtime has no Worker path.** `useRealtime.ts` listens for Supabase broadcasts, which
-   fire only on Supabase writes.
-5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
-   caching disabled. A read right after a write can be stale.
-6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
 
 ---
 
@@ -280,8 +258,8 @@ EOF
 Expect `neondb_tables_before=22`, `neondb_tables_after=22`, and
 `scratch=nuvo_dryrun_scratch tables=0`. Stop if the connected database is not
 `neondb`, if the `neondb` count moves, or if scratch is not at 0 tables. Never
-point this at any other database name. Last run 2026-10-29: `neondb` 22 → 22,
-scratch 34 tables → 0.
+point this at any other database name. Last run 2026-10-30, after dry run 41073240534:
+`neondb` 22 → 22, scratch 34 tables → 0.
 
 #### Go/no-go: Worker and copy job use the same `TOKEN_ENC_KEY_V1`
 
@@ -313,8 +291,9 @@ revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
    without one never had a token: prod's two Apple identities came from
    ID-token-only sign-in, so Apple owes none. Opening fewer than owed is a no-go
    (exit 1). A skip (exit 0 with nothing opened) is **not** a go: it means the key
-   or URL was unset. Last run 2026-10-29, against the 2026-10-28 scratch copy:
-   `github ok`, `google ok`, `icloud ok`, `ics ok` (11 tokens).
+   or URL was unset. Last run 2026-10-30, against dry run 41073240534's
+   scratch copy: `github ok`, `google ok`, `icloud ok`, `ics ok` (11 tokens), Keychain
+   digest `baa57583…`, the Worker's.
 3. Because the Worker secret cannot be read back, step 1's matching digest is
    what ties the Worker to the key step 2 just proved. If the digests differ,
    or anyone re-ran `wrangler secret put` from another source, re-set the
@@ -627,33 +606,47 @@ nothing.
 `RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
 Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
 
-### Data — rehearsal on 2026-10-28
+### Data — dry run on 2026-10-30
 
-**A full rehearsal copy of production went into Neon `nuvo_dryrun_scratch`** on
-2026-10-28. It ran with Supabase live, and Supabase wasn't frozen or written. The go/no-go
-passed on it, then it was **reset 2026-10-29** (§ Reset scratch), so no prod copy stays on Neon.
-`neondb` (what Hyperdrive serves) still holds only the synthetic A/B seed, 2 users.
+**`cutover-migrate` ran end to end as `mode=dry-run` `phase=copy`** (run 41073240534, master
+`9730e39`, 83 s) and every check passed. It copied production into Neon
+`nuvo_dryrun_scratch` with Supabase live, not frozen and not written. The go/no-go passed
+on it, then scratch was reset (§ Reset scratch), so no prod copy stays on Neon. `neondb`
+(what Hyperdrive serves) still holds only the synthetic A/B seed, 2 users. The three
+temporary secrets were set from the Mac (§ Temporary migrate secrets) and deleted after the
+run: `nuvo-cutover` holds 0.
 
 | What | Result |
 |---|---|
 | Accounts | 12 `auth.users` → `"user"`, 13 identities → `account`. Auth parity hashes match |
-| Planner tables | 26 copied. 25 match Supabase by count + md5 |
-| `calendar_accounts` | 11 = 11. The md5 differs on `calendars`, `next_sync_at`, `sync_failures`, `updated_at`: the every-minute calendar poll wrote between the dump and the snapshot. **Live drift, not a copy bug.** The freeze pauses `pg_cron`, which removes it |
-| Tokens | 10 calendar refresh tokens + 1 activity source sealed with the new key, 0 mismatches. 5 plaintext access tokens sealed and NULLed |
-| `sync_log` | 87,472 rows by id anti-join. Identity parked at 1,250,355 |
-| Dump | 2.6 MB, on the Mac only, shredded after the run |
+| Planner tables | 26 of 26 match by count + md5, three ways: snapshot, source after the copy, and target |
+| Tokens | 10 calendar refresh tokens + 1 activity source sealed, 0 mismatches. 5 plaintext access tokens sealed and NULLed. Apple owes none. Go/no-go: 4 providers `ok` |
+| `sync_log` | 91,762 rows by id anti-join: every Supabase row up to the watermark (id 254,645), counted on Supabase read-only after the run. Identity parked at 1,254,645 |
+| `push_subscriptions` | 0 on both sides |
+| Dump | 2.5 MB, runner only, sha256 re-checked before restore, shredded. The only artifact is the 1.4 KB checksum report |
+
+**The run printed `sync_log rows from source: 91907`, and that number was wrong.** It
+counted CSV *lines*, and five `error` texts span 145 extra lines. Every row landed. The
+count now goes through `csv_record_count` (`scripts/cutover_copy.py`), so the copy report
+reads 91,762 = 91,762 on the night instead of a 145-row gap at 2 AM.
+
+Not exercised by a dry run: the arm / freeze / 503 preflights and the TARGET restore
+(`mode=cutover` only), and a separate `phase=resync` run.
+
+The 2026-10-28 rehearsal ran the workflow's helper by hand on the Mac, because that
+checkout still gated `dump` on the freeze even for `mode=dry-run`. #116 dropped the gate,
+so this run went through the workflow itself. That rehearsal matched 25 of 26:
+the every-minute calendar poll wrote `calendar_accounts` between its dump and snapshot.
+Live drift, not a copy bug. The freeze pauses `pg_cron`, which removes it, and this run
+didn't hit it.
 
 The source credential: `migration_reader` (login, `default_transaction_read_only=on`)
 and all three `migration_tmp` readers already existed. Its password was reset 2026-10-28
 with a SCRAM verifier, never the plaintext. That reset is what left the box's
 `nuvo-migration-reader` stale (above).
 
-How it ran: the workflow's own helper on the Mac, extracted from the YAML, with the arm and
-freeze gates skipped. That checkout still gated `dump` on the freeze even for `mode=dry-run`;
-#116 has since dropped the gate for dry runs, so **the next rehearsal runs through
-`cutover-migrate` itself**, not a local copy. A write that lands mid-run shows up as `verify`
-drift, which is expected. The real copy still runs frozen (§ the copy steps above), because a
-live copy goes stale the moment it finishes.
+The real copy still runs frozen (§ the copy steps above), because a live copy goes stale
+the moment it finishes.
 
 ### VAPID — already rotated on the Worker
 
