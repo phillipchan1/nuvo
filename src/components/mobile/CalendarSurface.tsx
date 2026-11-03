@@ -499,6 +499,9 @@ export default function CalendarSurface({
           onPrev={() => travel(-1)}
           onNext={() => travel(1)}
           onTapEvent={onTapEvent}
+          onTapEmpty={onTapEmpty}
+          draft={draft}
+          defaultDurationMins={defaultDurationMins}
           recenter={recenter}
         />
       );

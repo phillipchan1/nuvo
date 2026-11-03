@@ -4840,6 +4840,7 @@ A wander past `AXIS_SLOP_PX` is a scroll or a page-swipe, never a create.
 Long-press-then-drag to size (Apple) is the increment if a default length
 feels short — duration chips are on the sheet. The Week lens is not this
 decision; its columns are a scan, and a 47px miss is a different problem.
+*(Superseded for the Week lens by D-175.)*
 
 Adds no pool, no name, no data. Works on an empty day by construction (the
 working window still draws). Guarded by `tests/canvas-tap.test.ts`,
@@ -6620,3 +6621,35 @@ freeze), the isolation mutation proof over `rest.ts`, `tests/worker-seam.test.ts
 dev app against a local `wrangler dev` on a prod-shaped restore, desktop and 375px, flag on and
 off. **Not driven:** the `nuvo-preview` Worker (the #90-era build — no `/api/rest/v1` until it is
 redeployed). Open items: [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Not ready to flip.*
+
+---
+
+**D-175 · 2026-11-03 · A tap on empty Week-canvas time claims it too — the column is the day.**
+
+D-130 gave the Day lens tap-to-claim and left the Week out: "its columns are a scan, and a 47px
+miss is a different problem." In use, that read as a broken calendar: on the Week, tapping a gap
+did nothing at all, where Apple and Google both create. A person who just saw Thursday 2pm open
+should not have to zoom to a Day to take it.
+
+→ The Week canvas takes the same gesture through the same code. The press state machine moved
+out of `MobileDayView` into `useCanvasPress` (press → ghost; a wander past `AXIS_SLOP_PX` is a
+scroll or a page-swipe; release in place claims), so the two lenses cannot drift on what a tap
+is. The Week resolves a point as **column → day** (`columnFromCanvasX`) and **height → half-hour**
+(`WEEK_TAP_SNAP_MINS`: at 52px an hour a 15-minute band is 13px, finer than the finger choosing
+it). It opens the same one capture door (`MobileCapture`), seeded, Task face — no second ＋.
+
+**The 47px miss.** Columns tile the canvas, so every point is exactly one day; the ghost draws in
+that column under the finger *before* release, and the capture sheet names the date and lets it
+change. A miss is visible and one tap to fix, which is the bar a 375px week can honestly meet.
+
+Also fixed on the way: the Week's "open on today's hours" scroll held a ref that was never
+attached to the canvas, so it never ran. It now parks the now line like the Day lens.
+
+**Anchor.** Closes the same inch of **D6** D-130 did, on the Week. Strains **P2** exactly as
+D-130 does (a timed capture lands without passing the week gate — the documented same-day
+reactive exception, and visible). The four no's: no pool, no new name, no clean-data
+requirement (an empty week still draws its working window), nothing builder-only.
+
+*Status: built — phone Week canvas tap-to-capture. Guarded by `tests/mobile-week-tap.test.tsx`
+(column + half-hour, ghost before release, wander, gutter, block) and the unchanged
+`tests/mobile-day-tap.test.tsx`. Driven with touch at 375px at `?horizon` (week and day frames).*

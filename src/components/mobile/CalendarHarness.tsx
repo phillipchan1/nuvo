@@ -235,7 +235,7 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
             <span key={i} className="h-9 w-9 shrink-0 rounded-full border border-line" />
           ))}
         </div>
-        {mode === "day" && claimed && (
+        {(mode === "day" || mode === "week") && claimed && (
           <div className="px-3 py-1 text-label text-accent" data-harness-claim>
             Capture at {at(claimed)}
           </div>
@@ -248,7 +248,7 @@ function Frame({ label, mode }: { label: string; mode: CalHorizon }) {
           weatherIndex={null}
           initialMode={mode}
           onHero={setHero}
-          onTapEmpty={mode === "day" ? setClaimed : undefined}
+          onTapEmpty={mode === "day" || mode === "week" ? setClaimed : undefined}
           draft={claimed ? { start: claimed, durationMinutes: 30 } : null}
         />
       </div>
@@ -275,8 +275,9 @@ export default function CalendarHarness() {
         Every frame is live — tap the ladder inside one and watch what moves. The hero, the ladder,
         travel and the seven columns should hold still; only the body should scale, through the
         column of the day you're standing on. Swipe (or drag) a body sideways to travel at that
-        horizon. On the day frame, tap a gap to claim that time (D-130) — a line above the canvas
-        should read the snapped clock, and a ghost should sit in the slot.
+        horizon. On the day and week frames, tap a gap to claim that time (D-130, D-175) — a line above
+        the canvas should read the snapped clock, and a ghost should sit in the slot (on the week,
+        in the column you tapped).
       </p>
       <div className="flex gap-4 overflow-x-auto">
         <Frame label="month" mode="month" />
