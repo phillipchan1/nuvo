@@ -1,4 +1,5 @@
 import { duplicateEventInput } from "../lib/eventActs";
+import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -2353,18 +2354,7 @@ function CalendarPane({
   const duplicateTask = (task: Task): string => {
     const clientId = crypto.randomUUID();
     void mutations.create(
-      {
-        clientId,
-        title: task.title,
-        notes: task.notes || undefined,
-        do_date: task.do_date,
-        start_time: task.start_time,
-        duration_minutes: task.duration_minutes,
-        priority: task.priority !== "none" ? task.priority : undefined,
-        domain_id: task.domain_id,
-        project_id: task.project_id,
-        labelIds: task.task_labels?.map((l) => l.label_id),
-      },
+      duplicateTaskInput(task, clientId),
       {
         // The copy lands exactly on the original, so without a word it
         // looks like nothing happened. Say it, and make it one ⌘Z away.
@@ -2375,15 +2365,7 @@ function CalendarPane({
     return `task:${clientId}`;
   };
   const duplicateSlot = (slot: Slot): string => {
-    const made = slotMutations.createSlot({
-      title: slot.title,
-      do_date: slot.do_date,
-      start_time: slot.start_time,
-      duration_minutes: slot.duration_minutes,
-      project_id: slot.project_id,
-      domain_id: slot.domain_id,
-      color: slot.color,
-    });
+    const made = slotMutations.createSlot(duplicateSlotInput(slot));
     recordUndo({
       label: `Duplicated — ${slotTitle(slot)}`,
       shortLabel: "Duplicated",

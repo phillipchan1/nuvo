@@ -53,6 +53,28 @@ export function useWeekCommitAct(mutations: Mutations) {
   };
 }
 
+type RecurrenceMutations = ReturnType<typeof useRecurrenceMutations>;
+type Recurrence = NonNullable<ReturnType<typeof useRecurrences>["data"]>[number];
+
+/** Trash a repeating task's occurrence, the rest of the series from it, or the
+ *  whole series — one meaning for the desktop's menu and the phone's sheet. */
+export function trashTaskScoped(
+  mutations: Mutations,
+  recurrenceMutations: RecurrenceMutations,
+  recurrence: Recurrence | null,
+  task: Task,
+  scope: "THIS" | "FOLLOWING" | "ALL",
+) {
+  if (scope === "THIS") {
+    if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
+    mutations.trash(task);
+  } else if (scope === "FOLLOWING") {
+    if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
+  } else if (recurrence) {
+    recurrenceMutations.deleteSeries(recurrence);
+  }
+}
+
 /** Move a task to a day by hand. A timed task keeps its clock; an untimed one
  *  is planned for the day, as before. */
 export function moveToDay(mutations: Mutations, task: Task, dateISO: string) {
@@ -157,8 +179,7 @@ export default function TaskActionsMenu({
       kind: "action",
       label: "This occurrence",
       action: () => {
-        if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
-        mutations.trash(task);
+        trashTaskScoped(mutations, recurrenceMutations, recurrence, task, "THIS");
         onClose();
       },
     },
@@ -166,7 +187,7 @@ export default function TaskActionsMenu({
       kind: "action",
       label: "This & following",
       action: () => {
-        if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
+        trashTaskScoped(mutations, recurrenceMutations, recurrence, task, "FOLLOWING");
         onClose();
       },
     },
@@ -174,7 +195,7 @@ export default function TaskActionsMenu({
       kind: "action",
       label: "Whole series",
       action: () => {
-        if (recurrence) recurrenceMutations.deleteSeries(recurrence);
+        trashTaskScoped(mutations, recurrenceMutations, recurrence, task, "ALL");
         onClose();
       },
     },

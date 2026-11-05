@@ -31,6 +31,11 @@ import { plainTextFromHtml } from "../../lib/text";
 import { DescriptionHtml } from "../../lib/descriptionHtml";
 import { describeRule, eventRRule, readEventRRule, rulesEqual, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl, RecurrenceScopeDialog, useRecurringScope } from "../RecurrencePicker";
+import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
+import { applySlotRepeat, deleteSlotScoped, duplicateSlotInput, type SlotDeleteScopeAct } from "../../lib/taskActs";
+import { ruleOf } from "../../lib/types";
+import TaskComposer from "../tasks/TaskComposer";
+import { fmtDuration } from "../../lib/dates";
 import ReminderSelect from "../ReminderSelect";
 import EventDomainControl from "../domain/EventDomainControl";
 import { eventKey } from "../../lib/now";
@@ -1073,6 +1078,13 @@ function MobileSlotSheet({
 
   const project = store ? projectById(store.data, slot.project_id) : null;
   const domain = store && project ? domainById(store.data, project.domainId) : null;
+  const { data: recurrences = [] } = useRecurrences();
+  const recurrenceMutations = useRecurrenceMutations();
+  const recurrence = slot.recurrence_id ? recurrences.find((r) => r.id === slot.recurrence_id) ?? null : null;
+  const [deleting, setDeleting] = useState(false);
+  // The slot's length, held here: `tap` is a snapshot, and a chip that didn't
+  // light up after you tapped it reads as a tap that didn't land.
+  const [duration, setDuration] = useState(slot.duration_minutes);
 
   const children = childTasks
     .filter((t) => t.status !== "trashed")
@@ -1111,10 +1123,39 @@ function MobileSlotSheet({
     onClose();
   };
 
+  // One meaning with the desktop popover's delete (`deleteSlotScoped`): a
+  // repeating block asks which occurrences, and a block holding work asks
+  // whether the work goes too. The phone deleted the one row and nothing else —
+  // an occurrence came straight back, and a series couldn't be ended here.
+  const recurring = Boolean(slot.recurrence_id && recurrence);
+  const deleteAs = (id: string) => {
+    const [scope, withTasks] = id.split("+") as [SlotDeleteScopeAct, string | undefined];
+    deleteSlotScoped({ slotMutations, recurrenceMutations, taskMutations: mutations }, slot, recurrence, children, scope, withTasks === "tasks");
+    onClose();
+  };
   const handleDelete = () => {
-    // on delete set null (tasks.slot_id) — children survive as plain planned
-    // tasks, same as the desktop delete flow.
-    slotMutations.removeSlot(slot);
+    if (recurring || children.length > 0) {
+      setDeleting(true);
+      return;
+    }
+    deleteAs("simple");
+  };
+  const n = children.length;
+  const deleteRows = recurring
+    ? [
+        { id: "this", name: "This block", sub: n ? "Its tasks stay on the day" : undefined },
+        { id: "following", name: "This and following" },
+        { id: "series", name: "The whole series" },
+        ...(n ? [{ id: "this+tasks", name: `This block and its ${n} ${n === 1 ? "task" : "tasks"}`, sub: "They go to Trash" }] : []),
+      ]
+    : [
+        { id: "simple", name: "Delete the block", sub: `Its ${n === 1 ? "task stays" : `${n} tasks stay`} on the day` },
+        { id: "simple+tasks", name: `Delete it and its ${n === 1 ? "task" : `${n} tasks`}`, sub: "They go to Trash" },
+      ];
+
+  const duplicate = () => {
+    slotMutations.createSlot(duplicateSlotInput(slot));
+    toast.success("Duplicated");
     onClose();
   };
 
@@ -1178,6 +1219,16 @@ function MobileSlotSheet({
               ))}
             </div>
           )}
+          {/* Add work straight into the block — the shared composer, told it's
+              in this slot (D-146: never another add box). A typed date or
+              @project still wins over where it is. */}
+          <div className="mt-1">
+            <TaskComposer
+              context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
+              placeholder="Add a task to this block"
+              enterKeyHint="done"
+            />
+          </div>
         </SheetSection>
 
         <SheetSection label="Reschedule">
@@ -1192,9 +1243,48 @@ function MobileSlotSheet({
           {showReschedule && <SlotReschedulePicker slot={slot} slotMutations={slotMutations} onDone={onClose} />}
         </SheetSection>
 
+        {/* Length — the desktop resizes by drag or ⌥⇧-arrows; the phone had no
+            way to make a block longer at all. */}
+        <SheetSection label="Length">
+          <ChipGrid cols={4}>
+            {[30, 45, 60, 90, 120, 180, 240, 360].map((m) => (
+              <Chip
+                key={m}
+                on={duration === m}
+                onClick={() => {
+                  setDuration(m);
+                  slotMutations.updateSlot({ id: slot.id, patch: { duration_minutes: m } });
+                }}
+              >
+                {fmtDuration(m)}
+              </Chip>
+            ))}
+          </ChipGrid>
+        </SheetSection>
+
+        <SheetSection>
+          <RowList>
+            <RepeatControl
+              anchorISO={slot.do_date}
+              value={recurrence ? ruleOf(recurrence) : null}
+              onChange={(r) => applySlotRepeat(recurrenceMutations, slot, recurrence, r)}
+              variant="row"
+            />
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-5 shrink-0 items-center justify-center text-muted">
+                <Icon name="bell" size={16} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <ReminderSelect block chevron target={{ targetKind: "slot", targetId: slot.id }} />
+              </div>
+            </div>
+          </RowList>
+        </SheetSection>
+
         <SheetSection>
           <RowList>
             {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={onAskNuvo} />}
+            <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />
             {/* Project time's own way out — the same panel the Schedule's block
                 and the Week's Plan row open. Delete only removes the block. */}
             {slot.project_id &&
@@ -1210,12 +1300,25 @@ function MobileSlotSheet({
 
         <div className="mt-6">
           <DestructiveRow
-            label={children.length > 0 ? "Delete block (keeps its tasks)" : "Delete block"}
+            label={recurring || children.length > 0 ? "Delete block…" : "Delete block"}
             confirmLabel="Delete block"
+            confirm={!(recurring || children.length > 0)}
             onConfirm={handleDelete}
           />
         </div>
       </div>
+      {deleting && (
+        <PickSheet
+          title={recurring ? "Delete a repeating block" : "Delete block"}
+          rows={deleteRows.map((r) => ({
+            ...r,
+            lead: <Icon name={r.id.includes("tasks") ? "trash" : r.id === "this" || r.id === "simple" ? "calendar" : "repeat"} size={16} className="text-muted" />,
+          }))}
+          value={null}
+          onPick={deleteAs}
+          onClose={() => setDeleting(false)}
+        />
+      )}
     </Sheet>
   );
 }

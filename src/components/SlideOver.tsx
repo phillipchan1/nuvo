@@ -1,4 +1,5 @@
 import { cancelNotifiesGuests } from "../lib/eventActs";
+import { applySlotRepeat, deleteSlotScoped } from "../lib/taskActs";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GuestsInput } from "./GuestsInput";
 import { Icon } from "./Icon";
@@ -2505,20 +2506,7 @@ export function SlotPopover({
   // What the slot shows when unnamed — derived from its contents.
   const derivedTitle = deriveSlotTitle(slot, childTasks, vertical);
 
-  const applyRepeat = (rule: RecurrenceRule | null) => {
-    if (rulesEqual(recurrence ? ruleOf(recurrence) : null, rule)) return;
-    const template: SeriesTemplate = {
-      title: slot.title,
-      duration_minutes: slot.duration_minutes,
-      time_of_day_minutes: localMinutes(slot.start_time),
-      project_id: slot.project_id,
-      domain_id: slot.domain_id,
-      color: slot.color,
-    };
-    if (rule && !recurrence) void recurrenceMutations.convertToSeries("slot", slot, rule, template);
-    else if (rule && recurrence) void recurrenceMutations.updateSeries(recurrence, rule, template);
-    else if (!rule && recurrence) void recurrenceMutations.stopSeries(recurrence, slot.do_date);
-  };
+  const applyRepeat = (rule: RecurrenceRule | null) => applySlotRepeat(recurrenceMutations, slot, recurrence, rule);
 
   useEffect(() => setTitle(slot.title), [slot.id, slot.title]);
 
@@ -3031,17 +3019,7 @@ export function SlotPopover({
             onDelete={(scope: SlotDeleteScope, deleteTasks: boolean) => {
               // Keep (default): children fall back onto the day, un-slotted (the
               // FK sets slot_id null). Delete: trash them with the slot.
-              if (deleteTasks) ordered.forEach((t) => taskMutations.trash(t));
-              if (scope === "series") {
-                if (recurrence) recurrenceMutations.deleteSeries(recurrence);
-              } else if (scope === "following") {
-                if (recurrence) recurrenceMutations.deleteFollowing(recurrence, slot.do_date);
-              } else {
-                // "simple" (non-recurring) or "this" occurrence
-                if (scope === "this" && recurrence && slot.recurrence_date)
-                  recurrenceMutations.skipOccurrence(recurrence, slot.recurrence_date);
-                slotMutations.removeSlot(slot);
-              }
+              deleteSlotScoped({ slotMutations, recurrenceMutations, taskMutations }, slot, recurrence, ordered, scope, deleteTasks);
               onClose();
             }}
           />

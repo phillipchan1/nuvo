@@ -1,4 +1,5 @@
 import { taskFromEvent } from "../lib/eventActs";
+import { useTaskToEvent } from "../hooks/useTaskToEvent";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -21,7 +22,7 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useStableHandler } from "../hooks/useStableHandler";
 import { gridLookups } from "../lib/verticalDirectory";
 import { mergeTaskLists } from "../lib/taskMerge";
-import { convertTaskToEvent, createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
+import { isWritableCalendar, type CreateTarget } from "../lib/calendarWrite";
 import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
@@ -497,47 +498,9 @@ export default function Planner({
     },
   );
 
+  const taskToEvent = useTaskToEvent(mutations);
   const handleConvertTaskToEvent = useStableHandler(
-    async (task: Task, picked?: CreateTarget) => {
-      if (!task.start_time) return;
-      const durationMs = (task.duration_minutes ?? 30) * 60000;
-      const end = new Date(new Date(task.start_time).getTime() + durationMs).toISOString();
-      // The calendar the menu or the card picked (D-152) — or, with only one
-      // calendar to offer, where every unpicked create lands: the Settings
-      // default, never a hidden calendar (D-047). The toast names it either way.
-      const target = pickCreateTarget(accounts, {
-        ...createDefaults(settings),
-        accountId: picked?.accountId,
-        calendarId: picked?.calendarId,
-      });
-      if (!target) {
-        toast.error("No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.");
-        return;
-      }
-      const calendarName = accounts
-        .find((a) => a.id === target.accountId)
-        ?.calendars.find((c) => c.id === target.calendarId)?.summary;
-      const start_at = task.start_time;
-      const made = await convertTaskToEvent(
-        () =>
-          eventMutations.createEvent({
-            title: task.title,
-            start_at,
-            end_at: end,
-            accountId: target.accountId,
-            calendarId: target.calendarId,
-          }),
-        {
-          // Silent: ⌘Z still brings the task back, but a "Trashed" toast before
-          // the event exists would announce the wrong half of the act.
-          trash: () => mutations.trash(task, { undo: "silent" }),
-          restore: () =>
-            mutations.patchTask(task.id, { status: task.status, trashed_at: task.trashed_at }, { undo: false }),
-        },
-      );
-      if (made) toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
-      else toast.error("Couldn't create the event — is your calendar connected?");
-    },
+    (task: Task, picked?: CreateTarget) => void taskToEvent(task, picked),
   );
 
   const openTaskAt = useCallback(

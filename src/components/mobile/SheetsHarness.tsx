@@ -451,6 +451,7 @@ export default function SheetsHarness() {
             accent={DOMAINS.find((d) => d.id === sc.task!.domain_id)?.color ?? null}
             onClose={close}
             onAskNuvo={() => setLast("askNuvo")}
+            onToggleWeek={(t) => setLast(`toggleWeek ${t.id}`)}
           />
         )}
         <Toaster position="top-center" />

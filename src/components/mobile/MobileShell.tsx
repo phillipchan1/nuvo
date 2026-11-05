@@ -57,6 +57,7 @@ import type { DetailTarget, Frame } from "./detail/verticalDetail";
 import MobileCapture, { type CaptureKind } from "./MobileCapture";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
+import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
@@ -413,6 +414,8 @@ export default function MobileShell() {
   const mutations = useTaskMutations();
   const slotMutations = useSlotMutations();
   const recurrenceMutations = useRecurrenceMutations();
+  // Commit to / off this week, from the task sheet — the desktop menu's act.
+  const weekCommit = useWeekCommitAct(mutations);
   const { agent, setRange, setNavFocus } = useAgentContext();
   useEffect(() => {
     setRange(range);
@@ -905,6 +908,7 @@ export default function MobileShell() {
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
           onAskNuvo={openChat}
+          onToggleWeek={weekCommit}
         />
       )}
       {calendarTap && (

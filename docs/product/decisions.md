@@ -6699,3 +6699,43 @@ builder-only.
 `?sheets=event-host` / `event-recurring` / `event-long` at 320 and 375 (new fixture
 `event-host`: you host, six guests, a Zoom-paste body).*
 
+---
+
+**D-177 · 2026-11-05 · A task and a block on the phone carry the desktop's right-click acts —
+one meaning each, in `lib/taskActs.ts`.**
+
+A parity audit after D-176 (desktop right-click / popover vs. the phone's sheets) found the
+same hole on tasks and blocks, plus two bugs in paths that did exist:
+
+| Gap on the phone | Now |
+|---|---|
+| Trash on a repeating task deleted one row — the series stamped it straight back, and a series couldn't be ended | **Trash…** asks *This occurrence · This and following · The whole series* (`trashTaskScoped`, the desktop menu's own act) |
+| Delete on a block: one row only, no series question, tasks always kept | **Delete block…** asks the scope on a series and whether its tasks go too (`deleteSlotScoped`, the popover's act) |
+| No way to change a block's length | **Length** chips, 30m–6h |
+| No Duplicate (task or block) | **Duplicate** row on both (`duplicateTaskInput` / `duplicateSlotInput`) |
+| No Task → Event | **Make it an event** on a timed task (`useTaskToEvent`, lifted out of `Planner`) |
+| No Commit to / take off this week | A row on the task sheet — the shell's `useWeekCommitAct` |
+| A deadline could be read, not set | **Deadline** row (native date) with clear |
+| A block's Repeat and Remind were desktop-only | Rows on the block sheet (`applySlotRepeat`) |
+| No way to add work inside a block | The shared `TaskComposer`, told it's in this slot (D-146) |
+| **Bug:** Today / Tomorrow / Next week on a timed task cleared its time | They call the desktop's `moveToDay` — the clock is kept |
+| **Bug:** three time pickers prefilled the **UTC** clock (`iso.slice(11,16)`) | `clockInputValue` reads the wall clock — phone task + block sheets and the desktop rail |
+
+**Why a lib, again.** Every one of these acts was written inline in a desktop component
+(`CalendarPane`, `Planner`, `SlideOver`, `TaskActionsMenu`), which is the whole reason the
+phone had none: there was nothing to import, so the phone either went without or would have
+grown a second copy. They now live once and the desktop calls the same functions.
+
+**Left desktop-only, on purpose or for later:** multi-select acts (*Make one slot* ⌘G, merge),
+keyboard nudges, ✦ name suggestion and domain guess, delegate pre-work, a block's project/
+domain (*For*), and taking one task out of a block in place (the phone does it by moving the
+task). None is reachable by a single tap on the desktop either, except *For* and *take out*,
+which are the next candidates.
+
+**Anchor.** No new ledger row — parity on existing surfaces. Strains **P5** (the sheets grow
+rows) within the sheet kit's grammar. Four no's: no pool, no new name, no clean-data
+requirement, nothing builder-only.
+
+*Status: built. Guarded by `tests/block-acts.test.ts`, `tests/clock-input-value.test.ts`.
+Driven at `?sheets=task-block` / `block-project` at 320.*
+
