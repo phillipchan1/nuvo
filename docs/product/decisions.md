@@ -6804,3 +6804,54 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-179 · 2026-11-05 · The project deck can be read By domain — one lane per domain, a gap shows
+as an empty socket.**
+
+Asked from the deck itself: *"instead of me reading what domain it is, I want to visually see what
+rows and what domains things are in, so I can identify gaps without thinking — I need to make sure
+I'm constantly doing Frontier things, because the other things carry over and take the focus."*
+The deck packed every project into one field, so whether a domain had anything in a week was a
+fact you assembled by reading eyebrows down four columns. The coverage strip already held the
+answer, but as a second band you had to read *against* the cards — two reads for one question.
+
+→ **A "By domain" toggle in the deck's toolbar** (`useDeckByDomain`, persisted like the other
+planner prefs). On, the deck splits into **one lane per domain**, in the domains' own order — never
+re-sorted by load, so a given domain's row is always in the same place and is found without
+reading. Each lane runs the deck's own packing (most-ready first) inside itself. A week a domain has
+nothing in shows a **socket**: a card-sized soft hollow in that lane's first row, so the gap reads as
+a missing card before a word is read. The lane × week cell is the create control for *that domain
+in that week* (the inline composer opens pre-bound, the recovery the coverage cell already offered);
+a project dragged in from the rail lights its own lane in the week under the pointer, so the landing
+is shown before the drop. The lane's name sits in the left gutter, which is blank in the packed deck.
+
+**Anchor.** Closes **W5** (*which domain am I starving?*) at the project altitude, where it is
+asked about the coming weeks rather than the past one. Strains **P8**, and that is why the lanes
+**replace** the coverage strip rather than sit under it: in lane mode they *are* the coverage read,
+with the count in words once ("3 of 4 domains with a project"). The cards stop naming their domain,
+because the lane draws it (D-122: a surface that draws a fact doesn't also write it). **P10/P11:** no
+new noun. It is a way of reading the deck, and the off state goes unnamed because every candidate
+("All", "Mixed") collides with an existing name. The four no's: no pool; no overlapping name; it
+degrades on an account with one domain to a single lane, the packed deck with a label (P7);
+nothing in it is about one account's domains (P16). The Domains filter decides which **empty**
+domains get a row. A hidden domain still gets one while it has a project placed, because hiding
+quiets a domain and never hides work. Projects whose domain no longer resolves get a "No area" lane.
+
+**Not done, on purpose.** Dropping a card into *another* lane does **not** re-home the project:
+domain is a record-level change with consequences (D-088), and a drag that silently changes it is
+the wrong place for that act. The bar slides only in time, inside its own lane. The **initiative
+deck** (quarters) is the same surface one clock speed up and should get the same toggle; not
+built here. **The phone** pages one week at a time (`MobileDeck`). Its equivalent would group a week
+page's cards by domain, with an empty domain as a socket, which needs its own pass.
+
+*Status: built — `ondeck/OnDeckPlanner.tsx` (lanes, sockets, landing), `ondeck/CoverageControls.tsx`
+(the toggle, the lane-mode read), `hooks/usePlannerPrefs.ts` (`useDeckByDomain`), `.lane-*` in
+`index.css`. Both layouts resolve to the same total width, so the toggle can't push the horizon off
+the pane (it did, by 6px, at 1680 before the week minimum absorbed the wider gutter). One frosted
+gutter column for the whole deck, not one per lane (perf rule 2). Driven in the dev app on a test
+account: toggle on/off and persistence, hover bloom, the composer from a socket (closed without
+writing), the sticky gutter over a horizontal scroll, the Domains popover note, the phone at 375
+(unaffected). **Not run:** the drag-landing highlight with a real pointer (synthetic events don't
+arm the deck's drag), and `npm run perf`. Chrome isn't installed on this machine;
+`perf-budget` in `npm test` passes. `guard-public-ci` fails on a clean tree (case-insensitive
+filesystem), as noted in D-178.*

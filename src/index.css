@@ -1059,6 +1059,43 @@ body.odp-dragging [data-resize] {
 .slot-col:hover {
   background: color-mix(in srgb, var(--slot) 7%, transparent);
 }
+/* The deck By domain: each lane × week cell is a create control, and a week the
+   domain has nothing in wears a SOCKET — a card-sized soft hollow in the lane's
+   first row, so a gap reads as a missing card before anything is read. The socket
+   is the cell's next sibling (the cell spans the whole lane, the socket only its
+   first row), hence `+` rather than a group selector. Solid, never dashed: a
+   lattice of dashed outlines reads as noise, not as open time. */
+.lane-cell {
+  cursor: pointer;
+  transition: background-color var(--d-base, 160ms) ease;
+}
+.lane-cell:hover,
+.lane-cell:focus-visible {
+  background: color-mix(in srgb, var(--slot) 6%, transparent);
+  outline: none;
+}
+.lane-socket {
+  background: color-mix(in srgb, var(--line-strong) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-strong) 14%, transparent);
+  transition: background-color var(--d-base, 160ms) ease, box-shadow var(--d-base, 160ms) ease;
+}
+.lane-socket-hint {
+  color: transparent;
+  transition: color var(--d-base, 160ms) ease;
+}
+.lane-cell[data-landing] {
+  background: color-mix(in srgb, var(--slot) 12%, transparent);
+}
+.lane-cell:hover + .lane-socket,
+.lane-cell:focus-visible + .lane-socket,
+.lane-cell[data-landing] + .lane-socket {
+  background: color-mix(in srgb, var(--slot) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
+}
+.lane-cell:hover + .lane-socket .lane-socket-hint,
+.lane-cell:focus-visible + .lane-socket .lane-socket-hint {
+  color: var(--slot);
+}
 /* Text-only open-time cue (column footers) — quiet at rest, blooms to
    `--slot` when the column is receptive. No box, no dash.
 
