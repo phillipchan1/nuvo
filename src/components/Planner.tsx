@@ -13,6 +13,7 @@ import { isTypingIn } from "../lib/a11y";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
+import { todayWithSlotChildren } from "../lib/slotRuns";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { firstDayOfWeek, useSettings } from "../hooks/useSettings";
@@ -311,29 +312,22 @@ export default function Planner({
   // Dedupe by id and prefer the slot-augmented copy: an optimistic assignToSlot
   // used to leave the day-query row in place (with slot_id stamped) *and* add
   // it via slotChildren, so the same task rendered twice.
-  const todayTasksForRail = useMemo(() => {
-    const todaySlotMap = new Map(
-      slots.filter((s) => s.do_date === today).map((s) => [s.id, s]),
-    );
-    const seen = new Set<string>();
-    const out: Task[] = [];
-    for (const raw of slotChildTasks) {
-      if (!raw.slot_id || !todaySlotMap.has(raw.slot_id) || raw.status === "trashed") continue;
-      if (seen.has(raw.id)) continue;
-      const t = allKnownTasks.get(raw.id);
-      if (!t || t.status === "trashed") continue;
-      seen.add(raw.id);
-      out.push({ ...t, start_time: todaySlotMap.get(raw.slot_id)!.start_time });
-    }
-    for (const raw of todayTasks) {
-      if (raw.slot_id || seen.has(raw.id) || raw.status === "trashed") continue;
-      const t = allKnownTasks.get(raw.id);
-      if (!t || t.status === "trashed") continue;
-      seen.add(raw.id);
-      out.push(t);
-    }
-    return out;
-  }, [todayTasks, slotChildTasks, slots, today, allKnownTasks]);
+  const todayTasksForRail = useMemo(
+    () =>
+      todayWithSlotChildren({
+        dayRows: todayTasks,
+        slotChildren: slotChildTasks,
+        slots,
+        today,
+        resolve: (raw) => allKnownTasks.get(raw.id),
+      }),
+    [todayTasks, slotChildTasks, slots, today, allKnownTasks],
+  );
+
+  // Today's slots, for the rail: it keeps a slot's tasks under one header and
+  // lists an empty slot as held time (lib/slotRuns, D-178). Same filter
+  // `todayTasksForRail` uses, so the header and its tasks can't disagree.
+  const todaySlots = useMemo(() => slots.filter((s) => s.do_date === today), [slots, today]);
 
   // The grid's colours and names, keyed by id, built from the vertical's
   // DIRECTORY — a snapshot that only moves when a name, hue or parent does. They
@@ -568,6 +562,9 @@ export default function Planner({
           collapsed={focusMode}
           squeezed={squeezed}
           weekDoor={weekDoor}
+          slots={todaySlots}
+          slotTitle={slotTitle}
+          onOpenSlot={openSlotAt}
         />
         {/* min-w: 280 was the old floor and it was too low to be a floor at
             all — a seven-day grid at 280px is a ~48px time gutter and 34px

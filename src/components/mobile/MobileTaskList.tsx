@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Label, Task } from "../../lib/types";
+import type { Label, Slot, Task } from "../../lib/types";
 import { restoreFromTrashPatch } from "../../lib/types";
 import { TRASH_RETENTION_DAYS, type useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
@@ -17,6 +17,12 @@ import { acceptPatch, dismissPatch, undoAutoPatch } from "../../lib/grooming";
 import { InboxAddressHint } from "../InboxAddress";
 import { SectionLabel } from "../ui";
 import SkeletonRows from "./Skeleton";
+import SlotRunHeader, { slotRunFace } from "../tasks/SlotRunHeader";
+import { clockEntries, type ClockEntry, type SlotRun } from "../../lib/slotRuns";
+import { coverage } from "../../lib/selection";
+
+const NO_SLOTS: readonly Slot[] = [];
+const NO_IDS: ReadonlySet<string> = new Set();
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
@@ -43,6 +49,9 @@ export default function MobileTaskList({
   filterNote = null,
   selection,
   onRestored,
+  slots = NO_SLOTS,
+  slotTitle,
+  onOpenSlot,
 }: {
   tab: MobileTab;
   inbox: Task[];
@@ -68,9 +77,18 @@ export default function MobileTaskList({
     /** Hold a row: start selecting, with that row picked. */
     begin: (id: string) => void;
     toggle: (id: string) => void;
+    /** A slot header's ring: fill the group, or (if whole) take it back out. */
+    toggleMany: (ids: string[]) => void;
   };
   /** After Restore — follow the row (inbox when that's where it landed). */
   onRestored?: (face: "inbox" | "today") => void;
+  /** TODAY's slots. The phone's day query leaves slot children out ("they show
+   *  inside their slot"), so with no slot to show them inside they weren't on
+   *  Today at all. With these, a slot is a header over its tasks (D-178). */
+  slots?: readonly Slot[];
+  slotTitle?: (s: Slot, children: Task[]) => string;
+  /** Tap a header: open the slot's sheet. */
+  onOpenSlot?: (run: SlotRun, title: string) => void;
 }) {
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
@@ -113,10 +131,45 @@ export default function MobileTaskList({
   });
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
+  // The day's clock with each slot whole — the same read the desktop rail draws
+  // (lib/slotRuns). Under a filter a slot with nothing matching is dropped:
+  // "open" would claim a gap the filter only hid.
+  const clock = useMemo(() => {
+    const all = clockEntries(todaySections.scheduled, slots, todaySections.done);
+    return filterNote ? all.filter((e) => e.kind === "task" || e.open.length > 0) : all;
+  }, [todaySections.scheduled, todaySections.done, slots, filterNote]);
   const weekPool = useMemo(() => buildWeekPool(week), [week]);
   const [todayOpen, setTodayOpen] = useState({ planned: true, scheduled: true, done: true });
   const toggleToday = (key: keyof typeof todayOpen) =>
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
+
+  // A slot as the head of its tasks. The ring is the tap path for "everything in
+  // this block" — there is no drag and no ⌘-click on a phone, and a hold on the
+  // header would be a third meaning for the gesture (D-122's one-gesture rule).
+  const renderSlotRun = (run: Extract<ClockEntry, { kind: "slot" }>) => {
+    const title = slotTitle ? slotTitle(run.slot, run.open) : run.slot.title;
+    const face = slotRunFace(run, title);
+    const ids = run.open.map((t) => t.id);
+    return (
+      <div key={`slot:${run.slot.id}`}>
+        <SlotRunHeader
+          slotId={run.slot.id}
+          {...face}
+          coverage={coverage(selection?.ids ?? NO_IDS, ids)}
+          selectable={Boolean(selection) && ids.length > 0}
+          onOpen={() => onOpenSlot?.(run, face.title)}
+          onToggleSelect={() => selection?.toggleMany(ids)}
+        />
+        {ids.length > 0 && (
+          <div style={{ boxShadow: `inset 3px 0 0 ${face.color}` }}>
+            {run.open.map((t) => (
+              <TaskRow key={t.id} {...rowProps(t)} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (tab === "trash") {
     return (
@@ -158,7 +211,7 @@ export default function MobileTaskList({
     const nothing =
       todaySections.pinned.length === 0 &&
       todaySections.unblocked.length === 0 &&
-      todaySections.scheduled.length === 0 &&
+      clock.length === 0 &&
       todaySections.done.length === 0;
     if (pending && nothing) return <SkeletonRows />;
     return (
@@ -187,7 +240,7 @@ export default function MobileTaskList({
               ))}
           </>
         )}
-        {todaySections.scheduled.length > 0 && (
+        {clock.length > 0 && (
           <>
             <SectionLabel
               open={todayOpen.scheduled}
@@ -197,9 +250,13 @@ export default function MobileTaskList({
               On the clock
             </SectionLabel>
             {todayOpen.scheduled &&
-              todaySections.scheduled.map((t) => (
-                <TaskRow key={t.id} {...rowProps(t)} />
-              ))}
+              clock.map((entry) =>
+                entry.kind === "task" ? (
+                  <TaskRow key={entry.task.id} {...rowProps(entry.task)} />
+                ) : (
+                  renderSlotRun(entry)
+                ),
+              )}
           </>
         )}
         {todaySections.done.length > 0 && (

@@ -18,7 +18,10 @@ import {
 } from "../../hooks/useTasks";
 import { useLabels, useCalendarAccounts } from "../../hooks/useCalendar";
 import { useRecurrenceMutations } from "../../hooks/useRecurrence";
-import { useSlotMutations } from "../../hooks/useSlots";
+import { useSlotMutations, useSlots } from "../../hooks/useSlots";
+import { todayWithSlotChildren } from "../../lib/slotRuns";
+import { deriveSlotTitle } from "../../lib/slots";
+import { toggleGroup } from "../../lib/selection";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
@@ -27,7 +30,7 @@ import { isTauri } from "../../lib/platform";
 import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
-import { DEFAULT_DURATION_MINUTES, type Task } from "../../lib/types";
+import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
 import { AltitudeIcon, type AltitudeKind } from "../icons";
 import { TrialBanner } from "../billing/TrialBanner";
@@ -68,6 +71,7 @@ import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 // taking a slot; Nuvo opens as an overlay over whatever screen you're on, so its
 // answers carry that screen's context.
 type Tab = "calendar" | "tasks" | "projects" | "initiatives" | "domains";
+const EMPTY_SLOT_ROWS: Slot[] = [];
 const TAB_KEY = "nuvo-mobile-tab-v3";
 const TAB_KEY_V2 = "nuvo-mobile-tab-v2"; // pre-redesign: now|calendar|tasks|plan|nuvo
 const SUB_KEY = "nuvo-mobile-tasksub";
@@ -476,6 +480,29 @@ export default function MobileShell() {
   );
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
+  // Today's slots, and today's list WITH what's inside them. The day query leaves
+  // slot children out ("they show inside their slot"), and the Tasks screen had no
+  // slot to show them inside — so a task you'd put in this morning's block was not
+  // on Today at all, and the count under the segment was short by exactly that
+  // many (D-178). Same assembly the desktop rail uses.
+  const { data: slotRows = EMPTY_SLOT_ROWS } = useSlots(range.start, range.end);
+  const todaySlots = useMemo(() => slotRows.filter((s) => s.do_date === today), [slotRows, today]);
+  const todayForList = useMemo(
+    () =>
+      todayWithSlotChildren({
+        dayRows: todayTasks,
+        slotChildren: allTasks.filter((t) => t.slot_id),
+        slots: todaySlots,
+        today,
+        resolve: (raw) => taskById.get(raw.id),
+      }),
+    [todayTasks, allTasks, todaySlots, today, taskById],
+  );
+  const slotTitle = useCallback(
+    (s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, vertical),
+    [vertical],
+  );
+
   // The bulk bar's acts — the same hook the desktop rail uses, so a phone bulk
   // move files the initiative and domain alongside the project (D-088) and the
   // whole set undoes in one step.
@@ -500,7 +527,7 @@ export default function MobileShell() {
         ? trashed.length
         : s === "week"
           ? weekTasks.filter((x) => x.status !== "done").length
-          : todayTasks.filter((x) => x.status !== "done").length;
+          : todayForList.filter((x) => x.status !== "done").length;
 
   // Per-tab scroll restoration: leaving a tab remembers your place; returning
   // restores it. Only re-tapping the ACTIVE tab scrolls to top (the platform
@@ -769,7 +796,21 @@ export default function MobileShell() {
             <MobileTaskList
               tab={sub}
               inbox={filtering ? filter.apply(inbox) : inbox}
-              today={filtering ? filter.apply(todayTasks) : todayTasks}
+              today={filtering ? filter.apply(todayForList) : todayForList}
+              slots={todaySlots}
+              slotTitle={slotTitle}
+              onOpenSlot={(run, title) => {
+                const start = new Date(run.slot.start_time);
+                setCalendarTap({
+                  kind: "slot",
+                  slot: run.slot,
+                  title,
+                  start,
+                  end: new Date(start.getTime() + run.slot.duration_minutes * 60_000),
+                  childCount: run.open.length + run.doneCount,
+                  doneCount: run.doneCount,
+                });
+              }}
               week={filtering ? filter.apply(weekTasks) : weekTasks}
               trashed={trashed}
               filterNote={
@@ -798,6 +839,7 @@ export default function MobileShell() {
                           next.has(id) ? next.delete(id) : next.add(id);
                           return next;
                         }),
+                      toggleMany: (ids) => setPickedIds((s) => toggleGroup(s, ids)),
                     }
               }
               pending={

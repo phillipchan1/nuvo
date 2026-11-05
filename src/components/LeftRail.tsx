@@ -1,6 +1,6 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
-import type { Label, Task } from "../lib/types";
+import type { Label, Slot, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
 import { acceptPatch, dismissPatch, undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
@@ -28,6 +28,9 @@ import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { InboxAddressHint } from "./InboxAddress";
 import { SectionLabel } from "./ui";
 import { skipWhenAsleep } from "./KeepAlive";
+import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
+import { clockEntries, type ClockEntry } from "../lib/slotRuns";
+import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
 
 /**
  * The rail's faces. `trash` is the floor under delete (audit rank 8: a trashed
@@ -42,6 +45,8 @@ type Mutations = ReturnType<typeof useTaskMutations>;
 /** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
  *  these plan/return acts take the toast channel (complete/trash already do). */
 const TRIAGE_UNDO = { undo: "toast" as const };
+
+const NO_SLOTS: readonly Slot[] = [];
 
 const RAIL_WIDTH_KEY = "nuvo-rail-width";
 const DEFAULT_RAIL_WIDTH = 360;
@@ -80,6 +85,9 @@ function LeftRail({
   collapsed = false,
   squeezed = false,
   weekDoor,
+  slots = NO_SLOTS,
+  slotTitle,
+  onOpenSlot,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -105,18 +113,40 @@ function LeftRail({
   squeezed?: boolean;
   /** The week door's lifecycle, worn by the WeekPanel header that crowns us. */
   weekDoor?: WeekDoor;
+  /** TODAY's slots. With these the rail keeps a slot's tasks together under one
+   *  header (and lists an empty slot as held time); without them the clock is
+   *  the flat run it always was, so a host that has no slots changes nothing. */
+  slots?: readonly Slot[];
+  /** Names an untitled slot from what's inside it — lives with the vertical. */
+  slotTitle?: (s: Slot, children: Task[]) => string;
+  onOpenSlot?: (s: Slot, anchor: DOMRect) => void;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
   // snapshot re-rendered every row on every write anywhere — a block dragged on
   // Thursday redrew the inbox.
   const vertical = useVerticalDirectory();
-  const { nav } = useAppNavigation();
+  const { nav, closeOverlay } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIdsRaw] = useState<Set<string>>(new Set());
+  // Holding several rows and having ONE of them open are incompatible: the next
+  // act would touch the group while the popover still says "this one". So
+  // growing a selection closes the task / slot popover. Modifier-clicks used to
+  // leave it up — the row's ⌘/⇧ mousedown `stopPropagation`s, which kept the
+  // popover's own click-away from ever hearing the press. Every route in
+  // (⌘-click, ⇧-click, ⌘A, x, a slot's ring) goes through here.
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  const setSelectedIds = useCallback(
+    (next: Set<string>) => {
+      setSelectedIdsRaw(next);
+      if (next.size > 0 && selectionClosesOverlay(navRef.current.overlay)) closeOverlay();
+    },
+    [closeOverlay],
+  );
   // The pivot for shift-click range selection — the last row touched plainly
   // or cmd-toggled. Range runs from here to the shift-clicked row.
   const [anchorId, setAnchorId] = useState<string | null>(null);
@@ -239,12 +269,48 @@ function LeftRail({
   // would flip the strip to Trash and make the row look like it was deleted.
   const suppressTabClickRef = useRef(false);
 
-  const visible: Task[] =
-    tab === "inbox"
-      ? inboxOrdered
-      : tab === "trash"
-        ? trashed
-        : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
+  // The day's clock, with each slot kept whole (lib/slotRuns — the phone draws
+  // from the same read). Filtering narrows the day, and a slot with nothing left
+  // that matches must not stand there reading "open": that would claim a gap the
+  // filter merely hid (the "never claim a false empty" rule).
+  const clock: ClockEntry[] = useMemo(() => {
+    const all = clockEntries(todaySections.scheduled, slots, todaySections.done);
+    return filtering ? all.filter((e) => e.kind === "task" || e.open.length > 0) : all;
+  }, [todaySections.scheduled, todaySections.done, slots, filtering]);
+
+  // List order IS draw order — j / k, ⇧-ranges and ⌘A all walk what's on screen,
+  // so a slot's tasks are contiguous (they were sorted by a start time they all
+  // share, which scattered them among their neighbours).
+  const visible: Task[] = useMemo(
+    () =>
+      tab === "inbox"
+        ? inboxOrdered
+        : tab === "trash"
+          ? trashed
+          : [
+              ...todaySections.pinned,
+              ...todaySections.unblocked,
+              ...clock.flatMap((e) => (e.kind === "slot" ? e.open : [e.task])),
+              ...todaySections.done,
+            ],
+    [tab, inboxOrdered, trashed, todaySections, clock],
+  );
+  const doneIds = useMemo(() => new Set(todaySections.done.map((t) => t.id)), [todaySections.done]);
+  // Only rows that are drawn: a collapsed Done tail is in `visible` but not on
+  // screen, and an invisible row must never be in a selection or a range.
+  const drawn: Task[] = useMemo(
+    () => (tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible),
+    [tab, todayOpen.done, visible, doneIds],
+  );
+  const drawnIds = useMemo(() => drawn.map((t) => t.id), [drawn]);
+
+  // A selection can only hold rows that still exist and are on screen: complete
+  // a selected row, switch to Inbox, collapse Done — the id used to stay, so the
+  // bar counted "4 selected" while its acts reached only the two you could see.
+  useEffect(() => {
+    setSelectedIdsRaw((prev) => pruneTo(prev, drawnIds) as Set<string>);
+  }, [drawnIds]);
+
 
   // The bulk bar's acts, shared with the phone (useBulkOps) so "move these to a
   // project" means the same thing on both — including carrying the initiative
@@ -268,25 +334,34 @@ function LeftRail({
     };
   };
 
+  // The row you're already on — the one whose popover is open, or the one the
+  // keyboard has lit. A ⌘-click on a SECOND row means "and this one too", so that
+  // row has to be in the selection already; it never was (a plain click only
+  // opened its popover), so the first ⌘-click selected one row, drew no bar, and
+  // left the first task's popover up over the pick.
+  const drawnRowId = openTaskId ?? (keyCursor ? selectedId : null);
+
   const toggleMultiSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    const base =
+      selectedIds.size === 0 && drawnRowId && drawnRowId !== id && drawnIds.includes(drawnRowId)
+        ? new Set([drawnRowId])
+        : selectedIds;
+    setSelectedIds(toggleId(base, id));
     setSelectedId(id);
     setAnchorId(id);
+    setKeyCursor(false);
   };
 
-  // Shift-click: select every row between the anchor and this one, inclusive.
+  // Shift-click: select every row between the anchor and this one, inclusive —
+  // over the rows that are DRAWN, so a range never sweeps through a collapsed
+  // Done tail or the inside of a slot you can't see.
   const selectRangeTo = (id: string) => {
-    const ids = visible.map((t) => t.id);
-    const from = anchorId && ids.includes(anchorId) ? ids.indexOf(anchorId) : ids.indexOf(id);
-    const to = ids.indexOf(id);
-    if (from === -1 || to === -1) return;
-    const [lo, hi] = from <= to ? [from, to] : [to, from];
-    setSelectedIds(new Set(ids.slice(lo, hi + 1)));
+    const anchor = anchorId ?? drawnRowId;
+    const range = rangeBetween(drawnIds, anchor, id);
+    if (!range) return;
+    setSelectedIds(range);
     setSelectedId(id);
+    setKeyCursor(false);
     // anchor stays put, so you can re-shift-click to grow/shrink the range
   };
 
@@ -335,6 +410,22 @@ function LeftRail({
   }, [tab, inboxOrdered, todaySections]);
 
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Empty paper lets go of the selection — the way out that needs no key (Esc is
+  // the keyboard's). A listener rather than an onClick on the list: the paper is
+  // not a control, and anything that IS one (a row, a slot's header, a button)
+  // keeps its own meaning.
+  const hasSelection = selectedIds.size > 0;
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || !hasSelection) return;
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest("[data-task-drag],[data-slot-run],button,a,input,textarea")) return;
+      setSelectedIdsRaw(new Set());
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, [hasSelection]);
   // A drag is a move, not a selection. Selection resolves on mousedown (so
   // modifier-clicks always register), which used to leave the row you merely
   // dragged sitting lifted afterwards — put the cursor back where it was.
@@ -470,7 +561,6 @@ function LeftRail({
     new DOMRect(360, 200, 0, 40);
   const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
-  const doneIds = new Set(todaySections.done.map((t) => t.id));
   const railKeysOn =
     hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
   useTaskListKeys({
@@ -479,7 +569,7 @@ function LeftRail({
     enabled: () => railKeysOn && keyOwner() === "rail",
     // Only rows that are drawn: j past the last one should reach the capture
     // box, not walk into a collapsed "done" tail.
-    rows: tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible,
+    rows: drawn,
     cursor: {
       // Keys act on a row you can SEE. A click selects without drawing the
       // cursor (the lift means "its popover is open"), and that invisible
@@ -659,6 +749,37 @@ function LeftRail({
     onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
     onUndoAutoFile: () => mutations.patchTask(t.id, undoAutoPatch(t)),
   });
+
+  // A slot as the head of its tasks (D-178). The header opens the slot; its ring
+  // picks everything inside for the bulk bar. The spine runs down the tasks so
+  // they read as inside it without a frame around them.
+  const renderSlotRun = (run: Extract<ClockEntry, { kind: "slot" }>) => {
+    const face = slotRunFace(run, slotTitle ? slotTitle(run.slot, run.open) : run.slot.title);
+    const ids = run.open.map((t) => t.id);
+    return (
+      <div key={`slot:${run.slot.id}`}>
+        <SlotRunHeader
+          slotId={run.slot.id}
+          {...face}
+          coverage={coverage(selectedIds, ids)}
+          selectable={ids.length > 0}
+          onOpen={(anchor) => onOpenSlot?.(run.slot, anchor)}
+          onToggleSelect={() => {
+            setSelectedIds(toggleGroup(selectedIds, ids));
+            setAnchorId(ids[0] ?? null);
+            setKeyCursor(false);
+          }}
+        />
+        {ids.length > 0 && (
+          <div style={{ boxShadow: `inset 3px 0 0 ${face.color}` }}>
+            {run.open.map((t) => (
+              <TaskRow key={t.id} {...rowProps(t)} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const tabCount = (t: "inbox" | "today") =>
     t === "inbox" ? inbox.length : today.filter((x) => x.status !== "done").length;
@@ -841,7 +962,12 @@ function LeftRail({
       </div>
 
       {/* List — opt out of the titlebar drag region so row drags aren't window drags */}
-      <div ref={listRef} className="rail-list relative min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false" data-teach="day-list">
+      <div
+        ref={listRef}
+        className="rail-list relative min-h-0 flex-1 overflow-y-auto"
+        data-tauri-drag-region="false"
+        data-teach="day-list"
+      >
         {/* Where a released row will land. The list never reflows to show it —
             rows shifting under the cursor is what made the old drop chrome read
             as the list jumping away from you. The line node is owned by
@@ -931,18 +1057,19 @@ function LeftRail({
                 ))}
               </div>
             )}
-            {todaySections.scheduled.length > 0 && (
+            {clock.length > 0 && (
               <div>
                 <SectionLabel count={todaySections.scheduled.length}>On the clock</SectionLabel>
-                {todaySections.scheduled.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
+                {clock.map((entry) =>
+                  entry.kind === "task" ? (
+                    <TaskRow key={entry.task.id} {...rowProps(entry.task)} />
+                  ) : (
+                    renderSlotRun(entry)
+                  ),
+                )}
               </div>
             )}
-            {todaySections.pinned.length +
-              todaySections.unblocked.length +
-              todaySections.scheduled.length ===
-              0 && (
+            {todaySections.pinned.length + todaySections.unblocked.length + clock.length === 0 && (
               <div className="px-3 py-6 text-center text-caption text-muted">
                 {filtering
                   ? "Nothing today matches the filter."
@@ -1008,8 +1135,15 @@ function LeftRail({
       {/* Bulk actions — one bar, shared with the phone (BulkBar.tsx). It grew
           label · priority · schedule · project-move here; the four it had
           before (today · inbox · done · trash) moved into it unchanged. */}
-      {selectedIds.size > 1 && (
-        <BulkBar count={selectedIds.size} ops={bulkOps} labels={labels} vertical={vertical} />
+      {selectedIds.size > 0 && (
+        <BulkBar
+          count={selectedIds.size}
+          ops={bulkOps}
+          labels={labels}
+          vertical={vertical}
+          total={drawnIds.length}
+          onSelectAll={() => setSelectedIds(new Set(drawnIds))}
+        />
       )}
 
       {labelPickerFor && (

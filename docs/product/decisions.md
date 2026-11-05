@@ -6739,3 +6739,68 @@ requirement, nothing builder-only.
 *Status: built. Guarded by `tests/block-acts.test.ts`, `tests/clock-input-value.test.ts`.
 Driven at `?sheets=task-block` / `block-project` at 320.*
 
+
+---
+
+**D-178 · 2026-11-05 · A selection owns the screen, and a slot is one thing in a list.**
+
+Two things reported from the Schedule's rail, one root: the list said less than the app knew.
+
+**1 · The first task's popover stayed open over a multi-select.** Click a row (its popover
+opens), ⌘-click another: both rows were *meant* to be held, but only the second was — the first
+was never in the set (a plain click only opens a popover) — so the bar didn't appear until a
+third pick, and the popover sat over the whole thing. The popover never closed because the row's
+⌘/⇧ `mousedown` `stopPropagation`s (so a modifier-press can't also open), which also kept the
+popover's own click-away from ever hearing it. Related and quieter: a selection kept ids that had
+left the list (switch to Inbox, complete a selected row), so the bar counted "4 selected" while
+its acts reached two.
+
+→ **One rule: holding several rows and having one open are incompatible.** Growing a selection
+closes the task / slot popover (`selectionClosesOverlay`); the ⌘-click folds in the row you're
+already on (the open popover's, or the keyboard's lit one); the selection is pruned to rows that
+exist **and are drawn** (`pruneTo` — also stops a ⇧-range sweeping a collapsed Done tail). New
+ways in and out, on the one shared keys hook so every task list gets them: **⌘A** · **⇧↑/⇧↓**
+(grow, and walk back to shrink) · **Esc** · a click on empty paper · **Select all N** and a
+tappable ✕ on the bar, which now appears from the first pick. The moves live in
+`lib/selection.ts`, pure, and are tested.
+
+**2 · Slotted work read as loose rows.** A slot's tasks carry the slot's start time, so five
+tasks in one block rendered as five unrelated commitments under "On the clock". On the **phone it
+was worse**: the day query leaves slot children out ("they show inside their slot") and the Tasks
+screen had no slot to show them inside — a task you'd put in this morning's block was not on
+Today, and the segment's count was short by that many.
+
+→ **A slot is the head of its tasks** (`lib/slotRuns.ts` — the one read both shells draw): its
+name, its span (`span()`, the one way a time is spelled), what it holds as a fact (`3 left · 1h of
+2h` / `open · 1h` / `all done`), a spine in its hue, and a ring that picks everything inside it —
+the tap path for "this whole block", since a phone has no ⌘-click or drag. An empty slot is
+listed (held time with nothing in it); a slot whose work is all done reads done rather than
+vanishing; a filter drops a slot with nothing matching rather than let it claim a gap it only
+hid. The phone now assembles today the way the rail does (`todayWithSlotChildren`, extracted from
+`Planner`).
+
+**Anchor.** Closes **D2** (*what's already decided so I don't have to re-decide it?* — a slot is
+decided time; the list now says so) and the triage half of **D4** (bulk-moving what rolled over).
+Strains **P8** lightly (the rail's one question is "what's on today", and a slot header is a
+second kind of line in it — held to one line of fact, no card) and **P10**: no new pool, and **no
+new name** — "slot" is the existing noun, the header is not a thing. The four no's: no pool; no
+overlapping name; it degrades to the old flat list on an account with no slots (P7); nothing
+that holds only in the builder's account (P16).
+
+**Amends the phone's earlier call.** The phone's earlier "Declined for now: multi-select + bulk delete on
+the phone (long-press is spent twice already)" was already overtaken by the hold-to-select bar;
+this adds no new gesture (the ring is a visible button, never a hidden hold).
+
+**Not done, on purpose.** Dragging a *group* to reorder inside the rail (the calendar takes a
+group; the rail's reorder moves one row — the keyboard's ⌥↑/⌥↓ is the path). A phone "put these
+in a slot" bulk act (the task sheet's *Put in a slot* is the per-task path, D-172) — worth its own
+anchor pass. Section-level "select this section".
+
+*Status: built — `lib/selection.ts`, `lib/slotRuns.ts`, `tasks/SlotRunHeader.tsx`, the rail and
+the phone's Today. Guarded by `tests/selection.test.ts` and `tests/slot-runs.test.ts`. Driven at
+`?rail` (desktop) and `?rail=phone` (375px, 44px targets, no horizontal scroll) — fixtures, not
+a live account: the local dev database was empty and writing to it was refused, so the
+open-then-⌘-click flow was driven against a navigation-state stand-in for the popover, not the
+real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
+`npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
+can't tell `checks.yml` from `checks.YML`) — not from this change.*

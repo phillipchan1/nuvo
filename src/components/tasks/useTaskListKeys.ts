@@ -169,7 +169,34 @@ export function useTaskListKeys<T extends KeyRow = Task>({
         acts.duplicate(targets);
         return handled();
       }
+      // ⌘A — every row that is drawn. The list owns it while it holds the keys
+      // (`isTypingIn` already let a text field keep its own select-all), so it
+      // never falls through to the page's select-everything.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+        if (!rows.length) return;
+        cursor.setSelectedIds(new Set(rows.map((t) => t.id)));
+        return handled();
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // ⇧↓ ⇧↑ — grow the selection a row at a time from the cursor; walking back
+      // over a row you already hold lets it go (the way every list shrinks a range).
+      if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        if (!rows.length) return;
+        const from =
+          at >= 0 ? at : cursor.homeId ? rows.findIndex((t) => t.id === cursor.homeId) : -1;
+        const start = from >= 0 ? from : 0;
+        const to = Math.max(0, Math.min(rows.length - 1, start + (e.key === "ArrowDown" ? 1 : -1)));
+        const next = new Set(cursor.selectedIds);
+        if (to !== start && next.has(rows[to].id) && next.has(rows[start].id)) next.delete(rows[start].id);
+        else {
+          next.add(rows[start].id);
+          next.add(rows[to].id);
+        }
+        cursor.setSelectedIds(next);
+        cursor.setCursorId(rows[to].id);
+        return handled();
+      }
 
       switch (e.key) {
         case "j":
