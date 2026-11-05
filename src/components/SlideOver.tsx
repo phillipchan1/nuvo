@@ -1,3 +1,4 @@
+import { cancelNotifiesGuests } from "../lib/eventActs";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GuestsInput } from "./GuestsInput";
 import { Icon } from "./Icon";
@@ -1626,7 +1627,7 @@ export function EventPopover({
   // reading like it only affects your own calendar.
   const otherGuests = (raw?.attendees ?? []).filter((a) => !a.self);
   const iOrganize = raw?.organizer?.self === true;
-  const cancelNotifies = iOrganize && otherGuests.length > 0;
+  const cancelNotifies = cancelNotifiesGuests(raw) > 0;
 
   // The masthead's one line. Reads off the live edit state, so it stays true
   // while you're changing the time rather than lagging a round-trip behind.

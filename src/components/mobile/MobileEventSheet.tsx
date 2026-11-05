@@ -10,7 +10,9 @@ import { useSlotMutations } from "../../hooks/useSlots";
 import { useOptionalVertical } from "../../hooks/useVertical";
 import { domainById, projectById } from "../../lib/vertical";
 import { isExternalEventRecurring } from "../../lib/now";
-import { useCalendarAccounts, useEventDetails, useEventSeriesRule, useExternalEventMutations } from "../../hooks/useCalendar";
+import { useCalendarAccounts, useEventDetails, useEventSeriesRule, useExternalEventMutations, useHiddenEvents } from "../../hooks/useCalendar";
+import { cancelNotifiesGuests, duplicateEventInput, taskFromEvent } from "../../lib/eventActs";
+import { eventSeriesKey } from "../../lib/eventActuals";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
   allDayInclusiveEnd,
@@ -22,7 +24,7 @@ import {
   todayISO,
   tomorrowISO,
 } from "../../lib/dates";
-import { CALENDAR_OFFLINE_NOTE, isWritableCalendar } from "../../lib/calendarWrite";
+import { CALENDAR_OFFLINE_NOTE, isWritableCalendar, providerLabel, writableCalendarTargets } from "../../lib/calendarWrite";
 import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
 import { DescriptionHtml } from "../../lib/descriptionHtml";
@@ -43,6 +45,7 @@ import {
   ChipGrid,
   DestructiveRow,
   MetaDot,
+  PickSheet,
   ResponseSegmented,
   RowList,
   SHEET_BODY,
@@ -104,7 +107,8 @@ export default function MobileEventSheet({
   onEditTask?: (taskId: string) => void;
 }) {
   const qc = useQueryClient();
-  const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
+  const { rsvpEvent, updateEvent, deleteEvent, createEvent, moveEventToCalendar, addMeetToEvent } = useExternalEventMutations();
+  const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const slotMutations = useSlotMutations();
   const { data: accounts = [] } = useCalendarAccounts();
   // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
@@ -165,6 +169,11 @@ export default function MobileEventSheet({
   const meetLink = joinUrl(raw, tap.kind === "event" ? tap.location : null);
   const [rsvping, setRsvping] = useState(false);
   const [showAllGuests, setShowAllGuests] = useState(false);
+  // The two choices that open a second sheet over this one (PickSheet), and the
+  // notes' read face — an invite body is mostly links, which a textarea can't open.
+  const [pick, setPick] = useState<null | "hide" | "move">(null);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [addingMeet, setAddingMeet] = useState(false);
 
   // Editable-event state — only meaningful for tap.kind === "event", but
   // declared unconditionally since hooks can't hide behind the branch below.
@@ -425,6 +434,97 @@ export default function MobileEventSheet({
       deleteEvent({ id: tap.id, scope: "THIS" });
       onClose();
     };
+    const deleteQuietly = () => {
+      deleteEvent({ id: tap.id, scope: "THIS", notifyGuests: false });
+      onClose();
+    };
+
+    // ── The acts the desktop reaches by right-click (D-176) ──────────────────
+    // A phone has no right-click, so every one of these needs a visible row —
+    // a hidden gesture is never the only path to an act.
+    const hidable = {
+      account_id: cachedEvent?.account_id ?? tap.accountId ?? "",
+      provider_event_id: cachedEvent?.provider_event_id ?? tap.providerEventId ?? "",
+      recurring_event_id: cachedEvent?.recurring_event_id ?? null,
+      title: tap.title,
+    };
+    const hiddenNow = Boolean(hidable.provider_event_id) && isHidden(hidable);
+    const canHideSeries = Boolean(eventSeriesKey(hidable));
+    const hideAs = (scope: RecurrenceScope) => {
+      hide(hidable, scope);
+      toast.success(scope === "ALL" ? "Series hidden" : "Event hidden", {
+        description: "Bring it back from Settings → Schedule.",
+      });
+      onClose();
+    };
+    const onHide = () => {
+      if (hiddenNow) {
+        const k = hiddenKeyFor(hidable);
+        if (k) unhide(k);
+        onClose();
+        return;
+      }
+      if (canHideSeries) setPick("hide");
+      else hideAs("THIS");
+    };
+    const toTask = () => {
+      mutations.create(taskFromEvent({ title: tap.title, start_at: tap.start.toISOString(), end_at: tap.end.toISOString() }));
+      hide(hidable, "THIS");
+      toast.success("Task created", { description: "The event is hidden — it stays on your calendar." });
+      onClose();
+    };
+    const duplicate = () => {
+      if (!cachedEvent) return;
+      onClose();
+      void createEvent(duplicateEventInput(cachedEvent))
+        .then(() => toast.success("Duplicated"))
+        .catch(() => toast.error(`Couldn't copy ${tap.title || "the event"}`));
+    };
+    const moveGroups = writableCalendarTargets(accounts, tap.calendarId);
+    const moveRows = moveGroups.flatMap((g) =>
+      g.calendars.map((c) => ({
+        id: `${g.accountId}|${c.id}`,
+        name: c.summary,
+        sub: `${g.accountLabel} · ${providerLabel(g.provider)}`,
+        color: c.color ?? null,
+      })),
+    );
+    const currentTarget = `${tap.accountId ?? ""}|${tap.calendarId ?? ""}`;
+    const moveTo = (id: string) => {
+      if (!id || id === currentTarget) return;
+      const [targetAccountId, targetCalendarId] = id.split("|");
+      void Promise.resolve(moveEventToCalendar({ id: tap.id, targetAccountId, targetCalendarId })).catch(() =>
+        toast.error("Couldn't move the event"),
+      );
+      onClose();
+    };
+    // Only Google mints a Meet link, and only on an event that has no way in yet.
+    const canAddMeet = editable && account?.provider === "google" && !meetLink && raw !== undefined;
+    const addMeet = () => {
+      commitScoped(
+        async (scope) => {
+          setAddingMeet(true);
+          try {
+            const res = await addMeetToEvent({ id: tap.id, scope });
+            if (!res?.meetUrl) toast("Google is still creating the link — give it a moment.");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Couldn't add a Meet link");
+          } finally {
+            setAddingMeet(false);
+          }
+        },
+        undefined,
+        "answer",
+      );
+    };
+    const openUrl = raw?.htmlLink ?? null;
+    const openLabel = account?.provider === "m365" ? "Open in Outlook" : "Open in Google Calendar";
+    // What the notes' read face shows: Google's own body (its links and line
+    // breaks intact) until you've edited it here, then what you wrote.
+    const description = raw?.description ?? "";
+    const notesHtml = editable && notes !== plainTextFromHtml(description) ? notes : description;
+    // You host it and others are on it: deleting is cancelling, and they're told.
+    const guestsTold = cancelNotifiesGuests(raw);
 
     // The ONE muted line under the name — what the read needs before any control
     // does: when it is, and whether it repeats (said even on a read-only event;
@@ -515,7 +615,7 @@ export default function MobileEventSheet({
           {/* The strip — the reason you opened it, at most two acts. Join is the
               one thing you open a meeting for on a phone, so it leads; "Going?"
               is the answer to the question the invite asks. */}
-          {(meetLink || showRsvp) && (
+          {(meetLink || showRsvp || canAddMeet) && (
             <div className="mt-4 space-y-3">
               {meetLink && (
                 <a
@@ -528,6 +628,17 @@ export default function MobileEventSheet({
                   <Icon name="video" size={16} className="shrink-0" />
                   Join {conferenceName(raw, tap.location)}
                 </a>
+              )}
+              {canAddMeet && (
+                <button
+                  type="button"
+                  onClick={addMeet}
+                  disabled={addingMeet}
+                  className="tap fast flex w-full items-center justify-center gap-2 rounded-xl border border-line-strong px-4 text-body font-medium text-ink active:bg-accent-soft disabled:opacity-50"
+                >
+                  <Icon name="video" size={16} className="shrink-0 text-muted" />
+                  {addingMeet ? "Adding…" : "Add Google Meet"}
+                </button>
               )}
               {showRsvp && (
                 <div className="flex items-center gap-3">
@@ -562,7 +673,7 @@ export default function MobileEventSheet({
                 </Chip>
               </div>
               {!allDay && (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
                   <input
                     type="time"
                     step={900}
@@ -573,6 +684,9 @@ export default function MobileEventSheet({
                     }}
                     aria-label="Start time"
                     className="field mono w-full min-w-0"
+                    // Inline: `.field`'s padding is unlayered and beats utilities.
+                    // Its default left 12px of empty room that "PM" needed at 320.
+                    style={{ paddingLeft: 10, paddingRight: 6 }}
                   />
                   <Icon name="arrow-right" size={14} className="text-muted" />
                   <input
@@ -585,22 +699,29 @@ export default function MobileEventSheet({
                     }}
                     aria-label="End time"
                     className="field mono w-full min-w-0"
+                    // Inline: `.field`'s padding is unlayered and beats utilities.
+                    // Its default left 12px of empty room that "PM" needed at 320.
+                    style={{ paddingLeft: 10, paddingRight: 6 }}
                   />
                 </div>
               )}
               <div className="relative">
-                <Icon name="pin" size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-                <input
+                {/* Pinned to the first line, not centred: a long place wraps. */}
+                <Icon name="pin" size={16} className="pointer-events-none absolute left-3.5 top-[14px] text-muted" />
+                {/* Wraps instead of clipping. A one-line input hid all but the
+                    first ~25 characters of an address, at exactly the moment you
+                    open an event to find out where you're going. */}
+                <AutoText
                   value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  onChange={setLocation}
                   onBlur={commitLocation}
                   placeholder="Add location"
-                  aria-label="Location"
-                  enterKeyHint="done"
-                  className="field w-full"
+                  label="Location"
+                  single
+                  className="field leading-snug"
                   // Inline, not utilities: `.field`'s own padding is unlayered CSS
                   // and outranks any padding class. Right pad clears the Maps arrow.
-                  style={{ paddingLeft: 40, paddingRight: location.trim() ? 44 : undefined }}
+                  style={{ paddingLeft: 40, paddingRight: location.trim() ? 44 : undefined, marginBlock: 0 }}
                 />
                 {location.trim() && (
                   // Its own 44px cell, positioned here rather than by `.tap-icon`:
@@ -611,7 +732,7 @@ export default function MobileEventSheet({
                     target="_blank"
                     rel="noreferrer"
                     aria-label="Open in Maps"
-                    className="fast absolute right-0 top-0 flex h-full w-11 items-center justify-center rounded-r-[var(--radius)] text-muted active:bg-accent-soft"
+                    className="fast absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-r-[var(--radius)] text-muted active:bg-accent-soft"
                   >
                     <Icon name="arrow-right" size={14} className="-rotate-45" />
                   </a>
@@ -682,12 +803,20 @@ export default function MobileEventSheet({
             </SheetSection>
           ) : null}
 
-          {editable ? (
+          {/* Notes READ first. An invite's body is mostly a join link, a dial-in
+              and a wall of boilerplate: as a textarea its links couldn't be
+              opened and the whole thing pushed every act below it off the screen.
+              It now reads with links live, folded past eight lines; Edit (or an
+              empty note) turns it into the field — the desktop popover's rule. */}
+          {editable && (editingNotes || !notes.trim()) ? (
             <SheetSection label="Notes">
               <AutoText
                 value={notes}
                 onChange={setNotes}
-                onBlur={commitNotes}
+                onBlur={() => {
+                  commitNotes();
+                  setEditingNotes(false);
+                }}
                 label="Notes"
                 placeholder="Add notes"
                 minRows={3}
@@ -695,9 +824,26 @@ export default function MobileEventSheet({
               />
             </SheetSection>
           ) : (
-            raw?.description && (
-              <SheetSection label="Notes">
-                <DescriptionHtml html={raw.description} className="whitespace-pre-wrap text-body" />
+            notesHtml && (
+              <SheetSection
+                label="Notes"
+                aside={
+                  editable ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingNotes(true)}
+                      className="tap-h fast -my-2 px-1 text-caption font-medium text-accent"
+                    >
+                      Edit
+                    </button>
+                  ) : undefined
+                }
+              >
+                <DescriptionHtml
+                  html={notesHtml}
+                  clampLines={8}
+                  className="whitespace-pre-wrap break-words text-body [overflow-wrap:anywhere]"
+                />
               </SheetSection>
             )
           )}
@@ -705,14 +851,44 @@ export default function MobileEventSheet({
           <SheetSection>
             <RowList>
               {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo to help prepare" onClick={handleAskNuvo} />}
+              {/* Turning a meeting into your own work: the task takes the hour and
+                  the event steps aside (hidden, never deleted). Timed only — an
+                  all-day event has no hour to hand over. */}
+              {!tap.allDay && <ActionRow icon="check" label="Make it a task" onClick={toTask} />}
+              {editable && cachedEvent && <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />}
+              {editable && moveRows.length > 1 && (
+                <ActionRow icon="calendar" label="Move to another calendar…" onClick={() => setPick("move")} />
+              )}
+              {openUrl && <ActionRow icon="arrow-right" label={openLabel} href={openUrl} />}
               <ActionRow quiet icon="copy" label="Copy details" onClick={copyDetails} />
+              {/* Hide works on every event — a read-only holiday feed is exactly
+                  what you most want out of the way. It never touches the server. */}
+              {hidable.provider_event_id && (
+                <ActionRow
+                  quiet
+                  icon={hiddenNow ? "eye" : "eye-off"}
+                  label={hiddenNow ? "Show on calendar" : "Hide from calendar"}
+                  onClick={onHide}
+                />
+              )}
             </RowList>
           </SheetSection>
 
           {/* Destructive, and alone: text at rest, red only once it asks. */}
           {editable && (
             <div className="mt-6">
-              <DestructiveRow label="Delete event" confirmLabel="Delete event" confirm={!recurring} onConfirm={handleDelete} />
+              <DestructiveRow
+                label={guestsTold ? "Cancel event" : "Delete event"}
+                confirmLabel={guestsTold ? "Cancel & notify guests" : "Delete event"}
+                confirm={!recurring}
+                prompt={
+                  guestsTold && !recurring
+                    ? `You're hosting — this cancels it for ${guestsTold} ${guestsTold === 1 ? "guest" : "guests"}.`
+                    : undefined
+                }
+                alt={guestsTold && !recurring ? { label: "Cancel without emailing", onConfirm: deleteQuietly } : undefined}
+                onConfirm={handleDelete}
+              />
             </div>
           )}
         </div>
@@ -722,6 +898,33 @@ export default function MobileEventSheet({
           mode={editScope.mode}
           onConfirm={confirmScope}
           onCancel={cancelScope}
+        />
+      )}
+      {pick === "hide" && (
+        <PickSheet
+          title="Hide from calendar"
+          note="Hidden events stay on your calendar account — Nuvo just stops drawing them and counting them as busy."
+          rows={[
+            { id: "THIS", name: "This event", lead: <Icon name="eye-off" size={16} className="text-muted" /> },
+            { id: "ALL", name: "All events in the series", lead: <Icon name="repeat" size={16} className="text-muted" /> },
+          ]}
+          value={null}
+          onPick={(id) => hideAs(id as RecurrenceScope)}
+          onClose={() => setPick(null)}
+        />
+      )}
+      {pick === "move" && (
+        <PickSheet
+          title="Move to calendar"
+          note={
+            moveGroups.length > 1 && (recurring || showRsvp)
+              ? "Moving to another account makes a copy there — repeats and guests won't carry over."
+              : undefined
+          }
+          rows={moveRows}
+          value={currentTarget}
+          onPick={moveTo}
+          onClose={() => setPick(null)}
         />
       )}
       </>

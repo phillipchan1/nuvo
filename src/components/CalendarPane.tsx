@@ -1,3 +1,4 @@
+import { duplicateEventInput } from "../lib/eventActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -2395,16 +2396,7 @@ function CalendarPane({
    *  re-invited eight people would be the app mailing on the user's behalf, and
    *  a copied series is two series. Resolves to the copy's block id. */
   const duplicateEvent = async (ev: ExternalEvent): Promise<string | null> => {
-    const data = await eventMutations.createEvent({
-      title: `${ev.title} (copy)`,
-      start_at: ev.start_at,
-      end_at: ev.end_at,
-      all_day: ev.all_day,
-      location: ev.location ?? undefined,
-      accountId: ev.account_id,
-      calendarId: ev.calendar_id,
-      notifyGuests: false,
-    });
+    const data = await eventMutations.createEvent(duplicateEventInput(ev));
     const id = (data as { event?: { id?: string } } | null)?.event?.id ?? (data as { id?: string } | null)?.id;
     return id ? `evt:${id}` : null;
   };

@@ -167,6 +167,7 @@ function scenarios(): Record<string, Scenario> {
     at(16), at(17),
   );
   const offline = mkEvent({ id: "e-off", title: "Dentist" }, at(9), at(9, 45));
+  const host = mkEvent({ id: "e-host", title: "Frontier staff sync", self_rsvp: "accepted" }, at(13), at(14));
 
   const blockTask = mkTask({
     id: "t-block", title: "Draft the launch email", status: "backlog", do_date: toDateISO(at(9)), start_time: at(9, 30).toISOString(),
@@ -217,6 +218,27 @@ function scenarios(): Record<string, Scenario> {
       },
     },
     "event-long": { label: "three-line title + long place", group: "Event", events: [long], tap: tapOf(long) },
+    // The real-world invite that broke the sheet (D-176): you host it, six people
+    // are on it, and the body is a Zoom paste — long unbreakable URLs, a dial-in
+    // wall, a separator rule. Delete must say it cancels for them; the notes must
+    // read with links live, folded, and never widen the sheet.
+    "event-host": {
+      label: "you host · 6 guests · Zoom-paste notes · htmlLink", group: "Event", events: [host], tap: tapOf(host),
+      details: {
+        "e-host": raw({
+          htmlLink: "https://www.google.com/calendar/event?eid=ZS1ob3N0",
+          organizer: { email: "you@example.com", displayName: "You", self: true },
+          attendees: [{ email: "you@example.com", self: true, organizer: true, responseStatus: "accepted" }, ...guests(6)],
+          description:
+            "Phillip Chan is inviting you to a scheduled Zoom meeting.<br><br>Join Zoom Meeting<br>" +
+            "<a href=\"https://us02web.zoom.us/j/81234567890?pwd=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefghijklmnop.1\">https://us02web.zoom.us/j/81234567890?pwd=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefghijklmnop.1</a>" +
+            "<br><br>Meeting ID: 812 3456 7890<br>Passcode: 424242<br><br>───────────────────────────────────────────<br>" +
+            "One tap mobile<br>+16694449171,,81234567890#,,,,*424242# US<br>+16699006833,,81234567890#,,,,*424242# US (San Jose)<br><br>" +
+            "Dial by your location<br>• +1 669 444 9171 US<br>• +1 669 900 6833 US (San Jose)<br>• +1 646 931 3860 US<br>• +1 929 436 2866 US (New York)<br><br>" +
+            "Find your local number: https://us02web.zoom.us/u/kdEFghIJklMNopQRstUVwxYZ0123456789",
+        }),
+      },
+    },
 
     "task-loose": {
       label: "loose · no date", group: "Task",

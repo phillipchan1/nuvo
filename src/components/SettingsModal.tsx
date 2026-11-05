@@ -675,6 +675,39 @@ function SchedulePane({
           />
         </Row>
 
+        {/* The way back from Hide (D-176). A hidden event is filtered off every
+            calendar Nuvo draws, so on the phone — which has no "Show N hidden"
+            in a ⋯ — hiding one was a door that only opened inward. Listed here
+            on both shells: the desktop's toggle reveals them in place, this
+            names them. */}
+        {(settings?.hidden_events?.length ?? 0) > 0 && (
+          <Row
+            layout="stack"
+            title="Hidden events"
+            desc="Events you hid stay on your calendar account; Nuvo just doesn't draw them or count them as busy."
+          >
+            <div className="divide-y divide-line border-y border-line">
+              {(settings?.hidden_events ?? []).map((h) => (
+                <div key={h.key} className="flex min-h-[44px] items-center gap-3 py-1">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body text-ink">{h.title || "Untitled event"}</span>
+                    {h.key.includes(":series:") && <span className="block text-meta text-muted">Every event in the series</span>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSettings({ hidden_events: (settings?.hidden_events ?? []).filter((x) => x.key !== h.key) })
+                    }
+                    className="tap-h fast shrink-0 rounded-full border border-line px-3 py-1 text-label font-medium text-ink hover:bg-accent-soft"
+                  >
+                    Show
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Row>
+        )}
+
         {/* The phone's door to recurring upkeep. On the desktop this lives in
             the calendar's ⋯ overflow; on the phone it had been promoted to a
             permanent icon in the Calendar's busiest row, which is a lot of

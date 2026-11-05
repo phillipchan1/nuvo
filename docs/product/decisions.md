@@ -6653,3 +6653,49 @@ requirement (an empty week still draws its working window), nothing builder-only
 *Status: built — phone Week canvas tap-to-capture. Guarded by `tests/mobile-week-tap.test.tsx`
 (column + half-hour, ghost before release, wander, gutter, block) and the unchanged
 `tests/mobile-day-tap.test.tsx`. Driven with touch at 375px at `?horizon` (week and day frames).*
+
+---
+
+**D-176 · 2026-11-05 · The phone's event sheet carries every act the desktop's right-click
+does — and Hide has a way back.**
+
+A phone has no right-click. Every act the desktop reached through the event's context menu or
+its popover footer — **Hide**, **→ Task**, **Duplicate**, **Move to…**, **Open in Google
+Calendar**, **Add Google Meet** — had no path on the phone at all; "I can't hide an event on
+mobile" was the report. Worse, the phone's **Delete** on a meeting you host cancelled it for
+every guest by email without saying so (the desktop asks *Cancel for 6 guests?* and offers
+*Cancel quietly*).
+
+→ Each act is now a visible row on the event sheet (`MobileEventSheet`). Choosing between
+this-occurrence and the-series, or among calendars, is a `PickSheet` — never a hidden
+gesture, never a cursor menu. Delete says what it does: on an event you host with guests it
+reads **Cancel event**, and arms to *Cancel & notify guests* · *Cancel without emailing* ·
+*Keep it*. What each act **means** moved out of the desktop components into
+`lib/eventActs.ts` (`taskFromEvent`, `duplicateEventInput`, `cancelNotifiesGuests`); they
+were inline in `Planner` / `CalendarPane` / `SlideOver`, which is exactly why the phone had
+none — there was nothing to import.
+
+**The way back.** Hidden events are filtered off every calendar Nuvo draws, and the desktop's
+*Show N hidden* lives in the calendar's ⋯, which the phone doesn't have (D-123 sends such
+management to Settings). So **Settings → Schedule → Hidden events** names each one with a
+**Show**, on both shells. Without it, Hide on a phone was a door that only opened inward.
+
+**Overflow** (same sheet, same report): at 320px the start/end time fields clipped "PM"; a long
+location was a one-line input showing its first ~25 characters; an invite's body (a Zoom
+paste) was either an unfolded wall or — on an editable event — a textarea whose links could
+not be opened, pushing every act below the fold. Times now fit; the location wraps; notes
+read first (links live, folded past eight lines, unbreakable URLs wrap) and **Edit** turns
+them into the field — the desktop popover's rule.
+
+**Anchor.** No new Question Ledger row — this is parity on an existing surface (the phone's
+event sheet already answers D2/D4 for an event; it now answers them without sending you to
+the desktop). Strains **P5** slightly (the sheet grows a row-list of acts), held by the sheet
+kit's grammar: acts are quiet rows, the destructive one stands alone. The four no's: no pool,
+one new user-facing name (**Hidden event**, glossary), no clean-data requirement, nothing
+builder-only.
+
+*Status: built — event sheet acts + overflow, Settings → Schedule hidden list. Guarded by
+`tests/event-acts.test.ts`, `tests/settings-hidden-events.test.tsx`. Driven at
+`?sheets=event-host` / `event-recurring` / `event-long` at 320 and 375 (new fixture
+`event-host`: you host, six guests, a Zoom-paste body).*
+

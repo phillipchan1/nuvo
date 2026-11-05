@@ -1,3 +1,4 @@
+import { taskFromEvent } from "../lib/eventActs";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -490,15 +491,7 @@ export default function Planner({
   // memo'd, and an inline arrow here re-rendered them on every Planner render.
   const handleConvertEventToTask = useStableHandler(
     (event: ExternalEvent) => {
-      const start = new Date(event.start_at);
-      const end = new Date(event.end_at);
-      const duration = Math.round((end.getTime() - start.getTime()) / 60000);
-      mutations.create({
-        title: event.title,
-        do_date: toDateISO(start),
-        start_time: event.start_at,
-        duration_minutes: duration > 0 ? duration : 30,
-      });
+      mutations.create(taskFromEvent(event));
       hideEvent(event, "THIS");
       toast.success("Task created");
     },
