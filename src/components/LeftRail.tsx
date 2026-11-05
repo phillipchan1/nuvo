@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
-import { isOverdue, nextWeekISO, todayISO } from "../lib/dates";
+import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
 import { acceptPatch, dismissPatch, undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
@@ -1294,7 +1294,7 @@ function SchedulePicker({
   mutations: Mutations;
 }) {
   const [date, setDate] = useState(task.do_date ?? todayISO());
-  const [time, setTime] = useState(task.start_time ? task.start_time.slice(11, 16) : "");
+  const [time, setTime] = useState(clockInputValue(task.start_time));
 
   const apply = () => {
     if (time) {

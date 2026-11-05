@@ -23,6 +23,7 @@ import {
   toDateISO,
   todayISO,
   tomorrowISO,
+  clockInputValue,
 } from "../../lib/dates";
 import { CALENDAR_OFFLINE_NOTE, isWritableCalendar, providerLabel, writableCalendarTargets } from "../../lib/calendarWrite";
 import { useOnline } from "../../hooks/useOnline";
@@ -993,7 +994,7 @@ function SlotReschedulePicker({
   onDone: () => void;
 }) {
   const [date, setDate] = useState(slot.do_date);
-  const [time, setTime] = useState(slot.start_time.slice(11, 16));
+  const [time, setTime] = useState(clockInputValue(slot.start_time));
 
   const apply = () => {
     const [h, m] = time.split(":").map(Number);

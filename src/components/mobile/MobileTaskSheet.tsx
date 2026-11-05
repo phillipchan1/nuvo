@@ -1,3 +1,4 @@
+import { moveToDay } from "../tasks/TaskActionsMenu";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Label, Task } from "../../lib/types";
@@ -6,7 +7,7 @@ import { useScheduledTasks, type useTaskMutations } from "../../hooks/useTasks";
 import { useSlotTasks, useSlots, type useSlotMutations } from "../../hooks/useSlots";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
-import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO } from "../../lib/dates";
+import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO, clockInputValue } from "../../lib/dates";
 import { blockDesignation, deriveSlotTitle, slotPickDay, slotPicksFor, type SlotPick } from "../../lib/slots";
 import {
   domainById,
@@ -165,10 +166,13 @@ export default function MobileTaskSheet({
   // iOS — commit on the way out so the edit isn't lost.
   useVisibilityFlush(() => commitRef.current());
 
+  // A timed block keeps its clock when it moves day — the desktop's `moveToDay`,
+  // imported rather than re-said. These chips used `planFor`, which clears the
+  // start time: "Tomorrow" on a 9am block quietly made it an anytime task.
   const planChips: { label: string; run: () => void; active?: boolean }[] = [
-    { label: "Today", run: () => mutations.planFor(task, todayISO(), TRIAGE_UNDO), active: task.do_date === todayISO() },
-    { label: "Tomorrow", run: () => mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO), active: task.do_date === tomorrowISO() },
-    { label: "Next week", run: () => mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO) },
+    { label: "Today", run: () => moveToDay(mutations, task, todayISO()), active: task.do_date === todayISO() },
+    { label: "Tomorrow", run: () => moveToDay(mutations, task, tomorrowISO()), active: task.do_date === tomorrowISO() },
+    { label: "Next week", run: () => moveToDay(mutations, task, nextWeekISO()) },
   ];
 
   // the domain the task actually counts toward — its parent's, not its own stale
@@ -665,7 +669,7 @@ function DateTimePicker({
   onDone: () => void;
 }) {
   const [date, setDate] = useState(task.do_date ?? todayISO());
-  const [time, setTime] = useState(task.start_time ? task.start_time.slice(11, 16) : "");
+  const [time, setTime] = useState(clockInputValue(task.start_time));
 
   const apply = () => {
     if (time) {
