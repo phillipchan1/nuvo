@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -54,9 +54,12 @@ import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSl
  * paying twice for something already correct in the cache.
  */
 
-/** A beat before warming neighbours, so a prefetch never competes with the
- *  fetch for the screen the user is actually looking at. */
-const PREFETCH_IDLE_MS = 350;
+/** A beat before warming neighbours, so the travel's own commit lands first and
+ *  the several range changes one gesture can make coalesce into one warm-up.
+ *  Short on purpose, and a THROTTLE, not a debounce (see
+ *  `useCalendarRangePrefetch`): a warmed range has no observers, so its fetch
+ *  re-renders nothing, and the only thing a longer wait bought was misses. */
+export const PREFETCH_IDLE_MS = 120;
 
 async function throwIfInvokeFailed(data: unknown, error: Error | null) {
   if (error) throw new Error((await formatAppError(error)).message);
@@ -164,27 +167,63 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
  * 1000-row page cap that `fetchExternalEventsRange` exists to survive. These
  * are the same query keys the live hooks use, so a prefetched range is simply a
  * hit — and `staleTime` is what stops the hit from immediately re-fetching.
+ *
+ * THROTTLED, never debounced. This used to restart a 350ms timer on every
+ * range change, so paging faster than ~350ms + a round trip never warmed
+ * anything: each press cancelled the warm-up the last one had scheduled, and
+ * every week or month after the first two landed blank and waited on the
+ * network — exactly when you were moving fastest. Now a change while a
+ * warm-up is pending just retargets it (it reads the LATEST ranges when it
+ * fires), so a warm-up goes out at least every `PREFETCH_IDLE_MS` however fast
+ * you travel. Re-warming a range that is already fresh is free: `prefetchQuery`
+ * skips it under `staleTime`, and dedupes one already in flight.
  */
 export function useCalendarRangePrefetch(ranges: { start: string; end: string }[]) {
   const qc = useQueryClient();
   // Serialised, so a new array of the same ranges doesn't re-run the effect.
   const key = ranges.map((r) => `${r.start}|${r.end}`).join(",");
+  const latest = useRef(ranges);
+  latest.current = ranges;
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    // After a beat: a swipe in progress should not contend with the fetch for
-    // the screen the user is currently looking at.
-    const t = setTimeout(() => {
-      if (cancelled) return;
-      for (const r of ranges) {
+    if (pending.current !== null) return; // already on its way — it reads `latest`
+    pending.current = setTimeout(() => {
+      pending.current = null;
+      for (const r of latest.current) {
         if (r.start && r.end) void prefetchCalendarRange(qc, r.start, r.end);
       }
     }, PREFETCH_IDLE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, qc]);
+  useEffect(
+    () => () => {
+      if (pending.current !== null) clearTimeout(pending.current);
+      pending.current = null;
+    },
+    [],
+  );
+}
+
+/**
+ * Which way the calendar last travelled: 1 forward, -1 back, 0 at rest — and 0
+ * again when the span's LENGTH changes (a lens change is a zoom, not travel).
+ * Lets a surface warm further ahead in the direction you're paging than behind
+ * you, where you have just been and the cache already holds it.
+ */
+export function useTravelDirection(range: { start: string; end: string }): -1 | 0 | 1 {
+  const span = (r: { start: string; end: string }) => Date.parse(r.end) - Date.parse(r.start);
+  const ref = useRef<{ start: string; span: number; dir: -1 | 0 | 1 }>({
+    start: range.start,
+    span: span(range),
+    dir: 0,
+  });
+  const s = span(range);
+  if (ref.current.start !== range.start || ref.current.span !== s) {
+    // Idempotent for a given range, so a re-render (or StrictMode's second
+    // render) can never flip it.
+    const dir = s !== ref.current.span ? 0 : Date.parse(range.start) > Date.parse(ref.current.start) ? 1 : -1;
+    ref.current = { start: range.start, span: s, dir };
+  }
+  return ref.current.dir;
 }
 
 /**

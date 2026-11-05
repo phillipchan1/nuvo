@@ -11,7 +11,7 @@ import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { isTypingIn } from "../lib/a11y";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
-import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
+import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels, useTravelDirection } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { todayWithSlotChildren } from "../lib/slotRuns";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -24,7 +24,7 @@ import { useStableHandler } from "../hooks/useStableHandler";
 import { gridLookups } from "../lib/verticalDirectory";
 import { mergeTaskLists } from "../lib/taskMerge";
 import { isWritableCalendar, type CreateTarget } from "../lib/calendarWrite";
-import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
+import { scheduleNeighbours, scheduleRangeFor, warmSteps, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
 import type { FlowName } from "./Spine";
@@ -267,12 +267,21 @@ export default function Planner({
   // would otherwise outrun it. One each way on the month: a month neighbour is
   // a six-week grid, so two each way would hold half a year of events for a
   // press that rarely comes twice. Only while the Schedule is on screen.
+  // Once you're paging, the budget leans the way you're going (`warmSteps`):
+  // three weeks / two months ahead, one behind — the same four week ranges as
+  // at rest, one extra month grid — because a quick run of presses outran a
+  // symmetric ±2 and landed blank at the frontier.
+  const travelDir = useTravelDirection(range);
   const neighbours = useMemo(
     () =>
       onSchedule
-        ? scheduleNeighbours(range, weekStartsOn, view === "dayGridMonth" ? [1, -1] : [1, -1, 2, -2])
+        ? scheduleNeighbours(
+            range,
+            weekStartsOn,
+            view === "dayGridMonth" ? warmSteps(travelDir, 1, 2) : warmSteps(travelDir, 2, 3),
+          )
         : [],
-    [onSchedule, range, weekStartsOn, view],
+    [onSchedule, range, weekStartsOn, view, travelDir],
   );
   useCalendarRangePrefetch(neighbours);
   const { data: accounts = [] } = useCalendarAccounts();

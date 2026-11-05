@@ -51,6 +51,27 @@ export function scheduleRangeFor(view: string, date: Date, weekStartsOn: WeekSta
 }
 
 /**
+ * Which presses of ‹ › to warm, nearest first (the order the fetches go out).
+ *
+ * At rest (`dir` 0): `near` steps either way. Moving: `ahead` steps the way
+ * you're going and ONE back — behind you is where you just were, already in
+ * the cache, so spending the budget there bought nothing while the frontier
+ * ahead was what a quick run of presses kept landing on blank. Rest warms
+ * 2 × `near` ranges, moving `ahead` + 1, so momentum costs memory only where a
+ * caller asks for more than it already held.
+ */
+export function warmSteps(dir: -1 | 0 | 1, near: number, ahead: number): number[] {
+  const out: number[] = [];
+  if (dir === 0) {
+    for (let n = 1; n <= near; n++) out.push(n, -n);
+    return out;
+  }
+  out.push(dir, -dir);
+  for (let n = 2; n <= ahead; n++) out.push(n * dir);
+  return out;
+}
+
+/**
  * The ranges `steps` presses of ‹ › away from `range`. Read off the range
  * itself rather than the view, so it can never disagree with what is actually
  * on screen — the view flips a render before `datesSet` reports its new span.
