@@ -6839,9 +6839,7 @@ quiets a domain and never hides work. Projects whose domain no longer resolves g
 
 **Not done, on purpose.** Dropping a card into *another* lane does **not** re-home the project:
 domain is a record-level change with consequences (D-088), and a drag that silently changes it is
-the wrong place for that act. The bar slides only in time, inside its own lane. The **initiative
-deck** (quarters) is the same surface one clock speed up and should get the same toggle; not
-built here. **The phone** pages one week at a time (`MobileDeck`). Its equivalent would group a week
+the wrong place for that act. The bar slides only in time, inside its own lane. **The phone** pages one week at a time (`MobileDeck`). Its equivalent would group a week
 page's cards by domain, with an empty domain as a socket, which needs its own pass.
 
 *Status: built — `ondeck/OnDeckPlanner.tsx` (lanes, sockets, landing), `ondeck/CoverageControls.tsx`
@@ -6855,3 +6853,17 @@ writing), the sticky gutter over a horizontal scroll, the Domains popover note, 
 arm the deck's drag), and `npm run perf`. Chrome isn't installed on this machine;
 `perf-budget` in `npm test` passes. `guard-public-ci` fails on a clean tree (case-insensitive
 filesystem), as noted in D-178.*
+
+*Amended 2026-11-05: **the initiative deck reads By domain too**. It is the same surface at
+quarters, so it gets the same toggle (remembered per deck). It is a kanban, not a Gantt, so each
+lane is a row of quarter cells, and each cell stacks that domain's bets, most urgent first.
+An empty cell is a socket with one card's height, so it doesn't stretch beside a stack of three.
+Both decks read By domain through **one set of parts**, `ondeck/DomainLanes.tsx`: `domainLanes`
+decides which domains get a lane, plus the label, the cell + socket and the gutter frost. Each deck
+keeps only its own geometry. Never re-decide either in a deck: the coverage strip drifted the first
+time it was copied between them. A bet dragged over a quarter lights its own lane there; dragging
+never re-homes it. The toolbar's read names the deck's noun ("2 of 4 domains with an
+initiative"). Driven on a test account: toggle, persistence independent of the project deck, a
+card click doesn't start a create, a socket opens a domain-bound composer (closed without
+writing), the project deck unchanged after the extraction, no horizontal overflow at 1680, and the
+phone at 375 (unaffected).*

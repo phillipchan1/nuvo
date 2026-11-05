@@ -29,6 +29,7 @@ import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
+import { LANE_GUTTER, LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
@@ -46,25 +47,10 @@ const CAUTION = PROJECT_STATUS_COLORS.waiting;
 // narrow as the names allow: below the strip it's necessarily blank, and every pixel
 // of it is a void running down the middle of the page.
 const LABEL_W = 96;
-// By domain, the same gutter carries each lane's name — a lane header has to be read
-// at a glance (it's the whole point of the mode), so it gets room for a real name
-// instead of the strip's micro label.
-const LANE_LABEL_W = 120;
 // An empty lane is still a full row: the gap IS the information, so it can't be
-// allowed to collapse into a hairline.
+// allowed to collapse into a hairline. (The lane parts — gutter, label, cell, socket,
+// which domains get a lane — are shared with the initiative deck: DomainLanes.tsx.)
 const LANE_ROW_MIN = 56;
-// Projects whose domain no longer resolves still need a lane — never hide work.
-const NO_AREA = "__no_area__";
-// The sticky name gutter's surface — the same frost DomainCoverage's labels wear in
-// this exact column. Painted twice in total (header gutter + one full-height body
-// gutter), never per lane — perf rule 2. Its backdrop is cards sliding under it on a
-// horizontal scroll, so it isn't a no-op blur (rule 1); a translucent fill alone let
-// a card's pips read straight through.
-const LANE_GUTTER = {
-  background: "color-mix(in srgb, var(--bg) 84%, transparent)",
-  backdropFilter: "blur(8px)",
-  WebkitBackdropFilter: "blur(8px)",
-} as const;
 // A fixed near-term horizon — the deck is for scaffolding the next stretch; coverage
 // measures load per domain over it. (A window selector proved to be noise once the
 // pips carried "how much" per lane.)
@@ -259,27 +245,11 @@ export default function OnDeckPlanner() {
   const rows = pack(geom);
 
   // ── By domain: the same packing, run once per domain, so each lane is its own
-  // small deck. Lanes keep the domains' own order — never re-sorted by load — so
-  // Frontier is always in the same place and its row can be found without reading.
-  // A domain gets a lane if coverage watches it OR it has something placed (the
-  // filter quiets an empty domain; it never hides work).
-  const lanes: { key: string; domain: Domain | null; rows: Geom[][] }[] = (() => {
-    if (!byDomain) return [];
-    const byDom = new Map<string, Geom[]>();
-    for (const g of geom) {
-      const id = g.l.project.domainId;
-      const key = id && domainById(data, id) ? id : NO_AREA;
-      const arr = byDom.get(key);
-      if (arr) arr.push(g);
-      else byDom.set(key, [g]);
-    }
-    const out: { key: string; domain: Domain | null; rows: Geom[][] }[] = domainsSorted
-      .filter((d) => byDom.has(d.id) || !coverageHidden.has(d.id))
-      .map((d) => ({ key: d.id, domain: d, rows: pack(byDom.get(d.id) ?? []) }));
-    const orphans = byDom.get(NO_AREA);
-    if (orphans) out.push({ key: NO_AREA, domain: null, rows: pack(orphans) });
-    return out;
-  })();
+  // small deck. Which domains get a lane, and in what order, is the shared rule
+  // (domainLanes) — the initiative deck reads By domain through the same one.
+  const lanes = byDomain
+    ? domainLanes(data, domainsSorted, coverageHidden, geom, (g) => g.l.project.domainId).map((ln) => ({ ...ln, rows: pack(ln.items) }))
+    : [];
   const effOf = (g: Geom) =>
     preview && preview.id === g.l.project.id
       ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
@@ -358,13 +328,12 @@ export default function OnDeckPlanner() {
   // ── a lane (By domain): label · per-week create cells · its own packed rows ──
   const renderLane = (lane: (typeof lanes)[number], li: number) => {
     const { domain } = lane;
-    const name = domain?.name ?? "No area";
-    const color = domain?.color ?? "var(--line-strong)";
+    const name = laneName(domain);
+    const color = laneColor(domain);
     // live coverage under a drag (effOf), so a socket fills the moment a bar slides
     // into this lane's week — the same live read the strip gave.
     const covered = board.weeks.map((w) => lane.rows.some((r) => r.some((g) => { const e = effOf(g); return w.idx >= e.start && w.idx <= e.end; })));
-    const count = lane.rows.reduce((n, r) => n + r.length, 0);
-    const any = count > 0;
+    const count = lane.items.length;
     const composing = cw != null && (composeDom?.id ?? null) === (domain?.id ?? null) && domain != null;
     const laneComposeRow = composing
       ? (() => { const i = lane.rows.findIndex((r) => !r.some((g) => g.start <= cw! && g.end >= cw!)); return i === -1 ? lane.rows.length : i; })()
@@ -375,7 +344,7 @@ export default function OnDeckPlanner() {
       <div
         key={lane.key}
         role="group"
-        aria-label={`${name} — ${any ? `${count} project${count === 1 ? "" : "s"}` : "nothing placed"}`}
+        aria-label={`${name} — ${count > 0 ? `${count} project${count === 1 ? "" : "s"}` : "nothing placed"}`}
         className="grid"
         style={{
           gridTemplateColumns: cols,
@@ -385,62 +354,25 @@ export default function OnDeckPlanner() {
           borderTop: li === 0 ? undefined : "1px solid var(--line)",
         }}
       >
-        {/* the lane's name — sticky so it survives a horizontal scroll. It carries
-            no surface of its own: the ONE frosted gutter column behind every lane
-            (the body grid's leading cell) does the occluding, so there is a single
-            blur for the whole column instead of one per lane, and its tone can't
-            step at a lane boundary. */}
-        <div
-          className="sticky left-0 z-10 flex min-w-0 flex-col pl-1 pr-3 pt-3.5"
-          style={{ gridColumn: 1, gridRow: span }}
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={any ? { background: color } : { boxShadow: "inset 0 0 0 1.5px var(--line-strong)" }}
-              aria-hidden
-            />
-            <span className="truncate text-caption font-semibold" style={{ color: any ? "var(--ink)" : "var(--muted)" }} title={name}>
-              {name}
-            </span>
-          </div>
-          <span className="mono mt-0.5 pl-4 text-micro tabular-nums text-muted">
-            {any ? `${count} project${count === 1 ? "" : "s"}` : "nothing placed"}
-          </span>
-        </div>
+        <LaneLabel domain={domain} count={count} noun="project" gridRow={span} />
 
-        {/* per-week cells — the create control for THIS domain in THIS week, the
-            whole height of the lane. An uncovered week gets a socket: a soft
-            hollow the size of a card, sitting in the lane's first row, so the gap
-            reads as a shape before anything is read. Quiet at rest (it's the
-            commonest thing on the page); it blooms to --slot on hover/focus. */}
-        {board.weeks.map((w) => {
-          const label = `New ${name} project — ${weekName(w.weekStart).toLowerCase()}`;
-          const showSocket = !covered[w.idx] && !(composing && cw === w.idx);
-          // Dragging a project in from the rail: its OWN lane lights in the week
-          // under the pointer — exactly where it will land, before the drop.
-          const landing = drag != null && drag.domainId === domain?.id && dropWeek === w.idx;
-          return domain ? (
-            <div key={`c${w.idx}`} className="contents">
-              <div
-                data-week={w.idx}
-                data-landing={landing || undefined}
-                className="lane-cell fast"
-                style={{ gridColumn: w.idx + 2, gridRow: span }}
-                onClick={() => addForDomain(domain, w.idx)}
-                {...pressable(() => addForDomain(domain, w.idx), { label })}
-                title={label}
-              />
-              {showSocket && (
-                <div className="lane-socket pointer-events-none mx-1 my-1 flex items-center justify-center rounded-lg" style={{ gridColumn: w.idx + 2, gridRow: 1 }} aria-hidden>
-                  <span className="lane-socket-hint text-micro font-medium">+ {name}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div key={`c${w.idx}`} data-week={w.idx} style={{ gridColumn: w.idx + 2, gridRow: span }} />
-          );
-        })}
+        {/* per-week cells — the create control for THIS domain in THIS week, and a
+            socket where the week has nothing for it (see LaneCell). */}
+        {board.weeks.map((w) => (
+          <LaneCell
+            key={`c${w.idx}`}
+            domain={domain}
+            column={w.idx + 2}
+            dropAttr={{ "data-week": String(w.idx) }}
+            label={`New ${name} project — ${weekName(w.weekStart).toLowerCase()}`}
+            onAdd={() => domain && addForDomain(domain, w.idx)}
+            // Dragging a project in from the rail: its OWN lane lights in the week
+            // under the pointer — exactly where it will land, before the drop.
+            landing={drag != null && drag.domainId === domain?.id && dropWeek === w.idx}
+            socket={!covered[w.idx] && !(composing && cw === w.idx)}
+            gridRow={span}
+          />
+        ))}
 
         {lane.rows.map((row, ri) => (
           <div key={ri} className="contents">

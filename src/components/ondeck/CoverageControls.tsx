@@ -24,6 +24,7 @@ export default function CoverageControls({
   setOpen,
   byDomain,
   setByDomain,
+  itemNoun = "project",
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
@@ -38,6 +39,8 @@ export default function CoverageControls({
   /** lane mode — omit both to hide the toggle (the deck has no lane layout). */
   byDomain?: boolean;
   setByDomain?: (v: boolean) => void;
+  /** what the deck holds — "project" / "initiative" — for the lane-mode read. */
+  itemNoun?: string;
 }) {
   const shown = domains.length - domains.filter((d) => hidden.has(d.id)).length;
   useEscape(open, () => setOpen(false));
@@ -50,7 +53,7 @@ export default function CoverageControls({
         <div className="flex items-center gap-1.5 py-1">
           <span className="section-label !p-0">Coverage</span>
           <span className="text-micro text-muted">
-            · {covered} of {tracked} domain{tracked === 1 ? "" : "s"} with a project
+            · {covered} of {tracked} domain{tracked === 1 ? "" : "s"} with {/^[aeiou]/i.test(itemNoun) ? "an" : "a"} {itemNoun}
           </span>
         </div>
       ) : (

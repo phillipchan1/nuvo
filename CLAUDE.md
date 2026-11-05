@@ -171,6 +171,11 @@ it needs to work on a phone.
   use (`readOnDeck` · `allOpenInitiativeLanes` · `readShipped`) — a wall of columns becomes
   a thinnest-first stack of cards. Never re-derive "how shaped is this" in a surface.
   Verify both at `?build` (`mobile/BuildFacesHarness.tsx`) — see D-099.
+- **Both planner decks read By domain through one set of parts** (D-179) —
+  `ondeck/DomainLanes.tsx`: `domainLanes` (which domains get a lane, in the domains' order;
+  hiding never hides work), `LaneLabel`, `LaneCell` (create control + the empty-cell socket),
+  `LANE_GUTTER`. The project deck packs bars into rows, the initiative deck stacks cards in a
+  cell — that geometry is all a deck owns. Dragging between lanes never re-homes a record.
 - **A task wears ONE row wherever it appears** — `TaskRow`, on both shells. Both week crowns
   render a project's work through the *same component* the day lists use, handed down as
   `renderTask` (`RenderCrownTask`, declared in `useWeekCrown.ts` so neither shell owns it):
