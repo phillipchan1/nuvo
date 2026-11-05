@@ -525,6 +525,18 @@ function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
   };
 }
 
+/** Enter in a custom-builder field applies the rule. A button keeps its own
+ *  Enter (a preset, Done). Stopped so the composer underneath does not also
+ *  create, with the rule from before this edit. */
+function onCustomFieldEnter(e: React.KeyboardEvent, custom: boolean, apply: () => void) {
+  if (e.key !== "Enter" || e.shiftKey || e.altKey || e.nativeEvent.isComposing || !custom) return;
+  const target = e.target as HTMLElement | null;
+  if (!target || target.tagName !== "INPUT") return;
+  e.preventDefault();
+  e.stopPropagation();
+  apply();
+}
+
 type RepeatPickerProps = {
   anchorISO: string;
   current: RecurrenceRule | null;
@@ -598,6 +610,7 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
         data-nested-surface=""
         className="moment fixed z-[61] flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{ top: pos.top, left: pos.left, width: POP_W, boxShadow: "var(--shadow-3)" }}
+        onKeyDown={(e) => onCustomFieldEnter(e, custom, () => onPick(buildCustom()))}
       >
         <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-2">
           <Icon name="repeat" size={13} className="text-accent" />
@@ -787,7 +800,7 @@ function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps)
 
   return (
     <Sheet title="Repeat" onClose={onClose} contentClassName={SHEET_SCROLL}>
-      <div className="px-4 pb-6">
+      <div className="px-4 pb-6" onKeyDown={(e) => onCustomFieldEnter(e, custom, () => onPick(buildCustom()))}>
         <div className="divide-y divide-line border-y border-line">
           {presets.map((p) => {
             const on = !custom && rulesEqual(p.rule, current);

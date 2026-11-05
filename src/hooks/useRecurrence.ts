@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { insertTaskCache, patchCaches } from "./useTasks";
-import { insertSlotCache, patchSlotCaches } from "./useSlots";
+import { fetchSlotOccurrences, insertSlotCache, patchSlotCaches, putSlotInCaches, SLOT_OCCURRENCES_KEY, type SlotOccurrenceRef } from "./useSlots";
 import {
   DEFAULT_DURATION_MINUTES,
   type Recurrence,
@@ -108,33 +108,74 @@ export interface SeriesTemplate {
  * `select recurrence_date where recurrence_id = …` that used to gate
  * materialisation on the network.
  *
- * It reads every `["tasks"]` / `["slots"]` fragment, not just the "all" one:
- * a freshly queued occurrence is patched into whichever filtered list it joins,
- * and missing it would materialise the same date twice.
+ * Tasks are answered by `["tasks", "all"]`. Slots have no such pool — every
+ * slot query is a date range — so their authority is `["slot-occurrences"]`,
+ * loaded on demand. A range fragment under-reports dates outside its window;
+ * null when the authority has not loaded means skip, never "empty".
+ *
+ * `fresh` is the one exception: the series id was minted in this call, so it
+ * cannot already occupy a date. A missing pool is an empty set, plus whatever
+ * this id was just patched onto (the anchor a convert adopts).
+ *
+ * Loaded fragments are always unioned in. A freshly queued occurrence lands in
+ * whichever list it joins, and missing it would materialise that date twice.
  */
-function occurrenceDates(
+function datesInFragments(
   qc: QueryClient,
-  kind: "task" | "slot",
+  root: "tasks" | "slots",
   recurrenceId: string,
-): Set<string> | null {
-  const root = kind === "task" ? "tasks" : "slots";
-  // The unfiltered pool is the only cache that can answer authoritatively —
-  // every other fragment is date- or status-filtered and would under-report.
-  // Null when it has not loaded: the caller must skip, not assume empty.
-  const pool = qc.getQueryData<{ recurrence_id?: string | null; recurrence_date?: string | null }[]>(
-    root === "tasks" ? ["tasks", "all"] : ["slots"],
-  );
-  if (!pool) return null;
-
+): Set<string> {
   const dates = new Set<string>();
   for (const [, rows] of qc.getQueriesData<{ recurrence_id?: string | null; recurrence_date?: string | null }[]>({
     queryKey: [root],
   })) {
-    for (const r of rows ?? []) {
+    if (!Array.isArray(rows)) continue;
+    for (const r of rows) {
       if (r.recurrence_id === recurrenceId && r.recurrence_date) dates.add(r.recurrence_date);
     }
   }
   return dates;
+}
+
+function occurrenceDates(
+  qc: QueryClient,
+  kind: "task" | "slot",
+  recurrenceId: string,
+  opts?: { fresh?: boolean },
+): Set<string> | null {
+  if (kind === "task") {
+    const pool = qc.getQueryData(["tasks", "all"]);
+    if (!pool && !opts?.fresh) return null;
+    return datesInFragments(qc, "tasks", recurrenceId);
+  }
+
+  const pool = qc.getQueryData<SlotOccurrenceRef[]>(SLOT_OCCURRENCES_KEY);
+  if (!pool) {
+    if (!opts?.fresh) return null;
+    return datesInFragments(qc, "slots", recurrenceId);
+  }
+  const dates = new Set<string>();
+  for (const r of pool) {
+    if (r.recurrence_id === recurrenceId && r.recurrence_date) dates.add(r.recurrence_date);
+  }
+  for (const d of datesInFragments(qc, "slots", recurrenceId)) dates.add(d);
+  return dates;
+}
+
+/** Load the slot occurrence index when it is not already in cache. A failure
+ *  (offline, never cached) leaves it unknown — callers skip unless the series
+ *  was just minted. */
+async function ensureSlotOccurrenceIndex(qc: QueryClient): Promise<void> {
+  if (qc.getQueryData(SLOT_OCCURRENCES_KEY)) return;
+  try {
+    await qc.fetchQuery({
+      queryKey: SLOT_OCCURRENCES_KEY,
+      queryFn: fetchSlotOccurrences,
+      staleTime: Infinity,
+    });
+  } catch {
+    // Unknown stays unknown.
+  }
 }
 
 /** Every active series — drives top-up materialization and rule lookups. */
@@ -181,7 +222,13 @@ export function useRecurrenceMutations() {
    *
    * Resolves true only when it actually wrote occurrences — see `materializeAll`.
    */
-  const materializeSeries = useCallback(async (rec: Recurrence, fromISO: string): Promise<boolean> => {
+  const materializeSeries = useCallback(async (
+    rec: Recurrence,
+    fromISO: string,
+    /** A series id minted in this call. Its dates cannot already exist, so a
+     *  missing occurrence pool is empty rather than unknown. */
+    opts?: { fresh?: boolean },
+  ): Promise<boolean> => {
     const toISO = toDateISO(addDays(parseDateISO(todayISO()), HORIZON_DAYS));
     const dates = expandRule(ruleOf(rec), rec.anchor_date, fromISO, toISO, rec.exdates);
     if (dates.length === 0) return false;
@@ -192,7 +239,9 @@ export function useRecurrenceMutations() {
     // unloaded cache made every date in the horizon look missing and queued a
     // fresh insert for each one. Observed: 385 ops, every one rejected by
     // `tasks_recurrence_occurrence_uniq` and parked. Unknown must mean skip.
-    const have = occurrenceDates(qc, rec.kind, rec.id);
+    // A just-minted id is the exception — see `occurrenceDates`.
+    if (rec.kind === "slot") await ensureSlotOccurrenceIndex(qc);
+    const have = occurrenceDates(qc, rec.kind, rec.id, opts);
     if (!have) return false;
     const missing = dates.filter((d) => !have.has(d));
     if (missing.length === 0) return false;
@@ -261,6 +310,9 @@ export function useRecurrenceMutations() {
     // Bail before writing anything if we cannot see what already exists —
     // guessing "nothing" here is what queued 385 duplicate occurrences.
     const kinds = new Set(recs.map((r) => r.kind));
+    // Slots have no unfiltered pool. Load their occurrence index first; if
+    // that cannot be answered, skip the whole pass rather than guess empty.
+    if (kinds.has("slot")) await ensureSlotOccurrenceIndex(qc);
     for (const kind of kinds) {
       if (occurrenceDates(qc, kind, "__probe__") === null) return false;
     }
@@ -336,7 +388,7 @@ export function useRecurrenceMutations() {
       template: SeriesTemplate;
     }): Promise<Recurrence> => {
       const rec = await insertRecurrence(input);
-      await materializeSeries(rec, input.anchorISO);
+      await materializeSeries(rec, input.anchorISO, { fresh: true });
       invalidate();
       return rec;
     },
@@ -356,7 +408,7 @@ export function useRecurrenceMutations() {
       await queueWrite(
         makeOp(kind === "task" ? "tasks" : "slots", "update", row.id, link),
       );
-      await materializeSeries(rec, anchorISO);
+      await materializeSeries(rec, anchorISO, { fresh: true });
       invalidate();
     },
     [insertRecurrence, materializeSeries, invalidate],
@@ -420,6 +472,10 @@ export function useRecurrenceMutations() {
       }),
     );
     for (const sl of doomedSlots) {
+      // Drop it from the range caches (and the occurrence index) before the
+      // delete is queued, so a regenerate in this same call does not see the
+      // date as still taken.
+      putSlotInCaches(qc, sl.id, null);
       // Same reason as the tasks above — an iCloud mirror carries no stored id,
       // so gating the teardown on one stranded the block on the phone.
       if (navigator.onLine) {

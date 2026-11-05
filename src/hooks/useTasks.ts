@@ -315,17 +315,25 @@ export function insertTaskCache(qc: QueryClient, task: Task) {
  */
 export function seedSlotChildrenQuery(qc: QueryClient, slotId: string) {
   runWithoutOwingPreserve(() => {
-    const slotQueries = qc.getQueriesData<Task[]>({ queryKey: ["tasks", "slot"] });
-    let seeded = false;
-    for (const [key, data] of slotQueries) {
+    const lists: { ids: string[]; data: Task[] | undefined }[] = [];
+    for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks", "slot"] })) {
       const ids = key[2];
       if (!Array.isArray(ids)) continue;
-      const list = ids as string[];
-      if (list.includes(slotId)) {
+      lists.push({ ids: ids as string[], data });
+    }
+    // Only the maximal sets. Extending every historical key — including the
+    // ones this function just created — doubles the cache per new slot, and a
+    // series lays down a month of them at once.
+    const maximal = lists.filter(
+      (a) => !lists.some((b) => b.ids.length > a.ids.length && a.ids.every((id) => b.ids.includes(id))),
+    );
+    let seeded = false;
+    for (const { ids, data } of maximal) {
+      if (ids.includes(slotId)) {
         seeded = true;
         continue;
       }
-      const nextIds = [...list, slotId].sort();
+      const nextIds = [...ids, slotId].sort();
       // An older key (without this slot) must not clobber a list that
       // assignToSlot has already started filling.
       if (qc.getQueryData(["tasks", "slot", nextIds])) {

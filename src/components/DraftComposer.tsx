@@ -254,9 +254,28 @@ export default function DraftComposer({
         nudge(e.shiftKey ? "end" : "both", e.key === "ArrowUp" ? -NUDGE_MINUTES : NUDGE_MINUTES);
         return;
       }
-      // ⌘/Ctrl+Enter creates from anywhere in the card (title, guests, picker…),
-      // not only the title field. No-ops if there's nothing valid to create yet.
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      // Enter creates. ⌘/Ctrl+Enter from anywhere in the card (title, guests,
+      // picker…). Plain Enter from the name, the card, or the body — choosing
+      // Repeat moves focus off the name, and Enter still has to finish the slot.
+      // A focused button activates itself. Another field keeps its own Enter.
+      // The repeat popover is a different surface and owns Enter while it is open.
+      if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing) {
+        const target = e.target as HTMLElement | null;
+        const foreign =
+          target instanceof Element &&
+          !!target.closest("[data-nested-surface]") &&
+          !cardRef.current?.contains(target);
+        if (foreign) return;
+        const cmd = e.metaKey || e.ctrlKey;
+        if (!cmd) {
+          if (isTypingIn(target) && target !== inputRef.current) return;
+          if (target instanceof Element && target.closest("button, a")) return;
+          const inCard =
+            target === document.body ||
+            target === inputRef.current ||
+            (target instanceof Node && !!cardRef.current?.contains(target));
+          if (!inCard) return;
+        }
         if (kind !== "slot" && !title.trim()) return;
         e.preventDefault();
         // Routed through submit() so the shortcut can't skip the guest
@@ -375,7 +394,14 @@ export default function DraftComposer({
             ref={inputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.shiftKey || e.altKey || e.nativeEvent.isComposing) return;
+              // The window listener also creates on Enter. Stop here so the
+              // name field cannot submit twice.
+              e.preventDefault();
+              e.stopPropagation();
+              submit();
+            }}
             placeholder={placeholder}
             aria-label={placeholder}
             className="w-full rounded-[var(--radius)] border border-line bg-surface-2 px-3.5 py-2.5 text-head font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-muted/50 focus:border-accent focus:bg-surface focus:shadow-[0_0_0_3px_var(--accent-soft)]"

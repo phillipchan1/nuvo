@@ -75,6 +75,16 @@ describe("the Repeat picker — a sheet on a phone, a popover on a desktop", () 
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ freq: "weekly", interval: 1, byweekday: [3, 5] }));
   });
 
+  it("Enter in a custom field applies the rule", () => {
+    stubViewport(true);
+    const onPick = vi.fn();
+    render(<RecurrencePicker anchorISO="2026-10-14" current={null} anchor={rect} onPick={onPick} onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByText("Custom…"));
+    fireEvent.keyDown(within(dialog).getByRole("spinbutton"), { key: "Enter" });
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ freq: "weekly", interval: 1, byweekday: [3] }));
+  });
+
   it("stays the anchored popover on a desktop", () => {
     stubViewport(false);
     render(<RecurrencePicker anchorISO="2026-10-14" current={null} anchor={rect} onPick={() => {}} onClose={() => {}} />);
