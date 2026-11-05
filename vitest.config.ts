@@ -14,6 +14,14 @@ export const ALIASES = [
   },
 ];
 
+// The app plans in ONE zone — `APP_TZ` (src/lib/dates.ts), America/Los_Angeles —
+// and a test that builds "today" from the machine clock disagrees with it every
+// night between 00:00 and 08:00 UTC, which is when CI and a cloud runner live.
+// Four capture tests went red on that alone and green again at sunrise. Pin the
+// test clock to the zone the app actually plans in, before any worker starts.
+// (A test that needs another zone sets `process.env.TZ` itself.)
+process.env.TZ = "America/Los_Angeles";
+
 export default defineConfig({
   resolve: { alias: ALIASES },
   test: {
