@@ -84,18 +84,49 @@ needs Phil's yes.
 
 **Total before a flip:** about 5–8 days of work, plus one rehearsal on preview with a real
 Mac and phone. That figure assumes OTP-only sign-in, no realtime, and the `field_ts`
-fix. Porting Google, Apple and realtime adds up to about 6 more.
+fix. Porting Google, Apple and realtime adds up to about 6 more. Getting fully off Supabase
+adds billing, about 5–7 days (§ What still needs Supabase).
 
-### What stays on Supabase after the flip, so "cancel Supabase" is a later step
+### What still needs Supabase after the flip
 
-| Stays | Why | To retire it |
-|---|---|---|
-| **Billing.** Functions `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `apple-iap`, `apple-webhook`, `iap-catalog`, `referral-code`. Tables `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` | Deliberately not ported (`blocked.ts`). The Stripe and App Store webhook URLs point at Supabase ([`billing-setup.md`](./billing-setup.md) §3). The Worker only **reads** `subscriptions` (`entitlement.ts`) | Port the writers to the Worker + Neon, retarget the Stripe and App Store Server Notification URLs, and copy the four tables. Its own project, not part of this flip |
-| `pg_cron` | **Nothing needs to stay.** All nine `nuvo-*` jobs have Worker twins: `calendar-dispatch`, `push-dispatch`, `google-renew`, `rollover-pdt` / `-pst`, `github-poll`, `trim-sync-log`, `purge-trash`, `reminder-deliveries-prune`. There are no billing crons | `cron.unschedule` **all nine** at step 8. The old text named only two, and `push-dispatch` left running would double-send |
-| The stale-caller freeze | Non-billing functions stay deployed and `WRITE_FREEZE`d, so an un-updated client or a pasted URL gets a 503 rather than a silent write | Delete them after the 24h rollback window and once the last old build has aged out |
+Phil's goal is to be **completely off Supabase and Vercel**, to save money. The flip
+alone doesn't do that. This is every Supabase dependency that's left after step 9,
+read from the repo and from `supabase functions list --project-ref ebibzojtkzkphykznomv`
+(36 functions deployed).
 
-So Supabase stays on a paid plan until billing moves. What the flip retires is Supabase
-**as the planner's backend**: auth, data, realtime, crons and the planner functions.
+| Dependency | What it is today | Work to port it | Est. |
+|---|---|---|---|
+| **Stripe:** `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `referral-code` | Edge functions. Stripe's **live** webhook endpoint is `ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook` ([`billing-setup.md`](./billing-setup.md) §3) | Port all four to the Worker, writing Neon. Move `STRIPE_*` secrets to `nuvo`. Add a **new** live webhook endpoint on api.nuvo.day, then retire the old one only after the new one has seen an event, because Stripe allows several endpoints | 2–3 days |
+| **App Store:** `apple-iap`, `apple-webhook`, `iap-catalog` | Edge functions. App Store Server Notifications V2 points at a `supabase.co` URL (`billing-setup.md` §11) | Port them to the Worker. Change the production **and** sandbox notification URLs in App Store Connect, and move the Apple IAP secrets | 2–3 days |
+| **Billing tables:** `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` / `billing_source()` | Excluded from the copy and the freeze on purpose. The Worker reads `subscriptions` over HTTPS with the service-role key (`entitlement.ts`) | Add the four tables to `neon.sql` and do a one-off frozen copy at the billing switch. Make `entitled()` a Worker function, and point `/api/entitlement` at Neon. Then delete `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `nuvo` | 1 day |
+| **Orphan functions** `apple-notifications`, `apple-verify` | Deployed on Supabase, **not in this repo**. Migration 70 names `apple-notifications` as Apple's writer, so **which URL App Store Connect actually calls is unverified** | Check App Store Connect's URL before porting. Delete whichever one is unused | 1 hr |
+| **Stale-caller freeze** (every non-billing function, `WRITE_FREEZE`d) | Kept after the flip on purpose, so old builds and pasted URLs get a 503 | Delete them after the 24h window, and once the last pre-flip Mac/iOS build is gone | 1 hr |
+| **Webhooks / redirect URIs on `supabase.co`** | Resend inbound (step 7). Google push channels (`google-resubscribe`, step 8). **OAuth redirect URIs:** the Google Cloud client and the Azure (M365) app list `…supabase.co/functions/v1/google-oauth` / `m365-oauth` and Supabase Auth's callback. What's registered there is **unverified**: the consoles weren't opened | Add `https://api.nuvo.day/functions/v1/google-oauth` and `…/m365-oauth` **before** the flip, or calendar connects fail. Drop the Supabase ones afterwards | 1 hr |
+| **Supabase Auth providers** (Google, Apple, email) | GoTrue holds the providers and the login. Unused once the flag is on | Nothing to port beyond blockers 4–6. Leave them in place until the rollback window closes | — |
+| `pg_cron` | All nine jobs have Worker twins. They're unscheduled at step 8 | Done at the flip | — |
+| Storage / Vault / Realtime | No buckets (`inventory.md` §1). Vault tokens are re-sealed into Neon by the copy. Realtime is replaced by focus refetch, or by the Durable Object | Done at the flip, or by blocker 10 | — |
+| **Calendar sync** (Google, M365, iCloud, ICS) | **Already ported** (#106, #107; `worker/src/calendar/http.ts`, `google/routes.ts`). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` (decision 5) | Secrets plus the redirect URI above | 1 hr |
+
+**Off Supabase entirely = the flip (about 5–8 days) + billing (about 5–7 days) + an
+hour of console work**, plus one frozen billing copy. Billing can go on a later night,
+but it is the only thing left that keeps the Supabase project alive.
+
+#### Monthly cost, before and after
+
+Verified means read today from a CLI. Everything else is marked.
+
+| Line | Before | After everything moves | Status |
+|---|---|---|---|
+| Supabase | Nuvo is one of **8 projects** in org `pcmiozuynhgglvgrgwik`. 7 are `ACTIVE_HEALTHY`: zeroed, LeadWell, drove-dev, dayspring, nuvo, drove, mathy (Melu is inactive). Free allows 2 active projects, so the org is on a paid plan (**inferred**). The plan and Nuvo's compute add-on are **unverified**: reading them needed the CLI's raw token, which this session wasn't allowed to use | Deleting the `nuvo` project removes **only its own compute line**. On Pro, list price is roughly $10/mo for a Micro instance (**unverified**; check the org's billing page). **The org fee stays as long as the other six active projects do**, so moving Nuvo alone doesn't end the Supabase bill | project list **verified**, prices **unverified** |
+| Neon | Project `nuvo` (`frosty-snow-66931204`) is in org `Phil` on plan **`free`** (`free_v3`), with a branch limit of 1 GB logical size | Stays $0 if prod fits Free. The 10-28 dump was 2.6 MB. Free autosuspends, so the first request after idle pays a cold start (§ Free-tier risk) | **verified** (plan) |
+| Cloudflare Workers | `nuvo-app` / `nuvo-site` / `nuvo` / `nuvo-preview` exist. Whether the account is already on Workers Paid is **unverified**: no queues exist, and no plan call was made | **Workers Paid, $5/mo, is required.** `wrangler.jsonc` declares 8 cron triggers, a Queue and the agent's CPU work, which exceeds Free's limits on cron count (5) and per-request CPU (10 ms) per Cloudflare's published limits. Hyperdrive is included | requirement from code, **account plan unverified** |
+| Vercel | Projects `nuvo` / `nuvo-site` still build from master as the hosting rollback ([`cloudflare-hosting.md`](./cloudflare-hosting.md)). The plan is **unverified** (no `vercel` CLI here) | $0 once both projects are deleted, after the hosting rollback window | **unverified** |
+| Unchanged | Resend, OpenAI, Apple Developer, Stripe fees | Same | — |
+
+Net, for Nuvo alone: **about −$10/mo of Supabase compute (unverified) +$5/mo Workers Paid
+(unless already paid) − whatever Vercel costs today**. The large saving, the Supabase org
+fee, only arrives when the other six active Supabase projects leave too. That's outside
+this repo and worth deciding before treating "off Supabase" as the reason for this cutover.
 
 ### What Phil must decide
 
@@ -113,6 +144,9 @@ So Supabase stays on a paid plan until billing moves. What the flip retires is S
    Carry it, or tell those users.
 6. **Flip model.** The repo variable (D-174, #127, what's on master) or #118's literal plus
    runtime flip. Master has already chosen the variable. Closing #118 makes that official.
+7. **Is "off Supabase" a Nuvo-only goal or an org-wide one?** Six other active projects
+   share Nuvo's Supabase org, so moving Nuvo alone removes one compute line, not the
+   bill. And does billing move in the same push as the flip, or on a later night?
 
 ### Flip-night order (once 1–9 are green)
 
@@ -246,8 +280,8 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; new VAPID pair, D-173). Supabase copies stay until flip | n/a |
-| Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
+| Billing | Supabase edge (Stripe, App Store) + 4 tables | **Still Supabase** at the flip. Port it later: § What still needs Supabase after the flip | n/a |
+| Calendar (Google, M365, iCloud, ICS) + mirrors + push | Supabase edge + pg_cron | Worker (#105–#107: `google/routes.ts`, `calendar/http.ts`, `slot-mirror`, `task-mirror`, `push-dispatch` with the new VAPID pair, D-173). Crons `google-renew` / `calendar-dispatch` / `push-dispatch`. M365 needs `MS_*` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
