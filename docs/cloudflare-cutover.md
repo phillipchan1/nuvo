@@ -1005,3 +1005,142 @@ StoreKit proof before a flip:
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each
 derived `user_id = ${store.userId}` filter and expects a failure.
+
+## Billing port
+
+**Status (2026-11-06):** built and checked on branch `billing-port-worker`.
+**Not deployed.** No secrets are set, no webhook URL has changed, and nothing
+has touched live data. Every step below is Phil's, on flip night.
+
+Billing was the one Supabase dependency with no Worker twin. Now
+`stripe-checkout`, `stripe-portal`, `stripe-webhook`, `apple-iap`,
+`apple-webhook`, `iap-catalog` and `referral-code` all run on Worker `nuvo`
+(`worker/src/billing/`). They make the same Stripe calls and write the same
+`subscriptions` rows as before, but those rows live on **Neon**. Until
+`CUTOVER_FLIPPED` is set, every billing route answers **503 + `Retry-After`,
+never 200**. If Stripe or Apple reaches the Worker early, they retry later
+instead of treating the event as delivered and dropping it. That means only
+one runtime ever processes a given live event. `iap-catalog` holds static
+product ids and is served on both sides of the flip.
+
+This **supersedes** the "Billing stays on Supabase" lines earlier in this doc
+and in the secrets table (`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are
+only for the billing read, and "do not add `STRIPE_SECRET_KEY`"). After the
+flip, `GET /api/entitlement` and the delete-account gate read Neon. Before
+the flip, they still read Supabase.
+
+### What changed, and why
+
+| Piece | Supabase (today) | Worker (after flip) |
+|---|---|---|
+| Entitlement row | `public.subscriptions`, keyed by `auth.users.id` | `public.subscriptions` on Neon (`worker/schema/neon.sql`), keyed by the same preserved auth id. No FK, because `"user".id` is TEXT |
+| Trial on sign-up | `handle_new_user` trigger | `bootstrapUser` inserts the 14-day row for brand-new accounts (`ON CONFLICT DO NOTHING`) |
+| Delete account | cascade from `auth.users` | `wipeOwnedAccount` deletes the row in the same transaction |
+| Stripe signature | `constructEventAsync` | `verifyStripeEvent`: HMAC-SHA256 `v1`, 300s tolerance, constant-time compare |
+| Apple notifications | base64-decoded only, plus optional `?secret=` | `?secret=` **and** full JWS verification: x5c chain to Apple Root CA - G3 (SHA-256 pinned), Apple marker OIDs, cert validity at `signedDate`, ES256 signature. The nested `signedTransactionInfo` is verified too |
+| Dedupe | insert-first into `stripe_webhook_events` / `apple_webhook_events`; delete on handler failure | the same, with `ON CONFLICT DO NOTHING RETURNING` |
+| Referral reward | read → credit → mark (it could double-credit when `invoice.paid` raced `checkout.session.completed`) | a conditional UPDATE claims the reward **before** Stripe is called, and the balance credit carries `Idempotency-Key: nuvo-referral-reward-<friend>`. `billing.check.ts` forces three concurrent deliveries and gets exactly one credit |
+| Referral notices | push + Resend | push (`pushToAccount`) + Resend, best effort |
+| `apple-iap` | trusts the signed-in client's transaction ids | unchanged. The native plugin sends no JWS. Verifying it is a follow-up |
+| Client | `functions.invoke(...)` → Supabase | same call. With `VITE_API_BASE_URL` set, `workerRoute` sends it to `/functions/v1/<name>` on the Worker. Friend codes work on the Worker path again |
+
+Proof: `node --experimental-strip-types worker/src/billing.check.ts`, also
+part of `npm run check:worker`, runs 130 checks with no live keys (PGlite, a
+mocked Stripe, and a generated Apple-style CA). Each of these was confirmed
+by breaking it and watching the suite fail: replay dedupe, the JWS signature,
+the leaf→intermediate chain, the timestamp tolerance, the flip gate and the
+reward claim.
+
+### Secrets and vars on Worker `nuvo`
+
+Set each with `wrangler secret put <NAME>` and paste the value into the
+prompt. The values are the same ones Supabase holds today. Supabase only
+returns hashes, so copy each one from its source:
+
+| Name | Source |
+|---|---|
+| `STRIPE_SECRET_KEY` | Stripe → Developers → API keys (live `sk_live_…`) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe → Webhooks → the **Nuvo** endpoint → Reveal signing secret. Editing that endpoint's URL in place keeps this value |
+| `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL` | Stripe → Products (`price_…`) |
+| `STRIPE_REFERRAL_COUPON` | the `coup_…` from `scripts/create-referral-codes.mjs` |
+| `APPLE_NOTIFICATION_SECRET` | only if Supabase has one, i.e. the App Store URL ends in `?secret=` |
+| `NUVO_IAP_MONTHLY`, `NUVO_IAP_ANNUAL` | StoreKit product id strings, if Supabase overrides the defaults |
+
+Already present and reused: `APP_URL`, `APPLE_BUNDLE_ID`, `RESEND_API_KEY`,
+`RESEND_FROM`, `VAPID_*`.
+
+### Before flip night (test mode, preview Worker only)
+
+1. **Apply `worker/schema/neon.sql`** to Neon. It is idempotent, and it adds
+   `subscriptions`, `stripe_webhook_events` and `apple_webhook_events`.
+2. **Check the Apple pin.** Download the root cert from
+   `https://www.apple.com/certificateauthority/AppleRootCA-G3.cer` and hash it
+   with `shasum -a 256`. The result must equal `APPLE_ROOT_CA_G3_SHA256` in
+   `worker/src/billing/appleJws.ts`. If the pin is wrong, every real
+   notification gets a 400 and Apple retries for 3 days, so check this first.
+3. **Stripe test mode on `nuvo-preview`.** Set `CUTOVER_FLIPPED=1` and the
+   **test** Stripe secrets on the preview env only. Then:
+   - Add a *test-mode* webhook endpoint pointing at
+     `https://<preview>.workers.dev/api/stripe-webhook`, or use the Stripe
+     CLI: `stripe listen --forward-to …/api/stripe-webhook`.
+   - Check out with card `4242 4242 4242 4242`. The Neon row should become
+     `active` / `stripe`, and `GET /api/entitlement` should return
+     `entitled: true`.
+   - Resend the same event from the dashboard. The response should be
+     `{ duplicate: true }` with no second write.
+   - Open the portal and cancel. The row should become `cancelled` once the
+     subscription is deleted.
+   - Mint a referral code (Settings → Billing → Share). This exercises
+     `POST /v1/promotion_codes` with `coupon=` under API version
+     `2026-05-27.dahlia`, which is exactly what Supabase sends. Confirm Stripe
+     accepts it.
+   - Check out a second test account with that code. You should get one
+     −$29 balance transaction on the referrer, not two.
+4. **Apple sandbox.** Point the **Sandbox** Server Notifications URL at the
+   preview Worker and send a test notification, either with the App Store
+   Server API `POST /inApps/v1/notifications/test` or with a TestFlight
+   purchase. A `TEST` notification should return `{ received: true,
+   ignored: true }`. That response only appears if the JWS verified; a 400
+   means it did not.
+
+### Flip night (in the flip runbook, between steps 2 and 3)
+
+1. **Copy billing, Supabase → Neon** (upsert; Supabase is the source):
+   `subscriptions` (every column in `neon.sql`), plus both ledgers with
+   `ON CONFLICT DO NOTHING`. Copying the ledgers means a retry of an event
+   Supabase already handled is still recognised on the Worker.
+   `cutover_copy.py` deliberately excludes these tables (`BILLING_TABLES`),
+   so this is a separate `psql \copy` out and an upsert in.
+2. **Set `CUTOVER_FLIPPED=1`**, as in the main runbook. Billing routes go
+   live.
+3. **Stripe dashboard → Developers → Webhooks → the Nuvo endpoint → Update
+   details.** Change the URL **in place** from
+   `https://ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook` to
+   `https://api.nuvo.day/api/stripe-webhook`. Keep the same six events. Do
+   **not** add a second endpoint: two endpoints would deliver every event to
+   both runtimes. Leave Dayspring's endpoint alone.
+4. **App Store Connect → the app → App Information → App Store Server
+   Notifications.** Set both **Production** and **Sandbox** to
+   `https://api.nuvo.day/api/apple-webhook`, with `?secret=<APPLE_NOTIFICATION_SECRET>`
+   if one is set. Keep Version 2.
+5. **Delta copy.** Re-run step 1 for rows whose Supabase `updated_at` is newer
+   than Neon's (`… ON CONFLICT (user_id) DO UPDATE … WHERE EXCLUDED.updated_at > subscriptions.updated_at`).
+   This catches anything Supabase wrote between the first copy and the URL
+   switch. Old app builds that still call Supabase's `apple-iap` also land
+   there, so repeat this daily until Supabase `subscriptions` stops changing.
+6. **Verify:** Stripe → the endpoint → recent deliveries all show 2xx from
+   `api.nuvo.day`; `GET /api/entitlement` for your own account matches the
+   pre-flip value; `scripts/check-entitlement-parity.ts` is clean.
+
+### Rollback
+
+1. Change the Stripe endpoint URL and both App Store URLs back to the
+   Supabase functions. The Supabase functions stay deployed until
+   decommission.
+2. Unset `CUTOVER_FLIPPED`, which is the main rollback anyway. Worker billing
+   goes back to 503, so any delivery still in flight retries against
+   whichever URL is current.
+3. Copy Neon → Supabase for `subscriptions` rows with
+   `updated_at > <flip time>`, plus both ledgers (`ON CONFLICT DO NOTHING`).
+   Stripe idempotency keys protect the referral credit for 24h. After that,
+   the copied `referral_reward_granted_at` is the guard.

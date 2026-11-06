@@ -297,9 +297,10 @@ describe("Worker delete-account Stripe gate", () => {
       readFileSync("worker/src/deleteAccount.ts", "utf8"),
       readFileSync("worker/src/lib/billingRead.ts", "utf8"),
       readFileSync("worker/src/index.ts", "utf8"),
-      readFileSync("worker/src/env.ts", "utf8"),
       readFileSync("worker/src/entitlement.ts", "utf8"),
     ].join("\n");
+    // env.ts declares STRIPE_SECRET_KEY now that billing runs on the Worker
+    // (worker/src/billing); the delete path itself must still never read it.
     expect(src).not.toMatch(/STRIPE_SECRET/);
     expect(src).not.toMatch(/stripe\.subscriptions/);
     expect(src).not.toMatch(/api\.stripe\.com/);

@@ -257,4 +257,46 @@ async function push(
   }
 }
 
+/**
+ * One-off push to every device of one planner account (billing's referral
+ * notices). Same send / prune / failure-count path as reminders. The caller
+ * resolves the planner id and is itself behind the cutover flip.
+ */
+export async function pushToAccount(
+  sql: Sql,
+  env: Env,
+  userId: string,
+  message: { title: string; body: string; key: string; url?: string },
+  fetchImpl?: FetchLike,
+): Promise<number> {
+  if (!webPushConfigured(env)) return 0;
+  const subs = (await sql`
+    SELECT id, endpoint, p256dh, auth, failure_count
+    FROM push_subscriptions
+    WHERE user_id = ${userId}
+  `) as unknown as PushSubscriptionRow[];
+  const payload = JSON.stringify({ title: message.title, body: message.body, key: message.key, url: message.url ?? "/" });
+  let sent = 0;
+  for (const sub of subs) {
+    const result = await sendWebPush(env, sub, payload, fetchImpl ?? testFetch ?? fetch);
+    if (result.gone) {
+      await sql`DELETE FROM push_subscriptions WHERE id = ${sub.id} AND user_id = ${userId}`;
+      continue;
+    }
+    if (result.ok) {
+      sent += 1;
+      await sql`
+        UPDATE push_subscriptions SET last_seen_at = now(), failure_count = 0
+        WHERE id = ${sub.id} AND user_id = ${userId}
+      `;
+    } else {
+      await sql`
+        UPDATE push_subscriptions SET failure_count = COALESCE(failure_count, 0) + 1
+        WHERE id = ${sub.id} AND user_id = ${userId}
+      `;
+    }
+  }
+  return sent;
+}
+
 export const PUSH_CRON_JOBS = new Set(["push-dispatch", "nuvo-push-dispatch"]);

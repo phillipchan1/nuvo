@@ -66,6 +66,7 @@ import {
 } from "./store.ts";
 import { persistAppleIdentity } from "./appleIdentity.ts";
 import { deleteOwnedAccount } from "./deleteAccount.ts";
+import { registerBillingRoutes } from "./billing/routes.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -255,14 +256,15 @@ app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
 
 /**
- * Billing stays on Supabase. The session id is the preserved auth.users
+ * Billing is read from Supabase until CUTOVER_FLIPPED, then from Neon (where
+ * worker/src/billing writes). The session id is the preserved auth.users
  * id — never a client-supplied owner, never an email remap.
  */
 app.get("/api/entitlement", async (c) => {
   const got = await requireSession(c);
   if ("error" in got) return got.error;
   try {
-    const entitlement = await readEntitlement(c.env, got.user.id);
+    const entitlement = await readEntitlement(c.env, got.user.id, new Date(), got.io.sql);
     return json(entitlementResponseBody(entitlement), 200, OPEN_CORS);
   } catch (err) {
     if (err instanceof EntitlementUnavailableError) {
@@ -540,6 +542,10 @@ app.all("/functions/v1/task-mirror", async (c) => {
 });
 app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
+
+// Billing (stripe-* / apple-* / iap-catalog / referral-code). Inert — 503 —
+// until CUTOVER_FLIPPED; see billing/routes.ts.
+registerBillingRoutes(app);
 
 app.all("/functions/v1/:name", (c) => {
   if (c.req.param("name") === "github-activity") return handleGithubActivity(c);

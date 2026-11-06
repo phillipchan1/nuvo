@@ -164,7 +164,7 @@ function clientFor(token: string | null): SupabaseClient {
 // --- route mapping -----------------------------------------------------------
 ok(workerRoute(`${SUPABASE}/rest/v1/tasks?select=*`, SUPABASE, `${WORKER}/api`) === `${WORKER}/api/rest/v1/tasks?select=*`, "route: PostgREST → /api/rest/v1");
 ok(workerRoute(`${SUPABASE}/functions/v1/task-mirror`, SUPABASE, `${WORKER}/api`) === `${WORKER}/functions/v1/task-mirror`, "route: function → Worker twin");
-ok(workerRoute(`${SUPABASE}/functions/v1/stripe-checkout`, SUPABASE, `${WORKER}/api`) === null, "route: billing stays on Supabase");
+ok(workerRoute(`${SUPABASE}/functions/v1/stripe-checkout`, SUPABASE, `${WORKER}/api`) === `${WORKER}/functions/v1/stripe-checkout`, "route: billing → Worker twin (inert until the flip)");
 ok(workerRoute(`${SUPABASE}/auth/v1/token`, SUPABASE, `${WORKER}/api`) === null, "route: GoTrue untouched");
 ok(workerRoute(`https://elsewhere.test/rest/v1/tasks`, SUPABASE, `${WORKER}/api`) === null, "route: other origins untouched");
 ok(workerRoute(`${SUPABASE}/rest/v1/tasks`, SUPABASE, "") === null, "route: flag off → nothing rerouted");
