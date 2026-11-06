@@ -325,6 +325,8 @@ jobs:
               push_upsert_sql,
               resolve_edge_preflight_url,
               skipped_from_copy,
+              OWNER_FKS_ON_AUTH_USERS_SQL,
+              REPOINT_OWNER_FKS_SQL,
               source_snapshot_is_fatal,
               SYNC_LOG_SEQUENCE_MARGIN,
               parse_labeled_count,
@@ -1278,6 +1280,13 @@ jobs:
                   psql(target, "\n".join(acc_sql))
               print("upserting public.users from auth.users (auth_id = id)…", flush=True)
               psql(target, PUBLIC_USERS_SQL)
+              # Blocker 8: a post-flip sign-up never gets an auth.users stub,
+              # so every owner FK must point at public.users (neon.sql's owner).
+              print("repointing owner FKs auth.users → public.users…", flush=True)
+              psql(target, REPOINT_OWNER_FKS_SQL)
+              left = psql(target, OWNER_FKS_ON_AUTH_USERS_SQL, extra=["-tA"]).strip()
+              if left != "0":
+                  die(f"{left} public FK(s) still reference auth.users after repoint")
               print("auth parity (count + ordered md5 of exported columns)…", flush=True)
               auth_problems: list[str] = []
               mode = os.environ.get("CUTOVER_MODE")

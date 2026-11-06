@@ -668,3 +668,60 @@ def push_upsert_sql() -> str:
 
 def push_anti_join_delete_sql() -> str:
     return "SELECT pg_temp.cutover_push_anti_join_delete() AS count"
+
+
+# Blocker 8 (docs/cloudflare-cutover.md): the restored Supabase schema keeps
+# every planner FK pointed at auth.users(id) — a stub table nothing writes
+# after the flip. A fresh Better Auth sign-up inserts public.users (the
+# planner owner, `bootstrapUser`) and then user_settings, which failed on
+# user_settings_user_id_fkey. Repoint each public → auth.users(id) FK at
+# public.users(id), keeping its name and ON DELETE / ON UPDATE / DEFERRABLE
+# clauses, so the copied database has the same owner as worker/schema/neon.sql.
+# Not Better Auth's "user": its id is TEXT and planner user_id is UUID.
+# Runs after PUBLIC_USERS_SQL (every copied account already has its row, so
+# ADD CONSTRAINT validates). Idempotent: a second run finds nothing to move.
+REPOINT_OWNER_FKS_SQL = r"""
+DO $repoint$
+DECLARE
+  fk record;
+  def text;
+BEGIN
+  IF to_regclass('auth.users') IS NULL THEN
+    RETURN;
+  END IF;
+  IF to_regclass('public.users') IS NULL THEN
+    RAISE EXCEPTION 'public.users must exist before repointing owner FKs';
+  END IF;
+  FOR fk IN
+    SELECT c.oid, c.conname, c.conrelid::regclass AS tbl, c.confkey
+    FROM pg_constraint c
+    JOIN pg_class r ON r.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = r.relnamespace
+    WHERE c.contype = 'f'
+      AND c.confrelid = 'auth.users'::regclass
+      AND n.nspname = 'public'
+  LOOP
+    def := pg_get_constraintdef(fk.oid);
+    IF def !~ 'REFERENCES auth\.users\(id\)' THEN
+      RAISE EXCEPTION 'FK % on % references auth.users by a column other than id: %',
+        fk.conname, fk.tbl, def;
+    END IF;
+    def := regexp_replace(def, 'REFERENCES auth\.users\(id\)', 'REFERENCES public.users(id)');
+    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.tbl, fk.conname);
+    EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s', fk.tbl, fk.conname, def);
+  END LOOP;
+END
+$repoint$;
+"""
+
+# Must print 0 after REPOINT_OWNER_FKS_SQL; the restore dies otherwise.
+OWNER_FKS_ON_AUTH_USERS_SQL = """
+SELECT count(*)
+FROM pg_constraint c
+JOIN pg_class r ON r.oid = c.conrelid
+JOIN pg_namespace n ON n.oid = r.relnamespace
+WHERE c.contype = 'f'
+  AND to_regclass('auth.users') IS NOT NULL
+  AND c.confrelid = to_regclass('auth.users')
+  AND n.nspname = 'public'
+"""
