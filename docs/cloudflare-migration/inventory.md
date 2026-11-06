@@ -200,8 +200,8 @@ purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log,
 `google-renew`, `calendar-dispatch`, `google-resubscribe` (no-op until
 `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps recent
 Neon-origin ids out of trim for ~1e6 further inserts). Unported jobs
-stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` (Google
-consume here; other providers ack for PR C). See
+stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` (the consumer
+polls Google, M365, iCloud and ICS since #106). See
 [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---

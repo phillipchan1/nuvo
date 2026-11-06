@@ -85,7 +85,7 @@ needs Phil's yes.
 **Total before a flip:** about 5–8 days of work, plus one rehearsal on preview with a real
 Mac and phone. That figure assumes OTP-only sign-in, no realtime, and the `field_ts`
 fix. Porting Google, Apple and realtime adds up to about 6 more. Getting fully off Supabase
-adds billing, about 5–7 days (§ What still needs Supabase).
+adds billing (A8–A9 below, about 4.5–6.5 days). The full code list is § Port plan to zero Supabase.
 
 ### What still needs Supabase after the flip
 
@@ -105,7 +105,7 @@ read from the repo and from `supabase functions list --project-ref ebibzojtkzkph
 | **Supabase Auth providers** (Google, Apple, email) | GoTrue holds the providers and the login. Unused once the flag is on | Nothing to port beyond blockers 4–6. Leave them in place until the rollback window closes | — |
 | `pg_cron` | All nine jobs have Worker twins. They're unscheduled at step 8 | Done at the flip | — |
 | Storage / Vault / Realtime | No buckets (`inventory.md` §1). Vault tokens are re-sealed into Neon by the copy. Realtime is replaced by focus refetch, or by the Durable Object | Done at the flip, or by blocker 10 | — |
-| **Calendar sync** (Google, M365, iCloud, ICS) | **Already ported** (#106, #107; `worker/src/calendar/http.ts`, `google/routes.ts`). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` (decision 5) | Secrets plus the redirect URI above | 1 hr |
+| **Calendar sync** (Google, M365, iCloud, ICS) | **Already ported** (#106 `98913a8`, #107; `worker/src/calendar/http.ts`, `google/routes.ts`; the queue consumer polls all four). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` (decision 5) | Secrets plus the redirect URI above | 1 hr |
 
 **Off Supabase entirely = the flip (about 5–8 days) + billing (about 5–7 days) + an
 hour of console work**, plus one frozen billing copy. Billing can go on a later night,
@@ -128,6 +128,73 @@ Net, for Nuvo alone: **about −$10/mo of Supabase compute (unverified) +$5/mo W
 fee, only arrives when the other six active Supabase projects leave too. That's outside
 this repo and worth deciding before treating "off Supabase" as the reason for this cutover.
 
+#### Every Supabase function against its Worker twin
+
+For each of the 34 functions under `supabase/functions/`, `worker/src` was searched for a
+route registered under the same name (`index.ts`, `google/routes.ts`, `calendar/http.ts`).
+`workerRoute.ts` maps `/functions/v1/<name>` to the Worker for every name except the
+billing set.
+
+| Has a Worker twin (27) | No twin (7, all billing) |
+|---|---|
+| `agent`, `mcp`, `capture`, `day`, `inbound-email`, `route-events`, `rollover`, `slot-mirror`, `task-mirror`, `push-dispatch`, `github-activity`, `apple-identity`, `delete-account`, `calendar-refresh`, `google-oauth` / `-sync` / `-events` / `-contacts` / `-webhook`, `m365-oauth` / `-sync`, `icloud-connect` / `-sync` / `-events` / `-contacts`, `ics-subscribe` / `-sync` | `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `apple-iap`, `apple-webhook`, `iap-catalog`, `referral-code` |
+
+Two loose ends:
+- `apple-notifications` and `apple-verify` are deployed on Supabase but aren't in the repo.
+- `blocked.ts` still lists `apple-identity` / `delete-account` as blocked, but `index.ts`
+  registers both directly (#104). The set is stale, and nothing is broken by it.
+
+**Non-Google calendar is fully ported** (#106, `98913a8`). `calendar/http.ts` serves
+`m365-oauth`, `icloud-connect`, `ics-subscribe` and `icloud-events`, including iCloud
+write-back. The queue consumer (`cronJobs.ts:299–350`) polls **all four** providers,
+plus iCloud contacts. This used to say "others ack", and that line is fixed below.
+M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` and the Azure redirect URI.
+
+**Client auth calls with no Better Auth path** (small): `linkIdentity` for Google and Apple
+in Settings, and `onAuthStateChange` listeners in `useSubscription` / `SettingsModal`.
+`workerSession.ts` covers only `getSession` / `getUser`. Sign-in, OTP, password and
+sign-out are already flag-gated (`authActions.ts`, `appleAuth.ts`).
+
+### Port plan to zero Supabase
+
+**Billing is now in scope** (Phil, 2026-11-06: "I want to port everything over"). That
+replaces #120's approach (the Worker proxying to Supabase billing functions): close #120
+once the port below lands. A separate session may own the billing port, and this report
+only describes it.
+
+**A. Code only. Safe to start now.** The Worker stays inert, because `CUTOVER_FLIPPED` and
+`VITE_API_BASE_URL` stay unset.
+
+| # | Work | Est. |
+|---|---|---|
+| A1 | Auth and entitlement CORS for `app.nuvo.day`, `tauri://localhost` and the preview hosts (blockers 9, 9b) | 0.5–1 d |
+| A2 | `wrangler.jsonc`: give preview its own queue name (blocker 11; creating the queue is B1) | 1 hr |
+| A3 | Sign-up FK: repoint the planner FKs at Better Auth `"user"(id)` in the copy (blocker 8) | 0.5 d |
+| A4 | Signed bearer moved to `localStorage` (blocker 10) | 0.5 d |
+| A5 | Sign-in doors: hide Google/Apple when the flag is on, or port them. Also give account linking a Better Auth path or hide it | 0.5–3 d |
+| A6 | Armed-build plumbing in the three build workflows, plus a guard re-pin (blocker 13) | 0.5 d |
+| A7 | `stampFieldTs` for server writers (blocker 7) | 1 d |
+| A8 | **Billing on the Worker + Neon.** (1) The four billing tables, plus `entitled()` / `plan()` as Worker functions, go into `worker/schema/neon.sql`. (2) Port all 7 functions over Neon: Stripe signature verify, the `stripe_webhook_events` / `apple_webhook_events` idempotency claims, App Store JWS verification, `iap-catalog` and `referral-code`. Bring the `supabase/functions/_shared` billing helpers across the way the kernel is shared, never as a second copy. (3) `/api/entitlement` reads Neon, and `SUPABASE_URL` / `SERVICE_ROLE_KEY` leave `nuvo`. (4) A Better Auth `user.create` hook seeds the trial row. (5) `workerRoute.ts` drops `SUPABASE_ONLY_FUNCTIONS`, so every function name routes to the Worker. Tests: signature, replay, `entitled()` parity against today's SQL, and the trial on sign-up | 4–6 d |
+| A9 | `cutover-migrate.yml` / `freeze.sql` / parity: **stop excluding** the billing tables, so they freeze and copy with everything else. `checks.yml` guard re-pin | 0.5 d |
+| A10 | Realtime Durable Object, if Phil chooses it | 2–3 d |
+| A11 | Tidy-up: `blocked.ts` sets, the stale runbook lines, and closing #118 / #120 | 1 hr |
+
+That's about **9–14 days**, depending on A5 and A10.
+
+**B. Live, and each step needs Phil's go.** In order.
+
+| # | Step | Reversible? |
+|---|---|---|
+| B1 | Create the queues, disable the Hyperdrive cache, and set the missing `nuvo` secrets: Apple, `MS_*`, Stripe **live** secret + webhook secret, App Store keys. Deploy `nuvo-preview` and `nuvo` from master, still inert | yes |
+| B2 | Add the `api.nuvo.day` redirect URIs to the Google Cloud client (`google-oauth`, and `/api/auth/callback/google` if A5 ports Google) and the Azure app (`m365-oauth`). Add, don't replace | yes |
+| B3 | Rehearse on preview: a flag-on build from a browser, a Mac and TestFlight. A Stripe **test-mode** endpoint pointed at the preview Worker, and StoreKit sandbox. Never the live account | yes |
+| B4 | `cutover-migrate` dry run with the billing tables included, plus the token go/no-go | yes (scratch only) |
+| B5 | **Flip night:** the order above (steps 0–9), with billing now inside the freeze. At the switch, add a **new** Stripe live webhook endpoint on api.nuvo.day and **disable** the Supabase one. Change App Store Server Notifications (production + sandbox) to the Worker. Then **reconcile** any billing events that hit the frozen Supabase endpoint during the window: Stripe's event list or a subscription re-read, and App Store "Get Notification History". Whether Apple retries a failed notification to the *new* URL is **unverified**, which is why the reconcile is a step and not an assumption | until the copy: unfreeze. After: rollback loses Neon-side writes |
+| B6 | After 24h: delete the frozen Supabase functions and the old Stripe endpoint, and confirm Apple's URL | — |
+| B7 | **End of the rollback window** (Phil picks it; two weeks suggested): `pg_dump` Supabase one last time to the Mac (never CI, since the repo is public). Then pause or delete the `nuvo` project. Whether a project in a paid org can be paused is **unverified**. Deleting stops its compute billing | delete is **not** reversible |
+| B8 | Delete the Vercel projects `nuvo` / `nuvo-site` once the hosting rollback window ends ([`cloudflare-hosting.md`](./cloudflare-hosting.md)) | not reversible |
+| B9 | Code, after the last pre-flip build has aged out: drop `VITE_SUPABASE_*` and supabase-js from the bundle. Until then the client keeps the Supabase URL only as the key `workerRoute.ts` matches on, and nothing dials it | — |
+
 ### What Phil must decide
 
 1. **Sign-in at the flip.** OTP-only (recommended for the flip: Google- and Apple-only
@@ -136,17 +203,18 @@ this repo and worth deciding before treating "off Supabase" as the reason for th
    are separate (`calendar_accounts` tokens) and survive either way.
 2. **Realtime.** Accept "other devices catch up on focus" for the first weeks, or build the
    Durable Object first.
-3. **Billing stays on Supabase for a while.** This is #120's option (b). Confirm it, and
-   accept that the Supabase subscription continues.
+3. ~~**Billing stays on Supabase for a while.**~~ **Decided 2026-11-06: port it** (Phil:
+   "I want to port everything over"). Open: does billing move on flip night (A8 + A9 done
+   first) or on a second, smaller night?
 4. **`field_ts` on server writes.** Fix it before the flip (recommended, about 1 day), or
    accept that an older offline edit can overwrite an agent, capture or rollover write.
 5. **M365.** `MS_*` isn't carried over, so any M365 calendar stops syncing at the flip.
    Carry it, or tell those users.
 6. **Flip model.** The repo variable (D-174, #127, what's on master) or #118's literal plus
    runtime flip. Master has already chosen the variable. Closing #118 makes that official.
-7. **Is "off Supabase" a Nuvo-only goal or an org-wide one?** Six other active projects
-   share Nuvo's Supabase org, so moving Nuvo alone removes one compute line, not the
-   bill. And does billing move in the same push as the flip, or on a later night?
+7. **The other six Supabase projects.** Nuvo is going fully off. But the org bill only ends
+   when zeroed, LeadWell, drove-dev, dayspring, drove and mathy leave too. That's outside
+   this repo.
 
 ### Flip-night order (once 1–9 are green)
 
@@ -673,7 +741,7 @@ the flip, ported jobs (`rollover`, `purge-trash`,
 `reminder-deliveries-prune`, `push-dispatch`, `github-poll`,
 `trim-sync-log`) iterate `users` then scope by `user_id`. Calendar-dispatch
 enqueues due accounts onto `CALENDAR_SYNC_QUEUE` and the consumer polls
-Google (other providers ack). `google-renew` re-watches channels that
+Google, M365, iCloud (+ contacts) and ICS (`consumeCalendarSyncBatch`). `google-renew` re-watches channels that
 expire within 48h. Flip tooling: `POST /api/cron/google-resubscribe`.
 `trim-sync-log` deletes by
 `created_at < now() - 30 days` and, when the identity is parked
@@ -684,7 +752,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, M365, iCloud and ICS. Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
