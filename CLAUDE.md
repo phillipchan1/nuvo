@@ -419,7 +419,8 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
 - `npm run build` — **desktop bundle** (`tsc -b && vite build`). **Keep this green** —
   typecheck must pass.
 - `npm run build:web` — **web/PWA bundle** (`vite build`, skips `tsc`). This is what
-  **Vercel** runs (see `vercel.json`).
+  **Cloudflare** runs (`.github/workflows/cloudflare-hosting.yml`; Vercel is rollback only —
+  see `docs/cloudflare-hosting.md`).
 - `npm run typecheck` — must be clean before shipping.
 - `npm run tauri:dev` / `npm run app:install` — desktop. The Tauri build sets
   `TAURI_BUILD=1`, so **no `sw.js` / manifest ships inside the desktop app**.
@@ -431,7 +432,7 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
   Settings → **Desktop app** surfaces version + manual check + "What's new". Full
   setup (secrets, signing keys, the two-signing-systems note) is in
   `docs/desktop-releases.md`. **Never commit the updater private key** (`~/.tauri`).
-- **PWA install (iOS) requires HTTPS** → deploy `dist/` to Vercel. Frontend is static; the
+- **PWA install (iOS) requires HTTPS** → `dist/` is served by the Cloudflare Worker `nuvo-app` (static assets only). Frontend is static; the
   Supabase anon key (`VITE_SUPABASE_*`) is baked at build time and is safe to embed.
   `start_url` / `scope` = "/". Icons live in `public/`.
 

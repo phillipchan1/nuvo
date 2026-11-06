@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // nuvo.day + www.nuvo.day — the prerendered marketing site, static only.
+  // Moved off Vercel 2026-11-06. See docs/cloudflare-hosting.md.
+  "name": "nuvo-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    // /privacy serves dist/privacy/index.html with no redirect (canonical has
+    // no trailing slash; Google's OAuth reviewers fetch it). Unknown paths and
+    // /help fall back to the shell, as Vercel's catch-all rewrite did.
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    { "pattern": "nuvo.day", "custom_domain": true },
+    { "pattern": "www.nuvo.day", "custom_domain": true }
+  ],
+  "observability": { "enabled": true },
+  "env": {
+    // workers.dev only — no custom domain. Routes must be an explicit empty
+    // array or wrangler inherits the production domains above.
+    "preview": {
+      "name": "nuvo-site-preview",
+      "workers_dev": true,
+      "routes": []
+    }
+  }
+}

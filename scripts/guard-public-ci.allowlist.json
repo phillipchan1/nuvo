@@ -92,6 +92,48 @@
       "sha256": "7d436c34ce32fc1ac859752d725010bac103872298754e5f281357cd9a3da512"
     },
     {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "checkout",
+      "sha256": "56900a8b60b7f47627a8238c5d915c6b6cc05a35ca586adf7af2f387148b879b"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "setup-node",
+      "sha256": "c72484695c5b0100be09ae252a02e2ad20dae8ed8178cfcc239ac1f50ce041ff"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "install",
+      "sha256": "46c40a5f3e0deeb6581add61449438b09658d0e4268bac211f81d958f6b20c53"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "build-app",
+      "sha256": "2bcfef8d9476bc3698de01e4b1ad275f5780de55fb90f9fe611b8db735ef332a"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "build-site",
+      "sha256": "06f1783178a507959251132bd33acc1ce515e94b363cc723c4e2253b226d6985"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "deploy-app",
+      "sha256": "6b9317c94792d4c58bf6377856c62e08c59f2dba1892d8845e1db6c58db805f8"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "deploy-site",
+      "sha256": "fcbb3446b2f489bc7480d744594fe6d9551597d83d1b14103d9fa2b1851e3c9b"
+    },
+    {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "checkout",
@@ -393,6 +435,20 @@
       "sha256": "ece7763ccb1393e3daa4440fa14fe95ab6af23e39939875b1bf67f70b439cc59"
     },
     {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "ids": [
+        "checkout",
+        "setup-node",
+        "install",
+        "build-app",
+        "build-site",
+        "deploy-app",
+        "deploy-site"
+      ],
+      "sha256": "744346e223b5a34ea0efa4dc1dc798b5d0b66f66a28c0abf98bbf233dfb94217"
+    },
+    {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "ids": [
@@ -481,6 +537,13 @@
         "isolation-mutation"
       ],
       "sha256": "8459d5da0d43d8bf3573f8f8977e2e966ec8f5055f352d2d8394972fef21974c"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "jobs": [
+        "deploy"
+      ],
+      "sha256": "a662bc6a43859d46cf033a3336963972d1ba28df4ee3655f32a6ef8021825822"
     },
     {
       "file": "cutover-migrate.yml",

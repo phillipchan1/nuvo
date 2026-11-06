@@ -1354,6 +1354,7 @@ describe("public-ci-guard .github layout", () => {
     const layout = assertGithubCiLayout(github);
     expect(layout.workflows).toEqual([
       "workflows/checks.yml",
+      "workflows/cloudflare-hosting.yml",
       "workflows/cutover-migrate.yml",
       "workflows/ios-release.yml",
       "workflows/release.yml",
