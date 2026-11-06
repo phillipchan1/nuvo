@@ -17,20 +17,50 @@ function emitAuthSessionChanged() {
 
 const SIGNED_BEARER_KEY = "nuvo.ba.signed-bearer";
 
-export function signedBearerToken(): string | null {
+/**
+ * localStorage, not sessionStorage (blocker 10, docs/cloudflare-cutover.md):
+ * WKWebView (Mac + iOS) and an installed PWA start every launch with an
+ * empty sessionStorage, so a relaunch signed the person out. GoTrue's
+ * session already lives in localStorage today, so this is no new exposure.
+ */
+function store(): Storage | null {
   try {
-    return sessionStorage.getItem(SIGNED_BEARER_KEY);
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** One-time move of a bearer written by a build that used sessionStorage. */
+function adoptLegacyBearer(target: Storage): void {
+  try {
+    const legacy = sessionStorage.getItem(SIGNED_BEARER_KEY);
+    if (legacy == null) return;
+    if (target.getItem(SIGNED_BEARER_KEY) == null) target.setItem(SIGNED_BEARER_KEY, legacy);
+    sessionStorage.removeItem(SIGNED_BEARER_KEY);
+  } catch {
+    /* private mode / SSR */
+  }
+}
+
+export function signedBearerToken(): string | null {
+  const s = store();
+  if (!s) return null;
+  try {
+    adoptLegacyBearer(s);
+    return s.getItem(SIGNED_BEARER_KEY);
   } catch {
     return null;
   }
 }
 
 function rememberSignedBearer(token: string) {
+  const s = store();
   try {
     // Unchanged is not a change: useAuth re-reads the session on this event,
     // and get-session hands the same token back.
-    if (sessionStorage.getItem(SIGNED_BEARER_KEY) === token) return;
-    sessionStorage.setItem(SIGNED_BEARER_KEY, token);
+    if (s?.getItem(SIGNED_BEARER_KEY) === token) return;
+    s?.setItem(SIGNED_BEARER_KEY, token);
   } catch {
     /* private mode / SSR */
   }
@@ -41,11 +71,20 @@ function rememberSignedBearer(token: string) {
  *  on this device cannot reuse it, and so the entitlement probe re-runs. */
 export function clearSignedBearer() {
   try {
+    store()?.removeItem(SIGNED_BEARER_KEY);
     sessionStorage.removeItem(SIGNED_BEARER_KEY);
   } catch {
     /* private mode / SSR */
   }
   emitAuthSessionChanged();
+}
+
+// Shared storage means a sign-in or sign-out in one tab is every tab's:
+// re-read the session there too instead of 401-ing on a dropped bearer.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === SIGNED_BEARER_KEY || e.key === null) emitAuthSessionChanged();
+  });
 }
 
 /** Persist a signed `token.hmac` so a new tab can reuse get-session's JSON. */

@@ -84,7 +84,7 @@ export function useAuth() {
           if (cancelled) return;
           const fromBody = data?.session?.token ?? data?.token;
           // Never send the raw DB session.token — requireSignature rejects it
-          // and a new tab with empty sessionStorage would 401 everywhere.
+          // and a fresh launch with no stored bearer would 401 everywhere.
           const signed = typeof fromBody === "string" && fromBody.includes(".") ? fromBody : null;
           const token = signedBearerToken() ?? signed;
           if (token) persistSignedBearer(token);
