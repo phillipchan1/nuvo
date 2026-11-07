@@ -574,6 +574,47 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
   ok((await row(P)).status === "active", "apple webhook: another bundle's notification ignored");
 }
 
+// ── 7b. appAccountToken: first purchase with no apple-iap confirm ───────────
+{
+  const T = "ffff0000-0000-4000-8000-00000000000f";
+  // A Better Auth user whose trial row never got written.
+  await db.query(`INSERT INTO "user" (id, email, name, "emailVerified") VALUES ($1, 't@billing.test', 'Tia', true)`, [T]);
+  const first = await appleNotification("uuid-sub-T", "SUBSCRIBED", "INITIAL_BUY", {
+    bundleId: "day.nuvo.app",
+    productId: "NUVO_IAP_ANNUAL",
+    originalTransactionId: "otx_T",
+    expiresDate: 1_950_000_000_000,
+    appAccountToken: T.replace(/-/g, "").toUpperCase(),
+  });
+  const res = await req("/api/apple-webhook", appleReq(first), flipped);
+  ok(res.status === 200, `apple token: SUBSCRIBED 200 (got ${res.status})`);
+  const t = await row(T);
+  ok(t?.status === "active" && t.plan_source === "apple" && t.apple_original_transaction_id === "otx_T", "apple token: signed appAccountToken attaches a first purchase (row created, then patched)");
+
+  // The token can't steal a lineage that is already linked.
+  const hijack = await appleNotification("uuid-hijack", "EXPIRED", null, { ...txP, appAccountToken: T });
+  await req("/api/apple-webhook", appleReq(hijack), flipped);
+  ok((await row(P)).status === "cancelled" && (await row(T)).apple_original_transaction_id === "otx_T", "apple token: a linked lineage stays with its row");
+  await db.query(`UPDATE subscriptions SET status = 'active' WHERE user_id = $1`, [P]);
+
+  const ghost = "99990000-0000-4000-8000-000000000009";
+  const unknownUser = await appleNotification("uuid-ghost", "SUBSCRIBED", null, { ...txP, originalTransactionId: "otx_ghost", appAccountToken: ghost });
+  await req("/api/apple-webhook", appleReq(unknownUser), flipped);
+  ok((await row(ghost)) === undefined, "apple token: an id Better Auth doesn't know never gets a row");
+}
+
+// ── 7c. CORS for credentialed and bearer callers ─────────────────────────────
+{
+  const cred = await req("/functions/v1/stripe-portal", { ...asUser(A), headers: { Authorization: `Bearer ${A}`, Origin: "https://app.nuvo.day" } }, flipped);
+  ok(cred.headers.get("access-control-allow-origin") === "https://app.nuvo.day" && cred.headers.get("access-control-allow-credentials") === "true", "cors: app origin echoed with credentials");
+  const foreign = await req("/functions/v1/stripe-portal", { ...asUser(A), headers: { Authorization: `Bearer ${A}`, Origin: "https://evil.test" } }, flipped);
+  ok(foreign.headers.get("access-control-allow-origin") === "*" && foreign.headers.get("access-control-allow-credentials") === null, "cors: foreign origin gets * and no credentials");
+  const pre = await req("/functions/v1/stripe-checkout", { method: "OPTIONS", headers: { Origin: "https://app.nuvo.day" } }, flipped);
+  ok(pre.headers.get("access-control-allow-origin") === "https://app.nuvo.day", "cors: preflight echoes the app origin");
+  const unflipped = await req("/functions/v1/stripe-checkout", { ...asUser(A), headers: { Origin: "https://app.nuvo.day" } }, baseEnv);
+  ok(unflipped.status === 503 && unflipped.headers.get("access-control-allow-origin") === "https://app.nuvo.day", "cors: pre-flip 503 is still readable by the app");
+}
+
 // ── 8. Sign-up trial + delete wipes the billing row ──────────────────────────
 {
   const NEW = "dddd0000-0000-4000-8000-00000000000d";

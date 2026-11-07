@@ -72,7 +72,17 @@ export async function applyPlanUpdate(
   sql: Sql,
   incoming: PlanWrite & { userId?: string },
 ): Promise<{ applied: boolean; userId?: string }> {
-  const existing = await findRow(sql, incoming);
+  let existing = await findRow(sql, incoming);
+  // A verified id with no row (sign-up's trial insert failed, or an account
+  // the copy missed): write the default trial first, then patch — same as
+  // PR #120's Supabase `plan.ts`. Only for an id Better Auth knows.
+  if (!existing && incoming.userId && UUID_RE.test(incoming.userId)) {
+    const known = await sql`SELECT 1 FROM "user" WHERE id = ${incoming.userId} LIMIT 1`;
+    if (known.length) {
+      await ensureTrialSubscription(sql, incoming.userId);
+      existing = await findRow(sql, incoming);
+    }
+  }
   if (!existing) return { applied: false };
   const patch = planRowPatch(
     { plan: planOf(existing) ?? existing.status, planSource: existing.plan_source },

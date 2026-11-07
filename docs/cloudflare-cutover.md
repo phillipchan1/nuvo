@@ -1045,11 +1045,57 @@ the flip, they still read Supabase.
 | Client | `functions.invoke(...)` → Supabase | same call. With `VITE_API_BASE_URL` set, `workerRoute` sends it to `/functions/v1/<name>` on the Worker. Friend codes work on the Worker path again |
 
 Proof: `node --experimental-strip-types worker/src/billing.check.ts`, also
-part of `npm run check:worker`, runs 130 checks with no live keys (PGlite, a
-mocked Stripe, and a generated Apple-style CA). Each of these was confirmed
+part of `npm run check:worker`, runs its checks with no live keys (PGlite, a
+mocked Stripe, and a generated Apple-style CA): 138 checks. Each of these was confirmed
 by breaking it and watching the suite fail: replay dedupe, the JWS signature,
 the leaf→intermediate chain, the timestamp tolerance, the flip gate and the
 reward claim.
+
+### Open question: which Apple endpoint is live?
+
+`supabase functions list` (2026-11-06) shows **two** Apple writers deployed:
+`apple-webhook` (v4, in the repo) and `apple-notifications` + `apple-verify`
+(v2, older, **not in the repo**). Migration 70 names `apple-notifications`
+as the writer, and it writes the legacy `apple_status` / `apple_expires_at`
+columns plus the `apple_notification_events` ledger. Since migration 75,
+entitlement reads only `status`. If App Store Connect still points at
+`apple-notifications`, Apple renewals and refunds have not been reaching
+`status` at all, and that is a bug today, separate from the cutover.
+
+**Before the flip, check the URL App Store Connect actually uses.** Either
+way the Worker URL is the same (`/api/apple-webhook`), and the copy carries
+the legacy columns. Also copy `apple_notification_events.notification_uuid`
+into Neon's `apple_webhook_events.event_id` (`ON CONFLICT DO NOTHING`), so a
+retry of an event that `apple-notifications` already handled is still
+deduped. `apple-verify` has no Worker twin. Current clients call `apple-iap`,
+so only an old iOS build could still be calling it.
+
+### Relationship to PR #120 (`cursor/billing-worker-proxy-bf39`)
+
+#120 keeps billing on Supabase and has the Worker *proxy* the four
+user-facing functions there with the service role. That works after the
+auth flip, but it never gets off Supabase. This port is the end state that
+replaces the proxy. From #120, this branch already matches:
+
+- **`appAccountToken`.** Once the transaction JWS verifies, the Worker's
+  Apple webhook attaches a first purchase to the signed token. It never
+  remaps a lineage that is already linked to a row.
+- **Missing trial row.** A verified Better Auth id with no row gets the
+  default trial before the patch.
+- **Credentialed CORS.** User routes echo allowlisted origins with
+  credentials (`billingCors`), so #120's `invokeBilling`
+  (`credentials: "include"`) works against them.
+
+At merge:
+
+- Swap `billingCors` for #120's `reflectedCredentialedCors` /
+  `reflectAllowOrigin`.
+- Point `invokeBilling` at these routes. It already calls
+  `/functions/v1/<name>`, the same path.
+- Drop `billingProxy.ts` and the Supabase-side `ensureSubscription`
+  (Neon's sign-up trial replaces it).
+- #120's iOS plugin change (`appAccountToken` on purchase) is still needed.
+  This branch relies on it.
 
 ### Secrets and vars on Worker `nuvo`
 
@@ -1107,7 +1153,8 @@ Already present and reused: `APP_URL`, `APPLE_BUNDLE_ID`, `RESEND_API_KEY`,
 
 1. **Copy billing, Supabase → Neon** (upsert; Supabase is the source):
    `subscriptions` (every column in `neon.sql`), plus both ledgers with
-   `ON CONFLICT DO NOTHING`. Copying the ledgers means a retry of an event
+   `ON CONFLICT DO NOTHING`. Also copy legacy `apple_notification_events.notification_uuid`
+   into `apple_webhook_events.event_id` (see the open question above). Copying the ledgers means a retry of an event
    Supabase already handled is still recognised on the Worker.
    `cutover_copy.py` deliberately excludes these tables (`BILLING_TABLES`),
    so this is a separate `psql \copy` out and an upsert in.

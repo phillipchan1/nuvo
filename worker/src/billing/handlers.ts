@@ -86,6 +86,19 @@ function appleDateToIso(value: unknown): string | null {
   return null;
 }
 
+/**
+ * StoreKit `appAccountToken` = the Nuvo user id, set at purchase (PR #120's
+ * plugin change). Apple signs it into the transaction, so once the JWS has
+ * verified it can attach a first purchase whose `apple-iap` confirm never
+ * ran. Hyphenated or compact 32-hex; anything else is ignored.
+ */
+export function parseAppAccountToken(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const compact = value.trim().replace(/-/g, "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(compact)) return null;
+  return `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`;
+}
+
 function stripeFor(deps: BillingDeps): StripeClient {
   return stripeClient(deps.env.STRIPE_SECRET_KEY ?? "", deps.fetchImpl ?? fetch);
 }
@@ -700,7 +713,14 @@ export async function handleAppleWebhook(deps: BillingDeps, req: Request): Promi
     const originalTransactionId = asString(tx.originalTransactionId);
     if (!originalTransactionId) return billingJson({ received: true, ignored: true });
 
+    // A row already linked to this lineage is never remapped by the token.
+    const linked = await sql`
+      SELECT 1 FROM subscriptions WHERE apple_original_transaction_id = ${originalTransactionId} LIMIT 1
+    `;
+    const tokenUser = linked.length ? undefined : (parseAppAccountToken(tx.appAccountToken) ?? undefined);
+
     const result = await applyPlanUpdate(sql, {
+      userId: tokenUser,
       plan: mapped.plan,
       planSource: "apple",
       currentPeriodEnd: appleDateToIso(tx.expiresDate),

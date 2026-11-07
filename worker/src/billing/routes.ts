@@ -12,7 +12,7 @@
  * on both sides of the flip.
  */
 import type { Context, Hono } from "hono";
-import { OPEN_CORS, json } from "../cors.ts";
+import { OPEN_CORS, json, trustedAuthOrigins } from "../cors.ts";
 import { cutoverFlipped, CUTOVER_NOT_FLIPPED } from "../cutoverFlip.ts";
 import { SessionLookupError, sessionUser } from "../auth.ts";
 import type { AppEnv } from "../session.ts";
@@ -83,9 +83,38 @@ async function sessionFor(c: Context<AppEnv>): Promise<{ user: BillingUser; io: 
   }
 }
 
-function withCors(res: Response): Response {
+/**
+ * Bearer callers (today's supabase-js path, Tauri) work with `*`. A browser
+ * call with `credentials: "include"` (PR #120's `invokeBilling`) needs its
+ * allowlisted Origin echoed instead — `*` + credentials is rejected. When
+ * #120 lands, swap this for its `reflectedCredentialedCors`.
+ */
+export function billingCors(origin: string | null | undefined, env: AppEnv["Bindings"]): Record<string, string> {
+  const allowed = new Set<string>();
+  try {
+    for (const o of trustedAuthOrigins(env)) allowed.add(o);
+  } catch {
+    /* auth URL unset — fall back to APP_URL only */
+  }
+  try {
+    if (env.APP_URL) allowed.add(new URL(env.APP_URL).origin);
+  } catch {
+    /* not a URL */
+  }
+  if (origin && allowed.has(origin)) {
+    return {
+      ...OPEN_CORS,
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin",
+    };
+  }
+  return { ...OPEN_CORS, Vary: "Origin" };
+}
+
+function withCors(res: Response, cors: Record<string, string> = OPEN_CORS): Response {
   const headers = new Headers(res.headers);
-  for (const [k, v] of Object.entries(OPEN_CORS)) headers.set(k, v);
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v);
   return new Response(res.body, { status: res.status, headers });
 }
 
@@ -93,10 +122,11 @@ async function userRoute(
   c: Context<AppEnv>,
   name: (typeof BILLING_USER_ROUTES)[number],
 ): Promise<Response> {
-  if (!cutoverFlipped(c.env?.CUTOVER_FLIPPED)) return billingNotFlipped(name, false);
-  if (c.req.method !== "POST") return json({ error: "method not allowed" }, 405, OPEN_CORS);
+  const cors = billingCors(c.req.header("Origin"), c.env);
+  if (!cutoverFlipped(c.env?.CUTOVER_FLIPPED)) return withCors(billingNotFlipped(name, false), cors);
+  if (c.req.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
   const got = await sessionFor(c);
-  if ("error" in got) return got.error;
+  if ("error" in got) return withCors(got.error, cors);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const d = deps(c, got.io);
   try {
@@ -107,11 +137,11 @@ async function userRoute(
         : name === "apple-iap"
           ? await handleAppleIap(d, got.user, body)
           : await handleReferralCode(d, got.user);
-    return withCors(res);
+    return withCors(res, cors);
   } catch (e) {
     if (e instanceof StripeApiError) {
       // Same as Supabase: the Stripe message reaches the caller; never a key.
-      return json({ error: e.message }, e.status === 503 ? 503 : 500, OPEN_CORS);
+      return json({ error: e.message }, e.status === 503 ? 503 : 500, cors);
     }
     throw e;
   }
@@ -128,7 +158,7 @@ async function webhookRoute(c: Context<AppEnv>, name: (typeof BILLING_WEBHOOK_RO
 export function registerBillingRoutes(app: Hono<AppEnv>): void {
   for (const prefix of ["/api", "/functions/v1"] as const) {
     for (const name of BILLING_USER_ROUTES) {
-      app.options(`${prefix}/${name}`, () => new Response("ok", { headers: OPEN_CORS }));
+      app.options(`${prefix}/${name}`, (c) => new Response("ok", { headers: billingCors(c.req.header("Origin"), c.env) }));
       app.all(`${prefix}/${name}`, (c) => userRoute(c, name));
     }
     for (const name of BILLING_WEBHOOK_ROUTES) {
