@@ -30,6 +30,39 @@ master as configured, and would refuse the real app's origins if it were. Billin
 and two of three sign-in doors also break at the flip. All of these are ordinary work,
 and none of them is a design unknown, except realtime.
 
+### Code update — 2026-11-06, branch `claude/affectionate-hellman-1dcca2`
+
+Every non-billing code blocker below is **closed in code** on this branch, one commit per
+item, nothing pushed or deployed. What's left is live work, in order, in
+[§ Phil's go list](#phils-go-list) at the end of this doc. Billing (12, plus the
+`/api/entitlement` CORS in 9) belongs to the parallel billing session and isn't touched here.
+
+| Item | Commit | Evidence |
+|---|---|---|
+| 9b Auth CORS | `6ce0c84` | `authUrl.check.ts`: every shell is echoed, look-alikes are refused, and the CORS list and Better Auth's list are the same |
+| 11 Queues | `7061d23` | `tests/wrangler-queues.test.ts`. Both `wrangler deploy --dry-run`s bind their own queue |
+| 8 Sign-up FK | `c66a070` | **Driven:** the workflow's own `dump` → `restore` from local Supabase under `wrangler dev`, before (409, FK) and after (200, writes) |
+| 10 Bearer | `6c18dc3` | **Driven:** OTP sign-in in the dev app, then a fresh tab (empty `sessionStorage`) stays signed in |
+| 2, 2b Google + Apple | `1029c85` | `tests/signin-door.test.ts` (14 cases). **Driven:** the dev app goes through the door and back |
+| 13 Armed build | `c53e687` | `tests/armed-build.test.ts`. Allowlist re-pinned |
+| 7 `field_ts` | `f1b791a` | **Driven:** a fresh copy, then `POST /api/rollover` stamps the fields it moved |
+| 4 Realtime | — | Not now (Phil, 2026-11-06). Ships with focus convergence; a post-cutover follow-up |
+
+**Gate state on this branch:** `npm run typecheck`, `typecheck:worker` and every
+`check:worker` script are clean, apart from two failures that **predate this branch**
+(reproduced on `59a41a7` with these changes stashed):
+- `accessHttp.check.ts` "B entitlement: live trial is entitled": the fixture's trial date
+  has expired. This is the billing session's area.
+- `guard-public-ci.test.ts` "checks.yml renamed to checks.YML": it assumes a case-sensitive
+  filesystem. macOS isn't one, and Linux CI is.
+
+`check:worker` chains with `&&`, so locally it stops at the first of those, and the scripts
+after it only ran individually.
+
+Local-drive caveat: `miniflare.seq.check.ts` re-applies `neon.sql` to the Hyperdrive local
+string (`127.0.0.1:5432/nuvo`). If a scratch restore is sitting in that database, the check
+overwrites it, so drive copies in a differently named database.
+
 ### What is actually live
 
 | Thing | What it is | Evidence |
@@ -49,7 +82,7 @@ and none of them is a design unknown, except realtime.
 | 2 | Google sign-in not ported | **Closed in code (2026-11-06); console step on the go list.** Better Auth now wires Google (`googleSocialProvider`, `auth.ts`) with `prompt: "select_account"` (D-126), on the same `GOOGLE_CLIENT_ID` / `_SECRET` the calendar connect uses. Every shell signs in through **the sign-in door** (`worker/src/signinDoor.ts`): a top-level `GET /api/signin/google?return=<shell origin>` → Google → Better Auth's callback → `/api/signin/return` → `<shell>/#nuvo_ott=<one-time token>`, which the SPA redeems for the signed bearer (`src/lib/authReturn.ts`, `useAuth`). **Why a door:** Better Auth refuses a callback without its signed state cookie, and a cookie set by a cross-origin fetch is third-party, which WKWebView drops, so #120's client-side `signIn.social` could never finish on Mac or iOS. The door makes every cookie first-party, and the token rides in the fragment, single-use, hashed at rest, 3 minutes. `return` must be a trusted shell origin (no open redirect). Linking goes through the same door with a one-time token, never a bearer in a URL. **Existing users keep their account:** the copy's `account` rows carry the Google `sub` and the same user id; an email-only account links by provider-verified email; an unverified email never adopts one. `tests/signin-door.test.ts` drives all of it (real Hono app + Better Auth over PGlite, Google's token endpoint faked), including both shells' return legs. **Driven** in the dev app against `wrangler dev`: Continue with Google → door → back on the login with the door's message (Google unconfigured locally), fragment gone. Also fixed on the way: `exposeSignedAuthToken` rewrote *any* JSON `token` into the session bearer, which would have handed the shell its bearer instead of the one-time token; it now rewrites only session bodies. **Not driven:** a real Google consent (needs the redirect URI, go list) | `auth.ts`, `signinDoor.ts`, `googleAuth.ts`, `authReturn.ts` |
 | 2b | *(new)* Apple sign-in is off too | **Closed in code (2026-11-06); secrets + console on the go list.** The provider registers once `APPLE_CLIENT_ID` (Services ID) and a client secret exist. The secret no longer has to be a hand-rotated ≤6-month JWT: without `APPLE_CLIENT_SECRET`, the Worker mints one from the SIWA key it already needs for revocation (`APPLE_SIWA_TEAM_ID` / `_KEY_ID` / `_PRIVATE_KEY`; `primeAppleClientSecret`, cached a week per isolate). The id-token audience accepts the Services ID and the bundle id, so native iOS (`ASAuthorizationController` → `signIn.social({ idToken })`, raw nonce; Better Auth compares `exact-or-sha256`) and the web redirect both verify. The web/desktop redirect and Apple linking go through the same door as Google. Tests: minted-secret shape, explicit-secret precedence, the door's `form_post` authorize URL, and the unconfigured message | `auth.ts`, `appleAuth.ts` |
 | 3 | Desktop build never gets the flag | **Closed** (#127): `release.yml:173`, `ios-release.yml:204`, and now `cloudflare-hosting.yml:56` read `vars.VITE_API_BASE_URL`. #118 (a hard-coded literal plus #117's runtime flip) is still open, and #117 is closed, so #118 should be closed as superseded | workflows |
-| 4 | Realtime has no Worker path | **Open, by design for now.** `useRealtime.ts:51` skips when the flag is on, so other devices converge on focus (15s stale). There's no Durable Object or `/api/live` | `useRealtime.ts` |
+| 4 | Realtime has no Worker path | **Not now (Phil, 2026-11-06). Post-cutover follow-up.** The flip ships with focus convergence: `useRealtime.ts:51` skips when the flag is on, and other devices catch up on window focus (15s stale). The Durable Object design (§ Not ready to flip, item 4) is the follow-up. It is not a flip blocker | `useRealtime.ts` |
 | 5 | Hyperdrive caches queries | **Open.** Verified live: caching is enabled. `rest.ts` reads are safe because they call `now()`. Agent, day, mirrors and `/api/data` reads are not | `wrangler hyperdrive get` |
 | 6 | Worker secrets missing | **Open.** Missing: `GOOGLE_CLIENT_SECRET` (rotates in the freeze, by design), the whole Apple set (`APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET`, `APPLE_SIWA_*`), and `MS_*`. Present: 15 names, matching § Key rotation | `wrangler secret list` |
 | 7 | Non-SPA writers don't stamp `field_ts` / `updated_at` | **`field_ts` closed in code, driven (2026-11-06).** Supabase already solved this with one trigger, `stamp_unstamped_field_ts` (migration 65): a column whose value changed but whose stamp didn't gets `now()`. The copy was dropping it (`pg_restore` skips every trigger and function). It's back as **one definition**, `worker/schema/field-ts.sql`, with the same name and body (a test pins it to migration 65 verbatim). The copy installs it right after the restore and dies if any `field_ts` table is left without it; `apply-neon-schema.mjs` applies it too, and it skips tables with no `field_ts`. **Deviation from the brief, on purpose:** the brief asked for a `stampFieldTs` helper called from each writer. There are ~40 hand-written writes to these tables (`store.ts`, `cronJobs.ts`, capture, inbound, agent, mirrors), so a helper would be one rule copied 40 times, and the next writer would forget it. The trigger covers them all, including future ones, and leaves client stamps alone (`rest.ts`, `apply_patch`). **Driven:** a fresh copy (14 triggers installed), a fresh sign-up under `wrangler dev`, then `POST /api/rollover`. That moved `do_date` and stamped `do_date` and `roll_count` with now, and left the client-stamped `title` untouched. `tests/field-ts-stamp.test.ts` runs the real `store.ts` writers and the rollover cron through it. `updated_at` is still hand-written per writer (unchanged) | `field-ts.sql`, `cutover-migrate.yml` |
@@ -59,7 +92,7 @@ and none of them is a design unknown, except realtime.
 | 10 | Bearer in `sessionStorage` | **Closed in code (2026-11-06).** `authClient.ts` keeps the signed bearer in `localStorage` (where GoTrue's session already lives, so no new exposure), adopts a bearer an older build left in `sessionStorage` once, clears both on sign-out, and re-reads the session when another tab signs in or out (`storage` event). `tests/auth-bearer-storage.test.ts` simulates the relaunch (sessionStorage wiped, module reloaded) and the legacy adoption. **Still to drive on a built Mac and TestFlight (B3)** — a jsdom relaunch is not WKWebView | `authClient.ts` |
 | 11 | *(new)* **Master can't deploy to `nuvo`** | **Closed in code (2026-11-06); the queues are a live step.** Preview now produces to and consumes its own `nuvo-calendar-sync-preview`; prod keeps `nuvo-calendar-sync`. `tests/wrangler-queues.test.ts` fails if any two environments consume the same queue or an environment consumes a queue it doesn't produce to. Both `wrangler deploy --dry-run` and `--env preview --dry-run` bind the right queue. **Still needed, Phil's go list G1:** `npx wrangler queues create nuvo-calendar-sync` and `npx wrangler queues create nuvo-calendar-sync-preview` — `wrangler deploy` does not create them | `wrangler.jsonc` |
 | 12 | *(new)* **Billing acts break at the flip** | **Open.** `workerRoute.ts` leaves `stripe-checkout`, `stripe-portal`, `apple-iap`, `referral-code` and `iap-catalog` on Supabase, which now receives a Better Auth bearer that GoTrue rejects. So checkout, portal, StoreKit confirm and referral would 401 (#120's own description). A post-flip sign-up also never fires Supabase's `handle_new_user`, so it gets no `subscriptions` row and, inferred, no trial. #120 fixes both (`billingProxy.ts`, `ensureDefaultSubscription`) but is **CONFLICTING**. It's 80+ files and still carries #117's runtime-flip and `workerData.ts`, which D-174 superseded | `workerRoute.ts:19–27`, PR #120 |
-| 13 | *(new)* **The armed build can't be shipped** | **Closed in code (2026-11-06); setting the variables is the go list.** `cloudflare-hosting.yml`, `release.yml` and `ios-release.yml` now pass `VITE_MAINTENANCE_URL` and `VITE_CUTOVER_ARMED` from repo **variables** beside `VITE_API_BASE_URL`; unset is today's build. `tests/armed-build.test.ts` fails if any build workflow drops one or reads it from `secrets.*`. Public-CI allowlist re-pinned (`regen-public-ci-allowlist.mjs`); `guard-public-ci.test.ts` is green except its macOS-only case-folding case (pre-existing, below). **Order matters:** an armed build fails *closed* when the maintenance URL is unreachable, so the real Worker must be deployed (G2) before the variables are set (G6), and `VITE_CUTOVER_ARMED` is cleared after the 24h watch | workflows |
+| 13 | *(new)* **The armed build can't be shipped** | **Closed in code (2026-11-06); setting the variables is the go list.** `cloudflare-hosting.yml`, `release.yml` and `ios-release.yml` now pass `VITE_MAINTENANCE_URL` and `VITE_CUTOVER_ARMED` from repo **variables** beside `VITE_API_BASE_URL`; unset is today's build. `tests/armed-build.test.ts` fails if any build workflow drops one or reads it from `secrets.*`. Public-CI allowlist re-pinned (`regen-public-ci-allowlist.mjs`); `guard-public-ci.test.ts` is green except its macOS-only case-folding case (pre-existing, below). **Order matters:** an armed build fails *closed* when the maintenance URL is unreachable, so the real Worker must be deployed (G8) before the variables are set (G10), and `VITE_CUTOVER_ARMED` is cleared after the 24h watch (G12) | workflows |
 | 14 | *(new)* **External callers still dial Supabase** | **Open, runbook only.** Resend's inbound webhook, MCP connectors and capture tokens people have already pasted, and Google push channels all point at `ebibzojtkzkphykznomv.supabase.co/functions/v1/*`. Google is handled by `google-resubscribe`. The others need a retarget and a re-copy, and Supabase's non-billing functions need to **stay** 503 (`WRITE_FREEZE`) after the switch, so a stale caller fails loudly instead of writing to the abandoned database | `route-inventory.md` §2 |
 
 ### Blockers in order, with an estimate
@@ -837,7 +870,9 @@ nothing.
 - `GOOGLE_CLIENT_SECRET` — below.
 - The Apple set. Nuvo has no Sign in with Apple key: Supabase only verifies the ID token,
   but Better Auth needs a client-secret JWT. Create a key for `day.nuvo.app` and download
-  the `.p8` once. The JWT lasts at most 6 months.
+  the `.p8` once. **Since 2026-11-06 the Worker mints the JWT itself** from
+  `APPLE_SIWA_TEAM_ID` / `_KEY_ID` / `_PRIVATE_KEY` (`primeAppleClientSecret`), so there is
+  no 6-month secret to rotate. Set `APPLE_CLIENT_SECRET` only to override that.
 - `MS_*` — M365 isn't carried over this round.
 
 `RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
@@ -1223,3 +1258,33 @@ StoreKit proof before a flip:
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each
 derived `user_id = ${store.userId}` filter and expects a failure.
+
+---
+
+## Phil's go list
+
+Every live step left after the code work on `claude/affectionate-hellman-1dcca2`, in order.
+Each one needs Phil's yes, and none was run. Billing steps (Stripe and App Store endpoints,
+`STRIPE_*`, the billing copy) come from the billing session and slot in at B1/B5 of
+§ Port plan. Never paste a secret value into a chat, an issue or a log.
+
+| # | Step | Command / where | Reversible? |
+|---|---|---|---|
+| G0 | Review and merge this branch (and the billing session's), then close #118 and #120 as superseded | GitHub | yes |
+| G1 | Create both queues. `wrangler deploy` doesn't create them | `npx wrangler queues create nuvo-calendar-sync` and `npx wrangler queues create nuvo-calendar-sync-preview` | yes (`queues delete`) |
+| G2 | Turn Hyperdrive caching off (blocker 5) | `npx wrangler hyperdrive update 2c52343139524c4e9ba39f8c1c9b0795 --caching-disabled true` | yes |
+| G3 | **Apple key**: Apple Developer → Keys → new key with Sign in with Apple, primary App ID `day.nuvo.app`. Download the `.p8` once (Keychain) | developer.apple.com | revoke key |
+| G4 | **Apple Services ID** for the web flow, e.g. `day.nuvo.web` (whatever exists). Under Sign in with Apple → Configure: domain `api.nuvo.day` and return URL `https://api.nuvo.day/api/auth/callback/apple`. For the rehearsal, also `nuvo-preview.nq-morning-briefing.workers.dev` + `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/apple`. **Add, don't replace** Supabase's entries until the rollback window closes | developer.apple.com | yes |
+| G5 | **Google OAuth client** (the one `GOOGLE_CLIENT_ID` names): add the authorized redirect URIs `https://api.nuvo.day/api/auth/callback/google` (sign-in) and `https://api.nuvo.day/functions/v1/google-oauth` (calendar connect, if missing). For the rehearsal, also `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/google`. **Unverified:** whether the consent screen needs `nq-morning-briefing.workers.dev` as an authorized domain for that preview URI. If Google refuses it, rehearse Google on api.nuvo.day after G7 instead. Add, don't replace | console.cloud.google.com | yes |
+| G6 | **Azure app** (M365): add `https://api.nuvo.day/functions/v1/m365-oauth`, if M365 is carried (decision 5) | portal.azure.com | yes |
+| G7 | **Secrets on `nuvo` and `nuvo-preview`**: `APPLE_CLIENT_ID` (Services ID from G4), `APPLE_SIWA_TEAM_ID`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (the `.p8` from G3). Optionally `APPLE_SIWA_CLIENT_ID`. `MS_CLIENT_ID` / `MS_CLIENT_SECRET` if G6. On **preview only** for now: `GOOGLE_CLIENT_SECRET`. On `nuvo` it rotates inside the freeze (§ Key rotation), and until it's set there, Google sign-in on prod answers "That sign-in option isn't available right now" | `npx wrangler secret put <NAME>` (add `--env preview` for preview), piped from Keychain | yes |
+| G8 | **Deploy** preview, then prod, from merged master. Both stay inert (`CUTOVER_FLIPPED` unset, no client points at them) | `npx wrangler deploy --env preview`, then `npx wrangler deploy` | yes (redeploy) |
+| G9 | **Rehearse on preview (B3)**: a flag-on build pointed at the preview Worker, on a browser, a **built Mac** (`tauri://localhost`) and **TestFlight**. Check OTP sign-in, Google (door round trip), Apple native + web, **quit and relaunch stays signed in** (blocker 10), and a fresh sign-up that writes (8). Also run a `cutover-migrate` dry run, which now installs the stamp trigger and repoints the FKs | — | yes |
+| G10 | **Armed build (step 0), only after G8 prod is deployed.** An armed build fails *closed* if the maintenance URL doesn't answer. Set repo **variables** `VITE_MAINTENANCE_URL=https://api.nuvo.day/api/maintenance` and `VITE_CUTOVER_ARMED=1`, then let the PWA, Mac and TestFlight builds roll out | `gh variable set …` | yes (unset + rebuild) |
+| G11 | **Flip night**: § Flip-night order steps 1–9, unchanged. Step 4 now also sets `GOOGLE_CLIENT_SECRET` on `nuvo`, which turns Google sign-in on | — | until the copy |
+| G12 | After the 24h watch: unset `VITE_CUTOVER_ARMED` (keep `VITE_MAINTENANCE_URL`) and rebuild | `gh variable delete VITE_CUTOVER_ARMED` | yes |
+| G13 | After the rollback window: remove the Supabase redirect URIs from Google and Apple, and do § Port plan B6–B9 | consoles | no |
+
+**Follow-ups, not blockers:** realtime over a Durable Object (item 4). `updated_at` is
+still hand-written per Worker writer: the trigger in `field-ts.sql` covers `field_ts` only.
+
