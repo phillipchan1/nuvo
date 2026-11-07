@@ -1,10 +1,15 @@
 import { betterAuth } from "better-auth";
-import { bearer, emailOTP } from "better-auth/plugins";
+import { bearer, emailOTP, oneTimeToken } from "better-auth/plugins";
 import { Pool } from "pg";
-import { authCookieSecure, isLocalAuthHost, resolveAuthBaseURL } from "./authUrl.ts";
+import { authCookieSecure, resolveAuthBaseURL } from "./authUrl.ts";
+import { trustedAuthOrigins } from "./cors.ts";
 import { clientConnection, CONNECT_TIMEOUT_MS, raceTimeout } from "./db.ts";
 import { databaseUrl, type Env } from "./env.ts";
-import { appleIssuedClientId } from "../../supabase/functions/_shared/appleIdentity.ts";
+import {
+  appleClientSecret,
+  appleIssuedClientId,
+  readAppleAuthConfig,
+} from "../../supabase/functions/_shared/appleIdentity.ts";
 import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
 import { parseRawKey } from "./secrets.ts";
 
@@ -47,23 +52,89 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
   }
 }
 
-export function appleSocialProvider(env: Env) {
-  const clientId = appleIssuedClientId(env, "web");
-  const clientSecret = env.APPLE_CLIENT_SECRET?.trim();
-  // Fail closed: missing or invalid TOKEN_ENC_KEY_V1 would persist tokens
-  // we cannot seal. Do not wire a sign-in that cannot persist.
+/** Social sign-in persists provider tokens; never wire one we cannot seal. */
+function tokenSealingReady(env: Env): boolean {
   const v1 = (env.TOKEN_ENC_KEY_V1 ?? "").trim();
-  if (!clientId || !clientSecret || !v1) return undefined;
+  if (!v1) return false;
   try {
     parseRawKey(v1);
+    return true;
   } catch {
-    return undefined;
+    return false;
   }
+}
+
+/**
+ * Apple's client_secret is an ES256 JWT (≤6 months). An explicit
+ * APPLE_CLIENT_SECRET wins; otherwise one is minted from the SIWA key the
+ * Worker already holds for revocation (APPLE_SIWA_TEAM_ID / _KEY_ID /
+ * _PRIVATE_KEY), so there is no half-yearly secret to rotate by hand.
+ * Minting is async and Better Auth's options are not, so callers that may
+ * reach Apple's token endpoint `await primeAppleClientSecret(env)` first
+ * (`/api/auth/*`, the sign-in door). One per isolate, re-minted a day out.
+ */
+const APPLE_SECRET_TTL_S = 7 * 24 * 60 * 60;
+let mintedApple: { key: string; secret: string; expMs: number } | null = null;
+
+function appleMintKey(env: Env): string | null {
+  const cfg = readAppleAuthConfig(env as unknown as Record<string, string | undefined>, "web");
+  return cfg ? `${cfg.teamId}:${cfg.keyId}:${cfg.clientId}` : null;
+}
+
+export async function primeAppleClientSecret(env: Env, nowMs = Date.now()): Promise<void> {
+  if (env.APPLE_CLIENT_SECRET?.trim()) return;
+  const cfg = readAppleAuthConfig(env as unknown as Record<string, string | undefined>, "web");
+  if (!cfg) return;
+  const key = `${cfg.teamId}:${cfg.keyId}:${cfg.clientId}`;
+  if (mintedApple?.key === key && mintedApple.expMs - nowMs > 24 * 60 * 60 * 1000) return;
+  try {
+    const secret = await appleClientSecret(cfg, Math.floor(nowMs / 1000), APPLE_SECRET_TTL_S);
+    mintedApple = { key, secret, expMs: nowMs + APPLE_SECRET_TTL_S * 1000 };
+  } catch {
+    // A malformed key leaves Apple unwired (fail closed), never the request broken.
+  }
+}
+
+function appleClientSecretFor(env: Env): string | undefined {
+  const explicit = env.APPLE_CLIENT_SECRET?.trim();
+  if (explicit) return explicit;
+  const key = appleMintKey(env);
+  return key && mintedApple?.key === key ? mintedApple.secret : undefined;
+}
+
+export function appleSocialProvider(env: Env) {
+  const clientId = appleIssuedClientId(env, "web");
+  const clientSecret = appleClientSecretFor(env);
+  // Fail closed: missing or invalid TOKEN_ENC_KEY_V1 would persist tokens
+  // we cannot seal. Do not wire a sign-in that cannot persist.
+  if (!clientId || !clientSecret || !tokenSealingReady(env)) return undefined;
   const bundle = env.APPLE_BUNDLE_ID?.trim();
+  // Native iOS id tokens are issued to the bundle id, the web redirect to
+  // the Services ID — accept both, never anything else.
+  const audience = [...new Set([clientId, env.APPLE_SIWA_CLIENT_ID?.trim(), bundle].filter(Boolean) as string[])];
   return {
     clientId,
     clientSecret,
+    audience,
     ...(bundle ? { appBundleIdentifier: bundle } : {}),
+  };
+}
+
+/**
+ * Google sign-in (blocker 2). The same OAuth client the calendar connect
+ * uses; its redirect list needs `${BETTER_AUTH_URL}/api/auth/callback/google`.
+ * `prompt: "select_account"` is D-126: without it Google silently re-uses
+ * the last account in the webview's cookie jar, which outlives a Nuvo
+ * sign-out on iOS. Profile scopes only — calendar access is its own grant.
+ */
+export function googleSocialProvider(env: Env) {
+  const clientId = env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret || !tokenSealingReady(env)) return undefined;
+  return {
+    clientId,
+    clientSecret,
+    prompt: "select_account" as const,
   };
 }
 
@@ -73,6 +144,11 @@ export function createAuth(env: Env, database: AuthDatabase) {
   const secrets = parseBetterAuthSecrets(env.BETTER_AUTH_SECRETS);
   const baseURL = resolveAuthBaseURL(env);
   const apple = appleSocialProvider(env);
+  const google = googleSocialProvider(env);
+  const socialProviders = {
+    ...(apple ? { apple } : {}),
+    ...(google ? { google } : {}),
+  };
   return betterAuth({
     secret,
     ...(secrets ? { secrets } : {}),
@@ -82,6 +158,15 @@ export function createAuth(env: Env, database: AuthDatabase) {
     account: {
       // 1.7.13 stores OAuth tokens in plaintext unless this is set.
       encryptOAuthTokens: true,
+      accountLinking: {
+        enabled: true,
+        // Explicit linking only (Settings → Link Google / Apple, which needs
+        // the signed-in session): a person's Google is often not the address
+        // they signed up with, and Supabase's linkIdentity allowed it.
+        // Implicit linking at sign-in still requires a provider-verified,
+        // matching email — that rule is Better Auth's and is unchanged.
+        allowDifferentEmails: true,
+      },
     },
     databaseHooks: {
       account: {
@@ -99,7 +184,7 @@ export function createAuth(env: Env, database: AuthDatabase) {
         },
       },
     },
-    ...(apple ? { socialProviders: { apple } } : {}),
+    ...(apple || google ? { socialProviders } : {}),
     // Password stays for App Review / already-verified accounts. Sign-up
     // must not auto-sign-in: an unverified email+password account would
     // otherwise adopt the planner row for that email (account takeover).
@@ -109,9 +194,9 @@ export function createAuth(env: Env, database: AuthDatabase) {
       minPasswordLength: 8,
       requireEmailVerification: true,
     },
-    trustedOrigins: isLocalAuthHost(baseURL)
-      ? [baseURL, "http://localhost:5717", "http://localhost:8787", "http://[::1]:5717", "http://[::1]:8787"]
-      : [baseURL],
+    // Same list as the CORS echo (cors.ts), so the browser and Better Auth's
+    // own origin check never disagree about a shell.
+    trustedOrigins: trustedAuthOrigins(env),
     advanced: {
       database: {
         generateId: () => crypto.randomUUID(),
@@ -125,6 +210,10 @@ export function createAuth(env: Env, database: AuthDatabase) {
     },
     plugins: [
       bearer({ requireSignature: true }),
+      // The sign-in door's return leg (signinDoor.ts): a single-use, 3-minute
+      // token handed to the shell in a URL fragment, because a cookie set on
+      // the API origin is invisible to tauri://localhost. Stored hashed.
+      oneTimeToken({ expiresIn: 3, storeToken: "hashed" }),
       emailOTP({
         otpLength: 6,
         expiresIn: 300,
@@ -197,6 +286,16 @@ export function sessionTokenFromCookie(cookieHeader: string | null | undefined):
   return null;
 }
 
+/**
+ * Only a body that describes a session carries a session token: sign-in
+ * (`{ token, user }`) and get-session (`{ session, user }`). Any other
+ * `token` — the one-time token from `/one-time-token/generate` — is not a
+ * session token and must reach the client untouched.
+ */
+function isSessionBody(body: Record<string, unknown>): boolean {
+  return Boolean(body.user && typeof body.user === "object");
+}
+
 function rewriteTokenFields(body: Record<string, unknown>, signed: string): void {
   if (typeof body.token === "string" && !body.token.includes(".")) body.token = signed;
   const session = body.session;
@@ -233,6 +332,9 @@ export async function exposeSignedAuthToken(
   try {
     const body = JSON.parse(text) as Record<string, unknown> | null;
     if (!body || typeof body !== "object") {
+      return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
+    }
+    if (!isSessionBody(body)) {
       return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
     }
     const raw = rawTokenFromBody(body);

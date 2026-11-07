@@ -5,7 +5,7 @@
 complete map of what Supabase does today. This file is the map. It does **not**
 authorize a cutover.
 
-Live Nuvo stays on Vercel + Supabase until a signed-off cutover
+Live Nuvo is hosted on Cloudflare (`nuvo-app`, since 2026-11-06) and runs on Supabase until a signed-off cutover
 ([`docs/cloudflare-cutover.md`](../cloudflare-cutover.md)). This PR adds a Worker
 that is **inert** unless `VITE_API_BASE_URL` is set.
 
@@ -193,15 +193,15 @@ Calendar push channels re-subscribe to the Worker at flip
 (`/api/cron/google-resubscribe`); `calendar-dispatch` is the poll fallback
 when watch setup fails (unverified domain).
 
-**Vercel crons:** none (`vercel.json` has no `crons`). The Worker now has
+**Static-hosting crons:** none (`nuvo-app` is assets-only; formerly Vercel, which had none either). The Worker now has
 Cron Triggers + a `scheduled` / `queue` export (Workers Paid). HTTP
 `/api/cron/:job` still requires `CRON_SECRET`. Ported: rollover,
 purge-trash, reminder-deliveries-prune, github-poll, trim-sync-log,
 `google-renew`, `calendar-dispatch`, `google-resubscribe` (no-op until
 `CUTOVER_FLIPPED` is `1`/`true`/`yes`/`on`; floor keeps recent
 Neon-origin ids out of trim for ~1e6 further inserts). Unported jobs
-stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` (Google
-consume here; other providers ack for PR C). See
+stay 501. Calendar-dispatch fans out via `CALENDAR_SYNC_QUEUE` (the consumer
+polls Google, M365, iCloud and ICS since #106). See
 [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Crons and Queues.
 
 ---

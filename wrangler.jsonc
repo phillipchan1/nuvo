@@ -52,7 +52,9 @@
     ]
   },
   // Calendar-dispatch fan-out. Included Queue ops on Workers Paid; see
-  // worker/src/cronJobs.ts for the per-account projection.
+  // worker/src/cronJobs.ts for the per-account projection. The queue must
+  // exist before `wrangler deploy` (it does not create it):
+  //   npx wrangler queues create nuvo-calendar-sync
   "queues": {
     "producers": [
       { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
@@ -82,14 +84,18 @@
         "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
         "ENVIRONMENT": "preview"
       },
-      // Same Queue as top-level — preview does not inherit producers/consumers.
+      // Its OWN queue. A queue has exactly one consumer Worker, so sharing
+      // `nuvo-calendar-sync` would make the preview and prod deploys steal
+      // it from each other (blocker 11). Preview does not inherit
+      // producers/consumers. Create once:
+      //   npx wrangler queues create nuvo-calendar-sync-preview
       "queues": {
         "producers": [
-          { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync" }
+          { "binding": "CALENDAR_SYNC_QUEUE", "queue": "nuvo-calendar-sync-preview" }
         ],
         "consumers": [
           {
-            "queue": "nuvo-calendar-sync",
+            "queue": "nuvo-calendar-sync-preview",
             "max_batch_size": 10,
             "max_retries": 3
           }

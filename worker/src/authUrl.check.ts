@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import app from "./index.ts";
 import { otpConsoleAllowed } from "./auth.ts";
-import { authConfigErrorResponse, beginAuthCors } from "./cors.ts";
+import { authConfigErrorResponse, beginAuthCors, originMatches, trustedAuthOrigins } from "./cors.ts";
+import { createAuth } from "./auth.ts";
 import { bearerToken, cronAuthorized, timingSafeEqualString } from "./cron.ts";
 import {
   authCookieSecure,
@@ -191,6 +192,63 @@ if (localOk.ok) {
     localOk.cors["Access-Control-Allow-Origin"] === "http://localhost:5717",
     "local CORS echoes vite origin",
   );
+}
+
+// Blocker 9b: production must echo every real shell, not only BETTER_AUTH_URL.
+const liveEnv = { BETTER_AUTH_URL: "https://api.nuvo.day", BETTER_AUTH_SECRET: "x".repeat(32) };
+for (const origin of [
+  "https://app.nuvo.day",
+  "tauri://localhost",
+  "https://nuvo-app-preview.nq-morning-briefing.workers.dev",
+  "https://nuvo-preview.nq-morning-briefing.workers.dev",
+  "https://3f9a1c2e-nuvo-app.nq-morning-briefing.workers.dev",
+  "https://api.nuvo.day",
+]) {
+  const got = beginAuthCors(origin, liveEnv);
+  ok(got.ok && got.cors["Access-Control-Allow-Origin"] === origin, `prod auth CORS echoes ${origin}`);
+  ok(got.ok && got.cors["Access-Control-Allow-Credentials"] === "true", `prod auth CORS credentials for ${origin}`);
+}
+for (const origin of [
+  "https://evil.example",
+  "https://app.nuvo.day.evil.example",
+  "https://evil.example/https://app.nuvo.day",
+  "http://app.nuvo.day",
+  "tauri://evil",
+  "https://a.b-nuvo-app.nq-morning-briefing.workers.dev",
+  "https://-nuvo-app.nq-morning-briefing.workers.dev.evil.example",
+  "https://other.workers.dev",
+  "http://localhost:5717",
+]) {
+  const got = beginAuthCors(origin, liveEnv);
+  ok(got.ok && got.cors["Access-Control-Allow-Origin"] === "https://api.nuvo.day", `prod auth CORS refuses ${origin}`);
+}
+ok(!trustedAuthOrigins(liveEnv).some((o) => o.startsWith("http://localhost")), "prod trusts no loopback");
+ok(
+  trustedAuthOrigins({ ...liveEnv, APP_URL: "https://staging-app.nuvo.day/some/path" }).includes("https://staging-app.nuvo.day"),
+  "APP_URL origin is trusted",
+);
+ok(originMatches("https://x-nuvo-app.h.dev", "https://*-nuvo-app.h.dev"), "label wildcard matches");
+ok(!originMatches("https://x.y-nuvo-app.h.dev", "https://*-nuvo-app.h.dev"), "label wildcard never spans a dot");
+ok(originMatches("http://localhost:5718", "http://localhost:*"), "loopback port wildcard matches a port");
+for (const bad of ["http://localhost:5718.evil.example", "http://localhost:", "http://localhost:80/x", "http://localhost.evil.example:80"]) {
+  ok(!originMatches(bad, "http://localhost:*"), `loopback port wildcard refuses ${bad}`);
+}
+{
+  const local = beginAuthCors("http://localhost:5718", { ENVIRONMENT: "local" });
+  ok(local.ok && local.cors["Access-Control-Allow-Origin"] === "http://localhost:5718", "local CORS echoes a drifted vite port");
+}
+// One list for both: Better Auth's own origin check reads the same strings.
+{
+  const ba = createAuth(liveEnv as never, { db: {}, type: "postgres" } as never);
+  const ctx = await ba.$context;
+  ok(Array.isArray(ctx.trustedOrigins) && ctx.trustedOrigins.length >= 5, "Better Auth exposes its trustedOrigins");
+  for (const o of trustedAuthOrigins(liveEnv)) {
+    ok(ctx.trustedOrigins.includes(o), `Better Auth trustedOrigins includes ${o}`);
+  }
+}
+for (const origin of ["https://app.nuvo.day", "tauri://localhost"]) {
+  const res = await app.request("http://localhost/api/auth/ok", { method: "OPTIONS", headers: { Origin: origin } }, liveEnv);
+  ok(res.headers.get("access-control-allow-origin") === origin, `OPTIONS preflight echoes ${origin}`);
 }
 
 const health = await app.request("http://localhost/api/health");

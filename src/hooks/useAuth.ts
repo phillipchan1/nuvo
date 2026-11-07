@@ -84,7 +84,7 @@ export function useAuth() {
           if (cancelled) return;
           const fromBody = data?.session?.token ?? data?.token;
           // Never send the raw DB session.token — requireSignature rejects it
-          // and a new tab with empty sessionStorage would 401 everywhere.
+          // and a fresh launch with no stored bearer would 401 everywhere.
           const signed = typeof fromBody === "string" && fromBody.includes(".") ? fromBody : null;
           const token = signedBearerToken() ?? signed;
           if (token) persistSignedBearer(token);
@@ -101,6 +101,11 @@ export function useAuth() {
           setWorkerSession(next);
           setSession((prev) => (sameSession(prev, next) ? prev : next));
         };
+        // Back from the sign-in door (Google / Apple): trade the one-time
+        // token for the signed bearer before the first session read.
+        const { consumeAuthReturn } = await import("../lib/authReturn");
+        await consumeAuthReturn((token) => client.oneTimeToken.verify({ token }));
+        if (cancelled) return;
         const { data } = await client.getSession();
         applyBa(data);
         if (import.meta.env.DEV && !data?.session) {

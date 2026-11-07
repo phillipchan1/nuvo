@@ -1,10 +1,12 @@
 # Nuvo Cloudflare cutover + rollback
 
-**Status:** draft rehearsal · 2026-10-26  
+**Status:** draft rehearsal · 2026-10-26 · readiness re-read 2026-11-06 (**not yet**, below)  
 **Do not deploy, change DNS, or touch prod data** until Phil signs off.
 
-Live Nuvo stays on Vercel + Supabase. This branch adds a Worker that is inert
-unless `VITE_API_BASE_URL` is set on a build.
+Live Nuvo is hosted on Cloudflare since 2026-11-06 (`nuvo-app` / `nuvo-site`,
+[`cloudflare-hosting.md`](./cloudflare-hosting.md)), but every shell still talks to Supabase
+for auth, data, realtime, edge functions and `pg_cron`. The `nuvo` API Worker
+(api.nuvo.day) is inert unless a build sets `VITE_API_BASE_URL`.
 
 Sister inventory: [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md).
 Access matrix (Neon has no RLS): [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md).
@@ -13,6 +15,275 @@ Pre-flip billing read: [`cloudflare-migration/billing-live-check.md`](./cloudfla
 Source auth readers (already on prod): [`cloudflare-migration/migration_tmp.sql`](./cloudflare-migration/migration_tmp.sql).
 Shape follows `phillipchan1/zeroed` PRs #11–#13.
 Client data calls → Worker routes: [`cloudflare-migration/client-data-inventory.md`](./cloudflare-migration/client-data-inventory.md).
+
+---
+
+## Readiness — 2026-11-06: **not yet**
+
+Read against `master` at `99474c1`, plus read-only checks of the live Cloudflare account
+(`wrangler deployments list` / `versions list` / `secret list` / `hyperdrive get` /
+`queues info`, and unauthenticated `curl`s of api.nuvo.day and the preview). Nothing was
+deployed, set or written. **Verdict: not yet.** The client seam works (driven 2026-10-29),
+and the data copy is rehearsed (a 2026-10-30 dry run passed, recorded in the still-open
+PR #128). But the Worker that would serve the flip isn't deployed, can't be deployed from
+master as configured, and would refuse the real app's origins if it were. Billing acts
+and two of three sign-in doors also break at the flip. All of these are ordinary work,
+and none of them is a design unknown, except realtime.
+
+### Code update — 2026-11-06, branch `claude/affectionate-hellman-1dcca2`
+
+Every non-billing code blocker below is **closed in code** on this branch, one commit per
+item, nothing pushed or deployed. What's left is live work, in order, in
+[§ Phil's go list](#phils-go-list) at the end of this doc. Billing (12, plus the
+`/api/entitlement` CORS in 9) belongs to the parallel billing session and isn't touched here.
+
+| Item | Commit | Evidence |
+|---|---|---|
+| 9b Auth CORS | `6ce0c84` | `authUrl.check.ts`: every shell is echoed, look-alikes are refused, and the CORS list and Better Auth's list are the same |
+| 11 Queues | `7061d23` | `tests/wrangler-queues.test.ts`. Both `wrangler deploy --dry-run`s bind their own queue |
+| 8 Sign-up FK | `c66a070` | **Driven:** the workflow's own `dump` → `restore` from local Supabase under `wrangler dev`, before (409, FK) and after (200, writes) |
+| 10 Bearer | `6c18dc3` | **Driven:** OTP sign-in in the dev app, then a fresh tab (empty `sessionStorage`) stays signed in |
+| 2, 2b Google + Apple | `1029c85` | `tests/signin-door.test.ts` (14 cases). **Driven:** the dev app goes through the door and back |
+| 13 Armed build | `c53e687` | `tests/armed-build.test.ts`. Allowlist re-pinned |
+| 7 `field_ts` | `f1b791a` | **Driven:** a fresh copy, then `POST /api/rollover` stamps the fields it moved |
+| 4 Realtime | — | Not now (Phil, 2026-11-06). Ships with focus convergence; a post-cutover follow-up |
+
+**Gate state on this branch:** `npm run typecheck`, `typecheck:worker` and every
+`check:worker` script are clean, apart from two failures that **predate this branch**
+(reproduced on `59a41a7` with these changes stashed):
+- `accessHttp.check.ts` "B entitlement: live trial is entitled": the fixture's trial date
+  has expired. This is the billing session's area.
+- `guard-public-ci.test.ts` "checks.yml renamed to checks.YML": it assumes a case-sensitive
+  filesystem. macOS isn't one, and Linux CI is.
+
+`check:worker` chains with `&&`, so locally it stops at the first of those, and the scripts
+after it only ran individually.
+
+Local-drive caveat: `miniflare.seq.check.ts` re-applies `neon.sql` to the Hyperdrive local
+string (`127.0.0.1:5432/nuvo`). If a scratch restore is sitting in that database, the check
+overwrites it, so drive copies in a differently named database.
+
+### What is actually live
+
+| Thing | What it is | Evidence |
+|---|---|---|
+| Worker `nuvo` (api.nuvo.day) | **A stub, not master.** Its last code upload was **2026-10-27 20:48Z**. Ten secret-only versions followed, the last on 2026-10-29. Every `/api/*` path answers `{"backend":"supabase"}`: `/api/health` returns the maintenance body, `/api/rest/v1/*` returns 404, and `/api/auth/*` returns 404 with `ACAO: *`. That string isn't in any branch of this repo, so this checkout can't say which source it came from | `wrangler deployments list --name nuvo`; `curl` |
+| Worker `nuvo-preview` | The 2026-10-26 build. `/api/maintenance` and `/api/rest/v1/*` both return the SPA's HTML | same |
+| `nuvo-app` / `nuvo-site` | Static hosting, deployed from master today | same |
+| Hyperdrive `nuvo-neon` | `caching.disabled: false`, origin `neondb`, 60 origin connections | `wrangler hyperdrive get` |
+| Queue `nuvo-calendar-sync` | **Does not exist** | `wrangler queues info` |
+| Repo variables | **None set.** `VITE_API_BASE_URL` is empty, so every build targets Supabase | `gh variable list` |
+
+### The 2026-10-29 list, re-checked on master
+
+| # | Item | Now | Where |
+|---|---|---|---|
+| 1 | SPA never calls the Worker | **Closed in code** (#127, D-174). The residual is still open: the preview is the 10-26 build, and prod `nuvo` is a stub (above) | `src/lib/workerRoute.ts`, `workerSession.ts` |
+| 2 | Google sign-in not ported | **Closed in code (2026-11-06); console step on the go list.** Better Auth now wires Google (`googleSocialProvider`, `auth.ts`) with `prompt: "select_account"` (D-126), on the same `GOOGLE_CLIENT_ID` / `_SECRET` the calendar connect uses. Every shell signs in through **the sign-in door** (`worker/src/signinDoor.ts`): a top-level `GET /api/signin/google?return=<shell origin>` → Google → Better Auth's callback → `/api/signin/return` → `<shell>/#nuvo_ott=<one-time token>`, which the SPA redeems for the signed bearer (`src/lib/authReturn.ts`, `useAuth`). **Why a door:** Better Auth refuses a callback without its signed state cookie, and a cookie set by a cross-origin fetch is third-party, which WKWebView drops, so #120's client-side `signIn.social` could never finish on Mac or iOS. The door makes every cookie first-party, and the token rides in the fragment, single-use, hashed at rest, 3 minutes. `return` must be a trusted shell origin (no open redirect). Linking goes through the same door with a one-time token, never a bearer in a URL. **Existing users keep their account:** the copy's `account` rows carry the Google `sub` and the same user id; an email-only account links by provider-verified email; an unverified email never adopts one. `tests/signin-door.test.ts` drives all of it (real Hono app + Better Auth over PGlite, Google's token endpoint faked), including both shells' return legs. **Driven** in the dev app against `wrangler dev`: Continue with Google → door → back on the login with the door's message (Google unconfigured locally), fragment gone. Also fixed on the way: `exposeSignedAuthToken` rewrote *any* JSON `token` into the session bearer, which would have handed the shell its bearer instead of the one-time token; it now rewrites only session bodies. **Not driven:** a real Google consent (needs the redirect URI, go list) | `auth.ts`, `signinDoor.ts`, `googleAuth.ts`, `authReturn.ts` |
+| 2b | *(new)* Apple sign-in is off too | **Closed in code (2026-11-06); secrets + console on the go list.** The provider registers once `APPLE_CLIENT_ID` (Services ID) and a client secret exist. The secret no longer has to be a hand-rotated ≤6-month JWT: without `APPLE_CLIENT_SECRET`, the Worker mints one from the SIWA key it already needs for revocation (`APPLE_SIWA_TEAM_ID` / `_KEY_ID` / `_PRIVATE_KEY`; `primeAppleClientSecret`, cached a week per isolate). The id-token audience accepts the Services ID and the bundle id, so native iOS (`ASAuthorizationController` → `signIn.social({ idToken })`, raw nonce; Better Auth compares `exact-or-sha256`) and the web redirect both verify. The web/desktop redirect and Apple linking go through the same door as Google. Tests: minted-secret shape, explicit-secret precedence, the door's `form_post` authorize URL, and the unconfigured message | `auth.ts`, `appleAuth.ts` |
+| 3 | Desktop build never gets the flag | **Closed** (#127): `release.yml:173`, `ios-release.yml:204`, and now `cloudflare-hosting.yml:56` read `vars.VITE_API_BASE_URL`. #118 (a hard-coded literal plus #117's runtime flip) is still open, and #117 is closed, so #118 should be closed as superseded | workflows |
+| 4 | Realtime has no Worker path | **Not now (Phil, 2026-11-06). Post-cutover follow-up.** The flip ships with focus convergence: `useRealtime.ts:51` skips when the flag is on, and other devices catch up on window focus (15s stale). The Durable Object design (§ Not ready to flip, item 4) is the follow-up. It is not a flip blocker | `useRealtime.ts` |
+| 5 | Hyperdrive caches queries | **Open.** Verified live: caching is enabled. `rest.ts` reads are safe because they call `now()`. Agent, day, mirrors and `/api/data` reads are not | `wrangler hyperdrive get` |
+| 6 | Worker secrets missing | **Open.** Missing: `GOOGLE_CLIENT_SECRET` (rotates in the freeze, by design), the whole Apple set (`APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET`, `APPLE_SIWA_*`), and `MS_*`. Present: 15 names, matching § Key rotation | `wrangler secret list` |
+| 7 | Non-SPA writers don't stamp `field_ts` / `updated_at` | **`field_ts` closed in code, driven (2026-11-06).** Supabase already solved this with one trigger, `stamp_unstamped_field_ts` (migration 65): a column whose value changed but whose stamp didn't gets `now()`. The copy was dropping it (`pg_restore` skips every trigger and function). It's back as **one definition**, `worker/schema/field-ts.sql`, with the same name and body (a test pins it to migration 65 verbatim). The copy installs it right after the restore and dies if any `field_ts` table is left without it; `apply-neon-schema.mjs` applies it too, and it skips tables with no `field_ts`. **Deviation from the brief, on purpose:** the brief asked for a `stampFieldTs` helper called from each writer. There are ~40 hand-written writes to these tables (`store.ts`, `cronJobs.ts`, capture, inbound, agent, mirrors), so a helper would be one rule copied 40 times, and the next writer would forget it. The trigger covers them all, including future ones, and leaves client stamps alone (`rest.ts`, `apply_patch`). **Driven:** a fresh copy (14 triggers installed), a fresh sign-up under `wrangler dev`, then `POST /api/rollover`. That moved `do_date` and stamped `do_date` and `roll_count` with now, and left the client-stamped `title` untouched. `tests/field-ts-stamp.test.ts` runs the real `store.ts` writers and the rollover cron through it. `updated_at` is still hand-written per writer (unchanged) | `field-ts.sql`, `cutover-migrate.yml` |
+| 8 | Post-flip sign-up hits `user_settings_user_id_fkey` | **Closed in code, driven (2026-11-06).** The copy now repoints every `public` FK on `auth.users(id)` at `public.users(id)` right after `PUBLIC_USERS_SQL` (`REPOINT_OWNER_FKS_SQL` in `scripts/cutover_copy.py`), keeping each constraint's name and `ON DELETE` / deferrable clauses, and dies if one is left. **Why the copy, not a `user.create` hook:** `public.users` is already the planner owner on a fresh Neon (`neon.sql`) and is what `bootstrapUser` writes, so the copied database ends with the same shape instead of keeping a fake Supabase `auth.users` alive forever; and Better Auth's `"user".id` is `TEXT` while planner `user_id` is `UUID`, so pointing FKs at `"user"` isn't possible without retyping every table. **Driven:** the workflow's own `cutover.py dump` → `restore` (extracted verbatim) from the local Supabase stack into a scratch Postgres 17, once from `HEAD~` and once with the fix, each under `wrangler dev`: the old restore 409s a fresh OTP sign-up's first read and first write with `23503 … user_settings_user_id_fkey`; the new one returns 200 and writes `user_settings`, 4 default domains and a task. A copied account (`dummy@nuvo.test`) still resolves to its original id. `tests/cutover-owner-fk.test.ts` (PGlite) pins the failure, the fix, idempotence and the refusal of a non-`id` FK. **Note for A8:** the trial row on sign-up is still the billing session's `user.create` hook | `cutover_copy.py`, `cutover-migrate.yml` |
+| 9 | `/api/entitlement` CORS | **Open.** It answers `OPEN_CORS` (`ACAO: *`) to a `credentials: "include"` fetch (`entitlementRead.ts:144`). The fix (`reflectAllowOrigin`) exists only in #120 | `index.ts:255–273` |
+| 9b | *(new, bigger)* **Auth CORS refuses every real origin** | **Closed in code (2026-11-06).** `trustedAuthOrigins` (`cors.ts`) now lists the auth origin, `APP_URL`, `https://app.nuvo.day`, `tauri://localhost` (Mac **and** iOS: Tauri v2 uses that scheme on both WKWebView shells) and Phil's workers.dev previews (`nuvo-app`, `nuvo-app-preview`, `nuvo-preview`, and `*-nuvo-app` version URLs; a `*` never spans a dot). **One list feeds both** the CORS echo and Better Auth's own `trustedOrigins`, so they cannot disagree. Loopback stays local-only. `authUrl.check.ts` asserts the echo for each shell, the refusal of look-alikes (`app.nuvo.day.evil.example`, `http://app.nuvo.day`, `tauri://evil`, a dotted wildcard), and that Better Auth's context carries the same strings. Not yet driven from a built Mac (B3) | `cors.ts`, `auth.ts` |
+| 10 | Bearer in `sessionStorage` | **Closed in code (2026-11-06).** `authClient.ts` keeps the signed bearer in `localStorage` (where GoTrue's session already lives, so no new exposure), adopts a bearer an older build left in `sessionStorage` once, clears both on sign-out, and re-reads the session when another tab signs in or out (`storage` event). `tests/auth-bearer-storage.test.ts` simulates the relaunch (sessionStorage wiped, module reloaded) and the legacy adoption. **Still to drive on a built Mac and TestFlight (B3)** — a jsdom relaunch is not WKWebView | `authClient.ts` |
+| 11 | *(new)* **Master can't deploy to `nuvo`** | **Closed in code (2026-11-06); the queues are a live step.** Preview now produces to and consumes its own `nuvo-calendar-sync-preview`; prod keeps `nuvo-calendar-sync`. `tests/wrangler-queues.test.ts` fails if any two environments consume the same queue or an environment consumes a queue it doesn't produce to. Both `wrangler deploy --dry-run` and `--env preview --dry-run` bind the right queue. **Still needed, Phil's go list G1:** `npx wrangler queues create nuvo-calendar-sync` and `npx wrangler queues create nuvo-calendar-sync-preview` — `wrangler deploy` does not create them | `wrangler.jsonc` |
+| 12 | *(new)* **Billing acts break at the flip** | **Open.** `workerRoute.ts` leaves `stripe-checkout`, `stripe-portal`, `apple-iap`, `referral-code` and `iap-catalog` on Supabase, which now receives a Better Auth bearer that GoTrue rejects. So checkout, portal, StoreKit confirm and referral would 401 (#120's own description). A post-flip sign-up also never fires Supabase's `handle_new_user`, so it gets no `subscriptions` row and, inferred, no trial. #120 fixes both (`billingProxy.ts`, `ensureDefaultSubscription`) but is **CONFLICTING**. It's 80+ files and still carries #117's runtime-flip and `workerData.ts`, which D-174 superseded | `workerRoute.ts:19–27`, PR #120 |
+| 13 | *(new)* **The armed build can't be shipped** | **Closed in code (2026-11-06); setting the variables is the go list.** `cloudflare-hosting.yml`, `release.yml` and `ios-release.yml` now pass `VITE_MAINTENANCE_URL` and `VITE_CUTOVER_ARMED` from repo **variables** beside `VITE_API_BASE_URL`; unset is today's build. `tests/armed-build.test.ts` fails if any build workflow drops one or reads it from `secrets.*`. Public-CI allowlist re-pinned (`regen-public-ci-allowlist.mjs`); `guard-public-ci.test.ts` is green except its macOS-only case-folding case (pre-existing, below). **Order matters:** an armed build fails *closed* when the maintenance URL is unreachable, so the real Worker must be deployed (G8) before the variables are set (G10), and `VITE_CUTOVER_ARMED` is cleared after the 24h watch (G12) | workflows |
+| 14 | *(new)* **External callers still dial Supabase** | **Open, runbook only.** Resend's inbound webhook, MCP connectors and capture tokens people have already pasted, and Google push channels all point at `ebibzojtkzkphykznomv.supabase.co/functions/v1/*`. Google is handled by `google-resubscribe`. The others need a retarget and a re-copy, and Supabase's non-billing functions need to **stay** 503 (`WRITE_FREEZE`) after the switch, so a stale caller fails loudly instead of writing to the abandoned database | `route-inventory.md` §2 |
+
+### Blockers in order, with an estimate
+
+The estimates are engineering-time guesses, not measurements. Every "deploy" or "set" step
+needs Phil's yes.
+
+| Order | Blocker | Work | Est. |
+|---|---|---|---|
+| 1 | Auth CORS + entitlement CORS (9, 9b) | Allow `https://app.nuvo.day`, `tauri://localhost` and the preview hosts in `trustedAuthOrigins`, reflect them on `/api/entitlement`, and drive a flag-on build from app.nuvo.day-preview **and** a built Mac | 0.5–1 day |
+| 2 | Deployable Worker (11, 1-residual) | Create `nuvo-calendar-sync`, give preview its own queue, then deploy preview and prod from master. Both stay inert (`CUTOVER_FLIPPED` unset, no client pointed at them) | 0.5 day |
+| 3 | Billing at the flip (12) | Re-cut #120 down to the billing proxy, the subscription seed and `reflectAllowOrigin`, on top of D-174. Then run [`billing-live-check.md`](./cloudflare-migration/billing-live-check.md) | 1–2 days |
+| 4 | Sign-up FK (8) | Repoint the planner FKs at Better Auth's `"user"(id)` in the copy (one migrate step), or insert the stub row in a `user.create` hook. Then drive a fresh OTP sign-up | 0.5 day |
+| 5 | Session survives relaunch (10) | Move the signed bearer to `localStorage`, which is where GoTrue's session lives today, so no new exposure. Prove it on a built Mac and a TestFlight build | 0.5 day |
+| 6 | Sign-in doors (2, 2b) | **Phil decides** (below). OTP-only means hiding the Google/Apple buttons when the flag is on: 0.5 day. Porting Google means a Worker provider, a GCP redirect URI for `api.nuvo.day/api/auth/callback/google`, and the Tauri return leg: 1–2 days. Apple needs a SIWA key, the JWT secret (≤6-month expiry) and the secrets: 0.5–1 day | 0.5–3 days |
+| 7 | Armed build (13) | Pass `VITE_MAINTENANCE_URL` / `VITE_CUTOVER_ARMED` through `cloudflare-hosting.yml` + `release.yml` (+ iOS), and re-pin the guard allowlist | 0.5 day |
+| 8 | Hyperdrive cache (5) | `wrangler hyperdrive update 2c52343139524c4e9ba39f8c1c9b0795 --caching-disabled true` | 5 min |
+| 9 | `field_ts` on server writes (7) | One `stampFieldTs` helper, called from `store.ts`, `cronJobs.ts`, capture, inbound and the agent. **Or** accept it (decision below) | 1 day |
+| 10 | Realtime (4) | **Phil decides.** Ship with focus convergence, or build the Durable Object design in item 4 below | 0 or 2–3 days |
+| 11 | External callers (14) | A flip-night step, not code: retarget Resend's inbound webhook to `https://api.nuvo.day/functions/v1/inbound-email`, and tell MCP / capture users to re-copy their URLs (Settings → Apps already shows the Worker URL when the flag is on) | 1 hr |
+| — | Housekeeping | Merge #128 (the 10-30 dry run). Close #118 as superseded by D-174. Delete the retired box secret files | — |
+
+**Total before a flip:** about 5–8 days of work, plus one rehearsal on preview with a real
+Mac and phone. That figure assumes OTP-only sign-in, no realtime, and the `field_ts`
+fix. Porting Google, Apple and realtime adds up to about 6 more. Getting fully off Supabase
+adds billing (A8–A9 below, about 4.5–6.5 days). The full code list is § Port plan to zero Supabase.
+
+### What still needs Supabase after the flip
+
+Phil's goal is to be **completely off Supabase and Vercel**, to save money. The flip
+alone doesn't do that. This is every Supabase dependency that's left after step 9,
+read from the repo and from `supabase functions list --project-ref ebibzojtkzkphykznomv`
+(36 functions deployed).
+
+| Dependency | What it is today | Work to port it | Est. |
+|---|---|---|---|
+| **Stripe:** `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `referral-code` | Edge functions. Stripe's **live** webhook endpoint is `ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook` ([`billing-setup.md`](./billing-setup.md) §3) | Port all four to the Worker, writing Neon. Move `STRIPE_*` secrets to `nuvo`. Add a **new** live webhook endpoint on api.nuvo.day, then retire the old one only after the new one has seen an event, because Stripe allows several endpoints | 2–3 days |
+| **App Store:** `apple-iap`, `apple-webhook`, `iap-catalog` | Edge functions. App Store Server Notifications V2 points at a `supabase.co` URL (`billing-setup.md` §11) | Port them to the Worker. Change the production **and** sandbox notification URLs in App Store Connect, and move the Apple IAP secrets | 2–3 days |
+| **Billing tables:** `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` / `billing_source()` | Excluded from the copy and the freeze on purpose. The Worker reads `subscriptions` over HTTPS with the service-role key (`entitlement.ts`) | Add the four tables to `neon.sql` and do a one-off frozen copy at the billing switch. Make `entitled()` a Worker function, and point `/api/entitlement` at Neon. Then delete `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `nuvo` | 1 day |
+| **Orphan functions** `apple-notifications`, `apple-verify` | Deployed on Supabase, **not in this repo**. Migration 70 names `apple-notifications` as Apple's writer, so **which URL App Store Connect actually calls is unverified** | Check App Store Connect's URL before porting. Delete whichever one is unused | 1 hr |
+| **Stale-caller freeze** (every non-billing function, `WRITE_FREEZE`d) | Kept after the flip on purpose, so old builds and pasted URLs get a 503 | Delete them after the 24h window, and once the last pre-flip Mac/iOS build is gone | 1 hr |
+| **Webhooks / redirect URIs on `supabase.co`** | Resend inbound (step 7). Google push channels (`google-resubscribe`, step 8). **OAuth redirect URIs:** the Google Cloud client and the Azure (M365) app list `…supabase.co/functions/v1/google-oauth` / `m365-oauth` and Supabase Auth's callback. What's registered there is **unverified**: the consoles weren't opened | Add `https://api.nuvo.day/functions/v1/google-oauth` and `…/m365-oauth` **before** the flip, or calendar connects fail. Drop the Supabase ones afterwards | 1 hr |
+| **Supabase Auth providers** (Google, Apple, email) | GoTrue holds the providers and the login. Unused once the flag is on | Nothing to port beyond blockers 4–6. Leave them in place until the rollback window closes | — |
+| `pg_cron` | All nine jobs have Worker twins. They're unscheduled at step 8 | Done at the flip | — |
+| Storage / Vault / Realtime | No buckets (`inventory.md` §1). Vault tokens are re-sealed into Neon by the copy. Realtime is replaced by focus refetch, or by the Durable Object | Done at the flip, or by blocker 10 | — |
+| **Calendar sync** (Google, M365, iCloud, ICS) | **Already ported** (#106 `98913a8`, #107; `worker/src/calendar/http.ts`, `google/routes.ts`; the queue consumer polls all four). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` (decision 5) | Secrets plus the redirect URI above | 1 hr |
+
+**Off Supabase entirely = the flip (about 5–8 days) + billing (about 5–7 days) + an
+hour of console work**, plus one frozen billing copy. Billing can go on a later night,
+but it is the only thing left that keeps the Supabase project alive.
+
+#### Monthly cost, before and after
+
+Verified means read today from a CLI. Everything else is marked.
+
+| Line | Before | After everything moves | Status |
+|---|---|---|---|
+| Supabase | Nuvo is one of **8 projects** in org `pcmiozuynhgglvgrgwik`. 7 are `ACTIVE_HEALTHY`: zeroed, LeadWell, drove-dev, dayspring, nuvo, drove, mathy (Melu is inactive). Free allows 2 active projects, so the org is on a paid plan (**inferred**). The plan and Nuvo's compute add-on are **unverified**: reading them needed the CLI's raw token, which this session wasn't allowed to use | Deleting the `nuvo` project removes **only its own compute line**. On Pro, list price is roughly $10/mo for a Micro instance (**unverified**; check the org's billing page). **The org fee stays as long as the other six active projects do**, so moving Nuvo alone doesn't end the Supabase bill | project list **verified**, prices **unverified** |
+| Neon | Project `nuvo` (`frosty-snow-66931204`) is in org `Phil` on plan **`free`** (`free_v3`), with a branch limit of 1 GB logical size | Stays $0 if prod fits Free. The 10-28 dump was 2.6 MB. Free autosuspends, so the first request after idle pays a cold start (§ Free-tier risk) | **verified** (plan) |
+| Cloudflare Workers | `nuvo-app` / `nuvo-site` / `nuvo` / `nuvo-preview` exist. Whether the account is already on Workers Paid is **unverified**: no queues exist, and no plan call was made | **Workers Paid, $5/mo, is required.** `wrangler.jsonc` declares 8 cron triggers, a Queue and the agent's CPU work, which exceeds Free's limits on cron count (5) and per-request CPU (10 ms) per Cloudflare's published limits. Hyperdrive is included | requirement from code, **account plan unverified** |
+| Vercel | Projects `nuvo` / `nuvo-site` still build from master as the hosting rollback ([`cloudflare-hosting.md`](./cloudflare-hosting.md)). The plan is **unverified** (no `vercel` CLI here) | $0 once both projects are deleted, after the hosting rollback window | **unverified** |
+| Unchanged | Resend, OpenAI, Apple Developer, Stripe fees | Same | — |
+
+Net, for Nuvo alone: **about −$10/mo of Supabase compute (unverified) +$5/mo Workers Paid
+(unless already paid) − whatever Vercel costs today**. The large saving, the Supabase org
+fee, only arrives when the other six active Supabase projects leave too. That's outside
+this repo and worth deciding before treating "off Supabase" as the reason for this cutover.
+
+#### Every Supabase function against its Worker twin
+
+For each of the 34 functions under `supabase/functions/`, `worker/src` was searched for a
+route registered under the same name (`index.ts`, `google/routes.ts`, `calendar/http.ts`).
+`workerRoute.ts` maps `/functions/v1/<name>` to the Worker for every name except the
+billing set.
+
+| Has a Worker twin (27) | No twin (7, all billing) |
+|---|---|
+| `agent`, `mcp`, `capture`, `day`, `inbound-email`, `route-events`, `rollover`, `slot-mirror`, `task-mirror`, `push-dispatch`, `github-activity`, `apple-identity`, `delete-account`, `calendar-refresh`, `google-oauth` / `-sync` / `-events` / `-contacts` / `-webhook`, `m365-oauth` / `-sync`, `icloud-connect` / `-sync` / `-events` / `-contacts`, `ics-subscribe` / `-sync` | `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `apple-iap`, `apple-webhook`, `iap-catalog`, `referral-code` |
+
+Two loose ends:
+- `apple-notifications` and `apple-verify` are deployed on Supabase but aren't in the repo.
+- `blocked.ts` still lists `apple-identity` / `delete-account` as blocked, but `index.ts`
+  registers both directly (#104). The set is stale, and nothing is broken by it.
+
+**Non-Google calendar is fully ported** (#106, `98913a8`). `calendar/http.ts` serves
+`m365-oauth`, `icloud-connect`, `ics-subscribe` and `icloud-events`, including iCloud
+write-back. The queue consumer (`cronJobs.ts:299–350`) polls **all four** providers,
+plus iCloud contacts. This used to say "others ack", and that line is fixed below.
+M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` and the Azure redirect URI.
+
+**Client auth calls with no Better Auth path** (small): ~~`linkIdentity` for Google and Apple
+in Settings~~ (now through the sign-in door, 2026-11-06), and `onAuthStateChange` listeners in `useSubscription` / `SettingsModal`.
+`workerSession.ts` covers only `getSession` / `getUser`. Sign-in, OTP, password and
+sign-out are already flag-gated (`authActions.ts`, `appleAuth.ts`).
+
+### Port plan to zero Supabase
+
+**Billing is now in scope** (Phil, 2026-11-06: "I want to port everything over"). That
+replaces #120's approach (the Worker proxying to Supabase billing functions): close #120
+once the port below lands. A separate session may own the billing port, and this report
+only describes it.
+
+**A. Code only. Safe to start now.** The Worker stays inert, because `CUTOVER_FLIPPED` and
+`VITE_API_BASE_URL` stay unset.
+
+| # | Work | Est. |
+|---|---|---|
+| A1 | Auth and entitlement CORS for `app.nuvo.day`, `tauri://localhost` and the preview hosts (blockers 9, 9b) | 0.5–1 d |
+| A2 | `wrangler.jsonc`: give preview its own queue name (blocker 11; creating the queue is B1) | 1 hr |
+| A3 | Sign-up FK: repoint the planner FKs at Better Auth `"user"(id)` in the copy (blocker 8) | 0.5 d |
+| A4 | Signed bearer moved to `localStorage` (blocker 10) | 0.5 d |
+| A5 | Sign-in doors: hide Google/Apple when the flag is on, or port them. Also give account linking a Better Auth path or hide it | 0.5–3 d |
+| A6 | Armed-build plumbing in the three build workflows, plus a guard re-pin (blocker 13) | 0.5 d |
+| A7 | `stampFieldTs` for server writers (blocker 7) | 1 d |
+| A8 | **Billing on the Worker + Neon.** (1) The four billing tables, plus `entitled()` / `plan()` as Worker functions, go into `worker/schema/neon.sql`. (2) Port all 7 functions over Neon: Stripe signature verify, the `stripe_webhook_events` / `apple_webhook_events` idempotency claims, App Store JWS verification, `iap-catalog` and `referral-code`. Bring the `supabase/functions/_shared` billing helpers across the way the kernel is shared, never as a second copy. (3) `/api/entitlement` reads Neon, and `SUPABASE_URL` / `SERVICE_ROLE_KEY` leave `nuvo`. (4) A Better Auth `user.create` hook seeds the trial row. (5) `workerRoute.ts` drops `SUPABASE_ONLY_FUNCTIONS`, so every function name routes to the Worker. Tests: signature, replay, `entitled()` parity against today's SQL, and the trial on sign-up | 4–6 d |
+| A9 | `cutover-migrate.yml` / `freeze.sql` / parity: **stop excluding** the billing tables, so they freeze and copy with everything else. `checks.yml` guard re-pin | 0.5 d |
+| A10 | Realtime Durable Object, if Phil chooses it | 2–3 d |
+| A11 | Tidy-up: `blocked.ts` sets, the stale runbook lines, and closing #118 / #120 | 1 hr |
+
+That's about **9–14 days**, depending on A5 and A10.
+
+**B. Live, and each step needs Phil's go.** In order.
+
+| # | Step | Reversible? |
+|---|---|---|
+| B1 | Create the queues, disable the Hyperdrive cache, and set the missing `nuvo` secrets: Apple, `MS_*`, Stripe **live** secret + webhook secret, App Store keys. Deploy `nuvo-preview` and `nuvo` from master, still inert | yes |
+| B2 | Add the `api.nuvo.day` redirect URIs to the Google Cloud client (`google-oauth`, and `/api/auth/callback/google` if A5 ports Google) and the Azure app (`m365-oauth`). Add, don't replace | yes |
+| B3 | Rehearse on preview: a flag-on build from a browser, a Mac and TestFlight. A Stripe **test-mode** endpoint pointed at the preview Worker, and StoreKit sandbox. Never the live account | yes |
+| B4 | `cutover-migrate` dry run with the billing tables included, plus the token go/no-go | yes (scratch only) |
+| B5 | **Flip night:** the order above (steps 0–9), with billing now inside the freeze. At the switch, add a **new** Stripe live webhook endpoint on api.nuvo.day and **disable** the Supabase one. Change App Store Server Notifications (production + sandbox) to the Worker. Then **reconcile** any billing events that hit the frozen Supabase endpoint during the window: Stripe's event list or a subscription re-read, and App Store "Get Notification History". Whether Apple retries a failed notification to the *new* URL is **unverified**, which is why the reconcile is a step and not an assumption | until the copy: unfreeze. After: rollback loses Neon-side writes |
+| B6 | After 24h: delete the frozen Supabase functions and the old Stripe endpoint, and confirm Apple's URL | — |
+| B7 | **End of the rollback window** (Phil picks it; two weeks suggested): `pg_dump` Supabase one last time to the Mac (never CI, since the repo is public). Then pause or delete the `nuvo` project. Whether a project in a paid org can be paused is **unverified**. Deleting stops its compute billing | delete is **not** reversible |
+| B8 | Delete the Vercel projects `nuvo` / `nuvo-site` once the hosting rollback window ends ([`cloudflare-hosting.md`](./cloudflare-hosting.md)) | not reversible |
+| B9 | Code, after the last pre-flip build has aged out: drop `VITE_SUPABASE_*` and supabase-js from the bundle. Until then the client keeps the Supabase URL only as the key `workerRoute.ts` matches on, and nothing dials it | — |
+
+### What Phil must decide
+
+1. **Sign-in at the flip.** OTP-only (recommended for the flip: Google- and Apple-only
+   users type their own address and land in the same account, because the copy keeps
+   their email and id), or port Google and/or Apple first. Google *calendar* connections
+   are separate (`calendar_accounts` tokens) and survive either way.
+2. **Realtime.** Accept "other devices catch up on focus" for the first weeks, or build the
+   Durable Object first.
+3. ~~**Billing stays on Supabase for a while.**~~ **Decided 2026-11-06: port it** (Phil:
+   "I want to port everything over"). Open: does billing move on flip night (A8 + A9 done
+   first) or on a second, smaller night?
+4. **`field_ts` on server writes.** Fix it before the flip (recommended, about 1 day), or
+   accept that an older offline edit can overwrite an agent, capture or rollover write.
+5. **M365.** `MS_*` isn't carried over, so any M365 calendar stops syncing at the flip.
+   Carry it, or tell those users.
+6. **Flip model.** The repo variable (D-174, #127, what's on master) or #118's literal plus
+   runtime flip. Master has already chosen the variable. Closing #118 makes that official.
+7. **The other six Supabase projects.** Nuvo is going fully off. But the org bill only ends
+   when zeroed, LeadWell, drove-dev, dayspring, drove and mathy leave too. That's outside
+   this repo.
+
+### Flip-night order (once 1–9 are green)
+
+Before the night: all fixes merged, prod and preview deployed and still inert, Hyperdrive
+cache off, a flag-on build driven on preview from a browser, a Mac and a phone, the
+billing live-check done, and a fresh `cutover-migrate` dry run with the token go/no-go.
+
+0. **Ship the armed build.** Set `VITE_MAINTENANCE_URL=https://api.nuvo.day/api/maintenance`
+   and `VITE_CUTOVER_ARMED=1` (needs blocker 7), then let it reach the PWA (master
+   deploy), the Mac (auto-update) and TestFlight. Allow time for Macs to update.
+1. **Preflight** the edge secrets (`preflight-edge-write-freeze.mjs`).
+2. **Arm.** `CUTOVER_ARMED=1` + `MAINTENANCE_WRITE_FREEZE=1` on `nuvo`, and
+   `WRITE_FREEZE=1` on Supabase's non-billing functions.
+3. **Freeze.** Apply `freeze.sql` by hand. This revokes client writes and pauses every
+   `nuvo-*` job.
+4. **Rotate the Google client secret** (§ Key rotation) on both sides.
+5. **Copy.** `cutover-migrate` `mode=cutover`: snapshot → copy → verify → first resync.
+   Then the `TOKEN_ENC_KEY_V1` go/no-go against `neondb`.
+6. **Switch.** In one sitting: set the repo variable
+   `VITE_API_BASE_URL=https://api.nuvo.day/api`, replace the repo secret
+   `VITE_VAPID_PUBLIC_KEY` with the D-173 key, then dispatch `cloudflare-hosting`,
+   `release` and `ios-release`. Clear `MAINTENANCE_WRITE_FREEZE` and `CUTOVER_ARMED` on
+   `nuvo`. **Leave Supabase frozen**: don't apply `unfreeze.sql`, and keep `WRITE_FREEZE`.
+7. **Retarget** Resend's inbound webhook to the Worker, and post the "re-copy your MCP /
+   capture URL" note.
+8. **Flip crons.** `cron.unschedule` all nine `nuvo-*` jobs, run the final `phase=resync`,
+   set `CUTOVER_FLIPPED=1`, `POST /api/cron/google-resubscribe`, then confirm per
+   § Flip runbook step 4.
+9. **Watch for 24h.** Sign in on each shell, check one paid account's entitlement, and do
+   one checkout in Stripe test mode on preview (never live). Rollback is clearing the
+   repo variable, re-dispatching the three builds and applying `unfreeze.sql`. Writes made
+   on Neon meanwhile don't come back. Neon is left as it is, never reset.
+
+Not checked here: whether an un-updated device's outbox replays its frozen-window edits
+to the Worker after it updates, and whether Better Auth's origin check 403s a bearer-only
+POST from a foreign origin. Drive both on preview.
 
 ---
 
@@ -43,9 +314,9 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 3. ~~**The desktop build never gets the flag.**~~ **Closed.** `release.yml` passes
    `VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}`, the line `ios-release.yml` already
    had. Unset repo variable → empty → Supabase, as today. Setting it is the switch for the
-   next desktop and iOS build; the PWA reads the same name from Vercel's project env, set
-   there at the flip. (#118 bakes a literal instead and leans on #117's launch-time flip —
-   one model has to win before either merges.)
+   next desktop and iOS build. The PWA reads the same repo variable through
+   `cloudflare-hosting.yml` (since 2026-11-06; it used to be Vercel's project env). The variable model
+   won: #117 is closed, and #118's literal bake depends on it, so #118 is superseded.
 4. **Realtime has no Worker path.** Now, with the flag on, realtime is a **known no-op**:
    only the client's `fetch` is re-pointed, so `supabase.channel()` would still dial
    Supabase — and both of its callers (`useRealtime`, `useSubscription`) skip on the flag.
@@ -101,39 +372,17 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 
 ---
 
-## Not ready to flip (found 2026-10-27)
-
-Read from the code while setting the Worker's secrets; none of these were driven.
-
-1. **The SPA never calls the Worker's data API.** With `VITE_API_BASE_URL` set, `useAuth`
-   builds a Supabase-shaped session from Better Auth, but the `supabase` client itself
-   has none — every `supabase.from()` / `.rpc()` (the sync outbox in
-   `src/lib/sync/transport.ts`, `push.ts`, the hooks) still goes to PostgREST as `anon`.
-   `/api/data/*` and `/api/rpc/*` exist on the Worker; nothing in `src/` calls them.
-   The "Planner CRUD" row below is the server half only.
-2. **Google sign-in isn't ported.** Better Auth wires Apple only (`worker/src/auth.ts`);
-   `src/lib/googleAuth.ts` ignores the flag.
-3. **The desktop build never gets the flag.** `release.yml` doesn't pass
-   `VITE_API_BASE_URL`, so auto-updated Macs keep writing Supabase after the switch.
-4. **Realtime has no Worker path.** `useRealtime.ts` listens for Supabase broadcasts, which
-   fire only on Supabase writes.
-5. **Hyperdrive `nuvo-neon` caches queries** (default `max_age`); `zeroed-neon` has
-   caching disabled. A read right after a write can be stale.
-6. **Secrets still missing on Worker `nuvo`** — § Key rotation at cutover.
-
----
-
 ## What moves (eventually)
 
 | Piece | Today | After cutover | Rollback |
 |---|---|---|---|
-| Static SPA | Vercel (Vite) | Workers Static Assets (optional) | DNS / Vercel still live |
+| Static SPA | Cloudflare `nuvo-app` (moved off Vercel 2026-11-06, [`cloudflare-hosting.md`](./cloudflare-hosting.md)) | Unchanged. The flip is a rebuild with `VITE_API_BASE_URL` set | Clear the variable, re-dispatch `cloudflare-hosting` |
 | Planner CRUD | Supabase PostgREST + RLS | The SPA's own PostgREST calls at `/api/rest/v1/*` (`worker/src/rest.ts`); also `/api/data/*` + `/api/rpc/*`. Owner filters in the Worker | Clear `VITE_API_BASE_URL` |
 | Auth | GoTrue (Google, Apple, OTP, password) | Better Auth `/api/auth` (email OTP + verified password; signed bearer only) | Same flag flip |
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
-| Billing / non-Google calendar | Supabase edge + pg_cron | **Still Supabase** except `slot-mirror`, `task-mirror`, and `push-dispatch` (Worker + Neon; new VAPID pair, D-173). Supabase copies stay until flip | n/a |
-| Google calendar | Supabase edge + pg_cron | Worker `/functions/v1/google-*` + `/api/calendar-refresh` (Google); crons `google-renew` / `calendar-dispatch` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
+| Billing | Supabase edge (Stripe, App Store) + 4 tables | **Still Supabase** at the flip. Port it later: § What still needs Supabase after the flip | n/a |
+| Calendar (Google, M365, iCloud, ICS) + mirrors + push | Supabase edge + pg_cron | Worker (#105–#107: `google/routes.ts`, `calendar/http.ts`, `slot-mirror`, `task-mirror`, `push-dispatch` with the new VAPID pair, D-173). Crons `google-renew` / `calendar-dispatch` / `push-dispatch`. M365 needs `MS_*` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
@@ -510,7 +759,7 @@ Calendar push channels re-subscribe to the Worker at the flip
 
 ## Crons and Queues (Workers Paid)
 
-`vercel.json` still has **no `crons`**. The Worker now has Cron Triggers
+Static hosting (`nuvo-app`, formerly Vercel) has **no crons**. The Worker now has Cron Triggers
 (UTC, matching today's `pg_cron`) and a `scheduled` + `queue` export.
 
 `CRON_SECRET` is compared in constant time on `/api/cron/:job` (401 if unset
@@ -525,7 +774,7 @@ the flip, ported jobs (`rollover`, `purge-trash`,
 `reminder-deliveries-prune`, `push-dispatch`, `github-poll`,
 `trim-sync-log`) iterate `users` then scope by `user_id`. Calendar-dispatch
 enqueues due accounts onto `CALENDAR_SYNC_QUEUE` and the consumer polls
-Google (other providers ack). `google-renew` re-watches channels that
+Google, M365, iCloud (+ contacts) and ICS (`consumeCalendarSyncBatch`). `google-renew` re-watches channels that
 expire within 48h. Flip tooling: `POST /api/cron/google-resubscribe`.
 `trim-sync-log` deletes by
 `created_at < now() - 30 days` and, when the identity is parked
@@ -536,7 +785,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer runs Google poll (others ack). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, M365, iCloud and ICS. Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
@@ -621,7 +870,9 @@ nothing.
 - `GOOGLE_CLIENT_SECRET` — below.
 - The Apple set. Nuvo has no Sign in with Apple key: Supabase only verifies the ID token,
   but Better Auth needs a client-secret JWT. Create a key for `day.nuvo.app` and download
-  the `.p8` once. The JWT lasts at most 6 months.
+  the `.p8` once. **Since 2026-11-06 the Worker mints the JWT itself** from
+  `APPLE_SIWA_TEAM_ID` / `_KEY_ID` / `_PRIVATE_KEY` (`primeAppleClientSecret`), so there is
+  no 6-month secret to rotate. Set `APPLE_CLIENT_SECRET` only to override that.
 - `MS_*` — M365 isn't carried over this round.
 
 `RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
@@ -874,9 +1125,11 @@ apply to a dry run.
    prior `active` exactly (idempotent), then clear `CUTOVER_ARMED`
    and `WRITE_FREEZE`.
 8. **Flip Worker crons** — in this order, and not before:
-   1. `cron.unschedule` Supabase `nuvo-github-poll` and
-      `nuvo-trim-sync-log` (and any other `nuvo-*` job that would
-      double-fire).
+   1. `cron.unschedule` **all nine** Supabase `nuvo-*` jobs. Every one has a
+      Worker twin: `calendar-dispatch`, `push-dispatch`, `google-renew`,
+      `rollover-pdt`, `rollover-pst`, `github-poll`, `trim-sync-log`,
+      `purge-trash`, `reminder-deliveries-prune`. (This used to name only the
+      first two. `push-dispatch` left running would double-send.)
    2. Final `cutover-migrate` `phase=resync` so post-switch billing
       inserts/updates/deletes land (id anti-join + setval +
       delete-then-upsert).
@@ -1005,3 +1258,33 @@ StoreKit proof before a flip:
 Isolation applies `worker/schema/neon.sql` onto PGlite, seeds two users, and
 asserts user A cannot read/write user B. The mutation script deletes each
 derived `user_id = ${store.userId}` filter and expects a failure.
+
+---
+
+## Phil's go list
+
+Every live step left after the code work on `claude/affectionate-hellman-1dcca2`, in order.
+Each one needs Phil's yes, and none was run. Billing steps (Stripe and App Store endpoints,
+`STRIPE_*`, the billing copy) come from the billing session and slot in at B1/B5 of
+§ Port plan. Never paste a secret value into a chat, an issue or a log.
+
+| # | Step | Command / where | Reversible? |
+|---|---|---|---|
+| G0 | Review and merge this branch (and the billing session's), then close #118 and #120 as superseded | GitHub | yes |
+| G1 | Create both queues. `wrangler deploy` doesn't create them | `npx wrangler queues create nuvo-calendar-sync` and `npx wrangler queues create nuvo-calendar-sync-preview` | yes (`queues delete`) |
+| G2 | Turn Hyperdrive caching off (blocker 5) | `npx wrangler hyperdrive update 2c52343139524c4e9ba39f8c1c9b0795 --caching-disabled true` | yes |
+| G3 | **Apple key**: Apple Developer → Keys → new key with Sign in with Apple, primary App ID `day.nuvo.app`. Download the `.p8` once (Keychain) | developer.apple.com | revoke key |
+| G4 | **Apple Services ID** for the web flow, e.g. `day.nuvo.web` (whatever exists). Under Sign in with Apple → Configure: domain `api.nuvo.day` and return URL `https://api.nuvo.day/api/auth/callback/apple`. For the rehearsal, also `nuvo-preview.nq-morning-briefing.workers.dev` + `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/apple`. **Add, don't replace** Supabase's entries until the rollback window closes | developer.apple.com | yes |
+| G5 | **Google OAuth client** (the one `GOOGLE_CLIENT_ID` names): add the authorized redirect URIs `https://api.nuvo.day/api/auth/callback/google` (sign-in) and `https://api.nuvo.day/functions/v1/google-oauth` (calendar connect, if missing). For the rehearsal, also `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/google`. **Unverified:** whether the consent screen needs `nq-morning-briefing.workers.dev` as an authorized domain for that preview URI. If Google refuses it, rehearse Google on api.nuvo.day after G7 instead. Add, don't replace | console.cloud.google.com | yes |
+| G6 | **Azure app** (M365): add `https://api.nuvo.day/functions/v1/m365-oauth`, if M365 is carried (decision 5) | portal.azure.com | yes |
+| G7 | **Secrets on `nuvo` and `nuvo-preview`**: `APPLE_CLIENT_ID` (Services ID from G4), `APPLE_SIWA_TEAM_ID`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (the `.p8` from G3). Optionally `APPLE_SIWA_CLIENT_ID`. `MS_CLIENT_ID` / `MS_CLIENT_SECRET` if G6. On **preview only** for now: `GOOGLE_CLIENT_SECRET`. On `nuvo` it rotates inside the freeze (§ Key rotation), and until it's set there, Google sign-in on prod answers "That sign-in option isn't available right now" | `npx wrangler secret put <NAME>` (add `--env preview` for preview), piped from Keychain | yes |
+| G8 | **Deploy** preview, then prod, from merged master. Both stay inert (`CUTOVER_FLIPPED` unset, no client points at them) | `npx wrangler deploy --env preview`, then `npx wrangler deploy` | yes (redeploy) |
+| G9 | **Rehearse on preview (B3)**: a flag-on build pointed at the preview Worker, on a browser, a **built Mac** (`tauri://localhost`) and **TestFlight**. Check OTP sign-in, Google (door round trip), Apple native + web, **quit and relaunch stays signed in** (blocker 10), and a fresh sign-up that writes (8). Also run a `cutover-migrate` dry run, which now installs the stamp trigger and repoints the FKs | — | yes |
+| G10 | **Armed build (step 0), only after G8 prod is deployed.** An armed build fails *closed* if the maintenance URL doesn't answer. Set repo **variables** `VITE_MAINTENANCE_URL=https://api.nuvo.day/api/maintenance` and `VITE_CUTOVER_ARMED=1`, then let the PWA, Mac and TestFlight builds roll out | `gh variable set …` | yes (unset + rebuild) |
+| G11 | **Flip night**: § Flip-night order steps 1–9, unchanged. Step 4 now also sets `GOOGLE_CLIENT_SECRET` on `nuvo`, which turns Google sign-in on | — | until the copy |
+| G12 | After the 24h watch: unset `VITE_CUTOVER_ARMED` (keep `VITE_MAINTENANCE_URL`) and rebuild | `gh variable delete VITE_CUTOVER_ARMED` | yes |
+| G13 | After the rollback window: remove the Supabase redirect URIs from Google and Apple, and do § Port plan B6–B9 | consoles | no |
+
+**Follow-ups, not blockers:** realtime over a Durable Object (item 4). `updated_at` is
+still hand-written per Worker writer: the trigger in `field-ts.sql` covers `field_ts` only.
+
