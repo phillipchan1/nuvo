@@ -789,7 +789,7 @@ row older than 30 days is eligible. The sequence is never reset.
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
-| `0 10 * * 0` | `trim-sync-log` | skip until flip, then per-user age delete. Floor keeps recent Neon-origin ids out of trim until ~1e6 further inserts |
+| `0 10 * * SUN` | `trim-sync-log` | skip until flip, then per-user age delete. Floor keeps recent Neon-origin ids out of trim until ~1e6 further inserts |
 | `30 4 * * *` | `reminder-deliveries-prune` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 | `0 4 * * *` | `purge-trash` | skip until flip, then iterates `users`, scopes `DELETE` by `user_id` |
 

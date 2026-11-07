@@ -75,7 +75,7 @@ export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
   "5 8 * * *": ["rollover"],
   "15 9 * * *": ["google-renew"],
   "20 9 * * *": ["github-poll"],
-  "0 10 * * 0": ["trim-sync-log"],
+  "0 10 * * SUN": ["trim-sync-log"],
   "30 4 * * *": ["reminder-deliveries-prune"],
   "0 4 * * *": ["purge-trash"],
 };

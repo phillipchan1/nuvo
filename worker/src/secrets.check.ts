@@ -228,7 +228,7 @@ ok(jobsForSchedule("* * * * *").includes("push-dispatch"), "minute tick includes
 ok(jobsForSchedule("15 9 * * *").includes("google-renew"), "09:15 UTC is google-renew");
 ok(jobsForSchedule("0 4 * * *").includes("purge-trash"), "04:00 UTC is purge-trash");
 ok(jobsForSchedule("20 9 * * *").includes("github-poll"), "09:20 UTC is github-poll");
-ok(jobsForSchedule("0 10 * * 0").includes("trim-sync-log"), "Sunday 10:00 UTC is trim-sync-log");
+ok(jobsForSchedule("0 10 * * SUN").includes("trim-sync-log"), "Sunday 10:00 UTC is trim-sync-log");
 ok(canonicalCronJob("nuvo-github-poll") === "github-poll", "cron alias github-poll");
 ok(canonicalCronJob("nuvo-trim-sync-log") === "trim-sync-log", "cron alias trim-sync-log");
 

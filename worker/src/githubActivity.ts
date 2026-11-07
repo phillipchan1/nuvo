@@ -29,7 +29,7 @@ export const SYNC_LOG_SEQUENCE_MARGIN = 1_000_000;
 export const SYNC_LOG_SEQ_NAME = "public.sync_log_id_seq";
 
 export const GITHUB_POLL_CRON = "20 9 * * *";
-export const TRIM_SYNC_LOG_CRON = "0 10 * * 0";
+export const TRIM_SYNC_LOG_CRON = "0 10 * * SUN";
 
 function ghHeaders(token: string): Record<string, string> {
   return {
