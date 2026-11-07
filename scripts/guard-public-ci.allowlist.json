@@ -113,7 +113,7 @@
       "file": "cloudflare-hosting.yml",
       "job": "deploy",
       "id": "build-app",
-      "sha256": "2bcfef8d9476bc3698de01e4b1ad275f5780de55fb90f9fe611b8db735ef332a"
+      "sha256": "49f440d626a2ae7d98ab056d4ba2e7608b08edd429edd4ea926c4fafd52eeee7"
     },
     {
       "file": "cloudflare-hosting.yml",
@@ -311,7 +311,7 @@
       "file": "ios-release.yml",
       "job": "testflight",
       "id": "build-ipa",
-      "sha256": "6ef4bcfef4fa437ccceb72e3a85a342c3ce98c8a11119dd5ef8246195070e7b1"
+      "sha256": "9461b92a1d80eead76b0faee7551b765aeb3babdf90923356da5099121ad5dcb"
     },
     {
       "file": "ios-release.yml",
@@ -389,7 +389,7 @@
       "file": "release.yml",
       "job": "release",
       "id": "build",
-      "sha256": "bcbc18b48440ba26ec0239e475b862313e7f58e615037932a609523ca01fab53"
+      "sha256": "720d6a1984f22266405bb563eee110cd580c036924f6f0860559b340941840eb"
     },
     {
       "file": "release.yml",
