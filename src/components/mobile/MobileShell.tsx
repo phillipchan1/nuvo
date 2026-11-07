@@ -42,6 +42,7 @@ import { useBulkOps } from "../../hooks/useBulkOps";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { describeQuery, queryFacetCount } from "../../lib/taskFilter";
 import MobileCalendar from "./MobileCalendar";
+import MobileRepairCard from "./MobileRepairCard";
 import type { CalHero } from "./CalendarChrome";
 import TaskRow from "../TaskRow";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
@@ -699,6 +700,7 @@ export default function MobileShell() {
       {/* Content */}
       <main ref={scrollRef} onScroll={recordScroll} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         <PullIndicator pulling={pulling} refreshing={refreshing} />
+        {tab === "calendar" && <MobileRepairCard now={now} />}
         {tab === "calendar" ? (
           <MobileCalendar
             now={now}

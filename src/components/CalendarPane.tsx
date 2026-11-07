@@ -50,6 +50,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTaskListKeys } from "./tasks/useTaskListKeys";
 import { claimKeys, keyOwner } from "./tasks/keyOwner";
 import { usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
+import { PLAN_EVENT_PREFIX, PLAN_GHOST_PREFIX, type PlanOverlay } from "./plan/planOverlay";
 import {
   DRAFT_PREVIEW_ID,
   gridBlocks,
@@ -113,7 +114,7 @@ const DOW_LABELS = Array.from({ length: 7 }, (_, i) =>
 );
 
 type ExtendedProps = {
-  kind: "task" | "google" | "m365" | "ics" | "icloud" | "slot";
+  kind: "task" | "google" | "m365" | "ics" | "icloud" | "slot" | "plan" | "planghost";
   refId: string;
   calColor?: string;
   /** Solid color of the 3px accent bar (domain / calendar / slot color). */
@@ -349,6 +350,7 @@ function CalendarPane({
   onToggleFocus,
   domains = [],
   onOpenUpkeep,
+  plan,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -429,6 +431,8 @@ function CalendarPane({
   /** Domains offered on the Slot create dialog (standing "domain slots"). */
   domains?: Array<{ id: string; name: string; color: string }>;
   onOpenUpkeep?: () => void;
+  /** Plan the week, drawn over this calendar (docs/plan-the-week-v2.md §4). */
+  plan?: PlanOverlay | null;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const { scale: uiScale } = useUiScale();
@@ -1989,10 +1993,60 @@ function CalendarPane({
       }
     : null;
 
-  const gridEvents = useMemo(
-    () => (draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents),
-    [fcEvents, draftPreviewEvent],
-  );
+  // Plan the week's draft — one more event source on THIS grid, never a second
+  // calendar (docs/plan-the-week-v2.md §4). Draft blocks drag like any block and
+  // report the move back; ghosts are the selected block's other fits.
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const planEvents = useMemo(() => {
+    if (!plan) return [];
+    const blocks = plan.blocks.map((b) => {
+      const hue = b.color ?? "var(--accent)";
+      return {
+        id: `${PLAN_EVENT_PREFIX}${b.key}`,
+        title: b.title,
+        start: b.start,
+        end: b.end,
+        allDay: false,
+        editable: true,
+        durationEditable: false,
+        classNames: ["evt-plan", b.held ? "evt-plan-held" : "", b.selected ? "evt-plan-selected" : ""].filter(Boolean),
+        backgroundColor: `color-mix(in srgb, ${hue} 16%, var(--surface))`,
+        borderColor: `color-mix(in srgb, ${hue} 60%, var(--line))`,
+        textColor: "var(--text)",
+        extendedProps: { kind: "plan" as const, refId: b.key, barColor: hue, calColor: hue, held: b.held, count: b.count ?? 0 },
+      };
+    });
+    const ghosts = plan.ghosts.map((g) => ({
+      id: `${PLAN_GHOST_PREFIX}${g.id}`,
+      title: g.label,
+      start: g.start,
+      end: g.end,
+      allDay: false,
+      editable: false,
+      classNames: ["evt-plan-ghost"],
+      backgroundColor: "var(--accent-soft)",
+      borderColor: "var(--accent)",
+      textColor: "var(--accent)",
+      extendedProps: { kind: "planghost" as const, refId: g.id },
+    }));
+    const clears = (plan.clears ?? []).map((c) => ({
+      id: `plan-clear:${c.id}`,
+      title: c.label,
+      start: c.start,
+      end: c.end,
+      allDay: false,
+      display: "background",
+      classNames: ["evt-plan-clear"],
+      extendedProps: { kind: "planghost" as const, refId: "" },
+    }));
+    return [...clears, ...blocks, ...ghosts];
+  }, [plan]);
+
+  const gridEvents = useMemo(() => {
+    const base = planEvents.length ? [...fcEvents, ...planEvents] : fcEvents;
+    return draftPreviewEvent ? [...base, draftPreviewEvent] : base;
+  }, [fcEvents, planEvents, draftPreviewEvent]);
 
   // FullCalendar treats a new `events` array as a new source and re-parses
   // every block. Keep the option stable, then reconcile only the blocks whose
@@ -2071,6 +2125,9 @@ function CalendarPane({
   // FullCalendar mounts it.
   const handleEventDidMount = useCallback((arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
+    // The plan's draft and its ghosts belong to the plan, not the selection,
+    // the context menus or the drag-to-rail watch.
+    if (kind === "plan" || kind === "planghost") return;
     // The selection's handle (D-158): which element(s) draw this block — a
     // multi-day chip is several. Never on a drag mirror, which isn't the block.
     if (!arg.isMirror) arg.el.setAttribute("data-block-id", arg.event.id);
@@ -3049,6 +3106,17 @@ function CalendarPane({
       info.revert();
       return;
     }
+    // A plan draft block, moved: the plan re-seats it (and holds it there).
+    // Nothing is written until the plan commits.
+    if (kind === "plan") {
+      if (info.event.start && !info.event.allDay) planRef.current?.onMove(refId, info.event.start);
+      else info.revert();
+      return;
+    }
+    if (kind === "planghost") {
+      info.revert();
+      return;
+    }
     // The draft's ghost, moved: the draft moves with it — nothing is written
     // until the composer creates (#33).
     if (info.event.id === DRAFT_PREVIEW_ID) {
@@ -3187,6 +3255,10 @@ function CalendarPane({
     const { kind, refId } = extProps;
 
     if (gestureRef.current?.take()) {
+      info.revert();
+      return;
+    }
+    if (kind === "plan" || kind === "planghost") {
       info.revert();
       return;
     }
@@ -3367,6 +3439,7 @@ function CalendarPane({
     // A timed draft stays timed — the anytime row is a different draft.
     if (dragged.id === DRAFT_PREVIEW_ID) return !dropInfo.allDay;
     const kind = (dragged.extendedProps as ExtendedProps).kind;
+    if (kind === "plan") return !dropInfo.allDay;
     return allowAnytimeLanding({ nextAllDay: dropInfo.allDay, wasAllDay: dragged.allDay, kind });
   }, []);
 
@@ -3402,6 +3475,13 @@ function CalendarPane({
       setDraft({ start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
     } else {
       clearGridSelection();
+      // While planning, a drag across empty time asks to keep it clear — the
+      // plan's act, not a new block (docs/plan-the-week-v2.md §4).
+      if (planRef.current?.onPaint) {
+        calRef.current?.getApi().unselect();
+        planRef.current.onPaint(arg.start, arg.end);
+        return;
+      }
       const je = arg.jsEvent;
       let kind: CreateKind = createMode;
       if (je?.altKey) kind = "event";
@@ -3554,6 +3634,14 @@ function CalendarPane({
     // The draft's ghost is part of the composer, not a block.
     if (info.event.id === DRAFT_PREVIEW_ID) return;
     const { kind, refId } = info.event.extendedProps as ExtendedProps;
+    if (kind === "plan") {
+      planRef.current?.onSelect(refId);
+      return;
+    }
+    if (kind === "planghost") {
+      planRef.current?.onPickGhost(refId);
+      return;
+    }
     // Clicking the checkbox toggles done — handle it in FullCalendar's own click
     // (FC's native eventClick fires before React's onClick on the rendered
     // checkbox, and opening the detail re-renders it away), and never focus/open.
@@ -3621,6 +3709,25 @@ function CalendarPane({
   const renderEvent = useCallback((arg: EventContentArg) => {
     const { kind, calColor, recurring, done: doneProp } = arg.event.extendedProps as ExtendedProps;
     const inMonth = arg.view.type === "dayGridMonth";
+
+    // ── Plan the week's draft: title, span, a held mark — and its ghosts ──
+    if (kind === "plan" || kind === "planghost") {
+      const ext = arg.event.extendedProps as ExtendedProps & { held?: boolean; count?: number };
+      return (
+        <div className="relative flex h-full min-w-0 flex-col overflow-hidden px-1.5 py-[2px]">
+          <span className="truncate text-label font-semibold leading-tight">
+            {arg.event.title}
+            {kind === "plan" && ext.count ? <span className="ml-1 font-normal text-muted">{ext.count}</span> : null}
+          </span>
+          {kind === "plan" && arg.event.start && arg.event.end && (
+            <span className="truncate text-micro leading-tight text-muted">{span(arg.event.start, arg.event.end)}</span>
+          )}
+          {kind === "plan" && ext.held && (
+            <span aria-label="held" className="absolute right-1 top-1 h-[6px] w-[6px] rounded-full" style={{ background: ext.barColor }} />
+          )}
+        </div>
+      );
+    }
 
     // ── Month view: compact dot + title pill ──────────────────────────────
     if (inMonth) {

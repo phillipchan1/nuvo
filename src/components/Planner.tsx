@@ -33,6 +33,11 @@ import type { FlowName } from "./Spine";
 // phone never runs, and the popovers/Settings are open-on-demand. Keeping them
 // out of the entry chunk is most of P0-4's desktop win.
 const CalendarPane = lazy(() => import("./CalendarPane"));
+import type { PlanOverlay } from "./plan/planOverlay";
+import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
+import { useWorkingDays } from "../hooks/useWorkingDays";
+const PlanRail = lazy(() => import("./plan/PlanRail"));
+const RepairBar = lazy(() => import("./plan/RepairBar"));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
@@ -71,6 +76,7 @@ export default function Planner({
     openOverlay,
     openSlotTask,
     closeOverlay,
+    closeFlow,
     navigate,
     panelAnchor,
     panelAnchorEl,
@@ -78,6 +84,17 @@ export default function Planner({
 
   const { tab, calView: view, overlay, overlayId, overlaySubId, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
+  // Plan the week is an overlay on THIS Schedule, not its own screen
+  // (docs/plan-the-week-v2.md §4): the flow swaps the rail and draws the draft
+  // on the real calendar.
+  const planning = nav.flow === "sunday";
+  const [planOverlay, setPlanOverlay] = useState<PlanOverlay | null>(null);
+  useEffect(() => {
+    if (!planning) return;
+    if (rung !== "day") navigate({ rung: "day" }, "replace");
+    if (nav.calView !== "timeGridWeek") setCalView("timeGridWeek");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planning]);
 
   const { settings, update: updateSettings } = useSettings();
   const weekStartsOn = firstDayOfWeek(settings);
@@ -400,6 +417,41 @@ export default function Planner({
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
+  // ── the planner staying with the week (docs/plan-the-week-v2.md §7) ──
+  const [workingDays] = useWorkingDays();
+  const hiddenCalendarIds = useMemo(() => settings?.hidden_calendar_ids ?? [], [settings]);
+  const hiddenEventKeys = useMemo(() => (settings?.hidden_events ?? []).map((h) => h.key), [settings]);
+  const repairs = useWeekRepair({
+    tasks: allTasksArray,
+    events,
+    slots,
+    hiddenCalendarIds,
+    hiddenEventKeys,
+    workStartMin: settings?.work_start_minutes ?? 480,
+    workEndMin: settings?.work_end_minutes ?? 990,
+    workingDays,
+    now,
+    enabled: onSchedule && !planning,
+  });
+  const repairActs = useMemo(
+    () => ({
+      apply: (r: Repair, start: Date) => {
+        if (r.kind === "task" && r.task) {
+          const task = r.task;
+          const was = new Date(task.start_time!);
+          mutations.block(task, start, r.from.durationMin);
+          return () => mutations.block(task, was, r.from.durationMin);
+        }
+        const slot = r.slot!;
+        const before = { start_time: slot.start_time, do_date: slot.do_date };
+        slotMutations.updateSlot({ id: slot.id, patch: { start_time: start.toISOString(), do_date: toDateISO(start) } });
+        return () => slotMutations.updateSlot({ id: slot.id, patch: before });
+      },
+    }),
+    [mutations, slotMutations],
+  );
+  const [repairOverlay, setRepairOverlay] = useState<PlanOverlay | null>(null);
+
   // Anything droppable that the render set doesn't hold. The week crown offers a
   // project's loose work for drag, and that work is deliberately outside all six
   // task queries above — no `do_date`, no `start_time`, no `sprint_id` — so
@@ -556,6 +608,11 @@ export default function Planner({
             Hotkeys follow `onSchedule`, so they cannot act on a rail you
             cannot see. */}
         <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
+        {planning ? (
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r border-line" />}>
+            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} />
+          </Suspense>
+        ) : (
         <LeftRail
           tab={tab}
           setTab={setTab}
@@ -575,6 +632,7 @@ export default function Planner({
           slotTitle={slotTitle}
           onOpenSlot={openSlotAt}
         />
+        )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
             all — a seven-day grid at 280px is a ~48px time gutter and 34px
             columns, which is not a smaller calendar so much as an unreadable
@@ -590,8 +648,9 @@ export default function Planner({
           <CalendarPane
             view={view}
             onViewChange={setCalView}
-            hotkeysEnabled={!gridCovered && onSchedule}
+            hotkeysEnabled={!gridCovered && onSchedule && !planning}
             live={onSchedule}
+            plan={planning ? planOverlay : repairOverlay}
             tasks={allTasksArray}
             events={events}
             slots={slots}
@@ -631,6 +690,12 @@ export default function Planner({
             onOpenUpkeep={openUpkeep}
           />
           </Suspense>
+
+          {onSchedule && !planning && repairs.length > 0 && (
+            <Suspense fallback={null}>
+              <RepairBar repairs={repairs} acts={repairActs} onOverlay={setRepairOverlay} />
+            </Suspense>
+          )}
 
           {onSchedule && openTask && taskPanel && overlay !== "slot" && (
             <Suspense fallback={null}>

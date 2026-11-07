@@ -29,7 +29,7 @@ import {
   type VerticalData,
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
-import { composeWeek, draftableKept, type DayContext, type Placement } from "../lib/compose";
+import { alternativesFor as composeAlternatives, asBusyBlock, composeWeek, draftableKept, type ComposeInput, type DayContext, type Placement } from "../lib/compose";
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { batchLooseWork, clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
@@ -38,6 +38,7 @@ import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
 import { laneOf, readIntake, type WeekLane } from "../lib/intake";
 import { suggestPull } from "../lib/pull";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
+import { rulesAsBusy, type PlanRules } from "../lib/planMemory";
 
 /** One board block's identity. A split overdue task yields several blocks that
  *  share a task id, so the BLOCK — not the task — is what you move and resize. */
@@ -66,7 +67,8 @@ export function computeGain(data: VerticalData) {
 
 export type WeekDraft = ReturnType<typeof useWeekDraft>;
 
-export function useWeekDraft() {
+export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string; rules?: PlanRules } = {}) {
+  const autoTheme = opts.autoTheme ?? true;
   const { data, planWeek, applySlots, assignToStanding } = useVertical();
   const { settings, update: updateSettings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
@@ -76,7 +78,9 @@ export function useWeekDraft() {
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
   const [workingDays, setWorkingDays] = useWorkingDays();
 
-  const weekStartISO = planningWeekStartISO();
+  // the kernel decides which week a plan is for (Saturday plans next week); a
+  // surface may name one explicitly — Plan on a spent Friday evening plans next.
+  const weekStartISO = opts.weekStartISO ?? planningWeekStartISO();
   const today = todayISO();
   // current week vs the one ahead — drives the day window and the copy
   const planningAhead = weekStartISO > today;
@@ -198,10 +202,43 @@ export function useWeekDraft() {
   const looseBatches = looseBatching.batches;
   const looseTasks = looseBatching.singles;
   const shownRuns = useMemo(() => [...looseBatches, ...runs], [looseBatches, runs]);
-  const draftBlocks = useMemo(
-    () => [...projectSlots, ...looseBatches, ...runs],
-    [projectSlots, looseBatches, runs],
-  );
+  // ── split: a run or a sitting cut in two, by you (S) or by a run cap you kept ──
+  /** Task ids that start a new block inside whatever batch holds them. */
+  const [splits, setSplits] = useState<Set<string>>(new Set());
+  const taskById = useMemo(() => new Map(allTasks.map((t) => [t.id, t])), [allTasks]);
+  const runCap = opts.rules?.runCap ?? null;
+  const draftBlocks = useMemo(() => {
+    const mins = (id: string) => taskById.get(id)?.duration_minutes ?? 30;
+    const out: Batch[] = [];
+    for (const b of [...projectSlots, ...looseBatches, ...runs]) {
+      const cap = !b.projectId && runCap ? runCap : null;
+      const groups: string[][] = [[]];
+      let acc = 0;
+      for (const id of b.taskIds) {
+        const cur = groups[groups.length - 1];
+        if (cur.length > 0 && (splits.has(id) || (cap != null && acc + mins(id) > cap))) {
+          groups.push([]);
+          acc = 0;
+        }
+        groups[groups.length - 1].push(id);
+        acc += mins(id);
+      }
+      if (groups.length === 1) {
+        out.push(b);
+        continue;
+      }
+      groups.forEach((g, i) =>
+        out.push({
+          ...b,
+          id: i === 0 ? b.id : `${b.id}~${i + 1}`,
+          taskIds: g,
+          durationMins: g.reduce((sum, id) => sum + mins(id), 0),
+          name: `${b.baseName ?? b.name} · ${i + 1}`,
+        }),
+      );
+    }
+    return out;
+  }, [projectSlots, looseBatches, runs, splits, runCap, taskById]);
   const slotById = useMemo(() => new Map(draftBlocks.map((b) => [b.id, b])), [draftBlocks]);
   const composeTasks = useMemo<Task[]>(
     () => [...draftBlocks.map(synthTask), ...looseTasks],
@@ -212,9 +249,28 @@ export function useWeekDraft() {
   // on the sprint row and persist as you cycle them
   const workStart = settings?.work_start_minutes ?? 480;
   const workEnd = settings?.work_end_minutes ?? 990;
+  // a day's context set while planning (Lighten · Day off) is a draft too —
+  // layered over the sprint's saved ones, never written before the commit
+  const [dayCtx, setDayCtx] = useState<Record<string, DayContext>>({});
   const dayContexts = useMemo(
-    () => (data.sprint?.day_contexts ?? {}) as Record<string, DayContext>,
-    [data.sprint],
+    () => ({ ...((data.sprint?.day_contexts ?? {}) as Record<string, DayContext>), ...dayCtx }),
+    [data.sprint, dayCtx],
+  );
+
+  // ── time kept clear: the rules you kept (memory) + what you painted this plan ──
+  // Both read as immovable time to the composer, exactly like a meeting.
+  const [clears, setClears] = useState<{ id: string; dayISO: string; startMin: number; endMin: number; label: string }[]>([]);
+  const planDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
+    [weekStartISO],
+  );
+  const clearRegions = useMemo(
+    () => [...(opts.rules ? rulesAsBusy(opts.rules, planDays, workEnd) : []), ...clears],
+    [opts.rules, planDays, workEnd, clears],
+  );
+  const clearBlocks = useMemo(
+    () => clearRegions.map((c, i) => asBusyBlock(`clear-${i}`, c.label, c.dayISO, c.startMin, Math.max(15, c.endMin - c.startMin))),
+    [clearRegions],
   );
 
   // calibration: the proven pace bounds the plan
@@ -239,10 +295,10 @@ export function useWeekDraft() {
   // you placed yourself is now as immovable as a meeting, and everything after
   // it is composed around it. Every step recomposes, so a change on one step is
   // visible on the next.
-  const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number }>>({});
+  const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number; soft?: boolean }>>({});
   const pinned = useMemo(() => {
     const byId = new Map(composeTasks.map((t) => [t.id, t]));
-    const out: { task: Task; dayISO: string; startMin: number; durationMin: number }[] = [];
+    const out: { task: Task; dayISO: string; startMin: number; durationMin: number; soft?: boolean }[] = [];
     for (const [key, o] of Object.entries(overrides)) {
       // a dragged *part* of a split task can't be pinned without stranding its
       // siblings — those keep the old cosmetic behaviour
@@ -270,6 +326,23 @@ export function useWeekDraft() {
   );
 
   // ── compose-on-open: the schedule recomputes from the draft, live ──────────
+  // The input is named once so "where else could this go" (alternativesFor) asks
+  // the SAME composer the same question, never a parallel placement rule.
+  const composeBase = useMemo<Omit<ComposeInput, "tasks" | "blocks">>(
+    () => ({
+      weekStartISO,
+      todayISO: today,
+      now: new Date(),
+      events: visibleEvents,
+      workStartMin: workStart,
+      workEndMin: workEnd,
+      focusInitiativeIds: data.focusInitiativeIds,
+      dayContexts,
+      workingDays,
+      weeklyBudgetMins: null,
+    }),
+    [weekStartISO, today, visibleEvents, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
+  );
   const result = useMemo(
     () =>
       composeWeek({
@@ -278,7 +351,7 @@ export function useWeekDraft() {
         now: new Date(),
         tasks: composeTasks.filter((t) => !pinnedIds.has(t.id)),
         events: visibleEvents,
-        blocks: [...onCalBlocks, ...pinnedBlocks],
+        blocks: [...onCalBlocks, ...clearBlocks, ...pinnedBlocks],
         workStartMin: workStart,
         workEndMin: workEnd,
         focusInitiativeIds: data.focusInitiativeIds,
@@ -305,7 +378,7 @@ export function useWeekDraft() {
         // a slot holds real tasks — it can't be carved in half
         atomicIds: draftBlocks.map((b) => b.id),
       }),
-    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, pinnedIds, pinnedBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
+    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, clearBlocks, pinnedIds, pinnedBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
@@ -376,7 +449,7 @@ export function useWeekDraft() {
         dayISO: p.dayISO,
         startMin: p.startMin,
         durationMin: p.durationMin,
-        reason: "you placed this",
+        reason: p.soft ? "stays where it was" : "you placed this",
       })),
     ],
     [result.placements, pinned],
@@ -394,6 +467,134 @@ export function useWeekDraft() {
       const startMin = prev[key]?.startMin ?? base?.startMin ?? 0;
       return { ...prev, [key]: { dayISO, startMin, durationMin } };
     });
+
+  /** Release a block you placed — it goes back to the composer. */
+  const unpinPlacement = (key: string) =>
+    setOverrides((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  /** Hold a block where it is: the composer treats it as immovable from now on. */
+  const holdPlacement = (key: string) => {
+    const p = placements.find((x) => placementKey(x) === key);
+    if (p) setOverrides((prev) => ({ ...prev, [key]: { dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin } }));
+  };
+  const isHeld = (key: string) => Boolean(overrides[key] && !overrides[key].soft);
+
+  /**
+   * Move one block and keep the rest of the week still (docs/plan-the-week-v2.md
+   * §4: "reflow is local and visible"). A plain `movePlacement` pins the moved
+   * block and lets the composer re-place everything else — which, being a greedy
+   * spread, can reshuffle the whole week for one move, the moment trust breaks.
+   * So every other block is frozen where it stands (a *soft* pin: not "held",
+   * just not reshuffled), except the ones the move lands on — those alone go
+   * back to the composer and find a new place around everything else.
+   */
+  const moveLocally = (key: string, dayISO: string, startMin: number) =>
+    setOverrides((prev) => {
+      const base = placements.find((p) => placementKey(p) === key);
+      const durationMin = prev[key]?.durationMin ?? base?.durationMin ?? 30;
+      const end = startMin + durationMin;
+      const next = { ...prev };
+      for (const p of placements) {
+        const k = placementKey(p);
+        if (k === key || next[k] || k.includes("#")) continue;
+        const lands = p.dayISO === dayISO && p.startMin < end && p.startMin + p.durationMin > startMin;
+        if (!lands) next[k] = { dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin, soft: true };
+      }
+      // a soft-frozen block the move lands on gives way too
+      for (const [k, o] of Object.entries(next)) {
+        if (k !== key && o.soft && o.dayISO === dayISO && o.startMin < end && o.startMin + o.durationMin > startMin) delete next[k];
+      }
+      next[key] = { dayISO, startMin, durationMin };
+      return next;
+    });
+
+  /** Where else this block fits: the composer asked again, with every other block
+   *  on the week held still (lib/compose `alternativesFor`). */
+  const alternativesFor = (key: string, count = 5): Placement[] => {
+    const p = placements.find((x) => placementKey(x) === key);
+    if (!p) return [];
+    const others = placements
+      .filter((x) => placementKey(x) !== key)
+      .map((x) => asBusyBlock(`busy-${placementKey(x)}`, x.task.title, x.dayISO, x.startMin, x.durationMin));
+    const input: ComposeInput = { ...composeBase, tasks: [], blocks: [...onCalBlocks, ...clearBlocks, ...others], atomicIds: draftBlocks.map((b) => b.id) };
+    return composeAlternatives(input, { ...p.task, duration_minutes: p.durationMin }, { dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin }, count);
+  };
+
+  // ── undo: every draft act is one step back (docs/plan-the-week-v2.md §4) ──
+  type DraftState = {
+    overrides: typeof overrides;
+    kept: Set<string>;
+    runs: Batch[];
+    unbatched: Set<string>;
+    splits: Set<string>;
+    clears: typeof clears;
+    dayCtx: Record<string, DayContext>;
+  };
+  const history = useRef<DraftState[]>([]);
+  const remember = () => {
+    history.current.push({ overrides, kept, runs, unbatched, splits, clears, dayCtx });
+    if (history.current.length > 80) history.current.shift();
+  };
+  const undo = (): boolean => {
+    const prev = history.current.pop();
+    if (!prev) return false;
+    setOverrides(prev.overrides);
+    setKept(prev.kept);
+    setRuns(prev.runs);
+    setUnbatched(prev.unbatched);
+    setSplits(prev.splits);
+    setClears(prev.clears);
+    setDayCtx(prev.dayCtx);
+    return true;
+  };
+
+  /** Hand frozen (soft) blocks back to the composer — the ones a new boundary
+   *  now sits on, so they reflow around it. Held blocks never move. */
+  const releaseSoft = (hit: (o: { dayISO: string; startMin: number; durationMin: number }) => boolean) =>
+    setOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [k, o] of Object.entries(prev)) {
+        if (o.soft && hit(o)) {
+          delete next[k];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+  /** Keep time clear in this plan: on one day, or on every working day. */
+  const addClear = (dayISOs: string[], startMin: number, endMin: number, label = "Kept clear") => {
+    setClears((prev) => [
+      ...prev,
+      ...dayISOs.map((dayISO) => ({ id: `${dayISO}@${startMin}-${endMin}-${prev.length}`, dayISO, startMin, endMin, label })),
+    ]);
+    releaseSoft((o) => dayISOs.includes(o.dayISO) && o.startMin < endMin && o.startMin + o.durationMin > startMin);
+  };
+  /** A day's shape for this plan — Lighten (light) · Day off (off) · back to normal. */
+  const setDayContext = (dayISO: string, ctx: DayContext) => {
+    setDayCtx((prev) => ({ ...prev, [dayISO]: ctx }));
+    releaseSoft((o) => o.dayISO === dayISO);
+  };
+  /** Cut a block in two at its middle task. A single task can't be cut. */
+  const splitBlock = (key: string): { ok: boolean; isRun: boolean; durationMin: number } => {
+    const b = slotById.get(key);
+    if (!b || b.taskIds.length < 2) return { ok: false, isRun: false, durationMin: 0 };
+    const at = b.taskIds[Math.ceil(b.taskIds.length / 2)];
+    setSplits((prev) => new Set([...prev, at]));
+    // the first half keeps this block's id; a pin sized for the whole is stale
+    setOverrides((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    return { ok: true, isRun: !b.projectId, durationMin: b.durationMins };
+  };
 
   const plannedMins = placements.reduce((s, p) => s + p.durationMin, 0) + blockedMins;
   const conf = cal && plannedMins > 0 ? confidence(plannedMins, cal) : null;
@@ -468,10 +669,10 @@ export function useWeekDraft() {
 
   const autoSlotted = useRef(false);
   useEffect(() => {
-    if (autoSlotted.current || theming || loosePool.length === 0) return;
+    if (!autoTheme || autoSlotted.current || theming || loosePool.length === 0) return;
     autoSlotted.current = true;
     void slotLooseWork();
-  }, [loosePool.length, theming, slotLooseWork]);
+  }, [autoTheme, loosePool.length, theming, slotLooseWork]);
 
 
   /**
@@ -676,6 +877,18 @@ export function useWeekDraft() {
     placements,
     movePlacement,
     resizePlacement,
+    unpinPlacement,
+    holdPlacement,
+    isHeld,
+    moveLocally,
+    addClear,
+    setDayContext,
+    splitBlock,
+    clearRegions,
+    planDays,
+    alternativesFor,
+    remember,
+    undo,
     plannedMins,
     cal,
     conf,

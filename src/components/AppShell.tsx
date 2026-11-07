@@ -565,7 +565,10 @@ const AppShellInner = memo(function AppShellInner() {
 
       {/* the plan's step rides nav history, so browser/mouse back-forward walks
           the sources instead of dropping out of the flow */}
-      {flow === "sunday" && (
+      {/* Plan the week ("sunday") is no longer a full-screen walk on the desktop:
+          Planner draws it as an overlay on the Schedule (docs/plan-the-week-v2.md).
+          The old walk stays reachable as "sunday-walk" while v2 is on trial. */}
+      {flow === "sunday-walk" && (
         <Suspense fallback={null}>
           <SundayRitual step={flowStep} setStep={(s) => navigate({ flowStep: s })} onClose={closeFlow} />
         </Suspense>

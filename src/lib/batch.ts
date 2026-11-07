@@ -15,6 +15,7 @@ import type { Energy } from "./energy";
 import { composeWeek, type DayContext } from "./compose";
 import { domainById, initiativeById, projectById, type VerticalData } from "./vertical";
 import { titleCase } from "./text";
+import { ACTION_KIND_NAME, actionKindOf } from "./actionKind";
 
 export interface Batch {
   id: string;
@@ -172,11 +173,18 @@ export function clusterWeek(tasks: Task[], data: VerticalData): Batch[] {
       for (const c of chunkByCap(members, cls === "deep" ? CAP_DEEP : CAP_DECIDE)) batches.push(makeBatch(c, cls, data, seq++));
     }
   }
-  // shallow: batch the small loose stuff by domain (one context)
+  // shallow: batch the small loose stuff by what you'll be DOING (calls, replies,
+  // errands, writing — lib/actionKind), and only by domain when the title names
+  // no action. A run is one mode of work; a domain is who it's for.
   const shallow = loose.filter((t) => classOf(t.energy) === "shallow");
-  for (const members of groupBy(shallow, (t) => resolveDomainId(data, t) ?? "loose")) {
+  for (const members of groupBy(shallow, (t) => {
+    const kind = actionKindOf(t.title);
+    return kind ? `kind:${kind}` : resolveDomainId(data, t) ?? "loose";
+  })) {
     members.sort((a, b) => a.sort_order - b.sort_order);
-    for (const c of chunkByCap(members, CAP_SHALLOW)) batches.push(makeBatch(c, "shallow", data, seq++));
+    const kind = actionKindOf(members[0].title);
+    const name = kind ? ACTION_KIND_NAME[kind] : undefined;
+    for (const c of chunkByCap(members, CAP_SHALLOW)) batches.push(makeBatch(c, "shallow", data, seq++, name));
   }
   return batches;
 }

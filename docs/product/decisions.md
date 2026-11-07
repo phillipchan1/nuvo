@@ -3439,6 +3439,7 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |
 | **Q-12** | Does an initiative get a completion stamp (`initiatives.shipped_at`)? | D-087 gave projects an honest ship date and folded them into the domain ledger. Initiatives have no stamp at all — `status === "complete"` and nothing else — so a finished bet neither keeps its domain warm nor files under the quarter it actually landed in; it files under the quarter it was *due*. The fallback is honest about being a fallback, which is why this is a question and not a bug | Whether a migration is worth it, or whether the bet's finish line is close enough at quarter grain |
 | **Q-13** | **Who wins when a mirrored block is moved on both sides?** D-107 closed the "iCloud gets no mirror at all" half of audit rank 3 and deliberately left this half open: mirroring is still one-directional, so dragging a Nuvo block in Google Calendar is silently reverted on the next reconcile. This is the only place in the app that **actively discards something the user did**, so it can't stay unanswered forever — but it is a model decision, not a bug fix. Three shapes, and each costs something real: **app always wins** (today — honest and simple, but the provider's UI lies to you the moment you touch a block there; the mitigation is to say so rather than to silently revert); **provider always wins for time** — needs Nuvo to start *reading back* its own mirror calendar, which it deliberately never does, and hands Google's quirks (a moved recurring instance, a declined invite) the power to rewrite planning state; **per-field last-writer-wins**, the model `lib/sync/ops.ts` already uses for tasks — but that model works because Nuvo stamps every field itself, and neither provider returns per-field timestamps, so this degrades to row-level LWW on the mirror's fields and a stale `updated` can still clobber a deliberate edit | **Answered 2026-08-15 — app always wins, and says so** (see D-107). Reopens if the warning proves insufficient: the thing to watch for is Phil losing an edit he made in Google *despite* the note, which is the only evidence that would justify paying for one of the other two shapes |
+| **Q-14** | **May Plan the week move a block mid-week without asking?** The v2 spec ([`plan-the-week-v2.md`](../plan-the-week-v2.md) §7) gives the planner a dial — *How much Nuvo moves*: Ask · Suggest · Handle. Ask and Suggest stage every change for one key; **Handle** would apply a least-change repair to unheld blocks and show an Undo afterwards. That is a partial reversal of **N-01** (auto-schedule, "never — this is identity"), asked for by the operator (ⓟ, 2026-11-06: *"turn up the temperature or down the temperature"*). | Decides whether the planner that stays with the week is a stager or an actor, which is exactly the line between Nuvo and Motion | Phase 1–2 of v2 built and used; evidence that Suggest's ↵ is still too slow. Until then Suggest is the ceiling |
 
 **D-099 · 2026-08-12 · The phone gets the Build altitudes' other two faces — and the acts a
 record has, including the one it could not perform.** *(A desktop→mobile parity audit,
@@ -6804,6 +6805,77 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-181 · 2026-11-06 · The rest of Plan the week v2 is built for a trial — memory, keep-clear, day
+acts, split, and the planner staying with the week.** *(Extends D-180; spec
+[`plan-the-week-v2.md`](../plan-the-week-v2.md) §4–§8.)*
+
+ⓟ: *"can we build the whole thing — I want to try it out."*
+
+- **Memory** (`lib/planMemory.ts`): moves, clears, splits, removals and holds are recorded; a
+  proposal needs evidence in three of the last four weeks and shows it as pips; Keep becomes a rule
+  (kept-clear hours, a day's early end, a run cap) the composer reads as immovable time; Forget
+  silences it for eight weeks. **Trial storage is this device's localStorage** — the `plan_signals`
+  table waits until the trial shows the proposals are worth keeping. A fresh install proposes nothing
+  for three weeks, by design (P16).
+- **Keep clear** is a drag across empty time while planning (CalendarPane routes `select` to the
+  plan), then *this day* or *every working day*. A planning rule, **not** a calendar event yet — the
+  spec's "private event" is deferred until the trial says the rule is right.
+- **Day acts** set the day's context (light / off) or clear its afternoon, draft-only until Commit.
+  **Split** cuts a run or sitting at its middle task.
+- **Repairs** (`hooks/useWeekRepair.ts`): a block a timed, busy, not-declined meeting landed on, or a
+  one-off block that was missed, gets the composer's options with every other block held still;
+  repeating occurrences are never re-placed (D-009). Desktop: `RepairBar` over the Schedule with the
+  focused target as a ghost. Phone: `MobileRepairCard` above the Calendar. Writes are the app's own
+  (`block`, `updateSlot`).
+- **The dial** (`lib/planDial.ts`) — Ask · Suggest (default) · Handle. **Handle is built on trial
+  only; Q-14 is not decided** — it applies each break once and keeps an Undo per move.
+
+Strains **N-01** under Handle (that is Q-14's question, not this entry's answer) and **P9** if repairs
+ever speak about a week that didn't break — they don't: only a landed meeting or a passed block
+triggers one.
+
+*Status: built, uncommitted. Typecheck, full suite (the one pre-existing `guard-public-ci`
+case-sensitivity failure), build. Driven on the dev demo account at 1440 and 375: keep-clear by
+drag, Every day, Day off, split + undo, the dial in the rail, the phone shell renders clean.
+Repairs and proposals are covered by tests (`tests/week-repair.test.tsx`, `tests/plan-v2.test.ts`),
+**not driven live** — the demo week has nothing broken and three weeks of evidence can't be driven.
+Commit, the real account and `npm run perf` (no Chrome here) were not run.*
+
+---
+
+**D-180 · 2026-11-06 · Plan the week is a draft drawn on the real Schedule, any day — and the
+first slice is built for a trial.** *(Spec: [`plan-the-week-v2.md`](../plan-the-week-v2.md).)*
+
+Origin ⓟ: trust broke when the groupings weren't good and the plan didn't seem to know the week;
+the plan ran once on Sunday and was never seen again; and *"we've recreated the calendar view … there
+are slight inconsistencies, and it doesn't perform the same."*
+
+- **An overlay, not a second grid.** The draft is one more event source on `CalendarPane`
+  (`plan` prop, `components/plan/planOverlay.ts`), drawn by the same `eventContent`, reconciled in the
+  same batched sync. `PlanRail` replaces `LeftRail` while you plan. The desktop no longer mounts
+  `SundayRitual` for `flow: "sunday"`; it stays reachable as `"sunday-walk"` (*Old walk*) for the
+  trial. The phone's `MobilePlanWeek` is unchanged.
+- **Any day.** The kernel's week is the default; *This week · Next week* names the other, and a week
+  with under an hour left hands over to the next by itself once.
+- **Moves are local.** Moving a block soft-freezes every other block where it stands; only blocks
+  the move lands on go back to the composer (`moveLocally`). Driven: before this, one move
+  reshuffled the whole demo week.
+- **Alternatives are the composer asked again** (`alternativesFor` in `lib/compose.ts`) — never a
+  second placement rule.
+- **Runs are cut by kind of action** (`lib/actionKind.ts`), domain only as the fallback; the AI
+  theming is not run on arrival in plan mode.
+
+Ledger: **W2**, **D2**. Strains **P3/N-01** only as far as any draft — nothing is written before
+Commit; Q-14 (the dial's top) is untouched. New names: *Held*, *To settle* (glossary).
+
+*Status: built, uncommitted — typecheck, full suite (one pre-existing case-sensitivity failure in
+`guard-public-ci`), build; driven on the dev demo account at 1440: open, next-week handover, select,
+alternatives, move, drag, hold, off, inbox into runs, undo, close. **Not** driven: Commit (it writes),
+the real account, `npm run perf` (no Chrome on this machine). Memory and the mid-week repair are not
+built.*
+
+---
 
 **D-179 · 2026-11-05 · The project deck can be read By domain — one lane per domain, a gap shows
 as an empty socket.**

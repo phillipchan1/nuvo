@@ -682,4 +682,44 @@ export function draftableKept(tasks: Task[], kept: Set<string>, weekStartISO: st
     .map((t) => (t.start_time ? { ...t, start_time: null } : t));
 }
 
+/** A block shaped the way the composer reads immovable time. */
+export function asBusyBlock(id: string, title: string, dayISO: string, startMin: number, durationMin: number): Task {
+  const hh = String(Math.floor(startMin / 60)).padStart(2, "0");
+  const mm = String(startMin % 60).padStart(2, "0");
+  return { id, title, duration_minutes: durationMin, start_time: `${dayISO}T${hh}:${mm}:00`, status: "backlog" } as unknown as Task;
+}
+
+/**
+ * The other places one block could go — **the composer's own answer, asked again.**
+ *
+ * Not a second placement rule (docs/plan-the-week-v2.md §9): each alternative is
+ * `composeWeek` placing this one block into the week with everything else held
+ * still, then asked once more with the previous answers taken. So an alternative
+ * obeys every rule a draft does — working hours, buffers, project mornings, the
+ * spread — and can never land on something. Each answer is held for an hour either
+ * side so the next one is a genuinely different place, not fifteen minutes later.
+ *
+ * `input.blocks` must already hold every OTHER block on the week (the caller's
+ * placements included); `current` is where this one sits now, and is excluded.
+ */
+export function alternativesFor(
+  input: ComposeInput,
+  task: Task,
+  current: { dayISO: string; startMin: number; durationMin: number },
+  count = 5,
+): Placement[] {
+  const out: Placement[] = [];
+  const taken: Task[] = [
+    asBusyBlock("__alt-current", "", current.dayISO, Math.max(0, current.startMin - 45), current.durationMin + 90),
+  ];
+  for (let i = 0; i < count; i++) {
+    const r = composeWeek({ ...input, tasks: [task], blocks: [...input.blocks, ...taken], weeklyBudgetMins: null, atomicIds: [task.id] });
+    const p = r.placements.find((x) => x.task.id === task.id);
+    if (!p) break;
+    out.push(p);
+    taken.push(asBusyBlock(`__alt-${i}`, "", p.dayISO, Math.max(0, p.startMin - 45), p.durationMin + 90));
+  }
+  return out;
+}
+
 export const fmtSlot = (p: Placement) => `${fmtMin(p.startMin)}–${fmtMin(p.startMin + p.durationMin)}`;

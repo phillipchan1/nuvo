@@ -2448,6 +2448,36 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc-event.evt-hidden.evt-focused,
 .fc-event.evt-hidden.evt-selected { opacity: 0.6; }
 
+/* Plan the week's draft, drawn on the Schedule (docs/plan-the-week-v2.md §4).
+   Dashed = proposed, not yet yours; the selected block lifts (focus lifts, it
+   doesn't outline) — instantly, as everything on the Schedule does. No blur:
+   these repeat per block (tests/perf-budget.test.ts). */
+.fc-event.evt-plan {
+  border-style: dashed !important;
+  border-width: 1px !important;
+}
+.fc-event.evt-plan.evt-plan-held { border-style: solid !important; }
+.fc-event.evt-plan.evt-plan-selected {
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-2px);
+  z-index: 5;
+}
+/* time kept clear while planning — hatched, behind everything */
+.fc .fc-bg-event.evt-plan-clear {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--line-strong) 75%, transparent) 0 1px, transparent 1px 7px) !important;
+  opacity: 1;
+}
+.fc .fc-bg-event.evt-plan-clear .fc-event-title {
+  font-size: var(--text-micro);
+  color: var(--muted);
+  font-style: normal;
+  margin: 2px 4px;
+}
+.fc-event.evt-plan-ghost {
+  border: 1.5px dashed var(--accent) !important;
+  cursor: pointer;
+}
+
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
 .fc-event.evt-draft-preview {
   opacity: 0.65;
