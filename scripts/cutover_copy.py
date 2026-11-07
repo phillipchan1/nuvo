@@ -725,3 +725,19 @@ WHERE c.contype = 'f'
   AND c.confrelid = to_regclass('auth.users')
   AND n.nspname = 'public'
 """
+
+
+# Blocker 7: every public table with a field_ts column must carry the stamp
+# trigger from worker/schema/field-ts.sql. Must print 0 after the install.
+FIELD_TS_TRIGGERS_MISSING_SQL = """
+SELECT count(*)
+FROM information_schema.columns c
+WHERE c.table_schema = 'public'
+  AND c.column_name = 'field_ts'
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_trigger t
+    WHERE t.tgrelid = format('public.%I', c.table_name)::regclass
+      AND t.tgname = c.table_name || '_stamp_field_ts'
+      AND NOT t.tgisinternal
+  )
+"""

@@ -325,6 +325,7 @@ jobs:
               push_upsert_sql,
               resolve_edge_preflight_url,
               skipped_from_copy,
+              FIELD_TS_TRIGGERS_MISSING_SQL,
               OWNER_FKS_ON_AUTH_USERS_SQL,
               REPOINT_OWNER_FKS_SQL,
               source_snapshot_is_fatal,
@@ -1236,6 +1237,16 @@ jobs:
               )
               print("applying Better Auth tables…", flush=True)
               run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(better_auth)])
+              # Blocker 7: pg_restore drops every trigger; put back the one that
+              # stamps field_ts for server writers (agent, capture, rollover…).
+              field_ts = Path("worker/schema/field-ts.sql")
+              if not field_ts.exists():
+                  die("missing worker/schema/field-ts.sql")
+              print("installing the field_ts stamp trigger…", flush=True)
+              run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(field_ts)])
+              missing = psql(target, FIELD_TS_TRIGGERS_MISSING_SQL, extra=["-tA"]).strip()
+              if missing != "0":
+                  die(f"{missing} field_ts table(s) have no stamp trigger after install")
               print('mapping auth.users → "user" (same ids)…', flush=True)
               ba_sql = ["BEGIN;"]
               for user in users:
