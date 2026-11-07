@@ -52,6 +52,7 @@ Statuses are owned by each doc's own header.
 
 **Surfaces & craft**
 - [`design-language.md`](./design-language.md) — **Warm Paper.** Read before building any surface.
+- [`native-feel/`](./native-feel/00-summary.md): **native feel.** The web-isms reset, the interaction primitives (menus, drag cancel, gestures, haptics, tooltips) and what is left for a decision.
 - [`marquee.md`](./marquee.md) — Nuvo shows an answer as well as telling it.
 - [`orientation.md`](./orientation.md) — first run forks: be shown, or be walked through.
 - [`APPLE_WATCH.md`](./APPLE_WATCH.md) — wrist capture via Shortcuts → the `agent` endpoint.

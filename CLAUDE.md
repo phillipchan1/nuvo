@@ -85,6 +85,18 @@ The rules that prevent regressions:
   (calendar events) keep their fill and apply the shadow/transform inline; on the Schedule
   the lift is instant (no transition).
 
+## Native feel — the browser stays out of the way ([`docs/native-feel/`](docs/native-feel/00-summary.md))
+
+`src/styles/native.css` + `lib/nativeFeel.ts` switch off the browser's defaults by **input
+capability** (`(hover)` / `(pointer)`), never by UA or width: arrow cursor on controls (the hand is
+for links only), no tap flash / callout / text selection on chrome, no browser context menu on
+app objects, `:active` press feedback under a finger, styled delayed tooltips for every `title`.
+So: **never add `cursor-pointer`** to a control; a hand-written `:hover` goes inside
+`@media (hover: hover)` (a test fails otherwise); content that must stay selectable inside chrome
+says `data-selectable`; a new menu uses `useMenuFocus` + `data-nested-surface`; a new pointer
+drag arms `armDragCancel`; touch physics come from `lib/gesture`, haptics from `lib/haptics`.
+`npm run e2e` (Playwright, fixture harnesses) covers selection, menus, swipe and sheets.
+
 ## Golden rule: every UI change ships mobile-ready
 
 The same components serve desktop and a 375–430px phone. A UI change is not done until:

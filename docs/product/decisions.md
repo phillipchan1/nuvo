@@ -6806,6 +6806,29 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
+capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*
+Nuvo already looked native and mostly behaved native. What read as "website" was the browser's
+own defaults leaking through: the hand cursor on every button, the iOS tap flash and copy
+callout, WebKit's Reload/Inspect menu on right-click, hover stuck after a tap, slow unstyled
+tooltips. These are fixed **once**, in `src/styles/native.css` plus `lib/nativeFeel.ts`, keyed on
+`(hover)`/`(pointer)` media rather than the user agent or the width. The defaults sit at zero
+specificity (`:where`), so a component's own choice always wins. **Consequences:** a new
+hand-written `:hover` must sit inside `@media (hover: hover)` (`tests/native-feel.test.ts`
+fails otherwise). Content that should stay selectable or keep the browser menu inside chrome
+says so with `data-selectable`. A new menu uses `useMenuFocus` and carries
+`data-nested-surface`. A new pointer drag arms `armDragCancel`. Haptics go through
+`lib/haptics.haptic()`, which is honestly a no-op on iOS until a native bridge exists.
+**Not done, on purpose:** anything that changes what an act does or how it is reached. That
+covers menus acting on a selection, long-press → context menu, undo for hard deletes, and sheet
+detents. They are listed for a decision in `native-feel/04-out-of-scope.md`.
+
+*Status: built. typecheck + build green; vitest green apart from the known `guard-public-ci`
+case-insensitive-filesystem failure; 23 Playwright specs green (`npm run e2e`: desktop Chromium,
+desktop WebKit, iPhone 13). Driven in the dev app at 1440 and 375. **Not run:** `npm run perf`
+(the rig aborted because the dev backend was 503-ing and the account looked unloaded), and a
+real iPhone (see `native-feel/05-verification.md`).*
+
 **D-181 · 2026-11-06 · The rest of Plan the week v2 is built for a trial — memory, keep-clear, day
 acts, split, and the planner staying with the week.** *(Extends D-180; spec
 [`plan-the-week-v2.md`](../plan-the-week-v2.md) §4–§8.)*
