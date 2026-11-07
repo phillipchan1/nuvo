@@ -1,0 +1,349 @@
+/* ════════════════════════════════════════════════════════════════════════
+   NATIVE FEEL — the web-isms reset (docs/native-feel/03-interaction-primitives.md)
+
+   One file, loaded after index.css, that makes the same SPA behave like an app
+   under a mouse (the Tauri Mac app, a desktop browser) and like an iOS app under
+   a thumb (the PWA, the Tauri iOS shell). Everything here is keyed on INPUT
+   CAPABILITY — `(hover: hover)`, `(pointer: coarse)` — never on the user agent
+   or the viewport width, so an iPad with a trackpad and a touchscreen laptop each
+   get the half that matches the pointer actually in use.
+
+   Rules are deliberately low-specificity (element and attribute selectors) so
+   any component that already decided its own cursor / selection / transition
+   keeps it. This file only fills the gaps the browser leaves.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. No browser artifacts ─────────────────────────────────────────────── */
+
+html {
+  /* The grey/blue flash iOS paints over anything tapped. Press feedback is ours
+     (§4), not the browser's. */
+  -webkit-tap-highlight-color: transparent;
+  /* Double-tap-to-zoom is a web gesture; pinch stays available. Also removes
+     any residual click delay. Intersects with descendants' own touch-action, so
+     a `touch-action: none` drag surface keeps it. */
+  touch-action: manipulation;
+  /* The whole UI must never rubber-band or trigger the browser's own
+     pull-to-refresh / swipe-navigation. Scrollers inside opt into `contain`. */
+  overscroll-behavior: none;
+}
+body {
+  overscroll-behavior: none;
+}
+
+/* Images and icons are never ghost files you can drag to the desktop. */
+img,
+svg,
+a img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* ── 2. Text selection: chrome is not text ───────────────────────────────── */
+
+/* App chrome — controls, navigation, menus, rows. Double-clicking a button or
+   long-pressing a row must never highlight its label or raise the iOS
+   copy/lookup callout. Content (chat replies, notes, descriptions, record
+   bodies) is untouched: it is not in this list, so it stays selectable. */
+:where(button,
+[role="button"],
+[role="tab"],
+[role="tablist"],
+[role="menu"],
+[role="menuitem"],
+[role="menuitemcheckbox"],
+[role="menuitemradio"],
+[role="menubar"],
+[role="option"],
+[role="listbox"],
+[role="toolbar"],
+[role="switch"],
+[role="checkbox"],
+[role="radio"],
+[role="slider"],
+[role="separator"],
+nav,
+label,
+summary,
+.tap,
+.tap-h,
+.row-hover,
+.deck-card,
+.section-label,
+[data-task-drag],
+[data-native-chrome],
+.fc) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* …and anything you can type into always selects, wherever it sits. WebKit will
+   refuse to place a caret in a contenteditable whose ancestor says `none`
+   unless the editor says otherwise explicitly. */
+:where(input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable="plaintext-only"],
+[data-selectable]) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+/* Buttons that are inputs are still chrome. */
+:where(input[type="button"],
+input[type="submit"],
+input[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+input[type="color"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ── 3. Cursor: the arrow is the app's cursor ────────────────────────────── */
+
+/* Native apps never show the pointing hand on a button, a row or a tab — the
+   hand means "this leaves for somewhere else". Tailwind v4's preflight already
+   gives <button> the arrow; this extends it to every ARIA control the app draws
+   out of a div, and keeps the hand for true hyperlinks only. */
+:where([role="button"],
+[role="tab"],
+[role="menuitem"],
+[role="menuitemcheckbox"],
+[role="menuitemradio"],
+[role="option"],
+[role="switch"],
+[role="checkbox"],
+[role="radio"],
+summary,
+label,
+select,
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+input[type="color"],
+input[type="button"],
+input[type="submit"],
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="file"]) {
+  cursor: default;
+}
+:where(a[href]) {
+  cursor: pointer;
+}
+:where(textarea,
+[contenteditable="true"],
+[contenteditable="plaintext-only"],
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="button"], [type="submit"], [type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"], [type="file"])) {
+  cursor: text;
+}
+:where([disabled], [aria-disabled="true"]) {
+  cursor: default;
+}
+
+/* ── 4. Press feedback under a thumb ─────────────────────────────────────── */
+
+/* iOS answers a touch the instant it lands: a control dims, a row greys. There
+   is no hover to pre-announce it, so `:active` IS the feedback. (WebKit only
+   matches `:active` on touch when a touchstart listener exists — main.tsx
+   installs a passive one via installNativeFeel.)
+
+   Opacity only: transform is owned by the lift/grab language and by drag
+   ghosts, and fighting it would cost a layer per row. Instant on press, eased
+   on release — the way UIKit's highlight fades back. */
+@media (hover: none) and (pointer: coarse) {
+  :where(button, [role="button"], [role="tab"], [role="menuitem"], [role="option"]) {
+    transition-property: opacity, background-color, color, border-color, box-shadow;
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-out);
+  }
+  button:not(:disabled):active,
+  [role="tab"]:active,
+  [role="menuitem"]:active,
+  [role="option"]:active,
+  .tap:active:not(:has(button:active, [role="button"]:active)),
+  [role="button"]:not([aria-disabled="true"]):active:not(:has(button:active, [role="button"]:active)) {
+    opacity: 0.55;
+    transition-duration: 0ms;
+  }
+  /* A row is a list cell, not a control: it greys rather than dims, so its
+     text stays legible under the finger (Reminders, Mail). */
+  .row-hover:active:not(:has(button:active, [role="button"]:active, input:active)),
+  [data-task-drag]:active:not(:has(button:active, [role="button"]:active, input:active)) {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--ink) 7%, transparent);
+    transition-duration: 0ms;
+  }
+  /* Dragging and swiping own their element while the finger is down. */
+  .glass-grab:active,
+  [data-swiping="true"]:active,
+  [data-swiping="true"] {
+    opacity: 1 !important;
+  }
+}
+
+/* ── 5. Focus: a ring for keys, nothing for clicks ───────────────────────── */
+
+/* A mouse click or a tap never leaves an outline behind; the keyboard always
+   gets one (index.css owns the ring itself, on :focus-visible). */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── 6. Inputs that look like the app, not the browser ───────────────────── */
+
+/* Autofill's yellow/blue wash is the browser announcing itself. Keep the app's
+   surface and ink; the 5000s transition is the only way to stop Chromium
+   repainting it (WebKit honours the inset shadow). */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  box-shadow: 0 0 0 1000px var(--surface) inset;
+  caret-color: var(--ink);
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Number spinners and the search field's ✕ are browser chrome. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+/* ── 7. Scrollbars: overlay-style under a mouse ──────────────────────────── */
+
+/* macOS draws scrollbars that float over content and only thicken under the
+   pointer. index.css already makes the WebKit thumb thin and trackless; Firefox
+   and the standards path get the same thin treatment here. Touch hides them. */
+/* Firefox only — in Chromium/WebKit setting `scrollbar-width` would switch off
+   the hand-tuned ::-webkit-scrollbar thumb in index.css. */
+@supports (-moz-appearance: none) {
+  @media (hover: hover) and (pointer: fine) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+  }
+}
+@media (hover: none) and (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* ── 8. Spring timing for movement ───────────────────────────────────────── */
+
+/* A critically-damped-ish spring sampled into `linear()` — the curve UIKit
+   uses for sheets and menus (≈ response 0.35, damping 0.86). Movement
+   (sheets, menus, reorder settle) uses it; feedback stays ≤200ms plain ease.
+   Browsers without `linear()` keep the cubic fallback. */
+:root {
+  --ease-native: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --d-native: 320ms;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-native: linear(
+      0, 0.0089, 0.0335, 0.0711, 0.1188, 0.1738, 0.2335, 0.2958, 0.3588, 0.4211,
+      0.4813, 0.5386, 0.5922, 0.6417, 0.6869, 0.7277, 0.7642, 0.7966, 0.8251,
+      0.8501, 0.8718, 0.8907, 0.907, 0.9211, 0.9332, 0.9436, 0.9525, 0.9601,
+      0.9666, 0.9722, 0.977, 0.9811, 0.9845, 0.9875, 0.99, 0.9921, 0.9939,
+      0.9954, 0.9967, 0.9978, 0.9987, 0.9995, 1
+    );
+  }
+}
+
+/* ── 9. Motion preference ────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d-native: 0.001ms;
+  }
+}
+
+/* ── 10. Action sheets ───────────────────────────────────────────────────── */
+
+/* A desktop dropdown's children re-framed as an iOS action sheet
+   (FloatingMenu on a phone): full-width, thumb-height rows on hairlines. */
+.native-sheet-menu > button,
+.native-sheet-menu > [role="menuitem"],
+.native-sheet-menu > [role="option"] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  font-size: 15px;
+  border-radius: var(--radius-sm, 8px);
+}
+.native-sheet-menu > button + button {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
+/* ── 11. Navigation stack motion ─────────────────────────────────────────── */
+
+/* A pushed frame arrives from the right edge, a popped one from the left —
+   the UINavigationController grammar, on the spring. Short travel (not a
+   full-width slide) so the content is readable on the first frame. */
+@keyframes nav-push-in {
+  from { transform: translateX(28%); opacity: 0.6; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes nav-pop-in {
+  from { transform: translateX(-18%); opacity: 0.6; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.nav-push-in { animation: nav-push-in var(--d-native) var(--ease-native) both; }
+.nav-pop-in { animation: nav-pop-in var(--d-native) var(--ease-native) both; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-push-in,
+  .nav-pop-in { animation: none; }
+}
+
+/* ── 12. Focused vs. unfocused selection ─────────────────────────────────── */
+
+/* A selection in a window that isn't key reads grey, not accent — the macOS
+   tell for "your keystrokes won't land here". (lib/nativeFeel toggles the
+   class on window focus/blur.) Pointer-fine only: an iPhone has one window. */
+@media (hover: hover) and (pointer: fine) {
+  html.window-inactive [aria-current="true"].bg-accent-soft,
+  html.window-inactive [aria-selected="true"].bg-accent-soft {
+    background-color: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+}
+
+/* ── 13. Tooltips (lib/tooltips.ts) ──────────────────────────────────────── */
+
+.native-tooltip {
+  position: fixed;
+  z-index: 2147483000;
+  max-width: 280px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: var(--shadow-2, 0 4px 14px rgba(0, 0, 0, 0.12));
+  pointer-events: none;
+  white-space: pre-line;
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 0;
+  visibility: hidden;
+}
+.native-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 90ms var(--ease-out);
+}

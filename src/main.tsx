@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./styles/native.css";
+import { installNativeFeel } from "./lib/nativeFeel";
 import { PostHogProvider } from "@posthog/react";
 import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";
 import { initPosthog, posthog } from "./lib/posthog";
@@ -15,6 +17,10 @@ import "./lib/installPrompt";
 captureReferralCodeFromLocation();
 
 const isTauri = isTauriShell();
+
+// Native feel: :active under touch, no browser context menu on app chrome,
+// spellcheck only on long-form text (src/lib/nativeFeel.ts).
+installNativeFeel();
 
 // Reserve left inset for macOS traffic lights when running in Tauri desktop.
 if (isTauri) {

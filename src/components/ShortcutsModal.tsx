@@ -1,3 +1,4 @@
+import { isMac } from "../lib/platform";
 import { Keycap, Modal } from "./ui";
 
 // A single shortcut: one label, and one-or-more key renderings. A string is a
@@ -110,6 +111,10 @@ const GROUPS: Group[] = [
   },
 ];
 
+// Keycaps in the platform's spelling: ⌘ ⌥ ⇧ on a Mac, Ctrl / Alt / Shift elsewhere.
+const MAC = isMac();
+const glyph = (k: string) => (MAC ? k : ({ "⌘": "Ctrl", "⌃": "Ctrl", "⌥": "Alt", "⇧": "Shift" } as Record<string, string>)[k] ?? k);
+
 function Row({ keys, sep, label }: Shortcut) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -119,7 +124,7 @@ function Row({ keys, sep, label }: Shortcut) {
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <span className="px-0.5 text-micro text-muted">{sep ?? "or"}</span>}
             {combo.map((k, j) => (
-              <Keycap key={j}>{k}</Keycap>
+              <Keycap key={j}>{glyph(k)}</Keycap>
             ))}
           </span>
         ))}

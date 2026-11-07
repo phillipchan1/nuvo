@@ -616,8 +616,10 @@ html:not([data-skin]) .agent-rail .agent-suggestion-chip {
   -webkit-backdrop-filter: blur(10px) saturate(1.15);
   backdrop-filter: blur(10px) saturate(1.15);
 }
+@media (hover: hover) {
 html:not([data-skin]) .agent-rail .agent-suggestion-chip:hover {
   background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
 }
 
 /* Below Nuvo's own collapse threshold there is no width to spend on a gutter —
@@ -909,12 +911,16 @@ html.tauri-macos .spine[data-rail] .spine-separator {
   overflow-wrap: anywhere;
   transition: background-color var(--d-fast) var(--ease-out);
 }
+@media (hover: hover) {
 .inline-edit:hover { background: var(--accent-soft); }
+}
 .inline-edit:focus { background: var(--accent-soft); }
 /* Spine rows (record task list) already carry hover/lift — a second tint on the
    title field reads as a box inside a box. Caret + row state is enough. */
-.inline-edit-quiet:hover,
 .inline-edit-quiet:focus { background: transparent; }
+@media (hover: hover) {
+.inline-edit-quiet:hover { background: transparent; }
+}
 .inline-edit:empty::before {
   content: attr(data-placeholder);
   color: var(--muted);
@@ -945,9 +951,11 @@ html.tauri-macos .spine[data-rail] .spine-separator {
 .lift {
   transition: transform var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
 }
+@media (hover: hover) {
 .lift:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-2);
+}
 }
 
 /* ── Focal lift — the one "this element is in focus" treatment ───────────
@@ -1050,14 +1058,18 @@ body.odp-dragging [data-resize] {
   border-color: color-mix(in srgb, var(--slot) 28%, var(--line));
   background: color-mix(in srgb, var(--slot) 4%, transparent);
 }
+@media (hover: hover) {
 .group\/col:hover .slot-open,
 .slot-open:hover {
   border-color: color-mix(in srgb, var(--slot) 55%, transparent);
   color: var(--slot);
   background: color-mix(in srgb, var(--slot) 9%, transparent);
 }
+}
+@media (hover: hover) {
 .slot-col:hover {
   background: color-mix(in srgb, var(--slot) 7%, transparent);
+}
 }
 /* The deck By domain: each lane × week cell is a create control, and a week the
    domain has nothing in wears a SOCKET — a card-sized soft hollow in the lane's
@@ -1066,13 +1078,18 @@ body.odp-dragging [data-resize] {
    first row), hence `+` rather than a group selector. Solid, never dashed: a
    lattice of dashed outlines reads as noise, not as open time. */
 .lane-cell {
-  cursor: pointer;
+  cursor: default;
   transition: background-color var(--d-base, 160ms) ease;
 }
-.lane-cell:hover,
 .lane-cell:focus-visible {
   background: color-mix(in srgb, var(--slot) 6%, transparent);
   outline: none;
+}
+@media (hover: hover) {
+.lane-cell:hover {
+  background: color-mix(in srgb, var(--slot) 6%, transparent);
+  outline: none;
+}
 }
 .lane-socket {
   background: color-mix(in srgb, var(--line-strong) 9%, transparent);
@@ -1086,15 +1103,24 @@ body.odp-dragging [data-resize] {
 .lane-cell[data-landing] {
   background: color-mix(in srgb, var(--slot) 12%, transparent);
 }
-.lane-cell:hover + .lane-socket,
 .lane-cell:focus-visible + .lane-socket,
 .lane-cell[data-landing] + .lane-socket {
   background: color-mix(in srgb, var(--slot) 9%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
 }
-.lane-cell:hover + .lane-socket .lane-socket-hint,
+@media (hover: hover) {
+.lane-cell:hover + .lane-socket {
+  background: color-mix(in srgb, var(--slot) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
+}
+}
 .lane-cell:focus-visible + .lane-socket .lane-socket-hint {
   color: var(--slot);
+}
+@media (hover: hover) {
+.lane-cell:hover + .lane-socket .lane-socket-hint {
+  color: var(--slot);
+}
 }
 /* Text-only open-time cue (column footers) — quiet at rest, blooms to
    `--slot` when the column is receptive. No box, no dash.
@@ -1110,9 +1136,13 @@ body.odp-dragging [data-resize] {
    (pressable() gives it a tab stop) and without this rule the label explaining
    what Enter will do stays dissolved — focusable and invisible, the exact
    failure docs/design-language.md names. */
-.group\/col:hover .slot-hint,
 .group\/col:focus-within .slot-hint {
   color: var(--slot);
+}
+@media (hover: hover) {
+.group\/col:hover .slot-hint {
+  color: var(--slot);
+}
 }
 /* Coverage gap — a soft solid recess matching a pip's geometry. Empty cells
    used to be dashed pills; that lattice was the "sloppy dotted lines." */
@@ -1123,8 +1153,10 @@ body.odp-dragging [data-resize] {
      striped block that out-weighs the deck below it. It blooms on hover. */
   background: color-mix(in srgb, var(--line-strong) 11%, transparent);
 }
+@media (hover: hover) {
 .group\/cell:hover .coverage-gap {
   background: color-mix(in srgb, var(--slot) 38%, transparent);
+}
 }
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {
@@ -1139,12 +1171,14 @@ body.odp-dragging [data-resize] {
    like every other focal element does — was border-brighten only, the one place
    `.lift-anim` cards didn't get `.glass-lift`'s shadow + rise. Fixed once here so
    both altitudes pick it up identically. */
+@media (hover: hover) {
 .deck-card:hover {
   border-color: transparent !important;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 34%, transparent),
     var(--shadow-lift);
   transform: translateY(-2px);
+}
 }
 /* The vacated slot left behind while a card is being dragged. */
 .is-dragging {
@@ -1175,8 +1209,10 @@ body.odp-dragging [data-resize] {
    would read subtle in light and loud in dark. A fraction of `--surface` is a
    partial step toward whatever the theme's raised surface is, so it stays a
    whisper in both. */
+@media (hover: hover) {
 .row-hover:hover {
   background-color: color-mix(in srgb, var(--surface) 40%, transparent);
+}
 }
 /* A rail row's selection replaces `.fast` outright — not just while selected.
    `.fast`'s eased transform/shadow/backdrop-filter/background-color caught
@@ -1324,7 +1360,9 @@ body.odp-dragging [data-resize] {
   background: var(--accent);
   transition: filter var(--d-fast, 120ms) ease;
 }
+@media (hover: hover) {
 .marquee-pill-back:hover { filter: brightness(1.08); }
+}
 .marquee-pill-x {
   display: flex;
   align-items: center;
@@ -1336,7 +1374,9 @@ body.odp-dragging [data-resize] {
   color: var(--muted);
   transition: background var(--d-fast, 120ms) ease, color var(--d-fast, 120ms) ease;
 }
+@media (hover: hover) {
 .marquee-pill-x:hover { background: var(--surface-2); color: var(--ink); }
+}
 @keyframes marquee-pill-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to { opacity: 1; transform: translate(-50%, 0); }
@@ -1502,9 +1542,13 @@ body.odp-dragging [data-resize] {
    stamp reveals a faint preview of the check on hover/focus — the same
    hover-reveal the old bespoke buttons used (`group-hover/chk:opacity-60`),
    just moved onto the stamp's own check path. */
-.group\/chk:hover .ship-stamp--off .ship-check,
 .group\/chk:focus-visible .ship-stamp--off .ship-check {
   opacity: 0.5;
+}
+@media (hover: hover) {
+.group\/chk:hover .ship-stamp--off .ship-check {
+  opacity: 0.5;
+}
 }
 
 /* Marquee multi-select — suppress text selection while dragging */
@@ -1572,7 +1616,9 @@ body.nuvo-selecting * {
    press, and lifts under the cursor. Everywhere after step one these fade back:
    your work is the subject then, and the calendar is context. */
 .ev-toggle { transition: background var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out); }
+@media (hover: hover) {
 .ev-toggle:hover { box-shadow: var(--shadow-lift); }
+}
 @media (prefers-reduced-motion: reduce) {
   .block-in, .gap-in { animation-duration: 1ms; animation-delay: 0ms !important; }
 }
@@ -1764,7 +1810,7 @@ body.nuvo-selecting * {
 }
 
 button {
-  cursor: pointer;
+  cursor: default;
 }
 
 input,
@@ -1909,7 +1955,9 @@ textarea:focus {
   outline: none;
 }
 .field::placeholder { color: var(--muted); }
+@media (hover: hover) {
 .field:hover:not(:disabled):not(:focus) { border-color: var(--line-strong); }
+}
 .field:focus,
 .field:focus-visible {
   border-color: var(--accent);
@@ -1977,9 +2025,11 @@ select.field { appearance: none; -webkit-appearance: none; }
   background-clip: content-box;
   border-radius: 6px;
 }
+@media (hover: hover) {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
   background-clip: content-box;
+}
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -2000,8 +2050,10 @@ select.field { appearance: none; -webkit-appearance: none; }
   background-clip: padding-box;
   border-radius: 3px;
 }
+@media (hover: hover) {
 .nuvo-chat::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--muted) 55%, transparent);
+}
 }
 
 /* Completion micro-interaction: check blooms, title strikes, row folds away.
@@ -2146,8 +2198,10 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--signal) 7%, transparent);
 }
+@media (hover: hover) {
 .fc .fc-daygrid-body .fc-daygrid-day.fc-day-today:hover .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--signal) 10%, transparent);
+}
 }
 .fc-timeGridWeek-view .fc-timegrid-col.fc-day-today,
 .fc-timeGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
@@ -2251,8 +2305,10 @@ select.field { appearance: none; -webkit-appearance: none; }
   pointer-events: none;
   opacity: 0;
 }
-.fc .fc-event:hover .fc-event-resizer::after,
 .fc .fc-event:focus-visible .fc-event-resizer::after { opacity: 1; }
+@media (hover: hover) {
+.fc .fc-event:hover .fc-event-resizer::after { opacity: 1; }
+}
 /* FullCalendar keeps the band `display:none` until the block is hovered, so the
    cursor never says "resize" when the pointer ENTERS on the edge: the band only
    exists after the hover starts, the browser doesn't re-pick the cursor until the
@@ -2332,14 +2388,18 @@ select.field { appearance: none; -webkit-appearance: none; }
 @container (max-width: 44px) {
   .fc .fc-timegrid-event [data-done-toggle] { display: none; }
 }
+@media (hover: hover) {
 .fc .fc-timegrid-event-harness .fc-event:hover {
   box-shadow: var(--shadow-2);
   transform: translateY(-1px);
   filter: brightness(1.015);
 }
+}
+@media (hover: hover) {
 .fc .fc-timegrid-event-harness .fc-event.evt-focused:hover {
   box-shadow: var(--shadow-lift);
   transform: translateY(-3px);
+}
 }
 /* Overlapping blocks get sliced into thin columns you can't read. CLICKING one
    marks it `.evt-focused`, which lifts its harness to the FULL column width, on
@@ -2370,9 +2430,11 @@ select.field { appearance: none; -webkit-appearance: none; }
   transform: translateY(-2px);
   box-shadow: var(--shadow-lift);
 }
+@media (hover: hover) {
 .fc .fc-timegrid-event-harness .fc-event.evt-selected:hover {
   box-shadow: var(--shadow-lift);
   transform: translateY(-3px);
+}
 }
 .fc-event.evt-done { opacity: 0.5; }
 /* Checkbox + strike are driven by the harness class so a click can paint
@@ -2475,7 +2537,7 @@ select.field { appearance: none; -webkit-appearance: none; }
 }
 .fc-event.evt-plan-ghost {
   border: 1.5px dashed var(--accent) !important;
-  cursor: pointer;
+  cursor: default;
 }
 
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
@@ -2579,8 +2641,10 @@ select.field { appearance: none; -webkit-appearance: none; }
   color: var(--ink);
 }
 /* And a quieter column glow when aiming at a specific time in the grid. */
+@media (hover: hover) {
 .cal-dragging .fc-timegrid-col:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
 }
 /* Dragging into a block → the slot (or the task, once armed) lifts and the drag
    ghost fades to almost nothing, so the item reads as "going into" it. The
@@ -2817,18 +2881,22 @@ body.drag-cancelled .fc-event-resizing {
    drag it down into the grid to block a slot. Kept tall enough to stay an easy
    drop target even when empty. Cells are clickable to create an anytime task. */
 .fc .fc-daygrid-body .fc-daygrid-day-frame {
-  cursor: pointer;
+  cursor: default;
 }
+@media (hover: hover) {
 .fc .fc-daygrid-body .fc-daygrid-day:hover .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
 }
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-active .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 /* Drag-hover beats the idle hover wash — see `.anytime-drop-target` above. */
+@media (hover: hover) {
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target:hover .fc-daygrid-day-frame {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
 }
 .fc .fc-timegrid-axis-cushion {
   text-transform: lowercase;
@@ -2849,9 +2917,11 @@ body.drag-cancelled .fc-event-resizing {
 .fc .fc-daygrid-event.evt-allday .fc-event-main {
   padding: 2px 0 !important;
 }
+@media (hover: hover) {
 .fc .fc-daygrid-event.evt-allday:hover {
   box-shadow: var(--shadow-1);
   filter: brightness(1.015);
+}
 }
 
 /* ── Month view: day numerals + compact pills ─────────────────────────── */
@@ -2902,9 +2972,11 @@ body.drag-cancelled .fc-event-resizing {
   display: inline-block;
   transition: background-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
 }
+@media (hover: hover) {
 .fc .fc-daygrid-more-link:hover {
   background: var(--accent-soft);
   color: var(--accent);
+}
 }
 /* Popover card */
 .fc .fc-more-popover {
@@ -2931,8 +3003,10 @@ body.drag-cancelled .fc-event-resizing {
   font-size: 14px;
   opacity: 0.6;
 }
+@media (hover: hover) {
 .fc .fc-more-popover .fc-popover-close:hover {
   opacity: 1;
+}
 }
 .fc .fc-more-popover .fc-popover-body {
   padding: 4px 4px 6px;
@@ -2989,9 +3063,13 @@ body.drag-cancelled .fc-event-resizing {
 .agent-turn-actions {
   transition: opacity var(--d-fast) var(--ease-out);
 }
-.agent-turn:hover .agent-turn-actions,
 .agent-turn:focus-within .agent-turn-actions {
   opacity: 1;
+}
+@media (hover: hover) {
+.agent-turn:hover .agent-turn-actions {
+  opacity: 1;
+}
 }
 
 .agent-markdown > :first-child {
@@ -3081,8 +3159,10 @@ body.drag-cancelled .fc-event-resizing {
 .agent-drop-overlay {
   animation: rise var(--d-fast) var(--ease-out) both;
 }
+@media (hover: hover) {
 .agent-attach-btn:hover svg {
   transform: rotate(-8deg);
+}
 }
 .agent-attach-btn svg {
   transition: transform 180ms var(--ease-out);
@@ -3093,12 +3173,16 @@ body.drag-cancelled .fc-event-resizing {
 .agent-attachment-thumb {
   transition: box-shadow 180ms var(--ease-out), border-color 180ms var(--ease-out);
 }
+@media (hover: hover) {
 .agent-attachment-thumb:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   box-shadow: 0 4px 14px -6px var(--accent-glow);
 }
+}
+@media (hover: hover) {
 .agent-rail-toggle:hover span:first-child {
   transform: scale(1.06);
+}
 }
 .agent-rail-toggle span:first-child {
   transition: transform 200ms var(--ease-spring);
@@ -3701,7 +3785,9 @@ html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
   border-radius: 4px;
   color: var(--muted);
 }
+@media (hover: hover) {
 .task-composer-unparse:hover { background: var(--accent-soft); color: var(--ink); }
+}
 .task-composer-swatch { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
 .task-composer-hints { display: inline-flex; align-items: center; gap: 0.3125rem; font-size: var(--text-meta); color: var(--muted); white-space: nowrap; }
 .task-composer-hints kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 0.25rem; font-size: var(--text-micro); background: var(--surface); }
