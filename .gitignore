@@ -43,3 +43,7 @@ src-tauri/plugins/*/target/
 
 # Supabase CLI local state (supabase start)
 supabase/.branches
+
+# Playwright
+/test-results/
+/playwright-report/
