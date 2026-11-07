@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { handleAgent } from "./agentHttp.ts";
-import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
+import { exposeSignedAuthToken, primeAppleClientSecret, SessionLookupError, sessionUser } from "./auth.ts";
+import { handleSigninReturn, handleSigninStart } from "./signinDoor.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
@@ -155,6 +156,11 @@ async function sqlUnavailable(sql: Sql): Promise<boolean> {
   }
 }
 
+// Google / Apple sign-in for every shell — a top-level navigation, so the
+// OAuth state cookie is first-party (signinDoor.ts). Before /api/auth/*.
+app.get("/api/signin/return", (c) => handleSigninReturn(c));
+app.get("/api/signin/:provider", (c) => handleSigninStart(c));
+
 app.all("/api/auth/*", async (c) => {
   const started = beginAuthCors(c.req.header("Origin"), c.env);
   if (!started.ok) return started.response;
@@ -162,6 +168,8 @@ app.all("/api/auth/*", async (c) => {
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   let io: RequestIo | undefined;
   try {
+    // Apple's callback exchanges a code with a minted client_secret.
+    await primeAppleClientSecret(c.env);
     io = await requestIo(c);
     const res = await exposeSignedAuthToken(
       await io.auth.handler(c.req.raw),

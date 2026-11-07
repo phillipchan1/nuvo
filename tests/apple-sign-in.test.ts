@@ -310,9 +310,13 @@ describe("deleting the account revokes Apple's grant (guideline 5.1.1(v))", () =
     expect(wipe).toContain("APPLE_CLIENT_ID");
     const spa = read("src/lib/appleAuth.ts");
     expect(spa).toContain("workersEnabled");
+    // Native: Apple's id token straight to Better Auth. Redirect + link:
+    // the Worker's sign-in door (signinDoor.ts), never a client-side
+    // signIn.social redirect whose state cookie WKWebView would drop.
     expect(spa).toContain("signIn.social");
-    expect(spa).toContain("linkSocial");
     expect(spa).toContain('provider: "apple"');
+    expect(spa).toContain('goThroughDoor("apple")');
+    expect(spa).toContain('linkThroughDoor("apple")');
   });
 
   it("the migration creates apple_identities with owner-only reads", () => {

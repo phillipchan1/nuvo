@@ -53,13 +53,12 @@ export const PREVIEW_ORIGINS = [
   `https://*-nuvo-app-preview.${WORKERS_DEV}`,
 ] as const;
 
+// Local runtime only (the auth origin itself is loopback). Any port: a dev
+// server that drifts off 5717 (vite's autoPort) must still sign in.
 const LOOPBACK_ORIGINS = [
-  "http://localhost:5717",
-  "http://localhost:8787",
-  "http://127.0.0.1:5717",
-  "http://127.0.0.1:8787",
-  "http://[::1]:5717",
-  "http://[::1]:8787",
+  "http://localhost:*",
+  "http://127.0.0.1:*",
+  "http://[::1]:*",
 ] as const;
 
 function appUrlOrigin(env: Env): string | null {
@@ -86,12 +85,18 @@ export function trustedAuthOrigins(env: Env): string[] {
 }
 
 /**
- * Exact match, or a pattern whose only wildcard is a leading `*` inside the
- * first host label (`https://*-nuvo-app.<acct>.workers.dev`). The `*`
- * matches `[a-z0-9-]+` — never a dot, so it cannot climb to another host.
+ * Exact match; a leading `*` inside the first host label
+ * (`https://*-nuvo-app.<acct>.workers.dev`, `[a-z0-9-]+`, never a dot, so it
+ * cannot climb to another host); or a `:*` port on a fixed host (loopback).
  */
 export function originMatches(origin: string, pattern: string): boolean {
   if (!pattern.includes("*")) return origin === pattern;
+  // `http://localhost:*` — any port, digits only.
+  const port = /^(https?:\/\/[^*/]+):\*$/.exec(pattern);
+  if (port) {
+    const prefix = `${port[1]}:`;
+    return origin.startsWith(prefix) && /^\d{1,5}$/.test(origin.slice(prefix.length));
+  }
   const m = /^(https?:\/\/)\*([^*/]+)$/.exec(pattern);
   if (!m) return false;
   const [, scheme, rest] = m;

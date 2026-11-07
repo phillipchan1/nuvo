@@ -4,7 +4,7 @@
  * it as Bearer — Better Auth is configured with requireSignature.
  */
 import { createAuthClient } from "better-auth/client";
-import { emailOTPClient } from "better-auth/client/plugins";
+import { emailOTPClient, oneTimeTokenClient } from "better-auth/client/plugins";
 import { authBaseUrl } from "./backend";
 import { AUTH_SESSION_CHANGED } from "./entitlementRead";
 
@@ -98,7 +98,7 @@ export function createNuvoAuthClient() {
   return createAuthClient({
     baseURL: base.replace(/\/api$/, "") || base,
     basePath: "/api/auth",
-    plugins: [emailOTPClient()],
+    plugins: [emailOTPClient(), oneTimeTokenClient()],
     fetchOptions: {
       credentials: "include",
       auth: {

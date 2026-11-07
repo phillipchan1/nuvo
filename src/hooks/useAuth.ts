@@ -101,6 +101,11 @@ export function useAuth() {
           setWorkerSession(next);
           setSession((prev) => (sameSession(prev, next) ? prev : next));
         };
+        // Back from the sign-in door (Google / Apple): trade the one-time
+        // token for the signed bearer before the first session read.
+        const { consumeAuthReturn } = await import("../lib/authReturn");
+        await consumeAuthReturn((token) => client.oneTimeToken.verify({ token }));
+        if (cancelled) return;
         const { data } = await client.getSession();
         applyBa(data);
         if (import.meta.env.DEV && !data?.session) {

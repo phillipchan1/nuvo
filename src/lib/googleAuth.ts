@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { authReturnUrl } from "./authRedirect";
+import { workersEnabled } from "./backend";
 
 /** Shared Google Auth options — login and identity linking both return here.
  *
@@ -33,8 +34,17 @@ function googleAuthOptions() {
   };
 }
 
-/** Sign in (or sign up) with Google. Prefer linking onto an existing user first. */
-export async function signInWithGoogle() {
+/** Sign in (or sign up) with Google. Prefer linking onto an existing user first.
+ *
+ *  Flag on (Better Auth): the Worker's sign-in door, a top-level navigation —
+ *  `prompt=select_account` (above, D-126) is set by the Worker's Google
+ *  provider, so it holds on every shell. The return leg comes back to this
+ *  origin (`tauri://localhost` included) as a one-time token; see authReturn.ts. */
+export async function signInWithGoogle(): Promise<{ error: { message: string } | null }> {
+  if (workersEnabled) {
+    const { goThroughDoor } = await import("./authReturn");
+    return goThroughDoor("google");
+  }
   return supabase.auth.signInWithOAuth({
     provider: "google",
     options: googleAuthOptions(),
@@ -42,7 +52,8 @@ export async function signInWithGoogle() {
 }
 
 /** Attach Google to the currently signed-in user (keeps the same auth UUID). */
-export async function linkGoogleIdentity() {
+export async function linkGoogleIdentity(): Promise<{ error: { message: string } | null }> {
+  if (workersEnabled) return linkThroughDoor("google");
   return supabase.auth.linkIdentity({
     provider: "google",
     options: googleAuthOptions(),
@@ -53,4 +64,15 @@ export function hasGoogleIdentity(
   identities: { provider: string }[] | undefined | null,
 ): boolean {
   return Boolean(identities?.some((i) => i.provider === "google"));
+}
+
+/** Flag on: mint a one-time token for this session (bearer, never a URL) and
+ *  walk the door with it, so linking needs no cookie on the API origin. */
+export async function linkThroughDoor(provider: "google" | "apple"): Promise<{ error: { message: string } | null }> {
+  const { createNuvoAuthClient } = await import("./authClient");
+  const res = await createNuvoAuthClient().oneTimeToken.generate();
+  const token = res.data?.token;
+  if (!token) return { error: { message: res.error?.message || "Couldn't start linking. Try again." } };
+  const { goThroughDoor } = await import("./authReturn");
+  return goThroughDoor(provider, token);
 }

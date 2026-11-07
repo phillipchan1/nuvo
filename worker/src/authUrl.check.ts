@@ -229,6 +229,14 @@ ok(
 );
 ok(originMatches("https://x-nuvo-app.h.dev", "https://*-nuvo-app.h.dev"), "label wildcard matches");
 ok(!originMatches("https://x.y-nuvo-app.h.dev", "https://*-nuvo-app.h.dev"), "label wildcard never spans a dot");
+ok(originMatches("http://localhost:5718", "http://localhost:*"), "loopback port wildcard matches a port");
+for (const bad of ["http://localhost:5718.evil.example", "http://localhost:", "http://localhost:80/x", "http://localhost.evil.example:80"]) {
+  ok(!originMatches(bad, "http://localhost:*"), `loopback port wildcard refuses ${bad}`);
+}
+{
+  const local = beginAuthCors("http://localhost:5718", { ENVIRONMENT: "local" });
+  ok(local.ok && local.cors["Access-Control-Allow-Origin"] === "http://localhost:5718", "local CORS echoes a drifted vite port");
+}
 // One list for both: Better Auth's own origin check reads the same strings.
 {
   const ba = createAuth(liveEnv as never, { db: {}, type: "postgres" } as never);
