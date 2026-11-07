@@ -7,12 +7,16 @@
  * user_id. Payment-rail writers are not imported here.
  */
 import { isEntitled, planOf, type PlanSource, type PlanState } from "../../supabase/functions/_shared/planRules.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
+import type { Sql } from "./db.ts";
 
 export type { PlanSource, PlanState };
 
 export interface EntitlementEnv {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  /** After the flip, billing lives on Neon (worker/src/billing) and is read there. */
+  CUTOVER_FLIPPED?: string;
 }
 
 /** Physical columns only — never the `entitled` / `plan` SQL functions,
@@ -175,12 +179,43 @@ export async function fetchSubscriptionByUserId(
   return row;
 }
 
+/**
+ * Post-flip read: the same physical columns, from Neon, by the same
+ * preserved user id. Billing writes land here once CUTOVER_FLIPPED.
+ */
+export async function fetchSubscriptionFromNeon(sql: Sql, userId: string): Promise<SubscriptionColumns | null> {
+  let rows: unknown[];
+  try {
+    rows = (await sql`
+      SELECT user_id::text AS user_id, status,
+             to_char(trial_ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS trial_ends_at,
+             plan_source,
+             to_char(current_period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS current_period_end,
+             cancel_at_period_end, referral_code, referral_uses,
+             to_char(referral_last_use_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS referral_last_use_at,
+             referral_credits_earned,
+             to_char(referral_last_credit_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS referral_last_credit_at
+      FROM subscriptions
+      WHERE user_id = ${userId}::uuid
+      LIMIT 1
+    `) as unknown as unknown[];
+  } catch (err) {
+    throw new EntitlementUnavailableError(err);
+  }
+  const row = parseSubscriptionRow(rows[0]);
+  if (row && row.user_id !== userId) return null;
+  return row;
+}
+
 let fetchSubscription: SubscriptionFetcher = fetchSubscriptionByUserId;
+let fetcherOverridden = false;
 
 export function installSubscriptionFetcherForTests(fn: SubscriptionFetcher): () => void {
   fetchSubscription = fn;
+  fetcherOverridden = true;
   return () => {
     fetchSubscription = fetchSubscriptionByUserId;
+    fetcherOverridden = false;
   };
 }
 
@@ -192,8 +227,10 @@ export async function readEntitlement(
   env: EntitlementEnv,
   userId: string,
   now: Date = new Date(),
+  sql?: Sql,
 ): Promise<Entitlement> {
-  const row = await fetchSubscription(env, userId);
+  const onNeon = Boolean(sql) && cutoverFlipped(env.CUTOVER_FLIPPED) && !fetcherOverridden;
+  const row = onNeon ? await fetchSubscriptionFromNeon(sql!, userId) : await fetchSubscription(env, userId);
   if (row && row.user_id !== userId) {
     return entitlementOf(null, userId, now);
   }

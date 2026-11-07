@@ -7,6 +7,7 @@
 import type { Sql } from "./db.ts";
 import { openAccountRefreshToken } from "./lib/accountTokens.ts";
 import type { Env } from "./env.ts";
+import { ensureTrialSubscription } from "./billing/db.ts";
 
 export const PLANNER_TABLES = [
   "tasks",
@@ -1289,7 +1290,23 @@ export async function bootstrapUser(
   }
 
   await ensureSettingsAndDomains(store);
+  await ensureTrial(sql, authId);
   return store;
+}
+
+/**
+ * The Neon half of Supabase's `handle_new_user` trial grant: a brand-new
+ * account gets its 14-day row, keyed by the auth id. ON CONFLICT keeps a
+ * copied (or racing) row untouched. Never throws — a schema that has not
+ * been re-applied yet must not break sign-up; the entitlement read then
+ * says "no row" and the flip checklist catches it.
+ */
+async function ensureTrial(sql: Sql, authId: string): Promise<void> {
+  try {
+    await ensureTrialSubscription(sql, authId);
+  } catch (e) {
+    console.warn("bootstrap: trial row not written", e instanceof Error ? e.name : "error");
+  }
 }
 
 async function recoverInsert(
@@ -1902,9 +1919,12 @@ export async function ownedAppleRefreshToken(
 /** Planner `users` + Better Auth `"user"` (session, account cascade) in one txn. */
 export async function wipeOwnedAccount(
   sql: Store["sql"],
-  ids: { plannerUserId: string; authUserId: string },
+  ids: { plannerUserId: string; authUserId: string; billingOnNeon?: boolean },
 ): Promise<{ planner: number; auth: number }> {
   return sql.begin(async (tx) => {
+    if (ids.billingOnNeon) {
+      await tx`DELETE FROM subscriptions WHERE user_id = ${ids.authUserId}::uuid`;
+    }
     const planner = await tx`
       DELETE FROM users WHERE id = ${ids.plannerUserId} RETURNING id
     `;

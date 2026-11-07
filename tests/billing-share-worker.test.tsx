@@ -64,12 +64,15 @@ describe("Share Nuvo on the Worker path", () => {
     host.remove();
   });
 
-  it("disables the share block with a clear message and does not call referral-code", async () => {
+  // referral-code is ported (worker/src/billing): on the Worker path the share
+  // block mints through the same call, which `workerRoute` sends to the twin.
+  it("mints the share code through referral-code, same as the Supabase path", async () => {
+    fetchReferralCode.mockResolvedValue("PHIL-K7RM");
     await act(async () => {
       root.render(createElement(WebBillingPane));
     });
-    expect(host.textContent).toMatch(/Friend-codes still mint on today’s billing path/i);
-    expect(host.textContent).not.toMatch(/Getting your code/i);
-    expect(fetchReferralCode).not.toHaveBeenCalled();
+    expect(fetchReferralCode).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toMatch(/PHIL-K7RM/);
+    expect(host.textContent).not.toMatch(/Friend-codes still mint on today’s billing path/i);
   });
 });

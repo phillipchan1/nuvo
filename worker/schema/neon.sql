@@ -546,3 +546,67 @@ ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS key_version SMALLIN
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS refresh_token_iv BYTEA;
 ALTER TABLE public.apple_identities ADD COLUMN IF NOT EXISTS key_version SMALLINT;
+
+-- ---------------------------------------------------------------------------
+-- Billing (the Worker port of stripe-* / apple-* / referral-code).
+-- Keyed by the preserved auth id (Better Auth "user".id = GoTrue auth.users.id),
+-- the same key Supabase used — NOT the planner users.id. No FK: "user".id is
+-- TEXT and the cutover copies rows before the auth table settles. Delete-account
+-- removes the row explicitly. Columns mirror public.subscriptions on Supabase
+-- (migrations 41, 66–70, 75) so the flip-night copy is column-for-column.
+-- Writers: only the Worker billing routes (worker/src/billing/*), after the flip.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  user_id UUID PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'trialing'
+    CHECK (status IN ('trialing', 'active', 'past_due', 'cancelled')),
+  trial_ends_at TIMESTAMPTZ NOT NULL,
+  stripe_customer_id TEXT UNIQUE,
+  stripe_subscription_id TEXT UNIQUE,
+  price_id TEXT,
+  current_period_end TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  referral_code TEXT,
+  stripe_promotion_code_id TEXT,
+  referred_by UUID,
+  referral_code_used TEXT,
+  referral_reward_granted_at TIMESTAMPTZ,
+  referral_credits_earned INTEGER NOT NULL DEFAULT 0,
+  referral_last_credit_at TIMESTAMPTZ,
+  referral_uses INTEGER NOT NULL DEFAULT 0,
+  referral_last_use_at TIMESTAMPTZ,
+  plan_source TEXT CHECK (plan_source IS NULL OR plan_source IN ('stripe', 'apple')),
+  apple_original_transaction_id TEXT,
+  apple_product_id TEXT,
+  -- Legacy migration-70 columns. Unused by code; kept so the copy is lossless.
+  apple_status TEXT CHECK (apple_status IN ('active', 'grace', 'expired', 'revoked')),
+  apple_expires_at TIMESTAMPTZ,
+  apple_grace_until TIMESTAMPTZ,
+  apple_auto_renew BOOLEAN NOT NULL DEFAULT FALSE,
+  apple_environment TEXT CHECK (apple_environment IN ('production', 'sandbox'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_referral_code_uidx
+  ON public.subscriptions (referral_code) WHERE referral_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_stripe_promotion_code_id_uidx
+  ON public.subscriptions (stripe_promotion_code_id) WHERE stripe_promotion_code_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_apple_original_transaction_id_uidx
+  ON public.subscriptions (apple_original_transaction_id) WHERE apple_original_transaction_id IS NOT NULL;
+
+CREATE OR REPLACE TRIGGER subscriptions_set_updated_at
+  BEFORE UPDATE ON public.subscriptions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- Webhook idempotency ledgers. Insert-first: a duplicate key means "already handled".
+-- The flip-night copy brings Supabase's rows over so a retry of an event Supabase
+-- already processed is still recognised here.
+CREATE TABLE IF NOT EXISTS public.stripe_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.apple_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

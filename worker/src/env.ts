@@ -67,6 +67,23 @@ export interface Env {
   MS_CLIENT_SECRET?: string;
   /** SPA origin for OAuth redirects after consent. */
   APP_URL?: string;
+  /**
+   * Billing (worker/src/billing). All inert until CUTOVER_FLIPPED — before the
+   * flip Supabase's stripe-* / apple-* functions own every billing write.
+   * Same names and values as the Supabase function secrets.
+   */
+  STRIPE_SECRET_KEY?: string;
+  /** whsec_… of the Stripe endpoint. Editing the endpoint URL in place keeps it. */
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_MONTHLY?: string;
+  STRIPE_PRICE_ANNUAL?: string;
+  /** coup_… for friend codes. Unset → referral-code 503 (same as Supabase). */
+  STRIPE_REFERRAL_COUPON?: string;
+  /** Optional `?secret=` on the App Store notification URL. */
+  APPLE_NOTIFICATION_SECRET?: string;
+  /** StoreKit product ids (strings, not the 6804… Apple ids). */
+  NUVO_IAP_MONTHLY?: string;
+  NUVO_IAP_ANNUAL?: string;
 }
 
 export function databaseUrl(env: Env): string | null {

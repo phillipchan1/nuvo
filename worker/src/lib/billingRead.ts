@@ -1,5 +1,6 @@
 /**
- * Delete-account Stripe gate. Own PostgREST read — never `readEntitlement`,
+ * Delete-account Stripe gate. Own read (Supabase PostgREST before the flip,
+ * Neon after) — never `readEntitlement`,
  * never a Stripe secret, never the Stripe API.
  *
  * The shared entitlement SELECT omits Stripe identifiers (they must not
@@ -20,6 +21,8 @@ import {
   APPLE_DELETE_NOTICE,
   STRIPE_DELETE_BLOCK_MESSAGE,
 } from "../../../supabase/functions/_shared/accountDeletion.ts";
+import { cutoverFlipped } from "../cutoverFlip.ts";
+import type { Sql } from "../db.ts";
 import type { Env } from "../env.ts";
 
 export { APPLE_DELETE_NOTICE };
@@ -170,11 +173,28 @@ async function fetchBillingSubscription(
   return mapGateRow(body, userId);
 }
 
+/** Post-flip delete gate: the same columns from Neon. Any failure fails closed. */
+export async function readBillingSubscriptionFromNeon(sql: Sql, userId: string): Promise<DeleteGateRow | null> {
+  let rows: unknown[];
+  try {
+    rows = (await sql`
+      SELECT user_id::text AS user_id, status, trial_ends_at::text AS trial_ends_at, plan_source, stripe_subscription_id
+      FROM subscriptions WHERE user_id = ${userId}::uuid LIMIT 1
+    `) as unknown as unknown[];
+  } catch {
+    throw new BillingLookupError();
+  }
+  if (!rows.length) return null;
+  return mapGateRow(rows[0], userId);
+}
+
 export async function readBillingSubscription(
-  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
+  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY" | "CUTOVER_FLIPPED">,
   userId: string,
   fetchImpl?: typeof fetch,
+  sql?: Sql,
 ): Promise<DeleteGateRow | null> {
   if (testReader && !fetchImpl) return testReader(env, userId);
+  if (sql && cutoverFlipped(env.CUTOVER_FLIPPED)) return readBillingSubscriptionFromNeon(sql, userId);
   return fetchBillingSubscription(env, userId, fetchImpl ?? fetch);
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SUPABASE_ONLY_FUNCTIONS, workerRoute } from "../src/lib/workerRoute";
+import { BILLING_CLIENT_FUNCTIONS, SUPABASE_ONLY_FUNCTIONS, workerRoute } from "../src/lib/workerRoute";
 
 const SUPA = "https://example.supabase.co";
 const API = "https://api.nuvo.day/api";
@@ -19,7 +19,14 @@ describe("workerRoute — where a Supabase-bound request goes on the Worker path
     );
   });
 
-  it("leaves billing, GoTrue, storage and other hosts alone", () => {
+  it("sends billing functions to their Worker twins (the routes in worker/src/billing/routes.ts)", () => {
+    for (const fn of BILLING_CLIENT_FUNCTIONS) {
+      expect(workerRoute(`${SUPA}/functions/v1/${fn}`, SUPA, API)).toBe(`https://api.nuvo.day/functions/v1/${fn}`);
+    }
+    expect(SUPABASE_ONLY_FUNCTIONS.size).toBe(0);
+  });
+
+  it("leaves GoTrue, storage and other hosts alone", () => {
     for (const fn of SUPABASE_ONLY_FUNCTIONS) {
       expect(workerRoute(`${SUPA}/functions/v1/${fn}`, SUPA, API)).toBeNull();
     }

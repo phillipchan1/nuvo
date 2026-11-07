@@ -75,7 +75,7 @@ const copyYml = readFileSync(join(here, "../../.github/workflows/cutover-migrate
 ok(copyYml.includes("identity_data->>'sub'"), "copy: Apple sub is the identity account id");
 ok(copyYml.includes('provider in {"google", "apple"}'), "copy: apple maps to Better Auth apple");
 ok(copyYml.includes('"accountId"') && copyYml.includes('"userId"'), "copy: writes BA accountId + userId");
-ok(/readEntitlement\(c\.env, got\.user\.id\)/.test(indexSrc), "entitlement: keyed by the verified session id");
+ok(/readEntitlement\(c\.env, got\.user\.id[,)]/.test(indexSrc), "entitlement: keyed by the verified session id");
 ok(!/STRIPE_SECRET/.test(indexSrc), "entitlement route does not read a Stripe secret");
 ok(/user_id = \$\{store\.userId\}/.test(readFileSync(join(here, "slotMirror.ts"), "utf8")), "slot-mirror: owner filter is store.userId");
 ok(/user_id = \$\{store\.userId\}/.test(readFileSync(join(here, "taskMirror.ts"), "utf8")), "task-mirror: owner filter is store.userId");
@@ -1347,7 +1347,8 @@ const restoreSubs = installSubscriptionFetcherForTests(async (_env, userId) => {
     [b.id]: {
       user_id: b.id,
       status: "trialing",
-      trial_ends_at: "2026-11-01T00:00:00Z",
+      // Far future: this fixture asserts a *live* trial, so it must not expire under the suite.
+      trial_ends_at: "2099-11-01T00:00:00Z",
       plan_source: null,
     },
   };

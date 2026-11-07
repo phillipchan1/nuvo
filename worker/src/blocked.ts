@@ -1,6 +1,6 @@
 import { OPEN_CORS, json } from "./cors.ts";
 
-/** Billing / Stripe / StoreKit — do not port. */
+/** Billing / Stripe / StoreKit — ported to billing/routes.ts, inert (503) until CUTOVER_FLIPPED. */
 export const BILLING_FUNCTIONS = new Set([
   "apple-iap",
   "apple-webhook",

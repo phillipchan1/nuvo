@@ -45,6 +45,8 @@ to update payment methods" and "Allow customers to cancel subscriptions".
 **Developers → Webhooks → + Add endpoint**
 
 - Endpoint URL: `https://ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook`
+  (after the Cloudflare cutover: `https://api.nuvo.day/api/stripe-webhook`, changed in place — see
+  [`cloudflare-cutover.md` → Billing port](./cloudflare-cutover.md#billing-port))
 - Events to send — select exactly these **six**:
   - `checkout.session.completed`
   - `customer.subscription.created`

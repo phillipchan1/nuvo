@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Btn } from "../../ui";
 import { useSubscription } from "../../../hooks/useSubscription";
-import { workersEnabled } from "../../../lib/backend";
 import { fetchPortalUrl, fetchReferralCode, openBillingUrl } from "../../../lib/stripeBilling";
 import { planOf, trialDaysRemaining, type Subscription } from "../../../lib/subscription";
 import { shareBlurb } from "../../../lib/referral";
@@ -34,34 +33,14 @@ export function WebBillingPane() {
       )}
 
       {subscription && (plan === "trialing" || (plan === "active" && source !== "apple")) && (
-        workersEnabled ? (
-          <ShareCodeUnavailable />
-        ) : (
-          <ShareCodeBlock
-            initial={subscription.referral_code ?? null}
-            creditsEarned={subscription.referral_credits_earned ?? 0}
-            uses={subscription.referral_uses ?? 0}
-          />
-        )
+        <ShareCodeBlock
+          initial={subscription.referral_code ?? null}
+          creditsEarned={subscription.referral_credits_earned ?? 0}
+          uses={subscription.referral_uses ?? 0}
+        />
       )}
 
       {upgrading && <WebUpgradeModal onClose={() => setUpgrading(false)} />}
-    </div>
-  );
-}
-
-/** Friend-codes mint through `referral-code`, which needs a GoTrue JWT and
- *  writes a Stripe Promotion Code. The Worker flag does not port that, so
- *  this block must not call it — a failing invoke would retry on every open. */
-function ShareCodeUnavailable() {
-  return (
-    <div className="mt-6 border-t border-line pt-4">
-      <div className="text-label uppercase tracking-wider text-muted">Share Nuvo</div>
-      <p className="mt-1 text-caption leading-snug text-muted">
-        Friend-codes still mint on today’s billing path and aren’t available
-        while this build talks to the Worker. Your plan and renewal dates above
-        still apply.
-      </p>
     </div>
   );
 }

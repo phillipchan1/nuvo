@@ -16,6 +16,7 @@ import {
 } from "../../supabase/functions/_shared/accountDeletion.ts";
 import { readAppleAuthConfig, revokeAppleToken } from "../../supabase/functions/_shared/appleIdentity.ts";
 import { json, OPEN_CORS } from "./cors.ts";
+import { cutoverFlipped } from "./cutoverFlip.ts";
 import type { Env } from "./env.ts";
 import {
   ACTIVE_STRIPE_DELETE_MESSAGE,
@@ -67,7 +68,7 @@ export async function deleteOwnedAccount(
 
   let billing;
   try {
-    billing = await readBillingSubscription(env, user.id, fetchImpl);
+    billing = await readBillingSubscription(env, user.id, fetchImpl, store.sql);
   } catch (err) {
     if (err instanceof BillingLookupError) {
       return json({ error: "Could not verify billing status. Try again." }, 502, OPEN_CORS);
@@ -84,6 +85,9 @@ export async function deleteOwnedAccount(
   const { planner, auth } = await wipeOwnedAccount(store.sql, {
     plannerUserId: store.userId,
     authUserId: user.id,
+    // Supabase cascaded subscriptions off auth.users; on Neon it is keyed by
+    // the auth id with no FK, so the wipe removes it once billing lives here.
+    billingOnNeon: cutoverFlipped(env.CUTOVER_FLIPPED),
   });
   if (planner === 0 && auth === 0) {
     return json({ error: "not found" }, 404, OPEN_CORS);
