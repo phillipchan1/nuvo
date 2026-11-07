@@ -1,6 +1,6 @@
 # On Deck — grooming that starts at the timeline
 
-Status: **spec** (2026-07-01). The surface that fixes the thing grooming is missing: a
+Status: **spec** (2026-07-01). *2026-11-05: the built project deck can be read **By domain**, one lane per domain with empty weeks as sockets (D-179).* The surface that fixes the thing grooming is missing: a
 higher-level *start*. Today grooming drops you straight into a per-project card deck
 (`RefineRun` → `ItemRun`) with no view of what's coming, sorted by *how unready* a project
 is rather than *when it's needed*. On Deck is the timeline you open **first** — see the

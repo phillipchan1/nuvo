@@ -80,7 +80,7 @@ function Menu({
         ref={btnRef}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="tap-bloom fast shrink-0 rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
+        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
       >
         {label}
       </button>
@@ -111,7 +111,7 @@ function Opt({ onClick, children, color }: { onClick: () => void; children: Reac
   return (
     <button
       onClick={onClick}
-      className="tap-bloom fast inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-line px-2.5 text-label font-medium text-muted hover:border-accent hover:text-accent"
+      className="tap-bloom tap-h fast inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-line px-2.5 text-label font-medium text-muted hover:border-accent hover:text-accent"
     >
       {color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
       {children}
@@ -127,6 +127,8 @@ export default function BulkBar({
   labels,
   vertical,
   onTrash = true as boolean | undefined,
+  total,
+  onSelectAll,
 }: {
   count: number;
   ops: BulkOps;
@@ -134,12 +136,27 @@ export default function BulkBar({
   vertical: VerticalData | undefined;
   /** Trash is offered by default; a surface where delete makes no sense hides it. */
   onTrash?: boolean;
+  /** How many rows the list is showing — with `onSelectAll`, the bar offers to
+   *  take the rest, so a bulk act never needs the count tapped out row by row. */
+  total?: number;
+  onSelectAll?: () => void;
 }) {
   const projects = (vertical?.projects ?? []).filter((p) => p.status !== "complete" && p.status !== "cancelled");
 
   return (
     <div className="rise flex shrink-0 flex-wrap items-center gap-1.5 border-t border-accent/30 bg-accent-soft px-3 py-2">
-      <span className="mono shrink-0 text-label font-semibold text-accent">{count} selected</span>
+      <span className="mono shrink-0 text-label font-semibold text-accent" role="status" aria-live="polite">
+        {count} selected
+      </span>
+      {onSelectAll && total != null && count < total && (
+        <button
+          type="button"
+          onClick={onSelectAll}
+          className="tap-bloom tap-h fast inline-flex shrink-0 items-center text-label text-muted underline-offset-2 hover:text-accent hover:underline"
+        >
+          Select all {total}
+        </button>
+      )}
       <div className="hidden flex-1 sm:block" />
 
       <Menu label="When ▾" title="Plan these for">
@@ -210,28 +227,30 @@ export default function BulkBar({
 
       <button
         onClick={ops.complete}
-        className="tap-bloom fast shrink-0 rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
+        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
       >
         ✓ Done
       </button>
       <button
         onClick={ops.backToInbox}
-        className="tap-bloom fast shrink-0 rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
+        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
       >
         → Inbox
       </button>
       {onTrash && (
         <button
           onClick={ops.trash}
-          className="tap-bloom fast shrink-0 rounded border border-signal/30 px-2 py-0.5 text-label text-signal hover:bg-signal-soft"
+          className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-signal/30 px-2 py-0.5 text-label text-signal hover:bg-signal-soft"
         >
           Trash
         </button>
       )}
       <button
         onClick={ops.clear}
-        className="tap-bloom ml-1 shrink-0 text-label text-muted hover:text-ink"
+        // The way out is the one control that must always be reachable by thumb.
+        className="tap-bloom tap fast ml-1 inline-flex shrink-0 items-center justify-center text-label text-muted hover:text-ink"
         aria-label="Clear selection"
+        title="Clear selection (Esc)"
       >
         <Icon name="close" size={12} />
       </button>

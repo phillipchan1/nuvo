@@ -452,6 +452,7 @@ The law, so a new planner surface can't drift:
    | crown above the pool | crown above the strip | one readiness hero per surface, execution voice |
    | column headers | the **strip**: every column at once, load as a bar, `--signal` on now | it is also the navigation *and* the drop target |
    | coverage strip aligned over the columns | same grid, collapsed by default, gutter = the ◇ cell's width | a lit cell still points at its column |
+   | **By domain** (both decks, one set of parts in `ondeck/DomainLanes.tsx`): one lane per domain, the gutter carries the lane's name, an empty week is a card-sized **socket** (soft hollow, `--slot` on hover, never dashed), and the lanes replace the strip | *not yet: the phone pages a week at a time* | a gap is a shape before it is a word (D-179) |
    | press-drag a card onto a column | **press-and-hold** → `.glass-grab` ghost → drop on a strip cell | the destination is always shown (the pager follows the finger) |
    | click a card → record | tap a card → record, whose picker makes the same move | never a drag-only affordance on a phone |
 

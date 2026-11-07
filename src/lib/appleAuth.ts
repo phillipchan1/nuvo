@@ -182,11 +182,10 @@ export async function signInWithApple(): Promise<{ error: AuthError | Error | nu
         };
       }
     }
-    const res = await client.signIn.social({
-      provider: "apple",
-      callbackURL: authReturnUrl(),
-    });
-    return { error: res.error ? new Error(res.error.message || "Sign-in failed") : null };
+    // The redirect half: the Worker's sign-in door (authReturn.ts) — a
+    // client-side signIn.social() would set Apple's state cookie third-party.
+    const { goThroughDoor } = await import("./authReturn");
+    return goThroughDoor("apple");
   }
 
   if (isTauriIOS()) {
@@ -236,11 +235,8 @@ export async function signInWithApple(): Promise<{ error: AuthError | Error | nu
  *  the first time its owner taps Sign in with Apple. */
 export async function linkAppleIdentity() {
   if (workersEnabled) {
-    const { createNuvoAuthClient } = await import("./authClient");
-    return createNuvoAuthClient().linkSocial({
-      provider: "apple",
-      callbackURL: authReturnUrl(),
-    });
+    const { linkThroughDoor } = await import("./googleAuth");
+    return linkThroughDoor("apple");
   }
   return supabase.auth.linkIdentity({
     provider: "apple",

@@ -92,6 +92,48 @@
       "sha256": "7d436c34ce32fc1ac859752d725010bac103872298754e5f281357cd9a3da512"
     },
     {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "checkout",
+      "sha256": "56900a8b60b7f47627a8238c5d915c6b6cc05a35ca586adf7af2f387148b879b"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "setup-node",
+      "sha256": "c72484695c5b0100be09ae252a02e2ad20dae8ed8178cfcc239ac1f50ce041ff"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "install",
+      "sha256": "46c40a5f3e0deeb6581add61449438b09658d0e4268bac211f81d958f6b20c53"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "build-app",
+      "sha256": "49f440d626a2ae7d98ab056d4ba2e7608b08edd429edd4ea926c4fafd52eeee7"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "build-site",
+      "sha256": "06f1783178a507959251132bd33acc1ce515e94b363cc723c4e2253b226d6985"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "deploy-app",
+      "sha256": "6b9317c94792d4c58bf6377856c62e08c59f2dba1892d8845e1db6c58db805f8"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "id": "deploy-site",
+      "sha256": "fcbb3446b2f489bc7480d744594fe6d9551597d83d1b14103d9fa2b1851e3c9b"
+    },
+    {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "checkout",
@@ -131,7 +173,7 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "write-helper",
-      "sha256": "99e7f559885b753b84b7d2903800b84468e2c459a6a0e178b63e2ee3231d49af"
+      "sha256": "65b8655105e350547056fa5e4063622b03db7a17654d6ee1a9f64e607c978500"
     },
     {
       "file": "cutover-migrate.yml",
@@ -269,7 +311,7 @@
       "file": "ios-release.yml",
       "job": "testflight",
       "id": "build-ipa",
-      "sha256": "6ef4bcfef4fa437ccceb72e3a85a342c3ce98c8a11119dd5ef8246195070e7b1"
+      "sha256": "9461b92a1d80eead76b0faee7551b765aeb3babdf90923356da5099121ad5dcb"
     },
     {
       "file": "ios-release.yml",
@@ -347,7 +389,7 @@
       "file": "release.yml",
       "job": "release",
       "id": "build",
-      "sha256": "bcbc18b48440ba26ec0239e475b862313e7f58e615037932a609523ca01fab53"
+      "sha256": "720d6a1984f22266405bb563eee110cd580c036924f6f0860559b340941840eb"
     },
     {
       "file": "release.yml",
@@ -391,6 +433,20 @@
         "isolation-mutation"
       ],
       "sha256": "ece7763ccb1393e3daa4440fa14fe95ab6af23e39939875b1bf67f70b439cc59"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "job": "deploy",
+      "ids": [
+        "checkout",
+        "setup-node",
+        "install",
+        "build-app",
+        "build-site",
+        "deploy-app",
+        "deploy-site"
+      ],
+      "sha256": "744346e223b5a34ea0efa4dc1dc798b5d0b66f66a28c0abf98bbf233dfb94217"
     },
     {
       "file": "cutover-migrate.yml",
@@ -481,6 +537,13 @@
         "isolation-mutation"
       ],
       "sha256": "8459d5da0d43d8bf3573f8f8977e2e966ec8f5055f352d2d8394972fef21974c"
+    },
+    {
+      "file": "cloudflare-hosting.yml",
+      "jobs": [
+        "deploy"
+      ],
+      "sha256": "a662bc6a43859d46cf033a3336963972d1ba28df4ee3655f32a6ef8021825822"
     },
     {
       "file": "cutover-migrate.yml",

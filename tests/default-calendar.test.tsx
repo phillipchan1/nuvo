@@ -170,9 +170,14 @@ describe("Task → Event asks which calendar, on both doors", () => {
   });
 
   it("the convert honours the pick, then the default", () => {
-    const src = read("components/Planner.tsx");
-    const fn = src.slice(src.indexOf("const handleConvertTaskToEvent"), src.indexOf("return (", src.indexOf("const handleConvertTaskToEvent")));
+    // The convert is one hook both shells call (D-177) — the desktop's Planner
+    // and the phone's task sheet — so the rule is asserted where it lives, and
+    // the Planner is held to delegating rather than keeping a copy.
+    const fn = read("hooks/useTaskToEvent.ts");
     expect(fn).toContain("...createDefaults(settings)");
     expect(fn).toContain("calendarId: picked?.calendarId");
+    const planner = read("components/Planner.tsx");
+    expect(planner).toContain("useTaskToEvent(mutations)");
+    expect(planner).not.toContain("pickCreateTarget(");
   });
 });

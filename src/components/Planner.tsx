@@ -1,3 +1,5 @@
+import { taskFromEvent } from "../lib/eventActs";
+import { useTaskToEvent } from "../hooks/useTaskToEvent";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -9,8 +11,9 @@ import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { isTypingIn } from "../lib/a11y";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
-import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
+import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels, useTravelDirection } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
+import { todayWithSlotChildren } from "../lib/slotRuns";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { firstDayOfWeek, useSettings } from "../hooks/useSettings";
@@ -20,8 +23,8 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useStableHandler } from "../hooks/useStableHandler";
 import { gridLookups } from "../lib/verticalDirectory";
 import { mergeTaskLists } from "../lib/taskMerge";
-import { convertTaskToEvent, createDefaults, isWritableCalendar, pickCreateTarget, type CreateTarget } from "../lib/calendarWrite";
-import { scheduleNeighbours, scheduleRangeFor, type ScheduleRange } from "../lib/scheduleRange";
+import { isWritableCalendar, type CreateTarget } from "../lib/calendarWrite";
+import { scheduleNeighbours, scheduleRangeFor, warmSteps, type ScheduleRange } from "../lib/scheduleRange";
 import LeftRail from "./LeftRail";
 import KeepAlive from "./KeepAlive";
 import type { FlowName } from "./Spine";
@@ -264,12 +267,21 @@ export default function Planner({
   // would otherwise outrun it. One each way on the month: a month neighbour is
   // a six-week grid, so two each way would hold half a year of events for a
   // press that rarely comes twice. Only while the Schedule is on screen.
+  // Once you're paging, the budget leans the way you're going (`warmSteps`):
+  // three weeks / two months ahead, one behind — the same four week ranges as
+  // at rest, one extra month grid — because a quick run of presses outran a
+  // symmetric ±2 and landed blank at the frontier.
+  const travelDir = useTravelDirection(range);
   const neighbours = useMemo(
     () =>
       onSchedule
-        ? scheduleNeighbours(range, weekStartsOn, view === "dayGridMonth" ? [1, -1] : [1, -1, 2, -2])
+        ? scheduleNeighbours(
+            range,
+            weekStartsOn,
+            view === "dayGridMonth" ? warmSteps(travelDir, 1, 2) : warmSteps(travelDir, 2, 3),
+          )
         : [],
-    [onSchedule, range, weekStartsOn, view],
+    [onSchedule, range, weekStartsOn, view, travelDir],
   );
   useCalendarRangePrefetch(neighbours);
   const { data: accounts = [] } = useCalendarAccounts();
@@ -309,29 +321,22 @@ export default function Planner({
   // Dedupe by id and prefer the slot-augmented copy: an optimistic assignToSlot
   // used to leave the day-query row in place (with slot_id stamped) *and* add
   // it via slotChildren, so the same task rendered twice.
-  const todayTasksForRail = useMemo(() => {
-    const todaySlotMap = new Map(
-      slots.filter((s) => s.do_date === today).map((s) => [s.id, s]),
-    );
-    const seen = new Set<string>();
-    const out: Task[] = [];
-    for (const raw of slotChildTasks) {
-      if (!raw.slot_id || !todaySlotMap.has(raw.slot_id) || raw.status === "trashed") continue;
-      if (seen.has(raw.id)) continue;
-      const t = allKnownTasks.get(raw.id);
-      if (!t || t.status === "trashed") continue;
-      seen.add(raw.id);
-      out.push({ ...t, start_time: todaySlotMap.get(raw.slot_id)!.start_time });
-    }
-    for (const raw of todayTasks) {
-      if (raw.slot_id || seen.has(raw.id) || raw.status === "trashed") continue;
-      const t = allKnownTasks.get(raw.id);
-      if (!t || t.status === "trashed") continue;
-      seen.add(raw.id);
-      out.push(t);
-    }
-    return out;
-  }, [todayTasks, slotChildTasks, slots, today, allKnownTasks]);
+  const todayTasksForRail = useMemo(
+    () =>
+      todayWithSlotChildren({
+        dayRows: todayTasks,
+        slotChildren: slotChildTasks,
+        slots,
+        today,
+        resolve: (raw) => allKnownTasks.get(raw.id),
+      }),
+    [todayTasks, slotChildTasks, slots, today, allKnownTasks],
+  );
+
+  // Today's slots, for the rail: it keeps a slot's tasks under one header and
+  // lists an empty slot as held time (lib/slotRuns, D-178). Same filter
+  // `todayTasksForRail` uses, so the header and its tasks can't disagree.
+  const todaySlots = useMemo(() => slots.filter((s) => s.do_date === today), [slots, today]);
 
   // The grid's colours and names, keyed by id, built from the vertical's
   // DIRECTORY — a snapshot that only moves when a name, hue or parent does. They
@@ -490,61 +495,15 @@ export default function Planner({
   // memo'd, and an inline arrow here re-rendered them on every Planner render.
   const handleConvertEventToTask = useStableHandler(
     (event: ExternalEvent) => {
-      const start = new Date(event.start_at);
-      const end = new Date(event.end_at);
-      const duration = Math.round((end.getTime() - start.getTime()) / 60000);
-      mutations.create({
-        title: event.title,
-        do_date: toDateISO(start),
-        start_time: event.start_at,
-        duration_minutes: duration > 0 ? duration : 30,
-      });
+      mutations.create(taskFromEvent(event));
       hideEvent(event, "THIS");
       toast.success("Task created");
     },
   );
 
+  const taskToEvent = useTaskToEvent(mutations);
   const handleConvertTaskToEvent = useStableHandler(
-    async (task: Task, picked?: CreateTarget) => {
-      if (!task.start_time) return;
-      const durationMs = (task.duration_minutes ?? 30) * 60000;
-      const end = new Date(new Date(task.start_time).getTime() + durationMs).toISOString();
-      // The calendar the menu or the card picked (D-152) — or, with only one
-      // calendar to offer, where every unpicked create lands: the Settings
-      // default, never a hidden calendar (D-047). The toast names it either way.
-      const target = pickCreateTarget(accounts, {
-        ...createDefaults(settings),
-        accountId: picked?.accountId,
-        calendarId: picked?.calendarId,
-      });
-      if (!target) {
-        toast.error("No visible calendar to create on. Unhide a calendar you own in Settings → Calendars.");
-        return;
-      }
-      const calendarName = accounts
-        .find((a) => a.id === target.accountId)
-        ?.calendars.find((c) => c.id === target.calendarId)?.summary;
-      const start_at = task.start_time;
-      const made = await convertTaskToEvent(
-        () =>
-          eventMutations.createEvent({
-            title: task.title,
-            start_at,
-            end_at: end,
-            accountId: target.accountId,
-            calendarId: target.calendarId,
-          }),
-        {
-          // Silent: ⌘Z still brings the task back, but a "Trashed" toast before
-          // the event exists would announce the wrong half of the act.
-          trash: () => mutations.trash(task, { undo: "silent" }),
-          restore: () =>
-            mutations.patchTask(task.id, { status: task.status, trashed_at: task.trashed_at }, { undo: false }),
-        },
-      );
-      if (made) toast.success(calendarName ? `Event created on ${calendarName}` : "Event created");
-      else toast.error("Couldn't create the event — is your calendar connected?");
-    },
+    (task: Task, picked?: CreateTarget) => void taskToEvent(task, picked),
   );
 
   const openTaskAt = useCallback(
@@ -612,6 +571,9 @@ export default function Planner({
           collapsed={focusMode}
           squeezed={squeezed}
           weekDoor={weekDoor}
+          slots={todaySlots}
+          slotTitle={slotTitle}
+          onOpenSlot={openSlotAt}
         />
         {/* min-w: 280 was the old floor and it was too low to be a floor at
             all — a seven-day grid at 280px is a ~48px time gutter and 34px

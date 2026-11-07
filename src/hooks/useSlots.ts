@@ -15,6 +15,56 @@ import { slotMinutesFor } from "../lib/slots";
 const SLOT_COLS =
   "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden";
 
+/**
+ * Which dates each slot series already occupies. Not under the `["slots"]`
+ * prefix: range queries live there, and `insertSlotCache` appends full slot
+ * rows into every one of them. This index is the authoritative pool
+ * `occurrenceDates` probes — a key nothing fetched before, so a repeating
+ * slot materialised zero rows and the grid stayed empty.
+ */
+export const SLOT_OCCURRENCES_KEY = ["slot-occurrences"] as const;
+
+export interface SlotOccurrenceRef {
+  recurrence_id: string;
+  recurrence_date: string;
+}
+
+export async function fetchSlotOccurrences(): Promise<SlotOccurrenceRef[]> {
+  const { data, error } = await supabase
+    .from("slots")
+    .select("recurrence_id, recurrence_date")
+    .not("recurrence_id", "is", null);
+  if (error) throw error;
+  return (data ?? []) as SlotOccurrenceRef[];
+}
+
+/** Record one occupied date. No-ops when the index has not loaded — creating
+ *  it from a single optimistic row would look like a complete answer. */
+export function noteSlotOccurrence(qc: QueryClient, recurrenceId: string, date: string) {
+  qc.setQueryData<SlotOccurrenceRef[]>(SLOT_OCCURRENCES_KEY, (old) => {
+    if (!old) return old;
+    if (old.some((r) => r.recurrence_id === recurrenceId && r.recurrence_date === date)) return old;
+    return [...old, { recurrence_id: recurrenceId, recurrence_date: date }];
+  });
+}
+
+export function forgetSlotOccurrence(qc: QueryClient, recurrenceId: string, date: string) {
+  qc.setQueryData<SlotOccurrenceRef[]>(SLOT_OCCURRENCES_KEY, (old) => {
+    if (!old) return old;
+    const next = old.filter((r) => !(r.recurrence_id === recurrenceId && r.recurrence_date === date));
+    return next.length === old.length ? old : next;
+  });
+}
+
+function occurrenceRef(slot: { recurrence_id?: string | null; recurrence_date?: string | null }): SlotOccurrenceRef | null {
+  if (!slot.recurrence_id || !slot.recurrence_date) return null;
+  return { recurrence_id: slot.recurrence_id, recurrence_date: slot.recurrence_date };
+}
+
+function sameOccurrence(a: SlotOccurrenceRef | null, b: SlotOccurrenceRef | null): boolean {
+  return !!a && !!b && a.recurrence_id === b.recurrence_id && a.recurrence_date === b.recurrence_date;
+}
+
 /** Slots intersecting a calendar range (keyed on start, like scheduled tasks). */
 export const slotsKey = (rangeStartISO: string, rangeEndISO: string) =>
   ["slots", rangeStartISO, rangeEndISO] as const;
@@ -81,12 +131,23 @@ export function useSlotTasks(slotIds: string[]) {
 }
 
 export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot>) {
+  let before: Slot | undefined;
+  for (const [, data] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
+    if (!Array.isArray(data)) continue;
+    before = data.find((s) => s.id === id);
+    if (before) break;
+  }
   holdFetchesBehindWrite(qc, "slots", ["slots"]);
   runWithoutOwingPreserve(() => {
     qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
       old?.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     );
   });
+  if (!before) return;
+  const prev = occurrenceRef(before);
+  const next = occurrenceRef({ ...before, ...patch });
+  if (prev && !sameOccurrence(prev, next)) forgetSlotOccurrence(qc, prev.recurrence_id, prev.recurrence_date);
+  if (next && !sameOccurrence(prev, next)) noteSlotOccurrence(qc, next.recurrence_id, next.recurrence_date);
 }
 
 export function insertSlotCache(qc: QueryClient, slot: Slot) {
@@ -100,16 +161,22 @@ export function insertSlotCache(qc: QueryClient, slot: Slot) {
       old ? [...old, slot] : [slot],
     );
   });
+  const occ = occurrenceRef(slot);
+  if (occ) noteSlotOccurrence(qc, occ.recurrence_id, occ.recurrence_date);
 }
 
 /** Place a slot's post-image into every mounted range query. `null` removes it. */
 export function putSlotInCaches(qc: QueryClient, id: string, next: Slot | null) {
+  // A holder, not a `let` assigned inside the callback: TS narrows that `let`
+  // to `never` once the closure returns.
+  const found: { occ: SlotOccurrenceRef | null } = { occ: null };
   runWithoutOwingPreserve(() => {
     for (const [key, data] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
       if (!Array.isArray(data)) continue;
       const rangeStart = key[1] as string | undefined;
       const rangeEnd = key[2] as string | undefined;
       const existing = data.find((s) => s.id === id);
+      if (!found.occ) found.occ = occurrenceRef(existing ?? {});
       const belongs =
         next != null &&
         (!rangeStart || !rangeEnd ||
@@ -121,6 +188,10 @@ export function putSlotInCaches(qc: QueryClient, id: string, next: Slot | null) 
       qc.setQueryData(key, updated);
     }
   });
+  const before = found.occ;
+  const after = next ? occurrenceRef(next) : null;
+  if (before && !sameOccurrence(before, after)) forgetSlotOccurrence(qc, before.recurrence_id, before.recurrence_date);
+  if (after && !sameOccurrence(before, after)) noteSlotOccurrence(qc, after.recurrence_id, after.recurrence_date);
 }
 
 export interface NewSlotInput {

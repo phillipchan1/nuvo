@@ -265,3 +265,13 @@ export function allowAnytimeLanding(args: {
   if (args.nextAllDay && !args.wasAllDay && args.kind !== "task") return false;
   return true;
 }
+
+/** The LOCAL wall-clock "HH:MM" of an ISO instant, for a `<input type="time">`.
+ *  `iso.slice(11, 16)` reads the UTC clock — a 9am block in Pasadena prefilled
+ *  as 17:00 — which is the bug this replaced in three pickers. */
+export function clockInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

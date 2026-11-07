@@ -158,6 +158,7 @@ export function pkcs8FromPem(pem: string): Uint8Array {
 export async function appleClientSecret(
   config: AppleAuthConfig,
   nowSeconds = Math.floor(Date.now() / 1000),
+  ttlSeconds = 600,
 ): Promise<string> {
   const key = await crypto.subtle.importKey(
     "pkcs8",
@@ -170,8 +171,9 @@ export async function appleClientSecret(
   const claims = b64urlJson({
     iss: config.teamId,
     iat: nowSeconds,
-    // Ten minutes. This JWT is used immediately and never stored.
-    exp: nowSeconds + 600,
+    // Ten minutes by default: used immediately and never stored. The
+    // Worker's Better Auth provider caches one per isolate for a day.
+    exp: nowSeconds + Math.min(ttlSeconds, 15_777_000),
     aud: "https://appleid.apple.com",
     sub: config.clientId,
   });

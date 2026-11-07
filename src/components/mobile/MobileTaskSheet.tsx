@@ -1,3 +1,6 @@
+import { moveToDay, trashTaskScoped } from "../tasks/TaskActionsMenu";
+import { useTaskToEvent } from "../../hooks/useTaskToEvent";
+import { duplicateTaskInput } from "../../lib/taskActs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Label, Task } from "../../lib/types";
@@ -6,7 +9,7 @@ import { useScheduledTasks, type useTaskMutations } from "../../hooks/useTasks";
 import { useSlotTasks, useSlots, type useSlotMutations } from "../../hooks/useSlots";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
-import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO } from "../../lib/dates";
+import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO, clockInputValue } from "../../lib/dates";
 import { blockDesignation, deriveSlotTitle, slotPickDay, slotPicksFor, type SlotPick } from "../../lib/slots";
 import {
   domainById,
@@ -75,6 +78,7 @@ export default function MobileTaskSheet({
   accent,
   onClose,
   onAskNuvo,
+  onToggleWeek,
 }: {
   task: Task;
   labels: Label[];
@@ -85,13 +89,17 @@ export default function MobileTaskSheet({
   accent?: string | null;
   onClose: () => void;
   onAskNuvo?: (seed: string, say?: string) => void;
+  /** Commit to / take off this week — the shell's `useWeekCommitAct` (it holds
+   *  the vertical store this sheet only reads). Omitted, the row isn't offered. */
+  onToggleWeek?: (task: Task) => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
-  const [picker, setPicker] = useState<"project" | "domain" | "slot" | null>(null);
+  const [picker, setPicker] = useState<"project" | "domain" | "slot" | "trash" | null>(null);
+  const taskToEvent = useTaskToEvent(mutations);
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const { data: recurrences = [] } = useRecurrences();
@@ -165,10 +173,13 @@ export default function MobileTaskSheet({
   // iOS — commit on the way out so the edit isn't lost.
   useVisibilityFlush(() => commitRef.current());
 
+  // A timed block keeps its clock when it moves day — the desktop's `moveToDay`,
+  // imported rather than re-said. These chips used `planFor`, which clears the
+  // start time: "Tomorrow" on a 9am block quietly made it an anytime task.
   const planChips: { label: string; run: () => void; active?: boolean }[] = [
-    { label: "Today", run: () => mutations.planFor(task, todayISO(), TRIAGE_UNDO), active: task.do_date === todayISO() },
-    { label: "Tomorrow", run: () => mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO), active: task.do_date === tomorrowISO() },
-    { label: "Next week", run: () => mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO) },
+    { label: "Today", run: () => moveToDay(mutations, task, todayISO()), active: task.do_date === todayISO() },
+    { label: "Tomorrow", run: () => moveToDay(mutations, task, tomorrowISO()), active: task.do_date === tomorrowISO() },
+    { label: "Next week", run: () => moveToDay(mutations, task, nextWeekISO()) },
   ];
 
   // the domain the task actually counts toward — its parent's, not its own stale
@@ -312,6 +323,25 @@ export default function MobileTaskSheet({
       keepPlaced([pick.task, task]);
     }
     close();
+  };
+
+  // ── The acts the desktop reaches by right-click (D-177) ──────────────────
+  const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
+  const duplicate = () => {
+    void mutations.create(duplicateTaskInput(task, crypto.randomUUID()), {
+      undo: "toast",
+      label: `Duplicated — ${task.title}`,
+    });
+    close();
+  };
+  const toEvent = () => {
+    commitRef.current();
+    onClose();
+    void taskToEvent(task);
+  };
+  const trashScoped = (scope: string) => {
+    trashTaskScoped(mutations, recurrenceMutations, recurrence, task, scope as "THIS" | "FOLLOWING" | "ALL");
+    onClose();
   };
 
   return (
@@ -472,6 +502,14 @@ export default function MobileTaskSheet({
                 />
               )}
               <RepeatControl anchorISO={anchorISO} value={repeatRule} onChange={(r) => void onRepeatChange(r)} variant="row" />
+              {/* Deadline — the one date that isn't a plan. The phone could only
+                  READ one (its reminder row appeared once a deadline existed);
+                  setting one needed the desktop. A native date input is iOS's
+                  own wheel: no cursor popover, no form. */}
+              <DeadlineRow
+                value={task.deadline}
+                onChange={(d) => mutations.patchTask(task.id, { deadline: d })}
+              />
               {/* Remind — a block, a day, or a deadline. Untimed days have no default. */}
               {(task.start_time || task.do_date) && (
                 <RemindRow caption={task.deadline ? "When it starts" : undefined}>
@@ -533,10 +571,24 @@ export default function MobileTaskSheet({
             </SheetSection>
           )}
 
-          {(task.start_time || onAskNuvo || slotRows.length > 0) && (
+          {(task.start_time || onAskNuvo || slotRows.length > 0 || onToggleWeek || !done) && (
             <SheetSection>
               <RowList>
                 {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={askNuvo} />}
+                {onToggleWeek && !done && (
+                  <ActionRow
+                    icon="agenda"
+                    label={inWeek ? "Take off this week" : "Commit to this week"}
+                    onClick={() => {
+                      onToggleWeek(task);
+                      close();
+                    }}
+                  />
+                )}
+                <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />
+                {/* Who else needs to see it (D-149's line between Task and
+                    Event): the block becomes a meeting on your default calendar. */}
+                {task.start_time && !done && <ActionRow icon="users" label="Make it an event" onClick={toEvent} />}
                 {/* Only when there is something to put it with — a row that
                     opens an empty list is a dead end. It names the slot the
                     task is in now, which nothing else on this sheet says. */}
@@ -565,9 +617,16 @@ export default function MobileTaskSheet({
 
           <div className="mt-6">
             <DestructiveRow
-              label="Trash"
+              label={recurrence ? "Trash…" : "Trash"}
               confirm={false}
               onConfirm={() => {
+                // A repeating task asks which occurrences — the desktop's menu
+                // question. Plain trash on an occurrence let the series stamp it
+                // straight back, and there was no way to end the series here.
+                if (recurrence) {
+                  setPicker("trash");
+                  return;
+                }
                 mutations.trash(task);
                 onClose();
               }}
@@ -602,6 +661,19 @@ export default function MobileTaskSheet({
           value={domain?.id ?? null}
           noneLabel="No domain"
           onPick={setDomain}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {picker === "trash" && (
+        <PickSheet
+          title="Trash a repeating task"
+          rows={[
+            { id: "THIS", name: "This occurrence", lead: <Icon name="trash" size={16} className="text-muted" /> },
+            { id: "FOLLOWING", name: "This and following", lead: <Icon name="repeat" size={16} className="text-muted" /> },
+            { id: "ALL", name: "The whole series", lead: <Icon name="repeat" size={16} className="text-muted" /> },
+          ]}
+          value={null}
+          onPick={trashScoped}
           onClose={() => setPicker(null)}
         />
       )}
@@ -665,7 +737,7 @@ function DateTimePicker({
   onDone: () => void;
 }) {
   const [date, setDate] = useState(task.do_date ?? todayISO());
-  const [time, setTime] = useState(task.start_time ? task.start_time.slice(11, 16) : "");
+  const [time, setTime] = useState(clockInputValue(task.start_time));
 
   const apply = () => {
     if (time) {
@@ -705,6 +777,43 @@ function DateTimePicker({
         onChange={(e) => setTime(e.target.value)}
         className="field mono w-full min-w-0"
       />
+    </div>
+  );
+}
+
+/** A deadline as a hairline row: the date is a native input laid over the value
+ *  (iOS's own wheel), and a set one can be cleared in place. */
+function DeadlineRow({ value, onChange }: { value: string | null; onChange: (d: string | null) => void }) {
+  const shown = value ? dayWord(parseDateISO(value)) : "None";
+  return (
+    <div className="relative flex min-h-[44px] items-center gap-3">
+      <span className="flex w-5 shrink-0 items-center justify-center text-muted">
+        <Icon name="clock" size={16} />
+      </span>
+      <span className="shrink-0 text-body text-ink">Deadline</span>
+      <label className="relative ml-auto flex min-w-0 items-center gap-1">
+        <span className="min-w-0 truncate text-body" style={{ color: value ? "var(--signal)" : "var(--muted)" }}>
+          {shown}
+        </span>
+        <Icon name="chevron-right" size={14} className="shrink-0 text-muted/70" />
+        <input
+          type="date"
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value || null)}
+          aria-label="Deadline"
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          aria-label="Clear deadline"
+          className="fast flex h-11 w-9 shrink-0 items-center justify-center text-muted active:text-ink"
+        >
+          <Icon name="close" size={14} />
+        </button>
+      )}
     </div>
   );
 }

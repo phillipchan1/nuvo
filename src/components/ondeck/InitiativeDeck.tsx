@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useRecordContextMenu } from "../RecordContextMenu";
-import { useMaxPerQuarter, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
+import { useMaxPerQuarter, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { weeksBetween } from "../../lib/week";
 import {
   domainById,
@@ -48,6 +48,7 @@ import { initiativeCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 import SlotCreateButton from "./SlotCreateButton";
 import DomainSymbol from "../domain/DomainSymbol";
+import { LANE_GUTTER, LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 216;
@@ -60,6 +61,10 @@ const LABEL_W = 96;
 // A fixed near-term horizon — a year of quarters. Coverage now measures load per
 // domain (the pips), so a window selector was noise; near-term is what matters.
 const HORIZON_QUARTERS = 4;
+// By domain: a card-sized socket. The kanban stacks a cell's cards, so the lane's row
+// is as tall as its fullest quarter — the socket keeps one card's height rather than
+// stretching into a tall empty box beside a stack of three.
+const SOCKET_H = 62;
 
 export default function InitiativeDeck() {
   const { data, updateInitiative, updateProject, addInitiative } = useVertical();
@@ -67,6 +72,9 @@ export default function InitiativeDeck() {
   const [maxPerQuarter] = useMaxPerQuarter();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden("initiative");
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed("initiative");
+  // "By domain" — one lane per domain × quarter (D-179, the project deck's toggle one
+  // clock speed up). Scoped: the two decks remember it independently.
+  const [byDomain, setByDomain] = useDeckByDomain("initiative");
   const [filterOpen, setFilterOpen] = useState(false);
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(data, now, HORIZON_QUARTERS, true), [data, now]);
@@ -80,8 +88,12 @@ export default function InitiativeDeck() {
   // One row per tracked domain, a cell per shown quarter lit where a bet lands. Empty
   // cell = one-tap start an initiative for that domain in that quarter.
   const Q = board.quarters.length;
-  const cols = `${LABEL_W}px repeat(${Q}, minmax(${COL_PX}px, 1fr))`;
-  const gridMinW = LABEL_W + Q * (COL_PX + COL_GAP);
+  // By domain the gutter widens to carry lane names; the extra comes out of the
+  // columns' minimum so the toggle never changes the deck's total width.
+  const labelW = byDomain ? LANE_LABEL_W : LABEL_W;
+  const colMin = COL_PX - Math.ceil((labelW - LABEL_W) / Math.max(Q, 1));
+  const cols = `${labelW}px repeat(${Q}, minmax(${colMin}px, 1fr))`;
+  const gridMinW = labelW + Q * (colMin + COL_GAP);
   const coverageRows: CoverageRow[] = domainsSorted
     .filter((d) => !coverageHidden.has(d.id))
     .map((domain) => {
@@ -123,7 +135,7 @@ export default function InitiativeDeck() {
   };
 
   // ── drag state ──────────────────────────────────────────────────────────────
-  const [drag, setDrag] = useState<{ name: string; dot: string; x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ name: string; dot: string; x: number; y: number; domainId: string | null } | null>(null);
   const [dropCol, setDropCol] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   // click into a quarter → compose an initiative inline, right there (no modal). The
@@ -147,6 +159,137 @@ export default function InitiativeDeck() {
   const addForDomain = (dom: Domain, quarterIdx: number) => {
     setComposeDomain(dom);
     setComposeCol(quarterIdx);
+  };
+
+
+  // ── a quarter's header — label, load against the cap, at-risk count, span. One
+  // copy for both layouts (inside the column when packed, its own row By domain).
+  const quarterHeader = (q: (typeof board.quarters)[number]) => {
+    const lanes = byColumn.get(q.idx) ?? [];
+    // The per-quarter cap counts open commitments — a finished bet doesn't
+    // still owe the quarter anything, so it shouldn't trip the "over" warning
+    // or hide the empty-quarter prompt (mirrors the project deck's pinch math,
+    // which never counts a done project's hours as still-demanded).
+    const openLanes = lanes.filter((l) => l.state !== "done");
+    const risky = lanes.filter((l) => l.atRisk.atRisk).length;
+    const over = openLanes.length > maxPerQuarter;
+    const current = q.idx === 0;
+    return (
+      <>
+        <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5 pt-1">
+          <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? NOW_INK : "var(--ink)" }}>
+            {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
+            {q.label}
+          </span>
+          {/* Two counts and up to two ⚠ glyphs, on the header of the
+              primary planning column. The ratio had a title; the
+              at-risk count had nothing, and a screen reader crossing
+              the row heard "3 warning sign" with no idea what was at
+              risk. The glyphs are decoration on top of numbers that
+              already carry the meaning, so they go aria-hidden and
+              the whole cluster gets one worded name. */}
+          <span
+            className="mono text-micro tabular-nums"
+            title={
+              `${openLanes.length} committed of ${maxPerQuarter} — your per-quarter focus cap` +
+              (over ? " · over the cap" : "") +
+              (risky > 0 ? ` · ${risky} at risk` : "")
+            }
+            aria-label={
+              `${openLanes.length} committed of ${maxPerQuarter}` +
+              (over ? ", over the cap" : "") +
+              (risky > 0 ? `, ${risky} at risk` : "")
+            }
+            style={{ color: over ? CAUTION : "var(--muted)" }}
+          >
+            <span aria-hidden>
+              {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}
+              {risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
+            </span>
+          </span>
+        </div>
+        {/* month span + week scale — each column reads when it starts and
+            ends, and (for the current quarter) how many weeks deep you are. */}
+        <div className="mono px-1 pb-2 text-micro text-muted">
+          {quarterRangeLabel(q.start, q.end)}
+          {current
+            ? ` · week ${Math.min(weeksBetween(q.start, q.end) + 1, Math.max(1, weeksBetween(q.start, new Date()) + 1))}/${weeksBetween(q.start, q.end) + 1}`
+            : ` · ${weeksBetween(q.start, q.end) + 1} weeks`}
+        </div>
+      </>
+    );
+  };
+  // Column wash: the live drop target, else the quiet "you are here" band.
+  const colBg = (i: number) =>
+    dropCol === i ? "color-mix(in srgb, var(--slot) 14%, transparent)" : i === 0 ? NOW_BAND : undefined;
+
+  // ── By domain: one lane per domain (the shared rule, domainLanes), each a row of
+  // quarter cells stacking that domain's bets — most urgent first, as in a column.
+  const domainRows = byDomain ? domainLanes(data, domainsSorted, coverageHidden, board.lanes, (l) => l.initiative.domainId) : [];
+  const renderLane = (lane: (typeof domainRows)[number], li: number) => {
+    const { domain } = lane;
+    const name = laneName(domain);
+    const cells = board.quarters.map((q) =>
+      lane.items.filter((l) => (l.quarterIdx ?? 0) === q.idx).sort((a, b) => LANE_ORDER[a.state] - LANE_ORDER[b.state]),
+    );
+    const composing = composeCol != null && domain != null && composeDom?.id === domain.id;
+    const span = "1 / span 2";
+    return (
+      <div
+        key={lane.key}
+        role="group"
+        aria-label={`${name} — ${lane.items.length > 0 ? `${lane.items.length} initiative${lane.items.length === 1 ? "" : "s"}` : "nothing placed"}`}
+        className="grid"
+        style={{
+          gridTemplateColumns: cols,
+          // one stacking row + a 10px tail: below a full stack, still a place to
+          // start another bet for this domain in that quarter.
+          gridTemplateRows: "minmax(56px, auto) 10px",
+          borderTop: li === 0 ? undefined : "1px solid var(--line)",
+        }}
+      >
+        <LaneLabel domain={domain} count={lane.items.length} noun="initiative" gridRow={span} />
+        {board.quarters.map((q) => (
+          <LaneCell
+            key={`c${q.idx}`}
+            domain={domain}
+            column={q.idx + 2}
+            dropAttr={{ "data-quarter": String(q.idx) }}
+            label={`New ${name} initiative in ${q.label}`}
+            onAdd={() => domain && addForDomain(domain, q.idx)}
+            // a bet being dragged lights its OWN lane in the quarter under the
+            // pointer — where it will land (dragging never re-homes it).
+            landing={drag != null && drag.domainId === domain?.id && dropCol === q.idx}
+            socket={cells[q.idx].length === 0 && !(composing && composeCol === q.idx)}
+            gridRow={span}
+            socketStyle={{ alignSelf: "start", height: SOCKET_H }}
+          />
+        ))}
+        {board.quarters.map((q) =>
+          cells[q.idx].length > 0 || (composing && composeCol === q.idx) ? (
+            // The stack ignores the pointer so empty space under it falls through
+            // to the cell (create); the cards and the composer take it back.
+            <div key={`s${q.idx}`} className="pointer-events-none relative flex min-w-0 flex-col gap-2 p-1" style={{ gridColumn: q.idx + 2, gridRow: 1 }}>
+              {cells[q.idx].map((l) => (
+                <div key={l.initiative.id} className="pointer-events-auto">
+                  <InitiativeCard lane={l} data={data} onSetDomain={setDomain} inLane />
+                </div>
+              ))}
+              {composing && composeCol === q.idx && (
+                <div className="pointer-events-auto" data-card-control onPointerDown={(e) => e.stopPropagation()}>
+                  <InlineAdd
+                    placeholder={`Name a ${name} initiative…`}
+                    accent={laneColor(domain)}
+                    onCreate={(n) => createInCol(q.idx, n)}
+                    onClose={closeCompose}
+                  />
+                </div>
+              )}
+            </div>
+          ) : null,
+        )}
+      </div>
+    );
   };
 
   const initiativeById = useMemo(() => new Map(data.initiatives.map((i) => [i.id, i])), [data.initiatives]);
@@ -185,7 +328,7 @@ export default function InitiativeDeck() {
         else { tCol = null; tInbox = false; }
         setDropCol(tCol);
         setOverInbox(tInbox);
-        setDrag({ name: p.name, dot, x: ev.clientX, y: ev.clientY });
+        setDrag({ name: p.name, dot, x: ev.clientX, y: ev.clientY, domainId: p.domainId ?? null });
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
@@ -285,12 +428,54 @@ export default function InitiativeDeck() {
             toggleHidden={toggleCoverageHidden}
             open={filterOpen}
             setOpen={setFilterOpen}
+            byDomain={byDomain}
+            setByDomain={(v) => { closeCompose(); setByDomain(v); }}
+            itemNoun="initiative"
           />
           {/* the grid FILLS the pane — same rule as the project deck: short column
               stubs in a tall pane leave the coverage label gutter reading as a hole
               in the middle of the page instead of the grid's own margin. */}
           <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-auto pb-1">
             <div className="flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
+              {byDomain ? (
+                <>
+                  {/* header row — the quarters, over every lane. The gutter cell
+                      wears the lane column's frost so the names read as one column. */}
+                  <div className="grid shrink-0" style={{ gridTemplateColumns: cols }}>
+                    <div aria-hidden className="sticky left-0 z-10" style={LANE_GUTTER} />
+                    {board.quarters.map((q) => (
+                      <div
+                        key={q.key}
+                        data-quarter={q.idx}
+                        className="fast border-l border-line px-2"
+                        style={{ background: colBg(q.idx), borderTop: q.idx === 0 ? NOW_BORDER : undefined }}
+                      >
+                        {quarterHeader(q)}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="h-px w-full shrink-0" style={{ background: "var(--line)" }} />
+                  {/* body — full-height quarter columns behind (the now band, the drop
+                      band, the rules, and ONE frosted gutter for every lane), lanes on
+                      top. The lanes ARE the coverage read here, so the strip steps aside. */}
+                  <div className="relative flex-1" style={{ minHeight: 320 }}>
+                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
+                      <div aria-hidden className="sticky left-0 z-10" style={LANE_GUTTER} />
+                      {board.quarters.map((q) => (
+                        <div key={q.key} data-quarter={q.idx} className="border-l border-line transition-colors" style={{ background: colBg(q.idx) }} />
+                      ))}
+                    </div>
+                    <div className="relative pb-6">
+                      {domainRows.length === 0 ? (
+                        <div className="px-4 pt-14 text-center text-caption text-muted">Every domain is hidden — choose some under Domains.</div>
+                      ) : (
+                        domainRows.map(renderLane)
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+              <>
               {!coverageCollapsed && (
                 <DomainCoverage
                   rows={coverageRows}
@@ -306,13 +491,6 @@ export default function InitiativeDeck() {
                 <div aria-hidden />
                 {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
-              // The per-quarter cap counts open commitments — a finished bet doesn't
-              // still owe the quarter anything, so it shouldn't trip the "over" warning
-              // or hide the empty-quarter prompt (mirrors the project deck's pinch math,
-              // which never counts a done project's hours as still-demanded).
-              const openLanes = lanes.filter((l) => l.state !== "done");
-              const risky = lanes.filter((l) => l.atRisk.atRisk).length;
-              const over = openLanes.length > maxPerQuarter;
               const dropping = dropCol === q.idx;
               // "You are here" — a quiet band on the current quarter. Orientation,
               // not alarm: `--signal` stays for at-risk; `--slot` is the drop target.
@@ -332,46 +510,7 @@ export default function InitiativeDeck() {
                     boxShadow: dropping ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 45%, transparent)" : undefined,
                   }}
                 >
-                  <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5 pt-1">
-                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? NOW_INK : "var(--ink)" }}>
-                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
-                      {q.label}
-                    </span>
-                    {/* Two counts and up to two ⚠ glyphs, on the header of the
-                        primary planning column. The ratio had a title; the
-                        at-risk count had nothing, and a screen reader crossing
-                        the row heard "3 warning sign" with no idea what was at
-                        risk. The glyphs are decoration on top of numbers that
-                        already carry the meaning, so they go aria-hidden and
-                        the whole cluster gets one worded name. */}
-                    <span
-                      className="mono text-micro tabular-nums"
-                      title={
-                        `${openLanes.length} committed of ${maxPerQuarter} — your per-quarter focus cap` +
-                        (over ? " · over the cap" : "") +
-                        (risky > 0 ? ` · ${risky} at risk` : "")
-                      }
-                      aria-label={
-                        `${openLanes.length} committed of ${maxPerQuarter}` +
-                        (over ? ", over the cap" : "") +
-                        (risky > 0 ? `, ${risky} at risk` : "")
-                      }
-                      style={{ color: over ? CAUTION : "var(--muted)" }}
-                    >
-                      <span aria-hidden>
-                        {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}
-                        {risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
-                      </span>
-                    </span>
-                  </div>
-                  {/* month span + week scale — each column reads when it starts and
-                      ends, and (for the current quarter) how many weeks deep you are. */}
-                  <div className="mono px-1 pb-2 text-micro text-muted">
-                    {quarterRangeLabel(q.start, q.end)}
-                    {current
-                      ? ` · week ${Math.min(weeksBetween(q.start, q.end) + 1, Math.max(1, weeksBetween(q.start, new Date()) + 1))}/${weeksBetween(q.start, q.end) + 1}`
-                      : ` · ${weeksBetween(q.start, q.end) + 1} weeks`}
-                  </div>
+                  {quarterHeader(q)}
 
                   <div className="flex min-h-[60px] flex-1 flex-col gap-2">
                     {lanes.length === 0 && composeCol !== q.idx ? (
@@ -436,6 +575,8 @@ export default function InitiativeDeck() {
               );
             })}
               </div>
+              </>
+              )}
             </div>
           </div>
 
@@ -499,10 +640,13 @@ function InitiativeCard({
   lane,
   data,
   onSetDomain,
+  inLane = false,
 }: {
   lane: InitiativeLane;
   data: VerticalData;
   onSetDomain: (i: Initiative, domainId: string) => void;
+  /** By domain: the lane names the area, so the card stops saying it (D-122). */
+  inLane?: boolean;
 }) {
   const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
@@ -540,9 +684,9 @@ function InitiativeCard({
       // bet reads as a weightier sibling — not a different kind of object.
       variant="bounded"
       spine={dot}
-      eyebrow={domain?.name ?? "no area"}
+      eyebrow={inLane ? (weight ?? "") : (domain?.name ?? "no area")}
       title={i.name}
-      weight={weight}
+      weight={inLane ? null : weight}
       status={status}
       pips={done ? undefined : [axes.defined, axes.planned]}
       pipTone={pipTone}

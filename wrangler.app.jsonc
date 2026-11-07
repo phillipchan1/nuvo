@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // app.nuvo.day — the SPA/PWA, static only (no Worker code). Moved off Vercel
+  // 2026-11-06 as a hosting-only change: the bundle still talks to Supabase
+  // directly, exactly as it did on Vercel. This is NOT the `nuvo` API Worker
+  // (wrangler.jsonc, api.nuvo.day) — always deploy with `-c wrangler.app.jsonc`.
+  // See docs/cloudflare-hosting.md.
+  "name": "nuvo-app",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    // Same as Vercel's `/(.*) -> /index.html` rewrite: deep links and refreshes
+    // get the shell. `public/_headers` carries the sw.js / manifest headers
+    // vercel.json set.
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [{ "pattern": "app.nuvo.day", "custom_domain": true }],
+  "observability": { "enabled": true },
+  "env": {
+    // workers.dev only — no custom domain. Routes must be an explicit empty
+    // array or wrangler inherits the production domains above.
+    "preview": {
+      "name": "nuvo-app-preview",
+      "workers_dev": true,
+      "routes": []
+    }
+  }
+}

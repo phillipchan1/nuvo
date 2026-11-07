@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { handleAgent } from "./agentHttp.ts";
-import { exposeSignedAuthToken, SessionLookupError, sessionUser } from "./auth.ts";
+import { exposeSignedAuthToken, primeAppleClientSecret, SessionLookupError, sessionUser } from "./auth.ts";
+import { handleSigninReturn, handleSigninStart } from "./signinDoor.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
 import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
@@ -66,6 +67,7 @@ import {
 } from "./store.ts";
 import { persistAppleIdentity } from "./appleIdentity.ts";
 import { deleteOwnedAccount } from "./deleteAccount.ts";
+import { registerBillingRoutes } from "./billing/routes.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -155,6 +157,11 @@ async function sqlUnavailable(sql: Sql): Promise<boolean> {
   }
 }
 
+// Google / Apple sign-in for every shell — a top-level navigation, so the
+// OAuth state cookie is first-party (signinDoor.ts). Before /api/auth/*.
+app.get("/api/signin/return", (c) => handleSigninReturn(c));
+app.get("/api/signin/:provider", (c) => handleSigninStart(c));
+
 app.all("/api/auth/*", async (c) => {
   const started = beginAuthCors(c.req.header("Origin"), c.env);
   if (!started.ok) return started.response;
@@ -162,6 +169,8 @@ app.all("/api/auth/*", async (c) => {
   if (c.req.method === "OPTIONS") return new Response("ok", { headers: cors });
   let io: RequestIo | undefined;
   try {
+    // Apple's callback exchanges a code with a minted client_secret.
+    await primeAppleClientSecret(c.env);
     io = await requestIo(c);
     const res = await exposeSignedAuthToken(
       await io.auth.handler(c.req.raw),
@@ -255,14 +264,15 @@ app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
 
 /**
- * Billing stays on Supabase. The session id is the preserved auth.users
+ * Billing is read from Supabase until CUTOVER_FLIPPED, then from Neon (where
+ * worker/src/billing writes). The session id is the preserved auth.users
  * id — never a client-supplied owner, never an email remap.
  */
 app.get("/api/entitlement", async (c) => {
   const got = await requireSession(c);
   if ("error" in got) return got.error;
   try {
-    const entitlement = await readEntitlement(c.env, got.user.id);
+    const entitlement = await readEntitlement(c.env, got.user.id, new Date(), got.io.sql);
     return json(entitlementResponseBody(entitlement), 200, OPEN_CORS);
   } catch (err) {
     if (err instanceof EntitlementUnavailableError) {
@@ -540,6 +550,10 @@ app.all("/functions/v1/task-mirror", async (c) => {
 });
 app.all("/api/push-dispatch", (c) => handleCron(c, "push-dispatch"));
 app.all("/functions/v1/push-dispatch", (c) => handleCron(c, "push-dispatch"));
+
+// Billing (stripe-* / apple-* / iap-catalog / referral-code). Inert — 503 —
+// until CUTOVER_FLIPPED; see billing/routes.ts.
+registerBillingRoutes(app);
 
 app.all("/functions/v1/:name", (c) => {
   if (c.req.param("name") === "github-activity") return handleGithubActivity(c);

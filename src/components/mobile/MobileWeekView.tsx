@@ -13,13 +13,21 @@
 // rung. This body used to draw its own back header AND its own `‹ Aug 24–30 ›`
 // mini-nav AND its own seven day headers: three bands saying what the hero and
 // one row now say once.
+//
+// An empty-space tap claims that time, as on the Day lens (D-130 → D-175): the
+// column is the day, the height is the half-hour, and the ghost shows both
+// under the finger before release — so a 47px column can't silently miss. It
+// opens the same one capture door, seeded. A wander is a scroll or a page.
 
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { addDays } from "date-fns";
+import { addDays, isSameDay } from "date-fns";
+import { DEFAULT_DURATION_MINUTES } from "../../lib/types";
 import type { CalendarTap } from "./MobileEventSheet";
 import { buildDayPlan, dayKey, layoutDay, scrollParent, tapFor, type DayCtx, type DayPlan } from "./dayPlan";
 import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
+import { columnFromCanvasX, dateAtMinutes, minutesFromCanvasY, WEEK_TAP_SNAP_MINS } from "./canvasTap";
+import { useCanvasPress } from "./useCanvasPress";
 
 const HOUR_PX = 52; // the week is a scan, not a canvas — half the Day lens
 const MIN_ITEM_PX = 14;
@@ -32,6 +40,9 @@ export default function MobileWeekView({
   onPrev,
   onNext,
   onTapEvent,
+  onTapEmpty,
+  draft = null,
+  defaultDurationMins = DEFAULT_DURATION_MINUTES,
   recenter = 0,
 }: {
   /** The first day of the week to draw — resolved by `CalendarSurface` from the
@@ -43,6 +54,11 @@ export default function MobileWeekView({
   onPrev: () => void;
   onNext: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  /** Empty-space tap — claim this time on that column's day (D-175). */
+  onTapEmpty?: (start: Date) => void;
+  /** The slot capture is claiming, drawn as a ghost in its column. */
+  draft?: { start: Date; durationMinutes: number } | null;
+  defaultDurationMins?: number;
   /** See `MobileDayView` — the chrome's Today asking for now, again. */
   recenter?: number;
 }) {
@@ -100,6 +116,30 @@ export default function MobileWeekView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenter]);
 
+  // Hooks above the loading return, always.
+  const { press, handlers: pressHandlers } = useCanvasPress({
+    enabled: !!onTapEmpty,
+    resolve: (clientX, clientY) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const col = columnFromCanvasX(clientX, rect.left, rect.width, CAL_GUTTER, 7);
+      if (col == null) return null;
+      return {
+        col,
+        startMin: minutesFromCanvasY(clientY, rect.top, winStart, HOUR_PX, WEEK_TAP_SNAP_MINS, winEnd),
+      };
+    },
+    onTap: (p) => onTapEmpty?.(dateAtMinutes(days[p.col].date, p.startMin)),
+  });
+  const draftCol = draft ? days.findIndex((d) => isSameDay(d.date, draft.start)) : -1;
+  const ghost =
+    press ??
+    (draft && draftCol >= 0
+      ? { col: draftCol, startMin: draft.start.getHours() * 60 + draft.start.getMinutes() }
+      : null);
+  const ghostDur = draft?.durationMinutes ?? defaultDurationMins;
+
   if (loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0)) {
     return <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>;
   }
@@ -110,8 +150,11 @@ export default function MobileWeekView({
         {/* The canvas wears the surface's one edge, so its seven columns begin
             exactly where the week row's seven cells do — see `CAL_EDGE`. */}
         <div
+          ref={canvasRef}
+          data-week-canvas
           className="relative mb-8 mt-2"
           style={{ height: y(winEnd) + 12, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
+          {...pressHandlers}
         >
           {/* Hour rules + labels — the shared time axis, in the same gutter and
               the same words as the Day lens. */}
@@ -164,6 +207,7 @@ export default function MobileWeekView({
               return (
                 <button
                   key={`${di}-${i}`}
+                  data-cal-item
                   onClick={() => onTapEvent?.(tapFor(b) as CalendarTap)}
                   className="fast absolute overflow-hidden rounded-[3px] border px-0.5 text-left active:opacity-80"
                   style={{
@@ -197,6 +241,24 @@ export default function MobileWeekView({
                 </button>
               );
             }),
+          )}
+
+          {/* Claimed time — the press preview, then the seed while capture is
+              open. Same ghost as the Day lens, one column wide. */}
+          {ghost && (
+            <div
+              data-week-draft
+              aria-hidden
+              className="pointer-events-none absolute rounded-[3px] border border-dashed"
+              style={{
+                top: y(ghost.startMin),
+                height: Math.max((ghostDur * HOUR_PX) / 60, MIN_ITEM_PX),
+                left: `calc(${CAL_GUTTER}px + (100% - ${CAL_GUTTER}px) * ${ghost.col / 7} + 1px)`,
+                width: `calc((100% - ${CAL_GUTTER}px) / 7 - 2px)`,
+                background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                borderColor: "color-mix(in srgb, var(--accent) 45%, var(--line))",
+              }}
+            />
           )}
         </div>
       </TimePager>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { requestEmailOtp, signInWithPassword, verifyEmailOtp } from "../lib/authActions";
 import { supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
@@ -7,6 +7,7 @@ import { lastAuthProvider, providerLabel } from "../lib/authProviders";
 import { isMobileTauri } from "../lib/platform";
 import { isReviewPasswordLogin } from "../lib/reviewLogin";
 import { isOAuthCanceled, useTapAction } from "../lib/tapAction";
+import { authReturnError, clearAuthReturnError } from "../lib/authReturn";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -30,7 +31,10 @@ export default function Login({
   /** Harness only — Apple is otherwise gated by `appleSignInAvailable`. */
   forceApple?: boolean;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  // A Google / Apple round trip through the Worker's door that came back
+  // with an error lands here, signed out — say why (flag on only).
+  const [error, setError] = useState<string | null>(() => authReturnError());
+  useEffect(() => clearAuthReturnError(), []);
   const [busy, setBusy] = useState<Busy>(null);
   const nativePhone = isMobileTauri();
   const passwordLogin = forcePasswordLogin || isReviewPasswordLogin();

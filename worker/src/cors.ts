@@ -23,18 +23,86 @@ const AUTH_CORS_ALLOW = {
   Vary: "Origin",
 } as const;
 
+/**
+ * The shells that call /api/auth with credentials (blocker 9b). The auth
+ * origin itself (BETTER_AUTH_URL) is only where the Worker lives; the SPA
+ * runs elsewhere:
+ *   - the PWA at app.nuvo.day (Worker `nuvo-app`, wrangler.app.jsonc)
+ *   - the Mac and iOS apps at `tauri://localhost` (Tauri v2's WKWebView
+ *     scheme on both; `http://tauri.localhost` is Windows/Android only,
+ *     which Nuvo doesn't ship)
+ *   - Phil's workers.dev previews: the SPA preview, the API preview (which
+ *     also serves the SPA) and nuvo-app's per-version preview URLs. Every
+ *     host under `nq-morning-briefing.workers.dev` belongs to this account,
+ *     so trusting them is trusting our own deploys.
+ * Patterns use Better Auth's `trustedOrigins` grammar (a `*` inside a
+ * single host label) so one list feeds both CORS and Better Auth's own
+ * origin check — they cannot disagree.
+ */
+export const APP_ORIGINS = [
+  "https://app.nuvo.day",
+  "tauri://localhost",
+] as const;
+
+const WORKERS_DEV = "nq-morning-briefing.workers.dev";
+export const PREVIEW_ORIGINS = [
+  `https://nuvo-app.${WORKERS_DEV}`,
+  `https://nuvo-app-preview.${WORKERS_DEV}`,
+  `https://nuvo-preview.${WORKERS_DEV}`,
+  `https://*-nuvo-app.${WORKERS_DEV}`,
+  `https://*-nuvo-app-preview.${WORKERS_DEV}`,
+] as const;
+
+// Local runtime only (the auth origin itself is loopback). Any port: a dev
+// server that drifts off 5717 (vite's autoPort) must still sign in.
+const LOOPBACK_ORIGINS = [
+  "http://localhost:*",
+  "http://127.0.0.1:*",
+  "http://[::1]:*",
+] as const;
+
+function appUrlOrigin(env: Env): string | null {
+  const raw = env.APP_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** First entry is the auth origin itself (the CORS fallback echo). */
 export function trustedAuthOrigins(env: Env): string[] {
   const base = resolveAuthBaseURL(env);
-  if (!isLocalAuthHost(base)) return [base];
+  const app = appUrlOrigin(env);
   return [...new Set([
     base,
-    "http://localhost:5717",
-    "http://localhost:8787",
-    "http://127.0.0.1:5717",
-    "http://127.0.0.1:8787",
-    "http://[::1]:5717",
-    "http://[::1]:8787",
+    ...(app ? [app] : []),
+    ...APP_ORIGINS,
+    ...PREVIEW_ORIGINS,
+    ...(isLocalAuthHost(base) ? LOOPBACK_ORIGINS : []),
   ])];
+}
+
+/**
+ * Exact match; a leading `*` inside the first host label
+ * (`https://*-nuvo-app.<acct>.workers.dev`, `[a-z0-9-]+`, never a dot, so it
+ * cannot climb to another host); or a `:*` port on a fixed host (loopback).
+ */
+export function originMatches(origin: string, pattern: string): boolean {
+  if (!pattern.includes("*")) return origin === pattern;
+  // `http://localhost:*` — any port, digits only.
+  const port = /^(https?:\/\/[^*/]+):\*$/.exec(pattern);
+  if (port) {
+    const prefix = `${port[1]}:`;
+    return origin.startsWith(prefix) && /^\d{1,5}$/.test(origin.slice(prefix.length));
+  }
+  const m = /^(https?:\/\/)\*([^*/]+)$/.exec(pattern);
+  if (!m) return false;
+  const [, scheme, rest] = m;
+  if (!origin.startsWith(scheme!) || !origin.endsWith(rest!)) return false;
+  const label = origin.slice(scheme!.length, origin.length - rest!.length);
+  return /^[a-z0-9-]+$/.test(label);
 }
 
 function credentialedCors(origin: string): Record<string, string> {
@@ -48,7 +116,7 @@ function credentialedCors(origin: string): Record<string, string> {
 /** Credentialed auth: echo an allowlisted Origin. Never ACAO * + credentials. */
 export function authCors(origin: string | null | undefined, env: Env): Record<string, string> {
   const allowed = trustedAuthOrigins(env);
-  const echoed = origin && allowed.includes(origin) ? origin : allowed[0];
+  const echoed = origin && allowed.some((p) => originMatches(origin, p)) ? origin : allowed[0]!;
   return credentialedCors(echoed);
 }
 

@@ -20,7 +20,9 @@ const sql = postgres(url, { max: 1, ssl: url.includes("localhost") ? false : "re
 try {
   await sql.unsafe(readFileSync(join(schemaDir, "neon.sql"), "utf8"));
   await sql.unsafe(readFileSync(join(schemaDir, "better-auth.sql"), "utf8"));
-  console.log("applied worker/schema/neon.sql + better-auth.sql");
+  // Per-field LWW for server writers; skips tables without field_ts.
+  await sql.unsafe(readFileSync(join(schemaDir, "field-ts.sql"), "utf8"));
+  console.log("applied worker/schema/neon.sql + better-auth.sql + field-ts.sql");
 } finally {
   await sql.end();
 }

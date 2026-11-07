@@ -1,0 +1,8 @@
+# Cloudflare static-asset headers (Workers Assets reads dist/_headers).
+# HSTS matches what Vercel sent; sw.js/manifest match vercel.json.
+/*
+  Strict-Transport-Security: max-age=63072000
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.webmanifest
+  Content-Type: application/manifest+json

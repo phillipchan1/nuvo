@@ -17,7 +17,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useDeferProject } from "../../hooks/useProjectTime";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
+import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
@@ -29,6 +29,7 @@ import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
+import { LANE_GUTTER, LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
@@ -46,6 +47,10 @@ const CAUTION = PROJECT_STATUS_COLORS.waiting;
 // narrow as the names allow: below the strip it's necessarily blank, and every pixel
 // of it is a void running down the middle of the page.
 const LABEL_W = 96;
+// An empty lane is still a full row: the gap IS the information, so it can't be
+// allowed to collapse into a hairline. (The lane parts — gutter, label, cell, socket,
+// which domains get a lane — are shared with the initiative deck: DomainLanes.tsx.)
+const LANE_ROW_MIN = 56;
 // A fixed near-term horizon — the deck is for scaffolding the next stretch; coverage
 // measures load per domain over it. (A window selector proved to be noise once the
 // pips carried "how much" per lane.)
@@ -76,6 +81,10 @@ export default function OnDeckPlanner() {
   const [maxPerWeek] = useMaxPerWeek();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden();
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed();
+  // "By domain" — the deck split into one lane per domain, so a domain with nothing
+  // in a week shows as an empty socket in its own row instead of an absence you'd
+  // have to notice by reading every card's eyebrow.
+  const [byDomain, setByDomain] = useDeckByDomain();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, HORIZON_WEEKS, true), [data, byWeek, weeklyAvgMins, now]);
   // The domain a lane-composed project lands in (reassignable in the record); the
@@ -88,8 +97,13 @@ export default function OnDeckPlanner() {
   // cells sit in TRUE columns above their sprints (the aligned demarcation). Deck +
   // coverage share this one template, so a lit coverage cell points straight down at
   // its week column.
-  const cols = `${LABEL_W}px repeat(${H}, minmax(${WEEK_COL_PX}px, 1fr))`;
-  const gridMinW = LABEL_W + H * WEEK_COL_PX;
+  // The lane gutter's extra width comes OUT of the week columns' minimum, so both
+  // layouts need the same total width: flipping the toggle must never be the thing
+  // that pushes the horizon off the pane (it did, by 6px, at a 1680 window).
+  const labelW = byDomain ? LANE_LABEL_W : LABEL_W;
+  const weekMin = WEEK_COL_PX - Math.ceil((labelW - LABEL_W) / H);
+  const cols = `${labelW}px repeat(${H}, minmax(${weekMin}px, 1fr))`;
+  const gridMinW = labelW + H * weekMin;
 
   const placed = board.lanes.filter((l) => l.project.targetDate);
   // Inbox = every open project NOT on the timeline. That's not just the undated
@@ -110,7 +124,7 @@ export default function OnDeckPlanner() {
   // POSITION is not — pointer coords go straight to the DOM node per rAF.
   // Routing x/y through setState re-rendered the whole planner per pointermove
   // (51 commits and 9–10 dropped frames per drag in the audit).
-  const [drag, setDrag] = useState<{ name: string; dot: string; sub: string } | null>(null);
+  const [drag, setDrag] = useState<{ name: string; dot: string; sub: string; domainId: string | null } | null>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const ghostPos = useRef({ x: 0, y: 0 });
   const ghostTransform = (x: number, y: number) => `translate3d(${x + 14}px, ${y + 8}px, 0) rotate(-2deg)`;
@@ -215,16 +229,28 @@ export default function OnDeckPlanner() {
   // a bar's column within its row.
   // Pack most-ready first so the greedy first-fit lands ready cards in the top
   // rows — "shaped to top" within each week — then by time to keep bars tidy.
-  const rows: (typeof geom)[] = [];
-  const doneRank = (g: (typeof geom)[number]) => (g.l.readyTier === "done" ? 1 : 0);
-  for (const g of [...geom].sort(
-    (a, b) => doneRank(a) - doneRank(b) || b.l.readyCount - a.l.readyCount || a.start - b.start || a.end - b.end,
-  )) {
-    const row = rows.find((r) => r.every((x) => !(g.start <= x.end && x.start <= g.end)));
-    if (row) row.push(g);
-    else rows.push([g]);
-  }
-  const effOf = (g: (typeof geom)[number]) =>
+  type Geom = (typeof geom)[number];
+  const doneRank = (g: Geom) => (g.l.readyTier === "done" ? 1 : 0);
+  const pack = (gs: Geom[]): Geom[][] => {
+    const out: Geom[][] = [];
+    for (const g of [...gs].sort(
+      (a, b) => doneRank(a) - doneRank(b) || b.l.readyCount - a.l.readyCount || a.start - b.start || a.end - b.end,
+    )) {
+      const row = out.find((r) => r.every((x) => !(g.start <= x.end && x.start <= g.end)));
+      if (row) row.push(g);
+      else out.push([g]);
+    }
+    return out;
+  };
+  const rows = pack(geom);
+
+  // ── By domain: the same packing, run once per domain, so each lane is its own
+  // small deck. Which domains get a lane, and in what order, is the shared rule
+  // (domainLanes) — the initiative deck reads By domain through the same one.
+  const lanes = byDomain
+    ? domainLanes(data, domainsSorted, coverageHidden, geom, (g) => g.l.project.domainId).map((ln) => ({ ...ln, rows: pack(ln.items) }))
+    : [];
+  const effOf = (g: Geom) =>
     preview && preview.id === g.l.project.id
       ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
       : { start: g.start, end: g.end, beyond: g.beyond };
@@ -255,6 +281,117 @@ export default function OnDeckPlanner() {
         />
       </div>
     );
+
+
+  // One card, both layouts. By domain the lane already names the area, so the card
+  // stops saying it — a surface that draws a fact doesn't also write it (D-122) —
+  // and its meta line keeps only the weight.
+  const renderCard = (g: Geom, gridRow: number) => {
+    const { l } = g;
+    const { start, end, beyond } = effOf(g);
+    const dom = domainById(data, l.project.domainId);
+    const dot = dom?.color ?? "var(--accent)";
+    const dragging = preview?.id === l.project.id;
+    const done = l.readyTier === "done";
+    const weight = done ? null : deckWeight(l.pace.remainingMins);
+    return (
+      <DeckCard
+        key={l.project.id}
+        dragAttr={{ "data-project-drag": l.project.id }}
+        onContextMenu={onContextMenu("project", l.project.id)}
+        className={`pointer-events-auto mx-1 min-h-[62px] cursor-grab justify-center active:cursor-grabbing ${byDomain ? "my-1" : ""}`}
+        style={{
+          gridColumn: `${start + 2} / ${end + 3}`,
+          gridRow,
+          ...(dragging
+            ? { borderColor: dot, boxShadow: "var(--shadow-lift)", transform: "translateY(-3px)" }
+            : { boxShadow: beyond ? `5px 0 0 -1px ${dot}` : undefined }),
+        }}
+        spine={dot}
+        eyebrow={byDomain ? (weight ?? "") : (dom?.name ?? "no area")}
+        title={l.project.name}
+        // the weight the pinch math actually runs on — a column of
+        // hours explains an over-committed sprint; a count doesn't.
+        weight={byDomain ? null : weight}
+        status={projectCardStatus(l)}
+        pips={done ? undefined : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
+        pipTone={PIP_TONE[l.readyTier]}
+        dim={l.readyTier === "parked"}
+        shipped={done}
+      >
+        <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
+        <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
+      </DeckCard>
+    );
+  };
+
+  // ── a lane (By domain): label · per-week create cells · its own packed rows ──
+  const renderLane = (lane: (typeof lanes)[number], li: number) => {
+    const { domain } = lane;
+    const name = laneName(domain);
+    const color = laneColor(domain);
+    // live coverage under a drag (effOf), so a socket fills the moment a bar slides
+    // into this lane's week — the same live read the strip gave.
+    const covered = board.weeks.map((w) => lane.rows.some((r) => r.some((g) => { const e = effOf(g); return w.idx >= e.start && w.idx <= e.end; })));
+    const count = lane.items.length;
+    const composing = cw != null && (composeDom?.id ?? null) === (domain?.id ?? null) && domain != null;
+    const laneComposeRow = composing
+      ? (() => { const i = lane.rows.findIndex((r) => !r.some((g) => g.start <= cw! && g.end >= cw!)); return i === -1 ? lane.rows.length : i; })()
+      : -1;
+    const nRows = Math.max(1, lane.rows.length + (laneComposeRow === lane.rows.length ? 1 : 0));
+    const span = `1 / span ${nRows + 1}`;
+    return (
+      <div
+        key={lane.key}
+        role="group"
+        aria-label={`${name} — ${count > 0 ? `${count} project${count === 1 ? "" : "s"}` : "nothing placed"}`}
+        className="grid"
+        style={{
+          gridTemplateColumns: cols,
+          // a 10px tail under the last row: the strip where a covered week can
+          // still take a second project (the cell above it is all card).
+          gridTemplateRows: `repeat(${nRows}, minmax(${LANE_ROW_MIN}px, auto)) 10px`,
+          borderTop: li === 0 ? undefined : "1px solid var(--line)",
+        }}
+      >
+        <LaneLabel domain={domain} count={count} noun="project" gridRow={span} />
+
+        {/* per-week cells — the create control for THIS domain in THIS week, and a
+            socket where the week has nothing for it (see LaneCell). */}
+        {board.weeks.map((w) => (
+          <LaneCell
+            key={`c${w.idx}`}
+            domain={domain}
+            column={w.idx + 2}
+            dropAttr={{ "data-week": String(w.idx) }}
+            label={`New ${name} project — ${weekName(w.weekStart).toLowerCase()}`}
+            onAdd={() => domain && addForDomain(domain, w.idx)}
+            // Dragging a project in from the rail: its OWN lane lights in the week
+            // under the pointer — exactly where it will land, before the drop.
+            landing={drag != null && drag.domainId === domain?.id && dropWeek === w.idx}
+            socket={!covered[w.idx] && !(composing && cw === w.idx)}
+            gridRow={span}
+          />
+        ))}
+
+        {lane.rows.map((row, ri) => (
+          <div key={ri} className="contents">
+            {row.map((g) => renderCard(g, ri + 1))}
+          </div>
+        ))}
+        {composing && cw != null && (
+          <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: laneComposeRow + 1 }} className="relative z-[1] mx-1 my-1 self-start">
+            <InlineAdd
+              placeholder={`Name a ${name} project…`}
+              accent={color}
+              onCreate={(n) => createInWeek(cw, n)}
+              onClose={closeCompose}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
   const live = useRef({ projectById, board, updateProject, openRecord, data, defer });
@@ -313,7 +450,7 @@ export default function OnDeckPlanner() {
           window.getSelection()?.removeAllRanges();
           // live preview: an inbox project has no bar yet, so it rides the
           // floating chip + column highlight. Identity set once, here.
-          if (fromInbox) setDrag({ name: p.name, dot: ghostDot, sub: ghostSub });
+          if (fromInbox) setDrag({ name: p.name, dot: ghostDot, sub: ghostSub, domainId: p.domainId ?? null });
         }
         ghostPos.current = { x: ev.clientX, y: ev.clientY };
         if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ev.clientX, ev.clientY);
@@ -459,6 +596,8 @@ export default function OnDeckPlanner() {
           toggleHidden={toggleCoverageHidden}
           open={filterOpen}
           setOpen={setFilterOpen}
+          byDomain={byDomain}
+          setByDomain={(v) => { closeCompose(); setByDomain(v); }}
         />
 
         {/* The grid FILLS the pane (flex-1, per the design language's "grid views go
@@ -483,17 +622,22 @@ export default function OnDeckPlanner() {
             {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
                 the grid template), so a lit cell points straight down at its sprint.
                 Collapsible: the deck is the primary surface. */}
-            {!coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
+            {/* By domain, the lanes below ARE this read — drawing it twice would be
+                two surfaces claiming one question (P8). */}
+            {!byDomain && !coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
             {/* week headers — label · date, with the week's committed load folded in
                 (amber past the max). Faint column rules only — no frame, no gauge row. */}
             <div
               className="grid shrink-0"
               style={{
                 gridTemplateColumns: cols,
-                borderTop: coverageCollapsed ? undefined : "1px solid var(--line)",
+                borderTop: coverageCollapsed || byDomain ? undefined : "1px solid var(--line)",
               }}
             >
-              <div aria-hidden />
+              {/* By domain the gutter is the lane-name column, so it stays put over
+                  a horizontal scroll here too — one continuous column, not lane
+                  labels under a header gutter that slides away. */}
+              <div aria-hidden className={byDomain ? "sticky left-0 z-10" : undefined} style={byDomain ? LANE_GUTTER : undefined} />
               {board.weeks.map((w) => {
                 const n = weekLoad[w.idx];
                 const over = n > maxPerWeek;
@@ -532,8 +676,13 @@ export default function OnDeckPlanner() {
               {/* week columns — drop targets + click-to-create + faint rules. The
                   leading spacer holds the label gutter so columns align with coverage. */}
               <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
-                <div aria-hidden />
-                {board.weeks.map((w) => (
+                <div aria-hidden className={byDomain ? "sticky left-0 z-10" : undefined} style={byDomain ? LANE_GUTTER : undefined} />
+                {byDomain ? board.weeks.map((w) => (
+                  // By domain, each lane's cell is the create control (it knows its
+                  // domain); the column underneath is just the now band, the drop
+                  // band and the rule.
+                  <div key={w.idx} data-week={w.idx} className="border-l border-line transition-colors" style={{ background: cellBg(w.idx) }} />
+                )) : board.weeks.map((w) => (
                   <div
                     key={w.idx}
                     data-week={w.idx}
@@ -582,7 +731,19 @@ export default function OnDeckPlanner() {
                   its right, week 4 the mirror image. Read as drifting gutters down
                   the deck. The card's own `mx-1` is the gutter; the rules and the
                   cards must share one box (D-097). */}
-              {rows.length === 0 ? (
+              {byDomain ? (
+                // Lanes stack in the domains' order; the body still fills the pane
+                // (the background columns run beneath) so a short deck doesn't float.
+                <div className="relative pb-6">
+                  {lanes.length === 0 ? (
+                    <div className="px-4 pt-14 text-center text-caption text-muted">
+                      Every domain is hidden — choose some under Domains.
+                    </div>
+                  ) : (
+                    lanes.map(renderLane)
+                  )}
+                </div>
+              ) : rows.length === 0 ? (
                 cw != null ? (
                   <div className="relative pb-16 pt-2.5">
                     <div className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
@@ -598,42 +759,7 @@ export default function OnDeckPlanner() {
                 <div className="pointer-events-none relative pb-16 pt-2.5">
                   {rows.map((row, ri) => (
                     <div key={ri} className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
-                    {row.map((g) => {
-                      const { l } = g;
-                      const { start, end, beyond } = effOf(g);
-                      const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
-                      const dragging = preview?.id === l.project.id;
-                      const done = l.readyTier === "done";
-                      return (
-                        <DeckCard
-                          key={l.project.id}
-                          dragAttr={{ "data-project-drag": l.project.id }}
-                          onContextMenu={onContextMenu("project", l.project.id)}
-                          className="pointer-events-auto mx-1 min-h-[62px] cursor-grab justify-center active:cursor-grabbing"
-                          style={{
-                            gridColumn: `${start + 2} / ${end + 3}`,
-                            gridRow: 1,
-                            ...(dragging
-                              ? { borderColor: dot, boxShadow: "var(--shadow-lift)", transform: "translateY(-3px)" }
-                              : { boxShadow: beyond ? `5px 0 0 -1px ${dot}` : undefined }),
-                          }}
-                          spine={dot}
-                          eyebrow={domainById(data, l.project.domainId)?.name ?? "no area"}
-                          title={l.project.name}
-                          // the weight the pinch math actually runs on — a column of
-                          // hours explains an over-committed sprint; a count doesn't.
-                          weight={done ? null : deckWeight(l.pace.remainingMins)}
-                          status={projectCardStatus(l)}
-                          pips={done ? undefined : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
-                          pipTone={PIP_TONE[l.readyTier]}
-                          dim={l.readyTier === "parked"}
-                          shipped={done}
-                        >
-                          <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
-                          <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
-                        </DeckCard>
-                      );
-                    })}
+                    {row.map((g) => renderCard(g, 1))}
                     {composeRowIdx === ri && composerCell}
                     </div>
                   ))}

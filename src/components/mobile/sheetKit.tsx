@@ -17,7 +17,7 @@
 //
 // Mobile-only on purpose: none of this is mounted on the desktop shell.
 
-import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type UIEvent } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type Ref, type UIEvent } from "react";
 import { Icon, type IconName } from "../Icon";
 import { toDateISO, todayISO, tomorrowISO } from "../../lib/dates";
 import Sheet from "./Sheet";
@@ -129,6 +129,7 @@ export function AutoText({
   className = "",
   single = false,
   minRows = 1,
+  style,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -138,6 +139,9 @@ export function AutoText({
    *  swaps this in under your finger and must raise the keyboard in the same tap). */
   inputRef?: Ref<HTMLTextAreaElement>;
   placeholder?: string;
+  /** Inline, for the padding `.field`'s unlayered CSS would otherwise win (see the
+   *  three CSS traps in CLAUDE.md) — e.g. clearing an icon in the gutter. */
+  style?: CSSProperties;
   label: string;
   className?: string;
   single?: boolean;
@@ -190,6 +194,7 @@ export function AutoText({
       className={`block w-full resize-none overflow-hidden outline-none placeholder:text-muted/60 ${
         single ? "-my-3 py-3" : ""
       } ${className}`}
+      style={style}
     />
   );
 }
@@ -366,14 +371,57 @@ export function DestructiveRow({
   confirm = true,
   icon = "trash",
   onConfirm,
+  prompt,
+  alt,
 }: {
   label: string;
   confirmLabel?: string;
   confirm?: boolean;
   icon?: IconName;
   onConfirm: () => void;
+  /** What the act will do, said before you commit — "Cancel for 6 guests?" */
+  prompt?: string;
+  /** A second, gentler way to do it (Cancel quietly). With one, the armed state
+   *  stacks full-width — three verbs side by side don't fit a 320px phone. */
+  alt?: { label: string; onConfirm: () => void };
 }) {
   const [armed, setArmed] = useState(false);
+  // The row sits at the very foot of a long sheet, so the choices it arms open
+  // below the fold — bring them up rather than leave "Keep it" off-screen.
+  const armedRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (armed) armedRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [armed]);
+  if (armed && (alt || prompt)) {
+    return (
+      <div ref={armedRef} className="space-y-2">
+        {prompt && <p className="px-1 text-caption text-ink">{prompt}</p>}
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="tap fast w-full rounded-xl border border-signal bg-signal/10 text-body font-semibold text-signal"
+        >
+          {confirmLabel}
+        </button>
+        {alt && (
+          <button
+            type="button"
+            onClick={alt.onConfirm}
+            className="tap fast w-full rounded-xl border border-line text-body font-medium text-ink active:bg-accent-soft"
+          >
+            {alt.label}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setArmed(false)}
+          className="tap fast w-full rounded-xl text-body text-muted active:bg-accent-soft"
+        >
+          Keep it
+        </button>
+      </div>
+    );
+  }
   if (armed) {
     return (
       <div className="grid grid-cols-2 items-center gap-2 py-px">

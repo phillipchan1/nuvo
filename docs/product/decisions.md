@@ -4840,6 +4840,7 @@ A wander past `AXIS_SLOP_PX` is a scroll or a page-swipe, never a create.
 Long-press-then-drag to size (Apple) is the increment if a default length
 feels short — duration chips are on the sheet. The Week lens is not this
 decision; its columns are a scan, and a 47px miss is a different problem.
+*(Superseded for the Week lens by D-175.)*
 
 Adds no pool, no name, no data. Works on an empty day by construction (the
 working window still draws). Guarded by `tests/canvas-tap.test.ts`,
@@ -6620,3 +6621,249 @@ freeze), the isolation mutation proof over `rest.ts`, `tests/worker-seam.test.ts
 dev app against a local `wrangler dev` on a prod-shaped restore, desktop and 375px, flag on and
 off. **Not driven:** the `nuvo-preview` Worker (the #90-era build — no `/api/rest/v1` until it is
 redeployed). Open items: [`cloudflare-cutover.md`](../cloudflare-cutover.md) § Not ready to flip.*
+
+---
+
+**D-175 · 2026-11-03 · A tap on empty Week-canvas time claims it too — the column is the day.**
+
+D-130 gave the Day lens tap-to-claim and left the Week out: "its columns are a scan, and a 47px
+miss is a different problem." In use, that read as a broken calendar: on the Week, tapping a gap
+did nothing at all, where Apple and Google both create. A person who just saw Thursday 2pm open
+should not have to zoom to a Day to take it.
+
+→ The Week canvas takes the same gesture through the same code. The press state machine moved
+out of `MobileDayView` into `useCanvasPress` (press → ghost; a wander past `AXIS_SLOP_PX` is a
+scroll or a page-swipe; release in place claims), so the two lenses cannot drift on what a tap
+is. The Week resolves a point as **column → day** (`columnFromCanvasX`) and **height → half-hour**
+(`WEEK_TAP_SNAP_MINS`: at 52px an hour a 15-minute band is 13px, finer than the finger choosing
+it). It opens the same one capture door (`MobileCapture`), seeded, Task face — no second ＋.
+
+**The 47px miss.** Columns tile the canvas, so every point is exactly one day; the ghost draws in
+that column under the finger *before* release, and the capture sheet names the date and lets it
+change. A miss is visible and one tap to fix, which is the bar a 375px week can honestly meet.
+
+Also fixed on the way: the Week's "open on today's hours" scroll held a ref that was never
+attached to the canvas, so it never ran. It now parks the now line like the Day lens.
+
+**Anchor.** Closes the same inch of **D6** D-130 did, on the Week. Strains **P2** exactly as
+D-130 does (a timed capture lands without passing the week gate — the documented same-day
+reactive exception, and visible). The four no's: no pool, no new name, no clean-data
+requirement (an empty week still draws its working window), nothing builder-only.
+
+*Status: built — phone Week canvas tap-to-capture. Guarded by `tests/mobile-week-tap.test.tsx`
+(column + half-hour, ghost before release, wander, gutter, block) and the unchanged
+`tests/mobile-day-tap.test.tsx`. Driven with touch at 375px at `?horizon` (week and day frames).*
+
+---
+
+**D-176 · 2026-11-05 · The phone's event sheet carries every act the desktop's right-click
+does — and Hide has a way back.**
+
+A phone has no right-click. Every act the desktop reached through the event's context menu or
+its popover footer — **Hide**, **→ Task**, **Duplicate**, **Move to…**, **Open in Google
+Calendar**, **Add Google Meet** — had no path on the phone at all; "I can't hide an event on
+mobile" was the report. Worse, the phone's **Delete** on a meeting you host cancelled it for
+every guest by email without saying so (the desktop asks *Cancel for 6 guests?* and offers
+*Cancel quietly*).
+
+→ Each act is now a visible row on the event sheet (`MobileEventSheet`). Choosing between
+this-occurrence and the-series, or among calendars, is a `PickSheet` — never a hidden
+gesture, never a cursor menu. Delete says what it does: on an event you host with guests it
+reads **Cancel event**, and arms to *Cancel & notify guests* · *Cancel without emailing* ·
+*Keep it*. What each act **means** moved out of the desktop components into
+`lib/eventActs.ts` (`taskFromEvent`, `duplicateEventInput`, `cancelNotifiesGuests`); they
+were inline in `Planner` / `CalendarPane` / `SlideOver`, which is exactly why the phone had
+none — there was nothing to import.
+
+**The way back.** Hidden events are filtered off every calendar Nuvo draws, and the desktop's
+*Show N hidden* lives in the calendar's ⋯, which the phone doesn't have (D-123 sends such
+management to Settings). So **Settings → Schedule → Hidden events** names each one with a
+**Show**, on both shells. Without it, Hide on a phone was a door that only opened inward.
+
+**Overflow** (same sheet, same report): at 320px the start/end time fields clipped "PM"; a long
+location was a one-line input showing its first ~25 characters; an invite's body (a Zoom
+paste) was either an unfolded wall or — on an editable event — a textarea whose links could
+not be opened, pushing every act below the fold. Times now fit; the location wraps; notes
+read first (links live, folded past eight lines, unbreakable URLs wrap) and **Edit** turns
+them into the field — the desktop popover's rule.
+
+**Anchor.** No new Question Ledger row — this is parity on an existing surface (the phone's
+event sheet already answers D2/D4 for an event; it now answers them without sending you to
+the desktop). Strains **P5** slightly (the sheet grows a row-list of acts), held by the sheet
+kit's grammar: acts are quiet rows, the destructive one stands alone. The four no's: no pool,
+one new user-facing name (**Hidden event**, glossary), no clean-data requirement, nothing
+builder-only.
+
+*Status: built — event sheet acts + overflow, Settings → Schedule hidden list. Guarded by
+`tests/event-acts.test.ts`, `tests/settings-hidden-events.test.tsx`. Driven at
+`?sheets=event-host` / `event-recurring` / `event-long` at 320 and 375 (new fixture
+`event-host`: you host, six guests, a Zoom-paste body).*
+
+---
+
+**D-177 · 2026-11-05 · A task and a block on the phone carry the desktop's right-click acts —
+one meaning each, in `lib/taskActs.ts`.**
+
+A parity audit after D-176 (desktop right-click / popover vs. the phone's sheets) found the
+same hole on tasks and blocks, plus two bugs in paths that did exist:
+
+| Gap on the phone | Now |
+|---|---|
+| Trash on a repeating task deleted one row — the series stamped it straight back, and a series couldn't be ended | **Trash…** asks *This occurrence · This and following · The whole series* (`trashTaskScoped`, the desktop menu's own act) |
+| Delete on a block: one row only, no series question, tasks always kept | **Delete block…** asks the scope on a series and whether its tasks go too (`deleteSlotScoped`, the popover's act) |
+| No way to change a block's length | **Length** chips, 30m–6h |
+| No Duplicate (task or block) | **Duplicate** row on both (`duplicateTaskInput` / `duplicateSlotInput`) |
+| No Task → Event | **Make it an event** on a timed task (`useTaskToEvent`, lifted out of `Planner`) |
+| No Commit to / take off this week | A row on the task sheet — the shell's `useWeekCommitAct` |
+| A deadline could be read, not set | **Deadline** row (native date) with clear |
+| A block's Repeat and Remind were desktop-only | Rows on the block sheet (`applySlotRepeat`) |
+| No way to add work inside a block | The shared `TaskComposer`, told it's in this slot (D-146) |
+| **Bug:** Today / Tomorrow / Next week on a timed task cleared its time | They call the desktop's `moveToDay` — the clock is kept |
+| **Bug:** three time pickers prefilled the **UTC** clock (`iso.slice(11,16)`) | `clockInputValue` reads the wall clock — phone task + block sheets and the desktop rail |
+
+**Why a lib, again.** Every one of these acts was written inline in a desktop component
+(`CalendarPane`, `Planner`, `SlideOver`, `TaskActionsMenu`), which is the whole reason the
+phone had none: there was nothing to import, so the phone either went without or would have
+grown a second copy. They now live once and the desktop calls the same functions.
+
+**Left desktop-only, on purpose or for later:** multi-select acts (*Make one slot* ⌘G, merge),
+keyboard nudges, ✦ name suggestion and domain guess, delegate pre-work, a block's project/
+domain (*For*), and taking one task out of a block in place (the phone does it by moving the
+task). None is reachable by a single tap on the desktop either, except *For* and *take out*,
+which are the next candidates.
+
+**Anchor.** No new ledger row — parity on existing surfaces. Strains **P5** (the sheets grow
+rows) within the sheet kit's grammar. Four no's: no pool, no new name, no clean-data
+requirement, nothing builder-only.
+
+*Status: built. Guarded by `tests/block-acts.test.ts`, `tests/clock-input-value.test.ts`.
+Driven at `?sheets=task-block` / `block-project` at 320.*
+
+
+---
+
+**D-178 · 2026-11-05 · A selection owns the screen, and a slot is one thing in a list.**
+
+Two things reported from the Schedule's rail, one root: the list said less than the app knew.
+
+**1 · The first task's popover stayed open over a multi-select.** Click a row (its popover
+opens), ⌘-click another: both rows were *meant* to be held, but only the second was — the first
+was never in the set (a plain click only opens a popover) — so the bar didn't appear until a
+third pick, and the popover sat over the whole thing. The popover never closed because the row's
+⌘/⇧ `mousedown` `stopPropagation`s (so a modifier-press can't also open), which also kept the
+popover's own click-away from ever hearing it. Related and quieter: a selection kept ids that had
+left the list (switch to Inbox, complete a selected row), so the bar counted "4 selected" while
+its acts reached two.
+
+→ **One rule: holding several rows and having one open are incompatible.** Growing a selection
+closes the task / slot popover (`selectionClosesOverlay`); the ⌘-click folds in the row you're
+already on (the open popover's, or the keyboard's lit one); the selection is pruned to rows that
+exist **and are drawn** (`pruneTo` — also stops a ⇧-range sweeping a collapsed Done tail). New
+ways in and out, on the one shared keys hook so every task list gets them: **⌘A** · **⇧↑/⇧↓**
+(grow, and walk back to shrink) · **Esc** · a click on empty paper · **Select all N** and a
+tappable ✕ on the bar, which now appears from the first pick. The moves live in
+`lib/selection.ts`, pure, and are tested.
+
+**2 · Slotted work read as loose rows.** A slot's tasks carry the slot's start time, so five
+tasks in one block rendered as five unrelated commitments under "On the clock". On the **phone it
+was worse**: the day query leaves slot children out ("they show inside their slot") and the Tasks
+screen had no slot to show them inside — a task you'd put in this morning's block was not on
+Today, and the segment's count was short by that many.
+
+→ **A slot is the head of its tasks** (`lib/slotRuns.ts` — the one read both shells draw): its
+name, its span (`span()`, the one way a time is spelled), what it holds as a fact (`3 left · 1h of
+2h` / `open · 1h` / `all done`), a spine in its hue, and a ring that picks everything inside it —
+the tap path for "this whole block", since a phone has no ⌘-click or drag. An empty slot is
+listed (held time with nothing in it); a slot whose work is all done reads done rather than
+vanishing; a filter drops a slot with nothing matching rather than let it claim a gap it only
+hid. The phone now assembles today the way the rail does (`todayWithSlotChildren`, extracted from
+`Planner`).
+
+**Anchor.** Closes **D2** (*what's already decided so I don't have to re-decide it?* — a slot is
+decided time; the list now says so) and the triage half of **D4** (bulk-moving what rolled over).
+Strains **P8** lightly (the rail's one question is "what's on today", and a slot header is a
+second kind of line in it — held to one line of fact, no card) and **P10**: no new pool, and **no
+new name** — "slot" is the existing noun, the header is not a thing. The four no's: no pool; no
+overlapping name; it degrades to the old flat list on an account with no slots (P7); nothing
+that holds only in the builder's account (P16).
+
+**Amends the phone's earlier call.** The phone's earlier "Declined for now: multi-select + bulk delete on
+the phone (long-press is spent twice already)" was already overtaken by the hold-to-select bar;
+this adds no new gesture (the ring is a visible button, never a hidden hold).
+
+**Not done, on purpose.** Dragging a *group* to reorder inside the rail (the calendar takes a
+group; the rail's reorder moves one row — the keyboard's ⌥↑/⌥↓ is the path). A phone "put these
+in a slot" bulk act (the task sheet's *Put in a slot* is the per-task path, D-172) — worth its own
+anchor pass. Section-level "select this section".
+
+*Status: built — `lib/selection.ts`, `lib/slotRuns.ts`, `tasks/SlotRunHeader.tsx`, the rail and
+the phone's Today. Guarded by `tests/selection.test.ts` and `tests/slot-runs.test.ts`. Driven at
+`?rail` (desktop) and `?rail=phone` (375px, 44px targets, no horizontal scroll) — fixtures, not
+a live account: the local dev database was empty and writing to it was refused, so the
+open-then-⌘-click flow was driven against a navigation-state stand-in for the popover, not the
+real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
+`npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
+can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-179 · 2026-11-05 · The project deck can be read By domain — one lane per domain, a gap shows
+as an empty socket.**
+
+Asked from the deck itself: *"instead of me reading what domain it is, I want to visually see what
+rows and what domains things are in, so I can identify gaps without thinking — I need to make sure
+I'm constantly doing Frontier things, because the other things carry over and take the focus."*
+The deck packed every project into one field, so whether a domain had anything in a week was a
+fact you assembled by reading eyebrows down four columns. The coverage strip already held the
+answer, but as a second band you had to read *against* the cards — two reads for one question.
+
+→ **A "By domain" toggle in the deck's toolbar** (`useDeckByDomain`, persisted like the other
+planner prefs). On, the deck splits into **one lane per domain**, in the domains' own order — never
+re-sorted by load, so a given domain's row is always in the same place and is found without
+reading. Each lane runs the deck's own packing (most-ready first) inside itself. A week a domain has
+nothing in shows a **socket**: a card-sized soft hollow in that lane's first row, so the gap reads as
+a missing card before a word is read. The lane × week cell is the create control for *that domain
+in that week* (the inline composer opens pre-bound, the recovery the coverage cell already offered);
+a project dragged in from the rail lights its own lane in the week under the pointer, so the landing
+is shown before the drop. The lane's name sits in the left gutter, which is blank in the packed deck.
+
+**Anchor.** Closes **W5** (*which domain am I starving?*) at the project altitude, where it is
+asked about the coming weeks rather than the past one. Strains **P8**, and that is why the lanes
+**replace** the coverage strip rather than sit under it: in lane mode they *are* the coverage read,
+with the count in words once ("3 of 4 domains with a project"). The cards stop naming their domain,
+because the lane draws it (D-122: a surface that draws a fact doesn't also write it). **P10/P11:** no
+new noun. It is a way of reading the deck, and the off state goes unnamed because every candidate
+("All", "Mixed") collides with an existing name. The four no's: no pool; no overlapping name; it
+degrades on an account with one domain to a single lane, the packed deck with a label (P7);
+nothing in it is about one account's domains (P16). The Domains filter decides which **empty**
+domains get a row. A hidden domain still gets one while it has a project placed, because hiding
+quiets a domain and never hides work. Projects whose domain no longer resolves get a "No area" lane.
+
+**Not done, on purpose.** Dropping a card into *another* lane does **not** re-home the project:
+domain is a record-level change with consequences (D-088), and a drag that silently changes it is
+the wrong place for that act. The bar slides only in time, inside its own lane. **The phone** pages one week at a time (`MobileDeck`). Its equivalent would group a week
+page's cards by domain, with an empty domain as a socket, which needs its own pass.
+
+*Status: built — `ondeck/OnDeckPlanner.tsx` (lanes, sockets, landing), `ondeck/CoverageControls.tsx`
+(the toggle, the lane-mode read), `hooks/usePlannerPrefs.ts` (`useDeckByDomain`), `.lane-*` in
+`index.css`. Both layouts resolve to the same total width, so the toggle can't push the horizon off
+the pane (it did, by 6px, at 1680 before the week minimum absorbed the wider gutter). One frosted
+gutter column for the whole deck, not one per lane (perf rule 2). Driven in the dev app on a test
+account: toggle on/off and persistence, hover bloom, the composer from a socket (closed without
+writing), the sticky gutter over a horizontal scroll, the Domains popover note, the phone at 375
+(unaffected). **Not run:** the drag-landing highlight with a real pointer (synthetic events don't
+arm the deck's drag), and `npm run perf`. Chrome isn't installed on this machine;
+`perf-budget` in `npm test` passes. `guard-public-ci` fails on a clean tree (case-insensitive
+filesystem), as noted in D-178.*
+
+*Amended 2026-11-05: **the initiative deck reads By domain too**. It is the same surface at
+quarters, so it gets the same toggle (remembered per deck). It is a kanban, not a Gantt, so each
+lane is a row of quarter cells, and each cell stacks that domain's bets, most urgent first.
+An empty cell is a socket with one card's height, so it doesn't stretch beside a stack of three.
+Both decks read By domain through **one set of parts**, `ondeck/DomainLanes.tsx`: `domainLanes`
+decides which domains get a lane, plus the label, the cell + socket and the gutter frost. Each deck
+keeps only its own geometry. Never re-decide either in a deck: the coverage strip drifted the first
+time it was copied between them. A bet dragged over a quarter lights its own lane there; dragging
+never re-homes it. The toolbar's read names the deck's noun ("2 of 4 domains with an
+initiative"). Driven on a test account: toggle, persistence independent of the project deck, a
+card click doesn't start a create, a socket opens a domain-bound composer (closed without
+writing), the project deck unchanged after the extraction, no horizontal overflow at 1680, and the
+phone at 375 (unaffected).*

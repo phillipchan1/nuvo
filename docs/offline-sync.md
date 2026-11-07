@@ -467,8 +467,12 @@ naively treated "I cannot see any occurrences" as "there are none", and because
 it queued **385 inserts for occurrences that already existed**, every one
 rejected by `tasks_recurrence_occurrence_uniq` and parked. Two fixes:
 
-1. `occurrenceDates` returns `null` when the unfiltered pool has not loaded, and
-   the caller skips. Unknown means skip, never "empty".
+1. `occurrenceDates` returns `null` when the authority has not loaded, and
+   the caller skips. Unknown means skip, never "empty". Tasks read
+   `["tasks", "all"]`. Slots have no unfiltered query — only date ranges — so
+   their authority is `["slot-occurrences"]`, fetched when missing. A series id
+   minted in the same call is the one case that is known-empty without that
+   pool: it cannot already occupy a date.
 2. `materializeAll` reports that skip, so the mobile shell's once-per-day guard
    does not record a cold-cache skip as a completed run.
 

@@ -22,7 +22,7 @@
 // the tap opens the one capture sheet, seeded. A wander past AXIS_SLOP_PX
 // is a scroll or a page-swipe, never a create.
 
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { isSameDay } from "date-fns";
 import { fmtMins } from "../../lib/now";
 import { DEFAULT_DURATION_MINUTES } from "../../lib/types";
@@ -32,13 +32,8 @@ import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
 import { blockDesignation } from "../../lib/slots";
-import {
-  DAY_HOUR_PX,
-  dateAtMinutes,
-  isCanvasTap,
-  minutesFromCanvasY,
-  TAP_SNAP_MINS,
-} from "./canvasTap";
+import { DAY_HOUR_PX, dateAtMinutes, minutesFromCanvasY, TAP_SNAP_MINS } from "./canvasTap";
+import { useCanvasPress } from "./useCanvasPress";
 
 const HOUR_PX = DAY_HOUR_PX;
 const MIN_ITEM_PX = 22; // a 15-min item stays readable without lying much
@@ -131,52 +126,23 @@ export default function MobileDayView({
   // Press preview — the slot under the finger, dismissed the moment the
   // gesture becomes a scroll or a page-swipe. The parent `draft` is the
   // same ghost once capture is open (the press itself is already over).
-  const pressRef = useRef<{ x: number; y: number; startMin: number; id: number } | null>(null);
-  const [pressMin, setPressMin] = useState<number | null>(null);
+  const { press, handlers: pressHandlers } = useCanvasPress({
+    enabled: !!onTapEmpty,
+    resolve: (clientX, clientY) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      if (clientX - rect.left < CAL_GUTTER) return null;
+      return { col: 0, startMin: minutesFromCanvasY(clientY, rect.top, winStart, HOUR_PX, TAP_SNAP_MINS, winEnd) };
+    },
+    onTap: (p) => onTapEmpty?.(dateAtMinutes(selected, p.startMin)),
+  });
   const draftMin =
     draft && isSameDay(draft.start, selected)
       ? draft.start.getHours() * 60 + draft.start.getMinutes()
       : null;
-  const ghostMin = pressMin ?? draftMin;
+  const ghostMin = press?.startMin ?? draftMin;
   const ghostDur = draft?.durationMinutes ?? defaultDurationMins;
-
-  const beginPress = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!onTapEmpty || e.button !== 0) return;
-    if ((e.target as HTMLElement).closest("[data-cal-item]")) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    if (e.clientX - rect.left < CAL_GUTTER) return;
-    const startMin = minutesFromCanvasY(e.clientY, rect.top, winStart, HOUR_PX, TAP_SNAP_MINS, winEnd);
-    pressRef.current = { x: e.clientX, y: e.clientY, startMin, id: e.pointerId };
-    setPressMin(startMin);
-  };
-  const movePress = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const p = pressRef.current;
-    if (!p || e.pointerId !== p.id) return;
-    if (!isCanvasTap(e.clientX - p.x, e.clientY - p.y)) {
-      pressRef.current = null;
-      setPressMin(null);
-    }
-  };
-  const endPress = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const p = pressRef.current;
-    pressRef.current = null;
-    if (!p || e.pointerId !== p.id) {
-      setPressMin(null);
-      return;
-    }
-    if (!isCanvasTap(e.clientX - p.x, e.clientY - p.y)) {
-      setPressMin(null);
-      return;
-    }
-    setPressMin(null);
-    onTapEmpty?.(dateAtMinutes(selected, p.startMin));
-  };
-  const cancelPress = () => {
-    pressRef.current = null;
-    setPressMin(null);
-  };
 
   return (
     <div ref={rootRef}>
@@ -246,10 +212,7 @@ export default function MobileDayView({
               // The surface's one edge — see `CAL_EDGE`. The column this canvas
               // draws has to begin where the week row's lit cell does.
               style={{ height: y(winEnd) + 14, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
-              onPointerDown={beginPress}
-              onPointerMove={movePress}
-              onPointerUp={endPress}
-              onPointerCancel={cancelPress}
+              {...pressHandlers}
             >
               {hours.map((h) => (
                 <div key={h} className="absolute inset-x-0" style={{ top: y(h * 60) }}>

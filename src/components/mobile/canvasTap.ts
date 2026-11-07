@@ -42,3 +42,23 @@ export function dateAtMinutes(day: Date, minutes: number): Date {
 export function isCanvasTap(dx: number, dy: number, slop: number = AXIS_SLOP_PX): boolean {
   return Math.hypot(dx, dy) <= slop;
 }
+
+/** The Week canvas is a scan at 52px an hour — a 15-minute grain there is a
+ *  13px band, finer than the finger choosing it. Half-hours are honest. */
+export const WEEK_TAP_SNAP_MINS = 30;
+
+/** Which of `cols` equal day columns an X falls in, past the hour gutter —
+ *  or null when it landed in the gutter itself. Columns tile the canvas, so
+ *  any X inside them is exactly one day; the ghost says which before release. */
+export function columnFromCanvasX(
+  clientX: number,
+  canvasLeft: number,
+  canvasWidth: number,
+  gutter: number,
+  cols: number = 7,
+): number | null {
+  const x = clientX - canvasLeft - gutter;
+  const w = canvasWidth - gutter;
+  if (x < 0 || w <= 0) return null;
+  return Math.min(cols - 1, Math.floor((x / w) * cols));
+}

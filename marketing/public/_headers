@@ -1,0 +1,3 @@
+# Cloudflare static-asset headers (Workers Assets reads dist/_headers).
+/*
+  Strict-Transport-Security: max-age=63072000

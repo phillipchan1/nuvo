@@ -90,32 +90,26 @@ function writeHidden(key: string, ids: Set<string>): void {
   window.dispatchEvent(new Event(EVT));
 }
 
-/** Whether a coverage strip is collapsed to its one-line summary (the deck is the
- *  primary surface, so this reclaims vertical space on demand). Persisted + reactive;
- *  scoped so projects and initiatives collapse independently. */
-export function useCoverageCollapsed(scope: CoverageScope = "ondeck"): [boolean, (v: boolean) => void] {
-  const key = collapsedKey(scope);
-  const [v, setV] = useState(() => {
+/** A persisted, reactive on/off pref ("1"/"0" in localStorage), synced across
+ *  tabs and every mounted reader via the shared planner-prefs event. */
+function useBoolPref(key: string): [boolean, (v: boolean) => void] {
+  const read = () => {
     try {
       return localStorage.getItem(key) === "1";
     } catch {
       return false;
     }
-  });
+  };
+  const [v, setV] = useState(read);
   useEffect(() => {
-    const sync = () => {
-      try {
-        setV(localStorage.getItem(key) === "1");
-      } catch {
-        /* ignore */
-      }
-    };
+    const sync = () => setV(read());
     window.addEventListener(EVT, sync);
     window.addEventListener("storage", sync);
     return () => {
       window.removeEventListener(EVT, sync);
       window.removeEventListener("storage", sync);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return [
     v,
@@ -129,6 +123,20 @@ export function useCoverageCollapsed(scope: CoverageScope = "ondeck"): [boolean,
       setV(next);
     },
   ];
+}
+
+/** Whether a coverage strip is collapsed to its one-line summary (the deck is the
+ *  primary surface, so this reclaims vertical space on demand). Persisted + reactive;
+ *  scoped so projects and initiatives collapse independently. */
+export function useCoverageCollapsed(scope: CoverageScope = "ondeck"): [boolean, (v: boolean) => void] {
+  return useBoolPref(collapsedKey(scope));
+}
+
+/** Whether the deck is split into one lane per domain ("By domain") instead of one
+ *  packed field. In lane mode the lanes ARE the coverage read, so the strip steps
+ *  aside. Scoped like the other coverage prefs. */
+export function useDeckByDomain(scope: CoverageScope = "ondeck"): [boolean, (v: boolean) => void] {
+  return useBoolPref(scope === "initiative" ? "nuvo.initiative.byDomain" : "nuvo.ondeck.byDomain");
 }
 
 /** Reactive read of the hidden-from-coverage domain set + a toggle (scoped). */

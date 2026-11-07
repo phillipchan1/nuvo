@@ -53,7 +53,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat / ?capture / ?sheets / ?login, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat / ?capture / ?sheets / ?rail / ?login, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -71,6 +71,7 @@ const showSittingHarness = import.meta.env.DEV && params.has("sitting");
 const showGatherHarness = import.meta.env.DEV && params.has("gather");
 const showCaptureHarness = import.meta.env.DEV && params.has("capture");
 const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
+const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 
 if (showPickHarness) {
@@ -110,6 +111,14 @@ if (showPickHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <CalendarHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showRailHarness) {
+  void import("./components/RailHarness").then(({ default: RailHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <RailHarness />
       </React.StrictMode>,
     );
   });
