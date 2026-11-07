@@ -742,7 +742,7 @@ export function TaskPopover({
               <PopField label="When">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* Date chip */}
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
                     <span className={task.do_date ? "text-ink" : "text-muted"}>{doDateLabel ?? "no date"}</span>
                     <input
@@ -762,12 +762,12 @@ export function TaskPopover({
                             ? mutations.backToWeek(task)
                             : mutations.backToInbox(task);
                       }}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     />
                   </label>
 
                   {/* Time chip */}
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
                     <span className={task.start_time ? "text-ink" : "text-muted"}>
                       {task.start_time ? at(new Date(task.start_time)) : "no time"}
@@ -778,12 +778,12 @@ export function TaskPopover({
                       aria-label="Start time"
                       value={startHHMM}
                       onChange={(e) => setStart(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     />
                   </label>
 
                   {/* Duration chip */}
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
                     <span className="text-ink">{fmtDuration(task.duration_minutes ?? defaultDurationMins)}</span>
                     <Icon name="chevron-down" size={7} className="text-muted/50" />
@@ -791,7 +791,7 @@ export function TaskPopover({
                       aria-label="Duration"
                       value={task.duration_minutes ?? defaultDurationMins}
                       onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     >
                       {DURATION_PRESETS.map((m) => (
                         <option key={m} value={m}>{fmtDuration(m)}</option>
@@ -800,7 +800,7 @@ export function TaskPopover({
                   </label>
 
                   {/* Deadline chip */}
-                  <label className={`relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
+                  <label className={`relative inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
                     <span aria-hidden>⚑</span>
                     <span>{task.deadline ? task.deadline.slice(5).replace("-", "/") : "deadline"}</span>
                     <input
@@ -808,7 +808,7 @@ export function TaskPopover({
                       aria-label="Deadline"
                       value={task.deadline ?? ""}
                       onChange={(e) => mutations.patchTask(task.id, { deadline: e.target.value || null })}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     />
                   </label>
 
@@ -824,13 +824,13 @@ export function TaskPopover({
               <PopField label="Project">
                 <div className="flex flex-wrap items-center gap-1">
                   {/* Project chip */}
-                  <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
+                  <label className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
                     <span>{project?.name ?? "+ project"}</span>
                     <select
                       aria-label="Project"
                       value={task.project_id ?? ""}
                       onChange={(e) => setProject(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     >
                       <option value="">— none —</option>
                       {vertical.projects
@@ -1940,7 +1940,7 @@ export function EventPopover({
               </div>
             )}
             {editable && hasAttendees && otherGuests.length > 0 && (
-              <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-micro text-muted">
+              <label className="ml-auto flex items-center gap-1.5 text-micro text-muted">
                 <input
                   type="checkbox"
                   checked={notify}
@@ -2824,7 +2824,7 @@ export function SlotPopover({
             <PopStack>
               <PopField label="When">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
                     <span className="text-ink">{format(new Date(slot.do_date + "T12:00:00"), "MMM d")}</span>
                     <input
@@ -2832,10 +2832,10 @@ export function SlotPopover({
                       aria-label="Date"
                       value={slot.do_date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     />
                   </label>
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
                     <span className="text-ink">{format(startDate, "h:mm a")}</span>
                     <input
@@ -2844,10 +2844,10 @@ export function SlotPopover({
                       aria-label="Start time"
                       value={startHHMM}
                       onChange={(e) => setTime(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     />
                   </label>
-                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
                     <span className="text-ink">{fmtDuration(slot.duration_minutes)}</span>
                     <Icon name="chevron-down" size={7} className="text-muted/50" />
@@ -2860,7 +2860,7 @@ export function SlotPopover({
                           patch: { duration_minutes: Number(e.target.value) },
                         })
                       }
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     >
                       {[30, 45, 60, 90, 120, 180, 240, 360, 480].map((m) => (
                         <option key={m} value={m}>{fmtDuration(m)}</option>
@@ -2881,7 +2881,7 @@ export function SlotPopover({
               <PopField label="For">
                 <div className="flex flex-wrap items-center gap-1">
                   <label
-                    className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+                    className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
                     style={{ color: domain?.color ?? "var(--muted)" }}
                   >
                     <span>{project?.name ?? "+ project"}</span>
@@ -2889,7 +2889,7 @@ export function SlotPopover({
                       aria-label="Project"
                       value={slot.project_id ?? ""}
                       onChange={(e) => setProject(e.target.value)}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      className="absolute inset-0 w-full opacity-0"
                     >
                       <option value="">— none —</option>
                       {vertical.projects
@@ -2903,7 +2903,7 @@ export function SlotPopover({
 
                   {!slot.project_id && (
                     <label
-                      className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+                      className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
                       style={{ color: domain?.color ?? "var(--muted)" }}
                     >
                       <span>{slot.domain_id ? (domain?.name ?? "domain") : "+ domain"}</span>
@@ -2911,7 +2911,7 @@ export function SlotPopover({
                         aria-label="Domain"
                         value={slot.domain_id ?? ""}
                         onChange={(e) => setDomain(e.target.value)}
-                        className="absolute inset-0 w-full cursor-pointer opacity-0"
+                        className="absolute inset-0 w-full opacity-0"
                       >
                         <option value="">— none —</option>
                         {vertical.domains.map((d) => (

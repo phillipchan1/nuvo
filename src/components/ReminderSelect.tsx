@@ -197,7 +197,7 @@ export function ReminderList({
         <span className={`mono text-micro text-muted ${enabled ? "" : "opacity-60"}`}>{text}</span>
       )}
       {(silenced || defaultOff) ? (
-        <label className={`relative inline-flex cursor-pointer items-center ${block ? "min-h-[44px] w-full" : ""}`}>
+        <label className={`relative inline-flex items-center ${block ? "min-h-[44px] w-full" : ""}`}>
           {block && (
             <span className={`text-body text-ink ${enabled ? "" : "opacity-60"}`}>
               {prefsMode ? "Never" : silenced ? "No reminder" : "Default (off)"}
@@ -208,7 +208,7 @@ export function ReminderList({
             value={silenced || prefsMode ? OFF_VALUE : DEFAULT_VALUE}
             aria-label="Reminder"
             onChange={(e) => replaceAt(0, e.target.value)}
-            className="tap absolute inset-0 w-full cursor-pointer opacity-0"
+            className="tap absolute inset-0 w-full opacity-0"
           >
             {!prefsMode && (
               <option value={DEFAULT_VALUE}>
@@ -227,7 +227,7 @@ export function ReminderList({
       ) : (
         showRows.map((lead, i) => (
           <div key={`${lead}-${i}`} className="flex items-center gap-1">
-            <label className={`relative inline-flex min-h-[44px] flex-1 cursor-pointer items-center ${block ? "" : ""}`}>
+            <label className={`relative inline-flex min-h-[44px] flex-1 items-center ${block ? "" : ""}`}>
               <span className={`${block ? "text-body text-ink" : "mono text-micro text-muted"} ${enabled ? "" : "opacity-60"}`}>
                 {i === 0 && source === "default" ? `${describeLead(lead)} · default` : describeLead(lead)}
               </span>
@@ -236,7 +236,7 @@ export function ReminderList({
                 value={String(lead)}
                 aria-label={i === 0 ? "Reminder" : `Reminder ${i + 1}`}
                 onChange={(e) => replaceAt(i, e.target.value)}
-                className="tap absolute inset-0 w-full cursor-pointer opacity-0"
+                className="tap absolute inset-0 w-full opacity-0"
               >
                 {i === 0 && !prefsMode && (
                   <option value={DEFAULT_VALUE}>

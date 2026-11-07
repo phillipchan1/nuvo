@@ -349,7 +349,7 @@ export function AppsDevicesPane() {
         )}
 
           <details ref={stepsRef} className="border-t border-line pt-1">
-            <summary className="tap min-h-[44px] cursor-pointer py-2 text-caption font-medium text-ink">
+            <summary className="tap min-h-[44px] py-2 text-caption font-medium text-ink">
               Next steps
             </summary>
           <div className="space-y-5 pb-2">
@@ -402,7 +402,7 @@ export function AppsDevicesPane() {
 
         {revoked.length > 0 && (
           <details className="text-label text-muted">
-            <summary className="tap min-h-[44px] cursor-pointer py-2">
+            <summary className="tap min-h-[44px] py-2">
               {revoked.length} revoked
             </summary>
             <div className="mt-1">

@@ -801,7 +801,7 @@ function DeadlineRow({ value, onChange }: { value: string | null; onChange: (d: 
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value || null)}
           aria-label="Deadline"
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          className="absolute inset-0 h-full w-full opacity-0"
         />
       </label>
       {value && (

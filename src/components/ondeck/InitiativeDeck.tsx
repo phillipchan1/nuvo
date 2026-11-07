@@ -15,6 +15,7 @@
 // OnDeckPlanner / WeekBoard: one document-level capture pointerdown, a 5px move
 // threshold to tell a drag from a click, elementFromPoint hit-testing.
 
+import { armDragCancel } from "../../lib/dragCancel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
@@ -330,11 +331,15 @@ export default function InitiativeDeck() {
         setOverInbox(tInbox);
         setDrag({ name: p.name, dot, x: ev.clientX, y: ev.clientY, domainId: p.domainId ?? null });
       };
+      let cancelled = false;
+      let disarm = () => {};
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
+        disarm();
+        if (cancelled) { tCol = null; tInbox = false; }
         const s = live.current;
         if (!moved) {
           s.openRecord("initiative", p.id);
@@ -349,6 +354,16 @@ export default function InitiativeDeck() {
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      // Esc / ⌘Tab / an OS cancel ends the drag with nothing written.
+      disarm = armDragCancel(() => {
+        cancelled = true;
+        if (moved) { up(); return; }
+        // Not yet a drag: just stand down — never open the card on an Esc.
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        document.body.style.cursor = "";
+        document.body.classList.remove("wb-noselect");
+      });
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -521,7 +536,7 @@ export default function InitiativeDeck() {
                         // pane, a stretched drop zone becomes a huge empty framed box
                         // — the loudest thing in an empty quarter. It stays a modest
                         // offer at the top; the rest of the column is a click target too.
-                        className="slot-open fast w-full cursor-pointer rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
+                        className="slot-open fast w-full rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
                         title="New initiative in this quarter"
                       >
                         Drop an initiative here, or tap to add
@@ -620,7 +635,7 @@ function AddSlotFiller({ onAdd, label }: { onAdd: () => void; label: string }) {
       type="button"
       onClick={onAdd}
       title={label}
-      className="slot-col fast group/add flex min-h-[28px] flex-1 cursor-pointer items-start justify-center rounded-lg pt-1.5 transition-colors"
+      className="slot-col fast group/add flex min-h-[28px] flex-1 items-start justify-center rounded-lg pt-1.5 transition-colors"
     >
       <span className="text-micro text-muted opacity-0 transition-opacity group-hover/add:opacity-100 group-focus-visible/add:opacity-100">
         ＋ {label}

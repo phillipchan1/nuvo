@@ -24,7 +24,7 @@ export default function DurationSelect({
   return (
     <label
       title={title}
-      className={`relative inline-flex cursor-pointer items-center ${className}`}
+      className={`relative inline-flex items-center ${className}`}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -33,7 +33,7 @@ export default function DurationSelect({
         value={value}
         aria-label={title}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="absolute inset-0 w-full cursor-pointer opacity-0"
+        className="absolute inset-0 w-full opacity-0"
       >
         {optionsFor(value).map((m) => (
           <option key={m} value={m}>

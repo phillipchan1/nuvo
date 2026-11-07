@@ -32,6 +32,7 @@ import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
 import { EDGE_GUARD_PX } from "../swipe";
+import { haptic } from "../../../lib/haptics";
 import DomainSymbol from "../../domain/DomainSymbol";
 
 // 260ms/10px picked up cards during ordinary scroll starts — a flick's first
@@ -272,7 +273,7 @@ export default function MobileDeck({
       if (held && t !== null) {
         const col = t === "pool" ? null : t;
         if (col !== from) {
-          navigator.vibrate?.(12);
+          haptic("selection");
           flashDrop(t);
           onMove(card.id, col);
         }
@@ -289,7 +290,7 @@ export default function MobileDeck({
       dragRef.current = { id: card.id, from: card.col };
       document.body.classList.add("deck-dragging");
       window.addEventListener("touchmove", blockScroll, { passive: false });
-      navigator.vibrate?.(8);
+      haptic("medium");
       setArming(null);
       ghostPos.current = { x: origin.x, y: origin.y };
       setDrag({ id: card.id, name: card.name, dot: card.dot });

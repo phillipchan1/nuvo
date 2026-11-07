@@ -65,7 +65,7 @@ export default class ErrorBoundary extends Component<
               removed: a user who can paste the message into a bug report is
               worth far more than one who can't. */}
           <details className="mb-5 text-left">
-            <summary className="tap-desk-h fast cursor-pointer list-none text-center text-caption text-muted hover:text-ink">
+            <summary className="tap-desk-h fast list-none text-center text-caption text-muted hover:text-ink">
               Technical details
             </summary>
             <p className="mono mt-2 break-words text-caption text-muted">

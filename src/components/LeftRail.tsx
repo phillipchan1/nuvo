@@ -1249,7 +1249,7 @@ function LabelPicker({
         <div className="px-1 py-2 text-caption text-muted">No labels yet. Add them in Settings.</div>
       )}
       {labels.map((l) => (
-        <label key={l.id} className="flex cursor-pointer items-center gap-2 px-1 py-1 text-body hover:bg-bg">
+        <label key={l.id} className="flex items-center gap-2 px-1 py-1 text-body hover:bg-bg">
           <input
             type="checkbox"
             defaultChecked={current.has(l.id)}

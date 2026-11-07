@@ -25,6 +25,9 @@ import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending"
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
 import DomainSymbol from "../domain/DomainSymbol";
+import Sheet from "../mobile/Sheet";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useMenuFocus } from "../../hooks/useMenuFocus";
 
 /** Menu portaled to <body> so it isn't clipped or covered by later table rows /
  *  overflow parents / the Record modal's `.moment` transform (which traps
@@ -47,9 +50,15 @@ export function FloatingMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  // On a phone a choice of one-of-many is a bottom sheet, never an anchored
+  // dropdown (CLAUDE.md, sheetKit's PickSheet rule) — the same children, framed
+  // as an action sheet with thumb-sized rows.
+  const mobile = useIsMobile();
+  // Desktop: arrows / type-ahead, focus back to the trigger on close.
+  useMenuFocus(menuRef, open && !mobile);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!open || mobile) {
       setPos(null);
       return;
     }
@@ -76,9 +85,18 @@ export function FloatingMenu({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, align, anchorRef, minWidth]);
+  }, [open, mobile, align, anchorRef, minWidth]);
 
   if (!open) return null;
+  if (mobile) {
+    return (
+      <Sheet onClose={onClose}>
+        <div className="native-sheet-menu px-2 pb-3 pt-1" onClick={(e) => e.stopPropagation()}>
+          {children}
+        </div>
+      </Sheet>
+    );
+  }
   // Above RecordScrim (z-81). The sheet climbed over the walkthrough (teach
   // dim 78 · orb 79 · panel 80); this menu used to sit at 70/71 — under that
   // sheet — so the record kebab (and every picker inside a record) opened a
@@ -92,12 +110,13 @@ export function FloatingMenu({
       />
       <div
         ref={menuRef}
+        data-nested-surface=""
         className="rise elev-2 fixed z-[83] rounded-md border border-line bg-surface py-1"
         style={{
           top: pos?.top ?? -9999,
           left: pos?.left ?? -9999,
           minWidth,
-          visibility: pos ? "visible" : "hidden",
+          opacity: pos ? undefined : 0,
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1371,7 +1390,7 @@ export function Timeline({
                       {...(!editable && it.onClick
                         ? pressable(() => it.onClick!(), { label: it.label })
                         : {})}
-                      className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                      className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{ background: it.dim ? softTint("var(--muted)", 10) : softTint(it.color, 20), border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
                       title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%${editable ? " · drag to move, edges to resize" : ""}`}
                     >
@@ -1493,7 +1512,7 @@ function UnassignedTray({
                 {...(!editable && it.onClick
                   ? pressable(() => it.onClick!(), { label: it.label || "Untitled" })
                   : {})}
-                className={`rise fast group flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:border-line-strong" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
+                className={`rise fast group flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:border-line-strong" : ""} ${draggingId === it.id ? "opacity-40" : ""}`}
                 style={{ animationDelay: `${i * 40}ms` }}
                 title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
               >

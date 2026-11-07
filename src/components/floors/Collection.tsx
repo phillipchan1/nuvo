@@ -206,7 +206,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
               if ((e.target as HTMLElement).closest("[data-no-select], button, input, textarea, select, a")) return;
               r.open();
             }}
-            className={`lift-anim group relative grid cursor-pointer items-center gap-3 border-b border-line py-2.5 pl-4 pr-2 last:border-0 ${
+            className={`lift-anim group relative grid items-center gap-3 border-b border-line py-2.5 pl-4 pr-2 last:border-0 ${
               selectable ? itemSelectRowClass(selection, r.id) : "hover:bg-accent-soft/60"
             }`}
             style={{ gridTemplateColumns: cols }}

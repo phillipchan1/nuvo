@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { haptic } from "../lib/haptics";
+import { resistedTravel } from "../lib/gesture";
 import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
@@ -387,6 +389,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const [swipeX, setSwipeX] = useState(0);
   const [swipeSnap, setSwipeSnap] = useState(false);
   const justSwiped = useRef(0);
+  // Past the fire threshold the action is "armed": the reveal fills solid and a
+  // haptic ticks once, the way Mail / Reminders tell you letting go will act.
+  const swipeArmed = useRef(false);
 
   // Long press → multi-select. Same 450ms the record sheet and the deck use, so
   // "hold to act on this" feels like one gesture across the phone.
@@ -407,7 +412,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
         justHeld.current = Date.now();
         // A selection appearing under your thumb with no feedback reads as a
         // glitch; the platform haptic is the cheapest honest confirmation.
-        navigator.vibrate?.(8);
+        haptic("medium");
         onLongPress();
       }, LONG_PRESS_MS);
     }
@@ -435,7 +440,14 @@ const TaskRow = forwardRef<TaskRowHandle, {
         return;
       }
     }
-    setSwipeX(Math.max(-120, Math.min(120, dx)));
+    // Follows the finger 1:1 up to the threshold, then with rubber-band
+    // resistance — never a hard wall.
+    setSwipeX(resistedTravel(dx, SWIPE_FIRE_PX, 150));
+    const armed = Math.abs(dx) >= SWIPE_FIRE_PX;
+    if (armed !== swipeArmed.current) {
+      swipeArmed.current = armed;
+      if (armed) haptic("selection");
+    }
   };
   const onSwipeUp = (e: React.PointerEvent) => {
     cancelHold();
@@ -443,11 +455,12 @@ const TaskRow = forwardRef<TaskRowHandle, {
     swipe.current = null;
     if (!s?.engaged) return;
     const dx = e.clientX - s.x;
+    swipeArmed.current = false;
     setSwipeSnap(true);
     setSwipeX(0);
     if (Math.abs(dx) < SWIPE_FIRE_PX) return;
     justSwiped.current = Date.now();
-    if (dx > 0) toggle();
+    if (dx > 0) { haptic(done ? "light" : "success"); toggle(); }
     else swipeActions?.onDefer();
   };
   // Attached whenever EITHER gesture is wanted — the long press lives on the
@@ -648,33 +661,55 @@ const TaskRow = forwardRef<TaskRowHandle, {
       // rail doesn't implement.
       aria-current={selected || multiSelected ? "true" : undefined}
       title={rowHint}
-      className={`group cursor-pointer select-none border-b border-line ${flush ? "-mx-2 px-2" : "px-3.5"} py-2.5 last:border-b-0 ${
+      data-swiping={swipeX !== 0 ? "true" : undefined}
+      className={`group select-none border-b border-line ${flush ? "-mx-2 px-2" : "px-3.5"} py-2.5 last:border-b-0 ${
         completing ? "task-completing" : "row-lift-instant"
       } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
-      {swipeActions && swipeX !== 0 && (
-        <div
-          aria-hidden
-          className="absolute inset-0 flex items-center justify-between px-4 text-caption font-medium"
-          style={{
-            background:
-              swipeX > 0
-                ? "color-mix(in srgb, var(--ok) 16%, transparent)"
-                : "color-mix(in srgb, var(--accent) 12%, transparent)",
-          }}
-        >
-          <span style={{ color: "var(--ok)", opacity: swipeX > 0 ? 1 : 0 }}>✓ done</span>
-          <span style={{ color: "var(--accent)", opacity: swipeX < 0 ? 1 : 0 }}>tomorrow ↷</span>
-        </div>
-      )}
+      {swipeActions && swipeX !== 0 && (() => {
+        const armed = Math.abs(swipeX) >= SWIPE_FIRE_PX;
+        const hue = swipeX > 0 ? "var(--ok)" : "var(--accent)";
+        return (
+          <div
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-between px-4 text-caption font-medium"
+            style={{
+              // A tint while you're deciding; solid once letting go will act.
+              background: armed ? hue : `color-mix(in srgb, ${hue} 14%, transparent)`,
+              transition: "background-color 120ms var(--ease-out)",
+            }}
+          >
+            <span
+              style={{
+                color: armed ? "var(--on-accent)" : "var(--ok)",
+                opacity: swipeX > 0 ? 1 : 0,
+                transform: `scale(${armed && swipeX > 0 ? 1.08 : 1})`,
+                transition: "transform 160ms var(--ease-spring), color 120ms",
+              }}
+            >
+              ✓ done
+            </span>
+            <span
+              style={{
+                color: armed ? "var(--on-accent)" : "var(--accent)",
+                opacity: swipeX < 0 ? 1 : 0,
+                transform: `scale(${armed && swipeX < 0 ? 1.08 : 1})`,
+                transition: "transform 160ms var(--ease-spring), color 120ms",
+              }}
+            >
+              tomorrow ↷
+            </span>
+          </div>
+        );
+      })()}
       <div
         className="flex min-w-0 items-center gap-3"
         style={
           swipeActions
             ? {
                 transform: `translateX(${swipeX}px)`,
-                transition: swipeSnap ? "transform 180ms var(--ease-out)" : undefined,
+                transition: swipeSnap ? "transform var(--d-native) var(--ease-native)" : undefined,
               }
             : undefined
         }

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "../../hooks/useDialogFocus";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
+import { rubberBand, releaseVelocity, type VelocitySample } from "../../lib/gesture";
 
 // A bottom sheet — the mobile equivalent of the desktop's anchored popovers and
 // modals. Rises from the bottom edge, dims the world behind it, and respects the
@@ -51,7 +52,7 @@ export default function Sheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ startY: number; engaged: boolean } | null>(null);
+  const drag = useRef<{ startY: number; engaged: boolean; samples: VelocitySample[] } | null>(null);
   // iOS never resizes the layout viewport for the keyboard, so a fixed sheet's
   // lower content (composer, submit button) would sit under the keys without
   // this pad.
@@ -88,11 +89,12 @@ export default function Sheet({
     // transition start state before we update transform.
     sheet.getBoundingClientRect();
 
-    sheet.style.transition = "transform 0.28s ease-in";
+    // Accelerate away — the UIKit dismiss curve, not a symmetric ease.
+    sheet.style.transition = "transform 0.28s cubic-bezier(0.4, 0, 1, 1)";
     sheet.style.transform = "translateY(110%)";
 
     if (scrim) {
-      scrim.style.transition = "opacity 0.28s ease-in";
+      scrim.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 1, 1)";
       scrim.style.opacity = "0";
     }
 
@@ -113,7 +115,7 @@ export default function Sheet({
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>, fromBody: boolean) => {
     if (fromBody && !scrollerAtTop()) return;
-    drag.current = { startY: e.clientY, engaged: !fromBody };
+    drag.current = { startY: e.clientY, engaged: !fromBody, samples: [{ y: e.clientY, t: e.timeStamp }] };
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -132,14 +134,19 @@ export default function Sheet({
         return;
       }
     }
-    const down = Math.max(0, delta);
+    const samples = drag.current.samples;
+    samples.push({ y: e.clientY, t: e.timeStamp });
+    if (samples.length > 6) samples.shift();
+    // Down follows the finger 1:1; up resists (the sheet is already as tall as
+    // it gets), the way a UISheetPresentationController rubber-bands.
+    const down = delta >= 0 ? delta : -rubberBand(-delta, 60);
     sheetRef.current.style.animation = "none";
     sheetRef.current.style.transition = "none";
     sheetRef.current.style.transform = `translateY(${down}px)`;
     // Dim the scrim proportionally as the sheet moves away.
     if (scrimRef.current) {
       const height = sheetRef.current.offsetHeight || 400;
-      const opacity = Math.max(0, 0.4 * (1 - down / height));
+      const opacity = Math.max(0, 0.4 * (1 - Math.max(0, down) / height));
       scrimRef.current.style.opacity = String(opacity);
     }
   };
@@ -148,20 +155,23 @@ export default function Sheet({
     if (!drag.current) return;
     const engaged = drag.current.engaged;
     const delta = Math.max(0, e.clientY - drag.current.startY);
+    const velocity = releaseVelocity(drag.current.samples); // px/ms, + = down
     drag.current = null;
     if (!engaged) return;
 
+    // Distance OR a flick: past 30% of the sheet, or released moving down fast
+    // enough (a short, quick swipe is a dismiss on iOS, not a snap-back).
     const threshold = sheetRef.current ? sheetRef.current.offsetHeight * 0.3 : 120;
-    if (delta > threshold) {
+    if (delta > threshold || (velocity > 0.5 && delta > 16)) {
       dismiss();
     } else {
-      // Snap back.
+      // Snap back on the spring.
       if (sheetRef.current) {
-        sheetRef.current.style.transition = "transform 0.22s ease-out";
+        sheetRef.current.style.transition = "transform var(--d-native) var(--ease-native)";
         sheetRef.current.style.transform = "translateY(0)";
       }
       if (scrimRef.current) {
-        scrimRef.current.style.transition = "opacity 0.22s ease-out";
+        scrimRef.current.style.transition = "opacity var(--d-native) var(--ease-native)";
         scrimRef.current.style.opacity = "0.4";
       }
     }
@@ -258,7 +268,9 @@ export default function Sheet({
               </div>
             )}
             <button
-              onClick={onClose}
+              // Animated like a swipe away — the ✕ used to make the sheet
+              // vanish in one frame while every other way out slid it down.
+              onClick={dismiss}
               onPointerDown={(e) => e.stopPropagation()}
               aria-label="Close"
               className="tap-icon fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"

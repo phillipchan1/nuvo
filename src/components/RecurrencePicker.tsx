@@ -318,7 +318,7 @@ export function SlotDeleteButton({
           <div className="absolute bottom-full right-0 z-[61] mb-1 w-60 overflow-hidden rounded-md border border-line bg-surface elev-3">
             {taskCount > 0 && (
               <div className="border-b border-line px-3 py-2.5">
-                <label className="flex cursor-pointer items-start gap-2 text-caption text-text">
+                <label className="flex items-start gap-2 text-caption text-text">
                   <input
                     type="checkbox"
                     checked={deleteTasks}

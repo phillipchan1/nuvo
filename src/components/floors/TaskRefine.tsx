@@ -193,7 +193,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 hover:bg-accent-soft">
+    <label className="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-accent-soft">
       <input
         type="checkbox"
         checked={checked}

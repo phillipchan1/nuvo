@@ -156,7 +156,7 @@ export function Select({
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div className={`relative inline-block ${className}`}>
-      <select {...props} className="field w-full cursor-pointer truncate pr-9">
+      <select {...props} className="field w-full truncate pr-9">
         {children}
       </select>
       <svg
@@ -227,7 +227,7 @@ export function Checkbox({
   children?: ReactNode;
 }) {
   return (
-    <label className={`tap inline-flex items-center gap-2 text-body text-muted ${disabled ? "opacity-40" : "cursor-pointer"}`}>
+    <label className={`tap inline-flex items-center gap-2 text-body text-muted ${disabled ? "opacity-40" : ""}`}>
       <input
         type="checkbox"
         checked={checked}

@@ -11,6 +11,7 @@
 // / CalendarPane: one document-level capture pointerdown, a 5px move threshold to
 // tell a drag from a click, elementFromPoint hit-testing, imperative during-drag.
 
+import { armDragCancel } from "../../lib/dragCancel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
@@ -476,6 +477,8 @@ export default function OnDeckPlanner() {
         lastEv = ev;
         if (!raf) raf = requestAnimationFrame(flush);
       };
+      let cancelled = false;
+      let disarm = () => {};
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
@@ -486,6 +489,8 @@ export default function OnDeckPlanner() {
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
         document.body.classList.remove("odp-dragging");
+        disarm();
+        if (cancelled) { tWeek = null; tInbox = false; }
         const s = live.current;
         const w = s.board.weeks;
         if (!moved) {
@@ -511,6 +516,17 @@ export default function OnDeckPlanner() {
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      // Esc / ⌘Tab / an OS cancel ends the drag with nothing written.
+      disarm = armDragCancel(() => {
+        cancelled = true;
+        if (moved) { up(); return; }
+        // Not yet a drag: just stand down — never open the card on an Esc.
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        document.body.style.cursor = "";
+        document.body.classList.remove("wb-noselect");
+      });
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -696,7 +712,7 @@ export default function OnDeckPlanner() {
                       label: `New project — ${weekName(w.weekStart).toLowerCase()}`,
                     })}
                     title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
-                    className="group/col slot-col relative cursor-pointer border-l border-line transition-colors"
+                    className="group/col slot-col relative border-l border-line transition-colors"
                     style={{ background: cellBg(w.idx) }}
                   >
                     {/* the base affordance — a pinned "+ project" hint. Clicking it

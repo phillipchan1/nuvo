@@ -1279,7 +1279,7 @@ function UpdateControls() {
       </div>
       {readyNotes && (
         <details className="mt-2 text-caption text-muted">
-          <summary className="cursor-pointer select-none hover:text-ink fast">
+          <summary className="select-none hover:text-ink fast">
             What's new in v{state.version}
           </summary>
           <p className="mt-1 whitespace-pre-line leading-snug">{readyNotes}</p>
@@ -1505,7 +1505,7 @@ function LabelsPane() {
               type="color"
               value={l.color}
               onChange={(e) => updateLabel({ id: l.id, color: e.target.value })}
-              className="h-9 w-10 shrink-0 cursor-pointer rounded-[var(--radius)] border border-line bg-surface"
+              className="h-9 w-10 shrink-0 rounded-[var(--radius)] border border-line bg-surface"
             />
             <TextInput
               defaultValue={l.name}
@@ -1539,7 +1539,7 @@ function LabelsPane() {
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            className="h-9 w-10 shrink-0 cursor-pointer rounded-[var(--radius)] border border-line bg-surface"
+            className="h-9 w-10 shrink-0 rounded-[var(--radius)] border border-line bg-surface"
           />
           <TextInput
             value={newLabel}

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { haptic } from "../lib/haptics";
 
 /**
  * Press-and-hold reordering for a single vertical list on a phone — the touch
@@ -121,7 +122,7 @@ export function useLongPressReorder({
             const next = current.filter((x) => x !== id);
             next.splice(Math.max(0, Math.min(targetIndex, next.length)), 0, id);
             if (next.some((x, i) => x !== current[i])) {
-              navigator.vibrate?.(12);
+              haptic("selection");
               opts.current.onCommit(next);
             }
           }
@@ -135,7 +136,7 @@ export function useLongPressReorder({
         held = true;
         document.body.classList.add("wb-noselect");
         window.addEventListener("touchmove", blockScroll, { passive: false });
-        navigator.vibrate?.(8);
+        haptic("medium");
         setArmingId(null);
         setDraggingId(id);
       }, LONG_PRESS_MS);

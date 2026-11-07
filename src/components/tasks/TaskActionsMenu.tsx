@@ -18,6 +18,7 @@
  * did nothing while the menu was open was a lie in a menu's own words.
  */
 
+import { shortcutLabel } from "../../lib/shortcutLabel";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Task } from "../../lib/types";
@@ -404,7 +405,7 @@ export default function TaskActionsMenu({
           >
             <span className="flex-1 truncate">{item.label}</span>
             {item.key && (
-              <span className="mono text-meta text-muted">{item.key}</span>
+              <span className="mono text-meta text-muted">{shortcutLabel(item.key)}</span>
             )}
           </button>
         );

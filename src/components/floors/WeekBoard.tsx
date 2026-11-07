@@ -9,6 +9,7 @@
 // Desktop-only: it renders inside CalendarPane, which never mounts on mobile.
 // Drag is pointer-based (HTML5 DnD is swallowed by the Tauri webview).
 
+import { armDragCancel } from "../../lib/dragCancel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
@@ -369,6 +370,8 @@ export default function WeekBoard({
         lastEv = ev;
         if (!raf) raf = requestAnimationFrame(flush);
       };
+      let cancelled = false;
+      let disarm = () => {};
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
@@ -377,6 +380,8 @@ export default function WeekBoard({
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
         rail?.classList.remove("rail-drop-active");
+        disarm();
+        if (cancelled) target = null;
         const s = live.current;
         if (!moved) {
           if (fromBoard) s.onOpenTask(task, el.getBoundingClientRect());
@@ -401,6 +406,17 @@ export default function WeekBoard({
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      // Esc / ⌘Tab / an OS cancel ends the drag with nothing written.
+      disarm = armDragCancel(() => {
+        cancelled = true;
+        if (moved) { up(); return; }
+        // Not yet a drag: just stand down — never open the card on an Esc.
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        document.body.style.cursor = "";
+        document.body.classList.remove("wb-noselect");
+      });
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -663,7 +679,7 @@ function Meter({
  */
 const CARD_H = 74;
 const CARD_BASE =
-  "fast relative cursor-pointer touch-none select-none rounded-lg border border-line bg-surface px-1.5 py-1.5 hover:border-line-strong";
+  "fast relative touch-none select-none rounded-lg border border-line bg-surface px-1.5 py-1.5 hover:border-line-strong";
 // Three lines, not two: at column width half of all titles clip at two, and
 // only a fifth clip at three. Shrinking the type instead barely moves it
 // (50%→42%) — the line count is the lever. 12px costs nothing at three lines

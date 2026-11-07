@@ -19,6 +19,7 @@ import { ProjectShipAssess } from "../record/ShipAssess";
 import { useRecordWeekActs } from "../../hooks/useProjectTime";
 import { buildRecordActions, type RecordAction, type RecordKind } from "../../lib/recordActions";
 import Sheet from "./Sheet";
+import { haptic } from "../../lib/haptics";
 
 /** Matches the deck's pick-up hold (MobileDeck) — one "held" feel across the app. */
 const LONG_PRESS_MS = 450;
@@ -64,7 +65,7 @@ export function useRecordActions(onOpen: (kind: RecordKind, id: string) => void)
         timer.current = window.setTimeout(() => {
           timer.current = 0;
           fired.current = true;
-          navigator.vibrate?.(8);
+          haptic("medium");
           setState({ kind, id });
         }, LONG_PRESS_MS);
       },

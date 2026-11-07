@@ -3,7 +3,9 @@
 // breadcrumb push/pop stack. Both the Projects and Initiatives tabs and global
 // search open THIS, so a tapped item behaves the same wherever it's reached.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { releaseVelocity, type VelocitySample } from "../../../lib/gesture";
+import { haptic } from "../../../lib/haptics";
 import { useVertical } from "../../../hooks/useVertical";
 import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
 import Sheet from "../Sheet";
@@ -53,6 +55,80 @@ export default function MobileDetailSheet({
   const back = () => {
     if (!atRoot) history.back();
   };
+
+  // Push slides in from the right, pop from the left — a navigation stack, not
+  // a swap. Direction is read from the depth change.
+  const depth = stack.length;
+  // Kept in a ref (set only when the depth actually changes) so an unrelated
+  // re-render mid-animation doesn't strip the class and snap the frame.
+  const prevDepth = useRef(depth);
+  const enterRef = useRef<"push" | "pop" | null>(null);
+  if (depth !== prevDepth.current) {
+    enterRef.current = depth > prevDepth.current ? "push" : "pop";
+    prevDepth.current = depth;
+  }
+  const enter = enterRef.current;
+
+  // ── Edge-swipe back (UINavigationController's interactive pop) ───────────
+  // From the left 24px of a pushed frame, a horizontal drag pulls the frame
+  // right; let go past a third of the width — or flick — and it pops (through
+  // history, exactly like ‹). The root frame has nothing to pop to, so the
+  // gesture never engages there.
+  const pane = useRef<HTMLDivElement>(null);
+  const edge = useRef<{ x: number; y: number; id: number; engaged: boolean; samples: VelocitySample[] } | null>(null);
+  const setPaneX = (x: number, animate: boolean) => {
+    const el = pane.current;
+    if (!el) return;
+    el.style.transition = animate ? "transform var(--d-native) var(--ease-native), opacity var(--d-native) var(--ease-native)" : "none";
+    el.style.transform = x ? `translateX(${x}px)` : "";
+    el.style.opacity = x ? String(Math.max(0.4, 1 - x / (el.offsetWidth * 1.4))) : "";
+  };
+  const edgeHandlers = atRoot
+    ? {}
+    : {
+        onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+          if (e.pointerType === "mouse" || e.clientX > 24) return;
+          edge.current = { x: e.clientX, y: e.clientY, id: e.pointerId, engaged: false, samples: [{ y: e.clientX, t: e.timeStamp }] };
+        },
+        onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+          const g = edge.current;
+          if (!g) return;
+          const dx = e.clientX - g.x;
+          const dy = e.clientY - g.y;
+          if (!g.engaged) {
+            if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { edge.current = null; return; }
+            if (dx < 10 || dx < 1.5 * Math.abs(dy)) return;
+            g.engaged = true;
+            e.currentTarget.setPointerCapture(g.id);
+          }
+          e.stopPropagation();
+          g.samples.push({ y: e.clientX, t: e.timeStamp });
+          if (g.samples.length > 6) g.samples.shift();
+          setPaneX(Math.max(0, dx), false);
+        },
+        onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+          const g = edge.current;
+          edge.current = null;
+          if (!g?.engaged) return;
+          const dx = Math.max(0, e.clientX - g.x);
+          const w = pane.current?.offsetWidth ?? 375;
+          const v = releaseVelocity(g.samples);
+          if (dx > w / 3 || (v > 0.5 && dx > 30)) {
+            haptic("light");
+            setPaneX(w, true);
+            window.setTimeout(() => {
+              setPaneX(0, false);
+              back();
+            }, 200);
+          } else {
+            setPaneX(0, true);
+          }
+        },
+        onPointerCancel: () => {
+          edge.current = null;
+          setPaneX(0, true);
+        },
+      };
 
   // Let the shell mirror the open frame into the agent's screen context.
   useEffect(() => {
@@ -163,7 +239,13 @@ export default function MobileDetailSheet({
         setScrolled((v) => (v === past ? v : past));
       }}
     >
-      <div className="pb-8">
+      <div
+        ref={pane}
+        key={`${frame.level}:${(frame as { id?: string }).id ?? ""}`}
+        className={`pb-8 ${enter === "push" ? "nav-push-in" : enter === "pop" ? "nav-pop-in" : ""}`}
+        style={atRoot ? undefined : { touchAction: "pan-y" }}
+        {...edgeHandlers}
+      >
         {frame.level === "domain" ? (
           <MobileDomainScreen key={frame.id} d={d} store={store} id={frame.id} onOpenInitiative={openInitiative} onOpenProject={openProject} onClose={onClose} />
         ) : frame.level === "initiative" ? (

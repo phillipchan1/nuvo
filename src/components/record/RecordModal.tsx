@@ -762,7 +762,7 @@ function InitiativeRecord({
                         pipTone="muted"
                         dim={p.status === "cancelled"}
                         shipped={p.status === "complete"}
-                        className="cursor-pointer"
+                        className=""
                         onClick={() => onOpenProject(p.id)}
                       >
                         {projects.length > 1 && (

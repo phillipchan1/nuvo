@@ -35,7 +35,7 @@ export default function UpdateToast() {
           </span>
           {notes && (
             <details className="text-label text-muted">
-              <summary className="cursor-pointer select-none hover:text-ink fast">
+              <summary className="select-none hover:text-ink fast">
                 What's new
               </summary>
               <p className="mt-1 whitespace-pre-line leading-snug">{notes}</p>

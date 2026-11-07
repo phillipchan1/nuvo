@@ -1942,7 +1942,7 @@ function WeekGrid({
                             label: `${it.title || "Meeting"} — ${aside ? "bring back" : "set aside"}`,
                           })
                         : {})}
-                      className={`group/ev absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
+                      className={`group/ev absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast" : ""}`}
                       style={{
                         top, height, ...laneStyle(lanes.get(it.id)),
                         // These are the immovable facts you arrived with — they

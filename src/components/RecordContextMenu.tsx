@@ -1,5 +1,7 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMenuFocus } from "../hooks/useMenuFocus";
+import { shortcutLabel } from "../lib/shortcutLabel";
 import { createPortal } from "react-dom";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -76,6 +78,9 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
   const { openRecord } = useAppNavigation();
   const [confirm, setConfirm] = useState<Item | null>(null);
   const week = useRecordWeekActs(state.kind, state.id);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Arrow keys, type-ahead, focus in on open and back to the row on close.
+  useMenuFocus(menuRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -94,12 +99,20 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     week,
   });
 
-  // Clamp to the viewport — mirrors TaskContextMenu.
+  // Anchored at the pointer and FLIPPED by its measured size, the way an
+  // NSMenu opens up/left when it would run off the screen (a fixed 280px guess
+  // left short menus floating far above the cursor near the bottom edge).
   const POP_W = 210;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const left = state.x + POP_W > vw - 8 ? vw - POP_W - 8 : state.x;
-  const top = state.y + 280 > vh - 8 ? vh - 280 - 8 : state.y;
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const h = el?.offsetHeight ?? 280;
+    const left = state.x + POP_W > vw - 8 ? Math.max(8, state.x - POP_W) : state.x;
+    const top = state.y + h > vh - 8 ? Math.max(8, state.y - h) : state.y;
+    setPos({ top, left });
+  }, [state.x, state.y, confirm]);
 
   const run = (item: Item) => {
     if (item.kind !== "action") return;
@@ -114,8 +127,14 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     <>
       <div className="fixed inset-0 z-50" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
       <div
-        className="rise elev-3 fixed z-50 overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-        style={{ top, left, width: POP_W }}
+        ref={menuRef}
+        role="menu"
+        // Lists behind the menu stand down while it owns the keys (useTaskListKeys).
+        data-nested-surface=""
+        aria-label={state.kind === "project" ? "Project actions" : "Initiative actions"}
+        className="rise elev-3 fixed z-50 overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1 outline-none"
+        style={{ top: pos?.top ?? state.y, left: pos?.left ?? state.x, width: POP_W, opacity: pos ? undefined : 0 }}
+        onContextMenu={(e) => e.preventDefault()}
       >
         {confirm && confirm.kind === "action" ? (
           <div className="px-3 py-2">
@@ -142,7 +161,7 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
         ) : (
           items.map((item, i) =>
             item.kind === "sep" ? (
-              <div key={i} className="my-1 border-t border-line" />
+              <div key={i} role="separator" className="my-1 border-t border-line" />
             ) : (
               <MenuButton key={i} item={item} onRun={run} />
             ),
@@ -157,13 +176,15 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
 function MenuButton({ item, onRun }: { item: Extract<Item, { kind: "action" }>; onRun: (item: Item) => void }): ReactNode {
   return (
     <button
+      role="menuitem"
+      data-label={item.label}
       onClick={() => onRun(item)}
-      className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-bg ${
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption outline-none hover:bg-accent-soft focus-visible:bg-accent-soft focus:bg-accent-soft ${
         item.danger ? "text-signal" : "text-text"
       }`}
     >
       <span className="flex-1">{item.label}</span>
-      {item.key && <span className="mono text-meta text-muted">{item.key}</span>}
+      {item.key && <span className="mono text-meta text-muted">{shortcutLabel(item.key)}</span>}
     </button>
   );
 }
