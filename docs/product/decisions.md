@@ -6829,6 +6829,14 @@ desktop WebKit, iPhone 13). Driven in the dev app at 1440 and 375. **Not run:** 
 (the rig aborted because the dev backend was 503-ing and the account looked unloaded), and a
 real iPhone (see `native-feel/05-verification.md`).*
 
+*Follow-up, same day (ⓟ: "Yes, add drag undo"):* project and initiative deck drops (move, edge
+resize, back to the pool) are now one **silent** ⌘Z / ⇧⌘Z entry each, through
+`lib/deckUndo.writeWithUndo`, which is the same tier a calendar drag uses. Undo restores only the
+fields the drop wrote, and for a project the *stored* status, never the derived `complete`. The
+deck's "off the deck" drop already went through `useDeferProject`, which records its own undo, and
+the week board's drops go through task mutations that already did. This changes what ⌘Z does
+after a drag, which is why it waited for a yes (`native-feel/04-out-of-scope.md` #6).
+
 **D-181 · 2026-11-06 · The rest of Plan the week v2 is built for a trial — memory, keep-clear, day
 acts, split, and the planner staying with the week.** *(Extends D-180; spec
 [`plan-the-week-v2.md`](../plan-the-week-v2.md) §4–§8.)*

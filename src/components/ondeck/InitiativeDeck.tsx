@@ -16,6 +16,8 @@
 // threshold to tell a drag from a click, elementFromPoint hit-testing.
 
 import { armDragCancel } from "../../lib/dragCancel";
+import { useOptionalUndoStack } from "../../hooks/useUndoStack";
+import { writeWithUndo } from "../../lib/deckUndo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
@@ -294,8 +296,12 @@ export default function InitiativeDeck() {
   };
 
   const initiativeById = useMemo(() => new Map(data.initiatives.map((i) => [i.id, i])), [data.initiatives]);
-  const live = useRef({ initiativeById, board, updateInitiative, openRecord, data });
-  live.current = { initiativeById, board, updateInitiative, openRecord, data };
+  const { recordUndo } = useOptionalUndoStack();
+  /** A deck drag is one ⌘Z: the fields it wrote go back to what they were. */
+  const moveInitiative = (i: Initiative, patch: Partial<Initiative>, verb: string) =>
+    writeWithUndo((x) => updateInitiative(i.id, x), i, patch, recordUndo, `${verb} “${i.name}”`, verb.toLowerCase());
+  const live = useRef({ initiativeById, board, moveInitiative, openRecord, data });
+  live.current = { initiativeById, board, moveInitiative, openRecord, data };
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -344,9 +350,9 @@ export default function InitiativeDeck() {
         if (!moved) {
           s.openRecord("initiative", p.id);
         } else if (tCol != null && s.board.quarters[tCol]) {
-          s.updateInitiative(p.id, { targetDate: quarterEndISO(s.board.quarters[tCol].start), status: "in_progress" });
+          s.moveInitiative(p, { targetDate: quarterEndISO(s.board.quarters[tCol].start), status: "in_progress" }, "Moved");
         } else if (tInbox && p.targetDate) {
-          s.updateInitiative(p.id, { targetDate: null, status: "backlog" });
+          s.moveInitiative(p, { targetDate: null, status: "backlog" }, "Shelved");
         }
         setDrag(null);
         setDropCol(null);

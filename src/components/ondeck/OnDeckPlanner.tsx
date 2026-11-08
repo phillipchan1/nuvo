@@ -12,6 +12,8 @@
 // tell a drag from a click, elementFromPoint hit-testing, imperative during-drag.
 
 import { armDragCancel } from "../../lib/dragCancel";
+import { useOptionalUndoStack } from "../../hooks/useUndoStack";
+import { writeWithUndo } from "../../lib/deckUndo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
@@ -20,7 +22,7 @@ import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
-import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
+import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
 import { weekName, weekSpan as weekDates } from "../../lib/week";
 import { noticeIfUnready } from "../../lib/readyNotice";
@@ -395,8 +397,13 @@ export default function OnDeckPlanner() {
   };
 
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
-  const live = useRef({ projectById, board, updateProject, openRecord, data, defer });
-  live.current = { projectById, board, updateProject, openRecord, data, defer };
+  const { recordUndo } = useOptionalUndoStack();
+  /** A deck drag is one ⌘Z: the fields it wrote go back to what they were. */
+  const moveProject = (p: Project, patch: Partial<Project>, verb: string) =>
+    // Undo restores the STORED status, never the derived one (an all-done project reads `complete`).
+    writeWithUndo((x) => updateProject(p.id, x), { ...p, status: p.storedStatus }, patch, recordUndo, `${verb} “${p.name}”`, verb.toLowerCase());
+  const live = useRef({ projectById, board, moveProject, openRecord, data, defer });
+  live.current = { projectById, board, moveProject, openRecord, data, defer };
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -496,7 +503,7 @@ export default function OnDeckPlanner() {
         if (!moved) {
           s.openRecord("project", p.id);
         } else if (mode === "move" && tWeek != null && w[tWeek]) {
-          s.updateProject(p.id, { ...weekSpan(p, w[tWeek].weekStart), status: "in_progress" });
+          s.moveProject(p, { ...weekSpan(p, w[tWeek].weekStart), status: "in_progress" }, "Moved");
           // Dropped either way — but say what an unshaped project costs the week.
           noticeIfUnready(s.data, p, () => s.openRecord("project", p.id));
         } else if (mode === "move" && tInbox && p.targetDate) {
@@ -504,10 +511,10 @@ export default function OnDeckPlanner() {
           void s.defer.takeOff(p, undefined, { status: "backlog" });
         } else if (mode === "end" && tWeek != null && w[tWeek]) {
           const wi = Math.max(tWeek, weekIndex(w, p.startDate));
-          s.updateProject(p.id, { targetDate: toISO(addDays(w[wi].weekStart, 4)), status: "in_progress" });
+          s.moveProject(p, { targetDate: toISO(addDays(w[wi].weekStart, 4)), status: "in_progress" }, "Changed the finish of");
         } else if (mode === "start" && tWeek != null && w[tWeek]) {
           const wi = Math.min(tWeek, weekIndex(w, p.targetDate));
-          s.updateProject(p.id, { startDate: toISO(w[wi].weekStart), status: "in_progress" });
+          s.moveProject(p, { startDate: toISO(w[wi].weekStart), status: "in_progress" }, "Changed the start of");
         }
         setDrag(null);
         setDropWeek(null);

@@ -1,6 +1,6 @@
 # Native feel — out of scope, for your decision
 
-*Status: open as of 2026-11-07. Nothing here was built. Each item either changes behaviour
+*Status: open as of 2026-11-07. Nothing here was built, except #6 (built the same day, on your yes). Each item either changes behaviour
 (what an act does, touches or how it is reached), needs a data-model change, or needs native
 code. The brief's hard constraint was "functionality stays the same", so these wait for a call.*
 
@@ -11,7 +11,7 @@ code. The brief's hard constraint was "functionality stays the same", so these w
 | 3 | **"Select" button + checkmark circles** (iOS edit mode) | A new entry point to existing bulk acts | Pairs with #2 |
 | 4 | **Undo for project/initiative delete** (replace the in-menu confirm) | `deleteProject` / `deleteInitiative` are hard deletes; an undo needs soft delete or a full snapshot re-insert, with children | Soft-delete column + a restore act, or keep the confirm |
 | 5 | **Undo for the Collection's armed bulk delete, Trash "Delete forever", event deletes** | Server-side or permanent deletes; there is no inverse | Same as #4; event deletes would need re-creation through Google, with new ids |
-| 6 | **Undo for deck drags** (`updateProject` / `updateInitiative` record none) | Adding entries to the undo stack changes what ⌘Z does after a drag | Small: wrap the two writes in `recordUndo` with the old span. Low risk; recommended |
+| 6 | ~~**Undo for deck drags**~~ **Built 2026-11-07** | — | Every project/initiative deck drop (move, edge resize, shelve) is one silent ⌘Z / ⇧⌘Z entry via `lib/deckUndo.writeWithUndo`; undo restores only the fields the drop wrote (a project's *stored* status). Guarded by `tests/deck-drag-undo.test.ts` |
 | 7 | **Calendar event menu: `role="menu"`, arrows, type-ahead** | Inside `CalendarPane` (240KB) with its own key layer; risk of breaking D-158's key grammar | Move the menu into a component, then `useMenuFocus` |
 | 8 | **⇧-click range on calendar blocks** | ⇧ currently toggles. A range across days needs an ordering rule | Define "between" in time order |
 | 9 | **⌘A / arrows in the Collection table** | Collides with the rail's `keyOwner` arbitration | Give the table a keyOwner slot |

@@ -80,6 +80,7 @@ touchscreen laptop gets the mouse half while its mouse is primary and keeps ever
 | Item | Current | Status |
 |---|---|---|
 | ⌘Z / ⇧⌘Z | `useUndoStack`, 30 deep, coalescing | existing |
+| Deck drags (project + initiative) recorded no undo | ⌘Z skipped them | **fixed** (`lib/deckUndo`, silent tier, like a calendar drag) |
 | ⌫ on tasks | trash with an undo toast | existing |
 | Enter-to-rename | ⌘E (Enter opens) | **kept**: Enter-opens is the app's grammar (D-158). Logged in 04 |
 | Modifier glyphs | ⌘ hard-coded | **fixed** in menus and the shortcuts sheet (`lib/shortcutLabel`); remaining inline hints still say ⌘. The app is Mac-first, so P2 |
