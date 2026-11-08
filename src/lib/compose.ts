@@ -325,8 +325,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
    * slot, because it is owed; and a project's loose piece tries the day its
    * previous piece landed on first, so a project's steps stay one context.
    */
+  /** Set while a stranded project is re-seated in calendar order (see §4). */
+  let chronoSeat = false;
   const dayOrder = (overdue: boolean, sameDayAs: string | null): typeof days => {
-    if (overdue) return days;
+    if (overdue || chronoSeat) return days;
     const openLeftOn = (d: (typeof days)[number]) => d.free - d.placed;
     const ranked = [...days].sort((a, b) => openLeftOn(b) - openLeftOn(a) || a.iso.localeCompare(b.iso));
     const i = sameDayAs ? ranked.findIndex((d) => d.iso === sameDayAs) : -1;
@@ -467,10 +469,24 @@ export function composeWeek(input: ComposeInput): ComposeResult {
 
   /** The longest unbroken stretch still open anywhere in the week — the number
    *  that decides whether "no room" is about volume or about shape. */
-  const longestGap = () => Math.max(0, ...days.flatMap((d) => d.slots.map((s) => s.end - s.start)));
+  // Only days this piece may use count: a day off (or a shallow-only day, for
+  // focused work) has open minutes, but naming them as "the longest free
+  // stretch" told you a 6h gap was sitting there while the work was refused.
+  // A lightened day counts only while this piece still fits under its cap.
+  const usable = (t: Task) => {
+    const shallow = t.energy === "quick" || t.energy === "delegate" || t.energy == null;
+    const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
+    return days.filter(
+      (d) =>
+        d.rules.cap > 0 &&
+        !(d.rules.shallowOnly && !shallow) &&
+        !(d.context !== "normal" && d.placed + dur > d.free * d.rules.cap),
+    );
+  };
+  const longestGap = (t: Task) => Math.max(0, ...usable(t).flatMap((d) => d.slots.map((s) => s.end - s.start)));
   /** Every open minute still left, so a refusal can never claim the week is full
    *  while hours of it sit there. */
-  const openLeft = () => days.reduce((n, d) => n + d.slots.reduce((m, s) => m + (s.end - s.start), 0), 0);
+  const openLeft = (t: Task) => usable(t).reduce((n, d) => n + d.slots.reduce((m, s) => m + (s.end - s.start), 0), 0);
   const asHours = (m: number) => (m >= 60 ? `${Math.round((m / 60) * 10) / 10}h` : `${m}m`);
 
   /**
@@ -532,6 +548,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       days.every(
         (d) =>
           d.iso < after.dayISO ||
+          !usable(t).includes(d) ||
           d.slots.every((s) => Math.max(s.start, d.iso === after.dayISO ? after.endMin : 0) + dur > s.end),
       );
     return {
@@ -548,7 +565,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
               : // "the week is full" was a flat lie whenever the room was there but
                 // in the wrong shape — the complaint every time was "look how much
                 // free space is on the calendar". Say which of the two it is.
-                `needs ${asHours(dur)} unbroken — longest gap left is ${asHours(longestGap())} (${asHours(openLeft())} open in total)`,
+                `needs ${asHours(dur)} unbroken — longest gap left is ${asHours(longestGap(t))} (${asHours(openLeft(t))} open in total)`,
     };
   };
 
@@ -615,9 +632,14 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     // "full" refusal is worth re-seating — a pace refusal would repeat.
     if (misses.length > 0 && group.length > 1 && group[0].project_id && misses.every((m) => m.kind === "full")) {
       let best: Snapshot | null = null;
-      for (const reach of ["anywhere", "flush"] as const) {
+      // Last: the same reaches in calendar order. "Most open day first" can hand
+      // part 1 the last roomy day of the week, so parts 2 and 3 — which must come
+      // after it — had nowhere left while Monday sat open.
+      for (const [reach, chrono] of [["anywhere", false], ["flush", false], ["anywhere", true], ["flush", true]] as const) {
         restore(before);
+        chronoSeat = chrono;
         const retry = attempt(reach);
+        chronoSeat = false;
         if (retry.length < misses.length) {
           misses = retry;
           best = snapshot();

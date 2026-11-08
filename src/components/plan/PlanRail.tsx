@@ -2,9 +2,9 @@
 //
 // The draft is drawn on the real Schedule (CalendarPane's `plan` prop); this rail
 // replaces LeftRail while you plan and holds only what needs a decision. The law:
-// decide, don't read — one row, one decision, four words, a glyph for the cause,
-// ✓ does the row's chip and ✕ is always "not now". The grid explains; the rail
-// doesn't. Everything that decides WHAT the week is stays in useWeekDraft — this
+// decide, don't read — one row, one decision, a glyph for the cause, the reason
+// in one line, and two buttons that SAY what they do (a bare ✓/✕ asked a question
+// it never stated). The grid explains the rest. Everything that decides WHAT the week is stays in useWeekDraft — this
 // file only lays it out and maps keys to its acts.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,6 +40,24 @@ const dayName = (iso: string) => DAY[parseDateISO(iso).getDay()];
 const where = (p: { dayISO: string; startMin: number; durationMin: number }) =>
   `${dayName(p.dayISO)} ${span(instant(p.dayISO, p.startMin), instant(p.dayISO, p.startMin + p.durationMin))}`;
 
+/** "Nov 9–13" — the week a tab plans, by its dates (on a Saturday "This week" was next week). */
+const weekLabel = (iso: string) => {
+  const a = parseDateISO(iso);
+  const b = new Date(a.getTime() + 4 * 86_400_000);
+  const m = (d: Date) => d.toLocaleString("en-US", { month: "short" });
+  return a.getMonth() === b.getMonth() ? `${m(a)} ${a.getDate()}–${b.getDate()}` : `${m(a)} ${a.getDate()} – ${m(b)} ${b.getDate()}`;
+};
+/** The composer's refusal, in words a person says. */
+const plainReason = (r: string) =>
+  r
+    .replace(/^needs (\S+) unbroken — longest gap left is (\S+) \((\S+) open in total\)$/, "it needs $1 in one go, and the longest free stretch is $2")
+    .replace(/^nothing left after its earlier part \((.+)\)$/, "its earlier part ends $1 and nothing is free after that");
+/** The longest free stretch a refusal names, in minutes (null when it names none). */
+const gapMins = (r: string): number | null => {
+  const m = r.match(/longest gap left is (\d+(?:\.\d+)?)(h|m)/);
+  return m ? Math.round(Number(m[1]) * (m[2] === "h" ? 60 : 1)) : null;
+};
+
 type StackItem = {
   id: string;
   glyph: string;
@@ -47,6 +65,12 @@ type StackItem = {
   label: string;
   chip: string;
   why: string;
+  /** what ✓ does, said on the button — never a bare tick */
+  yesLabel: string;
+  /** what ✕ does */
+  noLabel: string;
+  /** shown under the label without a click: the reason this needs you */
+  sub?: string;
   yes: () => string;
   /** "not now" for this row — default just dismisses it for this plan */
   no?: () => string;
@@ -132,7 +156,7 @@ function PlanRailWeek({
   const [altList, setAltList] = useState<Placement[]>([]);
   const [altIx, setAltIx] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
-  const [expand, setExpand] = useState<string | null>(null);
+  const [, setExpand] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState(0);
   const [done, setDone] = useState<{ things: number; blocks: number; secs: number; changes: number } | null>(null);
@@ -255,6 +279,9 @@ function PlanRailWeek({
         label: pr.label,
         chip: pr.chip,
         why: pr.why,
+        sub: pr.why,
+        yesLabel: "Keep",
+        noLabel: "Forget",
         pips: pr.pips,
         yes: () => {
           setMemory((m) => ({ ...m, rules: pr.apply(m.rules) }));
@@ -267,18 +294,37 @@ function PlanRailWeek({
       });
     }
     for (const u of d.result.unplaced) {
+      const b = slotById.get(u.task.id);
+      // splitting only helps when the refusal was about one long stretch, and a half fits
+      const gap = gapMins(u.reason);
+      const canSplit = (b?.taskIds.length ?? 0) >= 2 && gap != null && (b?.durationMins ?? 0) / 2 <= gap;
       out.push({
         id: `unplaced:${u.task.id}`,
         glyph: "⊘",
-        cause: "no room",
-        label: slotById.get(u.task.id)?.name ?? u.task.title,
-        chip: "off week",
+        cause: "didn't fit",
+        label: b?.name ?? u.task.title,
+        chip: "no time yet",
         why: u.reason,
+        sub: `No time found — ${plainReason(u.reason)}`,
+        yesLabel: canSplit ? "Split to fit" : "Skip this week",
+        noLabel: canSplit ? "Skip this week" : "Leave it",
         yes: () => {
           d.remember();
+          if (canSplit) {
+            const r = d.splitBlock(u.task.id);
+            record({ kind: "split", week: weekStartISO, durationMin: r.durationMin, isRun: r.isRun });
+            return "Split in two — placing the halves";
+          }
           d.dropBlock(u.task.id);
           return "Off this week";
         },
+        no: canSplit
+          ? () => {
+              d.remember();
+              d.dropBlock(u.task.id);
+              return "Off this week";
+            }
+          : undefined,
       });
     }
     if (inboxIds.length) {
@@ -286,9 +332,12 @@ function PlanRailWeek({
         id: "inbox",
         glyph: "⇣",
         cause: "new",
-        label: `Inbox · ${inboxIds.length}`,
-        chip: "into runs",
+        label: `${inboxIds.length} inbox capture${inboxIds.length === 1 ? "" : "s"}`,
+        chip: "not in the week",
         why: "Captures that aren't in the week yet. Each joins the run its verb matches (calls, replies, errands, writing) or its domain's.",
+        sub: "Not in the week yet. Add them and each joins a run (calls, replies, errands, writing).",
+        yesLabel: "Add to the week",
+        noLabel: "Leave in inbox",
         yes: () => {
           d.remember();
           d.setKept((prev) => new Set([...prev, ...inboxIds]));
@@ -297,7 +346,7 @@ function PlanRailWeek({
       });
     }
     return out.filter((s) => !dismissed.has(s.id));
-  }, [d, slotById, inboxIds, dismissed, noticed, setMemory, today]);
+  }, [d, slotById, inboxIds, dismissed, noticed, setMemory, today, record, weekStartISO]);
 
   const decide = useCallback(
     (id: string, yes: boolean) => {
@@ -357,7 +406,8 @@ function PlanRailWeek({
   const pinnedMins = placedMins - d.result.placements.reduce((s, p) => s + p.durationMin, 0);
   const openMins = d.result.days.reduce((s, x) => s + x.freeMins, 0) + pinnedMins;
   const pct = openMins ? Math.round((placedMins / openMins) * 100) : 0;
-  const tag = pct <= 75 ? "fits" : pct <= 90 ? "tight" : "over";
+  const unplacedN = d.result.unplaced.length;
+  const tag = unplacedN ? `${unplacedN} without a time` : pct <= 75 ? "fits" : pct <= 90 ? "tight" : "over";
   const daysKnown = d.result.days.length > 0 || d.data.tasks.length > 0;
   useEffect(() => {
     if (weekStartISO === weeks.thisWeek && daysKnown && openMins < 60) onWeek(weeks.nextWeek, false);
@@ -589,7 +639,7 @@ function PlanRailWeek({
     >
       <div className="flex items-baseline justify-between pt-3">
         <span className="flex items-center gap-1">
-          {([["This week", weeks.thisWeek], ["Next week", weeks.nextWeek]] as const).map(([label, iso]) => (
+          {([[weekLabel(weeks.thisWeek), weeks.thisWeek], [weekLabel(weeks.nextWeek), weeks.nextWeek]] as const).map(([label, iso]) => (
             <button
               key={iso}
               onClick={() => iso !== weekStartISO && onWeek(iso, true)}
@@ -642,8 +692,8 @@ function PlanRailWeek({
               <span
                 className="rounded-full px-2 text-micro"
                 style={{
-                  background: tag === "over" ? "color-mix(in srgb, var(--signal) 14%, transparent)" : "var(--accent-soft)",
-                  color: tag === "over" ? "var(--signal)" : "var(--accent)",
+                  background: tag === "over" || unplacedN ? "color-mix(in srgb, var(--signal) 14%, transparent)" : "var(--accent-soft)",
+                  color: tag === "over" || unplacedN ? "var(--signal)" : "var(--accent)",
                 }}
               >
                 {tag}
@@ -756,6 +806,11 @@ function PlanRailWeek({
             </div>
           )}
 
+          {/* the job, said once */}
+          <p className="text-caption text-muted">
+            The dashed blocks on the calendar are Nuvo's draft of this week. Click one to move it, settle anything below, then Commit.
+          </p>
+
           {/* the stack */}
           <div className="flex flex-col">
             <div className="section-label flex justify-between">
@@ -781,21 +836,19 @@ function PlanRailWeek({
             )}
             {stack.length === 0 && !paint && <p className="py-1 text-caption text-muted">Nothing needs you.</p>}
             {stack.map((it) => (
-              <div key={it.id}>
-                <div
-                  className="-mx-1.5 flex min-h-[44px] items-center gap-1.5 rounded-[8px] border-b border-line px-1.5"
-                  style={{ background: focus === it.id ? "var(--accent-soft)" : undefined }}
-                  onMouseEnter={() => !sel && setFocus(it.id)}
-                >
+              <div
+                key={it.id}
+                className="-mx-1.5 flex flex-col gap-1.5 rounded-[8px] border-b border-line px-1.5 py-2"
+                style={{ background: focus === it.id ? "var(--accent-soft)" : undefined }}
+                onMouseEnter={() => !sel && setFocus(it.id)}
+              >
+                <div className="flex items-center gap-1.5">
                   <span className="w-[18px] shrink-0 text-center text-accent" title={it.cause}>
                     {it.glyph}
                   </span>
-                  <button
-                    className="min-w-0 flex-1 truncate text-left text-body"
-                    onClick={() => setExpand((x) => (x === it.id ? null : it.id))}
-                  >
+                  <span className="min-w-0 flex-1 truncate text-body" title={it.label}>
                     {it.label}
-                  </button>
+                  </span>
                   {it.pips && (
                     <span className="flex shrink-0 gap-[2px]" aria-label={`${it.pips.filter(Boolean).length} of ${it.pips.length} weeks`}>
                       {it.pips.map((on, i) => (
@@ -803,25 +856,16 @@ function PlanRailWeek({
                       ))}
                     </span>
                   )}
-                  <span className="shrink-0 whitespace-nowrap rounded-full border border-line-strong px-2 text-micro text-muted">
-                    {it.chip}
-                  </span>
-                  <button
-                    aria-label={`Do it: ${it.chip}`}
-                    onClick={() => decide(it.id, true)}
-                    className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] bg-accent text-on-accent"
-                  >
-                    ✓
+                </div>
+                {it.sub && <p className="pl-[24px] text-caption text-muted">{it.sub}</p>}
+                <div className="flex gap-1.5 pl-[24px]">
+                  <button onClick={() => decide(it.id, true)} className="h-[30px] rounded-[8px] bg-accent px-3 text-caption font-semibold text-on-accent">
+                    {it.yesLabel}
                   </button>
-                  <button
-                    aria-label="Not now"
-                    onClick={() => decide(it.id, false)}
-                    className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line-strong"
-                  >
-                    ✕
+                  <button onClick={() => decide(it.id, false)} className="h-[30px] rounded-[8px] border border-line-strong px-3 text-caption">
+                    {it.noLabel}
                   </button>
                 </div>
-                {expand === it.id && <div className="border-b border-line py-1.5 pl-6 text-caption text-muted">{it.why}</div>}
               </div>
             ))}
           </div>
@@ -872,7 +916,6 @@ function PlanRailWeek({
               <span>↻ noticed</span>
               <span>⊘ no room</span>
               <span>⇣ new</span>
-              <span>✓ do · ✕ not now</span>
               <span>J/K block · ←→ fits · ↑↓ day · H hold · S split · X off · ⌘Z undo · drag empty time to keep it clear</span>
             </div>
             <button
