@@ -1149,7 +1149,7 @@ describe("public-repo CI guard", () => {
   it("keeps ::add-mask:: off teed logs and still fails a real row-shaped dump.log", () => {
     const workflow = readFileSync(join(ROOT, ".github/workflows/cutover-migrate.yml"), "utf8");
     expect(workflow).toMatch(/os\.write\(3, line\.encode\(\)\)/);
-    expect(workflow.match(/^\s+exec 3>&1\s*$/gm)?.length).toBe(4);
+    expect(workflow.match(/^\s+exec 3>&1\s*$/gm)?.length).toBe(6);
     expect(workflow).toMatch(/\|\s*tee "/);
 
     const dir = tmp();

@@ -137,103 +137,115 @@
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "checkout",
-      "sha256": "d32f78e8891f87ea4289f18258da124b1740f206ccbde34c9961ece388d2b16a"
+      "sha256": "8a22bfd8afbb3467442d3e6e3ab4b2e8492373e4c29a5ba78adadae0123af54b"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "cutover-dirs",
-      "sha256": "723f6fa5fa223336d4ce823841e89b6089bd5025e4e907a87be446e49f8c70d0"
+      "sha256": "002a863b5c83414c5764319dc4496188e0cc72f71ec9bd5158218753cdbdf28d"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "setup-node",
-      "sha256": "dcdba668747a489ca34e59e8ff18183d4c852b826b7f1d1c6917ade3a8a0e7c2"
+      "sha256": "3294a0fbb3b0dfc11e6616f35c02d4bc4839be7240f92efa2c764a6e3350ba6e"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "npm-ci",
-      "sha256": "21c28b6f259c19e12b5dbcb64537349353a79fff0f6ad8766d884fc8f781efad"
+      "sha256": "100e2dee04341bdd920d74d405dd3fa3044b96c2faba3f189ca2d63af986d3dc"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "mask",
-      "sha256": "7d04ed1d59d6af4fef5b578e63549ef4a8ce116652e57f899e89934b9dd577db"
+      "sha256": "d3cc022b326fd632b5143629f4df5eb7992964e9973451ad1b67b6bacb5b56f4"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "install-pg",
-      "sha256": "7d993f018929e6e0f7688fe64707a1ef52c250dbdd4cf70c41a7a3686b548529"
+      "sha256": "b27f4715b76edc099c13ab09e5488200d0e1374d3be684c70213b3fe1e4e32fb"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "write-helper",
-      "sha256": "d4e40c9829cd342096f2585f427ec14dd0ebf78359c6b511214881f997596fe6"
+      "sha256": "57f95f50925f769d377f22be0d6cc4c3d6cd6264ecf97c90ccca8802c445d56c"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "pick-dump",
-      "sha256": "887589fd1c0f5d66e63b0e9aeb56c9ed8842981fbc3cdb855a3207e8db027fb0"
+      "sha256": "4632a2a423df85f051e7219a45c07ee3cdaf740e0dc499151b572720ba94f2bf"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "dump",
-      "sha256": "5566129c4b12e87b08421894f91504968f42d652ffc24480d15879e45173ec71"
+      "sha256": "2e029f0ca1ec0729be8db6a11021b5eaaa1ec8566eba445fc34b91ab13358199"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "restore",
-      "sha256": "460118db9411a21400675ed98a3af2311ea49ba6f6f3b81e9caec1a1a0cb16b4"
+      "sha256": "651dc0a316ad0c7e384570e7dec44503523d0ff89677aed4ddf0fa0f6815fd60"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "verify",
-      "sha256": "74912dbcb3c38ee17d300b0c1f607d0e26c06a2faf0f011ba37f48ff27a05ab6"
+      "sha256": "67d0f77cd9f84b5078fad3c0e0904076aa45e98c0815c6dd1d29311c47c79235"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "billing",
+      "sha256": "0f8e22f7053d91da4bc6b07b28542185f95a12c1113f974ba2eae2600b646cd4"
+    },
+    {
+      "file": "cutover-migrate.yml",
+      "job": "cutover",
+      "id": "billing-restore",
+      "sha256": "26a0ac61e58a5f8019d18f27748bd34acc7ef37212134afd6dc836dc3ba03860"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "assert-logs",
-      "sha256": "4752ae05c9eb420303a0414c92a97a2ec7740fe04ed27276dd5935e40f35a37b"
+      "sha256": "3d057f84d8332600c4a52aa5de8b7b2c873d4b364cef3068af26ea50dc999063"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "guard",
-      "sha256": "7942dc62e8cd7c7101df67f04e10016b2aa67550830d1d4c8376d829d069ab63"
+      "sha256": "557a1e1cc90899a590b0c53ce61c0197afd9e6eb026ba27178bc9179e88151a9"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "seal-tokens",
-      "sha256": "044e295c5fdd135b0e92c2fc48265070519bf47205fd2e053230264f40b53022"
+      "sha256": "eb351687c02b768a8c904d168647c09be762311bb2bc9c7a32e82d980cf12110"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "resync",
-      "sha256": "07b20362748af8d7fc1083e0d63175dcd037cdcd0e61c453e49330626e69e53b"
+      "sha256": "2013e22efb89a6f01150edc41baaf81108af18553b0889189dd1b23ebbe706c1"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "upload",
-      "sha256": "3a6fb07f054529d943a089f6fb8750b696d999ca97302d8a043c3aee8d44b88c"
+      "sha256": "c8a3033b26f73d29e08d30f05bf62a0c283a8d1fd7f6123d429ffcc3e1d22298"
     },
     {
       "file": "cutover-migrate.yml",
       "job": "cutover",
       "id": "shred",
-      "sha256": "28457a355b25a24a53084039c66c69cae8f366a37be3ffc7e552158c7518e105"
+      "sha256": "0357658d4b88c66be9db4302db82efae80ea6079e534e59b86d0554e5b880b6c"
     },
     {
       "file": "ios-release.yml",
@@ -463,6 +475,8 @@
         "dump",
         "restore",
         "verify",
+        "billing",
+        "billing-restore",
         "assert-logs",
         "guard",
         "seal-tokens",
@@ -470,7 +484,7 @@
         "upload",
         "shred"
       ],
-      "sha256": "e53426a286caaeb0d861698526fb4aade96743ac2d7eaae171c1e2e7cde68e46"
+      "sha256": "170b2f529935eb8eb32d66b7316f8bba4ba9ca7c598e0fa5181f855ae8153ac3"
     },
     {
       "file": "ios-release.yml",

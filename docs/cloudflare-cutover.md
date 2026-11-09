@@ -131,7 +131,7 @@ read from the repo and from `supabase functions list --project-ref ebibzojtkzkph
 |---|---|---|---|
 | **Stripe:** `stripe-checkout`, `stripe-portal`, `stripe-webhook`, `referral-code` | Edge functions. Stripe's **live** webhook endpoint is `ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook` ([`billing-setup.md`](./billing-setup.md) §3) | Port all four to the Worker, writing Neon. Move `STRIPE_*` secrets to `nuvo`. Add a **new** live webhook endpoint on api.nuvo.day, then retire the old one only after the new one has seen an event, because Stripe allows several endpoints | 2–3 days |
 | **App Store:** `apple-iap`, `apple-webhook`, `iap-catalog` | Edge functions. App Store Server Notifications V2 points at a `supabase.co` URL (`billing-setup.md` §11) | Port them to the Worker. Change the production **and** sandbox notification URLs in App Store Connect, and move the Apple IAP secrets | 2–3 days |
-| **Billing tables:** `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` / `billing_source()` | Excluded from the copy and the freeze on purpose. The Worker reads `subscriptions` over HTTPS with the service-role key (`entitlement.ts`) | Add the four tables to `neon.sql` and do a one-off frozen copy at the billing switch. Make `entitled()` a Worker function, and point `/api/entitlement` at Neon. Then delete `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `nuvo` | 1 day |
+| **Billing tables:** `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` / `billing_source()` | Excluded from the dump and the freeze on purpose. Copied by `cutover-migrate`'s own billing step instead (§ Billing port → Flip night). The Worker reads `subscriptions` over HTTPS with the service-role key (`entitlement.ts`) | Add the four tables to `neon.sql` and do a one-off frozen copy at the billing switch. Make `entitled()` a Worker function, and point `/api/entitlement` at Neon. Then delete `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `nuvo` | 1 day |
 | **Orphan functions** `apple-notifications`, `apple-verify` | Deployed on Supabase, **not in this repo**. Migration 70 names `apple-notifications` as Apple's writer, so **which URL App Store Connect actually calls is unverified** | Check App Store Connect's URL before porting. Delete whichever one is unused | 1 hr |
 | **Stale-caller freeze** (every non-billing function, `WRITE_FREEZE`d) | Kept after the flip on purpose, so old builds and pasted URLs get a 503 | Delete them after the 24h window, and once the last pre-flip Mac/iOS build is gone | 1 hr |
 | **Webhooks / redirect URIs on `supabase.co`** | Resend inbound (step 7). Google push channels (`google-resubscribe`, step 8). **OAuth redirect URIs:** the Google Cloud client lists `…supabase.co/functions/v1/google-oauth` and Supabase Auth's callback (M365 was removed, D-184, so there is no Azure app to update). What's registered there is **unverified**: the consoles weren't opened | Add `https://api.nuvo.day/functions/v1/google-oauth` **before** the flip, or calendar connects fail. Drop the Supabase ones afterwards | 1 hr |
@@ -210,7 +210,7 @@ only describes it.
 | A6 | Armed-build plumbing in the three build workflows, plus a guard re-pin (blocker 13) | 0.5 d |
 | A7 | `stampFieldTs` for server writers (blocker 7) | 1 d |
 | A8 | **Billing on the Worker + Neon.** (1) The four billing tables, plus `entitled()` / `plan()` as Worker functions, go into `worker/schema/neon.sql`. (2) Port all 7 functions over Neon: Stripe signature verify, the `stripe_webhook_events` / `apple_webhook_events` idempotency claims, App Store JWS verification, `iap-catalog` and `referral-code`. Bring the `supabase/functions/_shared` billing helpers across the way the kernel is shared, never as a second copy. (3) `/api/entitlement` reads Neon, and `SUPABASE_URL` / `SERVICE_ROLE_KEY` leave `nuvo`. (4) A Better Auth `user.create` hook seeds the trial row. (5) `workerRoute.ts` drops `SUPABASE_ONLY_FUNCTIONS`, so every function name routes to the Worker. Tests: signature, replay, `entitled()` parity against today's SQL, and the trial on sign-up | 4–6 d |
-| A9 | `cutover-migrate.yml` / `freeze.sql` / parity: **stop excluding** the billing tables, so they freeze and copy with everything else. `checks.yml` guard re-pin | 0.5 d |
+| A9 | ~~Stop excluding the billing tables from the freeze and the dump.~~ **Replaced (2026-11-09):** billing stays out of the freeze and the dump on purpose (webhooks keep writing Supabase through the window), and `cutover-migrate` now copies it in its own `billing` step with its own parity, re-runnable as `phase=billing`. See § Billing port → Flip night | done |
 | A10 | Realtime Durable Object, if Phil chooses it | 2–3 d |
 | A11 | Tidy-up: `blocked.ts` sets, the stale runbook lines, and closing #118 / #120 | 1 hr |
 
@@ -266,8 +266,9 @@ billing live-check done, and a fresh `cutover-migrate` dry run with the token go
 3. **Freeze.** Apply `freeze.sql` by hand. This revokes client writes and pauses every
    `nuvo-*` job.
 4. **Rotate the Google client secret** (§ Key rotation) on both sides.
-5. **Copy.** `cutover-migrate` `mode=cutover`: snapshot → copy → verify → first resync.
-   Then the `TOKEN_ENC_KEY_V1` go/no-go against `neondb`.
+5. **Copy.** `cutover-migrate` `mode=cutover`: snapshot → copy → verify → billing copy
+   (§ Billing port → Flip night 1) → first resync. Then the `TOKEN_ENC_KEY_V1` go/no-go
+   against `neondb`.
 6. **Switch.** In one sitting: set the repo variable
    `VITE_API_BASE_URL=https://api.nuvo.day/api`, replace the repo secret
    `VITE_VAPID_PUBLIC_KEY` with the D-173 key, then dispatch `cloudflare-hosting`,
@@ -1026,11 +1027,13 @@ iap-catalog, referral-code. Those keep writing billing tables.
 
 `docs/cloudflare-migration/freeze.sql` and `unfreeze.sql` are committed
 and reviewed. Do **not** apply them from CI, the Worker, or
-`cutover-migrate.yml`. Billing stays on Supabase: `subscriptions`,
-`stripe_webhook_events`, `apple_webhook_events`, and
-`apple_notification_events` are excluded from the freeze, from
+`cutover-migrate.yml`. Billing webhooks keep writing Supabase through the
+window, so `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`,
+and `apple_notification_events` are excluded from the freeze, from
 `pg_dump --exclude-table`, from `source-snapshot.json`, and from the
-parity proof. `sync_log` **structure** is dumped (`--exclude-table-data`);
+planner parity proof. They move by the separate **billing step** instead
+(its own read-only snapshot and parity, § Billing port → Flip night), which
+`phase=billing` re-runs for the post-switch delta. `sync_log` **structure** is dumped (`--exclude-table-data`);
 its rows stay out of snapshot/parity (billing webhooks insert via
 `logSync`). After the switch, `phase=resync` copies **every** source
 row whose `id` is missing on the target. An incoming id that already
@@ -1116,7 +1119,7 @@ apply to a dry run.
    (`source-snapshot.json` in runner temp) plus the `sync_log`
    watermark (report only, on `cutover-report.md`).
 4. **Copy** — restore + token seal into Neon. Billing tables are not in
-   the dump TOC. `sync_log` is: structure only, no rows. Restore
+   the dump TOC; the `billing` step copies them after `verify`. `sync_log` is: structure only, no rows. Restore
    `setval`s the empty identity past source `max(id)` + 1e6 so any
    pre-resync Neon insert cannot collide with a Supabase id.
 5. **Verify** — `verify` recomputes source and target hashes against the
@@ -1279,7 +1282,8 @@ derived `user_id = ${store.userId}` filter and expects a failure.
 ## Billing port
 
 **Status (2026-11-06):** built and checked on branch `billing-port-worker`.
-**Not deployed.** No secrets are set, no webhook URL has changed, and nothing
+Billing copy hardened 2026-11-09 (QA2 #133: parity before `COMMIT`, drop-list,
+delete policy, pre-write backup). **Not deployed.** No secrets are set, no webhook URL has changed, and nothing
 has touched live data. Every step below is Phil's, on flip night.
 
 Billing was the one Supabase dependency with no Worker twin. Now
@@ -1421,13 +1425,146 @@ Already present and reused: `APP_URL`, `APPLE_BUNDLE_ID`, `RESEND_API_KEY`,
 
 ### Flip night (in the flip runbook, between steps 2 and 3)
 
-1. **Copy billing, Supabase → Neon** (upsert; Supabase is the source):
-   `subscriptions` (every column in `neon.sql`), plus both ledgers with
-   `ON CONFLICT DO NOTHING`. Also copy legacy `apple_notification_events.notification_uuid`
-   into `apple_webhook_events.event_id` (see the open question above). Copying the ledgers means a retry of an event
-   Supabase already handled is still recognised on the Worker.
-   `cutover_copy.py` deliberately excludes these tables (`BILLING_TABLES`),
-   so this is a separate `psql \copy` out and an upsert in.
+1. **Copy billing, Supabase → Neon. Scripted, not by hand.** The `billing`
+   step of `cutover-migrate` runs inside `phase=copy`, right after `verify`
+   (flip-night order step 5), and refuses to run in `phase=copy` unless
+   `verify` succeeded. It is not in `pg_dump` or the frozen snapshot:
+   webhooks keep writing Supabase during the window, by design.
+   - **One read-only source snapshot.** The source session is
+     `default_transaction_read_only=on` (`PGOPTIONS`, the same read-only
+     `SOURCE_DATABASE_URL` / `migration_reader` the dump uses), run as
+     `psql -X -q -tA -v ON_ERROR_STOP=1 -f`. Every `\copy` out plus every
+     source hash runs inside one `BEGIN ISOLATION LEVEL REPEATABLE READ READ
+     ONLY`, so the source counts describe exactly the rows copied. Both
+     scripts start with `\set VERBOSITY sqlstate`: an error prints a bare
+     SQLSTATE, never message text or a key. The CSVs live only under
+     `CUTOVER_DUMP_DIR` (runner temp), are shredded right after the target
+     run, and are never uploaded.
+   - **Columns: copied, or reviewed and dropped — never silently lost.**
+     The column lists come from `pg_catalog` (`pg_attribute`, `attnum > 0`,
+     not dropped) — `information_schema` hides columns the reader role has
+     no privilege on. Each table copies the columns both sides have. A
+     **source column the target lacks refuses the run** before anything is
+     written (`BillingCopyError`), unless it is on
+     `BILLING_DROPPED_SOURCE_COLUMNS` in `scripts/cutover_copy.py`, the
+     reviewed drop-list. Today that list is exactly
+     `apple_notification_events.notification_type` (the Worker's ledger is
+     a dedupe set and never reads the type). Prod Supabase may carry columns
+     the repo doesn't (migrations 70–74 are recovered placeholders): if the
+     dry run refuses, add the column to `worker/schema/neon.sql`, or — after
+     review — to the drop-list. Dropped names (names only) go to the log and
+     the report. A Neon `NOT NULL` column with no default that the source
+     lacks also refuses.
+   - **`subscriptions`:** `INSERT … ON CONFLICT (user_id) DO UPDATE … WHERE
+     EXCLUDED.updated_at > subscriptions.updated_at`. A missing row is
+     inserted, an older one is overwritten, a newer one is kept. The
+     `subscriptions_set_updated_at` trigger (it would stamp `now()` over the
+     copied `updated_at`) is off only around that one statement, inside the
+     transaction, and back on before `COMMIT`; an abort rolls the toggle back
+     with everything else.
+   - **`stripe_webhook_events`, `apple_webhook_events`:** `ON CONFLICT
+     (event_id) DO NOTHING`.
+   - **Legacy `apple_notification_events`** (source only; skipped if the
+     table is absent): `notification_uuid` → `apple_webhook_events.event_id`,
+     `received_at` → `created_at`, `ON CONFLICT DO NOTHING`. Those are
+     Neon's only two columns there, and only the id matters: a retry of an
+     event `apple-notifications` already handled is still deduped.
+   - **Parity is decided inside the target transaction, before `COMMIT`.**
+     The source counts and md5s are passed in as
+     `psql -v src_<table>_n=… -v src_<table>_md5=…` (plus the phase); after
+     the writes, a `DO` block checks them and `RAISE`s a bare custom
+     SQLSTATE (`NVB01`–`NVB06`, `BILLING_ASSERT_SQLSTATES`) on any failure,
+     so **a mismatch rolls back the whole transaction — the target is left
+     exactly as it was.** Count + md5 over the common columns in one
+     canonical text (UTC, ordered by key `COLLATE "C"`). The rule: (a) the
+     rows loaded on the target hash exactly like the source snapshot; (b) no
+     source key is missing on the target (for the legacy ledger, every
+     `notification_uuid` is an `event_id`); (c) over the source keys, the
+     target rows hash exactly like the source rows. A `subscriptions` row
+     whose Neon `updated_at` is strictly newer is left out of (c) and
+     counted as `target_newer`: allowed only in `phase=billing`, after the
+     flip, and fatal in `phase=copy`; the report lists it on its own named
+     line as a **reviewed number** ("Neon newer wins, kept"). (d) Rows only
+     on the target (`target_extra`) are **fatal in `phase=copy`** — the
+     target must equal the source, and a dry-run/seed row on a reused
+     scratch branch must not survive (clear it and re-run). For
+     `phase=billing`, see the delete policy below. The same checks re-run
+     after `COMMIT`.
+   - **On a mismatch, the report names the columns.** Per-column md5s are
+     compared (loaded vs source, and target vs source over the source keys)
+     and the report says `table.column differs` — names only, no values.
+   - **Backup before writing.** Before any write, the step `pg_dump`s the
+     target's three billing tables (`--data-only`) to runner temp, prints and
+     reports its `sha256`, and keeps it for the job only (shredded by the
+     always() step, never uploaded). Because parity is decided before
+     `COMMIT`, a parity failure needs no restore. The backup is for the one
+     case that can fail after `COMMIT` (the post-commit re-check, which runs
+     after the lock is released): the `billing-restore` step then puts the
+     backup back in one transaction, **only if** the target still has
+     exactly the fingerprint (whole-table count + md5) the billing commit
+     left; otherwise it refuses (`NVB10`) rather than lose a Worker write,
+     and the run needs a person.
+   - **Locks.** The copy transaction takes
+     `LOCK TABLE … IN SHARE ROW EXCLUSIVE MODE` on the three Neon billing
+     tables, and the trigger toggle takes the same mode (checked on PG
+     17.11 — not `ACCESS EXCLUSIVE`). Worker **reads** (entitlement) are never blocked; Worker
+     and webhook **writes** to those tables wait for the transaction, which
+     is sub-second at today's row counts. `lock_timeout` is 10s for the
+     copy. `SET LOCAL session_replication_role = replica` is not used: it
+     needs superuser (or a `GRANT SET` Neon's owner role doesn't have) and
+     it would also switch off FK enforcement and every other trigger.
+   - **Guards.** `phase=copy` runs only after `verify` succeeded;
+     `phase=billing` only with `mode=cutover`, `confirm=CUTOVER nuvo`, in
+     the `nuvo-cutover` environment; `mode=dry-run` writes the scratch
+     branch only and refuses a `SCRATCH_DATABASE_URL` that is the same
+     database as `TARGET_DATABASE_URL`; any Supabase host as the target
+     (`*.supabase.co`, `*.pooler.supabase.com`, …) is refused. No DSN is
+     ever echoed, every step is `set +x`, and the step runs
+     `guard-public-ci.mjs --check-log` on its own output. The step fails on
+     any parity problem, a psql non-zero exit, a missing parse line or a
+     `BillingCopyError`. Table/column names, counts and md5s go to
+     `cutover-report.md` (the only upload); no row data, ids or emails do.
+   - If the target has no billing tables yet (the restore never creates
+     them), `phase=copy` first applies the billing section of
+     `worker/schema/neon.sql` (`billing_schema_sql`, idempotent) — exactly
+     the text between the `-- Billing (the Worker port` marker and the
+     `-- End of billing (the Worker port).` marker; a missing or duplicated
+     marker refuses, so DDL appended to `neon.sql` later never runs here.
+     `phase=billing` refuses a target without them.
+
+   Proof: `tests/cutover-billing.test.ts` drives the same SQL on PGlite
+   (intersection and the drop-list refusal, newer wins / older loses, ledger
+   idempotence, the legacy mapping, the in-transaction abort leaving the
+   target unchanged, extra rows, column-name diagnosis, the marker
+   extraction, pg_catalog under column privileges). The composed scripts
+   were also run end to end through real `psql` / `pg_dump` 17.11 against a
+   throwaway PostgreSQL 17.11 (ICU `en-US` source read by a SELECT-only role
+   under `default_transaction_read_only`, `C` target written by a
+   non-superuser owner): 31/31, including the source-only-column refusal,
+   the same-`updated_at` content mismatch aborting with the target
+   unchanged, the catch-up, the guarded restore and its refusal. The next
+   `mode=dry-run` is the first run against the real Supabase schema.
+
+   **Rows on Neon that Supabase doesn't have (`target_extra`) in
+   `phase=billing` — the delete policy.** They are **never deleted
+   automatically**: they are live entitlements. After the flip most are
+   Neon-born (new sign-ups' trial rows, Worker ledger ids); the rare other
+   kind is a row Supabase deleted after the copy (an account deleted through
+   an old build during the window — the freeze makes this rare). The source
+   delta still lands (the extras don't touch it), the report prints a named
+   `billing WARNING target_extra` line per table, and **the run fails while
+   `subscriptions` has any unreviewed extra.** To review: for each extra
+   `user_id` (query Neon directly, never in the workflow log), check the
+   account still exists on Neon (`"user"`) and whether it was deleted on
+   Supabase. A Neon-born account is fine as is. A deleted account: delete
+   its Neon `subscriptions` row by hand if the Neon account is gone too
+   (delete-account already does that for Worker-side deletes). Then re-run
+   with `allow_target_extra=<the subscriptions count from the report>`; the
+   run passes only if the observed count matches exactly. Ledger extras
+   (webhook ids the Worker processed) are reported and never fatal. Chosen
+   over failing the whole transaction on extras because a new sign-up
+   between two runs would otherwise block a Supabase cancellation from
+   reaching Neon.
 2. **Set `CUTOVER_FLIPPED=1`**, as in the main runbook. Billing routes go
    live.
 3. **Stripe dashboard → Developers → Webhooks → the Nuvo endpoint → Update
@@ -1440,11 +1577,19 @@ Already present and reused: `APP_URL`, `APPLE_BUNDLE_ID`, `RESEND_API_KEY`,
    Notifications.** Set both **Production** and **Sandbox** to
    `https://api.nuvo.day/api/apple-webhook`, with `?secret=<APPLE_NOTIFICATION_SECRET>`
    if one is set. Keep Version 2.
-5. **Delta copy.** Re-run step 1 for rows whose Supabase `updated_at` is newer
-   than Neon's (`… ON CONFLICT (user_id) DO UPDATE … WHERE EXCLUDED.updated_at > subscriptions.updated_at`).
-   This catches anything Supabase wrote between the first copy and the URL
-   switch. Old app builds that still call Supabase's `apple-iap` also land
-   there, so repeat this daily until Supabase `subscriptions` stops changing.
+5. **Delta copy.** Dispatch `cutover-migrate` `mode=cutover`
+   `confirm=CUTOVER nuvo` `phase=billing`. It runs only the billing step
+   (no dump, restore or seal), after the same pre-write backup, with parity
+   asserted before `COMMIT`. Newer Supabase rows overwrite Neon, newer Neon
+   rows are kept and listed as `target_newer` (review that number), and the
+   ledgers fill in. This catches anything Supabase wrote between the first
+   copy and the URL switch. Old app builds that still call Supabase's
+   `apple-iap` also land there, so **repeat it daily until Supabase
+   `subscriptions` stops changing** (`written` = 0 for `subscriptions` in the
+   report). Expect `target_extra` to grow with Neon sign-ups: review it as
+   above and pass `allow_target_extra`. `phase=billing` refuses
+   `mode=dry-run` (it exists to write live entitlements); rehearse the
+   billing copy through a `mode=dry-run` `phase=copy`.
 6. **Verify:** Stripe → the endpoint → recent deliveries all show 2xx from
    `api.nuvo.day`; `GET /api/entitlement` for your own account matches the
    pre-flip value; `scripts/check-entitlement-parity.ts` is clean.
@@ -1459,8 +1604,25 @@ Already present and reused: `APP_URL`, `APPLE_BUNDLE_ID`, `RESEND_API_KEY`,
    whichever URL is current.
 3. Copy Neon → Supabase for `subscriptions` rows with
    `updated_at > <flip time>`, plus both ledgers (`ON CONFLICT DO NOTHING`).
+   This direction is **still by hand**: the billing step only ever writes
+   the target, and the workflow refuses a Supabase target. Stop running
+   `phase=billing` first, or it will copy Supabase back over Neon.
    Stripe idempotency keys protect the referral credit for 24h. After that,
    the copied `referral_reward_granted_at` is the guard.
+
+### Post-flip debt
+
+Deferred to after the flip by Tech Lead, not a blocker:
+
+- **`set_updated_at` triggers are not reinstalled on Neon planner tables.**
+  `pg_restore` drops every trigger, and the copy puts back only the
+  `field_ts` stamp (`worker/schema/field-ts.sql`). On Neon only
+  `subscriptions` has a `set_updated_at` trigger (`neon.sql`).
+- **Worker writers bump `updated_at` by hand**, at about 22 sites.
+- **The client's fragment merge reads `updated_at`** (`src/lib/taskMerge.ts`,
+  `src/lib/sync/coordinator.ts`). A missed bump is a **stale-view risk, not
+  data loss**: a device can keep its older copy of a row until something
+  else touches it.
 
 ---
 

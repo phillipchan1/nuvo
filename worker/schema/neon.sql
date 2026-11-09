@@ -610,3 +610,6 @@ CREATE TABLE IF NOT EXISTS public.apple_webhook_events (
   event_id TEXT PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- End of billing (the Worker port). Nothing below this line is applied by the
+-- cutover billing copy (scripts/cutover_copy.py billing_schema_sql).
