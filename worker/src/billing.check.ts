@@ -511,24 +511,52 @@ const checkoutDone = {
   const missing = await req("/functions/v1/apple-iap", asUser(S, { transactionId: "3999999999" }), apiEnv);
   ok(missing.status === 400, `apple-iap 1.1: a transaction Apple doesn't know 400 (got ${missing.status})`);
   appleApiDown = true;
+  const warned: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...a: unknown[]) => void warned.push(a.map(String).join(" "));
   const down = await req("/functions/v1/apple-iap", asUser(S, { transactionId: "3000000001" }), apiEnv);
+  console.warn = realWarn;
   appleApiDown = false;
   ok(down.status === 503, `apple-iap 1.1: App Store API failure → 503, no write (got ${down.status})`);
+  ok(
+    warned.includes('{"event":"apple_iap_verify","outcome":"rejected","code":"apple_unreachable","status":503,"runtime":"worker"}'),
+    `apple-iap: apple_unreachable emits one alertable JSON line (got ${JSON.stringify(warned)})`,
+  );
+  ok(!warned.join("").includes("3000000001"), "apple-iap: the alert line carries no transaction id");
   const noBundle = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx() }), { ...flipped, APPLE_BUNDLE_ID: "" });
   ok(noBundle.status === 503, "apple-iap: APPLE_BUNDLE_ID unset → fail closed");
+  // S2 (QA2 #136): a confirm never flips a Stripe-paying account to Apple — sandbox or production.
+  const W = "3e3e0000-0000-4000-8000-00000000003e";
+  await db.query(`INSERT INTO "user" (id, email, name, "emailVerified") VALUES ($1, 'w@billing.test', 'Wren', true)`, [W]);
+  await db.query(
+    `INSERT INTO subscriptions (user_id, status, plan_source, stripe_customer_id, stripe_subscription_id, trial_ends_at)
+     VALUES ($1, 'active', 'stripe', 'cus_W', 'sub_W', '2020-01-01T00:00:00Z')`,
+    [W],
+  );
+  for (const environment of ["Sandbox", "Production"]) {
+    const flip = await req(
+      "/functions/v1/apple-iap",
+      asUser(W, { jwsRepresentation: await signedTx({ environment, originalTransactionId: `otx_W_${environment}`, transactionId: "2000000777", appAccountToken: W }) }),
+      flipped,
+    );
+    const fb = (await flip.json()) as { code?: string };
+    const w = await row(W);
+    ok(flip.status === 409 && fb.code === "active_on_other_rail", `apple-iap: Stripe-active account refused 409 active_on_other_rail (${environment}, got ${flip.status} ${fb.code})`);
+    ok(w.status === "active" && w.plan_source === "stripe" && w.apple_original_transaction_id === null && w.apple_environment === null, `apple-iap: Stripe row untouched (${environment})`);
+  }
   const checkoutApple = await req("/functions/v1/stripe-checkout", asUser(P, { plan: "monthly" }), flipped);
   ok(checkoutApple.status === 409, "checkout: refuses an Apple-active account");
 }
 
 // ── 7. Apple webhook: verify, dedupe, write ──────────────────────────────────
 async function appleNotification(uuid: string, type: string, subtype: string | null, tx: Record<string, unknown>, opts: { txKey?: Key } = {}) {
-  const signedTransactionInfo = await jws({ signedDate: Date.parse("2026-11-06T00:00:00Z"), ...tx }, { key: opts.txKey });
+  const signedTransactionInfo = await jws({ signedDate: Date.parse("2026-11-06T00:00:00Z"), environment: "Production", ...tx }, { key: opts.txKey });
   return jws({
     notificationType: type,
     subtype,
     notificationUUID: uuid,
     signedDate: Date.parse("2026-11-06T00:00:00Z"),
-    data: { bundleId: "day.nuvo.app", signedTransactionInfo },
+    data: { bundleId: "day.nuvo.app", environment: "Production", signedTransactionInfo },
   });
 }
 const appleReq = (signedPayload: string, secret?: string): RequestInit => ({
@@ -544,7 +572,9 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
   const forged = expired.split(".");
   forged[1] = b64url(new TextEncoder().encode(JSON.stringify({ notificationType: "EXPIRED", notificationUUID: "uuid-forged", data: {} })));
   const forgedRes = await req("/api/apple-webhook", appleReq(forged.join(".")), flipped);
+  const forgedBody = await forgedRes.text();
   ok(forgedRes.status === 400, `apple webhook: forged payload 400 (got ${forgedRes.status})`);
+  ok(forgedBody === JSON.stringify({ error: "rejected" }), `apple webhook: refusal body is a fixed string, no verifier detail (got ${forgedBody})`);
   ok((await row(P)).status === "active", "apple webhook: forged payload wrote nothing");
 
   const secretEnv = { ...flipped, APPLE_NOTIFICATION_SECRET: "s3cret" };
@@ -553,7 +583,12 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
 
   const rogueTx = await appleNotification("uuid-rogue-tx", "EXPIRED", null, txP, { txKey: await newKey("P-256") });
   const rogueRes = await req("/api/apple-webhook", appleReq(rogueTx), flipped);
-  ok(rogueRes.status === 200 && (await row(P)).status === "active", "apple webhook: unverifiable signedTransactionInfo is ignored, not written");
+  ok(rogueRes.status === 400 && (await row(P)).status === "active", `apple webhook: unverifiable signedTransactionInfo → 400, not written (got ${rogueRes.status})`);
+  ok((await db.query(`SELECT 1 FROM apple_webhook_events WHERE event_id = 'uuid-rogue-tx'`)).rows.length === 0, "apple webhook: …and not claimed");
+
+  const noBundle = await req("/api/apple-webhook", appleReq(await appleNotification("uuid-nobundle", "EXPIRED", null, txP)), { ...flipped, APPLE_BUNDLE_ID: "" });
+  ok(noBundle.status === 503 && (await noBundle.text()) === JSON.stringify({ error: "unavailable" }), `apple webhook: APPLE_BUNDLE_ID unset → 503 fail closed (got ${noBundle.status})`);
+  ok((await row(P)).status === "active" && (await db.query(`SELECT 1 FROM apple_webhook_events WHERE event_id = 'uuid-nobundle'`)).rows.length === 0, "apple webhook: …no write, no claim");
 
   const res = await req("/api/apple-webhook?secret=s3cret", appleReq(expired), secretEnv);
   ok(res.status === 200, `apple webhook: verified EXPIRED 200 (got ${res.status})`);
@@ -572,8 +607,8 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
   ok(ent.entitled === true && ent.plan_source === "apple", "entitlement (Neon): apple-active is entitled");
 
   const otherBundle = await appleNotification("uuid-bundle", "EXPIRED", null, { ...txP, bundleId: "com.someone.else" });
-  await req("/api/apple-webhook", appleReq(otherBundle), flipped);
-  ok((await row(P)).status === "active", "apple webhook: another bundle's notification ignored");
+  const otherBundleRes = await req("/api/apple-webhook", appleReq(otherBundle), flipped);
+  ok(otherBundleRes.status === 400 && (await row(P)).status === "active", `apple webhook: another bundle's notification refused 400, no write (got ${otherBundleRes.status})`);
 }
 
 // ── 7b. appAccountToken: first purchase with no apple-iap confirm ───────────
@@ -649,6 +684,30 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
   const retryBody = (await retry.json()) as { duplicate?: boolean };
   ok(retry.status === 200 && retryBody.duplicate !== true, "apple ledger: Apple's retry is processed, not acked as a duplicate");
   ok(new Date((await row(P)).current_period_end as string).getTime() === 1_970_000_000_000, "apple ledger: the retry wrote the renewal");
+}
+
+// ── 7d. A failed sync_log write never rolls the notification back (QA2 #136 S4) ──
+{
+  // Every sync_log INSERT raises. Inside the transaction that would abort it
+  // (Postgres) even though logBilling swallows the JS error, so the log lines
+  // are written after the commit.
+  await db.exec(`
+    CREATE FUNCTION fail_sync_log() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'sync_log down'; END $$;
+    CREATE TRIGGER sync_log_down BEFORE INSERT ON sync_log FOR EACH ROW EXECUTE FUNCTION fail_sync_log();
+  `);
+  // Stripe-active V's token is refused (one log line) and the lineage is unlinked (another).
+  const vTx = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalTransactionId: "otx_V_log", expiresDate: 1_950_000_000_000, appAccountToken: "7e7e0000-0000-4000-8000-00000000007e" };
+  const logged = await req("/api/apple-webhook", appleReq(await appleNotification("uuid-log-fail", "SUBSCRIBED", null, vTx)), flipped);
+  ok(logged.status === 200, `apple ledger: a failing log write still answers 200 (got ${logged.status})`);
+  ok((await db.query(`SELECT 1 FROM apple_webhook_events WHERE event_id = 'uuid-log-fail'`)).rows.length === 1, "apple ledger: …and the claim committed");
+  // A row write with sync_log down: T (linked to otx_T) renews.
+  const tRenew = await appleNotification("uuid-log-fail-2", "DID_RENEW", null, { bundleId: "day.nuvo.app", productId: "NUVO_IAP_ANNUAL", originalTransactionId: "otx_T", expiresDate: 1_980_000_000_000 });
+  const written = await req("/api/apple-webhook", appleReq(tRenew), flipped);
+  ok(written.status === 200 && new Date((await row("ffff0000-0000-4000-8000-00000000000f")).current_period_end as string).getTime() === 1_980_000_000_000, "apple ledger: the row write commits with sync_log down");
+  await db.exec(`DROP TRIGGER sync_log_down ON sync_log; DROP FUNCTION fail_sync_log();`);
+  const src = handlersSrc.slice(handlersSrc.indexOf("export async function handleAppleWebhook"));
+  const inTx = src.slice(src.indexOf("sql.begin("), src.indexOf("for (const line of logs)"));
+  ok(!/logBilling\(/.test(inTx) && !/logBilling\(/.test(src.slice(src.indexOf("async function applyAppleNotification"))), "apple webhook: no logBilling inside the transaction");
 }
 
 // ── 7c. CORS for credentialed and bearer callers ─────────────────────────────

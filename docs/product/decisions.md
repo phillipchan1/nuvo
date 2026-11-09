@@ -6806,6 +6806,47 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-185 · 2026-11-09 · App Store data is trusted only when Apple signed it, and a sandbox
+purchase is entitled only until its verified period end.** *(Extends D-118; mechanism in
+[`billing-setup.md`](../billing-setup.md) — "The `apple-iap` confirm", "Sandbox entitlement",
+"Known limits", "The `apple-webhook`". QA2's notes: `/workspace/qa/nuvo136.md`.)*
+QA2 found that the Supabase `apple-webhook` base64-decoded notifications with no signature
+check: with the URL, anyone could renew any known lineage until 2100. And `apple-iap`
+trusted the client's ids (#129). In order:
+**Interim step.** Prod Supabase `apple-webhook` has been **fail-closed** since
+`APPLE_NOTIFICATION_SECRET` was set at **10:38 AM PT, 2026-11-09**. A request without the
+secret gets 401. The secret stays as an extra layer, checked first, on top of the
+verification below.
+**JWS verification.** `apple-iap` (#136) and `apple-webhook` (this PR, on Supabase and the
+Worker) verify every App Store JWS against Apple Root CA - G3 (`_shared/appleJws.ts`). The
+cert extensions are parsed, the marker OIDs are matched as extnIDs, and basicConstraints is
+checked: a CA intermediate and a non-CA leaf. Plan, expiry, product, environment and lineage
+come from the signed payload only. Both webhooks run one decision,
+`decideAppleNotification`. A confirm on an account paying on Stripe is refused 409
+`active_on_other_rail`. It never flips the rail.
+**Tech Lead rulings.** **(b)** A row with `plan_source = 'apple'` and
+`apple_environment = 'sandbox'` is entitled only while `current_period_end > now()`, and for
+an Apple row that column comes only from Apple-verified data. This is enforced in `isEntitled`
+(SPA + Worker) and `public.entitled` (migration 93). **Production rows, and rows with no
+recorded environment, are not held to the period end yet**: notifications don't reliably
+reach us, and a real payer must never be cut off by a renewal we didn't hear about.
+**(a)** No sandbox allowlist. Sandbox is accepted for any account, because App Review and
+TestFlight buy with sandbox receipts against prod. (b) is what stops that from becoming a free
+permanent plan.
+**Known limits, documented, not fixed.** **S3:** a tokenless (iOS 1.1) lineage goes to whoever
+confirms it first. **S6:** Family Sharing members get 403 on restore, because the
+`appAccountToken` is the purchaser's.
+**Consequence:** a TestFlight tester's sandbox purchase lapses at its period end. A
+production subscriber whose renewal we never hear about keeps access, which is the open risk,
+and it is the payer's side of it. *Revisit (b) for production* once App Store Server
+Notifications are verified as reaching prod reliably.
+
+*Status: built on branches `security/apple-iap-verify-jws` (#136) and
+`security/apple-webhook-verify-jws`, not merged, not deployed. Migrations 92 and 93 have not
+been applied. typecheck, vitest, `check:worker`, `deno check` and `cf:preview:dry-run` pass.
+**Not run:** a live sandbox purchase end to end, or a real Apple-signed leaf (only the real G3
+root and WWDR G6 were parsed).*
+
 **D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
 ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
 Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.

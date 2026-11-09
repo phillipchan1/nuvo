@@ -57,7 +57,8 @@ export type AppleIapRejectCode =
   | "revoked"
   | "expired"
   | "account_mismatch" // signed appAccountToken is another Nuvo user
-  | "linked_elsewhere"; // this lineage already entitles another Nuvo user
+  | "linked_elsewhere" // this lineage already entitles another Nuvo user
+  | "active_on_other_rail"; // the account is paying on Stripe — a confirm never flips the rail
 
 export interface AppleIapRejection {
   ok: false;
@@ -79,10 +80,23 @@ const STATUS: Record<AppleIapRejectCode, { status: AppleIapRejection["status"]; 
   expired: { status: 400, retriable: false },
   account_mismatch: { status: 403, retriable: false },
   linked_elsewhere: { status: 409, retriable: false },
+  active_on_other_rail: { status: 409, retriable: false },
 };
 
 export function rejectIap(code: AppleIapRejectCode): AppleIapRejection {
   return { ok: false, code, ...STATUS[code] };
+}
+
+export type BillingRuntime = "supabase" | "worker";
+
+/**
+ * The one alertable line per refused confirm: single-line JSON, codes and
+ * counts only — never an id, a token or a JWS. Alert on repeated
+ * `apple_unreachable` (a missing / revoked APPLE_IAP_* key makes every 1.1
+ * confirm one, forever — QA2 #136 S7).
+ */
+export function iapVerifyLogLine(r: AppleIapRejection, runtime: BillingRuntime): string {
+  return JSON.stringify({ event: "apple_iap_verify", outcome: "rejected", code: r.code, status: r.status, runtime });
 }
 
 /** What the client sees. Generic on purpose — the code is enough to act on. */
@@ -91,11 +105,13 @@ export function iapRejectionBody(r: AppleIapRejection): { error: string; code: A
     ? "Couldn’t verify the App Store purchase right now. Try again in a moment."
     : r.code === "linked_elsewhere"
       ? "This App Store subscription already belongs to another Nuvo account."
-      : r.code === "account_mismatch"
-        ? "This App Store purchase was made from another Nuvo account."
-        : r.code === "expired" || r.code === "revoked"
-          ? "That App Store subscription is no longer active."
-          : "Couldn’t verify the App Store purchase.";
+      : r.code === "active_on_other_rail"
+        ? "This Nuvo account already has an active subscription billed on the web."
+        : r.code === "account_mismatch"
+          ? "This App Store purchase was made from another Nuvo account."
+          : r.code === "expired" || r.code === "revoked"
+            ? "That App Store subscription is no longer active."
+            : "Couldn’t verify the App Store purchase.";
   return { error, code: r.code, retriable: r.retriable };
 }
 
@@ -187,28 +203,36 @@ export function ownershipRejection(linkedUserId: string | null, userId: string):
   return null;
 }
 
+/** The rail-relevant columns of a `subscriptions` row. */
+export interface RailRow {
+  apple_original_transaction_id?: string | null;
+  status?: string | null;
+  plan_source?: string | null;
+  stripe_subscription_id?: string | null;
+}
+
+/**
+ * Is this row paying (or in a trial) on Stripe? Then nothing Apple does may
+ * flip it to `apple`: the lineage's later EXPIRED / REFUND would cancel a
+ * live Stripe plan (QA2 #129 S2, #136 S2). A cancelled / past_due Stripe row
+ * is not protected — a new App Store purchase may take it over.
+ */
+export function activeOnStripe(row: RailRow | null): boolean {
+  if (!row || row.plan_source === "apple") return false;
+  const stripe = row.plan_source === "stripe" || Boolean(row.stripe_subscription_id);
+  return stripe && (row.status === "active" || row.status === "trialing");
+}
+
 /**
  * App Store webhook (Worker): may a signed `appAccountToken` attach a lineage
  * no row is linked to yet to the token's account? Only when that account has
- * no Apple purchase linked and isn't paying on another rail — otherwise a
- * Stripe subscriber would be flipped to `apple` and the lineage's later
- * REFUND/EXPIRED would cancel a live Stripe plan (QA2 #129 S2).
+ * no Apple purchase linked and isn't paying on another rail (`activeOnStripe`).
  * `null` = the account has no row yet (it is created only for a known user).
  */
-export function appleTokenMayAttach(
-  target: {
-    apple_original_transaction_id?: string | null;
-    status?: string | null;
-    plan_source?: string | null;
-    stripe_subscription_id?: string | null;
-  } | null,
-): boolean {
+export function appleTokenMayAttach(target: RailRow | null): boolean {
   if (!target) return true;
   if (target.apple_original_transaction_id) return false;
-  const onStripe = Boolean(target.stripe_subscription_id) &&
-    target.plan_source !== "apple" &&
-    (target.status === "active" || target.status === "trialing");
-  return !onStripe;
+  return !activeOnStripe(target);
 }
 
 export interface AppleIapDeps {
@@ -223,6 +247,8 @@ export interface AppleIapDeps {
   now?: Date;
   /** The `subscriptions.user_id` already linked to this lineage, or null. Throws on a DB error. */
   ownerOfOriginalTransaction: (originalTransactionId: string) => Promise<string | null>;
+  /** The confirming account's own row (rail columns), or null. Throws on a DB error. */
+  railRowOf: (userId: string) => Promise<RailRow | null>;
 }
 
 export type AppleIapConfirm =
@@ -233,7 +259,7 @@ export type AppleIapConfirm =
  * Verify a confirm request and return the plan write, or why not.
  * Reads ONLY `body.jwsRepresentation` (1.2+) or `body.transactionId` (1.1).
  * Every other body field is ignored. Never throws for a verification problem —
- * only `ownerOfOriginalTransaction` may throw (DB), which callers turn into a
+ * only `ownerOfOriginalTransaction` / `railRowOf` may throw (DB), which callers turn into a
  * generic 500 with no write.
  */
 export async function confirmAppleTransaction(
@@ -295,6 +321,8 @@ export async function confirmAppleTransaction(
   const owner = await deps.ownerOfOriginalTransaction(tx.originalTransactionId);
   const conflict = ownershipRejection(owner, userId);
   if (conflict) return conflict;
+  // A confirm never flips a Stripe-paying account to Apple — sandbox or not.
+  if (activeOnStripe(await deps.railRowOf(userId))) return rejectIap("active_on_other_rail");
 
   return {
     ok: true,

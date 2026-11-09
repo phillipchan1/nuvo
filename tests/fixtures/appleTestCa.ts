@@ -1,5 +1,5 @@
 // A generated Apple-shaped CA for App Store JWS tests: Root (P-384) →
-// WWDR-marked intermediate (P-384) → App-Store-marked leaf (P-256), DER built
+// WWDR-marked CA intermediate (P-384) → App-Store-marked leaf (P-256), DER built
 // by hand so the test needs no dependency. Pin the generated root with
 // `{ rootFingerprints: [ca.rootFp] }`; under the real Apple pin it is refused.
 // Shared by worker/src/billing.check.ts (node --experimental-strip-types) and
@@ -51,11 +51,39 @@ export async function newKey(curve: "P-256" | "P-384"): Promise<Key> {
   const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
   return { pair, spki, curve };
 }
+export const OID_BASIC_CONSTRAINTS = u8(0x06, 0x03, 0x55, 0x1d, 0x13);
+/** One Extension: `SEQUENCE { extnID, [critical], extnValue OCTET STRING }`. */
+export function ext(oid: Uint8Array, value: Uint8Array, critical = false): Uint8Array {
+  return seq(oid, ...(critical ? [u8(0x01, 0x01, 0xff)] : []), tlv(0x04, value));
+}
+/** basicConstraints; `ca: false` is written out explicitly (parsers must accept it). */
+export function basicConstraints(ca: boolean): Uint8Array {
+  return ext(OID_BASIC_CONSTRAINTS, seq(u8(0x01, 0x01, ca ? 0xff : 0x00)), true);
+}
+export interface CertOptions {
+  /** basicConstraints: true / false written out; undefined = absent. */
+  ca?: boolean;
+  /** Replace the generated extension list entirely. */
+  extensions?: Uint8Array[];
+}
 let serial = 1;
-export async function cert(subject: string, key: Key, issuer: string, issuerKey: Key, marker: Uint8Array | null, nb: Date, na: Date) {
+export async function cert(
+  subject: string,
+  key: Key,
+  issuer: string,
+  issuerKey: Key,
+  marker: Uint8Array | null,
+  nb: Date,
+  na: Date,
+  opts: CertOptions = {},
+) {
   const sigOid = issuerKey.curve === "P-384" ? OID_SHA384 : OID_SHA256;
   const hash = issuerKey.curve === "P-384" ? "SHA-384" : "SHA-256";
-  const ext = marker ? [tlv(0xa3, seq(seq(marker, tlv(0x04, u8(0x05, 0x00)))))] : [];
+  const list = opts.extensions ?? [
+    ...(opts.ca !== undefined ? [basicConstraints(opts.ca)] : []),
+    ...(marker ? [ext(marker, u8(0x05, 0x00))] : []),
+  ];
+  const ext_ = list.length ? [tlv(0xa3, seq(...list))] : [];
   const tbs = seq(
     tlv(0xa0, u8(0x02, 0x01, 0x02)),
     u8(0x02, 0x01, serial++),
@@ -64,7 +92,7 @@ export async function cert(subject: string, key: Key, issuer: string, issuerKey:
     seq(utc(nb), utc(na)),
     name(subject),
     key.spki,
-    ...ext,
+    ...ext_,
   );
   const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash }, issuerKey.pair.privateKey, tbs));
   return seq(tbs, seq(sigOid), tlv(0x03, u8(0), rawToDerSig(raw)));
@@ -85,8 +113,8 @@ export async function makeAppleTestCa() {
   const rootKey = await newKey("P-384");
   const interKey = await newKey("P-384");
   const leafKey = await newKey("P-256");
-  const rootDer = await cert("Test Root CA - G3", rootKey, "Test Root CA - G3", rootKey, null, past, future);
-  const interDer = await cert("Test WWDR G6", interKey, "Test Root CA - G3", rootKey, OID_INTER, past, future);
+  const rootDer = await cert("Test Root CA - G3", rootKey, "Test Root CA - G3", rootKey, null, past, future, { ca: true });
+  const interDer = await cert("Test WWDR G6", interKey, "Test Root CA - G3", rootKey, OID_INTER, past, future, { ca: true });
   const leafDer = await cert("Test Prod ECC Mac App Store", leafKey, "Test WWDR G6", interKey, OID_LEAF, past, future);
   const rootFp = await sha256Hex(rootDer);
   const x5c = [b64(leafDer), b64(interDer), b64(rootDer)];

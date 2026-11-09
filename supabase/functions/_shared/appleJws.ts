@@ -1,7 +1,7 @@
 /**
  * App Store signed-data (JWS) verification — shared by the Worker
  * (`worker/src/billing/appleJws.ts` re-exports this file) and the Supabase
- * edge functions (`apple-iap`). Zero imports, WebCrypto only, so Deno,
+ * edge functions (`apple-iap`, `apple-webhook`). Zero imports, WebCrypto only, so Deno,
  * workerd and Node all run the identical code.
  *
  * App Store Server Notifications V2 arrive as `{ signedPayload }`, an ES256
@@ -14,15 +14,18 @@
  *   1. the last cert in `x5c` IS Apple Root CA - G3 (SHA-256 pinned),
  *   2. each cert is signed by the next one up (ECDSA, P-256/P-384),
  *   3. each cert is inside its validity window at the payload's signedDate,
- *   4. the leaf carries Apple's receipt-signing marker OID and the
- *      intermediate carries Apple's WWDR intermediate marker OID,
- *   5. the JWS signature verifies under the leaf's key.
+ *   4. each cert's issuer name is the next one's subject name,
+ *   5. the extensions are parsed (DER walk, extnID matched exactly — never a
+ *      byte search): the leaf carries Apple's receipt-signing marker OID and
+ *      is NOT a CA (basicConstraints absent or cA=FALSE); the intermediate
+ *      carries Apple's WWDR marker OID and, like the root, is cA=TRUE,
+ *   6. the JWS signature verifies under the leaf's key.
  *
  * StoreKit 2's `Transaction`/`VerificationResult.jwsRepresentation` is the
  * same shape, so the in-app purchase confirm (`apple-iap`) verifies with it too.
  *
- * NOTE: the Supabase `apple-webhook` still only base64-decodes notifications
- * (plus an optional URL secret). The Worker verifies them with this file.
+ * App Store Server Notifications are verified with it on both runtimes: the
+ * Worker's webhook and the Supabase `apple-webhook` (`appleWebhook.ts`).
  */
 
 /** SHA-256 of Apple Root CA - G3 (https://www.apple.com/certificateauthority/AppleRootCA-G3.cer). */
@@ -33,7 +36,10 @@ export const APPLE_ROOT_CA_G3_SHA256 =
 const OID_APPLE_LEAF = new Uint8Array([0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x06, 0x0b, 0x01]);
 /** 1.2.840.113635.100.6.2.1 — Apple WWDR intermediate. */
 const OID_APPLE_INTERMEDIATE = new Uint8Array([0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x06, 0x02, 0x01]);
+/** 2.5.29.19 — basicConstraints. */
+const OID_BASIC_CONSTRAINTS = new Uint8Array([0x06, 0x03, 0x55, 0x1d, 0x13]);
 
+const OID_EC_PUBLIC_KEY = new Uint8Array([0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]);
 const OID_P256 = new Uint8Array([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07]);
 const OID_P384 = new Uint8Array([0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22]);
 const OID_ECDSA_SHA256 = new Uint8Array([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]);
@@ -94,12 +100,20 @@ function slice(bytes: Uint8Array, t: Tlv, contentOnly = false): Uint8Array {
   return bytes.slice(contentOnly ? t.contentStart : t.start, t.end);
 }
 
-function contains(hay: Uint8Array, needle: Uint8Array): boolean {
-  outer: for (let i = 0; i + needle.length <= hay.length; i++) {
-    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
-    return true;
-  }
-  return false;
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Key for an OID TLV (tag + length + body), for exact matching. */
+function oidKey(bytes: Uint8Array, t: Tlv): string {
+  if (t.tag !== 0x06) throw new AppleJwsError("expected an OID");
+  return Array.from(slice(bytes, t), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function keyOf(oid: Uint8Array): string {
+  return Array.from(oid, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function parseTime(bytes: Uint8Array, t: Tlv): Date {
@@ -125,6 +139,56 @@ export interface ParsedCert {
   curve: "P-256" | "P-384";
   notBefore: Date;
   notAfter: Date;
+  /** DER of the issuer / subject Name, compared byte for byte along the chain. */
+  issuer: Uint8Array;
+  subject: Uint8Array;
+  /** extnID (hex of the OID TLV) → extnValue's contents. Parsed, never searched. */
+  extensions: Map<string, Uint8Array>;
+  /** basicConstraints cA. `null` when the extension is absent. */
+  isCa: boolean | null;
+}
+
+/** AlgorithmIdentifier / SPKI algorithm: the first child must BE `oid`. */
+function firstOidIs(bytes: Uint8Array, seqT: Tlv, oid: Uint8Array): boolean {
+  if (seqT.tag !== 0x30) return false;
+  const first = children(bytes, seqT)[0];
+  return Boolean(first && first.tag === 0x06 && sameBytes(slice(bytes, first), oid));
+}
+
+/**
+ * `[3] EXPLICIT Extensions` → extnID → extnValue contents. Each Extension is
+ * `SEQUENCE { extnID OID, critical BOOLEAN DEFAULT FALSE, extnValue OCTET STRING }`;
+ * a repeated extnID is malformed (RFC 5280 §4.2) and refused.
+ */
+function parseExtensions(bytes: Uint8Array, wrapper: Tlv | undefined): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  if (!wrapper) return out;
+  const [list, ...rest] = children(bytes, wrapper);
+  if (!list || rest.length || list.tag !== 0x30) throw new AppleJwsError("bad extensions");
+  for (const ext of children(bytes, list)) {
+    if (ext.tag !== 0x30) throw new AppleJwsError("bad extension");
+    const parts = children(bytes, ext);
+    const id = parts[0];
+    let idx = 1;
+    if (parts[idx]?.tag === 0x01) idx++; // critical
+    const value = parts[idx];
+    if (!id || !value || value.tag !== 0x04 || parts.length !== idx + 1) throw new AppleJwsError("bad extension");
+    const key = oidKey(bytes, id);
+    if (out.has(key)) throw new AppleJwsError("duplicate extension");
+    out.set(key, slice(bytes, value, true));
+  }
+  return out;
+}
+
+/** basicConstraints extnValue: `SEQUENCE { cA BOOLEAN DEFAULT FALSE, pathLen INTEGER OPTIONAL }`. */
+function basicConstraintsCa(value: Uint8Array): boolean {
+  const bc = readTlv(value, 0);
+  if (bc.tag !== 0x30 || bc.end !== value.length) throw new AppleJwsError("bad basicConstraints");
+  const first = children(value, bc)[0];
+  if (!first || first.tag !== 0x01) return false;
+  const v = slice(value, first, true);
+  if (v.length !== 1) throw new AppleJwsError("bad basicConstraints");
+  return v[0] !== 0;
 }
 
 export function parseCertificate(der: Uint8Array): ParsedCert {
@@ -132,8 +196,11 @@ export function parseCertificate(der: Uint8Array): ParsedCert {
   if (cert.tag !== 0x30 || cert.end !== der.length) throw new AppleJwsError("not a certificate");
   const [tbsT, algT, sigT] = children(der, cert);
   if (!tbsT || !algT || !sigT || sigT.tag !== 0x03) throw new AppleJwsError("bad certificate");
-  const alg = slice(der, algT);
-  const sigAlg = contains(alg, OID_ECDSA_SHA256) ? "SHA-256" : contains(alg, OID_ECDSA_SHA384) ? "SHA-384" : null;
+  const sigAlg = firstOidIs(der, algT, OID_ECDSA_SHA256)
+    ? "SHA-256"
+    : firstOidIs(der, algT, OID_ECDSA_SHA384)
+      ? "SHA-384"
+      : null;
   if (!sigAlg) throw new AppleJwsError("unsupported certificate signature algorithm");
   const sigBits = slice(der, sigT, true);
   if (sigBits[0] !== 0) throw new AppleJwsError("bad signature bit string");
@@ -143,26 +210,49 @@ export function parseCertificate(der: Uint8Array): ParsedCert {
   if (fields[i]?.tag === 0xa0) i++; // [0] version
   i++; // serial
   i++; // signature algorithm
-  i++; // issuer
+  const issuerT = fields[i++];
   const validity = fields[i++];
-  i++; // subject
+  const subjectT = fields[i++];
   const spkiT = fields[i++];
-  if (!validity || !spkiT || validity.tag !== 0x30 || spkiT.tag !== 0x30) throw new AppleJwsError("bad tbsCertificate");
+  if (!issuerT || !validity || !subjectT || !spkiT || issuerT.tag !== 0x30 || validity.tag !== 0x30 ||
+      subjectT.tag !== 0x30 || spkiT.tag !== 0x30) {
+    throw new AppleJwsError("bad tbsCertificate");
+  }
+  // [1] issuerUniqueID, [2] subjectUniqueID (both obsolete), then [3] extensions — nothing after.
+  while (fields[i]?.tag === 0x81 || fields[i]?.tag === 0xa1 || fields[i]?.tag === 0x82 || fields[i]?.tag === 0xa2) i++;
+  const extT = fields[i]?.tag === 0xa3 ? fields[i++] : undefined;
+  if (i !== fields.length) throw new AppleJwsError("bad tbsCertificate");
+
   const [nb, na] = children(der, validity);
   if (!nb || !na) throw new AppleJwsError("bad validity");
-  const spki = slice(der, spkiT);
-  const curve = contains(spki, OID_P256) ? "P-256" : contains(spki, OID_P384) ? "P-384" : null;
+  const [spkiAlg] = children(der, spkiT);
+  if (!spkiAlg || !firstOidIs(der, spkiAlg, OID_EC_PUBLIC_KEY)) throw new AppleJwsError("unsupported certificate key");
+  const curveT = children(der, spkiAlg)[1];
+  const curveOid = curveT ? slice(der, curveT) : new Uint8Array();
+  const curve = sameBytes(curveOid, OID_P256) ? "P-256" : sameBytes(curveOid, OID_P384) ? "P-384" : null;
   if (!curve) throw new AppleJwsError("unsupported certificate key");
+
+  const extensions = parseExtensions(der, extT);
+  const bc = extensions.get(keyOf(OID_BASIC_CONSTRAINTS));
   return {
     der,
     tbs: slice(der, tbsT),
     sigAlg,
     signature: sigBits.slice(1),
-    spki,
+    spki: slice(der, spkiT),
     curve,
     notBefore: parseTime(der, nb),
     notAfter: parseTime(der, na),
+    issuer: slice(der, issuerT),
+    subject: slice(der, subjectT),
+    extensions,
+    isCa: bc ? basicConstraintsCa(bc) : null,
   };
+}
+
+/** Does the cert carry `oid` as an extnID? Exact, parsed — bytes elsewhere don't count. */
+export function hasExtension(cert: ParsedCert, oid: Uint8Array): boolean {
+  return cert.extensions.has(keyOf(oid));
 }
 
 /** DER `SEQUENCE { INTEGER r, INTEGER s }` → raw `r || s` (what WebCrypto verifies). */
@@ -261,8 +351,14 @@ export async function verifyAppleJws(
   for (const c of certs) {
     if (at < c.notBefore || at > c.notAfter) throw new AppleJwsError("certificate outside its validity window");
   }
-  if (!contains(leaf.tbs, OID_APPLE_LEAF)) throw new AppleJwsError("leaf is not an App Store signing certificate");
-  if (!contains(intermediate.tbs, OID_APPLE_INTERMEDIATE)) throw new AppleJwsError("intermediate is not Apple WWDR");
+  if (!sameBytes(leaf.issuer, intermediate.subject) || !sameBytes(intermediate.issuer, root.subject)) {
+    throw new AppleJwsError("x5c names do not chain");
+  }
+  if (!hasExtension(leaf, OID_APPLE_LEAF)) throw new AppleJwsError("leaf is not an App Store signing certificate");
+  if (leaf.isCa === true) throw new AppleJwsError("leaf must not be a CA");
+  if (!hasExtension(intermediate, OID_APPLE_INTERMEDIATE)) throw new AppleJwsError("intermediate is not Apple WWDR");
+  if (intermediate.isCa !== true) throw new AppleJwsError("intermediate is not a CA");
+  if (root.isCa !== true) throw new AppleJwsError("root is not a CA");
   if (!(await signedBy(intermediate, root))) throw new AppleJwsError("intermediate not signed by root");
   if (!(await signedBy(leaf, intermediate))) throw new AppleJwsError("leaf not signed by intermediate");
   if (leaf.curve !== "P-256") throw new AppleJwsError("leaf key must be P-256 for ES256");
