@@ -6,7 +6,7 @@ import { DeleteAccount } from "../src/components/account/DeleteAccount";
 import {
   ACCOUNT_DELETE_CONFIRM,
   APPLE_DELETE_NOTICE,
-  STRIPE_DELETE_BLOCK_MESSAGE,
+  STRIPE_DELETE_AUTO_CANCEL_NOTICE,
 } from "../src/lib/account";
 
 vi.mock("../src/lib/account", async () => {
@@ -49,9 +49,10 @@ describe("DeleteAccount two-step", () => {
     expect(screen.queryByText(/Stripe/i)).toBeNull();
   });
 
-  it("tells Stripe subscribers to cancel in Billing first", async () => {
+  it("on the Supabase path (flag off), tells Stripe subscribers we cancel it for them", async () => {
     await openPanel("stripe");
-    expect(screen.getByText(STRIPE_DELETE_BLOCK_MESSAGE)).toBeTruthy();
+    expect(screen.getByText(STRIPE_DELETE_AUTO_CANCEL_NOTICE)).toBeTruthy();
+    expect(screen.queryByText(/first, then delete/i)).toBeNull();
     expect(screen.queryByText(/Apple Account settings/i)).toBeNull();
   });
 });

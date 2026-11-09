@@ -1,6 +1,6 @@
 {
   "productName": "Nuvo",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "identifier": "com.nuvo.app",
   "build": {
     "frontendDist": "../dist",

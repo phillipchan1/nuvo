@@ -4,11 +4,13 @@ import { TextInput } from "../form";
 import {
   ACCOUNT_DELETE_CONFIRM,
   APPLE_DELETE_NOTICE,
-  STRIPE_DELETE_BLOCK_MESSAGE,
   isAccountDeleteConfirm,
   requestAccountDeletion,
   signOutAfterDeletion,
+  stripeDeleteCopy,
 } from "../../lib/account";
+import { workersEnabled } from "../../lib/backend";
+import { IAP_ONLY } from "../../lib/billingRail";
 import type { PlanSource } from "../../lib/subscription";
 
 /** Two-step wipe. Lives on Settings → Account and on the locked screen —
@@ -74,7 +76,9 @@ export function DeleteAccount({
           able to sign back in.
         </p>
         {planSource === "stripe" && (
-          <p className="mt-2 text-caption leading-snug text-muted">{STRIPE_DELETE_BLOCK_MESSAGE}</p>
+          <p className="mt-2 text-caption leading-snug text-muted">
+            {stripeDeleteCopy({ workers: workersEnabled, iapOnly: IAP_ONLY })}
+          </p>
         )}
         {planSource === "apple" && (
           <p className="mt-2 text-caption leading-snug text-muted">{APPLE_DELETE_NOTICE}</p>

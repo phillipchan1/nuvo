@@ -9,8 +9,11 @@ import { ACCOUNT_DELETE_CONFIRM } from "../../supabase/functions/_shared/account
 export {
   ACCOUNT_DELETE_CONFIRM,
   APPLE_DELETE_NOTICE,
+  STRIPE_DELETE_AUTO_CANCEL_NOTICE,
   STRIPE_DELETE_BLOCK_MESSAGE,
+  STRIPE_DELETE_BLOCK_MESSAGE_IOS,
   isAccountDeleteConfirm,
+  stripeDeleteCopy,
 } from "../../supabase/functions/_shared/accountDeletion.ts";
 
 export async function requestAccountDeletion(): Promise<void> {
