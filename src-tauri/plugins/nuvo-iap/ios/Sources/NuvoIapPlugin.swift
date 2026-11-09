@@ -25,6 +25,7 @@ class ProductIdsArgs: Decodable {
 
 class ProductIdArgs: Decodable {
     let productId: String
+    let appAccountToken: String?
 }
 
 struct IapProductPayload: Encodable {
@@ -106,7 +107,11 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate {
                     invoke.reject("Unknown App Store product")
                     return
                 }
-                switch try await product.purchase() {
+                guard let token = args.appAccountToken, let account = UUID(uuidString: token) else {
+                    invoke.reject("Sign in before buying from the App Store")
+                    return
+                }
+                switch try await product.purchase(options: [.appAccountToken(account)]) {
                 case .success(let verification):
                     guard case .verified(let transaction) = verification else {
                         invoke.reject("The App Store couldn’t verify that purchase")
