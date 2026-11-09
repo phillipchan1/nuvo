@@ -6806,7 +6806,7 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
-**D-184 · 2026-11-09 · App Store data is trusted only when Apple signed it, and a sandbox
+**D-185 · 2026-11-09 · App Store data is trusted only when Apple signed it, and a sandbox
 purchase is entitled only until its verified period end.** *(Extends D-118; mechanism in
 [`billing-setup.md`](../billing-setup.md) — "The `apple-iap` confirm", "Sandbox entitlement",
 "Known limits", "The `apple-webhook`". QA2's notes: `/workspace/qa/nuvo136.md`.)*

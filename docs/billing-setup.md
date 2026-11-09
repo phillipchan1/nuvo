@@ -235,7 +235,7 @@ supabase secrets set \
 | `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build — **CI must set them** | Same Product ID strings baked into the binary so StoreKit can be queried offline. Plain values, **not** GitHub secrets: they are public identifiers. |
 | `APPLE_BUNDLE_ID` | Supabase **and** Worker | Must match the transaction's `bundleId`: `day.nuvo.app` (iOS, `src-tauri/tauri.ios.conf.json`). `com.nuvo.app` is the macOS app, which makes no App Store purchases — not a mismatch, and never this value. |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
-| `APPLE_NOTIFICATION_SECRET` | Supabase (set on prod 2026-11-09, D-184) **and** Worker | Query secret on the App Store Server Notifications URL, checked **first** (401 on mismatch). An extra layer on top of the JWS verification, not a replacement for it. |
+| `APPLE_NOTIFICATION_SECRET` | Supabase (set on prod 2026-11-09, D-185) **and** Worker | Query secret on the App Store Server Notifications URL, checked **first** (401 on mismatch). An extra layer on top of the JWS verification, not a replacement for it. |
 | `APPLE_IAP_KEY_ID` / `APPLE_IAP_ISSUER_ID` / `APPLE_IAP_PRIVATE_KEY` | Supabase secrets **and** Worker secrets | App Store Connect → Users and Access → Integrations → **In-App Purchase** key (`.p8` PEM; literal `\n` is fine). Only used to verify confirms from iOS **1.1** binaries, which send no JWS. All three or none — unset, a 1.1 confirm gets a retriable 503 (fail closed). |
 | `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | Supabase | Unchanged. Web only. |
 
@@ -270,7 +270,7 @@ Both runtimes run one decision, `confirmAppleTransaction`
    whose later EXPIRED cancelled them (QA2 #136 S2). A lapsed Stripe row may
    be taken over.
 3. **Sandbox is accepted** for any account (App Review and TestFlight buy
-   with sandbox receipts against production; no allowlist — D-184 ruling (a))
+   with sandbox receipts against production; no allowlist — D-185 ruling (a))
    and recorded as `apple_environment`. **A sandbox row is entitled only
    until its `current_period_end`** (ruling (b), below).
 4. Any verification error — bad chain, wrong root, bad signature, Apple
