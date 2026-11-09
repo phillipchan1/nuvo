@@ -16,7 +16,9 @@ export default function ReconnectBanner({
   /** Open Settings → Calendars, where non-OAuth providers (ICS/iCloud) reconnect. */
   onManualReconnect?: () => void;
 }) {
-  const broken = accounts.filter((a) => a.needs_reconnect);
+  // Microsoft 365 is no longer offered, so there is nothing to reconnect it to;
+  // a leftover account stays disconnectable in Settings → Calendars.
+  const broken = accounts.filter((a) => a.needs_reconnect && a.provider !== "m365");
   if (broken.length === 0) return null;
 
   const reconnect = async (a: CalendarAccount) => {
@@ -29,8 +31,7 @@ export default function ReconnectBanner({
     const token = data.session?.access_token;
     if (!token) return;
     const base = import.meta.env.VITE_SUPABASE_URL;
-    const fn = a.provider === "google" ? "google-oauth" : "m365-oauth";
-    window.location.href = `${base}/functions/v1/${fn}?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
+    window.location.href = `${base}/functions/v1/google-oauth?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
   };
 
   return (

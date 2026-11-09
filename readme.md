@@ -1,6 +1,6 @@
 # Nuvo
 
-A subscription daily planning app: GTD inbox + task list + Google/M365 calendars on one
+A subscription daily planning app: GTD inbox + task list + Google/iCloud/ICS calendars on one
 planning surface with drag-and-drop time blocking. Phase 1 of LifeOS — the daily driver
 that replaces Akiflow.
 
@@ -55,8 +55,8 @@ supabase/functions/         edge functions (all server-side logic)
   google-events/            write-back for real Google events (create/move/resize/retitle,
                             invite, RSVP, delete, and Google Meet links)
   task-mirror/              scheduled task → "Nuvo" Google calendar reconciler
-  m365-oauth/               Microsoft identity platform OAuth
-  m365-sync/                Graph calendarView delta polling (read-only)
+  m365-oauth/               Microsoft 365 OAuth — removed (D-184); 503 m365_disabled without MS_*
+  m365-sync/                Graph delta polling — removed (D-184); skips without MS_*
   icloud-connect/           iCloud CalDAV connect (Apple ID + app-specific password)
   icloud-sync/              iCloud CalDAV read sync (per-calendar calendar-query)
   icloud-events/            iCloud CalDAV write-back (create/move/resize/delete)
@@ -96,7 +96,6 @@ names its own via the first-run picker (D-026 in
 ```sh
 supabase secrets set \
   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
-  MS_CLIENT_ID=... MS_CLIENT_SECRET=... \
   APP_URL=https://your-app-host \
   OPENAI_API_KEY=sk-... \
   OPENAI_MODEL=gpt-4.1-mini
@@ -110,9 +109,8 @@ For local function dev: `supabase functions serve agent --env-file .env.local`.
   `https://YOUR_REF.supabase.co/functions/v1/google-oauth`, Calendar API enabled.
   Push notifications require the domain to be verifiable; if `events.watch` fails the
   app automatically falls back to 5-minute polling (check `sync_log`).
-- **Microsoft Entra admin center:** app registration (personal + work accounts),
-  redirect URI `https://YOUR_REF.supabase.co/functions/v1/m365-oauth`, delegated
-  permissions `Calendars.Read`, `User.Read`, `offline_access`.
+- **Microsoft 365:** removed (D-184) — no Entra app registration needed. `MS_*` unset
+  means the feature is off; existing m365 rows are kept as read-only history.
 - **Apple Calendar (iCloud):** no cloud console and no app secret to register —
   Apple has no OAuth for calendars. Each user connects with their **Apple ID + an
   app-specific password** (Settings → Calendars → Connect Apple Calendar walks

@@ -90,7 +90,7 @@ const INVENTORY = [
   {
     group: 'Your calendars',
     items: [
-      'Google, Microsoft 365, iCloud, ICS',
+      'Google, iCloud, ICS',
       'Two-way sync with Google',
       'Meetings and your work, one grid',
       'Hide what you don’t plan around',
@@ -419,7 +419,7 @@ export default function Home() {
               block. One row, one grid, beside the meetings you can’t move.
             </p>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Work on Google. Family on Apple. Corp on Microsoft. The youth-group ICS feed.
+              Work on Google. Family on Apple. The youth-group ICS feed.
               Nuvo reads all of them and plans into what’s actually open.
             </p>
           </div>

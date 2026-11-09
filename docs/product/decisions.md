@@ -85,7 +85,7 @@ the iOS PWA. *Status: standing — Principle 15. Extended by D-099 (native iOS s
 **D-015 · Calendar providers by capability, not parity.** Google two-way + mirror · M365
 read-only (striped, dashed, not draggable) · iCloud two-way over CalDAV with an
 app-specific password in Vault · ICS read. → We ship what each API honestly supports and
-*show* the difference rather than faking parity. *Status: standing.*
+*show* the difference rather than faking parity. *Status: standing — M365 since removed (D-184).*
 
 **D-016 · All model/API keys live in Supabase secrets, never the frontend.** The agent edge
 function is the only path to the model. *Status: standing — security-load-bearing.*
@@ -6837,6 +6837,18 @@ so a sitting's hour looked free. `slotsAsBusy` (`lib/compose.ts`) now feeds ever
 into the draft, its alternatives and **Find time**. That includes standing slots: work that
 belongs in one is routed in first, and nothing else lands on top. Mid-week repair already did
 this. Guarded in `tests/plan-v2.test.ts`.
+
+**D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
+ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
+Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.
+Nothing offers to connect or reconnect M365 any more (Settings, the reconnect banner,
+marketing, the agent prompt). Missing `MS_CLIENT_ID` / `MS_CLIENT_SECRET` now means *feature
+off*: `m365-oauth` answers 503 `m365_disabled` (Worker and edge), and `m365-sync`, the
+dispatcher, the queue and the manual refresh skip m365 accounts without touching or logging
+them. Kept on purpose: the `m365` provider enum, existing `calendar_accounts` /
+`external_events` rows and how they render (a leftover account can still be disconnected),
+the Graph code, the old migrations and the edge-function folders, so this reverses by setting
+the two secrets and restoring the buttons. *Status: standing.*
 
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*

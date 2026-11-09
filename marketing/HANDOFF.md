@@ -25,7 +25,7 @@ Read before writing copy:
 - Single-user daily planner: GTD-style inbox + tasks + calendars on one planning surface
 - Phase 1 of LifeOS; daily driver meant to replace Akiflow
 - Core model: a scheduled task **is** a time block (one `tasks` row — no separate event entity for tasks)
-- Calendars: Google (two-way + “Nuvo” mirror), Microsoft 365 (read-only), Apple/iCloud (two-way CalDAV), ICS
+- Calendars: Google (two-way + “Nuvo” mirror), Apple/iCloud (two-way CalDAV), ICS
 - Drag-and-drop time blocking; free-text capture (`parseCapture`); Nuvo assistant proposes, human promotes toward the calendar
 - Domains → Initiatives → Projects (vertical / conscience) meet Day · Week (execution) via rituals (Sunday compose, Summit, Blueprint, Sunrise/Sundown)
 - Clients: Tauri macOS app + installable iOS PWA from the same SPA

@@ -33,6 +33,7 @@ import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
 import { runIcloudContacts, runIcloudSync } from "./calendar/icloud.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
 import { runM365Sync } from "./calendar/m365.ts";
+import { m365Enabled } from "./lib/ms.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
@@ -184,6 +185,8 @@ async function runReminderPrune(sql: Sql): Promise<{ deleted: number; users: num
 
 const DUE_BATCH = 100;
 
+// M365 off (no MS_*): its skip never moves next_sync_at, so leaving m365 in
+// would re-enqueue the same rows every minute ahead of real work.
 export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<number> {
   const queue = env.CALENDAR_SYNC_QUEUE;
   if (!queue) return 0;
@@ -192,6 +195,7 @@ export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<nu
     FROM calendar_accounts
     WHERE NOT needs_reconnect
       AND (next_sync_at IS NULL OR next_sync_at <= now())
+      AND (${m365Enabled(env)} OR provider <> 'm365')
     ORDER BY next_sync_at ASC NULLS FIRST
     LIMIT ${DUE_BATCH}
   `) as { id: string; user_id: string; provider: string }[];

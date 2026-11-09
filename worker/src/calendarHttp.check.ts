@@ -178,6 +178,38 @@ const cronHttp = await call(
 );
 ok(cronHttp.status === 200 && typeof cronHttp.body === "object" && cronHttp.body.skipped === true, "handleCron m365-sync before flip skips");
 
+// M365 removed: no MS_* secrets = feature off. Boot still serves, oauth is a
+// stable 503 `m365_disabled` (never 500), and sync skips without touching rows.
+const noMs: Env = { ...env, MS_CLIENT_ID: undefined, MS_CLIENT_SECRET: undefined };
+for (const [label, path, init] of [
+  ["start (signed in)", "/functions/v1/m365-oauth?action=start&token=user-a", { method: "GET" }],
+  ["start (signed out)", "/functions/v1/m365-oauth?action=start", { method: "GET" }],
+  ["callback", "/functions/v1/m365-oauth?code=c&state=s", { method: "GET" }],
+  ["api alias", "/api/m365-oauth?action=start&token=user-a", { method: "GET" }],
+] as const) {
+  const r = await call(path, init, noMs);
+  ok(r.status === 503, `m365-oauth ${label} without MS_*: HTTP ${r.status}`);
+  ok(typeof r.body === "object" && r.body.error === "m365_disabled", `m365-oauth ${label} without MS_*: m365_disabled`);
+}
+const syncOff = await call(
+  "/functions/v1/m365-sync",
+  { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` }, body: JSON.stringify({ accountId: M365_A }) },
+  noMs,
+);
+ok(
+  syncOff.status === 200 && typeof syncOff.body === "object" && syncOff.body.skipped === true && syncOff.body.reason === "m365_disabled",
+  `m365-sync cron bearer without MS_*: skipped (HTTP ${syncOff.status})`,
+);
+const userSyncOff = await call("/functions/v1/m365-sync", { method: "POST", ...auth("a"), body: JSON.stringify({ accountId: M365_A }) }, noMs);
+ok(userSyncOff.status === 200 && typeof userSyncOff.body === "object" && userSyncOff.body.ok === true, "m365-sync as owner without MS_*: 200 ok");
+const cronOff = await call("/api/cron/m365-sync", { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } }, noMs);
+ok(cronOff.status === 200, `handleCron m365-sync without MS_*: HTTP ${cronOff.status}`);
+const m365Row = await db.query<{ sync_failures: number; needs_reconnect: boolean }>(
+  "SELECT sync_failures, needs_reconnect FROM calendar_accounts WHERE id = $1",
+  [M365_A],
+);
+ok(Number(m365Row.rows[0]?.sync_failures) === 0 && m365Row.rows[0]?.needs_reconnect === false, "m365 row untouched while feature off");
+
 restoreFetch();
 await db.close();
 
