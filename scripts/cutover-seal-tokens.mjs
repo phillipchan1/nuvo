@@ -9,6 +9,7 @@
  */
 import postgres from "postgres";
 import { parseTokenKeyring, sealToken, sealedColumnValues } from "../worker/src/secrets.ts";
+import { SOURCE_TOKENLESS_APPLE_SQL, TARGET_UNSEALED_APPLE_SQL, tokenlessParity } from "./cutover-token-parity.mjs";
 
 const SOURCE = (process.env.SOURCE_DATABASE_URL || "").trim();
 const TARGET = (process.env.RESTORE_DATABASE_URL || process.env.TARGET_DATABASE_URL || "").trim();
@@ -155,6 +156,17 @@ try {
     console.log(`${table}: source=${n.source} encrypted=${n.encrypted} mismatches=${n.mismatches}`);
   }
   if (mismatches) die("token copy mismatches — abort");
+
+  // Rows with no Vault pointer were skipped above. They must arrive in Neon
+  // unsealed, one for one — counts only.
+  const tokenlessSource = await source.unsafe(SOURCE_TOKENLESS_APPLE_SQL);
+  const unsealedTarget = await target.unsafe(TARGET_UNSEALED_APPLE_SQL);
+  const parity = tokenlessParity({
+    source: tokenlessSource[0]?.n ?? 0,
+    target: unsealedTarget[0]?.n ?? 0,
+  });
+  console.log(parity.line);
+  if (!parity.ok) die("apple_identities token-less parity mismatch — abort");
 
   // Plaintext access_token is copied from Supabase. Seal it (same AAD as
   // the live Worker), then NULL the column. Counts only — never print values.
