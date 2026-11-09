@@ -15,14 +15,28 @@
  * anything else (omitted, non-OK, timeout, offline) → Supabase, unless this
  * device already saw the flip (`CUTOVER_FLIP_STORAGE_KEY`), which is sticky so
  * a relaunch during a network blip doesn't fall back onto the old backend.
+ *
+ * Flip / unflip takes effect on the next cold start only; an already-running
+ * session keeps its backend for the whole session. Sticky
+ * `nuvo.cutover_flipped` records the last known allowlisted flag so the next
+ * launch can flip or roll back even if maintenance is briefly unreachable.
+ *
+ * Downgrade-safe: the only thing this module persists is that key, holding
+ * `"1"` or absent. Builds before it (≤ v1.2.794) never read it.
  */
-import { apiBaseUrl, apiConfigured, setWorkersEnabled, workersEnabled } from "./backend";
+import { apiBaseUrl, apiConfigured, setWorkersEnabled } from "./backend";
 
 export const WRITE_FROZEN_MESSAGE =
   "Nuvo is briefly read-only during a maintenance window. Try again in a few minutes.";
 
 const TTL_MS = 5_000;
-export const LAUNCH_TIMEOUT_MS = 4_000;
+/**
+ * How long launch waits on `/api/maintenance` before falling back. ~3s keeps a
+ * desktop cold start snappy, and the Worker answers maintenance from the local
+ * edge (no database round trip), so a healthy read is far under this.
+ * `BackendGate` caps its loading screen at the same number.
+ */
+export const LAUNCH_TIMEOUT_MS = 3_000;
 export const CUTOVER_FLIP_STORAGE_KEY = "nuvo.cutover_flipped";
 
 type MaintenanceBody = {
@@ -77,15 +91,14 @@ function persistFlip(on: boolean): void {
   }
 }
 
-/** Never point the app at a Worker it has no address for. */
+/**
+ * The launch decision — made once. If `settleLaunchBackend` already gave up on
+ * the probe, a late answer must not switch a session that has started.
+ * Never points the app at a Worker it has no address for.
+ */
 function chooseWorker(on: boolean): void {
+  if (resolved) return;
   setWorkersEnabled(on && apiConfigured());
-}
-
-/** Auth and the sync layer can't switch backends mid-flight — start over on the new one. */
-function requestMidSessionReload(): void {
-  if (typeof window === "undefined" || typeof window.location?.reload !== "function") return;
-  window.location.reload();
 }
 
 export function maintenanceUrl(): string {
@@ -109,6 +122,10 @@ export function launchBackendResolved(): boolean {
   return resolved || !apiConfigured();
 }
 
+function isPlainObject(value: unknown): value is MaintenanceBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function applyBody(body: MaintenanceBody, atLaunch: boolean): void {
   seenArmed = parseMaintenanceFlag(body.cutover_armed) === true || bakedArmed();
   cached = { frozen: parseMaintenanceFlag(body.write_freeze) === true, at: Date.now() };
@@ -117,14 +134,11 @@ function applyBody(body: MaintenanceBody, atLaunch: boolean): void {
   if (flipped === true) persistFlip(true);
   else if (flipped === false) persistFlip(false);
 
-  if (atLaunch) {
-    chooseWorker(flipped ?? readPersistedFlip());
-    return;
-  }
-  // Later polls: explicit false rolls back; omitted stays where it is (sticky);
-  // a flip seen mid-session reloads rather than half-switching auth.
-  if (flipped === false && workersEnabled) chooseWorker(false);
-  else if (flipped === true && !workersEnabled && apiConfigured()) requestMidSessionReload();
+  // The backend is chosen here, at launch, and nowhere else. Later polls only
+  // refresh the freeze cache and the sticky key above — flip / unflip takes
+  // effect on the next cold start, never mid-session (auth and the sync
+  // layer can't switch backends mid-flight).
+  if (atLaunch) chooseWorker(flipped ?? readPersistedFlip());
 }
 
 async function fetchMaintenance(url: string, timeoutMs?: number): Promise<Response> {
@@ -144,21 +158,59 @@ async function fetchMaintenance(url: string, timeoutMs?: number): Promise<Respon
  * freezes writes on its own — `writeFrozen` keeps its fail-open-unless-armed rule.
  */
 export async function resolveLaunchBackend(): Promise<void> {
-  const url = maintenanceUrl();
-  if (!url) {
-    setWorkersEnabled(false);
-    resolved = true;
-    return;
-  }
   try {
+    const url = maintenanceUrl();
+    if (!url) {
+      chooseWorker(false);
+      return;
+    }
+    // Offline: don't spend the timeout on a fetch that can't land.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      chooseWorker(readPersistedFlip());
+      return;
+    }
     const res = await fetchMaintenance(url, LAUNCH_TIMEOUT_MS);
     if (!res.ok) throw new Error(`maintenance ${res.status}`);
-    applyBody((await res.json()) as MaintenanceBody, true);
+    const body: unknown = await res.json();
+    if (!isPlainObject(body)) throw new Error("maintenance body");
+    applyBody(body, true);
   } catch {
-    // Fail-safe: Supabase, unless this device already saw the flip.
+    // Fail-safe (unreachable, timeout, non-JSON, garbage): Supabase, unless
+    // this device already saw the flip.
     chooseWorker(readPersistedFlip());
+  } finally {
+    resolved = true;
   }
+}
+
+/**
+ * Belt-and-suspenders for `BackendGate`: if the probe hasn't decided by the
+ * gate's own cap, decide now (sticky flip or Supabase) and ignore the late
+ * answer — the next launch picks it up.
+ */
+export function settleLaunchBackend(): void {
+  if (resolved) return;
+  chooseWorker(readPersistedFlip());
   resolved = true;
+}
+
+/**
+ * What `BackendGate` awaits: the probe, raced against a hard cap of
+ * `LAUNCH_TIMEOUT_MS` so a hung promise can never leave the loading screen up.
+ * The probe's own abort normally wins first; on the cap the probe keeps
+ * running in the background but can no longer change this session's backend.
+ */
+export async function resolveLaunchBackendCapped(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cap = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, LAUNCH_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([resolveLaunchBackend().catch(() => {}), cap]);
+  } finally {
+    clearTimeout(timer);
+    settleLaunchBackend();
+  }
 }
 
 export async function writeFrozen(): Promise<boolean> {
@@ -170,7 +222,10 @@ export async function writeFrozen(): Promise<boolean> {
   try {
     const res = await fetchMaintenance(url);
     if (!res.ok) return armedFallback ? true : (cached?.frozen ?? false);
-    applyBody((await res.json()) as MaintenanceBody, false);
+    const body: unknown = await res.json();
+    if (!isPlainObject(body)) return armedFallback ? true : (cached?.frozen ?? false);
+    // Mid-session: freeze cache + sticky key only; the backend stays put until relaunch.
+    applyBody(body, false);
     return cached?.frozen ?? false;
   } catch {
     return armedFallback ? true : (cached?.frozen ?? false);
