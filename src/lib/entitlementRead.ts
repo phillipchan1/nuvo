@@ -32,6 +32,7 @@ export interface WorkerEntitlementBody {
   trial_ends_at?: unknown;
   current_period_end?: unknown;
   cancel_at_period_end?: unknown;
+  apple_environment?: unknown;
   referral_code?: unknown;
   referral_uses?: unknown;
   referral_last_use_at?: unknown;
@@ -89,6 +90,8 @@ export function subscriptionFromWorkerBody(
     price_id: null,
     current_period_end: period,
     cancel_at_period_end: body.cancel_at_period_end === true,
+    apple_environment:
+      body.apple_environment === "production" || body.apple_environment === "sandbox" ? body.apple_environment : null,
     referral_code: code,
     referral_uses: uses,
     referral_last_use_at: typeof body.referral_last_use_at === "string" ? body.referral_last_use_at : null,

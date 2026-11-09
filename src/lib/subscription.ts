@@ -21,6 +21,9 @@ export interface Subscription {
   cancel_at_period_end: boolean;
   apple_original_transaction_id?: string | null;
   apple_product_id?: string | null;
+  /** production | sandbox. A sandbox Apple row is entitled only until
+   *  `current_period_end` (`isEntitled`). */
+  apple_environment?: "production" | "sandbox" | null;
   /** Personal share code (Stripe Promotion Code). Null until Billing asks
    *  `referral-code` to mint or attach one. */
   referral_code?: string | null;

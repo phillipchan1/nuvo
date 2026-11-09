@@ -18,11 +18,13 @@
  *     (outer OR nested), environment missing/unknown or disagreeing between
  *     the envelope and the transaction, renewal info for another lineage.
  *   · 400 `wrong_bundle` — a VERIFIED notification for another bundle. Not a
- *     2xx "ignored": the bundle id is known-confusing here (App Store Connect
- *     says `day.nuvo.app`, tauri.conf.json says `com.nuvo.app`), so a mistyped
- *     APPLE_BUNDLE_ID must be loud and leave Apple retrying while it is fixed,
- *     rather than ack every real renewal with no write. A genuinely foreign
- *     bundle only costs Apple a few retries.
+ *     2xx "ignored": a mistyped APPLE_BUNDLE_ID (it must be the iOS id,
+ *     `day.nuvo.app` — `com.nuvo.app` is the macOS app, which makes no App
+ *     Store purchases) must be loud and leave Apple retrying while it is
+ *     fixed, rather than ack every real renewal with no write. A genuinely
+ *     foreign bundle only costs Apple a few retries.
+ *   Every refusal answers a fixed body (`{ error: "rejected" }`, or
+ *   `"unavailable"` for the 503) — the code is logged, never returned.
  *   · 200 `ignored` — verified, ours, but nothing to write: an unmapped type
  *     (TEST, CONSUMPTION_REQUEST, …), no transaction, a product outside the
  *     catalog. No ledger claim either — there is nothing to make idempotent.
@@ -31,15 +33,17 @@
  *     between the read and the write. The claim rolls back with the write
  *     (one transaction, `apple_webhook_apply`), so Apple's retry runs it again.
  *
- * Differences from the Worker twin (`worker/src/billing/handlers.ts`), on
- * purpose: this function matches the row by `originalTransactionId` ONLY
- * (never attaches by `appAccountToken`, never moves a lineage between users),
- * and it refuses a nested JWS that fails verification instead of acking it.
+ * The Worker (`worker/src/billing/handlers.ts`) runs the SAME decision
+ * (`decideAppleNotification`) and differs only in the write: it may attach an
+ * unlinked lineage to the verified `appAccountToken`'s account
+ * (`appleTokenMayAttach`), inside its own `sql.begin`. This function matches
+ * the row by `originalTransactionId` ONLY (never attaches by token, never
+ * moves a lineage between users).
  *
  * Imports only other `_shared` modules.
  */
 import { verifyAppleJws, type AppleJwsOptions } from "./appleJws.ts";
-import type { AppleEnvironment } from "./appleIap.ts";
+import { parseAppAccountToken, type AppleEnvironment, type BillingRuntime } from "./appleIap.ts";
 import {
   appleNotificationToPlan,
   isOurIapProduct,
@@ -73,6 +77,8 @@ export type AppleWebhookDecision =
       notificationType: string;
       originalTransactionId: string;
       environment: AppleEnvironment;
+      /** The VERIFIED transaction's appAccountToken, normalized, or null. Only the Worker reads it. */
+      appAccountToken: string | null;
       write: PlanWrite & { appleOriginalTransactionId: string; appleEnvironment: AppleEnvironment };
     };
 
@@ -192,6 +198,7 @@ export async function decideAppleNotification(body: unknown, cfg: AppleWebhookCo
     notificationType,
     originalTransactionId,
     environment,
+    appAccountToken: parseAppAccountToken(tx.appAccountToken),
     write: {
       plan,
       planSource: "apple",
@@ -254,6 +261,23 @@ export function applyArgs(
   };
 }
 
+/**
+ * What a refused notification answers. Fixed strings only — never the
+ * verifier's message, never which check failed (QA2 #136 S5). The code goes
+ * to the log line, not the caller.
+ */
+export function webhookRejectBody(decision: Extract<AppleWebhookDecision, { kind: "reject" }>): Record<string, unknown> {
+  return { error: decision.status === 503 ? "unavailable" : "rejected" };
+}
+
+/** One alertable single-line JSON per refused notification — codes only, never an id. */
+export function webhookRejectLogLine(
+  decision: Extract<AppleWebhookDecision, { kind: "reject" }>,
+  runtime: BillingRuntime,
+): string {
+  return JSON.stringify({ event: "apple_webhook_verify", outcome: "rejected", code: decision.code, status: decision.status, runtime });
+}
+
 export interface AppleWebhookResponse {
   status: number;
   body: Record<string, unknown>;
@@ -283,8 +307,8 @@ export async function handleAppleNotification(
   const decision = await decideAppleNotification(req.body, cfg);
   if (decision.kind === "reject") {
     // Console only: an unauthenticated (possibly forged) request must cause no DB write at all.
-    console.warn("apple-webhook: refused", decision.code);
-    return { status: decision.status, body: { error: "rejected", code: decision.code } };
+    console.warn(webhookRejectLogLine(decision, "supabase"));
+    return { status: decision.status, body: webhookRejectBody(decision) };
   }
   if (decision.kind === "ignore") return { status: 200, body: { received: true, ignored: true } };
 

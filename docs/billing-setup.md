@@ -233,17 +233,17 @@ supabase secrets set \
 | `NUVO_IAP_MONTHLY` | Supabase | StoreKit Product ID for Apple ID `6804259519`. **Not** the Apple ID, **not** a price. |
 | `NUVO_IAP_ANNUAL` | Supabase | StoreKit Product ID for Apple ID `6804258767`. **Not** the Apple ID, **not** a price. |
 | `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build — **CI must set them** | Same Product ID strings baked into the binary so StoreKit can be queried offline. Plain values, **not** GitHub secrets: they are public identifiers. |
-| `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
+| `APPLE_BUNDLE_ID` | Supabase **and** Worker | Must match the transaction's `bundleId`: `day.nuvo.app` (iOS, `src-tauri/tauri.ios.conf.json`). `com.nuvo.app` is the macOS app, which makes no App Store purchases — not a mismatch, and never this value. |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
-| `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. An extra layer on top of the JWS verification, not a replacement for it. |
+| `APPLE_NOTIFICATION_SECRET` | Supabase (set on prod 2026-11-09, D-184) **and** Worker | Query secret on the App Store Server Notifications URL, checked **first** (401 on mismatch). An extra layer on top of the JWS verification, not a replacement for it. |
 | `APPLE_IAP_KEY_ID` / `APPLE_IAP_ISSUER_ID` / `APPLE_IAP_PRIVATE_KEY` | Supabase secrets **and** Worker secrets | App Store Connect → Users and Access → Integrations → **In-App Purchase** key (`.p8` PEM; literal `\n` is fine). Only used to verify confirms from iOS **1.1** binaries, which send no JWS. All three or none — unset, a 1.1 confirm gets a retriable 503 (fail closed). |
 | `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | Supabase | Unchanged. Web only. |
 
 Do **not** put dollar amounts in these values. Localized prices exist only on
 StoreKit product objects at runtime.
 
-`APPLE_BUNDLE_ID` is now **required** by `apple-iap` (Supabase and Worker)
-and by the Supabase `apple-webhook`: unset, every confirm and every
+`APPLE_BUNDLE_ID` is now **required** by `apple-iap` and `apple-webhook`, on
+both Supabase and the Worker: unset, every confirm and every
 notification is refused (503, so Apple keeps retrying until it is set). It is `day.nuvo.app` — the App Store
 bundle, which is what Apple signs into the transaction.
 
@@ -263,10 +263,49 @@ Both runtimes run one decision, `confirmAppleTransaction`
    appAccountToken ≠ the signed-in user, or a lineage already linked to
    another account. A token-less (1.1) purchase is accepted only on a lineage
    nobody holds yet.
-3. **Sandbox is accepted** (App Review and TestFlight buy with sandbox
-   receipts against production) and recorded as `apple_environment`.
+   **An account paying on Stripe is refused 409 `active_on_other_rail`**
+   (`activeOnStripe`: `plan_source` stripe, or a Stripe subscription id, and
+   `active`/`trialing`). A confirm never flips the rail — that is how a free
+   sandbox purchase used to turn a paying Stripe customer into an Apple row
+   whose later EXPIRED cancelled them (QA2 #136 S2). A lapsed Stripe row may
+   be taken over.
+3. **Sandbox is accepted** for any account (App Review and TestFlight buy
+   with sandbox receipts against production; no allowlist — D-184 ruling (a))
+   and recorded as `apple_environment`. **A sandbox row is entitled only
+   until its `current_period_end`** (ruling (b), below).
 4. Any verification error — bad chain, wrong root, bad signature, Apple
    unreachable — fails closed.
+5. Every refusal logs **one single-line JSON** — `{"event":"apple_iap_verify",
+   "outcome":"rejected","code":"…","status":…,"runtime":"supabase"|"worker"}`
+   (`iapVerifyLogLine`), codes only, never an id. **Alert on repeated
+   `"code":"apple_unreachable"`**: a missing, wrong or revoked `APPLE_IAP_*`
+   key makes every 1.1 confirm one, forever, and the client only ever sees
+   "try again" (QA2 #136 S7).
+
+### Sandbox entitlement ends at the verified period end (ruling (b))
+
+`isEntitled` (`_shared/planRules.ts` — the SPA and the Worker) and its SQL
+twin `public.entitled` (migration `00000000000093_sandbox_entitlement_period.sql`)
+treat a row with `plan_source = 'apple'` **and** `apple_environment =
+'sandbox'` as entitled only while `current_period_end > now()`; a missing
+period end is not entitled. For an Apple row that column is written only
+from a verified transaction (the confirm, the JWS-verified webhook).
+**Production rows and rows with no recorded environment are not held to the
+period end** — notifications don't reliably reach us yet, and a real payer
+must never be cut off by a renewal we didn't hear about. `tests/sandbox-entitlement.test.ts`
+holds the TS rule, the Worker's read and the SQL function to the same cases.
+
+### Known limits (documented, not fixed)
+
+- **S3 — a tokenless (1.1) lineage goes to whoever confirms it first.** A 1.1
+  purchase carries no `appAccountToken`, so an unlinked lineage (e.g. one
+  whose confirm failed before `APPLE_IAP_*` was set) links to the first Nuvo
+  account that confirms its JWS or `transactionId`. Needs that JWS or id;
+  low likelihood. Mitigation: set `APPLE_IAP_*` before deploying `apple-iap`.
+- **S6 — Family Sharing members get 403 on restore.** A family member's
+  transaction carries the purchaser's `appAccountToken`, so their confirm is
+  `account_mismatch`. Fine while Family Sharing is off for `NUVO_IAP_*`;
+  turning it on needs a decision on how members get access.
 
 `apple_status` / `apple_expires_at` stay unwritten on purpose: no webhook
 maintains them, and `entitled()` ORs them in — an `apple-iap`-written
@@ -286,7 +325,8 @@ tested by `tests/apple-webhook-verify.test.ts`):
    claim.
 3. `data.bundleId` and the transaction's `bundleId` must equal
    `APPLE_BUNDLE_ID` → else 400 `wrong_bundle` (a 4xx, not a silent 200, so a
-   mistyped secret is loud and Apple's retries survive the fix).
+   mistyped `APPLE_BUNDLE_ID` — e.g. the macOS id `com.nuvo.app` — is loud
+   and Apple's retries survive the fix).
 4. Sandbox and Production are both accepted. The envelope's, the
    transaction's and the renewal info's environments must agree (else 400),
    and the row records `apple_environment` = `production` | `sandbox`.
@@ -307,7 +347,19 @@ tested by `tests/apple-webhook-verify.test.ts`):
 
 Status codes: 401 secret · 400 unverified / wrong bundle / environment ·
 503 `APPLE_BUNDLE_ID` unset · 200 applied / ignored / duplicate · 500 DB
-error (retriable). Bodies carry a code at most — no ids, no payload.
+error (retriable). Refusal bodies are fixed strings — `{"error":"rejected"}`
+(400) or `{"error":"unavailable"}` (503); the verifier's message and the code
+never reach the caller (QA2 #136 S5). The code goes to one JSON log line,
+`{"event":"apple_webhook_verify","outcome":"rejected","code":"…",…}`.
+`sync_log` is written only after the transaction (never inside it: a failed
+log INSERT would abort the write — S4).
+
+**The Worker's `/api/apple-webhook` runs the same `decideAppleNotification`**
+(same statuses, same bodies). It differs only in the write: inside one
+`sql.begin` it claims the ledger and, for a lineage no row holds yet, may
+attach it to the verified `appAccountToken`'s account — only if that account
+has no Apple lineage and isn't paying on Stripe (`appleTokenMayAttach`).
+Its `sync_log` lines are collected and written after the commit.
 
 ### Functions to deploy
 
@@ -316,7 +368,15 @@ error (retriable). Bodies carry a code at most — no ids, no payload.
 `apple_webhook_apply` for every write; without it every write 500s (Apple
 retries for ~3 days, so nothing is lost if the migration follows quickly,
 but don't rely on it). Set `APPLE_BUNDLE_ID=day.nuvo.app` before the deploy
-too, or every notification answers 503.
+too, or every notification answers 503. Migration
+`00000000000093_sandbox_entitlement_period` (ruling (b)) is independent of
+the functions and can go in the same push; the SPA's and the Worker's
+`isEntitled` enforce the same rule without it.
+
+Full order: (1) secrets — `APPLE_BUNDLE_ID`, `APPLE_IAP_*`,
+`APPLE_NOTIFICATION_SECRET` (set) · (2) `supabase db push` (92, 93) ·
+(3) `supabase functions deploy apple-iap apple-webhook` · (4) Worker: the
+same secrets as wrangler secrets before the flip.
 
 ```bash
 supabase db push   # includes 00000000000092_apple_webhook_apply — Phil's call, not from a PR

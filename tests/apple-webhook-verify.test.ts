@@ -191,12 +191,24 @@ async function notification(o: NoteOpts = {}) {
   return { signedPayload };
 }
 
+/**
+ * The response, plus the refusal `code` read back from the one JSON log line
+ * — the caller never sees it (S5: the body is a fixed string).
+ */
 async function post(body: unknown, opts: { cfg?: AppleWebhookConfig; store?: AppleWebhookStore; secretOk?: boolean } = {}) {
-  return handleAppleNotification(
-    { method: "POST", secretOk: opts.secretOk ?? true, body },
-    opts.cfg ?? cfg(),
-    opts.store ?? pgStore(),
-  );
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const res = await handleAppleNotification(
+      { method: "POST", secretOk: opts.secretOk ?? true, body },
+      opts.cfg ?? cfg(),
+      opts.store ?? pgStore(),
+    );
+    const line = warn.mock.calls.at(-1)?.[0];
+    const code = typeof line === "string" && line.startsWith("{") ? (JSON.parse(line) as { code?: string }).code : undefined;
+    return { ...res, code };
+  } finally {
+    warn.mockRestore();
+  }
 }
 
 async function row(userId = USER) {
@@ -228,7 +240,7 @@ async function expectNoWrite() {
 describe("apple-webhook — verification fails closed", () => {
   it("applies a genuine production notification", async () => {
     const res = await post(await notification());
-    expect(res).toEqual({ status: 200, body: { received: true } });
+    expect(res).toMatchObject({ status: 200, body: { received: true } });
     const r = await row();
     expect(r.status).toBe("active");
     expect(r.plan_source).toBe("apple");
@@ -244,14 +256,15 @@ describe("apple-webhook — verification fails closed", () => {
     for (const signedPayload of [`${h}.${p}.`, `${h}.${p}`, `${b64url(new TextEncoder().encode('{"alg":"none"}'))}.${p}.x`]) {
       const res = await post({ signedPayload });
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: "rejected", code: "unverified" });
+      expect(res.body).toEqual({ error: "rejected" });
+      expect(res.code).toBe("unverified");
     }
     await expectNoWrite();
   });
 
   it("rejects a forged payload: the genuine chain, signed by someone else's key", async () => {
     const res = await post({ signedPayload: await ca.jws({ notificationType: "DID_RENEW", notificationUUID: "u" }, { key: otherCa.leafKey }) });
-    expect(res).toMatchObject({ status: 400, body: { code: "unverified" } });
+    expect(res).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified" });
     await expectNoWrite();
   });
 
@@ -265,31 +278,33 @@ describe("apple-webhook — verification fails closed", () => {
 
   it("rejects a chain that ends in a root other than the pinned one", async () => {
     const res = await post(await notification({ signer: otherCa, txSigner: otherCa }));
-    expect(res).toMatchObject({ status: 400, body: { code: "unverified" } });
+    expect(res).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified" });
     // And under the real Apple G3 pin, the test CA itself is refused.
     const real = await post(await notification(), { cfg: cfg({ jwsOptions: undefined }) });
-    expect(real).toMatchObject({ status: 400, body: { code: "unverified" } });
+    expect(real).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified" });
     await expectNoWrite();
   });
 
   it("rejects a genuine envelope around a badly signed signedTransactionInfo — no write, no claim", async () => {
     const res = await post(await notification({ txSigner: otherCa }));
-    expect(res).toMatchObject({ status: 400, body: { code: "unverified_transaction" } });
+    expect(res).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified_transaction" });
     await expectNoWrite();
 
     const garbage = await notification({ data: { signedTransactionInfo: "not.a.jws" } });
-    expect(await post(garbage)).toMatchObject({ status: 400, body: { code: "unverified_transaction" } });
+    expect(await post(garbage)).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified_transaction" });
     await expectNoWrite();
   });
 
   it("rejects a badly signed signedRenewalInfo, and renewal info for another lineage", async () => {
     expect(await post(await notification({ renewal: {}, renewalSigner: otherCa }))).toMatchObject({
       status: 400,
-      body: { code: "unverified_renewal" },
+      body: { error: "rejected" },
+      code: "unverified_renewal",
     });
     expect(await post(await notification({ renewal: { originalTransactionId: "999" } }))).toMatchObject({
       status: 400,
-      body: { code: "lineage_mismatch" },
+      body: { error: "rejected" },
+      code: "lineage_mismatch",
     });
     await expectNoWrite();
     // A genuine one is fine.
@@ -299,7 +314,7 @@ describe("apple-webhook — verification fails closed", () => {
 
   it("refuses with 401 when the URL secret is configured and wrong, before anything else", async () => {
     const store = pgStore();
-    expect(await post(await notification(), { secretOk: false, store })).toEqual({ status: 401, body: { error: "unauthorized" } });
+    expect(await post(await notification(), { secretOk: false, store })).toMatchObject({ status: 401, body: { error: "unauthorized" } });
     expect(store.applyCalls).toBe(0);
     await expectNoWrite();
   });
@@ -309,7 +324,7 @@ describe("apple-webhook — bundle and environment", () => {
   it("missing APPLE_BUNDLE_ID fails closed with a retriable 503 and no write", async () => {
     const store = pgStore();
     const res = await post(await notification(), { cfg: cfg({ bundleId: null }), store });
-    expect(res).toEqual({ status: 503, body: { error: "rejected", code: "not_configured" } });
+    expect(res).toEqual({ status: 503, body: { error: "unavailable" }, code: "not_configured" });
     expect(store.applyCalls).toBe(0);
     await expectNoWrite();
   });
@@ -317,16 +332,20 @@ describe("apple-webhook — bundle and environment", () => {
   it("a verified notification for another bundle is refused (4xx, so Apple keeps retrying) with no write", async () => {
     expect(await post(await notification({ data: { bundleId: "com.nuvo.app" } }))).toMatchObject({
       status: 400,
-      body: { code: "wrong_bundle" },
+      body: { error: "rejected" },
+      code: "wrong_bundle",
     });
     expect(await post(await notification({ tx: { bundleId: "com.nuvo.app" } }))).toMatchObject({
       status: 400,
-      body: { code: "wrong_bundle" },
+      body: { error: "rejected" },
+      code: "wrong_bundle",
     });
-    // tauri.conf.json's identifier is com.nuvo.app — it is NOT what Apple signs.
+    // com.nuvo.app is the macOS app (tauri.conf.json); iOS is day.nuvo.app (tauri.ios.conf.json).
+    // An APPLE_BUNDLE_ID set to the macOS id refuses every real iOS notification, loudly.
     expect(await post(await notification(), { cfg: cfg({ bundleId: "com.nuvo.app" }) })).toMatchObject({
       status: 400,
-      body: { code: "wrong_bundle" },
+      body: { error: "rejected" },
+      code: "wrong_bundle",
     });
     await expectNoWrite();
   });
@@ -342,15 +361,18 @@ describe("apple-webhook — bundle and environment", () => {
   it("rejects when the envelope and the transaction disagree about the environment", async () => {
     expect(await post(await notification({ data: { environment: "Sandbox" } }))).toMatchObject({
       status: 400,
-      body: { code: "environment_mismatch" },
+      body: { error: "rejected" },
+      code: "environment_mismatch",
     });
     expect(await post(await notification({ renewal: { environment: "Sandbox" } }))).toMatchObject({
       status: 400,
-      body: { code: "environment_mismatch" },
+      body: { error: "rejected" },
+      code: "environment_mismatch",
     });
     expect(await post(await notification({ data: { environment: "Xcode" }, tx: { environment: "Xcode" } }))).toMatchObject({
       status: 400,
-      body: { code: "bad_environment" },
+      body: { error: "rejected" },
+      code: "bad_environment",
     });
     await expectNoWrite();
   });
@@ -372,7 +394,7 @@ describe("apple-webhook — what gets written comes only from verified data", ()
     const [h, , s] = signedTx.split(".");
     const lie = b64url(new TextEncoder().encode(JSON.stringify(tx({ expiresDate: LIE }))));
     const tampered = await post(await notification({ uuid: "second", data: { signedTransactionInfo: `${h}.${lie}.${s}` } }));
-    expect(tampered).toMatchObject({ status: 400, body: { code: "unverified_transaction" } });
+    expect(tampered).toMatchObject({ status: 400, body: { error: "rejected" }, code: "unverified_transaction" });
     expect((await row()).current_period_end?.toISOString()).toBe(new Date(EXPIRES).toISOString());
   });
 
@@ -406,7 +428,7 @@ describe("apple-webhook — what gets written comes only from verified data", ()
       await notification({ tx: null }),
       await notification({ tx: { productId: "SOMEONE_ELSES_PRODUCT" } }),
     ]) {
-      expect(await post(body, { store })).toEqual({ status: 200, body: { received: true, ignored: true } });
+      expect(await post(body, { store })).toMatchObject({ status: 200, body: { received: true, ignored: true } });
     }
     expect(store.applyCalls).toBe(0);
     await expectNoWrite();
@@ -414,7 +436,7 @@ describe("apple-webhook — what gets written comes only from verified data", ()
 
   it("matches by originalTransactionId only: an unlinked lineage writes nothing, even with a token", async () => {
     const res = await post(await notification({ tx: { originalTransactionId: "7777", appAccountToken: OTHER_USER } }));
-    expect(res).toEqual({ status: 200, body: { received: true } });
+    expect(res).toMatchObject({ status: 200, body: { received: true } });
     expect(await row(OTHER_USER)).toMatchObject({ status: "trialing", apple_original_transaction_id: null });
     expect(await row()).toMatchObject({ status: "trialing", apple_environment: null });
   });
@@ -428,12 +450,15 @@ describe("apple-webhook — what gets written comes only from verified data", ()
   it("logs codes only — no ids, no bundle, no payload — and a refusal never reaches sync_log", async () => {
     logs.length = 0;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await post(await notification({ data: { bundleId: "com.example.other" } }));
-    await post(await notification({ txSigner: otherCa }));
+    const store = pgStore();
+    const cfgNow = cfg();
+    await handleAppleNotification({ method: "POST", secretOk: true, body: await notification({ data: { bundleId: "com.example.other" } }) }, cfgNow, store);
+    await handleAppleNotification({ method: "POST", secretOk: true, body: await notification({ txSigner: otherCa }) }, cfgNow, store);
     expect(logs).toEqual([]);
+    // S7: one single-line JSON per refusal, alertable, codes only.
     expect(warn.mock.calls.map((c) => c.join(" "))).toEqual([
-      "apple-webhook: refused wrong_bundle",
-      "apple-webhook: refused unverified_transaction",
+      '{"event":"apple_webhook_verify","outcome":"rejected","code":"wrong_bundle","status":400,"runtime":"supabase"}',
+      '{"event":"apple_webhook_verify","outcome":"rejected","code":"unverified_transaction","status":400,"runtime":"supabase"}',
     ]);
     warn.mockRestore();
     await post(await notification({ tx: { originalTransactionId: "7777" } }));
@@ -442,6 +467,22 @@ describe("apple-webhook — what gets written comes only from verified data", ()
 });
 
 describe("apple-webhook — ledger claim and row write are one transaction", () => {
+  it("S4: a failing sync_log write never rolls back the claim or the write (logs run after the RPC)", async () => {
+    const store = pgStore();
+    store.log = async () => {
+      throw new Error("sync_log down");
+    };
+    // no_row: logged after the RPC committed.
+    const unlinked = await post(await notification({ uuid: "log-1", tx: { originalTransactionId: "7777" } }), { store });
+    expect(unlinked).toMatchObject({ status: 200, body: { received: true } });
+    // applied: the row write stands.
+    expect((await post(await notification({ uuid: "log-2" }), { store })).status).toBe(200);
+    expect((await row()).status).toBe("active");
+    expect(await ledger()).toEqual(["log-1", "log-2"]);
+    // The RPC itself never writes sync_log — nothing a log failure can abort.
+    expect(MIGRATION).not.toMatch(/sync_log/);
+  });
+
   it("a replayed notificationUUID is acked as a duplicate with no second write", async () => {
     const uuid = "replayed-uuid";
     expect(await post(await notification({ uuid }))).toEqual({ status: 200, body: { received: true } });

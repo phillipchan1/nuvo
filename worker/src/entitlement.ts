@@ -28,6 +28,8 @@ export interface SubscriptionColumns {
   plan_source: PlanSource | null;
   current_period_end?: string | null;
   cancel_at_period_end?: boolean;
+  /** `production` | `sandbox` — a sandbox Apple row is entitled only until current_period_end. */
+  apple_environment?: "production" | "sandbox" | null;
   referral_code?: string | null;
   referral_uses?: number;
   referral_last_use_at?: string | null;
@@ -45,6 +47,7 @@ export interface Entitlement {
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  appleEnvironment: "production" | "sandbox" | null;
   referralCode: string | null;
   referralUses: number;
   referralLastUseAt: string | null;
@@ -72,6 +75,7 @@ const PHYSICAL_SELECT = [
   "plan_source",
   "current_period_end",
   "cancel_at_period_end",
+  "apple_environment",
   "referral_code",
   "referral_uses",
   "referral_last_use_at",
@@ -112,6 +116,7 @@ export function entitlementOf(
     trialEndsAt: row?.trial_ends_at ?? null,
     currentPeriodEnd: row?.current_period_end ?? null,
     cancelAtPeriodEnd: row?.cancel_at_period_end === true,
+    appleEnvironment: row?.apple_environment ?? null,
     referralCode: row?.referral_code ?? null,
     referralUses: row?.referral_uses ?? 0,
     referralLastUseAt: row?.referral_last_use_at ?? null,
@@ -134,6 +139,7 @@ function parseSubscriptionRow(value: unknown): SubscriptionColumns | null {
     plan_source: source === "stripe" || source === "apple" ? source : null,
     current_period_end: asIso(row.current_period_end),
     cancel_at_period_end: row.cancel_at_period_end === true,
+    apple_environment: row.apple_environment === "production" || row.apple_environment === "sandbox" ? row.apple_environment : null,
     referral_code: asIso(row.referral_code),
     referral_uses: asCount(row.referral_uses),
     referral_last_use_at: asIso(row.referral_last_use_at),
@@ -191,7 +197,7 @@ export async function fetchSubscriptionFromNeon(sql: Sql, userId: string): Promi
              to_char(trial_ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS trial_ends_at,
              plan_source,
              to_char(current_period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS current_period_end,
-             cancel_at_period_end, referral_code, referral_uses,
+             cancel_at_period_end, apple_environment, referral_code, referral_uses,
              to_char(referral_last_use_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS referral_last_use_at,
              referral_credits_earned,
              to_char(referral_last_credit_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS referral_last_credit_at
@@ -247,6 +253,7 @@ export function entitlementResponseBody(entitlement: Entitlement): Record<string
     trial_ends_at: entitlement.trialEndsAt,
     current_period_end: entitlement.currentPeriodEnd,
     cancel_at_period_end: entitlement.cancelAtPeriodEnd,
+    apple_environment: entitlement.appleEnvironment,
     referral_code: entitlement.referralCode,
     referral_uses: entitlement.referralUses,
     referral_last_use_at: entitlement.referralLastUseAt,

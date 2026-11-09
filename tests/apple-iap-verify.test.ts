@@ -6,13 +6,29 @@ import {
   confirmAppleTransaction,
   evaluateAppleTransaction,
   iapRejectionBody,
+  iapVerifyLogLine,
+  rejectIap,
   type AppleIapDeps,
+  type RailRow,
 } from "../supabase/functions/_shared/appleIap";
 import * as sharedJws from "../supabase/functions/_shared/appleJws";
 import * as workerJws from "../worker/src/billing/appleJws";
 import { appStoreApiCredentialsFrom } from "../supabase/functions/_shared/appStoreServerApi";
 import { planRowPatch } from "../supabase/functions/_shared/planRules";
-import { b64, cert, makeAppleTestCa, newKey, OID_LEAF, past, future, type AppleTestCa } from "./fixtures/appleTestCa";
+import {
+  b64,
+  basicConstraints,
+  cert,
+  ext,
+  makeAppleTestCa,
+  newKey,
+  OID_INTER,
+  OID_LEAF,
+  past,
+  future,
+  u8,
+  type AppleTestCa,
+} from "./fixtures/appleTestCa";
 
 // P0 (QA2 #129 P1): `apple-iap` used to write an active Apple plan from
 // whatever productId / originalTransactionId / expiresDate the client sent.
@@ -57,6 +73,7 @@ function deps(over: Partial<AppleIapDeps> = {}): AppleIapDeps & { owner: ReturnT
     jwsOptions: { rootFingerprints: [ca.rootFp] },
     now: NOW,
     ownerOfOriginalTransaction: owner,
+    railRowOf: async () => null,
     owner,
     ...over,
   };
@@ -256,6 +273,107 @@ describe("confirmAppleTransaction — iOS 1.1 (no JWS) through the App Store Ser
 
   it("needs all three key parts — a partial set is 'not configured'", () => {
     expect(appStoreApiCredentialsFrom((k) => ({ APPLE_IAP_KEY_ID: "K", APPLE_IAP_ISSUER_ID: "I" } as Record<string, string>)[k])).toBeNull();
+  });
+});
+
+describe("S2 — a confirm never flips a Stripe-paying account to Apple", () => {
+  const stripeActive: RailRow = { status: "active", plan_source: "stripe", stripe_subscription_id: "sub_1" };
+  const run = (row: RailRow | null, env = "Production") =>
+    ca.jws(txPayload({ environment: env })).then((jwsRepresentation) =>
+      confirmAppleTransaction({ jwsRepresentation }, USER, deps({ railRowOf: async () => row })),
+    );
+
+  it("refuses 409 active_on_other_rail — production and (especially) sandbox", async () => {
+    for (const env of ["Production", "Sandbox"]) {
+      expect(await run(stripeActive, env)).toMatchObject({ ok: false, status: 409, code: "active_on_other_rail", retriable: false });
+    }
+    // A legacy Stripe row with no plan_source yet still counts.
+    expect(await run({ status: "active", plan_source: null, stripe_subscription_id: "sub_1" })).toMatchObject({ code: "active_on_other_rail" });
+    expect(iapRejectionBody(rejectIap("active_on_other_rail")).error).toMatch(/already has an active subscription/);
+  });
+
+  it("allows a trial, a lapsed Stripe row, and the account's own Apple plan", async () => {
+    expect((await run(null)).ok).toBe(true);
+    expect((await run({ status: "trialing", plan_source: null, stripe_subscription_id: null })).ok).toBe(true);
+    expect((await run({ status: "cancelled", plan_source: "stripe", stripe_subscription_id: "sub_1" })).ok).toBe(true);
+    expect((await run({ status: "past_due", plan_source: "stripe", stripe_subscription_id: "sub_1" })).ok).toBe(true);
+    expect((await run({ status: "active", plan_source: "apple", apple_original_transaction_id: "1000000001" })).ok).toBe(true);
+  });
+
+  it("a DB error reading the account's row throws (callers answer a generic 500, no write)", async () => {
+    await expect(
+      confirmAppleTransaction({ jwsRepresentation: await ca.jws(txPayload()) }, USER, deps({ railRowOf: async () => { throw new Error("db down"); } })),
+    ).rejects.toThrow();
+  });
+});
+
+describe("S7 — every refused confirm is one alertable JSON line, codes only", () => {
+  it("apple_unreachable (and every other code) logs event/outcome/code/status/runtime and nothing else", () => {
+    for (const runtime of ["supabase", "worker"] as const) {
+      const line = iapVerifyLogLine(rejectIap("apple_unreachable"), runtime);
+      expect(line).not.toMatch(/\n/);
+      expect(JSON.parse(line)).toEqual({ event: "apple_iap_verify", outcome: "rejected", code: "apple_unreachable", status: 503, runtime });
+    }
+    expect(JSON.parse(iapVerifyLogLine(rejectIap("active_on_other_rail"), "worker"))).toMatchObject({ code: "active_on_other_rail", status: 409 });
+  });
+
+  it("both entry points emit it on refusal", () => {
+    const root = join(__dirname, "..");
+    expect(readFileSync(join(root, "supabase/functions/apple-iap/index.ts"), "utf8")).toMatch(/console\.warn\(iapVerifyLogLine\(verdict, "supabase"\)\)/);
+    expect(readFileSync(join(root, "worker/src/billing/handlers.ts"), "utf8")).toMatch(/console\.warn\(iapVerifyLogLine\(verdict, "worker"\)\)/);
+  });
+});
+
+describe("S1 — certificate extensions are parsed, not searched", () => {
+  const pins = () => ({ rootFingerprints: [ca.rootFp] });
+  const verify = (chain: string[], key = ca.leafKey) =>
+    ca.jws({ hello: 1, signedDate: SIGNED }, { chain, key }).then((j) => sharedJws.verifyAppleJws(j, pins()).then(() => "ok", (e: Error) => e.message));
+
+  it("the generated chain (root + intermediate cA=TRUE, leaf without basicConstraints) verifies", async () => {
+    expect(await verify(ca.x5c)).toBe("ok");
+    const parsed = sharedJws.parseCertificate(ca.interDer);
+    expect(parsed.isCa).toBe(true);
+    expect(sharedJws.parseCertificate(ca.leafDer).isCa).toBeNull();
+  });
+
+  it("a leaf with an explicit cA=FALSE verifies; a leaf with cA=TRUE is refused", async () => {
+    const notCa = await cert("Test Prod ECC Mac App Store", ca.leafKey, "Test WWDR G6", ca.interKey, OID_LEAF, past, future, { ca: false });
+    expect(await verify([b64(notCa), ca.x5c[1]!, ca.x5c[2]!])).toBe("ok");
+    const isCa = await cert("Test Prod ECC Mac App Store", ca.leafKey, "Test WWDR G6", ca.interKey, OID_LEAF, past, future, { ca: true });
+    expect(await verify([b64(isCa), ca.x5c[1]!, ca.x5c[2]!])).toBe("leaf must not be a CA");
+  });
+
+  it("an intermediate without cA=TRUE is refused — absent or explicitly FALSE", async () => {
+    for (const opt of [{}, { ca: false }]) {
+      const inter = await cert("Test WWDR G6", ca.interKey, "Test Root CA - G3", ca.rootKey, OID_INTER, past, future, opt);
+      expect(await verify([ca.x5c[0]!, b64(inter), ca.x5c[2]!])).toBe("intermediate is not a CA");
+    }
+  });
+
+  it("the marker OID as bytes anywhere but an extnID does not count", async () => {
+    // Leaf: the App Store OID buried inside another extension's value (old substring search passed this).
+    const buried = await cert("Test Prod ECC Mac App Store", ca.leafKey, "Test WWDR G6", ca.interKey, null, past, future, {
+      extensions: [ext(u8(0x06, 0x03, 0x2a, 0x03, 0x04), OID_LEAF)],
+    });
+    expect(await verify([b64(buried), ca.x5c[1]!, ca.x5c[2]!])).toBe("leaf is not an App Store signing certificate");
+    // Intermediate: CA, but the WWDR OID only inside the basicConstraints-adjacent value of another extension.
+    const inter = await cert("Test WWDR G6", ca.interKey, "Test Root CA - G3", ca.rootKey, null, past, future, {
+      extensions: [basicConstraints(true), ext(u8(0x06, 0x03, 0x2a, 0x03, 0x05), OID_INTER)],
+    });
+    expect(await verify([ca.x5c[0]!, b64(inter), ca.x5c[2]!])).toBe("intermediate is not Apple WWDR");
+    // …and the same OID as an extnID does count.
+    expect(sharedJws.hasExtension(sharedJws.parseCertificate(ca.leafDer), OID_LEAF)).toBe(true);
+    expect(sharedJws.hasExtension(sharedJws.parseCertificate(buried), OID_LEAF)).toBe(false);
+  });
+
+  it("a duplicated extension is malformed; names must chain leaf → intermediate → root", async () => {
+    const dup = await cert("Test Prod ECC Mac App Store", ca.leafKey, "Test WWDR G6", ca.interKey, null, past, future, {
+      extensions: [ext(OID_LEAF, u8(0x05, 0x00)), ext(OID_LEAF, u8(0x05, 0x00))],
+    });
+    expect(await verify([b64(dup), ca.x5c[1]!, ca.x5c[2]!])).toBe("duplicate extension");
+    // Signed by the real intermediate key, but naming a different issuer.
+    const misnamed = await cert("Test Prod ECC Mac App Store", ca.leafKey, "Someone Else", ca.interKey, OID_LEAF, past, future);
+    expect(await verify([b64(misnamed), ca.x5c[1]!, ca.x5c[2]!])).toBe("x5c names do not chain");
   });
 });
 

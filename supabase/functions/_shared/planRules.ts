@@ -14,12 +14,19 @@ export type PlanState = "trialing" | "active" | "cancelled" | "past_due";
 export type PlanSource = "stripe" | "apple";
 
 /** What `isEntitled` needs. `status` is the physical column; `plan` is the
- *  public name (computed alias of `status`). Either is enough. */
+ *  public name (computed alias of `status`). Either is enough. Snake or camel
+ *  case — PostgREST rows and the Worker's rows both pass straight in. */
 export interface EntitlementRow {
   plan?: PlanState | null;
   status?: PlanState | null;
   trialEndsAt?: string | null;
   trial_ends_at?: string | null;
+  planSource?: PlanSource | null;
+  plan_source?: PlanSource | null;
+  appleEnvironment?: string | null;
+  apple_environment?: string | null;
+  currentPeriodEnd?: string | null;
+  current_period_end?: string | null;
 }
 
 /**
@@ -27,16 +34,40 @@ export interface EntitlementRow {
  * a Stripe-active row are the same yes. `past_due` is not entitled — the
  * paywall's recovery UI (portal on web, StoreKit manage on iOS) is the path
  * back. Matches `public.entitled(subscriptions)` / `public.is_entitled`.
+ *
+ * One exception (Tech Lead ruling (b), 2026-11-09): an App Store SANDBOX
+ * purchase (`plan_source = 'apple'`, `apple_environment = 'sandbox'`) — App
+ * Review, TestFlight, a team build — is entitled only until its
+ * `current_period_end`, which for an Apple row is written only from a
+ * verified transaction. Sandbox notifications may never reach prod, so
+ * without this a free sandbox purchase would be a permanent paid plan. A
+ * missing period end on such a row is not entitled. Production rows and rows
+ * with no recorded environment are NOT held to the period end (yet): App
+ * Store notifications don't reliably reach us, and a real payer must never be
+ * cut off by a renewal we didn't hear about.
  */
 export function isEntitled(row: EntitlementRow | null | undefined, now: Date = new Date()): boolean {
   if (!row) return false;
   const plan = row.plan ?? row.status ?? null;
-  if (plan === "active") return true;
+  if (plan === "active") {
+    if (isAppleSandbox(row)) {
+      const end = row.currentPeriodEnd ?? row.current_period_end;
+      const endMs = end ? new Date(end).getTime() : NaN;
+      return Number.isFinite(endMs) && endMs > now.getTime();
+    }
+    return true;
+  }
   if (plan === "trialing") {
     const ends = row.trialEndsAt ?? row.trial_ends_at;
     return Boolean(ends && new Date(ends).getTime() > now.getTime());
   }
   return false;
+}
+
+function isAppleSandbox(row: EntitlementRow): boolean {
+  const source = row.planSource ?? row.plan_source ?? null;
+  const env = row.appleEnvironment ?? row.apple_environment ?? null;
+  return source === "apple" && env === "sandbox";
 }
 
 export function planOf(row: { plan?: PlanState | null; status?: PlanState | null } | null | undefined): PlanState | null {

@@ -4,7 +4,8 @@
 // signedTransactionInfo / signedRenewalInfo are verified against Apple Root
 // CA - G3, bundle and environment checked, and plan / expiry / product /
 // environment derived from the verified payloads only. APPLE_NOTIFICATION_SECRET
-// on the URL stays as an extra layer when it is set. APPLE_BUNDLE_ID unset → 503.
+// on the URL stays as an extra layer, checked first (401). APPLE_BUNDLE_ID
+// unset → 503. Refusals answer a fixed body; the code goes to one JSON log line.
 //
 // DEPLOY ORDER: migration 00000000000092_apple_webhook_apply must be applied
 // before this function is deployed — the ledger claim and the row write are
