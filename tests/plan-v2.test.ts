@@ -140,3 +140,42 @@ describe("what the planner remembers", () => {
     expect(p.map((x) => x.label)).toContain("End Fridays at 3pm");
   });
 });
+
+import { slotsAsBusy } from "../src/lib/compose";
+
+describe("slots already on the week are busy", () => {
+  // ⓟ 2026-11-09: the draft put a new project sitting on Tue 2pm, on top of the
+  // "Move church" sitting already there — the composer never saw slots at all.
+  const base: ComposeInput = {
+    weekStartISO: WEEK,
+    todayISO: WEEK,
+    now: new Date(`${WEEK}T05:00:00`),
+    tasks: [],
+    events: [],
+    blocks: [],
+    workStartMin: 13 * 60,
+    workEndMin: 16 * 60,
+    focusInitiativeIds: [],
+    dayContexts: {},
+    workingDays: [2],
+    weeklyBudgetMins: null,
+  };
+  const slot = { id: "s1", title: "Move church", start_time: new Date(2026, 9, 27, 14, 0).toISOString(), duration_minutes: 60 };
+
+  it("turns a slot into immovable time on its own day and hour", () => {
+    const [b] = slotsAsBusy([slot]);
+    expect(b.start_time).toBe("2026-10-27T14:00:00");
+    expect(b.duration_minutes).toBe(60);
+  });
+
+  it("the composer places around it, never on it", () => {
+    // 1–2pm is taken too, so the slot's hour is the first free-looking one
+    const meeting = asBusyBlock("m", "Meeting", "2026-10-27", 13 * 60, 60);
+    const work = t("w", 45);
+    const without = composeWeek({ ...base, tasks: [work], blocks: [meeting] }).placements;
+    expect(without[0]?.startMin).toBeLessThan(15 * 60); // the bug: it took the slot's hour
+    const res = composeWeek({ ...base, tasks: [work], blocks: [meeting, ...slotsAsBusy([slot])] });
+    expect(res.placements.length).toBe(1);
+    expect(res.placements[0].startMin).toBeGreaterThanOrEqual(15 * 60);
+  });
+});

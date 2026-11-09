@@ -25,7 +25,7 @@ import { useAllTasks, useScheduledTasks } from "./useTasks";
 import { useSlots } from "./useSlots";
 import { parseDateISO, todayISO } from "../lib/dates";
 import { isPlacedInWeek } from "../lib/priorities";
-import { composeWeek, type Placement } from "../lib/compose";
+import { composeWeek, slotsAsBusy, type Placement } from "../lib/compose";
 import { isEventHidden } from "../lib/now";
 import type { Task } from "../lib/types";
 
@@ -113,14 +113,16 @@ export function useLooseWork(weekStartISO: string) {
 
   const looseFor = useCallback((projectId: string) => splitFor(projectId).loose, [splitFor]);
 
-  return { splitFor, looseFor, blocks, range };
+  return { splitFor, looseFor, blocks, slots, range };
 }
 
 export function useFindTime(weekStartISO: string) {
   const { data: vertical, applySchedule, ensureWeek } = useVertical();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
-  const { looseFor, blocks, range } = useLooseWork(weekStartISO);
+  const { looseFor, blocks: timedBlocks, slots, range } = useLooseWork(weekStartISO);
+  // a slot is busy time too — a sitting already on Tuesday isn't free for new work
+  const blocks = useMemo(() => [...timedBlocks, ...slotsAsBusy(slots)], [timedBlocks, slots]);
 
   const { data: events = [] } = useExternalEvents(range.start, range.end);
 

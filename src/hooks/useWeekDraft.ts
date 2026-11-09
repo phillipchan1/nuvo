@@ -29,7 +29,7 @@ import {
   type VerticalData,
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
-import { alternativesFor as composeAlternatives, asBusyBlock, composeWeek, draftableKept, type ComposeInput, type DayContext, type Placement } from "../lib/compose";
+import { alternativesFor as composeAlternatives, asBusyBlock, composeWeek, slotsAsBusy, draftableKept, type ComposeInput, type DayContext, type Placement } from "../lib/compose";
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { batchLooseWork, clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
@@ -276,7 +276,12 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
   // calibration: the proven pace bounds the plan
   const cal = useMemo(() => calibrate(data.tasks), [data.tasks]);
   const budget = weeklyBudgetMins(cal);
+  // what's already on the calendar and can't move: timed tasks AND the slots
+  // (a sitting, a standing block) — leaving slots out drafted work on top of them.
+  // `onCalBlocks` stays tasks-only: it's also the minutes count and the old grid's
+  // locked layer, which draws slots on its own.
   const onCalBlocks = useMemo(() => blocks.filter((b) => b.status !== "done"), [blocks]);
+  const fixedBlocks = useMemo(() => [...onCalBlocks, ...slotsAsBusy(weekSlots)], [onCalBlocks, weekSlots]);
   const blockedMins = useMemo(
     () => onCalBlocks.reduce((s, b) => s + (b.duration_minutes ?? 30), 0),
     [onCalBlocks],
@@ -351,7 +356,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
         now: new Date(),
         tasks: composeTasks.filter((t) => !pinnedIds.has(t.id)),
         events: visibleEvents,
-        blocks: [...onCalBlocks, ...clearBlocks, ...pinnedBlocks],
+        blocks: [...fixedBlocks, ...clearBlocks, ...pinnedBlocks],
         workStartMin: workStart,
         workEndMin: workEnd,
         focusInitiativeIds: data.focusInitiativeIds,
@@ -378,7 +383,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
         // a slot holds real tasks — it can't be carved in half
         atomicIds: draftBlocks.map((b) => b.id),
       }),
-    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, clearBlocks, pinnedIds, pinnedBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
+    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, fixedBlocks, clearBlocks, pinnedIds, pinnedBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
@@ -520,7 +525,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     const others = placements
       .filter((x) => placementKey(x) !== key)
       .map((x) => asBusyBlock(`busy-${placementKey(x)}`, x.task.title, x.dayISO, x.startMin, x.durationMin));
-    const input: ComposeInput = { ...composeBase, tasks: [], blocks: [...onCalBlocks, ...clearBlocks, ...others], atomicIds: draftBlocks.map((b) => b.id) };
+    const input: ComposeInput = { ...composeBase, tasks: [], blocks: [...fixedBlocks, ...clearBlocks, ...others], atomicIds: draftBlocks.map((b) => b.id) };
     return composeAlternatives(input, { ...p.task, duration_minutes: p.durationMin }, { dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin }, count);
   };
 

@@ -6830,6 +6830,14 @@ a browser on the `?gather` fixtures with a stand-in overlay. **Not driven** agai
 account: the cloud session has no dev login, so the rail was exercised through the test, not the
 running app. **Not run:** `npm run perf`. The fade is opacity only, with no blur or filter.*
 
+*Fix, same day (ⓟ: "look how it's suggesting a time that's already taken"):* the draft put a
+project sitting on Tue 2pm, on top of a project slot that was already there. The composer only
+counted events and timed tasks as busy, never **slots**. Slot children carry `start_time: null`,
+so a sitting's hour looked free. `slotsAsBusy` (`lib/compose.ts`) now feeds every slot on the week
+into the draft, its alternatives and **Find time**. That includes standing slots: work that
+belongs in one is routed in first, and nothing else lands on top. Mid-week repair already did
+this. Guarded in `tests/plan-v2.test.ts`.
+
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*
 Nuvo already looked native and mostly behaved native. What read as "website" was the browser's
