@@ -235,15 +235,16 @@ supabase secrets set \
 | `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build — **CI must set them** | Same Product ID strings baked into the binary so StoreKit can be queried offline. Plain values, **not** GitHub secrets: they are public identifiers. |
 | `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
-| `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. |
+| `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. An extra layer on top of the JWS verification, not a replacement for it. |
 | `APPLE_IAP_KEY_ID` / `APPLE_IAP_ISSUER_ID` / `APPLE_IAP_PRIVATE_KEY` | Supabase secrets **and** Worker secrets | App Store Connect → Users and Access → Integrations → **In-App Purchase** key (`.p8` PEM; literal `\n` is fine). Only used to verify confirms from iOS **1.1** binaries, which send no JWS. All three or none — unset, a 1.1 confirm gets a retriable 503 (fail closed). |
 | `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | Supabase | Unchanged. Web only. |
 
 Do **not** put dollar amounts in these values. Localized prices exist only on
 StoreKit product objects at runtime.
 
-`APPLE_BUNDLE_ID` is now **required** by `apple-iap` (Supabase and Worker):
-unset, every confirm is refused (503). It is `day.nuvo.app` — the App Store
+`APPLE_BUNDLE_ID` is now **required** by `apple-iap` (Supabase and Worker)
+and by the Supabase `apple-webhook`: unset, every confirm and every
+notification is refused (503, so Apple keeps retrying until it is set). It is `day.nuvo.app` — the App Store
 bundle, which is what Apple signs into the transaction.
 
 ### The `apple-iap` confirm
@@ -271,9 +272,54 @@ Both runtimes run one decision, `confirmAppleTransaction`
 maintains them, and `entitled()` ORs them in — an `apple-iap`-written
 `apple_status = 'active'` would outlive a REFUND that only flips `status`.
 
+### The `apple-webhook` (App Store Server Notifications V2)
+
+`supabase/functions/apple-webhook` is a thin shell over
+`handleAppleNotification` (`supabase/functions/_shared/appleWebhook.ts`,
+tested by `tests/apple-webhook-verify.test.ts`):
+
+1. `?secret=` must match `APPLE_NOTIFICATION_SECRET` when that is set (401).
+2. The outer `signedPayload`, the nested `data.signedTransactionInfo` and,
+   when present, `data.signedRenewalInfo` are each verified with
+   `verifyAppleJws` (Apple Root CA - G3 pin). Unsigned, malformed, wrong root,
+   bad chain or bad signature on **any** of them → 400, no write, no ledger
+   claim.
+3. `data.bundleId` and the transaction's `bundleId` must equal
+   `APPLE_BUNDLE_ID` → else 400 `wrong_bundle` (a 4xx, not a silent 200, so a
+   mistyped secret is loud and Apple's retries survive the fix).
+4. Sandbox and Production are both accepted. The envelope's, the
+   transaction's and the renewal info's environments must agree (else 400),
+   and the row records `apple_environment` = `production` | `sandbox`.
+5. Plan, `current_period_end`, `cancel_at_period_end`, product and lineage
+   come only from the verified notification type/subtype and transaction.
+   A transaction with `revocationDate` is never `active`. Products outside the
+   catalog, unmapped types (`TEST`, …) and notifications with no transaction
+   are acked 200 with no write.
+6. The row is matched by `originalTransactionId` only — never by
+   `appAccountToken`, never moved between accounts. `apple-iap` links it.
+7. The ledger claim (`apple_webhook_events`, keyed by `notificationUUID`) and
+   the row write are **one transaction**: `public.apple_webhook_apply`
+   (migration `00000000000092_apple_webhook_apply.sql`, service role only).
+   The function computes the patch with the kernel's `planRowPatch` against
+   the row it read; the RPC applies it only if the row is unchanged, else it
+   raises. A replayed UUID → 200 `duplicate`, no second write. Any DB error →
+   generic 500 and the claim rolls back, so Apple's retry is processed.
+
+Status codes: 401 secret · 400 unverified / wrong bundle / environment ·
+503 `APPLE_BUNDLE_ID` unset · 200 applied / ignored / duplicate · 500 DB
+error (retriable). Bodies carry a code at most — no ids, no payload.
+
 ### Functions to deploy
 
+**Order is load-bearing:** apply migration `00000000000092_apple_webhook_apply`
+**before** deploying `apple-webhook`. The new function calls
+`apple_webhook_apply` for every write; without it every write 500s (Apple
+retries for ~3 days, so nothing is lost if the migration follows quickly,
+but don't rely on it). Set `APPLE_BUNDLE_ID=day.nuvo.app` before the deploy
+too, or every notification answers 503.
+
 ```bash
+supabase db push   # includes 00000000000092_apple_webhook_apply — Phil's call, not from a PR
 supabase functions deploy stripe-checkout stripe-portal stripe-webhook apple-iap apple-webhook iap-catalog
 ```
 

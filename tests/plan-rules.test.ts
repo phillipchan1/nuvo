@@ -149,10 +149,16 @@ describe("isEntitled is one function", () => {
     });
   }
 
-  it("both webhooks call applyPlanUpdate", () => {
+  it("both webhooks write through the kernel's patch", () => {
     expect(readFileSync("supabase/functions/stripe-webhook/index.ts", "utf8")).toContain("applyPlanUpdate");
-    expect(readFileSync("supabase/functions/apple-webhook/index.ts", "utf8")).toContain("applyPlanUpdate");
     expect(readFileSync("supabase/functions/apple-iap/index.ts", "utf8")).toContain("applyPlanUpdate");
+    // apple-webhook claims its ledger and writes in one transaction
+    // (`apple_webhook_apply`), so it can't call applyPlanUpdate — but the patch
+    // it hands the RPC is still `planRowPatch`, and it never updates the table itself.
+    const webhook = readFileSync("supabase/functions/apple-webhook/index.ts", "utf8");
+    expect(webhook).toContain("apple_webhook_apply");
+    expect(webhook).not.toMatch(/from\("subscriptions"\)[\s\S]{0,80}\.(update|upsert|insert)\(/);
+    expect(readFileSync("supabase/functions/_shared/appleWebhook.ts", "utf8")).toMatch(/planRowPatch\(/);
   });
 });
 

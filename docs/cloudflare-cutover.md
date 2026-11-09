@@ -1305,11 +1305,11 @@ the flip, they still read Supabase.
 | Trial on sign-up | `handle_new_user` trigger | `bootstrapUser` inserts the 14-day row for brand-new accounts (`ON CONFLICT DO NOTHING`) |
 | Delete account | cascade from `auth.users` | `wipeOwnedAccount` deletes the row in the same transaction |
 | Stripe signature | `constructEventAsync` | `verifyStripeEvent`: HMAC-SHA256 `v1`, 300s tolerance, constant-time compare |
-| Apple notifications | base64-decoded only, plus optional `?secret=` | `?secret=` **and** full JWS verification: x5c chain to Apple Root CA - G3 (SHA-256 pinned), Apple marker OIDs, cert validity at `signedDate`, ES256 signature. The nested `signedTransactionInfo` is verified too |
+| Apple notifications | `?secret=` **and** the same JWS verification (outer, `signedTransactionInfo`, `signedRenewalInfo`) via `_shared/appleWebhook.ts`; claim + write in one transaction (`apple_webhook_apply`, migration 92) | `?secret=` **and** full JWS verification: x5c chain to Apple Root CA - G3 (SHA-256 pinned), Apple marker OIDs, cert validity at `signedDate`, ES256 signature. The nested `signedTransactionInfo` is verified too |
 | Dedupe | insert-first into `stripe_webhook_events` / `apple_webhook_events`; delete on handler failure | the same, with `ON CONFLICT DO NOTHING RETURNING` |
 | Referral reward | read → credit → mark (it could double-credit when `invoice.paid` raced `checkout.session.completed`) | a conditional UPDATE claims the reward **before** Stripe is called, and the balance credit carries `Idempotency-Key: nuvo-referral-reward-<friend>`. `billing.check.ts` forces three concurrent deliveries and gets exactly one credit |
 | Referral notices | push + Resend | push (`pushToAccount`) + Resend, best effort |
-| `apple-iap` | trusts the signed-in client's transaction ids | unchanged. The native plugin sends no JWS. Verifying it is a follow-up |
+| `apple-iap` | `confirmAppleTransaction` (`_shared/appleIap.ts`): a verified StoreKit JWS, or the App Store Server API for 1.1 clients (#136) | the same function |
 | Client | `functions.invoke(...)` → Supabase | same call. With `VITE_API_BASE_URL` set, `workerRoute` sends it to `/functions/v1/<name>` on the Worker. Friend codes work on the Worker path again |
 
 Proof: `node --experimental-strip-types worker/src/billing.check.ts`, also
@@ -1488,4 +1488,18 @@ Each one needs Phil's yes, and none was run. Billing steps (Stripe and App Store
 
 **Follow-ups, not blockers:** realtime over a Durable Object (item 4). `updated_at` is
 still hand-written per Worker writer: the trigger in `field-ts.sql` covers `field_ts` only.
+
+**Debt — bundle id:** App Store Connect's bundle id is `day.nuvo.app`, but
+`src-tauri/tauri.conf.json` `identifier` is `com.nuvo.app`. Logged as debt per Tech Lead;
+no change now. `APPLE_BUNDLE_ID` must be `day.nuvo.app` (Supabase secrets and Worker) — it is
+what Apple signs into every transaction and notification, and both `apple-iap` and
+`apple-webhook` refuse anything else (`com.nuvo.app` would make the webhook 400 every real
+notification).
+
+**Debt — the two Apple webhooks differ:** the Supabase `apple-webhook` now refuses (400) a
+nested `signedTransactionInfo` that fails verification, fails closed (503) without
+`APPLE_BUNDLE_ID`, and matches rows by `originalTransactionId` only. The Worker's
+`handleAppleWebhook` acks a bad nested JWS with 200, skips the bundle check when
+`APPLE_BUNDLE_ID` is unset, and can attach an unlinked lineage by `appAccountToken`. Move
+the Worker onto `decideAppleNotification` (`_shared/appleWebhook.ts`) before the flip.
 

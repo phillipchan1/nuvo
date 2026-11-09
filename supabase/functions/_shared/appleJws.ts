@@ -1,7 +1,7 @@
 /**
  * App Store signed-data (JWS) verification — shared by the Worker
  * (`worker/src/billing/appleJws.ts` re-exports this file) and the Supabase
- * edge functions (`apple-iap`). Zero imports, WebCrypto only, so Deno,
+ * edge functions (`apple-iap`, `apple-webhook`). Zero imports, WebCrypto only, so Deno,
  * workerd and Node all run the identical code.
  *
  * App Store Server Notifications V2 arrive as `{ signedPayload }`, an ES256
@@ -21,8 +21,8 @@
  * StoreKit 2's `Transaction`/`VerificationResult.jwsRepresentation` is the
  * same shape, so the in-app purchase confirm (`apple-iap`) verifies with it too.
  *
- * NOTE: the Supabase `apple-webhook` still only base64-decodes notifications
- * (plus an optional URL secret). The Worker verifies them with this file.
+ * App Store Server Notifications are verified with it on both runtimes: the
+ * Worker's webhook and the Supabase `apple-webhook` (`appleWebhook.ts`).
  */
 
 /** SHA-256 of Apple Root CA - G3 (https://www.apple.com/certificateauthority/AppleRootCA-G3.cer). */
