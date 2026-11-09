@@ -8,7 +8,7 @@ Clear afternoon · Day off), runs by kind of action, This/Next week, memory (pro
 phone (a card on the Calendar). Trial deviations from this spec: memory and the dial live in this
 device's localStorage, not `plan_signals`; Keep clear is a planning rule, not a calendar event;
 kept rules sit in the rail's "Nuvo keeps" list, not Settings; the phone has no draft mode (only
-repairs). Handle is built on trial — Q-14 is still open.* Prototype:
+repairs). Handle is built on trial — Q-14 is still open.* *2026-11-09: the draft is now walked **one block at a time** over a faded calendar. Each group lists its tasks; ↵ accepts (holds) it and moves on; dragging it or picking a numbered alternative re-places it (D-183).* Prototype:
 [Plan the week v2](https://claude.ai/artifact/Xtnmyo9RFic7r2xeZB8TwN) (private; Sunday ·
 Wednesday · Phone scenes, example data, a toy scorer, not `compose.ts`). Three
 calls are still open and marked **[open]** below; the biggest is Q-14 (how far the dial
@@ -121,6 +121,15 @@ The first prototype's rail was a stack of sentences: correct, and too much readi
 **Rail, top to bottom:** the verdict (one meter, `29h / 38h`) and the slate pips · **the
 stack** — noticed and needs-you in one list, glyph-led, ≤6 rows · the selected block (name,
 span, one line of why, its alternatives as chips) · **Commit** at the foot.
+
+### The walk — one block at a time (D-183)
+
+Showing the whole draft at once over a full week was unreadable (ⓟ, 2026-11-09). So the plan
+opens **on the earliest block**. The calendar scrolls to it and it lifts. The rest of the draft
+goes quiet, and **everything already on the calendar fades**, so only the net-new reads. The rail
+shows what the block holds (each task and its minutes), why it's there, and its other open times
+(numbered on the grid). **Looks good ↵** holds it and moves to the next; **Later J** moves on;
+dragging it holds it where it lands. A pip per block, in time order, shows what's accepted.
 
 ### Three zoom levels, no page changes
 

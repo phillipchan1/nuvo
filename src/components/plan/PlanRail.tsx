@@ -174,6 +174,18 @@ function PlanRailWeek({
     const b = slotById.get(p.task.id);
     return b && !b.projectId && b.taskIds.length > 1 ? b.taskIds.length : 0;
   };
+  /** What a group holds — the tasks themselves, so "Admin batch" says what it is. */
+  const itemsOf = useCallback(
+    (p: Placement): { id: string; title: string; mins: number }[] => {
+      const b = slotById.get(p.task.id);
+      if (!b) return [];
+      return b.taskIds.map((id) => {
+        const t = d.taskById.get(id);
+        return { id, title: t?.title ?? "Untitled", mins: t?.duration_minutes ?? 30 };
+      });
+    },
+    [slotById, d.taskById],
+  );
   const colorOf = useCallback(
     (p: Placement): string | null => {
       const b = slotById.get(p.task.id);
@@ -425,6 +437,56 @@ function PlanRailWeek({
     }
   }, [d, done, things, placements.length, changes]);
 
+  // ── the walk: one group at a time, in the order the week runs ──────────
+  // A whole week of proposals at once over a full calendar was unreadable (ⓟ,
+  // 2026-11-09): you couldn't tell what a group held or where it landed. So the
+  // plan walks its blocks one by one — the current one lifts, the calendar
+  // scrolls to it, the rail lists what's inside — and you accept it (it's held
+  // from then on), drag it, or take one of its other times.
+  const order = useMemo(
+    () => [...placements].sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.startMin - b.startMin).map(placementKey),
+    [placements],
+  );
+  const reviewed = order.filter((k) => d.isHeld(k)).length;
+  /** The next block that still needs a look, after `from` in time (wrapping). */
+  const nextOpen = useCallback(
+    (from: string | null): string | null => {
+      const open = order.filter((k) => k !== from && !d.isHeld(k));
+      if (!open.length) return null;
+      const i = from ? order.indexOf(from) : -1;
+      return open.find((k) => order.indexOf(k) > i) ?? open[0];
+    },
+    [order, d],
+  );
+  const advance = useCallback((from: string | null) => setSel(nextOpen(from)), [nextOpen]);
+  const accept = useCallback(
+    (key: string) => {
+      if (!d.isHeld(key)) {
+        d.remember();
+        d.holdPlacement(key);
+      }
+      advance(key);
+    },
+    [d, advance],
+  );
+  // open on the first group, once the draft has one
+  const walkStarted = useRef(false);
+  useEffect(() => {
+    if (walkStarted.current || done || !order.length) return;
+    walkStarted.current = true;
+    setSel(nextOpen(null));
+  }, [order, done, nextOpen]);
+  // take the calendar to the group under review
+  const selDay = sel ? byKey.get(sel)?.dayISO : undefined;
+  const selStart = sel ? byKey.get(sel)?.startMin : undefined;
+  useEffect(() => {
+    if (!selDay || selStart == null) return;
+    const m = Math.max(0, selStart - 60);
+    revealOnCalendar({ dateISO: selDay, scrollToTime: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00` });
+    // only when the walk moves on, not on every reflow
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel]);
+
   // ── the overlay the Schedule draws ──────────────────────────────────────
   const overlay = useMemo<PlanOverlay | null>(() => {
     if (done) return null;
@@ -439,7 +501,9 @@ function PlanRailWeek({
           color: colorOf(p),
           held: d.isHeld(key),
           selected: key === sel,
+          quiet: Boolean(sel) && key !== sel,
           count: countOf(p),
+          items: itemsOf(p).map((t) => t.title),
         };
       }),
       ghosts: sel
@@ -456,6 +520,7 @@ function PlanRailWeek({
         setSel(key);
       },
       onPickGhost: (id) => pickAlt(Number(id)),
+      dimCalendar: true,
       clears: d.clearRegions.map((c, i) => ({
         id: String(i),
         start: instant(c.dayISO, c.startMin).toISOString(),
@@ -473,7 +538,7 @@ function PlanRailWeek({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done, placements, sel, altList, titleOf, colorOf, select, moveTo, pickAlt, d.isHeld, d.clearRegions]);
+  }, [done, placements, sel, altList, titleOf, colorOf, itemsOf, select, moveTo, pickAlt, d.isHeld, d.clearRegions]);
   useEffect(() => {
     onOverlay(overlay);
   }, [overlay, onOverlay]);
@@ -551,10 +616,6 @@ function PlanRailWeek({
   };
 
   // ── keys ───────────────────────────────────────────────────────────────
-  const order = useMemo(
-    () => [...placements].sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.startMin - b.startMin).map(placementKey),
-    [placements],
-  );
   const keyState = useRef({ sel, focus, stack, order, altIx });
   keyState.current = { sel, focus, stack, order, altIx };
   useEffect(() => {
@@ -616,6 +677,7 @@ function PlanRailWeek({
         if (k === "?") return eat(), setExpand((x) => (x ? null : s.focus));
       }
       if (!s.sel) return;
+      if (k === "Enter" || k === "y") return eat(), accept(s.sel);
       if (k === "ArrowRight") return eat(), pickAlt(s.altIx + 1);
       if (k === "ArrowLeft") return eat(), pickAlt(s.altIx - 1);
       if (/^[1-5]$/.test(k)) return eat(), pickAlt(Number(k));
@@ -627,7 +689,7 @@ function PlanRailWeek({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [d, commit, decide, pickAlt, shiftDay, byKey, act]);
+  }, [d, commit, decide, pickAlt, shiftDay, byKey, act, accept]);
 
   const selP = sel ? byKey.get(sel) : null;
 
@@ -763,53 +825,133 @@ function PlanRailWeek({
             )}
           </div>
 
-          {/* the selected block */}
-          {selP && (
-            <div className="glass-card flex flex-col gap-2 rounded-[12px] border border-line p-3">
-              <div className="masthead text-display">{titleOf(selP)}</div>
-              <div className="text-caption text-muted">
-                {where(selP)}
-                {d.isHeld(sel!) ? " · held" : ""}
+          {/* the walk — one group at a time */}
+          {order.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="section-label flex justify-between">
+                <span>{selP ? `Block ${order.indexOf(sel!) + 1} of ${order.length}` : "Nuvo's draft"}</span>
+                <span className="mono">
+                  {reviewed}/{order.length} accepted
+                </span>
               </div>
-              <div className="text-caption text-muted">{selP.reason}</div>
-              {altList.length > 1 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {altList.map((a, i) => (
+              {/* one pip per block, in time order — filled once accepted; tap one to look at it */}
+              <div className="flex flex-wrap gap-[3px]" role="group" aria-label="Blocks in the draft">
+                {order.map((k) => {
+                  const p = byKey.get(k)!;
+                  const held = d.isHeld(k);
+                  const hue = colorOf(p) ?? "var(--accent)";
+                  return (
                     <button
-                      key={i}
-                      onClick={() => pickAlt(i)}
-                      className="rounded-full border px-2.5 py-0.5 text-caption"
+                      key={k}
+                      onClick={() => setSel(k)}
+                      title={`${titleOf(p)} · ${where(p)}`}
+                      aria-label={`${titleOf(p)}, ${where(p)}${held ? ", accepted" : ""}`}
+                      aria-current={k === sel}
+                      className="h-[10px] w-[10px] rounded-full"
                       style={{
-                        borderColor: i === altIx ? "var(--accent)" : "var(--line-strong)",
-                        color: i === altIx ? "var(--accent)" : undefined,
+                        background: held ? hue : "transparent",
+                        border: `1.5px solid ${hue}`,
+                        outline: k === sel ? "1.5px solid var(--text)" : undefined,
+                        outlineOffset: 1.5,
                       }}
-                    >
-                      <span className="mono mr-1 text-micro text-muted">{i === 0 ? "·" : i}</span>
-                      {dayName(a.dayISO)} {at(instant(a.dayISO, a.startMin))}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {(
-                  [
-                    ["H", d.isHeld(sel!) ? "Release" : "Hold", () => act.hold(sel!)],
-                    ["S", "Split", () => act.split(sel!)],
-                    ["X", "Off", () => act.off(sel!)],
-                  ] as const
-                ).map(([key, label, run]) => (
-                  <button key={key} className="rounded-full border border-line-strong px-2.5 py-0.5 text-caption" onClick={run}>
-                    {label} <kbd className="mono text-micro text-muted">{key}</kbd>
-                  </button>
-                ))}
+                    />
+                  );
+                })}
               </div>
             </div>
           )}
-
-          {/* the job, said once */}
-          <p className="text-caption text-muted">
-            The dashed blocks on the calendar are Nuvo's draft of this week. Click one to move it, settle anything below, then Commit.
-          </p>
+          {selP ? (
+            (() => {
+              const items = itemsOf(selP);
+              const held = d.isHeld(sel!);
+              return (
+                <div className="glass-card flex flex-col gap-2 rounded-[12px] border border-line p-3">
+                  <div className="masthead text-display leading-tight">{titleOf(selP)}</div>
+                  <div className="text-caption text-muted">
+                    {where(selP)}
+                    {items.length > 1 ? ` · ${items.length} tasks` : ""}
+                    {held ? " · accepted" : ""}
+                  </div>
+                  {items.length > 1 && (
+                    <ul className="flex flex-col border-t border-line">
+                      {items.map((t) => (
+                        <li key={t.id} className="flex items-baseline gap-2 border-b border-line py-1.5">
+                          <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
+                            {t.title}
+                          </span>
+                          <span className="mono shrink-0 text-micro text-muted">{t.mins}m</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="text-caption text-muted">{selP.reason}</div>
+                  <div className="flex gap-1.5 pt-1">
+                    <button
+                      onClick={() => accept(sel!)}
+                      className="h-9 flex-1 rounded-[9px] bg-accent px-3 text-caption font-semibold text-on-accent"
+                    >
+                      {held ? "Keep · next" : "Looks good"} <span className="opacity-75">↵</span>
+                    </button>
+                    <button onClick={() => advance(sel)} className="h-9 rounded-[9px] border border-line-strong px-3 text-caption">
+                      Later <kbd className="mono text-micro text-muted">J</kbd>
+                    </button>
+                  </div>
+                  {altList.length > 1 && (
+                    <div className="flex flex-col gap-1 pt-1">
+                      <span className="text-micro text-muted">Or another open time — numbered on the calendar</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {altList.map((a, i) => (
+                          <button
+                            key={i}
+                            onClick={() => pickAlt(i)}
+                            className="rounded-full border px-2.5 py-0.5 text-caption"
+                            style={{
+                              borderColor: i === altIx ? "var(--accent)" : "var(--line-strong)",
+                              color: i === altIx ? "var(--accent)" : undefined,
+                            }}
+                          >
+                            <span className="mono mr-1 text-micro text-muted">{i === 0 ? "·" : i}</span>
+                            {dayName(a.dayISO)} {at(instant(a.dayISO, a.startMin))}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        ...(held ? ([["H", "Release", () => act.hold(sel!)]] as const) : []),
+                        ["S", "Split", () => act.split(sel!)],
+                        ["X", "Off this week", () => act.off(sel!)],
+                      ] as const
+                    ).map(([key, label, run]) => (
+                      <button key={key} className="rounded-full border border-line px-2.5 py-0.5 text-caption text-muted" onClick={run}>
+                        {label} <kbd className="mono text-micro">{key}</kbd>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-micro text-muted">Drag it on the calendar to any open time. Faded blocks are already fixed.</p>
+                </div>
+              );
+            })()
+          ) : order.length > 0 ? (
+            <div className="flex flex-col gap-2 rounded-[12px] border border-line p-3">
+              {reviewed >= order.length ? (
+                <p className="text-body">All {order.length} blocks accepted. Settle anything below, then Commit.</p>
+              ) : (
+                <>
+                  <p className="text-body">
+                    {order.length - reviewed} block{order.length - reviewed === 1 ? "" : "s"} still to look at.
+                  </p>
+                  <button onClick={() => advance(null)} className="h-9 rounded-[9px] bg-accent px-3 text-caption font-semibold text-on-accent">
+                    Review the next one
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-caption text-muted">Nothing to place this week yet.</p>
+          )}
 
           {/* the stack */}
           <div className="flex flex-col">
@@ -916,7 +1058,7 @@ function PlanRailWeek({
               <span>↻ noticed</span>
               <span>⊘ no room</span>
               <span>⇣ new</span>
-              <span>J/K block · ←→ fits · ↑↓ day · H hold · S split · X off · ⌘Z undo · drag empty time to keep it clear</span>
+              <span>↵ accept · J/K block · ←→ fits · ↑↓ day · H hold · S split · X off · ⌘Z undo · drag empty time to keep it clear</span>
             </div>
             <button
               className="h-11 rounded-[10px] bg-accent font-semibold text-on-accent disabled:opacity-60"

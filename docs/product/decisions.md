@@ -6806,6 +6806,30 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-183 · 2026-11-09 · Plan the week walks its draft one block at a time, over a faded
+calendar.** *(Extends D-180; spec [`plan-the-week-v2.md`](../plan-the-week-v2.md) §4, "The walk".)*
+ⓟ, driving a real week: on a full calendar he couldn't tell where a suggestion landed or what was
+new, and "Admin batch" never said which tasks it held. He asked to go through one grouping at a
+time, and to accept each or drag it to another open slot. So, three changes on the same overlay.
+**(1)** While planning, every event that is already on the calendar fades to 28% opacity
+(`data-plan-dim` on the pane), and hovering one brings it back. Only the draft reads at full
+strength, which is the old walk's "set aside" view on the real grid. **(2)** A group shows its
+tasks, both on the calendar block and in the rail. **(3)** The rail opens on the earliest block.
+The calendar scrolls to it and that block lifts, while the others go quieter. The rail lists its
+tasks with their minutes and offers **Looks good ↵** (holds the block and moves to the next) or
+**Later J**. It also shows the block's other open times, numbered on the grid. Dragging the block
+anywhere holds it there. A row of pips, one per block in time order, shows what's accepted and
+jumps to any block. The whole-week view still exists: Esc leaves the walk.
+**Consequence:** accepting a block **holds** it, so a later reflow won't move it. This reuses
+an existing state and adds no new one. **Not changed:** what is grouped, or how (that stays
+`batch.ts`). The phone has no draft mode yet (D-181), so this change is desktop only.
+
+*Status: built for the trial. typecheck clean, vitest green, including the new
+`tests/plan-walk.test.tsx`. The calendar half (fade, task lists, quiet vs current) was checked in
+a browser on the `?gather` fixtures with a stand-in overlay. **Not driven** against a live
+account: the cloud session has no dev login, so the rail was exercised through the test, not the
+running app. **Not run:** `npm run perf`. The fade is opacity only, with no blur or filter.*
+
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*
 Nuvo already looked native and mostly behaved native. What read as "website" was the browser's

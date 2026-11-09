@@ -2539,6 +2539,17 @@ select.field { appearance: none; -webkit-appearance: none; }
   border: 1.5px dashed var(--accent) !important;
   cursor: default;
 }
+/* While planning, what's already fixed recedes so the net-new reads at a glance
+   (the old walk's "set aside" view, on the real Schedule). Opacity only — no
+   filter or blur, these repeat per event (tests/perf-budget.test.ts). */
+[data-plan-dim] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear) {
+  opacity: 0.28;
+}
+@media (hover: hover) {
+  [data-plan-dim] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear):hover { opacity: 0.85; }
+}
+/* the walk: the group under review is full strength, the rest wait quieter */
+.fc-event.evt-plan.evt-plan-quiet { opacity: 0.55; }
 
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
 .fc-event.evt-draft-preview {

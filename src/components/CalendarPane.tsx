@@ -2010,11 +2010,11 @@ function CalendarPane({
         allDay: false,
         editable: true,
         durationEditable: false,
-        classNames: ["evt-plan", b.held ? "evt-plan-held" : "", b.selected ? "evt-plan-selected" : ""].filter(Boolean),
+        classNames: ["evt-plan", b.held ? "evt-plan-held" : "", b.selected ? "evt-plan-selected" : "", b.quiet ? "evt-plan-quiet" : ""].filter(Boolean),
         backgroundColor: `color-mix(in srgb, ${hue} 16%, var(--surface))`,
         borderColor: `color-mix(in srgb, ${hue} 60%, var(--line))`,
         textColor: "var(--text)",
-        extendedProps: { kind: "plan" as const, refId: b.key, barColor: hue, calColor: hue, held: b.held, count: b.count ?? 0 },
+        extendedProps: { kind: "plan" as const, refId: b.key, barColor: hue, calColor: hue, held: b.held, count: b.count ?? 0, items: b.items ?? [] },
       };
     });
     const ghosts = plan.ghosts.map((g) => ({
@@ -3712,7 +3712,7 @@ function CalendarPane({
 
     // ── Plan the week's draft: title, span, a held mark — and its ghosts ──
     if (kind === "plan" || kind === "planghost") {
-      const ext = arg.event.extendedProps as ExtendedProps & { held?: boolean; count?: number };
+      const ext = arg.event.extendedProps as ExtendedProps & { held?: boolean; count?: number; items?: string[] };
       return (
         <div className="relative flex h-full min-w-0 flex-col overflow-hidden px-1.5 py-[2px]">
           <span className="truncate text-label font-semibold leading-tight">
@@ -3721,6 +3721,16 @@ function CalendarPane({
           </span>
           {kind === "plan" && arg.event.start && arg.event.end && (
             <span className="truncate text-micro leading-tight text-muted">{span(arg.event.start, arg.event.end)}</span>
+          )}
+          {/* what the group holds — "Admin batch" alone said nothing about Tuesday */}
+          {kind === "plan" && ext.items && ext.items.length > 1 && (
+            <ul className="mt-0.5 min-w-0">
+              {ext.items.map((t, i) => (
+                <li key={i} className="truncate text-micro leading-tight">
+                  · {t}
+                </li>
+              ))}
+            </ul>
           )}
           {kind === "plan" && ext.held && (
             <span aria-label="held" className="absolute right-1 top-1 h-[6px] w-[6px] rounded-full" style={{ background: ext.barColor }} />
@@ -4314,7 +4324,7 @@ function CalendarPane({
     // `data-calendar-pane`: a press in here hands the keyboard to the grid — the
     // rail drops its cursor (LeftRail) so ⌫ in a block's menu can't also trash
     // the row the rail was pointing at.
-    <div data-calendar-pane="" className="relative flex h-full min-w-0 flex-1 flex-col">
+    <div data-calendar-pane="" data-plan-dim={plan?.dimCalendar ? "" : undefined} className="relative flex h-full min-w-0 flex-1 flex-col">
       {createError && (
         <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>

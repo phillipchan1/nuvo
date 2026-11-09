@@ -20,6 +20,10 @@ export interface PlanOverlayBlock {
   selected: boolean;
   /** a run: how many tasks ride inside it */
   count?: number;
+  /** what's inside a group, by title — so a run says what it holds, not just its name */
+  items?: string[];
+  /** the walk's current block, when another one is up — drawn quieter */
+  quiet?: boolean;
 }
 
 export interface PlanOverlayGhost {
@@ -42,6 +46,8 @@ export interface PlanOverlay {
   clears?: { id: string; start: string; end: string; label: string }[];
   /** a drag across empty grid while planning: "keep this clear?" */
   onPaint?: (start: Date, end: Date) => void;
+  /** fade what's already on the calendar so only the net-new reads at a glance */
+  dimCalendar?: boolean;
 }
 
 export const PLAN_EVENT_PREFIX = "plan:";

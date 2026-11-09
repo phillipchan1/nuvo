@@ -858,6 +858,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     routing,
     routedCount,
     slotById,
+    taskById,
     /** Every grouped run of loose work on the board — the domain batches and the
      *  AI's themed runs — so both shells list (and let you take apart) one set. */
     runs: shownRuns,
