@@ -9,7 +9,8 @@ import csv
 import json
 import os
 import re
-from typing import Any, Callable
+import sys
+from typing import Any, Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -219,11 +220,41 @@ def sync_log_copy_sql() -> str:
     return f"COPY (SELECT {cols} FROM public.sync_log) TO STDOUT WITH CSV"
 
 
+def _lift_csv_field_limit() -> None:
+    """csv's default 128 KiB field cap raises on a long sync_log `error`
+    (it is unbounded). The limit is process-wide; lift it as far as the
+    platform's C long allows."""
+    try:
+        csv.field_size_limit(sys.maxsize)
+    except OverflowError:
+        csv.field_size_limit(2**31 - 1)
+
+
+def iter_copy_csv_records(path: str | os.PathLike[str]) -> Iterator[list[str]]:
+    """Yield each record of a `COPY … WITH CSV` file. A quoted field may hold
+    newlines (CR, LF or CRLF), commas and doubled quotes; it stays one record.
+    strict=True raises csv.Error on an unterminated quote (a truncated file)
+    instead of swallowing the rest of the file as one field. A blank line
+    comes back as [] — see csv_record_count."""
+    _lift_csv_field_limit()
+    with open(path, newline="", encoding="utf-8") as fh:
+        yield from csv.reader(fh, strict=True)
+
+
+def read_copy_csv_records(path: str | os.PathLike[str]) -> list[list[str]]:
+    return list(iter_copy_csv_records(path))
+
+
 def csv_record_count(path: str | os.PathLike[str]) -> int:
     """Records in a `COPY … WITH CSV` file. A quoted field may hold newlines
-    (five sync_log `error` texts do), so counting lines over-reports."""
-    with open(path, newline="", encoding="utf-8") as fh:
-        return sum(1 for row in csv.reader(fh) if row)
+    (five sync_log `error` texts do), so counting lines over-reports.
+
+    Every record counts, a blank one included: COPY writes a blank line only
+    for a single-column row whose value is NULL ('' is written as ""), and a
+    multi-column row is never blank (all-NULL is ",,"). The final record
+    terminator does not start another record, so "a\nb\n" and "a\nb" are 2,
+    an empty file is 0, and a 1-column "a\n\nb\n" is 3."""
+    return sum(1 for _ in iter_copy_csv_records(path))
 
 
 def sync_log_set_lock_timeout_sql(*, local: bool = False) -> str:
