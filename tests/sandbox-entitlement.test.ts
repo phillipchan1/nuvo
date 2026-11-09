@@ -5,11 +5,12 @@ import { isEntitled, type EntitlementRow } from "../supabase/functions/_shared/p
 import { entitlementOf } from "../worker/src/entitlement";
 import { subscriptionFromWorkerBody } from "../src/lib/entitlementRead";
 
-// Tech Lead ruling (b), 2026-11-09 (decisions.md D-189): an App Store SANDBOX
+// Tech Lead ruling (b), 2026-11-09 (decisions.md D-185): an App Store SANDBOX
 // row is entitled only until its verified current_period_end. Production rows
 // and rows with no recorded environment are not held to it (yet). Enforced in
 // `isEntitled` (SPA + Worker) and its SQL twin `public.entitled` (migration 93)
-// — this file holds all of them to the same cases.
+// — this file holds all of them to the same cases. The cut-off applies to
+// plan_source='apple' rows only: a Stripe row with a stale sandbox tag stays entitled.
 
 const NOW = new Date("2026-11-09T18:00:00Z");
 const PAST = "2026-11-01T00:00:00.000Z";
@@ -70,6 +71,21 @@ describe("isEntitled — sandbox rows end at the verified period end", () => {
     });
     expect(sub?.apple_environment).toBe("sandbox");
     expect(isEntitled(sub, NOW)).toBe(false);
+  });
+
+  it("the SPA's Worker path leaves a Stripe row with a stale sandbox tag entitled", () => {
+    const sub = subscriptionFromWorkerBody({
+      present: true,
+      entitled: true,
+      status: "active",
+      plan_source: "stripe",
+      apple_environment: "sandbox",
+      current_period_end: PAST,
+      trial_ends_at: LONG_AGO,
+    });
+    expect(sub?.plan_source).toBe("stripe");
+    expect(sub?.apple_environment).toBe("sandbox");
+    expect(isEntitled(sub, NOW)).toBe(true);
   });
 });
 
