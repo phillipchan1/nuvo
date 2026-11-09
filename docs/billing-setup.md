@@ -156,7 +156,9 @@ multi-tenant now, not single-user.
   Connect when they create SKUs (after listing screenshots; no Submit).
   `plan_source` stays null until a rail is charged.
 - **The webhook is the only writer** of billing state (plus the authenticated
-  `apple-iap` confirm after a StoreKit purchase). Stripe claims each
+  `apple-iap` confirm after a StoreKit purchase — which trusts **only** an App
+  Store JWS verified to Apple Root CA - G3, never the ids/expiry in the body;
+  see *The `apple-iap` confirm* below). Stripe claims each
   `event.id` in `stripe_webhook_events`; Apple claims `notificationUUID` in
   `apple_webhook_events`. Redeliveries are no-ops; a failed handle releases
   the claim so the retry is real.
@@ -234,10 +236,40 @@ supabase secrets set \
 | `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
 | `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. |
+| `APPLE_IAP_KEY_ID` / `APPLE_IAP_ISSUER_ID` / `APPLE_IAP_PRIVATE_KEY` | Supabase secrets **and** Worker secrets | App Store Connect → Users and Access → Integrations → **In-App Purchase** key (`.p8` PEM; literal `\n` is fine). Only used to verify confirms from iOS **1.1** binaries, which send no JWS. All three or none — unset, a 1.1 confirm gets a retriable 503 (fail closed). |
 | `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | Supabase | Unchanged. Web only. |
 
 Do **not** put dollar amounts in these values. Localized prices exist only on
 StoreKit product objects at runtime.
+
+`APPLE_BUNDLE_ID` is now **required** by `apple-iap` (Supabase and Worker):
+unset, every confirm is refused (503). It is `day.nuvo.app` — the App Store
+bundle, which is what Apple signs into the transaction.
+
+### The `apple-iap` confirm
+
+Both runtimes run one decision, `confirmAppleTransaction`
+(`supabase/functions/_shared/appleIap.ts`), over one verifier
+(`_shared/appleJws.ts`, which the Worker re-exports):
+
+1. **iOS 1.2+** sends StoreKit 2's `jwsRepresentation`. **iOS 1.1** sends only
+   ids, so the server fetches the transaction by `transactionId` from the App
+   Store Server API (production, then sandbox) and verifies Apple's
+   `signedTransactionInfo` the same way. No JWS and no API key → 503.
+2. productId, expiry, bundle, environment, ids, appAccountToken and
+   revocation come only from the verified payload. Refused (4xx, no write):
+   wrong bundle, product not in the catalog, revoked, expired,
+   appAccountToken ≠ the signed-in user, or a lineage already linked to
+   another account. A token-less (1.1) purchase is accepted only on a lineage
+   nobody holds yet.
+3. **Sandbox is accepted** (App Review and TestFlight buy with sandbox
+   receipts against production) and recorded as `apple_environment`.
+4. Any verification error — bad chain, wrong root, bad signature, Apple
+   unreachable — fails closed.
+
+`apple_status` / `apple_expires_at` stay unwritten on purpose: no webhook
+maintains them, and `entitled()` ORs them in — an `apple-iap`-written
+`apple_status = 'active'` would outlive a REFUND that only flips `status`.
 
 ### Functions to deploy
 

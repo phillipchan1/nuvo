@@ -101,7 +101,8 @@ export async function applyPlanUpdate(
       stripe_subscription_id = CASE WHEN ${has("stripe_subscription_id")} THEN ${val("stripe_subscription_id")}::text ELSE stripe_subscription_id END,
       price_id = CASE WHEN ${has("price_id")} THEN ${val("price_id")}::text ELSE price_id END,
       apple_original_transaction_id = CASE WHEN ${has("apple_original_transaction_id")} THEN ${val("apple_original_transaction_id")}::text ELSE apple_original_transaction_id END,
-      apple_product_id = CASE WHEN ${has("apple_product_id")} THEN ${val("apple_product_id")}::text ELSE apple_product_id END
+      apple_product_id = CASE WHEN ${has("apple_product_id")} THEN ${val("apple_product_id")}::text ELSE apple_product_id END,
+      apple_environment = CASE WHEN ${has("apple_environment")} THEN ${val("apple_environment")}::text ELSE apple_environment END
     WHERE user_id = ${existing.user_id}::uuid
   `;
   return { applied: true, userId: existing.user_id };

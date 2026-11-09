@@ -108,6 +108,8 @@ export interface PlanWrite {
   priceId?: string | null;
   appleOriginalTransactionId?: string | null;
   appleProductId?: string | null;
+  /** From the VERIFIED transaction only — lowercased `production` | `sandbox`. */
+  appleEnvironment?: "production" | "sandbox" | null;
 }
 
 export interface ExistingPlan {
@@ -150,6 +152,7 @@ export function planRowPatch(
     patch.apple_original_transaction_id = incoming.appleOriginalTransactionId;
   }
   if (incoming.appleProductId !== undefined) patch.apple_product_id = incoming.appleProductId;
+  if (incoming.appleEnvironment !== undefined) patch.apple_environment = incoming.appleEnvironment;
   return patch;
 }
 

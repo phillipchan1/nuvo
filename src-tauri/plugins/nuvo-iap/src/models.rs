@@ -47,6 +47,10 @@ pub struct IapPurchase {
     /// Expiry in epoch milliseconds, when StoreKit knows it.
     #[serde(default)]
     pub expires_date: Option<i64>,
+    /// StoreKit 2 signed transaction (`VerificationResult.jwsRepresentation`).
+    /// The server verifies it against Apple's root; nothing else is trusted.
+    #[serde(default)]
+    pub jws_representation: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

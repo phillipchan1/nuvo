@@ -49,6 +49,9 @@ struct PurchasePayload: Encodable {
     let originalTransactionId: String?
     /// Expiry in epoch milliseconds, when StoreKit knows it.
     let expiresDate: Int64?
+    /// The signed transaction (`VerificationResult.jwsRepresentation`). The
+    /// server verifies it against Apple's root and trusts nothing else here.
+    let jwsRepresentation: String?
 }
 
 struct RestorePayload: Encodable {
@@ -62,12 +65,13 @@ private func isStoreKitProductId(_ id: String) -> Bool {
 }
 
 @available(iOS 15.0, *)
-private func payload(for transaction: Transaction) -> PurchasePayload {
+private func payload(for transaction: Transaction, jws: String) -> PurchasePayload {
     PurchasePayload(
         productId: transaction.productID,
         transactionId: String(transaction.id),
         originalTransactionId: String(transaction.originalID),
-        expiresDate: transaction.expirationDate.map { Int64($0.timeIntervalSince1970 * 1000) }
+        expiresDate: transaction.expirationDate.map { Int64($0.timeIntervalSince1970 * 1000) },
+        jwsRepresentation: jws
     )
 }
 
@@ -117,7 +121,7 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate {
                         invoke.reject("The App Store couldn’t verify that purchase")
                         return
                     }
-                    let result = payload(for: transaction)
+                    let result = payload(for: transaction, jws: verification.jwsRepresentation)
                     await transaction.finish()
                     invoke.resolve(result)
                 case .userCancelled:
@@ -141,7 +145,7 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate {
             var transactions: [PurchasePayload] = []
             for await entitlement in Transaction.currentEntitlements {
                 if case .verified(let transaction) = entitlement {
-                    transactions.append(payload(for: transaction))
+                    transactions.append(payload(for: transaction, jws: entitlement.jwsRepresentation))
                 }
             }
             invoke.resolve(RestorePayload(supported: true, transactions: transactions))

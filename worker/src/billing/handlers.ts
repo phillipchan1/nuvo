@@ -37,6 +37,13 @@ import {
 import { pushToAccount } from "../pushDispatch.ts";
 import { AppleJwsError, verifyAppleJws, type AppleJwsOptions } from "./appleJws.ts";
 import {
+  appleTokenMayAttach,
+  confirmAppleTransaction,
+  iapRejectionBody,
+  parseAppAccountToken,
+} from "../../../supabase/functions/_shared/appleIap.ts";
+import { appStoreApiCredentialsFrom } from "../../../supabase/functions/_shared/appStoreServerApi.ts";
+import {
   applyPlanUpdate,
   claimWebhookEvent,
   logBilling,
@@ -86,18 +93,8 @@ function appleDateToIso(value: unknown): string | null {
   return null;
 }
 
-/**
- * StoreKit `appAccountToken` = the Nuvo user id, set at purchase (PR #120's
- * plugin change). Apple signs it into the transaction, so once the JWS has
- * verified it can attach a first purchase whose `apple-iap` confirm never
- * ran. Hyphenated or compact 32-hex; anything else is ignored.
- */
-export function parseAppAccountToken(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const compact = value.trim().replace(/-/g, "").toLowerCase();
-  if (!/^[0-9a-f]{32}$/.test(compact)) return null;
-  return `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`;
-}
+/** StoreKit `appAccountToken` → normalized user id. One definition, in `_shared/appleIap.ts`. */
+export { parseAppAccountToken };
 
 function stripeFor(deps: BillingDeps): StripeClient {
   return stripeClient(deps.env.STRIPE_SECRET_KEY ?? "", deps.fetchImpl ?? fetch);
@@ -200,30 +197,43 @@ export function handleIapCatalog(env: Env): Response {
 // ── apple-iap ────────────────────────────────────────────────────────────────
 
 /**
- * Same trust model as Supabase's `apple-iap`: the signed-in client reports
- * its StoreKit transaction ids (the native plugin does not hand us a JWS);
- * renewals and refunds then arrive verified through the App Store webhook.
+ * Same decision as Supabase's `apple-iap` — literally: both call
+ * `confirmAppleTransaction` (_shared/appleIap.ts). The purchase's product,
+ * expiry, bundle, environment, ids, appAccountToken and revocation come only
+ * from an App Store JWS verified to Apple Root CA - G3: the device's StoreKit 2
+ * `jwsRepresentation` (1.2+), or for 1.1 binaries the `signedTransactionInfo`
+ * the App Store Server API returns for `transactionId` (APPLE_IAP_* bindings;
+ * unset → 503, never a trusted body). Renewals and refunds arrive verified
+ * through the App Store webhook.
  */
 export async function handleAppleIap(deps: BillingDeps, user: BillingUser, body: Obj): Promise<Response> {
-  const productId = asString(body?.productId);
-  const originalTransactionId = asString(body?.originalTransactionId);
-  const transactionId = asString(body?.transactionId);
-  if (!productId || !originalTransactionId) {
-    return billingJson({ error: "productId and originalTransactionId are required" }, 400);
-  }
-  const env = iapEnvFrom((k) => (deps.env as Record<string, string | undefined>)[k]);
-  if (!isOurIapProduct(productId, env)) return billingJson({ error: "unknown App Store product" }, 400);
-  const result = await applyPlanUpdate(deps.sql, {
-    userId: user.id,
-    plan: "active",
-    planSource: "apple",
-    currentPeriodEnd: appleDateToIso(body?.expiresDate),
-    cancelAtPeriodEnd: body?.cancelAtPeriodEnd === true,
-    appleOriginalTransactionId: originalTransactionId,
-    appleProductId: productId,
+  const { sql } = deps;
+  const get = (k: string) => (deps.env as Record<string, string | undefined>)[k];
+  const verdict = await confirmAppleTransaction(body, user.id, {
+    bundleId: deps.env.APPLE_BUNDLE_ID?.trim() || null,
+    iapEnv: iapEnvFrom(get),
+    apiCredentials: appStoreApiCredentialsFrom(get),
+    jwsOptions: deps.appleJws,
+    fetchImpl: deps.fetchImpl,
+    ownerOfOriginalTransaction: async (otx) => {
+      const rows = (await sql`
+        SELECT user_id::text AS user_id FROM subscriptions WHERE apple_original_transaction_id = ${otx} LIMIT 1
+      `) as { user_id: string }[];
+      return rows[0]?.user_id ?? null;
+    },
   });
+  if (!verdict.ok) {
+    await logBilling(sql, "apple", "apple-iap", "error", `refused: ${verdict.code}`, user.id);
+    return billingJson(iapRejectionBody(verdict), verdict.status);
+  }
+  const result = await applyPlanUpdate(sql, verdict.write);
   if (!result.applied) return billingJson({ error: "no subscription row" }, 404);
-  return billingJson({ ok: true, transactionId, originalTransactionId });
+  return billingJson({
+    ok: true,
+    transactionId: verdict.tx.transactionId,
+    originalTransactionId: verdict.tx.originalTransactionId,
+    environment: verdict.tx.environment,
+  });
 }
 
 // ── referral-code ────────────────────────────────────────────────────────────
@@ -678,61 +688,89 @@ export async function handleAppleWebhook(deps: BillingDeps, req: Request): Promi
 
   const { sql } = deps;
   const notificationUUID = asString(notification.notificationUUID);
-  if (notificationUUID && !(await claimWebhookEvent(sql, "apple_webhook_events", notificationUUID))) {
-    return billingJson({ received: true, duplicate: true });
-  }
-
   const notificationType = asString(notification.notificationType) ?? "";
+
+  // Ledger claim and row write commit together, in ONE transaction, and every
+  // DB call sits inside this try. A DB error anywhere — including the claim
+  // itself — rolls the claim back and answers a generic 500, so Apple's retry
+  // (it retries any non-200) runs the notification again instead of finding
+  // a claimed-but-never-processed event and acking it as a duplicate. The
+  // previous "claim, then DELETE on failure" left the claim behind whenever
+  // the release failed too. Concurrent duplicates block on the ledger's
+  // primary key until the first commits, then see the claim and ack.
   try {
-    const mapped = appleNotificationToPlan(notificationType, asString(notification.subtype));
-    if (!mapped) return billingJson({ received: true, ignored: true });
-
-    const data = notification.data;
-    const signedTx = data && typeof data === "object" ? asString((data as Obj).signedTransactionInfo) : null;
-    if (!signedTx) return billingJson({ received: true, ignored: true });
-
-    let tx: Obj;
-    try {
-      tx = await verifyAppleJws(signedTx, deps.appleJws);
-    } catch {
-      // The envelope verified but the transaction didn't — never write from it.
-      await logBilling(sql, "apple", notificationType, "error", "signedTransactionInfo failed verification");
-      return billingJson({ received: true, ignored: true });
-    }
-
-    const bundle = deps.env.APPLE_BUNDLE_ID?.trim() || null;
-    const txBundle = asString(tx.bundleId);
-    if (bundle && txBundle && txBundle !== bundle) return billingJson({ received: true, ignored: true });
-
-    const productId = asString(tx.productId);
-    const iapEnv = iapEnvFrom((k) => (deps.env as Record<string, string | undefined>)[k]);
-    if (iapEnv.NUVO_IAP_MONTHLY || iapEnv.NUVO_IAP_ANNUAL) {
-      if (!isOurIapProduct(productId, iapEnv)) return billingJson({ received: true, ignored: true });
-    }
-
-    const originalTransactionId = asString(tx.originalTransactionId);
-    if (!originalTransactionId) return billingJson({ received: true, ignored: true });
-
-    // A row already linked to this lineage is never remapped by the token.
-    const linked = await sql`
-      SELECT 1 FROM subscriptions WHERE apple_original_transaction_id = ${originalTransactionId} LIMIT 1
-    `;
-    const tokenUser = linked.length ? undefined : (parseAppAccountToken(tx.appAccountToken) ?? undefined);
-
-    const result = await applyPlanUpdate(sql, {
-      userId: tokenUser,
-      plan: mapped.plan,
-      planSource: "apple",
-      currentPeriodEnd: appleDateToIso(tx.expiresDate),
-      cancelAtPeriodEnd: mapped.cancelAtPeriodEnd,
-      appleOriginalTransactionId: originalTransactionId,
-      appleProductId: productId,
+    return await sql.begin(async (tx) => {
+      const txSql = tx as unknown as Sql;
+      if (notificationUUID && !(await claimWebhookEvent(txSql, "apple_webhook_events", notificationUUID))) {
+        return billingJson({ received: true, duplicate: true });
+      }
+      return await applyAppleNotification(deps, txSql, notification, notificationType);
     });
-    if (!result.applied) await logBilling(sql, "apple", notificationType, "ok", "no matching subscription row");
   } catch (e) {
-    if (notificationUUID) await releaseWebhookEvent(sql, "apple_webhook_events", notificationUUID);
-    await logBilling(sql, "apple", "notification", "error", e instanceof Error ? e.message : String(e));
+    await logBilling(sql, "apple", "notification", "error", e instanceof Error ? e.name : "error");
     return billingJson({ error: "handler failed" }, 500);
   }
+}
+
+async function applyAppleNotification(deps: BillingDeps, sql: Sql, notification: Obj, notificationType: string): Promise<Response> {
+  const mapped = appleNotificationToPlan(notificationType, asString(notification.subtype));
+  if (!mapped) return billingJson({ received: true, ignored: true });
+
+  const data = notification.data;
+  const signedTx = data && typeof data === "object" ? asString((data as Obj).signedTransactionInfo) : null;
+  if (!signedTx) return billingJson({ received: true, ignored: true });
+
+  let tx: Obj;
+  try {
+    tx = await verifyAppleJws(signedTx, deps.appleJws);
+  } catch {
+    // The envelope verified but the transaction didn't — never write from it.
+    await logBilling(sql, "apple", notificationType, "error", "signedTransactionInfo failed verification");
+    return billingJson({ received: true, ignored: true });
+  }
+
+  const bundle = deps.env.APPLE_BUNDLE_ID?.trim() || null;
+  const txBundle = asString(tx.bundleId);
+  if (bundle && txBundle && txBundle !== bundle) return billingJson({ received: true, ignored: true });
+
+  const productId = asString(tx.productId);
+  const iapEnv = iapEnvFrom((k) => (deps.env as Record<string, string | undefined>)[k]);
+  if (iapEnv.NUVO_IAP_MONTHLY || iapEnv.NUVO_IAP_ANNUAL) {
+    if (!isOurIapProduct(productId, iapEnv)) return billingJson({ received: true, ignored: true });
+  }
+
+  const originalTransactionId = asString(tx.originalTransactionId);
+  if (!originalTransactionId) return billingJson({ received: true, ignored: true });
+
+  // A row already linked to this lineage is never remapped by the token. An
+  // unlinked lineage attaches by token only to an account with no Apple
+  // purchase of its own that isn't paying on Stripe (`appleTokenMayAttach`,
+  // QA2 #129 S2) — otherwise nothing moves and the confirm path decides.
+  const linked = await sql`
+    SELECT 1 FROM subscriptions WHERE apple_original_transaction_id = ${originalTransactionId} LIMIT 1
+  `;
+  let tokenUser: string | undefined;
+  const token = linked.length ? null : parseAppAccountToken(tx.appAccountToken);
+  if (token) {
+    const target = (await sql`
+      SELECT apple_original_transaction_id, status, plan_source, stripe_subscription_id
+      FROM subscriptions WHERE user_id = ${token}::uuid LIMIT 1
+    `) as { apple_original_transaction_id: string | null; status: string | null; plan_source: string | null; stripe_subscription_id: string | null }[];
+    if (appleTokenMayAttach(target[0] ?? null)) tokenUser = token;
+    else await logBilling(sql, "apple", notificationType, "ok", "appAccountToken not applied: account linked or on another rail");
+  }
+
+  const env = asString(tx.environment)?.toLowerCase();
+  const result = await applyPlanUpdate(sql, {
+    userId: tokenUser,
+    plan: mapped.plan,
+    planSource: "apple",
+    currentPeriodEnd: appleDateToIso(tx.expiresDate),
+    cancelAtPeriodEnd: mapped.cancelAtPeriodEnd,
+    appleOriginalTransactionId: originalTransactionId,
+    appleProductId: productId,
+    ...(env === "production" || env === "sandbox" ? { appleEnvironment: env } : {}),
+  });
+  if (!result.applied) await logBilling(sql, "apple", notificationType, "ok", "no matching subscription row");
   return billingJson({ received: true });
 }

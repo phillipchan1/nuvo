@@ -13,6 +13,7 @@ import { installBillingForTests, BILLING_ROUTE_NAMES } from "./billing/routes.ts
 import { stripeSignatureFor, verifyStripeEvent, encodeStripeForm } from "./billing/stripeApi.ts";
 import { verifyAppleJws, APPLE_ROOT_CA_G3_SHA256 } from "./billing/appleJws.ts";
 import { wipeOwnedAccount } from "./store.ts";
+import { b64, b64url, cert, makeAppleTestCa, newKey, past, future, OID_LEAF, type Key } from "../../tests/fixtures/appleTestCa.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -64,97 +65,9 @@ const NOW = 1_800_000_000;
   ok(multi, "stripe sig: any matching v1 (secret rotation) verifies");
 }
 
-// ── Apple test CA (DER by hand; same shape as Apple's x5c) ───────────────────
-function lenBytes(n: number): number[] {
-  if (n < 0x80) return [n];
-  if (n < 0x100) return [0x81, n];
-  return [0x82, n >> 8, n & 0xff];
-}
-function tlv(tag: number, ...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((s, p) => s + p.length, 0);
-  const head = [tag, ...lenBytes(total)];
-  const out = new Uint8Array(head.length + total);
-  out.set(head, 0);
-  let o = head.length;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
-}
-const u8 = (...b: number[]) => new Uint8Array(b);
-const seq = (...p: Uint8Array[]) => tlv(0x30, ...p);
-const OID_SHA256 = u8(0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02);
-const OID_SHA384 = u8(0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x03);
-const OID_LEAF = u8(0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x06, 0x0b, 0x01);
-const OID_INTER = u8(0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x06, 0x02, 0x01);
-function name(cn: string): Uint8Array {
-  return seq(tlv(0x31, seq(u8(0x06, 0x03, 0x55, 0x04, 0x03), tlv(0x0c, new TextEncoder().encode(cn)))));
-}
-function utc(d: Date): Uint8Array {
-  const p = (n: number) => String(n).padStart(2, "0");
-  const s = `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
-  return tlv(0x17, new TextEncoder().encode(s));
-}
-function derInt(raw: Uint8Array): Uint8Array {
-  let v = raw;
-  while (v.length > 1 && v[0] === 0 && !(v[1]! & 0x80)) v = v.slice(1);
-  if (v[0]! & 0x80) v = new Uint8Array([0, ...v]);
-  return tlv(0x02, v);
-}
-function rawToDerSig(raw: Uint8Array): Uint8Array {
-  const half = raw.length / 2;
-  return seq(derInt(raw.slice(0, half)), derInt(raw.slice(half)));
-}
-type Key = { pair: CryptoKeyPair; spki: Uint8Array; curve: "P-256" | "P-384" };
-async function newKey(curve: "P-256" | "P-384"): Promise<Key> {
-  const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: curve }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
-  return { pair, spki, curve };
-}
-let serial = 1;
-async function cert(subject: string, key: Key, issuer: string, issuerKey: Key, marker: Uint8Array | null, nb: Date, na: Date) {
-  const sigOid = issuerKey.curve === "P-384" ? OID_SHA384 : OID_SHA256;
-  const hash = issuerKey.curve === "P-384" ? "SHA-384" : "SHA-256";
-  const ext = marker ? [tlv(0xa3, seq(seq(marker, tlv(0x04, u8(0x05, 0x00)))))] : [];
-  const tbs = seq(
-    tlv(0xa0, u8(0x02, 0x01, 0x02)),
-    u8(0x02, 0x01, serial++),
-    seq(sigOid),
-    name(issuer),
-    seq(utc(nb), utc(na)),
-    name(subject),
-    key.spki,
-    ...ext,
-  );
-  const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash }, issuerKey.pair.privateKey, tbs));
-  return seq(tbs, seq(sigOid), tlv(0x03, u8(0), rawToDerSig(raw)));
-}
-const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
-const b64url = (b: Uint8Array) => b64(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-async function sha256Hex(b: Uint8Array) {
-  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", b)), (x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-const past = new Date("2020-01-01T00:00:00Z");
-const future = new Date("2040-01-01T00:00:00Z");
-const rootKey = await newKey("P-384");
-const interKey = await newKey("P-384");
-const leafKey = await newKey("P-256");
-const rootDer = await cert("Test Root CA - G3", rootKey, "Test Root CA - G3", rootKey, null, past, future);
-const interDer = await cert("Test WWDR G6", interKey, "Test Root CA - G3", rootKey, OID_INTER, past, future);
-const leafDer = await cert("Test Prod ECC Mac App Store", leafKey, "Test WWDR G6", interKey, OID_LEAF, past, future);
-const rootFp = await sha256Hex(rootDer);
-const x5c = [b64(leafDer), b64(interDer), b64(rootDer)];
-
-async function jws(payload: Record<string, unknown>, opts: { key?: Key; chain?: string[] } = {}) {
-  const h = b64url(new TextEncoder().encode(JSON.stringify({ alg: "ES256", x5c: opts.chain ?? x5c })));
-  const p = b64url(new TextEncoder().encode(JSON.stringify(payload)));
-  const sig = new Uint8Array(
-    await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, (opts.key ?? leafKey).pair.privateKey, new TextEncoder().encode(`${h}.${p}`)),
-  );
-  return `${h}.${p}.${b64url(sig)}`;
-}
+// ── Apple test CA (generated; same shape as Apple's x5c) ─────────────────────
+const ca = await makeAppleTestCa();
+const { interKey, leafKey, rootFp, x5c, jws } = ca;
 
 {
   const pins = { rootFingerprints: [rootFp] };
@@ -243,12 +156,22 @@ const restoreIo = installRequestIoForTests(() => {
 type Call = { url: string; method: string; body: string; headers: Record<string, string> };
 const calls: Call[] = [];
 let failInvoiceRetrieve = false;
+let appleApiTx: string | null = null;
+let appleApiDown = false;
 const stripeFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
   const headers = Object.fromEntries(new Headers(init.headers).entries());
   calls.push({ url: input, method: init.method ?? "GET", body: String(init.body ?? ""), headers });
   const u = new URL(input);
   const j = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   if (u.hostname === "api.resend.com") return j({ id: "email" });
+  if (u.hostname === "api.storekit.itunes.apple.com" || u.hostname === "api.storekit-sandbox.itunes.apple.com") {
+    if (appleApiDown) return j({ errorCode: 5000000 }, 500);
+    const auth = headers.authorization ?? "";
+    const claims = JSON.parse(Buffer.from(auth.replace(/^Bearer /, "").split(".")[1] ?? "", "base64url").toString()) as Record<string, unknown>;
+    if (claims.aud !== "appstoreconnect-v1" || claims.bid !== "day.nuvo.app" || claims.iss !== "issuer-1") return j({}, 401);
+    const sandboxHit = u.hostname.startsWith("api.storekit-sandbox") && u.pathname === "/inApps/v1/transactions/3000000001";
+    return sandboxHit && appleApiTx ? j({ signedTransactionInfo: appleApiTx }) : j({ errorCode: 4040010 }, 404);
+  }
   if (u.hostname !== "api.stripe.com") return j({}, 404);
   const path = u.pathname;
   if (path === "/v1/checkout/sessions" && init.method === "POST") return j({ id: "cs_new", url: "https://checkout.stripe.test/cs_new" });
@@ -504,16 +427,95 @@ const checkoutDone = {
   const again = (await (await req("/functions/v1/referral-code", asUser(P), flipped)).json()) as { code?: string };
   ok(again.code === codeBody.code, "referral-code: second call returns the same code");
 
-  const unknown = await req("/functions/v1/apple-iap", asUser(P, { productId: "com.other.app", originalTransactionId: "otx_P" }), flipped);
-  ok(unknown.status === 400, "apple-iap: unknown product 400");
+  // apple-iap: only a JWS that verifies to the (pinned) Apple root counts.
+  const SIGNED = Date.parse("2026-11-06T00:00:00Z");
+  const signedTx = (over: Record<string, unknown> = {}) => jws({
+    bundleId: "day.nuvo.app",
+    productId: "NUVO_IAP_MONTHLY",
+    transactionId: "2000000001",
+    originalTransactionId: "otx_P",
+    expiresDate: 1_950_000_000_000,
+    environment: "Production",
+    appAccountToken: P,
+    signedDate: SIGNED,
+    ...over,
+  });
+  const iapRow = async () => {
+    const r = await row(P);
+    return `${r.status}|${r.plan_source}|${r.apple_original_transaction_id}`;
+  };
+  const before = await iapRow();
+  const forged = await req(
+    "/functions/v1/apple-iap",
+    asUser(P, { productId: "NUVO_IAP_MONTHLY", originalTransactionId: "otx_P", transactionId: "2000000001", expiresDate: 4_102_444_800_000 }),
+    flipped,
+  );
+  const forgedBody = (await forged.json()) as { code?: string; retriable?: boolean };
+  ok(forged.status === 503 && forgedBody.code === "verification_unavailable" && forgedBody.retriable === true, `apple-iap: 1.1 body with no JWS and no App Store API key → 503 fail closed (got ${forged.status})`);
+  ok((await iapRow()) === before, "apple-iap: forged client ids wrote nothing");
+  const garbage = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: "a.b.c", productId: "NUVO_IAP_MONTHLY" }), flipped);
+  ok(garbage.status === 400, `apple-iap: malformed JWS 400 (got ${garbage.status})`);
+  const otherCa = await makeAppleTestCa();
+  const wrongRoot = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await otherCa.jws({ bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", transactionId: "1", originalTransactionId: "otx_P", expiresDate: 1_950_000_000_000, environment: "Production", signedDate: SIGNED }) }), flipped);
+  ok(wrongRoot.status === 400, `apple-iap: chain to an unpinned root 400 (got ${wrongRoot.status})`);
+  const unknown = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx({ productId: "com.other.app" }) }), flipped);
+  ok(unknown.status === 400, "apple-iap: unknown product (signed) 400");
+  const otherBundleIap = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx({ bundleId: "com.someone.else" }) }), flipped);
+  ok(otherBundleIap.status === 400, "apple-iap: another bundle's transaction 400");
+  const mismatch = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx({ appAccountToken: A }) }), flipped);
+  ok(mismatch.status === 403, `apple-iap: appAccountToken of another account 403 (got ${mismatch.status})`);
+  const lapsed = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx({ expiresDate: 1_000_000_000_000 }) }), flipped);
+  ok(lapsed.status === 400, "apple-iap: expired transaction 400");
+  const revoked = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx({ revocationDate: SIGNED }) }), flipped);
+  ok(revoked.status === 400, "apple-iap: revoked transaction 400");
+  ok((await iapRow()) === before, "apple-iap: no rejected confirm wrote anything");
+
   const iap = await req(
     "/functions/v1/apple-iap",
-    asUser(P, { productId: "NUVO_IAP_MONTHLY", originalTransactionId: "otx_P", transactionId: "tx_1", expiresDate: 1_900_000_000_000 }),
+    // The body's own product/expiry/ids are lies; only the JWS counts.
+    asUser(P, { jwsRepresentation: await signedTx(), productId: "NUVO_IAP_ANNUAL", originalTransactionId: "otx_forged", expiresDate: 4_102_444_800_000 }),
     flipped,
   );
   ok(iap.status === 200, `apple-iap: 200 (got ${iap.status})`);
   const pr = await row(P);
   ok(pr.status === "active" && pr.plan_source === "apple" && pr.apple_original_transaction_id === "otx_P", "apple-iap: row active via apple");
+  ok(new Date(pr.current_period_end as string).getTime() === 1_950_000_000_000, "apple-iap: expiry from the signed payload, never the body");
+  ok(pr.apple_product_id === "NUVO_IAP_MONTHLY" && pr.apple_environment === "production", "apple-iap: product + environment from the signed payload (lowercased)");
+
+  // Sandbox (App Review / TestFlight) is accepted on prod and tagged.
+  const S = "5a5a0000-0000-4000-8000-00000000005a";
+  await db.query(`INSERT INTO "user" (id, email, name, "emailVerified") VALUES ($1, 's@billing.test', 'Sam', true)`, [S]);
+  await db.query(`INSERT INTO subscriptions (user_id, status, trial_ends_at) VALUES ($1, 'trialing', '2099-01-01T00:00:00Z')`, [S]);
+  const stolen = await req("/functions/v1/apple-iap", asUser(S, { jwsRepresentation: await signedTx({ appAccountToken: undefined }) }), flipped);
+  ok(stolen.status === 409 && (await row(S)).status === "trialing", `apple-iap: a lineage linked to another account 409 (got ${stolen.status})`);
+  const sandbox = await req(
+    "/functions/v1/apple-iap",
+    asUser(S, { jwsRepresentation: await signedTx({ environment: "Sandbox", originalTransactionId: "otx_S", transactionId: "2000000099", appAccountToken: S.toUpperCase() }) }),
+    flipped,
+  );
+  const sr = await row(S);
+  ok(sandbox.status === 200 && sr.status === "active" && sr.apple_environment === "sandbox" && sr.apple_original_transaction_id === "otx_S", `apple-iap: sandbox accepted + tagged sandbox (got ${sandbox.status})`);
+
+  // 1.1 binary (no JWS) with the App Store Server API configured: the
+  // transaction comes from Apple and passes the same verifier + rules.
+  appleApiTx = await signedTx({ originalTransactionId: "otx_S", transactionId: "3000000001", environment: "Sandbox", appAccountToken: undefined });
+  const keyPair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+  const apiEnv = { ...flipped, APPLE_IAP_KEY_ID: "KEY123", APPLE_IAP_ISSUER_ID: "issuer-1", APPLE_IAP_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----\\n${b64(pkcs8)}\\n-----END PRIVATE KEY-----` };
+  calls.length = 0;
+  const legacy = await req("/functions/v1/apple-iap", asUser(S, { transactionId: "3000000001", productId: "NUVO_IAP_ANNUAL", expiresDate: 4_102_444_800_000 }), apiEnv);
+  const hosts = calls.map((c) => new URL(c.url).hostname);
+  ok(legacy.status === 200, `apple-iap 1.1: verified via App Store Server API (got ${legacy.status})`);
+  ok(hosts.join(",") === "api.storekit.itunes.apple.com,api.storekit-sandbox.itunes.apple.com", `apple-iap 1.1: production first, then sandbox (got ${hosts.join(",")})`);
+  ok(new Date((await row(S)).current_period_end as string).getTime() === 1_950_000_000_000, "apple-iap 1.1: expiry from Apple's signed answer");
+  const missing = await req("/functions/v1/apple-iap", asUser(S, { transactionId: "3999999999" }), apiEnv);
+  ok(missing.status === 400, `apple-iap 1.1: a transaction Apple doesn't know 400 (got ${missing.status})`);
+  appleApiDown = true;
+  const down = await req("/functions/v1/apple-iap", asUser(S, { transactionId: "3000000001" }), apiEnv);
+  appleApiDown = false;
+  ok(down.status === 503, `apple-iap 1.1: App Store API failure → 503, no write (got ${down.status})`);
+  const noBundle = await req("/functions/v1/apple-iap", asUser(P, { jwsRepresentation: await signedTx() }), { ...flipped, APPLE_BUNDLE_ID: "" });
+  ok(noBundle.status === 503, "apple-iap: APPLE_BUNDLE_ID unset → fail closed");
   const checkoutApple = await req("/functions/v1/stripe-checkout", asUser(P, { plan: "monthly" }), flipped);
   ok(checkoutApple.status === 409, "checkout: refuses an Apple-active account");
 }
@@ -601,6 +603,52 @@ const txP = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalT
   const unknownUser = await appleNotification("uuid-ghost", "SUBSCRIBED", null, { ...txP, originalTransactionId: "otx_ghost", appAccountToken: ghost });
   await req("/api/apple-webhook", appleReq(unknownUser), flipped);
   ok((await row(ghost)) === undefined, "apple token: an id Better Auth doesn't know never gets a row");
+}
+
+// ── 7b'. appAccountToken never moves a Stripe subscriber (QA2 #129 S2) ───────
+{
+  const V = "7e7e0000-0000-4000-8000-00000000007e";
+  await db.query(`INSERT INTO "user" (id, email, name, "emailVerified") VALUES ($1, 'v@billing.test', 'Val', true)`, [V]);
+  await db.query(
+    `INSERT INTO subscriptions (user_id, status, plan_source, stripe_customer_id, stripe_subscription_id, trial_ends_at)
+     VALUES ($1, 'active', 'stripe', 'cus_V', 'sub_V', '2020-01-01T00:00:00Z')`,
+    [V],
+  );
+  const vTx = { bundleId: "day.nuvo.app", productId: "NUVO_IAP_MONTHLY", originalTransactionId: "otx_V", expiresDate: 1_950_000_000_000, appAccountToken: V };
+  await req("/api/apple-webhook", appleReq(await appleNotification("uuid-sub-V", "SUBSCRIBED", "INITIAL_BUY", vTx)), flipped);
+  let v = await row(V);
+  ok(v.status === "active" && v.plan_source === "stripe" && v.apple_original_transaction_id === null, "apple token: a Stripe-active account is not flipped to apple by a token");
+  await req("/api/apple-webhook", appleReq(await appleNotification("uuid-refund-V", "REFUND", null, vTx)), flipped);
+  v = await row(V);
+  ok(v.status === "active" && v.plan_source === "stripe", "apple token: that lineage's REFUND can't cancel the live Stripe plan");
+
+  // An account that already has its own Apple lineage isn't re-linked by a token either.
+  const otherLineage = await appleNotification("uuid-sub-T2", "SUBSCRIBED", null, { ...vTx, originalTransactionId: "otx_T2", appAccountToken: "ffff0000-0000-4000-8000-00000000000f" });
+  await req("/api/apple-webhook", appleReq(otherLineage), flipped);
+  ok((await row("ffff0000-0000-4000-8000-00000000000f")).apple_original_transaction_id === "otx_T", "apple token: an account linked to another lineage keeps it");
+}
+
+// ── 7b''. Ledger + write are one unit: a DB error is a clean, retriable 5xx ───
+{
+  const renew = await appleNotification("uuid-ledger-1", "DID_RENEW", null, { ...txP, expiresDate: 1_970_000_000_000 });
+  await db.query(`ALTER TABLE apple_webhook_events RENAME TO apple_webhook_events_off`);
+  const claimFail = await req("/api/apple-webhook", appleReq(renew), flipped);
+  await db.query(`ALTER TABLE apple_webhook_events_off RENAME TO apple_webhook_events`);
+  const claimBody = await claimFail.text();
+  ok(claimFail.status === 500 && claimBody === JSON.stringify({ error: "handler failed" }), `apple ledger: claim DB error → generic 500 (got ${claimFail.status} ${claimBody.slice(0, 80)})`);
+
+  // Processing fails AFTER the claim: the claim must roll back with it.
+  await db.query(`ALTER TABLE subscriptions RENAME TO subscriptions_off`);
+  const writeFail = await req("/api/apple-webhook", appleReq(renew), flipped);
+  await db.query(`ALTER TABLE subscriptions_off RENAME TO subscriptions`);
+  ok(writeFail.status === 500, `apple ledger: write DB error → 500 (got ${writeFail.status})`);
+  const claimed = await db.query(`SELECT 1 FROM apple_webhook_events WHERE event_id = 'uuid-ledger-1'`);
+  ok(claimed.rows.length === 0, "apple ledger: a failed notification leaves no claim behind");
+
+  const retry = await req("/api/apple-webhook", appleReq(renew), flipped);
+  const retryBody = (await retry.json()) as { duplicate?: boolean };
+  ok(retry.status === 200 && retryBody.duplicate !== true, "apple ledger: Apple's retry is processed, not acked as a duplicate");
+  ok(new Date((await row(P)).current_period_end as string).getTime() === 1_970_000_000_000, "apple ledger: the retry wrote the renewal");
 }
 
 // ── 7c. CORS for credentialed and bearer callers ─────────────────────────────
