@@ -36,9 +36,16 @@
 # Cutover additionally requires the confirm input exactly `CUTOVER nuvo` and
 # runs in the `nuvo-cutover` environment (set required reviewers there).
 #
-# Billing tables stay on Supabase and are excluded from the dump, the
-# source-snapshot.json, and the parity proof: subscriptions,
-# stripe_webhook_events, apple_webhook_events, apple_notification_events.
+# Billing tables are excluded from the dump, the frozen
+# source-snapshot.json, and the planner parity proof (subscriptions,
+# stripe_webhook_events, apple_webhook_events, apple_notification_events):
+# webhooks keep writing Supabase through the window. The billing step
+# copies them separately — one REPEATABLE READ READ ONLY source snapshot,
+# subscriptions upserted newer-updated_at-wins, ledgers ON CONFLICT DO
+# NOTHING, legacy apple_notification_events.notification_uuid →
+# apple_webhook_events.event_id — then dies unless count + md5 parity
+# holds (scripts/cutover_copy.py, compose_billing_*). phase=billing re-runs
+# only that for the post-switch delta.
 # sync_log structure is dumped (--exclude-table-data); its rows stay out
 # of snapshot/parity. After switch, resync inserts every source row whose
 # id is missing on the target, aborting if an incoming id already exists
@@ -83,13 +90,16 @@ on:
         default: ""
       phase:
         description: >
-          copy = dump + restore + verify + seal + first tail/reconcile.
-          resync = post-switch sync_log tail + push_subscriptions
-          anti-join only (pass the watermark from the copy report).
+          copy = dump + restore + verify + billing copy + seal + first
+          tail/reconcile. resync = post-switch sync_log tail +
+          push_subscriptions anti-join only (pass the watermark from the
+          copy report). billing = billing copy + parity only (post-switch
+          delta; re-run daily until Supabase subscriptions stops changing).
         type: choice
         options:
           - copy
           - resync
+          - billing
         default: copy
       sync_log_watermark_id:
         description: >
@@ -237,6 +247,9 @@ jobs:
                   sys.exit(1)
               target = ensure_ssl(scratch)
               kind = "scratch"
+              if neon and same_db(target, ensure_ssl(neon)):
+                  print("::error::dry-run refuses a SCRATCH_DATABASE_URL that is TARGET_DATABASE_URL", file=sys.stderr)
+                  sys.exit(1)
           else:
               if not neon:
                   print("::error::Missing repo secret TARGET_DATABASE_URL (required for cutover)", file=sys.stderr)
@@ -304,12 +317,24 @@ jobs:
           sys.path.insert(0, str(ROOT / "scripts"))
           from cutover_copy import (
               BILLING_TABLES,
+              BillingCopyError,
               COPY_SKIP_TABLES,
               SYNC_LOG_COLUMNS,
               PUSH_COLUMNS,
               CutoverArmedError,
               anon_insert_denied,
               anon_insert_privilege_sql,
+              billing_columns_sql,
+              billing_parity_problems,
+              billing_plan,
+              billing_plan_entries,
+              billing_report_lines,
+              billing_schema_missing,
+              billing_schema_sql,
+              compose_billing_source_script,
+              compose_billing_target_script,
+              parse_billing_columns,
+              parse_billing_lines,
               assert_cutover_armed,
               dump_exclude_args,
               auth_parity_is_fatal,
@@ -1476,9 +1501,86 @@ jobs:
                   except OSError:
                       pass
 
+          def cmd_billing() -> None:
+              """Supabase → target billing copy + parity. Counts and md5 only."""
+              source = os.environ["SOURCE_DATABASE_URL"]
+              target = os.environ["RESTORE_DATABASE_URL"]
+              phase = (os.environ.get("PHASE") or "copy").strip().lower()
+              work = dump_dir()
+              cols_sql = billing_columns_sql()
+              target_meta = parse_billing_columns(psql(target, cols_sql, extra=["-tA"]))
+              missing = billing_schema_missing(target_meta)
+              if missing:
+                  neon_sql = Path("worker/schema/neon.sql")
+                  if not neon_sql.exists():
+                      die("missing worker/schema/neon.sql")
+                  print(f"target has no {', '.join(missing)} — applying the neon.sql billing DDL…", flush=True)
+                  schema = work / "billing-schema.sql"
+                  try:
+                      schema.write_text(billing_schema_sql(neon_sql.read_text(encoding="utf-8")), encoding="utf-8")
+                  except BillingCopyError as exc:
+                      die(str(exc))
+                  run(["psql", "-v", "ON_ERROR_STOP=1", "-d", target, "-f", str(schema)])
+                  target_meta = parse_billing_columns(psql(target, cols_sql, extra=["-tA"]))
+              source_meta = parse_billing_columns(psql(source, cols_sql, source=True, extra=["-tA"]))
+              try:
+                  plan = billing_plan(source_meta, target_meta)
+              except BillingCopyError as exc:
+                  die(f"billing copy refused, wrote nothing: {exc}")
+              for entry in plan["tables"]:
+                  print(f"  {entry['table']}: {len(entry['columns'])} common column(s)", flush=True)
+              if not plan.get("legacy"):
+                  print("  apple_notification_events: not on source, skipped", flush=True)
+              files = {
+                  entry["table"]: str(work / f"billing-{entry['table']}.csv")
+                  for entry in billing_plan_entries(plan)
+              }
+              src_script = work / "billing-source.sql"
+              dst_script = work / "billing-target.sql"
+              src_script.write_text(compose_billing_source_script(plan, files), encoding="utf-8")
+              dst_script.write_text(compose_billing_target_script(plan, files), encoding="utf-8")
+              print("reading billing from one REPEATABLE READ READ ONLY source snapshot…", flush=True)
+              src_out = run(
+                  ["psql", "-v", "ON_ERROR_STOP=1", "-tA", "-d", source, "-f", str(src_script)],
+                  source=True,
+              )
+              print("writing billing to target (one transaction) + parity…", flush=True)
+              dst_out = run(["psql", "-v", "ON_ERROR_STOP=1", "-tA", "-d", target, "-f", str(dst_script)])
+              for path in [src_script, dst_script, *(Path(f) for f in files.values())]:
+                  try:
+                      path.unlink()
+                  except OSError:
+                      pass
+              src_hashes = parse_billing_lines(src_out)
+              dst_hashes = parse_billing_lines(dst_out)
+              problems = billing_parity_problems(
+                  src_hashes, dst_hashes, plan, allow_target_newer=phase == "billing"
+              )
+              lines = billing_report_lines(src_hashes, dst_hashes, plan, problems, phase=phase)
+              for line in lines:
+                  if line.startswith("| ") and not line.startswith("| ---"):
+                      print(f"  {line}", flush=True)
+              report = report_dir() / "cutover-report.md"
+              if not report.exists():
+                  report.write_text(
+                      "# Nuvo cutover checksum report\n\n"
+                      f"- mode: {os.environ.get('CUTOVER_MODE', '')}\n"
+                      f"- target: {os.environ.get('RESTORE_KIND', '')}\n",
+                      encoding="utf-8",
+                  )
+              with report.open("a", encoding="utf-8") as fh:
+                  fh.write("\n".join(lines) + "\n")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as fh:
+                      fh.write("\n".join(lines) + "\n")
+              if problems:
+                  die("billing count or md5 mismatch — abort:\n  " + "\n  ".join(problems))
+              print("billing parity ok", flush=True)
+
           def main() -> None:
               if len(sys.argv) < 2:
-                  die("usage: cutover.py resolve|dump|restore|verify|resync")
+                  die("usage: cutover.py resolve|dump|restore|verify|resync|billing")
               action = sys.argv[1]
               if action == "resolve":
                   cmd_resolve()
@@ -1490,6 +1592,8 @@ jobs:
                   cmd_verify()
               elif action == "resync":
                   cmd_resync()
+              elif action == "billing":
+                  cmd_billing()
               else:
                   die(f"unknown action {action}")
 
@@ -1499,7 +1603,7 @@ jobs:
 
       - id: pick-dump
         name: Pick pg_dump matching source major
-        if: ${{ inputs.phase != 'resync' }}
+        if: ${{ (inputs.phase || 'copy') == 'copy' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1511,7 +1615,7 @@ jobs:
 
       - id: dump
         name: pg_dump source + export auth (read-only)
-        if: ${{ inputs.phase != 'resync' }}
+        if: ${{ (inputs.phase || 'copy') == 'copy' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1526,7 +1630,7 @@ jobs:
 
       - id: restore
         name: Restore + map auth on ${{ inputs.mode == 'cutover' && 'Neon target' || 'scratch target' }}
-        if: ${{ inputs.phase != 'resync' }}
+        if: ${{ (inputs.phase || 'copy') == 'copy' }}
         run: |
           set +x
           set -eu
@@ -1539,7 +1643,7 @@ jobs:
 
       - id: verify
         name: Per-table row count + content hash
-        if: ${{ inputs.phase != 'resync' }}
+        if: ${{ (inputs.phase || 'copy') == 'copy' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
@@ -1551,6 +1655,22 @@ jobs:
           mkdir -p "$CUTOVER_LOG_DIR"
           exec 3>&1
           python3 "${RUNNER_TEMP}/cutover.py" verify 2>&1 | tee "${CUTOVER_LOG_DIR}/verify.log"
+
+      # Billing is not in the dump or the frozen snapshot (webhooks keep
+      # writing Supabase). Copied here from one read-only source snapshot,
+      # with its own count + md5 parity; phase=billing runs only this.
+      - id: billing
+        name: Billing copy + parity (subscriptions, webhook ledgers)
+        if: ${{ inputs.phase == 'billing' || steps.verify.outcome == 'success' }}
+        run: |
+          set +x
+          set -eu
+          set -o pipefail
+          unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+          unset PGDATABASE PGUSER PGPASSWORD PGPASSFILE
+          mkdir -p "$CUTOVER_LOG_DIR"
+          exec 3>&1
+          python3 "${RUNNER_TEMP}/cutover.py" billing 2>&1 | tee "${CUTOVER_LOG_DIR}/billing.log"
 
       - id: assert-logs
         name: Assert cutover logs have no row data
@@ -1577,7 +1697,7 @@ jobs:
 
       - id: seal-tokens
         name: Re-encrypt vault tokens in-runner
-        if: ${{ inputs.phase != 'resync' }}
+        if: ${{ (inputs.phase || 'copy') == 'copy' }}
         env:
           PGOPTIONS: "-c default_transaction_read_only=on"
         run: |
