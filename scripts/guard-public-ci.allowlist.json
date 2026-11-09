@@ -389,7 +389,7 @@
       "file": "release.yml",
       "job": "release",
       "id": "build",
-      "sha256": "720d6a1984f22266405bb563eee110cd580c036924f6f0860559b340941840eb"
+      "sha256": "63a3f23aeb96f0073a01307c4a2cb878d93ab6725a07dda195390e81bea7398e"
     },
     {
       "file": "release.yml",

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { authLock } from "./authLock";
-import { authBaseUrl, edgeFunctionUrl, workersEnabled } from "./backend";
+import { apiConfigured, authBaseUrl, edgeFunctionUrl, workersEnabled } from "./backend";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance";
 import { isSpotlightWindow } from "./platform";
 import { workerRoute } from "./workerRoute";
@@ -9,7 +9,7 @@ import { workerSession } from "./workerSession";
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-export const supabaseConfigured = Boolean((url && anonKey) || workersEnabled);
+export const supabaseConfigured = Boolean((url && anonKey) || apiConfigured());
 
 // Exported so callers that need to stream an edge function (the agent replies
 // over SSE, which `functions.invoke` can't consume) can build the request URL
@@ -72,7 +72,7 @@ const innerFetch: typeof fetch = import.meta.env.DEV
  * The Worker path's one seam. The query builder, filters, upserts and
  * `.single()` stay supabase-js's own; only the wire changes — `/rest/v1/*` and
  * the edge functions go to the Worker (`workerRoute`), carrying the Better
- * Auth bearer instead of a GoTrue JWT. Never reached with the flag unset.
+ * Auth bearer instead of a GoTrue JWT. Never reached until the cutover flips.
  */
 async function toWorker(routed: string, input: RequestInfo | URL, init?: RequestInit): Promise<Request> {
   const req = new Request(routed, input instanceof Request ? input : init);
@@ -116,19 +116,23 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-if (workersEnabled) {
+if (apiConfigured()) {
   // GoTrue never holds a session on the Worker path — Better Auth does. Answer
   // the two questions every caller asks (`useAuth` publishes the answer), so the
   // outbox's owner key, push, the agent's bearer and the hooks need no fork.
+  // Installed whenever the Worker is baked in, but decided per call: until the
+  // launch probe reads `cutover_flipped`, GoTrue keeps answering.
   const auth = supabase.auth;
-  auth.getSession = (async () => ({
-    data: { session: await workerSession() },
-    error: null,
-  })) as typeof auth.getSession;
-  auth.getUser = (async () => ({
-    data: { user: (await workerSession())?.user ?? null },
-    error: null,
-  })) as unknown as typeof auth.getUser;
+  const goTrueGetSession = auth.getSession.bind(auth);
+  const goTrueGetUser = auth.getUser.bind(auth);
+  auth.getSession = (async () => {
+    if (!workersEnabled) return goTrueGetSession();
+    return { data: { session: await workerSession() }, error: null };
+  }) as typeof auth.getSession;
+  auth.getUser = (async (jwt?: string) => {
+    if (!workersEnabled) return goTrueGetUser(jwt);
+    return { data: { user: (await workerSession())?.user ?? null }, error: null };
+  }) as unknown as typeof auth.getUser;
 }
 
 /** Invoke an edge function, fire-and-forget, logging failures to console. */

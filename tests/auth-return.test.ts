@@ -83,13 +83,19 @@ describe("Google keeps D-126 on both backends", () => {
     vi.doMock("../src/lib/supabase", () => ({ supabase: { auth: { signInWithOAuth, linkIdentity: vi.fn() } } }));
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign, origin: "tauri://localhost", protocol: "tauri:", host: "localhost" });
+    const { setWorkersEnabled, resetWorkersEnabledForTests } = await import("../src/lib/backend");
+    setWorkersEnabled(true);
+    try {
     const g = await import("../src/lib/googleAuth");
     expect(await g.signInWithGoogle()).toEqual({ error: null });
     expect(signInWithOAuth).not.toHaveBeenCalled();
     const url = new URL(assign.mock.calls[0]![0] as string);
     expect(url.pathname).toBe("/api/signin/google");
     expect(url.searchParams.get("return")).toBe("tauri://localhost");
-    vi.unstubAllGlobals();
-    vi.doUnmock("../src/lib/supabase");
+    } finally {
+      resetWorkersEnabledForTests();
+      vi.unstubAllGlobals();
+      vi.doUnmock("../src/lib/supabase");
+    }
   });
 });
