@@ -712,6 +712,26 @@ export function asBusyBlock(id: string, title: string, dayISO: string, startMin:
 }
 
 /**
+ * Slots already on the calendar, as the immovable time the composer reads.
+ *
+ * A slot is a time block like any other — a project's sitting, a standing
+ * dedication, a run you committed last week. It used to be left out: the
+ * composer saw events and timed tasks but not slots, so Plan the week drafted
+ * new work straight on top of a project sitting already on Tuesday (ⓟ,
+ * 2026-11-09). Standing slots count too: work that belongs in one is routed
+ * into it before composing, and nothing else should land on top of it.
+ */
+export function slotsAsBusy(slots: { id: string; title: string; start_time: string; duration_minutes: number | null }[]): Task[] {
+  return slots
+    .filter((s) => s.start_time)
+    .map((s) => {
+      const d = new Date(s.start_time);
+      const dayISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return asBusyBlock(`slot-${s.id}`, s.title, dayISO, d.getHours() * 60 + d.getMinutes(), Math.max(15, s.duration_minutes ?? 30));
+    });
+}
+
+/**
  * The other places one block could go — **the composer's own answer, asked again.**
  *
  * Not a second placement rule (docs/plan-the-week-v2.md §9): each alternative is
