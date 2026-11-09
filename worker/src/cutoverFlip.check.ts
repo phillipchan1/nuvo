@@ -11,7 +11,8 @@ import {
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
 import { PGlite } from "@electric-sql/pglite";
-import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, runCronJob } from "./cronJobs.ts";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, enqueueDueCalendarAccounts, runCronJob } from "./cronJobs.ts";
+import type { Env } from "./env.ts";
 import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
 import { applyIsolationSchema } from "./isolationDb.ts";
@@ -474,7 +475,10 @@ try {
           },
         ],
       },
-      { CUTOVER_FLIPPED: "1" },
+      // M365 runs only with MS_* set (missing = feature off, covered below).
+      account.provider === "m365"
+        ? { CUTOVER_FLIPPED: "1", MS_CLIENT_ID: "test-ms-client", MS_CLIENT_SECRET: "test-ms-secret" }
+        : { CUTOVER_FLIPPED: "1" },
       sql,
     );
     const after = await db.query<{ sync_failures: number; next_sync_at: string | Date | null }>(
@@ -489,6 +493,55 @@ try {
     );
     ok(nextAt > Date.now(), `failed ${account.provider} account sets next_sync_at in the future`);
   }
+  await db.close();
+}
+
+{
+  // M365 removed: with no MS_* secrets an m365 message acks and the row is untouched.
+  const db = new PGlite();
+  await applyIsolationSchema(db);
+  const sql = makePgliteSql(db);
+  const id = "aaaaaaaa-eeee-4000-8000-000000000011";
+  const read = () =>
+    db.query<{ sync_failures: number; next_sync_at: string | Date | null; needs_reconnect: boolean }>(
+      "SELECT sync_failures, next_sync_at, needs_reconnect FROM calendar_accounts WHERE id = $1",
+      [id],
+    );
+  const before = await read();
+  let acks = 0;
+  let retries = 0;
+  let threw = false;
+  try {
+    await consumeCalendarSyncBatch(
+      {
+        messages: [
+          {
+            body: { account_id: id, user_id: "11111111-1111-1111-1111-111111111111", provider: "m365" },
+            ack: () => { acks += 1; },
+            retry: () => { retries += 1; },
+          },
+        ],
+      },
+      { CUTOVER_FLIPPED: "1" },
+      sql,
+    );
+  } catch {
+    threw = true;
+  }
+  const after = await read();
+  ok(!threw && acks === 1 && retries === 0, "m365 message without MS_* acks (feature off, no retry)");
+  ok(JSON.stringify(after.rows[0]) === JSON.stringify(before.rows[0]), "m365 message without MS_* leaves the account row untouched");
+
+  const enqueued = async (env: Env) => {
+    const sent: string[] = [];
+    await enqueueDueCalendarAccounts(sql, { ...env, CALENDAR_SYNC_QUEUE: { send: async (m: { provider: string }) => { sent.push(m.provider); } } as never });
+    return sent;
+  };
+  await db.query("UPDATE calendar_accounts SET next_sync_at = NULL, needs_reconnect = false");
+  const off = await enqueued({ CUTOVER_FLIPPED: "1" });
+  const on = await enqueued({ CUTOVER_FLIPPED: "1", MS_CLIENT_ID: "x", MS_CLIENT_SECRET: "y" });
+  ok(off.length > 0 && !off.includes("m365"), "calendar-dispatch without MS_* does not enqueue m365 accounts");
+  ok(on.includes("m365"), "calendar-dispatch with MS_* still enqueues m365 accounts");
   await db.close();
 }
 

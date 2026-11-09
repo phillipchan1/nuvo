@@ -561,7 +561,32 @@ await m365RefreshCase("5xx", { status: 503, body: "{}", reconnect: false });
 await m365RefreshCase("429", { status: 429, body: "{}", reconnect: false });
 await m365RefreshCase("network", { network: true, reconnect: false });
 await m365RefreshCase("missing access_token", { status: 200, body: JSON.stringify({ expires_in: 3600 }), reconnect: false });
-await m365RefreshCase("missing MS client", { env, reconnect: false });
+
+// M365 removed: missing MS_* is "feature off" — a quiet skip, not a failure.
+{
+  await db.query(
+    "UPDATE calendar_accounts SET needs_reconnect = false, sync_failures = 0, next_sync_at = NULL WHERE id = $1",
+    [M365_A],
+  );
+  let fetched = 0;
+  const restore = installOutboundFetchForTests(async () => {
+    fetched += 1;
+    return new Response("unexpected", { status: 500 });
+  });
+  const logsBefore = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM sync_log WHERE provider = 'm365'");
+  const out = await runM365Sync(sql, env, { accountId: M365_A, userId: A });
+  const after = await db.query<{ sync_failures: number; next_sync_at: unknown; needs_reconnect: boolean }>(
+    "SELECT sync_failures, next_sync_at, needs_reconnect FROM calendar_accounts WHERE id = $1",
+    [M365_A],
+  );
+  const logsAfter = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM sync_log WHERE provider = 'm365'");
+  ok("ok" in out && out.skipped === true && out.reason === "m365_disabled", "missing MS client: runM365Sync skips (m365_disabled)");
+  ok(Number(after.rows[0]?.sync_failures) === 0 && after.rows[0]?.next_sync_at === null, "missing MS client: account not marked failing");
+  ok(after.rows[0]?.needs_reconnect === false, "missing MS client: needs_reconnect untouched");
+  ok(logsAfter.rows[0]?.n === logsBefore.rows[0]?.n, "missing MS client: no sync_log noise");
+  ok(fetched === 0, "missing MS client: no Microsoft request");
+  restore();
+}
 
 await db.close();
 

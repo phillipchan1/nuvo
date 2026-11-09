@@ -1,6 +1,7 @@
 // Manual calendar pull — authenticated users can refresh on demand instead of
 // waiting for webhooks or the 5-minute poll.
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
+import { m365Enabled } from "../_shared/ms.ts";
 import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 Deno.serve(async (req) => {
@@ -30,6 +31,8 @@ Deno.serve(async (req) => {
 
     const errors: string[] = [];
     for (const account of accounts ?? []) {
+      // M365 is removed: skip leftover accounts rather than call a disabled sync.
+      if (account.provider === "m365" && !m365Enabled()) continue;
       const fn = account.provider === "google"
         ? "google-sync"
         : account.provider === "m365"

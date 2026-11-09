@@ -1,7 +1,7 @@
 // Microsoft 365 read-only sync via Graph calendarView delta queries.
 // Runs every 5 minutes from pg_cron; also kicked once right after connect.
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
-import { GRAPH, type MsAccount, getMsAccessToken } from "../_shared/ms.ts";
+import { GRAPH, type MsAccount, getMsAccessToken, m365Enabled } from "../_shared/ms.ts";
 import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
@@ -94,6 +94,8 @@ Deno.serve(async (req) => {
   if (pre) return pre;
   const frozen = refuseFrozenWrite(req);
   if (frozen) return frozen;
+  // M365 is removed: without MS_* this is a quiet ok-skip (no row writes, no log).
+  if (!m365Enabled()) return json({ ok: true, skipped: true, reason: "m365_disabled" });
 
   const { accountId } = await req.json().catch(() => ({}));
 

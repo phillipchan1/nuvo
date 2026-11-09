@@ -5,6 +5,12 @@ export const MS_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0
 export const GRAPH = "https://graph.microsoft.com/v1.0";
 export const MS_SCOPES = "offline_access User.Read Calendars.Read";
 
+/** Microsoft 365 was removed as a feature: unset MS_* secrets mean "off" —
+ *  m365-oauth answers `m365_disabled`, m365-sync skips. Rows stay as history. */
+export function m365Enabled(): boolean {
+  return Boolean(Deno.env.get("MS_CLIENT_ID") && Deno.env.get("MS_CLIENT_SECRET"));
+}
+
 export interface MsAccount {
   id: string;
   user_id: string;

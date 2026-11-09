@@ -5,7 +5,7 @@ import { json, OPEN_CORS } from "../cors.ts";
 import { gateCronBearerRoute } from "../cutoverFlip.ts";
 import type { Env } from "../env.ts";
 import { BadRequestError, readJson, requireJsonObject, requireUuid } from "../http.ts";
-import { GRAPH, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../lib/ms.ts";
+import { GRAPH, m365Enabled, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../lib/ms.ts";
 import { signState, verifyState } from "../lib/oauthState.ts";
 import { discoverCalendars } from "../lib/caldav.ts";
 import { withoutMirrorCalendar } from "../lib/mirror.ts";
@@ -147,7 +147,9 @@ export async function runCalendarRefreshOthers(
 ): Promise<{ synced: number; errors: string[] }> {
   const store = makeStore(sql, userId);
   const accounts = (await listOwnedAccounts(store)).filter(
-    (a) => !a.needs_reconnect && (a.provider === "m365" || a.provider === "icloud" || a.provider === "ics"),
+    (a) =>
+      !a.needs_reconnect &&
+      ((a.provider === "m365" && m365Enabled(env)) || a.provider === "icloud" || a.provider === "ics"),
   );
   const errors: string[] = [];
   let synced = 0;
@@ -168,6 +170,8 @@ export async function runCalendarRefreshOthers(
 }
 
 async function handleM365Oauth(c: Context<AppEnv>, deps: CalendarRouteDeps): Promise<Response> {
+  // M365 is removed: without MS_* secrets every path (start, callback) is a stable 503 `m365_disabled`.
+  if (!m365Enabled(c.env)) return clientError("m365_disabled", 503);
   const url = new URL(c.req.url);
   const isStart = url.searchParams.get("action") === "start";
   const isCallback = Boolean(url.searchParams.get("code"));
