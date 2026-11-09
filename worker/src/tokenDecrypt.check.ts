@@ -5,7 +5,8 @@
  * Reads the key from TOKEN_ENC_KEY_V1_FILE (preferred) or TOKEN_ENC_KEY_V1.
  * Skips (exit 0) only when both the key and DATABASE_URL are unset — CI
  * does not have migrated tokens. A provider that opens fewer tokens than it
- * had Vault pointers at the source is a no-go (exit 1).
+ * had Vault pointers at the source is a no-go (exit 1), counted per row: only
+ * a row that carried a pointer counts toward what it owes.
  *
  * Neon URLs use @neondatabase/serverless over HTTPS. TOKEN_DECRYPT_TCP=1
  * forces the TCP postgres.js driver.
@@ -27,23 +28,28 @@ export type TokenRow = {
   enc: Uint8Array | Buffer | string;
   iv: Uint8Array | Buffer | string;
   key_version: number;
+  /** The row had a Vault pointer at the source, so it owes this token. Absent = owed. */
+  owed?: boolean;
 };
 
 /** Enum columns in this UNION must be `::text` or Postgres raises 42804. */
 export const SEALED_TOKENS_SQL = `
   SELECT * FROM (
     SELECT 'calendar_accounts'::text AS table_name, provider::text AS provider, id::text AS row_id, user_id::text,
-           refresh_token_enc AS enc, refresh_token_iv AS iv, key_version
+           refresh_token_enc AS enc, refresh_token_iv AS iv, key_version,
+           (refresh_token_secret_id IS NOT NULL) AS owed
     FROM calendar_accounts
     WHERE refresh_token_enc IS NOT NULL
     UNION ALL
     SELECT 'activity_sources'::text, kind::text, id::text, user_id::text,
-           refresh_token_enc, refresh_token_iv, key_version
+           refresh_token_enc, refresh_token_iv, key_version,
+           (token_secret_id IS NOT NULL)
     FROM activity_sources
     WHERE refresh_token_enc IS NOT NULL
     UNION ALL
     SELECT 'apple_identities'::text, 'apple'::text, user_id::text, user_id::text,
-           refresh_token_enc, refresh_token_iv, key_version
+           refresh_token_enc, refresh_token_iv, key_version,
+           (refresh_token_secret_id IS NOT NULL)
     FROM apple_identities
     WHERE refresh_token_enc IS NOT NULL
   ) t
@@ -116,13 +122,18 @@ export type TokenCheckResult = {
   checked: Record<string, number>;
 };
 
-/** Decrypt every sealed row. A provider that opens fewer tokens than it owes is a fail. */
+/**
+ * Decrypt every sealed row. A provider fails when any sealed row is broken, or
+ * when fewer of its *owed* rows open than it owes — counted per row, so an
+ * extra sealed row without a Vault pointer can't stand in for a missing one.
+ */
 export async function checkTokenRows(
   rows: TokenRow[],
   expected: Record<string, number>,
   ring: TokenKeyring,
 ): Promise<TokenCheckResult> {
   const checked: Record<string, number> = {};
+  const owedOpened: Record<string, number> = {};
   const fails = new Set<string>();
   for (const row of rows) {
     const provider = String(row.provider ?? "");
@@ -143,6 +154,7 @@ export async function checkTokenRows(
         continue;
       }
       void prefixClass(secret);
+      if (row.owed !== false) owedOpened[provider] = (owedOpened[provider] ?? 0) + 1;
     } catch {
       fails.add(provider);
     }
@@ -156,7 +168,7 @@ export async function checkTokenRows(
   }
   for (const name of names) {
     const n = checked[name] ?? 0;
-    if (n > 0 && n >= (expected[name] ?? 0) && !fails.has(name)) {
+    if (n > 0 && (owedOpened[name] ?? 0) >= (expected[name] ?? 0) && !fails.has(name)) {
       lines.push(`${name} ok`);
     } else {
       lines.push(`${name} fail`);
@@ -195,6 +207,7 @@ function asTokenRow(row: Record<string, unknown>): TokenRow {
     enc: row.enc as TokenRow["enc"],
     iv: row.iv as TokenRow["iv"],
     key_version: Number(row.key_version),
+    owed: row.owed !== false,
   };
 }
 

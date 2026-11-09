@@ -560,8 +560,24 @@ revoke, calendar refresh), so this is a **no-go** for the flip if it fails.
    prints `fail`. A provider owes one sealed token per row that had a Vault
    pointer at the source (`refresh_token_secret_id` / `token_secret_id`). A row
    without one never had a token: prod's two Apple identities came from
-   ID-token-only sign-in, so Apple owes none. Opening fewer than owed is a no-go
-   (exit 1). A skip (exit 0 with nothing opened) is **not** a go: it means the key
+   ID-token-only sign-in, so Apple owes none. The count is **per row**: only a
+   sealed row that carried a pointer counts toward what its provider owes, so a
+   stray sealed row cannot cover for a missing owed one. Opening fewer than owed,
+   or any sealed row that fails to open or opens to the wrong shape (even for a
+   provider that owes none), is a no-go (exit 1).
+
+   The copy job's "Re-encrypt vault tokens in-runner" step
+   (`scripts/cutover-seal-tokens.mjs`) already enforces the token-less half
+   before this check runs. It skips token-less rows when sealing. Then it
+   counts the source's `apple_identities` with no Vault pointer
+   (`refresh_token_secret_id IS NULL`, on the read-only source connection) and
+   Neon's `apple_identities` with no sealed token (`refresh_token_enc IS NULL`).
+   It prints only `apple_identities token-less: source=N neon=M` and fails the
+   run unless N = M. Prod expects `source=2 neon=2`. Neon higher means an owed
+   token was not sealed. Neon lower means a row was sealed that had no token,
+   or a row never arrived. The rule is Apple-only by ruling
+   (`calendar_accounts` / `activity_sources` still rely on the per-table
+   `source=encrypted` line plus this decrypt check). A skip (exit 0 with nothing opened) is **not** a go: it means the key
    or URL was unset. Last run 2026-10-30, against dry run 41073240534's
    scratch copy: `github ok`, `google ok`, `icloud ok`, `ics ok` (11 tokens), Keychain
    digest `baa57583…`, the Worker's.
