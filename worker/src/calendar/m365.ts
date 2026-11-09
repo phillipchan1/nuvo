@@ -1,6 +1,6 @@
 import type { Sql } from "../db.ts";
 import type { Env } from "../env.ts";
-import { GRAPH, getMsAccessToken } from "../lib/ms.ts";
+import { GRAPH, getMsAccessToken, m365Enabled } from "../lib/ms.ts";
 import { deleteAccountEvents, deleteEventsByProviderIds, reconcileEvents, type EventRow } from "../lib/eventSync.ts";
 import type { CalendarAccount } from "./types.ts";
 import { loadAccountsPaged, loggedError, logSync, markSyncResult, updateAccount } from "./store.ts";
@@ -99,7 +99,10 @@ export async function runM365Sync(
   sql: Sql,
   env: Env,
   opts: { accountId?: string; userId?: string } = {},
-): Promise<{ ok: true } | { error: string }> {
+): Promise<{ ok: true; skipped?: true; reason?: "m365_disabled" } | { error: string }> {
+  // Feature off: touch no rows and log nothing, so a leftover account is not
+  // marked failing and the batch / cron / queue message still succeeds.
+  if (!m365Enabled(env)) return { ok: true, skipped: true, reason: "m365_disabled" };
   try {
     const accounts = await loadAccountsPaged(sql, "m365", opts.accountId, opts.userId);
     for (const account of accounts) {

@@ -85,7 +85,7 @@ the iOS PWA. *Status: standing — Principle 15. Extended by D-099 (native iOS s
 **D-015 · Calendar providers by capability, not parity.** Google two-way + mirror · M365
 read-only (striped, dashed, not draggable) · iCloud two-way over CalDAV with an
 app-specific password in Vault · ICS read. → We ship what each API honestly supports and
-*show* the difference rather than faking parity. *Status: standing.*
+*show* the difference rather than faking parity. *Status: standing — M365 since removed (D-184).*
 
 **D-016 · All model/API keys live in Supabase secrets, never the frontend.** The agent edge
 function is the only path to the model. *Status: standing — security-load-bearing.*
@@ -6847,6 +6847,18 @@ been applied. typecheck, vitest, `check:worker`, `deno check` and `cf:preview:dr
 **Not run:** a live sandbox purchase end to end, or a real Apple-signed leaf (only the real G3
 root and WWDR G6 were parsed).*
 
+**D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
+ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
+Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.
+Nothing offers to connect or reconnect M365 any more (Settings, the reconnect banner,
+marketing, the agent prompt). Missing `MS_CLIENT_ID` / `MS_CLIENT_SECRET` now means *feature
+off*: `m365-oauth` answers 503 `m365_disabled` (Worker and edge), and `m365-sync`, the
+dispatcher, the queue and the manual refresh skip m365 accounts without touching or logging
+them. Kept on purpose: the `m365` provider enum, existing `calendar_accounts` /
+`external_events` rows and how they render (a leftover account can still be disconnected),
+the Graph code, the old migrations and the edge-function folders, so this reverses by setting
+the two secrets and restoring the buttons. *Status: standing.*
+
 **D-183 · 2026-11-09 · Plan the week walks its draft one block at a time, over a faded
 calendar.** *(Extends D-180; spec [`plan-the-week-v2.md`](../plan-the-week-v2.md) §4, "The walk".)*
 ⓟ, driving a real week: on a full calendar he couldn't tell where a suggestion landed or what was
@@ -6878,6 +6890,23 @@ so a sitting's hour looked free. `slotsAsBusy` (`lib/compose.ts`) now feeds ever
 into the draft, its alternatives and **Find time**. That includes standing slots: work that
 belongs in one is routed in first, and nothing else lands on top. Mid-week repair already did
 this. Guarded in `tests/plan-v2.test.ts`.
+
+*Follow-up, same day (ⓟ: "allow me to change the slot time … I can imagine showing all the
+different slots available so we can quickly put it in and automatically fit"):* three acts on the
+walk. **(1) How long.** Length chips on the block under review (15m to 2h). Picking one sends the
+block back to the engine at that length, with the rest of the draft frozen in place
+(`setBlockLength`). Your estimate beats the sum of its tasks. Dragging a draft block's edge on the
+calendar does the same and keeps it where it is. **(2) Open time.** While a block is selected (or
+being placed), every open gap on the week is shaded in `--slot`, labelled with its length, and
+numbered when it holds one of Nuvo's picks. Gaps come from the one busy rule (`toBusyBlocks` →
+`readDay`) over events, slots, kept-clear time and the rest of the draft (`openGaps`). Clicking a gap
+puts the block there: at Nuvo's pick inside it if it has one, otherwise at the gap's start. A gap
+shorter than the block **cuts the block to fit** (`placeInGap`). **(3) A block that didn't fit** gets
+**Pick a time**, which opens the same gaps, and **Shorten to <the longest gap>**, both beside
+Split and Skip. The numbered alternative outlines are no longer drawn: the gaps say the same and more.
+**Also fixed:** the overlay was handed up to Planner as state and rebuilt on every render, a loop
+that kept the Schedule reconciling the draft for as long as the plan was open. The overlay now
+changes only when what it draws changes. Guarded in `tests/plan-walk.test.tsx`.
 
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*

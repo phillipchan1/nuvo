@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AppleLogo, GoogleLogo, IcsLogo, MicrosoftLogo } from './logos'
+import { AppleLogo, GoogleLogo, IcsLogo } from './logos'
 
 type CalCard = {
   name: string
@@ -20,12 +20,6 @@ const CALENDARS: CalCard[] = [
     mode: 'Two-way',
     line: 'iCloud CalDAV with an app-specific password. Drag, resize, create.',
     Logo: AppleLogo,
-  },
-  {
-    name: 'Microsoft 365',
-    mode: 'Read-only',
-    line: 'Work and personal Graph calendars on the same grid — no write risk.',
-    Logo: MicrosoftLogo,
   },
   {
     name: 'ICS feeds',

@@ -16,6 +16,7 @@ import { domainById, projectById } from "../../lib/vertical";
 import { resolveDomainId } from "../../lib/batch";
 import { at, span } from "../mobile/dayPlan";
 import { revealOnCalendar } from "../../lib/calendarReveal";
+import { fmtMins } from "../../lib/now";
 import type { PlanOverlay } from "./planOverlay";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
@@ -71,6 +72,8 @@ type StackItem = {
   noLabel: string;
   /** shown under the label without a click: the reason this needs you */
   sub?: string;
+  /** a third act, when there is one (Pick a time · Shorten to fit) */
+  extra?: { label: string; run: () => void }[];
   yes: () => string;
   /** "not now" for this row — default just dismisses it for this plan */
   no?: () => string;
@@ -155,6 +158,10 @@ function PlanRailWeek({
   /** The selected block's fits, frozen at selection: [where it was, ...others]. */
   const [altList, setAltList] = useState<Placement[]>([]);
   const [altIx, setAltIx] = useState(0);
+  /** bumped when the selected block is re-placed by its length — re-reads its fits */
+  const [altNonce, setAltNonce] = useState(0);
+  /** a block with no time yet that you're placing by hand: its open gaps are shown */
+  const [placing, setPlacing] = useState<{ id: string; name: string; mins: number } | null>(null);
   const [focus, setFocus] = useState<string | null>(null);
   const [, setExpand] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -211,11 +218,12 @@ function PlanRailWeek({
     setAltList([p, ...d.alternativesFor(sel)]);
     setAltIx(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel]);
+  }, [sel, altNonce]);
 
   const select = useCallback((key: string | null) => {
     setSel((cur) => (cur === key ? null : key));
     setFocus(null);
+    setPlacing(null);
   }, []);
 
   const moveTo = useCallback(
@@ -318,6 +326,21 @@ function PlanRailWeek({
         chip: "no time yet",
         why: u.reason,
         sub: `No time found — ${plainReason(u.reason)}`,
+        extra: [
+          { label: "Pick a time", run: () => {
+            setSel(null);
+            setFocus(null);
+            setPlacing({ id: u.task.id, name: b?.name ?? u.task.title, mins: u.task.duration_minutes ?? b?.durationMins ?? 30 });
+          } },
+          ...(gap != null && gap >= 30
+            ? [{ label: `Shorten to ${fmtMins(Math.floor(gap / 15) * 15)}`, run: () => {
+                d.remember();
+                d.setBlockLength(u.task.id, Math.floor(gap / 15) * 15);
+                setChanges((n) => n + 1);
+                toast(`Shortened to ${fmtMins(Math.floor(gap / 15) * 15)} — placing it`);
+              } }]
+            : []),
+        ],
         yesLabel: canSplit ? "Split to fit" : "Skip this week",
         noLabel: canSplit ? "Skip this week" : "Leave it",
         yes: () => {
@@ -483,13 +506,79 @@ function PlanRailWeek({
     if (!selDay || selStart == null) return;
     const m = Math.max(0, selStart - 60);
     revealOnCalendar({ dateISO: selDay, scrollToTime: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00` });
-    // only when the walk moves on, not on every reflow
+    // when the walk moves on, or a new length sent it somewhere else — not every reflow
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel]);
+  }, [sel, altNonce]);
+
+  // ── open time: every gap the selected (or being-placed) block could go into ─
+  // "Show me all the slots available so I can put it in" (ⓟ, 2026-11-09). Drawn
+  // on the grid in the claimable colour; a click puts the block there, cut to fit
+  // when the gap is shorter.
+  const needMins = placing ? placing.mins : sel ? byKey.get(sel)?.durationMin ?? null : null;
+  const gaps = useMemo(() => {
+    if (needMins == null || done) return [];
+    const min = Math.min(30, needMins);
+    return d.openGaps().filter((g) => g.endMin - g.startMin >= min);
+    // re-read when the draft or the target changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needMins, sel, placing, placements, d.clearRegions, done]);
+  const pickGap = useCallback(
+    (i: number) => {
+      const g = gaps[i];
+      if (!g) return;
+      const len = g.endMin - g.startMin;
+      if (placing) {
+        const mins = Math.min(len, placing.mins);
+        d.remember();
+        d.placeInGap(placing.id, g.dayISO, g.startMin, mins);
+        setChanges((n) => n + 1);
+        record({ kind: "moved", week: weekStartISO, dayISO: g.dayISO, fromMin: g.startMin, toDayISO: g.dayISO, toMin: g.startMin, durationMin: mins, isRun: !slotById.get(placing.id)?.projectId });
+        toast(mins < placing.mins ? `Placed · shortened to ${fmtMins(mins)} to fit` : `Placed ${dayName(g.dayISO)} ${at(instant(g.dayISO, g.startMin))}`);
+        setDismissed((prev) => new Set([...prev, `unplaced:${placing.id}`]));
+        setSel(placing.id);
+        setPlacing(null);
+        return;
+      }
+      if (!sel) return;
+      const p = byKey.get(sel);
+      if (!p) return;
+      // Nuvo's own pick inside this gap, if it has one — else the gap's start
+      const alt = altList.slice(1).find((a) => a.dayISO === g.dayISO && a.startMin >= g.startMin && a.startMin + a.durationMin <= g.endMin);
+      if (alt) return moveTo(sel, alt.dayISO, alt.startMin);
+      if (len >= p.durationMin) return moveTo(sel, g.dayISO, g.startMin);
+      const mins = Math.floor(len / 15) * 15;
+      d.remember();
+      d.placeInGap(sel, g.dayISO, g.startMin, mins);
+      setChanges((n) => n + 1);
+      setAltNonce((n) => n + 1);
+      toast(`Shortened to ${fmtMins(mins)} to fit`);
+    },
+    [gaps, placing, sel, byKey, altList, d, moveTo, record, weekStartISO, slotById],
+  );
+  const setLength = useCallback(
+    (key: string, mins: number) => {
+      d.remember();
+      d.setBlockLength(key, mins);
+      setChanges((n) => n + 1);
+      setAltNonce((n) => n + 1);
+      toast(`${fmtMins(mins)} — Nuvo found it a place`);
+    },
+    [d],
+  );
 
   // ── the overlay the Schedule draws ──────────────────────────────────────
+  // It must change only when what it DRAWS changes. The overlay is handed up to
+  // Planner as state, so an overlay rebuilt on every render re-renders Planner,
+  // which re-renders this rail, which rebuilds it — a loop that kept the
+  // Schedule reconciling the draft for as long as you planned (the acts below
+  // close over `d`, a new object every render). So the acts go through a ref,
+  // and "held" is read as a key string, not a function identity.
+  const acts = useRef({ select, moveTo, pickAlt, pickGap, d });
+  acts.current = { select, moveTo, pickAlt, pickGap, d };
+  const heldSig = placements.map(placementKey).filter((k) => d.isHeld(k)).join("|");
   const overlay = useMemo<PlanOverlay | null>(() => {
     if (done) return null;
+    const held = new Set(heldSig ? heldSig.split("|") : []);
     return {
       blocks: placements.map((p) => {
         const key = placementKey(p);
@@ -499,27 +588,39 @@ function PlanRailWeek({
           start: instant(p.dayISO, p.startMin).toISOString(),
           end: instant(p.dayISO, p.startMin + p.durationMin).toISOString(),
           color: colorOf(p),
-          held: d.isHeld(key),
+          held: held.has(key),
           selected: key === sel,
           quiet: Boolean(sel) && key !== sel,
           count: countOf(p),
           items: itemsOf(p).map((t) => t.title),
         };
       }),
-      ghosts: sel
-        ? altList.slice(1).map((a, i) => ({
-            id: String(i + 1),
-            start: instant(a.dayISO, a.startMin).toISOString(),
-            end: instant(a.dayISO, a.startMin + a.durationMin).toISOString(),
-            label: String(i + 1),
-          }))
-        : [],
-      onSelect: select,
+      ghosts: gaps.map((g, i) => {
+        const len = g.endMin - g.startMin;
+        const pick = altList.slice(1).findIndex((a) => a.dayISO === g.dayISO && a.startMin >= g.startMin && a.startMin + a.durationMin <= g.endMin);
+        const short = needMins != null && len < needMins;
+        return {
+          id: `gap:${i}`,
+          kind: "gap" as const,
+          start: instant(g.dayISO, g.startMin).toISOString(),
+          end: instant(g.dayISO, g.endMin).toISOString(),
+          label: `${pick >= 0 ? `${pick + 1} · ` : ""}${fmtMins(len)} open${short ? " · fits shorter" : ""}`,
+        };
+      }),
+      onSelect: (key) => acts.current.select(key),
       onMove: (key, start) => {
-        moveTo(key, toDateISO(start), start.getHours() * 60 + start.getMinutes());
+        acts.current.moveTo(key, toDateISO(start), start.getHours() * 60 + start.getMinutes());
         setSel(key);
       },
-      onPickGhost: (id) => pickAlt(Number(id)),
+      onPickGhost: (id) => (id.startsWith("gap:") ? acts.current.pickGap(Number(id.slice(4))) : acts.current.pickAlt(Number(id))),
+      onResize: (key, start, mins) => {
+        const dr = acts.current.d;
+        dr.remember();
+        dr.placeInGap(key, toDateISO(start), start.getHours() * 60 + start.getMinutes(), mins);
+        setChanges((n) => n + 1);
+        setSel(key);
+        setAltNonce((n) => n + 1);
+      },
       dimCalendar: true,
       clears: d.clearRegions.map((c, i) => ({
         id: String(i),
@@ -538,7 +639,7 @@ function PlanRailWeek({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done, placements, sel, altList, titleOf, colorOf, itemsOf, select, moveTo, pickAlt, d.isHeld, d.clearRegions]);
+  }, [done, placements, sel, altList, titleOf, colorOf, itemsOf, gaps, needMins, heldSig, d.clearRegions]);
   useEffect(() => {
     onOverlay(overlay);
   }, [overlay, onOverlay]);
@@ -645,6 +746,7 @@ function PlanRailWeek({
       }
       if (mod || e.altKey) return;
       if (k === "Escape") {
+        setPlacing(null);
         if (s.sel || s.focus) {
           eat();
           setSel(null);
@@ -825,6 +927,19 @@ function PlanRailWeek({
             )}
           </div>
 
+          {placing && (
+            <div className="flex flex-col gap-2 rounded-[12px] border p-3" style={{ borderColor: "var(--slot)" }}>
+              <div className="text-body">
+                Pick a time for <b>{placing.name}</b>
+              </div>
+              <p className="text-caption text-muted">
+                Every open stretch is shaded on the calendar ({gaps.length}). Click one — it goes there, shortened if the gap is smaller than {fmtMins(placing.mins)}.
+              </p>
+              <button onClick={() => setPlacing(null)} className="h-8 self-start rounded-[8px] border border-line-strong px-3 text-caption">
+                Cancel
+              </button>
+            </div>
+          )}
           {/* the walk — one group at a time */}
           {order.length > 0 && (
             <div className="flex flex-col gap-2">
@@ -885,6 +1000,27 @@ function PlanRailWeek({
                     </ul>
                   )}
                   <div className="text-caption text-muted">{selP.reason}</div>
+                  {/* how long — your estimate beats the sum of the tasks; Nuvo re-places it */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-micro text-muted">How long</span>
+                    <div className="flex flex-wrap gap-1" role="group" aria-label="Block length">
+                      {[...new Set([15, 30, 45, 60, 90, 120, selP.durationMin])].sort((a, b) => a - b).map((m) => (
+                        <button
+                          key={m}
+                          aria-pressed={m === selP.durationMin}
+                          onClick={() => m !== selP.durationMin && setLength(sel!, m)}
+                          className="mono rounded-full border px-2 py-0.5 text-micro"
+                          style={{
+                            borderColor: m === selP.durationMin ? "var(--accent)" : "var(--line-strong)",
+                            color: m === selP.durationMin ? "var(--accent)" : undefined,
+                            background: m === selP.durationMin ? "var(--accent-soft)" : undefined,
+                          }}
+                        >
+                          {fmtMins(m)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex gap-1.5 pt-1">
                     <button
                       onClick={() => accept(sel!)}
@@ -898,7 +1034,7 @@ function PlanRailWeek({
                   </div>
                   {altList.length > 1 && (
                     <div className="flex flex-col gap-1 pt-1">
-                      <span className="text-micro text-muted">Or another open time — numbered on the calendar</span>
+                      <span className="text-micro text-muted">Nuvo's other picks (numbered in the open time)</span>
                       <div className="flex flex-wrap gap-1.5">
                         {altList.map((a, i) => (
                           <button
@@ -930,7 +1066,9 @@ function PlanRailWeek({
                       </button>
                     ))}
                   </div>
-                  <p className="text-micro text-muted">Drag it on the calendar to any open time. Faded blocks are already fixed.</p>
+                  <p className="text-micro text-muted">
+                    Click any shaded open time to put it there — it shortens to fit. Or drag it, or pull its edge to change the length.
+                  </p>
                 </div>
               );
             })()
@@ -1008,6 +1146,15 @@ function PlanRailWeek({
                     {it.noLabel}
                   </button>
                 </div>
+                {it.extra && it.extra.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pl-[24px]">
+                    {it.extra.map((x) => (
+                      <button key={x.label} onClick={x.run} className="h-[30px] rounded-[8px] border border-line-strong px-3 text-caption">
+                        {x.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -48,7 +48,7 @@ export default function Privacy() {
                 notes.
               </li>
               <li>
-                Optional calendar connections you choose (Google Calendar, Microsoft 365,
+                Optional calendar connections you choose (Google Calendar,
                 Apple/iCloud, ICS) — detailed below.
               </li>
               <li>
@@ -140,16 +140,12 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="masthead text-[1.35rem] text-[var(--text)]">Microsoft 365, Apple Calendar &amp; ICS</h2>
+            <h2 className="masthead text-[1.35rem] text-[var(--text)]">Apple Calendar &amp; ICS</h2>
             <p className="mt-3">
               Optional connections work the same spirit: credentials are stored in a secured
               vault; event data is synced only to power your planning surface.
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-5">
-              <li>
-                <strong className="text-[var(--text)]">Microsoft 365</strong> — calendar
-                read access (events appear in Nuvo; Nuvo does not write back to M365).
-              </li>
               <li>
                 <strong className="text-[var(--text)]">Apple / iCloud Calendar</strong> —
                 you connect with Apple ID + an app-specific password for two-way CalDAV sync.

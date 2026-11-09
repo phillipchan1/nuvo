@@ -1,6 +1,6 @@
 // Microsoft 365 OAuth (read-only calendar access via Microsoft Graph).
 import { admin, json, logSync, signState, storeSecret, verifyState } from "../_shared/admin.ts";
-import { GRAPH, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../_shared/ms.ts";
+import { GRAPH, m365Enabled, MS_AUTH_URL, MS_SCOPES, MS_TOKEN_URL } from "../_shared/ms.ts";
 import { refuseFrozenWrite } from "../_shared/writeFreeze.ts";
 
 function selfUrl(): string {
@@ -10,6 +10,8 @@ function selfUrl(): string {
 Deno.serve(async (req) => {
   const frozen = refuseFrozenWrite(req);
   if (frozen) return frozen;
+  // M365 is removed; same stable code the Worker returns.
+  if (!m365Enabled()) return json({ error: "m365_disabled" }, 503);
 
   const url = new URL(req.url);
 

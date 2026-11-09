@@ -2,6 +2,7 @@ import { claimDueAccounts } from "../calendar/store.ts";
 import { runIcloudContacts, runIcloudSync } from "../calendar/icloud.ts";
 import { runIcsSync } from "../calendar/icsFeed.ts";
 import { runM365Sync } from "../calendar/m365.ts";
+import { m365Enabled } from "../lib/ms.ts";
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
 import { claimDueGoogleAccounts } from "./owned.ts";
@@ -35,7 +36,8 @@ export async function runGoogleResubscribe(sql: Sql, env: Env, reqUrl?: string) 
  */
 export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string) {
   const google = await claimDueGoogleAccounts(sql, DISPATCH_BATCH);
-  const others = await claimDueAccounts(sql, ["m365", "icloud", "ics"], DISPATCH_BATCH);
+  // M365 off (no MS_* secrets): don't claim those rows at all.
+  const others = await claimDueAccounts(sql, m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"], DISPATCH_BATCH);
   let ran = 0;
   const failures: string[] = [];
   for (const row of google) {

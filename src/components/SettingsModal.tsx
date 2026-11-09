@@ -743,13 +743,13 @@ function ConnectionsPane({
   accounts: CalendarAccount[];
 }) {
   const qc = useQueryClient();
-  const connect = async (provider: "google" | "m365") => {
+  const connect = async (provider: "google") => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
     const base = import.meta.env.VITE_SUPABASE_URL;
     const redirect = encodeURIComponent(window.location.origin);
-    window.location.href = `${base}/functions/v1/${provider === "google" ? "google-oauth" : "m365-oauth"}?action=start&token=${token}&redirect=${redirect}`;
+    window.location.href = `${base}/functions/v1/${provider}-oauth?action=start&token=${token}&redirect=${redirect}`;
   };
   const disconnect = async (id: string) => {
     await supabase.from("calendar_accounts").delete().eq("id", id);
@@ -1030,8 +1030,9 @@ function ConnectionsPane({
                     {a.sync_direction === "two_way" ? "two-way" : "read-only"}
                   </span>
                   <div className="flex-1" />
-                  {a.needs_reconnect && a.provider !== "ics" && a.provider !== "icloud" && (
-                    <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
+                  {/* Microsoft 365 is no longer offered: a leftover account can only be disconnected. */}
+                  {a.needs_reconnect && a.provider === "google" && (
+                    <Btn kind="signal" onClick={() => connect("google")}>
                       Reconnect
                     </Btn>
                   )}
@@ -1121,9 +1122,6 @@ function ConnectionsPane({
           <Btn kind="primary" onClick={() => connect("google")}>
             {accounts.some((a) => a.provider === "google") ? "+ Add Google account" : "Connect Google"}
           </Btn>
-          {!accounts.some((a) => a.provider === "m365") && (
-            <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
-          )}
           {!accounts.some((a) => a.provider === "icloud") && !showIcloud && (
             <Btn onClick={() => setShowIcloud(true)}>Connect Apple Calendar</Btn>
           )}

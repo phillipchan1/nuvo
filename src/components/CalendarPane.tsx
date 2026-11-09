@@ -2009,7 +2009,7 @@ function CalendarPane({
         end: b.end,
         allDay: false,
         editable: true,
-        durationEditable: false,
+        durationEditable: Boolean(plan.onResize),
         classNames: ["evt-plan", b.held ? "evt-plan-held" : "", b.selected ? "evt-plan-selected" : "", b.quiet ? "evt-plan-quiet" : ""].filter(Boolean),
         backgroundColor: `color-mix(in srgb, ${hue} 16%, var(--surface))`,
         borderColor: `color-mix(in srgb, ${hue} 60%, var(--line))`,
@@ -2024,10 +2024,10 @@ function CalendarPane({
       end: g.end,
       allDay: false,
       editable: false,
-      classNames: ["evt-plan-ghost"],
-      backgroundColor: "var(--accent-soft)",
-      borderColor: "var(--accent)",
-      textColor: "var(--accent)",
+      classNames: g.kind === "gap" ? ["evt-plan-ghost", "evt-plan-gap"] : ["evt-plan-ghost"],
+      backgroundColor: g.kind === "gap" ? "color-mix(in srgb, var(--slot) 9%, transparent)" : "var(--accent-soft)",
+      borderColor: g.kind === "gap" ? "var(--slot)" : "var(--accent)",
+      textColor: g.kind === "gap" ? "var(--slot)" : "var(--accent)",
       extendedProps: { kind: "planghost" as const, refId: g.id },
     }));
     const clears = (plan.clears ?? []).map((c) => ({
@@ -3256,6 +3256,12 @@ function CalendarPane({
 
     if (gestureRef.current?.take()) {
       info.revert();
+      return;
+    }
+    // a plan draft block's edge: its new length (the plan holds it there)
+    if (kind === "plan" && planRef.current?.onResize && info.event.start && info.event.end) {
+      const mins = Math.max(15, Math.round((info.event.end.getTime() - info.event.start.getTime()) / 60_000));
+      planRef.current.onResize(refId, info.event.start, mins);
       return;
     }
     if (kind === "plan" || kind === "planghost") {

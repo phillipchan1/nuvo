@@ -6,7 +6,8 @@
  * not see which blocks were new. So: the plan opens on the first block, the rail
  * lists what's inside it, ↵ accepts it (held from then on) and moves to the next,
  * the overlay fades what the calendar already has, and the blocks not under
- * review are drawn quieter.
+ * review are drawn quieter. While a block is selected, every open gap on the
+ * week is drawn; a click puts the block there, shortened when the gap is smaller.
  */
 import { act, useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -29,38 +30,43 @@ const PLACEMENTS = [
   { task: { id: "admin", title: "Admin batch" }, dayISO: DAY, startMin: 9 * 60, durationMin: 45, reason: "first open hour" },
 ];
 
+const S = {
+  data: { tasks: [], projects: [], domains: [], initiatives: [] },
+  slotById: new Map(SLOTS.map((s) => [s.id, s])),
+  taskById: new Map(TASKS.map((x) => [x.id, x])),
+  empty: [] as never[],
+  kept: new Set(),
+  result: { unplaced: [], placements: PLACEMENTS, days: [{ freeMins: 600 }] },
+  planDays: [DAY],
+  workingDays: [1, 2, 3, 4, 5],
+  ctx: {},
+  // an hour free at 4pm, and 30 minutes at 11am — shorter than either block
+  gaps: [
+    { dayISO: DAY, startMin: 16 * 60, endMin: 17 * 60 },
+    { dayISO: DAY, startMin: 11 * 60, endMin: 11 * 60 + 30 },
+  ],
+  setBlockLength: vi.fn(),
+  placeInGap: vi.fn(),
+};
 vi.mock("../src/hooks/useWeekDraft", () => ({
   placementKey: (p: { task: { id: string } }) => p.task.id,
   useWeekDraft: () => {
     const [held, setHeld] = useState<Set<string>>(new Set());
     return {
-      data: { tasks: [], projects: [], domains: [], initiatives: [] },
-      placements: PLACEMENTS,
-      slotById: new Map(SLOTS.map((s) => [s.id, s])),
-      taskById: new Map(TASKS.map((x) => [x.id, x])),
-      fromGate: DAY,
-      alternativesFor: () => [],
-      isHeld: (k: string) => held.has(k),
+      data: S.data, placements: PLACEMENTS, slotById: S.slotById, taskById: S.taskById, fromGate: DAY,
+      alternativesFor: () => [], isHeld: (k: string) => held.has(k),
       holdPlacement: (k: string) => setHeld((h) => new Set([...h, k])),
-      unpinPlacement: (k: string) => setHeld((h) => new Set([...h].filter((x) => x !== k))),
-      remember: () => {},
-      undo: () => false,
-      moveLocally: () => {},
-      loosePool: [],
-      kept: new Set(),
-      setKept: () => {},
-      result: { unplaced: [], placements: PLACEMENTS, days: [{ freeMins: 600 }] },
-      suggestions: [],
-      clearRegions: [],
-      planDays: [DAY],
-      workingDays: [1, 2, 3, 4, 5],
-      dayContexts: {},
-      applying: false,
+      unpinPlacement: () => {}, remember: () => {}, undo: () => false, moveLocally: () => {},
+      setBlockLength: S.setBlockLength, placeInGap: S.placeInGap, openGaps: () => S.gaps,
+      loosePool: S.empty, kept: S.kept, setKept: () => {}, result: S.result, suggestions: S.empty,
+      clearRegions: S.empty, planDays: S.planDays, workingDays: S.workingDays, dayContexts: S.ctx, applying: false,
     };
   },
 }));
 
+let overlays = 0;
 const { default: PlanRail } = await import("../src/components/plan/PlanRail");
+
 
 describe("Plan the week — the walk", () => {
   it("opens on the earliest block, lists what's inside, and ↵ accepts and moves on", () => {
@@ -97,5 +103,41 @@ describe("Plan the week — the walk", () => {
     fireEvent.click(screen.getByText(/Later/));
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
     expect(screen.getByText("0/2 accepted")).toBeTruthy();
+  });
+});
+
+describe("Plan the week — open time and length", () => {
+  it("draws every open gap for the block under review, and a short gap shortens it", () => {
+    let overlay: PlanOverlay | null = null;
+    S.placeInGap.mockClear();
+    render(<PlanRail onOverlay={(o) => (overlay = o)} onClose={() => {}} />);
+    const gaps = overlay!.ghosts.filter((g) => g.kind === "gap");
+    expect(gaps.map((g) => g.label)).toEqual(["1h open", "30m open · fits shorter"]);
+    // Admin is 45m; the 11am gap is 30m → it goes there at 30m
+    act(() => overlay!.onPickGhost("gap:1"));
+    expect(S.placeInGap).toHaveBeenCalledWith("admin", DAY, 11 * 60, 30);
+  });
+
+  it("a length chip sends the block back to the engine at that length", () => {
+    S.setBlockLength.mockClear();
+    render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "30m" }));
+    expect(S.setBlockLength).toHaveBeenCalledWith("admin", 30);
+  });
+
+  it("settles: the overlay is rebuilt only when what it draws changes", async () => {
+    // Planner keeps the overlay as state — a new one every render was a loop
+    let n = 0;
+    function Host() {
+      const [, set] = useState<unknown>(null);
+      const [cb] = useState(() => (o: unknown) => {
+        n++;
+        if (n < 100) set(o);
+      });
+      return <PlanRail onOverlay={cb} onClose={() => {}} />;
+    }
+    render(<Host />);
+    await act(() => new Promise((r) => setTimeout(r, 200)));
+    expect(n).toBeLessThan(10);
   });
 });

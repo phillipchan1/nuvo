@@ -131,6 +131,10 @@ shows what the block holds (each task and its minutes), why it's there, and its 
 (numbered on the grid). **Looks good ↵** holds it and moves to the next; **Later J** moves on;
 dragging it holds it where it lands. A pip per block, in time order, shows what's accepted.
 
+**How long** chips re-place the block at a length you choose (or drag its edge). While a block is
+selected, **every open gap** on the week is shaded; a click puts it there, cut to fit when the gap
+is shorter. A block with no time gets **Pick a time** (the same gaps) and **Shorten to fit**.
+
 ### Three zoom levels, no page changes
 
 | Level | You see | Question it answers |
