@@ -29,8 +29,12 @@ export type IapPurchase = {
   productId: string;
   transactionId: string | null;
   originalTransactionId: string | null;
-  /** Expiry in epoch ms, when StoreKit knows it. */
+  /** Expiry in epoch ms, when StoreKit knows it. Display only — the server
+   *  reads expiry from the signed transaction, never from this. */
   expiresDate?: number | null;
+  /** StoreKit 2's signed transaction (`VerificationResult.jwsRepresentation`).
+   *  The ONLY thing `apple-iap` trusts. Absent from 1.1 plugins. */
+  jwsRepresentation?: string | null;
 };
 
 /** `configuredIapProductIds` is the one place that decides the ids: it drops
@@ -124,7 +128,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * signed transaction, so the Worker's App Store webhook can attach a first
  * purchase to the right account even if `apple-iap` confirm never ran
  * (worker/src/billing/handlers.ts `parseAppAccountToken`). With the cutover
- * flag on, `supabase.auth.getUser()` answers from Better Auth (workerSession).
+ * flag on, `supabase.auth.getSession()` answers from Better Auth (workerSession).
  */
 export function appAccountTokenFor(userId: unknown): string | null {
   return typeof userId === "string" && UUID_RE.test(userId) ? userId.toLowerCase() : null;
@@ -133,8 +137,12 @@ export function appAccountTokenFor(userId: unknown): string | null {
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
   const [id] = storeKitProductIds([productId]);
   if (!id) throw new Error("Unknown App Store product");
-  const { data } = await supabase.auth.getUser();
-  const appAccountToken = appAccountTokenFor(data?.user?.id);
+  // getSession, not getUser: getUser is a GoTrue round trip, so a network blip
+  // read as "signed out" (QA2 #129 S1). The session is local; a failure to
+  // read it is a retry, not a sign-in prompt.
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error("Couldn’t reach Nuvo. Check your connection and try again.");
+  const appAccountToken = appAccountTokenFor(data?.session?.user?.id);
   if (!appAccountToken) throw new Error("Sign in before buying from the App Store");
   return invokeIap<IapPurchase>("purchase", { payload: { productId: id, appAccountToken } });
 }
@@ -156,15 +164,23 @@ export async function manageIapSubscriptions(): Promise<void> {
   await invokeIap("manage_subscriptions");
 }
 
-/** Tell the one entitlement row this Apple transaction belongs to us. */
+/**
+ * Tell the one entitlement row this Apple transaction belongs to us. The
+ * server verifies `jwsRepresentation` against Apple's root and takes product,
+ * expiry and ids from the signed payload; `transactionId` is what it asks the
+ * App Store Server API about when there is no JWS. The other ids ride along
+ * only so a pre-fix server keeps working during rollout — the fixed server
+ * ignores them.
+ */
 export async function confirmApplePurchase(purchase: IapPurchase): Promise<void> {
   if (!purchase.originalTransactionId || !purchase.productId) {
     throw new Error("That App Store purchase is missing its transaction.");
   }
   const { error } = await supabase.functions.invoke("apple-iap", {
     body: {
-      productId: purchase.productId,
+      jwsRepresentation: purchase.jwsRepresentation ?? null,
       transactionId: purchase.transactionId,
+      productId: purchase.productId,
       originalTransactionId: purchase.originalTransactionId,
       expiresDate: purchase.expiresDate ?? null,
     },

@@ -84,6 +84,15 @@ export interface Env {
   /** StoreKit product ids (strings, not the 6804… Apple ids). */
   NUVO_IAP_MONTHLY?: string;
   NUVO_IAP_ANNUAL?: string;
+  /**
+   * App Store Server API "In-App Purchase" key — only used to verify confirms
+   * from iOS 1.1 binaries, which send a transaction id but no signed JWS.
+   * All three or none; unset → those confirms are refused (503, retriable).
+   */
+  APPLE_IAP_KEY_ID?: string;
+  APPLE_IAP_ISSUER_ID?: string;
+  /** The .p8 PEM (PKCS#8, P-256). A secret — `wrangler secret put`. */
+  APPLE_IAP_PRIVATE_KEY?: string;
 }
 
 export function databaseUrl(env: Env): string | null {
