@@ -242,7 +242,69 @@ def iter_copy_csv_records(path: str | os.PathLike[str]) -> Iterator[list[str]]:
 
 
 def read_copy_csv_records(path: str | os.PathLike[str]) -> list[list[str]]:
+    """Every record of a `COPY … WITH CSV` file, as lists of strings.
+
+    NULL and '' both arrive as '': Python's csv cannot tell an unquoted
+    empty field (COPY's NULL) from a quoted one (""). Fine for counts; a
+    caller must not use this where NULL vs '' matters."""
     return list(iter_copy_csv_records(path))
+
+
+# Column order of USERS_COPY / IDENTITIES_COPY in cutover-migrate.yml.
+AUTH_USERS_FIELDS = (
+    "id",
+    "name",
+    "email",
+    "email_verified",
+    "created_at",
+    "updated_at",
+    "email_confirmed_at",
+)
+AUTH_IDENTITIES_FIELDS = (
+    "id",
+    "user_id",
+    "provider",
+    "provider_id",
+    "created_at",
+    "updated_at",
+)
+
+
+def _load_copy_rows(
+    path: str | os.PathLike[str], fields: tuple[str, ...], label: str
+) -> list[dict[str, str]]:
+    """Map each COPY CSV record onto `fields`. Fails closed: a record with
+    the wrong column count or an empty id raises ValueError, a malformed
+    file (e.g. truncated inside a quote) raises ValueError too. Messages
+    carry record numbers and counts only — never row data.
+
+    '' stands for NULL as well as '' (see read_copy_csv_records). Every
+    caller in cutover-migrate.yml treats it that way: a timestamp ''
+    becomes SQL NULL (no timestamp is ''), and name / provider_id are
+    COALESCEd to '' in the COPY, so they are never NULL."""
+    rows: list[dict[str, str]] = []
+    try:
+        for n, cols in enumerate(iter_copy_csv_records(path), start=1):
+            if len(cols) != len(fields):
+                raise ValueError(
+                    f"{label} record {n}: expected {len(fields)} columns, got {len(cols)}"
+                )
+            if not cols[0]:
+                raise ValueError(f"{label} record {n}: empty id")
+            rows.append(dict(zip(fields, cols)))
+    except csv.Error as exc:
+        raise ValueError(f"{label}: malformed CSV after {len(rows)} record(s): {exc}") from None
+    return rows
+
+
+def load_auth_users(path: str | os.PathLike[str]) -> list[dict[str, str]]:
+    """auth.users rows from USERS_COPY (7 columns, AUTH_USERS_FIELDS)."""
+    return _load_copy_rows(path, AUTH_USERS_FIELDS, "auth.users")
+
+
+def load_auth_identities(path: str | os.PathLike[str]) -> list[dict[str, str]]:
+    """auth.identities rows from IDENTITIES_COPY (6 columns, AUTH_IDENTITIES_FIELDS)."""
+    return _load_copy_rows(path, AUTH_IDENTITIES_FIELDS, "auth.identities")
 
 
 def csv_record_count(path: str | os.PathLike[str]) -> int:
