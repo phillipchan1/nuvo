@@ -882,7 +882,7 @@ Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
 ### Data — dry run on 2026-10-30
 
 **`cutover-migrate` ran end to end as `mode=dry-run` `phase=copy`** (run 41073240534, master
-`9730e39`, 83 s) and every check passed. It copied production into Neon
+`9730e39`, 89 s) and every check passed. It copied production into Neon
 `nuvo_dryrun_scratch` with Supabase live, not frozen and not written. The go/no-go passed
 on it, then scratch was reset (§ Reset scratch), so no prod copy stays on Neon. `neondb`
 (what Hyperdrive serves) still holds only the synthetic A/B seed, 2 users. The three
@@ -896,7 +896,7 @@ run: `nuvo-cutover` holds 0.
 | Tokens | 10 calendar refresh tokens + 1 activity source sealed, 0 mismatches. 5 plaintext access tokens sealed and NULLed. Apple owes none. Go/no-go: 4 providers `ok` |
 | `sync_log` | 91,762 rows by id anti-join: every Supabase row up to the watermark (id 254,645), counted on Supabase read-only after the run. Identity parked at 1,254,645 |
 | `push_subscriptions` | 0 on both sides |
-| Dump | 2.5 MB, runner only, sha256 re-checked before restore, shredded. The only artifact is the 1.4 KB checksum report |
+| Dump | 2.5 MB, runner only, sha256 re-checked before restore, shredded. Its only artifact was the 1.4 KB checksum report; the run now lists 0 artifacts (deleted or expired) |
 
 **The run printed `sync_log rows from source: 91907`, and that number was wrong.** It
 counted CSV *lines*, and five `error` texts span 145 extra lines. Every row landed. The

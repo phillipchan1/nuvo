@@ -78,6 +78,62 @@ describe("cutover_copy helpers", () => {
     expect(WORKFLOW).not.toMatch(/splitlines\(\) if line\.strip\(\)/);
   });
 
+  describe("COPY CSV records", () => {
+    function withCsv<T>(content: string, fn: (file: string) => T): T {
+      const dir = mkdtempSync(join(tmpdir(), "cutover-csv-"));
+      const file = join(dir, "copy.csv");
+      try {
+        writeFileSync(file, content);
+        return fn(file);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    const count = (content: string) =>
+      withCsv(content, (file) => py(`from cutover_copy import csv_record_count; print(csv_record_count(${JSON.stringify(file)}))`));
+
+    it("keeps the multi-column edges: empty file, no trailing newline, CRLF, BOM, quoted newlines", () => {
+      expect(count("")).toBe("0");
+      expect(count("1,a\n2,b")).toBe("2");
+      expect(count("1,a\r\n2,b\r\n3,c\r\n")).toBe("3");
+      expect(count("﻿1,a\n2,b\n")).toBe("2");
+      expect(count('1,"x\ny\r\nz",ok\n2,"a ""q"", b",ok\n')).toBe("2");
+    });
+
+    it("counts a field over csv's default 128 KiB limit (sync_log.error is unbounded)", () => {
+      const big = "e".repeat(200_000);
+      expect(count(`1,,google,sync,error,"${big}",2026-10-30 00:00:00+00\n2,,google,sync,ok,,2026-10-30 00:01:00+00\n`)).toBe("2");
+    });
+
+    it("raises on an unterminated quote instead of counting a truncated file", () => {
+      expect(() => count('1,ok\n2,"truncated mid-field\n3,more\n')).toThrow(/csv\.Error|unexpected end of data/);
+    });
+
+    it("counts a single-column NULL (a blank line) as a record", () => {
+      // COPY (SELECT x FROM (VALUES (NULL),(''),(NULL)) v(x)) TO STDOUT WITH CSV
+      expect(count('\n""\n\n')).toBe("3");
+      expect(count("a\n\nb\n")).toBe("3");
+    });
+
+    it("reads an auth.users COPY whose quoted name holds \\n, \\r\\n, commas and quotes", () => {
+      const csv =
+        'u1,"Ann\nLee, ""AJ""",ann@example.test,t,2026-01-01 00:00:00+00,2026-01-02 00:00:00+00,2026-01-01 00:00:00+00\n' +
+        'u2,"Bo\r\nKim",bo@example.test,f,2026-01-03 00:00:00+00,2026-01-04 00:00:00+00,\n' +
+        "u3,Cy,cy@example.test,t,2026-01-05 00:00:00+00,2026-01-06 00:00:00+00,2026-01-05 00:00:00+00\n";
+      const out = withCsv(csv, (file) =>
+        py(`from cutover_copy import read_copy_csv_records; import json; print(json.dumps(read_copy_csv_records(${JSON.stringify(file)})))`),
+      );
+      const rows = JSON.parse(out) as string[][];
+      expect(rows).toHaveLength(3);
+      expect(rows.map((r) => r.length)).toEqual([7, 7, 7]);
+      expect(rows[0].slice(0, 3)).toEqual(["u1", 'Ann\nLee, "AJ"', "ann@example.test"]);
+      expect(rows[1].slice(0, 4)).toEqual(["u2", "Bo\r\nKim", "bo@example.test", "f"]);
+      expect(rows[1][6]).toBe("");
+      expect(rows[2][0]).toBe("u3");
+    });
+
+  });
+
   it("setvals the sync_log identity after resync and reserves past source max after restore", () => {
     const setval = py("from cutover_copy import sync_log_setval_sql; print(sync_log_setval_sql())");
     expect(setval).toMatch(/GREATEST\(/);
