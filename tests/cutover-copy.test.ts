@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -55,6 +56,26 @@ describe("cutover_copy helpers", () => {
     expect(sql).not.toMatch(/id >/);
     expect(sql).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM public\.sync_log t WHERE t\.id = s\.id\)/);
     expect(sql).toMatch(/ON CONFLICT \(id\) DO NOTHING/);
+  });
+
+  it("counts CSV records, not lines, so a multi-line error field is one row", () => {
+    // The 2026-10-30 dry run read 91,762 sync_log rows and reported 91,907: five
+    // `error` texts carry newlines, and the resync counted lines.
+    const dir = mkdtempSync(join(tmpdir(), "cutover-csv-"));
+    const file = join(dir, "sync.csv");
+    try {
+      writeFileSync(
+        file,
+        '1,,google,sync,error,"line one\nline two\n\nline four",2026-10-30 00:00:00+00\n' +
+          "2,,google,sync,ok,,2026-10-30 00:01:00+00\n",
+      );
+      expect(py(`from cutover_copy import csv_record_count; print(csv_record_count(${JSON.stringify(file)}))`)).toBe("2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    expect(WORKFLOW).toMatch(/sync_n = csv_record_count\(sync_path\)/);
+    expect(WORKFLOW).toMatch(/push_n = csv_record_count\(push_path\)/);
+    expect(WORKFLOW).not.toMatch(/splitlines\(\) if line\.strip\(\)/);
   });
 
   it("setvals the sync_log identity after resync and reserves past source max after restore", () => {
