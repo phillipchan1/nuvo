@@ -116,10 +116,27 @@ export function iapErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * StoreKit `appAccountToken` = the signed-in Nuvo user id (a UUID on both
+ * GoTrue and Better Auth, which keeps the copied id). Apple echoes it in the
+ * signed transaction, so the Worker's App Store webhook can attach a first
+ * purchase to the right account even if `apple-iap` confirm never ran
+ * (worker/src/billing/handlers.ts `parseAppAccountToken`). With the cutover
+ * flag on, `supabase.auth.getUser()` answers from Better Auth (workerSession).
+ */
+export function appAccountTokenFor(userId: unknown): string | null {
+  return typeof userId === "string" && UUID_RE.test(userId) ? userId.toLowerCase() : null;
+}
+
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
   const [id] = storeKitProductIds([productId]);
   if (!id) throw new Error("Unknown App Store product");
-  return invokeIap<IapPurchase>("purchase", { payload: { productId: id } });
+  const { data } = await supabase.auth.getUser();
+  const appAccountToken = appAccountTokenFor(data?.user?.id);
+  if (!appAccountToken) throw new Error("Sign in before buying from the App Store");
+  return invokeIap<IapPurchase>("purchase", { payload: { productId: id, appAccountToken } });
 }
 
 export async function restoreIap(): Promise<IapPurchase[]> {

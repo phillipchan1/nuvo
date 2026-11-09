@@ -10,6 +10,10 @@ pub struct ProductIds {
 #[serde(rename_all = "camelCase")]
 pub struct ProductId {
     pub product_id: String,
+    /// Nuvo user id (UUID). StoreKit `appAccountToken` so Apple can attach
+    /// a first purchase when confirm never ran.
+    #[serde(default)]
+    pub app_account_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
