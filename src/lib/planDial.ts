@@ -46,5 +46,5 @@ export function useDial(): [Dial, (d: Dial) => void] {
 export const DIAL_NOTE: Record<Dial, string> = {
   ask: "Nothing moves until you ask.",
   suggest: "Repairs wait for ✓.",
-  handle: "Repairs apply, each with Undo. Trial — Q-14 is open.",
+  handle: "Repairs apply, each with Undo.",
 };

@@ -24,7 +24,11 @@ tauri-build = { version = "2", features = [] }
 # A [patch.crates-io] to crates.io 0.20.0 has the same resolve failure.
 # Do not vendor gtk-rs (closed #37). Revisit when Tauri ships GTK4 / webkit6.
 # Advisory is Linux-only; shipped targets are macOS + iOS, which do not compile glib.
-tauri = { version = "2", features = ["macos-private-api", "devtools"] }
+# `devtools` (WebKit inspector in release builds) is desktop-only: it backs
+# Settings → Developer → Open DevTools on the Mac (lib.rs open_devtools). On
+# iOS a release WKWebView must not be inspectable (App Review readiness S3);
+# debug builds stay inspectable without the feature.
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 # Opens links outside the app — every `<a target="_blank">` (Join Meet, a
@@ -59,6 +63,7 @@ tauri-plugin-nuvo-siwa = { path = "plugins/nuvo-siwa" }
 # Global hotkey is desktop-only; the crate doesn't build for mobile targets.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
+tauri = { version = "2", features = ["devtools"] }
 
 # The ⌥Space spotlight is a macOS NSPanel (non-activating) so it can take the
 # keyboard without stealing focus from whatever app you're in — Spotlight/Raycast

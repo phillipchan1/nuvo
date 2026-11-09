@@ -12,6 +12,23 @@ export function isAccountDeleteConfirm(typed: unknown): boolean {
 export const STRIPE_DELETE_BLOCK_MESSAGE =
   "Cancel your Stripe subscription in Settings → Billing first, then delete your account.";
 
+/** Supabase path (cutover flag off): the server cancels Stripe itself, so
+ *  telling the user to cancel "first" would be wrong. */
+export const STRIPE_DELETE_AUTO_CANCEL_NOTICE =
+  "If you pay through the web or Mac, we cancel that Stripe subscription when you delete.";
+
+/** iOS build with the Worker on: the 409 still applies, but the phone's
+ *  Settings → Billing is the App Store pane with no Stripe controls. */
+export const STRIPE_DELETE_BLOCK_MESSAGE_IOS =
+  "Cancel your subscription from Nuvo on the web or your Mac first, then delete your account.";
+
+/** Which Stripe line the delete panel shows. `workers` = the cutover flag
+ *  (Worker refuses a live Stripe row with 409); `iapOnly` = the iOS build. */
+export function stripeDeleteCopy(opts: { workers: boolean; iapOnly: boolean }): string {
+  if (!opts.workers) return STRIPE_DELETE_AUTO_CANCEL_NOTICE;
+  return opts.iapOnly ? STRIPE_DELETE_BLOCK_MESSAGE_IOS : STRIPE_DELETE_BLOCK_MESSAGE;
+}
+
 /** StoreKit can delete; we cannot cancel Apple. Same words in the panel and the 200. */
 export const APPLE_DELETE_NOTICE =
   "Cancel your subscription in Apple Account settings (Settings → your name → Subscriptions). We cannot cancel an App Store subscription for you.";
