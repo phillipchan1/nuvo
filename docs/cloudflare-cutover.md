@@ -84,7 +84,7 @@ overwrites it, so drive copies in a differently named database.
 | 3 | Desktop build never gets the flag | **Closed** (#127): `release.yml:173`, `ios-release.yml:204`, and now `cloudflare-hosting.yml:56` read `vars.VITE_API_BASE_URL`. #118 (a hard-coded literal plus #117's runtime flip) is still open, and #117 is closed, so #118 should be closed as superseded | workflows |
 | 4 | Realtime has no Worker path | **Not now (Phil, 2026-11-06). Post-cutover follow-up.** The flip ships with focus convergence: `useRealtime.ts:51` skips when the flag is on, and other devices catch up on window focus (15s stale). The Durable Object design (§ Not ready to flip, item 4) is the follow-up. It is not a flip blocker | `useRealtime.ts` |
 | 5 | Hyperdrive caches queries | **Open.** Verified live: caching is enabled. `rest.ts` reads are safe because they call `now()`. Agent, day, mirrors and `/api/data` reads are not | `wrangler hyperdrive get` |
-| 6 | Worker secrets missing | **Open.** Missing: `GOOGLE_CLIENT_SECRET` (rotates in the freeze, by design), the whole Apple set (`APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET`, `APPLE_SIWA_*`), and `MS_*`. Present: 15 names, matching § Key rotation | `wrangler secret list` |
+| 6 | Worker secrets missing | **Open.** Missing: `GOOGLE_CLIENT_SECRET` (rotates in the freeze, by design), the whole Apple set (`APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET`, `APPLE_SIWA_*`). (`MS_*` is no longer needed: M365 was removed 2026-11-09, D-184.) Present: 15 names, matching § Key rotation | `wrangler secret list` |
 | 7 | Non-SPA writers don't stamp `field_ts` / `updated_at` | **`field_ts` closed in code, driven (2026-11-06).** Supabase already solved this with one trigger, `stamp_unstamped_field_ts` (migration 65): a column whose value changed but whose stamp didn't gets `now()`. The copy was dropping it (`pg_restore` skips every trigger and function). It's back as **one definition**, `worker/schema/field-ts.sql`, with the same name and body (a test pins it to migration 65 verbatim). The copy installs it right after the restore and dies if any `field_ts` table is left without it; `apply-neon-schema.mjs` applies it too, and it skips tables with no `field_ts`. **Deviation from the brief, on purpose:** the brief asked for a `stampFieldTs` helper called from each writer. There are ~40 hand-written writes to these tables (`store.ts`, `cronJobs.ts`, capture, inbound, agent, mirrors), so a helper would be one rule copied 40 times, and the next writer would forget it. The trigger covers them all, including future ones, and leaves client stamps alone (`rest.ts`, `apply_patch`). **Driven:** a fresh copy (14 triggers installed), a fresh sign-up under `wrangler dev`, then `POST /api/rollover`. That moved `do_date` and stamped `do_date` and `roll_count` with now, and left the client-stamped `title` untouched. `tests/field-ts-stamp.test.ts` runs the real `store.ts` writers and the rollover cron through it. `updated_at` is still hand-written per writer (unchanged) | `field-ts.sql`, `cutover-migrate.yml` |
 | 8 | Post-flip sign-up hits `user_settings_user_id_fkey` | **Closed in code, driven (2026-11-06).** The copy now repoints every `public` FK on `auth.users(id)` at `public.users(id)` right after `PUBLIC_USERS_SQL` (`REPOINT_OWNER_FKS_SQL` in `scripts/cutover_copy.py`), keeping each constraint's name and `ON DELETE` / deferrable clauses, and dies if one is left. **Why the copy, not a `user.create` hook:** `public.users` is already the planner owner on a fresh Neon (`neon.sql`) and is what `bootstrapUser` writes, so the copied database ends with the same shape instead of keeping a fake Supabase `auth.users` alive forever; and Better Auth's `"user".id` is `TEXT` while planner `user_id` is `UUID`, so pointing FKs at `"user"` isn't possible without retyping every table. **Driven:** the workflow's own `cutover.py dump` → `restore` (extracted verbatim) from the local Supabase stack into a scratch Postgres 17, once from `HEAD~` and once with the fix, each under `wrangler dev`: the old restore 409s a fresh OTP sign-up's first read and first write with `23503 … user_settings_user_id_fkey`; the new one returns 200 and writes `user_settings`, 4 default domains and a task. A copied account (`dummy@nuvo.test`) still resolves to its original id. `tests/cutover-owner-fk.test.ts` (PGlite) pins the failure, the fix, idempotence and the refusal of a non-`id` FK. **Note for A8:** the trial row on sign-up is still the billing session's `user.create` hook | `cutover_copy.py`, `cutover-migrate.yml` |
 | 9 | `/api/entitlement` CORS | **Open.** It answers `OPEN_CORS` (`ACAO: *`) to a `credentials: "include"` fetch (`entitlementRead.ts:144`). The fix (`reflectAllowOrigin`) exists only in #120 | `index.ts:255–273` |
@@ -134,11 +134,11 @@ read from the repo and from `supabase functions list --project-ref ebibzojtkzkph
 | **Billing tables:** `subscriptions`, `stripe_webhook_events`, `apple_webhook_events`, `apple_notification_events`, plus `entitled()` / `plan()` / `billing_source()` | Excluded from the copy and the freeze on purpose. The Worker reads `subscriptions` over HTTPS with the service-role key (`entitlement.ts`) | Add the four tables to `neon.sql` and do a one-off frozen copy at the billing switch. Make `entitled()` a Worker function, and point `/api/entitlement` at Neon. Then delete `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `nuvo` | 1 day |
 | **Orphan functions** `apple-notifications`, `apple-verify` | Deployed on Supabase, **not in this repo**. Migration 70 names `apple-notifications` as Apple's writer, so **which URL App Store Connect actually calls is unverified** | Check App Store Connect's URL before porting. Delete whichever one is unused | 1 hr |
 | **Stale-caller freeze** (every non-billing function, `WRITE_FREEZE`d) | Kept after the flip on purpose, so old builds and pasted URLs get a 503 | Delete them after the 24h window, and once the last pre-flip Mac/iOS build is gone | 1 hr |
-| **Webhooks / redirect URIs on `supabase.co`** | Resend inbound (step 7). Google push channels (`google-resubscribe`, step 8). **OAuth redirect URIs:** the Google Cloud client and the Azure (M365) app list `…supabase.co/functions/v1/google-oauth` / `m365-oauth` and Supabase Auth's callback. What's registered there is **unverified**: the consoles weren't opened | Add `https://api.nuvo.day/functions/v1/google-oauth` and `…/m365-oauth` **before** the flip, or calendar connects fail. Drop the Supabase ones afterwards | 1 hr |
+| **Webhooks / redirect URIs on `supabase.co`** | Resend inbound (step 7). Google push channels (`google-resubscribe`, step 8). **OAuth redirect URIs:** the Google Cloud client lists `…supabase.co/functions/v1/google-oauth` and Supabase Auth's callback (M365 was removed, D-184, so there is no Azure app to update). What's registered there is **unverified**: the consoles weren't opened | Add `https://api.nuvo.day/functions/v1/google-oauth` **before** the flip, or calendar connects fail. Drop the Supabase ones afterwards | 1 hr |
 | **Supabase Auth providers** (Google, Apple, email) | GoTrue holds the providers and the login. Unused once the flag is on | Nothing to port beyond blockers 4–6. Leave them in place until the rollback window closes | — |
 | `pg_cron` | All nine jobs have Worker twins. They're unscheduled at step 8 | Done at the flip | — |
 | Storage / Vault / Realtime | No buckets (`inventory.md` §1). Vault tokens are re-sealed into Neon by the copy. Realtime is replaced by focus refetch, or by the Durable Object | Done at the flip, or by blocker 10 | — |
-| **Calendar sync** (Google, M365, iCloud, ICS) | **Already ported** (#106 `98913a8`, #107; `worker/src/calendar/http.ts`, `google/routes.ts`; the queue consumer polls all four). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` (decision 5) | Secrets plus the redirect URI above | 1 hr |
+| **Calendar sync** (Google, iCloud, ICS; M365 removed) | **Already ported** (#106 `98913a8`, #107; `worker/src/calendar/http.ts`, `google/routes.ts`; the queue consumer polls all four). The "What moves" row that kept non-Google calendar on Supabase was stale and is fixed below. M365 is removed (2026-11-09, D-184): with `MS_*` unset, `m365-oauth` answers 503 `m365_disabled` and m365 sync skips; enum and rows are kept | Secrets plus the redirect URI above | 1 hr |
 
 **Off Supabase entirely = the flip (about 5–8 days) + billing (about 5–7 days) + an
 hour of console work**, plus one frozen billing copy. Billing can go on a later night,
@@ -181,7 +181,9 @@ Two loose ends:
 `m365-oauth`, `icloud-connect`, `ics-subscribe` and `icloud-events`, including iCloud
 write-back. The queue consumer (`cronJobs.ts:299–350`) polls **all four** providers,
 plus iCloud contacts. This used to say "others ack", and that line is fixed below.
-M365 still needs `MS_CLIENT_ID` / `MS_CLIENT_SECRET` on `nuvo` and the Azure redirect URI.
+**M365 is removed** (2026-11-09, D-184): missing `MS_*` = feature off. `m365-oauth` returns
+503 `m365_disabled`, and the dispatcher, queue and refresh skip m365 accounts without touching
+them. The `m365` enum, rows and events are kept. Nothing to set on `nuvo`, no Azure redirect URI.
 
 **Client auth calls with no Better Auth path** (small): ~~`linkIdentity` for Google and Apple
 in Settings~~ (now through the sign-in door, 2026-11-06), and `onAuthStateChange` listeners in `useSubscription` / `SettingsModal`.
@@ -218,8 +220,8 @@ That's about **9–14 days**, depending on A5 and A10.
 
 | # | Step | Reversible? |
 |---|---|---|
-| B1 | Create the queues, disable the Hyperdrive cache, and set the missing `nuvo` secrets: Apple, `MS_*`, Stripe **live** secret + webhook secret, App Store keys. Deploy `nuvo-preview` and `nuvo` from master, still inert | yes |
-| B2 | Add the `api.nuvo.day` redirect URIs to the Google Cloud client (`google-oauth`, and `/api/auth/callback/google` if A5 ports Google) and the Azure app (`m365-oauth`). Add, don't replace | yes |
+| B1 | Create the queues, disable the Hyperdrive cache, and set the missing `nuvo` secrets: Apple, Stripe **live** secret + webhook secret, App Store keys. Deploy `nuvo-preview` and `nuvo` from master, still inert | yes |
+| B2 | Add the `api.nuvo.day` redirect URIs to the Google Cloud client (`google-oauth`, and `/api/auth/callback/google` if A5 ports Google). Add, don't replace. (No Azure app: M365 removed, D-184) | yes |
 | B3 | Rehearse on preview: a flag-on build from a browser, a Mac and TestFlight. A Stripe **test-mode** endpoint pointed at the preview Worker, and StoreKit sandbox. Never the live account | yes |
 | B4 | `cutover-migrate` dry run with the billing tables included, plus the token go/no-go | yes (scratch only) |
 | B5 | **Flip night:** the order above (steps 0–9), with billing now inside the freeze. At the switch, add a **new** Stripe live webhook endpoint on api.nuvo.day and **disable** the Supabase one. Change App Store Server Notifications (production + sandbox) to the Worker. Then **reconcile** any billing events that hit the frozen Supabase endpoint during the window: Stripe's event list or a subscription re-read, and App Store "Get Notification History". Whether Apple retries a failed notification to the *new* URL is **unverified**, which is why the reconcile is a step and not an assumption | until the copy: unfreeze. After: rollback loses Neon-side writes |
@@ -241,8 +243,8 @@ That's about **9–14 days**, depending on A5 and A10.
    first) or on a second, smaller night?
 4. **`field_ts` on server writes.** Fix it before the flip (recommended, about 1 day), or
    accept that an older offline edit can overwrite an agent, capture or rollover write.
-5. **M365.** `MS_*` isn't carried over, so any M365 calendar stops syncing at the flip.
-   Carry it, or tell those users.
+5. ~~**M365.**~~ **Decided 2026-11-09: removed** (Phil: "were skipping azure let's just remove
+   m365", D-184). Prod has 0 m365 accounts. Not a flip requirement; `MS_*` stays unset.
 6. **Flip model.** The repo variable (D-174, #127, what's on master) or #118's literal plus
    runtime flip. Master has already chosen the variable. Closing #118 makes that official.
 7. **The other six Supabase projects.** Nuvo is going fully off. But the org bill only ends
@@ -382,7 +384,7 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
 | Agent / MCP | `*.supabase.co/functions/v1` | `/api/agent`, `/api/mcp` (session / connection scoped on Neon) | Point the flag at `/functions/v1` |
 | Database | Supabase Postgres + RLS | Neon via Hyperdrive | Leave Neon; app stops writing it |
 | Billing | Supabase edge (Stripe, App Store) + 4 tables | **Still Supabase** at the flip. Port it later: § What still needs Supabase after the flip | n/a |
-| Calendar (Google, M365, iCloud, ICS) + mirrors + push | Supabase edge + pg_cron | Worker (#105–#107: `google/routes.ts`, `calendar/http.ts`, `slot-mirror`, `task-mirror`, `push-dispatch` with the new VAPID pair, D-173). Crons `google-renew` / `calendar-dispatch` / `push-dispatch`. M365 needs `MS_*` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
+| Calendar (Google, M365, iCloud, ICS) + mirrors + push | Supabase edge + pg_cron | Worker (#105–#107: `google/routes.ts`, `calendar/http.ts`, `slot-mirror`, `task-mirror`, `push-dispatch` with the new VAPID pair, D-173). Crons `google-renew` / `calendar-dispatch` / `push-dispatch`. M365 removed (D-184), skipped without `MS_*` | Leave Supabase functions + jobs until `cron.unschedule` at flip |
 
 `ENVIRONMENT=local` (exactly, case-insensitive) **or** a parsed DB/Hyperdrive
 **hostname** that is loopback is the only unset-`BETTER_AUTH_URL` fallback.
@@ -775,7 +777,7 @@ the flip, ported jobs (`rollover`, `purge-trash`,
 `reminder-deliveries-prune`, `push-dispatch`, `github-poll`,
 `trim-sync-log`) iterate `users` then scope by `user_id`. Calendar-dispatch
 enqueues due accounts onto `CALENDAR_SYNC_QUEUE` and the consumer polls
-Google, M365, iCloud (+ contacts) and ICS (`consumeCalendarSyncBatch`). `google-renew` re-watches channels that
+Google, iCloud (+ contacts) and ICS (`consumeCalendarSyncBatch`; M365 is removed and acks as a no-op without `MS_*`). `google-renew` re-watches channels that
 expire within 48h. Flip tooling: `POST /api/cron/google-resubscribe`.
 `trim-sync-log` deletes by
 `created_at < now() - 30 days` and, when the identity is parked
@@ -786,7 +788,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, M365, iCloud and ICS. Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, iCloud and ICS (M365 removed; skipped without `MS_*`). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |
@@ -874,7 +876,7 @@ nothing.
   the `.p8` once. **Since 2026-11-06 the Worker mints the JWT itself** from
   `APPLE_SIWA_TEAM_ID` / `_KEY_ID` / `_PRIVATE_KEY` (`primeAppleClientSecret`), so there is
   no 6-month secret to rotate. Set `APPLE_CLIENT_SECRET` only to override that.
-- `MS_*` — M365 isn't carried over this round.
+- ~~`MS_*`~~ — not needed: M365 was removed (D-184). Missing = feature off.
 
 `RESEND_FROM` stays `noreply@inbox.nuvo.day`: Resend has verified only `inbox.nuvo.day`.
 Supabase's `RESEND_FROM` is `hello@nuvo.day`, on an unverified domain.
@@ -1477,8 +1479,8 @@ Each one needs Phil's yes, and none was run. Billing steps (Stripe and App Store
 | G3 | **Apple key**: Apple Developer → Keys → new key with Sign in with Apple, primary App ID `day.nuvo.app`. Download the `.p8` once (Keychain) | developer.apple.com | revoke key |
 | G4 | **Apple Services ID** for the web flow, e.g. `day.nuvo.web` (whatever exists). Under Sign in with Apple → Configure: domain `api.nuvo.day` and return URL `https://api.nuvo.day/api/auth/callback/apple`. For the rehearsal, also `nuvo-preview.nq-morning-briefing.workers.dev` + `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/apple`. **Add, don't replace** Supabase's entries until the rollback window closes | developer.apple.com | yes |
 | G5 | **Google OAuth client** (the one `GOOGLE_CLIENT_ID` names): add the authorized redirect URIs `https://api.nuvo.day/api/auth/callback/google` (sign-in) and `https://api.nuvo.day/functions/v1/google-oauth` (calendar connect, if missing). For the rehearsal, also `https://nuvo-preview.nq-morning-briefing.workers.dev/api/auth/callback/google`. **Unverified:** whether the consent screen needs `nq-morning-briefing.workers.dev` as an authorized domain for that preview URI. If Google refuses it, rehearse Google on api.nuvo.day after G7 instead. Add, don't replace | console.cloud.google.com | yes |
-| G6 | **Azure app** (M365): add `https://api.nuvo.day/functions/v1/m365-oauth`, if M365 is carried (decision 5) | portal.azure.com | yes |
-| G7 | **Secrets on `nuvo` and `nuvo-preview`**: `APPLE_CLIENT_ID` (Services ID from G4), `APPLE_SIWA_TEAM_ID`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (the `.p8` from G3). Optionally `APPLE_SIWA_CLIENT_ID`. `MS_CLIENT_ID` / `MS_CLIENT_SECRET` if G6. On **preview only** for now: `GOOGLE_CLIENT_SECRET`. On `nuvo` it rotates inside the freeze (§ Key rotation), and until it's set there, Google sign-in on prod answers "That sign-in option isn't available right now" | `npx wrangler secret put <NAME>` (add `--env preview` for preview), piped from Keychain | yes |
+| ~~G6~~ | ~~**Azure app** (M365)~~ — **dropped 2026-11-09**: M365 is removed (decision 5, D-184). Nothing to do | — | — |
+| G7 | **Secrets on `nuvo` and `nuvo-preview`**: `APPLE_CLIENT_ID` (Services ID from G4), `APPLE_SIWA_TEAM_ID`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (the `.p8` from G3). Optionally `APPLE_SIWA_CLIENT_ID`. (No `MS_*`: M365 removed.) On **preview only** for now: `GOOGLE_CLIENT_SECRET`. On `nuvo` it rotates inside the freeze (§ Key rotation), and until it's set there, Google sign-in on prod answers "That sign-in option isn't available right now" | `npx wrangler secret put <NAME>` (add `--env preview` for preview), piped from Keychain | yes |
 | G8 | **Deploy** preview, then prod, from merged master. Both stay inert (`CUTOVER_FLIPPED` unset, no client points at them) | `npx wrangler deploy --env preview`, then `npx wrangler deploy` | yes (redeploy) |
 | G9 | **Rehearse on preview (B3)**: a flag-on build pointed at the preview Worker, on a browser, a **built Mac** (`tauri://localhost`) and **TestFlight**. Check OTP sign-in, Google (door round trip), Apple native + web, **quit and relaunch stays signed in** (blocker 10), and a fresh sign-up that writes (8). Also run a `cutover-migrate` dry run, which now installs the stamp trigger and repoints the FKs | — | yes |
 | G10 | **Armed build (step 0), only after G8 prod is deployed.** An armed build fails *closed* if the maintenance URL doesn't answer. Set repo **variables** `VITE_MAINTENANCE_URL=https://api.nuvo.day/api/maintenance` and `VITE_CUTOVER_ARMED=1`, then let the PWA, Mac and TestFlight builds roll out | `gh variable set …` | yes (unset + rebuild) |

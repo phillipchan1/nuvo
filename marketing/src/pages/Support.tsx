@@ -47,7 +47,7 @@ const FIRST_RUN = [
   },
   {
     title: 'Connect a calendar',
-    body: 'Settings (⌘,) → Calendars. Google, Microsoft 365, Apple/iCloud, or an ICS feed. Connect the one your meetings actually live in — Nuvo can’t tell you what you have room for until it can see what’s already there.',
+    body: 'Settings (⌘,) → Calendars. Google, Apple/iCloud, or an ICS feed. Connect the one your meetings actually live in — Nuvo can’t tell you what you have room for until it can see what’s already there.',
   },
   {
     title: 'Set your hours and time zone',
@@ -65,7 +65,6 @@ const FIRST_RUN = [
 
 const CALENDARS = [
   ['Google', 'Two-way', 'Events read in; scheduled Nuvo work can mirror out to a calendar named “Nuvo”.'],
-  ['Microsoft 365', 'Read only', 'Events appear in Nuvo. Nuvo never writes back to M365.'],
   ['Apple / iCloud', 'Two-way', 'Connect with your Apple ID and an app-specific password (CalDAV).'],
   ['ICS subscription', 'Read only', 'Paste a feed URL — the youth group calendar, a sports schedule, a shared team feed.'],
 ] as const
@@ -510,8 +509,8 @@ export default function Support() {
                         Settings (<span className="mono text-[var(--text)]">⌘,</span>) →{' '}
                         <strong className="text-[var(--text)]">Calendars</strong>. Connect as many
                         accounts as you like, from as many providers as you like — that’s the
-                        point. Work on Google, family on Apple, corp on Microsoft, the volunteer
-                        thing as an ICS feed.
+                        point. Work on Google, family on Apple, the volunteer thing as an
+                        ICS feed.
                       </p>
                       <div className="mt-5 overflow-x-auto">
                         <table className="w-full min-w-[30rem] border-collapse text-left text-[0.9375rem]">
@@ -940,8 +939,8 @@ export default function Support() {
                     <strong className="text-[var(--text)]">Resume subscription</strong>.
                   </p>
                   <p className="mt-3">
-                    Your calendars are unaffected either way — they live in Google, Apple, and
-                    Microsoft, and they stay there.
+                    Your calendars are unaffected either way — they live in Google, Apple, or
+                    wherever a feed is published, and they stay there.
                   </p>
                 </Disclose>
                 <Disclose q="Signing in, and signing in on another device">
@@ -1002,7 +1001,7 @@ export default function Support() {
                   ['Calendar credentials go in a vault.', 'OAuth tokens and app-specific passwords are stored separately from application data, never in plain tables.'],
                   ['Google data is used for one thing.', 'Syncing your calendars and scheduling your work. Nuvo follows Google’s Limited Use requirements: it is never sold, never used for advertising, and never used to train general AI models.'],
                   ['We don’t sell anything to anybody.', 'The business model is the subscription. That’s the whole model — which is why there’s no incentive to do anything else with your calendar.'],
-                  ['You can leave with your calendars intact.', 'They live in Google, Apple, and Microsoft. Disconnecting Nuvo stops the sync and changes nothing about the calendars themselves.'],
+                  ['You can leave with your calendars intact.', 'They live in Google, Apple, or wherever a feed is published. Disconnecting Nuvo stops the sync and changes nothing about the calendars themselves.'],
                 ].map(([head, body]) => (
                   <li key={head} className="border-t border-[var(--line)] pt-4">
                     <p className="text-[0.9375rem] font-medium text-[var(--text)]">{head}</p>

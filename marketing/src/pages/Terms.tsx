@@ -113,7 +113,7 @@ export default function Terms() {
           <section>
             <h2 className="masthead text-[1.35rem] text-[var(--text)]">Connected accounts</h2>
             <p className="mt-3">
-              Connecting Google Calendar, Microsoft 365, Apple/iCloud Calendar or an ICS feed
+              Connecting Google Calendar, Apple/iCloud Calendar or an ICS feed
               is optional. When you connect one, you authorize Nuvo to access that account on
               your behalf for the purposes described in the{' '}
               <a href="/privacy" className="text-[var(--accent)] underline-offset-2 hover:underline">

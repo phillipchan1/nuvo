@@ -85,7 +85,7 @@ the iOS PWA. *Status: standing — Principle 15. Extended by D-099 (native iOS s
 **D-015 · Calendar providers by capability, not parity.** Google two-way + mirror · M365
 read-only (striped, dashed, not draggable) · iCloud two-way over CalDAV with an
 app-specific password in Vault · ICS read. → We ship what each API honestly supports and
-*show* the difference rather than faking parity. *Status: standing.*
+*show* the difference rather than faking parity. *Status: standing — M365 since removed (D-184).*
 
 **D-016 · All model/API keys live in Supabase secrets, never the frontend.** The agent edge
 function is the only path to the model. *Status: standing — security-load-bearing.*
@@ -6805,6 +6805,18 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
+ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
+Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.
+Nothing offers to connect or reconnect M365 any more (Settings, the reconnect banner,
+marketing, the agent prompt). Missing `MS_CLIENT_ID` / `MS_CLIENT_SECRET` now means *feature
+off*: `m365-oauth` answers 503 `m365_disabled` (Worker and edge), and `m365-sync`, the
+dispatcher, the queue and the manual refresh skip m365 accounts without touching or logging
+them. Kept on purpose: the `m365` provider enum, existing `calendar_accounts` /
+`external_events` rows and how they render (a leftover account can still be disconnected),
+the Graph code, the old migrations and the edge-function folders, so this reverses by setting
+the two secrets and restoring the buttons. *Status: standing.*
 
 **D-183 · 2026-11-09 · Plan the week walks its draft one block at a time, over a faded
 calendar.** *(Extends D-180; spec [`plan-the-week-v2.md`](../plan-the-week-v2.md) §4, "The walk".)*

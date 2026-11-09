@@ -124,7 +124,7 @@ attacks the core.
 Statuses are owned by each spec's own header — this is a map, not the source of truth.
 
 **Shipped:** capture + NLP parsing · drag-and-drop blocking · Google (two-way + "Nuvo"
-mirror) / M365 (read) / iCloud (two-way CalDAV) / ICS · rollover · domains, initiatives,
+mirror) / iCloud (two-way CalDAV) / ICS (M365 removed, D-184) · rollover · domains, initiatives,
 projects on live rows · the Week gate · Sunday compose + calibration · Sunrise / Sundown ·
 the Nuvo assistant (scaffold / blueprint / prepare / narrate) · Marquee · recurrence ·
 slots · the **Review** with evidence + the Find · the **Refine run** (phone-first) ·
