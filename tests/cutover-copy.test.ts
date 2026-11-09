@@ -132,6 +132,134 @@ describe("cutover_copy helpers", () => {
       expect(rows[2][0]).toBe("u3");
     });
 
+    describe("auth CSV loaders (load_users / load_identities in cutover-migrate.yml)", () => {
+      const load = (fn: "load_auth_users" | "load_auth_identities", content: string) =>
+        withCsv(content, (file) =>
+          py(`from cutover_copy import ${fn}; import json; print(json.dumps(${fn}(${JSON.stringify(file)})))`),
+        );
+      // Top-level SELECT expressions of a COPY constant in the workflow.
+      const selectArity = (name: string) => {
+        const body = WORKFLOW.slice(WORKFLOW.indexOf(`${name} = """`)).split('"""')[1];
+        const list = body.slice(body.indexOf("SELECT") + 6, body.indexOf("FROM migration_tmp"));
+        let depth = 0;
+        let cols = 1;
+        for (const ch of list.replace(/'[^']*'/g, "''")) {
+          if (ch === "(") depth++;
+          else if (ch === ")") depth--;
+          else if (ch === "," && depth === 0) cols++;
+        }
+        return cols;
+      };
+      const user = (id: string, name: string, email: string, confirmed = "2026-01-01 00:00:00+00") =>
+        `${id},${name},${email},t,2026-01-01 00:00:00+00,2026-01-02 00:00:00+00,${confirmed}\n`;
+
+      it("field lists match the workflow's USERS_COPY (7) and IDENTITIES_COPY (6)", () => {
+        const fields = py(
+          "from cutover_copy import AUTH_USERS_FIELDS as u, AUTH_IDENTITIES_FIELDS as i; print(len(u), len(i))",
+        );
+        expect(fields).toBe(`${selectArity("USERS_COPY")} ${selectArity("IDENTITIES_COPY")}`);
+        expect(fields).toBe("7 6");
+      });
+
+      it("load_users keeps a quoted name holding \\n, \\r\\n, commas and quotes as one user", () => {
+        const users = JSON.parse(
+          load(
+            "load_auth_users",
+            user("u1", '"Ann\nLee, ""AJ"""', "ann@example.test") +
+              user("u2", '"Bo\r\nKim, Jr."', "bo@example.test", "") +
+              user("u3", "Cy", "cy@example.test"),
+          ),
+        ) as Record<string, string>[];
+        expect(users.map((u) => u.id)).toEqual(["u1", "u2", "u3"]);
+        expect(users[0].name).toBe('Ann\nLee, "AJ"');
+        expect(users[1].name).toBe("Bo\r\nKim, Jr.");
+        expect(users[1].email).toBe("bo@example.test");
+        // NULL email_confirmed_at arrives as '' and sql_timestamp('') is NULL.
+        expect(users[1].email_confirmed_at).toBe("");
+        expect(users[0].email_verified).toBe("t");
+      });
+
+      it("load_identities reads 6 columns, a quoted provider id included", () => {
+        const rows = JSON.parse(
+          load(
+            "load_auth_identities",
+            'i1,u1,google,"10\n9, ""x""",2026-01-01 00:00:00+00,\ni2,u2,email,,2026-01-02 00:00:00+00,2026-01-03 00:00:00+00\n',
+          ),
+        ) as Record<string, string>[];
+        expect(rows).toHaveLength(2);
+        expect(rows[0]).toEqual({
+          id: "i1",
+          user_id: "u1",
+          provider: "google",
+          provider_id: '10\n9, "x"',
+          created_at: "2026-01-01 00:00:00+00",
+          updated_at: "",
+        });
+        expect(rows[1].provider_id).toBe("");
+      });
+
+      it("fails closed on a wrong column count, with counts only (no row data)", () => {
+        const short = user("u1", "Ann", "ann@example.test") + "u2,Bo,bo@example.test,t,2026-01-01 00:00:00+00,2026-01-02 00:00:00+00\n";
+        expect(() => load("load_auth_users", short)).toThrow(/auth\.users record 2: expected 7 columns, got 6/);
+        expect(() => load("load_auth_users", user("u1", '"A,nn"', "ann@example.test").replace("A,nn", "A,nn\",\"x"))).toThrow(
+          /expected 7 columns, got 8/,
+        );
+        expect(() => load("load_auth_identities", "i1,u1,google,sub,2026-01-01 00:00:00+00\n")).toThrow(
+          /auth\.identities record 1: expected 6 columns, got 5/,
+        );
+        let message = "";
+        try {
+          load("load_auth_users", "zq-id-7,zq-secret-name,zq-secret@example.test\n");
+        } catch (err) {
+          message = String(err);
+        }
+        expect(message).toMatch(/auth\.users record 1: expected 7 columns, got 3/);
+        expect(message).not.toMatch(/zq-/);
+      });
+
+      it("fails closed on an empty id instead of skipping the record", () => {
+        expect(() => load("load_auth_users", user("u1", "Ann", "a@example.test") + user("", "Bo", "b@example.test"))).toThrow(
+          /auth\.users record 2: empty id/,
+        );
+        expect(() => load("load_auth_identities", ',u1,google,sub,2026-01-01 00:00:00+00,\n')).toThrow(
+          /auth\.identities record 1: empty id/,
+        );
+        // A blank line is a 1-column record, not something to skip.
+        expect(() => load("load_auth_users", user("u1", "Ann", "a@example.test") + "\n")).toThrow(/record 2: expected 7 columns, got 0/);
+      });
+
+      it("fails closed on a truncated file (unterminated quote)", () => {
+        expect(() => load("load_auth_users", user("u1", '"Ann', "a@example.test"))).toThrow(
+          /auth\.users: malformed CSV after 0 record\(s\)/,
+        );
+      });
+
+      it("an empty export loads as no users (assert_users_ready then refuses)", () => {
+        expect(load("load_auth_users", "")).toBe("[]");
+      });
+    });
+
+    it("loads auth users and identities through the CSV reader, not by physical line", () => {
+      expect(WORKFLOW).not.toMatch(/parse_csv_line/);
+      expect(WORKFLOW).toMatch(/^\s+load_auth_users,$/m);
+      expect(WORKFLOW).toMatch(/^\s+load_auth_identities,$/m);
+      const loaders = WORKFLOW.slice(WORKFLOW.indexOf("def load_users("), WORKFLOW.indexOf("def mask_rows("));
+      expect(loaders).toMatch(/return load_auth_users\(path\)/);
+      expect(loaders).toMatch(/return load_auth_identities\(path\)/);
+      expect(loaders.match(/except ValueError as exc:\n\s+die\(/g)).toHaveLength(2);
+      expect(loaders).not.toMatch(/splitlines|read_text|continue/);
+      // The auth CSVs are never read by physical line anywhere in the workflow.
+      expect(WORKFLOW).not.toMatch(/(users|identities)_path\.read_text/);
+      expect(WORKFLOW).not.toMatch(/auth-(users|identities)\.csv[\s\S]{0,200}splitlines/);
+      // mask_rows still runs before the first print of the loaded rows.
+      for (const fn of ["cmd_dump", "cmd_restore"]) {
+        const body = WORKFLOW.slice(WORKFLOW.indexOf(`def ${fn}(`));
+        const masked = body.indexOf("mask_rows(users, identities)");
+        expect(masked).toBeGreaterThan(body.indexOf("identities = load_identities(identities_path)"));
+        expect(masked).toBeLessThan(body.indexOf("assert_users_ready(users)"));
+      }
+    });
+
   });
 
   it("setvals the sync_log identity after resync and reserves past source max after restore", () => {
