@@ -10,7 +10,7 @@ import json
 import os
 import re
 import sys
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -847,6 +847,7 @@ WHERE c.table_schema = 'public'
 """
 
 
+
 # ---------------------------------------------------------------------------
 # Billing copy (docs/cloudflare-cutover.md § Billing port → Flip night 1 and 5).
 #
@@ -865,7 +866,14 @@ WHERE c.table_schema = 'public'
 #       ON CONFLICT (event_id) DO NOTHING. Neon has no such table: the
 #       ledger only has to recognise the id so a retry is still deduped.
 #
-# Parity rule (billing_parity_problems): target ⊇ source.
+# Columns: a source column the target lacks is a refusal (BillingCopyError)
+# unless it is on BILLING_DROPPED_SOURCE_COLUMNS, the reviewed drop-list;
+# dropped names are reported. Column lists come from pg_catalog, which
+# lists every column whatever the reader role may SELECT.
+#
+# Parity rule, decided INSIDE the target transaction before COMMIT (the
+# source counts + md5s arrive as psql -v variables; any failure RAISEs a
+# bare SQLSTATE, so the whole transaction rolls back — target unchanged):
 #   1. The rows loaded into the target's temp table hash exactly like the
 #      source snapshot (count + md5) — what was copied is what was read.
 #   2. Every source key exists on the target (missing = 0). For the legacy
@@ -875,10 +883,17 @@ WHERE c.table_schema = 'public'
 #      rows (same columns, same canonical text, same order). For
 #      subscriptions a key whose target updated_at is strictly newer (the
 #      Worker wrote it after the flip) is left out of both sides and
-#      counted as target_newer — allowed only in phase=billing; in the
-#      copy phase the target was just created, so it must be 0.
-#   4. Target rows with no source key (target_extra) are reported, never
-#      fatal: after the flip the Worker creates rows Supabase never sees.
+#      counted as target_newer — allowed only in phase=billing, and listed
+#      in the report as a reviewed number.
+#   4. Target rows with no source key (target_extra): phase=copy → fatal
+#      (the target must equal the source). phase=billing → never deleted
+#      and never fatal inside the transaction (the delta of source truth
+#      still lands); reported as a named warning, and the job fails unless
+#      the operator passes allow_target_extra = the observed subscriptions
+#      count after the manual review in the doc. Ledger extras after the
+#      flip are the Worker's own webhook ids: reported, never fatal.
+# The same checks re-run after COMMIT (cheap); a post-commit failure is
+# fatal and arms the guarded restore from the pre-write backup.
 # ---------------------------------------------------------------------------
 
 BILLING_COPY_KEYS: dict[str, str] = {
@@ -887,6 +902,8 @@ BILLING_COPY_KEYS: dict[str, str] = {
     "apple_webhook_events": "event_id",
 }
 BILLING_COPY_ORDER = ("subscriptions", "stripe_webhook_events", "apple_webhook_events")
+# Ledgers first, subscriptions last: the trigger toggle spans one statement.
+BILLING_APPLY_ORDER = ("stripe_webhook_events", "apple_webhook_events", "subscriptions")
 LEGACY_APPLE_LEDGER = "apple_notification_events"
 LEGACY_APPLE_KEY = "notification_uuid"
 LEGACY_APPLE_STAMP = "received_at"
@@ -895,12 +912,47 @@ BILLING_UPSERT_STAMP = "updated_at"
 BILLING_UPDATED_AT_TRIGGER = "subscriptions_set_updated_at"
 BILLING_LOCK_TIMEOUT = "10s"
 BILLING_SCHEMA_MARKER = "-- Billing (the Worker port"
+BILLING_SCHEMA_END_MARKER = "-- End of billing (the Worker port)."
+BILLING_PHASES = ("copy", "billing")
 
+# Reviewed drop-list: source columns the target intentionally does not
+# carry. Anything else the source has and the target lacks is a refusal.
+#   apple_notification_events.notification_type — the legacy ledger maps to
+#   apple_webhook_events (event_id, created_at) only; the Worker's ledger is
+#   a dedupe set and never reads the type (docs § Billing port).
+BILLING_DROPPED_SOURCE_COLUMNS: dict[str, frozenset[str]] = {
+    LEGACY_APPLE_LEDGER: frozenset({"notification_type"}),
+}
+
+# Custom SQLSTATEs the in-transaction assert raises (no message text: psql
+# runs with VERBOSITY sqlstate). Each aborts before COMMIT.
+BILLING_ASSERT_SQLSTATES: dict[str, str] = {
+    "NVB00": "billing assert inputs missing or malformed (phase / source counts)",
+    "NVB01": "loaded rows != source snapshot (count or md5)",
+    "NVB02": "source key(s) missing on target after the write",
+    "NVB03": "target rows over the source keys != source (count or md5)",
+    "NVB04": "target_newer > 0 outside phase=billing",
+    "NVB05": "compared + target_newer != loaded",
+    "NVB06": "target_extra > 0 in phase=copy (target must equal source)",
+    "NVB10": "restore refused: target changed since the billing commit",
+    "NVB11": "restore check failed: restored rows != pre-write fingerprint",
+}
+
+_BILLING_KINDS = "src|load|cmp|dst|missing|newer|extra|written"
 _BILLING_LINE = re.compile(
-    r"^billing\|(src|load|cmp|dst|missing|newer|extra|written)\|(\w+)\|(\d+)\|([0-9a-f]{32}|-)$"
+    rf"^billing\|({_BILLING_KINDS})\|(\w+)\|(\d+)\|([0-9a-f]{{32}}|-)$"
+)
+_BILLING_POST_LINE = re.compile(
+    rf"^billing_post\|({_BILLING_KINDS})\|(\w+)\|(\d+)\|([0-9a-f]{{32}}|-)$"
 )
 _BILLING_COL_LINE = re.compile(r"^billing_col\|(\w+)\|([^|]+)\|(YES|NO)\|(t|f|true|false)$")
+_BILLING_COLMD5_LINE = re.compile(r"^billing_colmd5\|(src|load)\|(\w+)\|(\w+)\|([0-9a-f]{32})$")
+_BILLING_COLDIFF_LINE = re.compile(r"^billing_coldiff\|(\w+)\|(\w+)$")
+_BILLING_FP_LINE = re.compile(r"^billing_fp\|(pre|post|now)\|(\w+)\|(\d+)\|([0-9a-f]{32})$")
+_BILLING_SQLSTATE = re.compile(r"ERROR:\s+([0-9A-Z]{5})\b")
 _BARE_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
+_MD5_HEX = re.compile(r"^[0-9a-f]{32}$")
+_SUPABASE_HOST_SUFFIXES = ("supabase.co", "supabase.com", "supabase.net", "supabase.in")
 
 
 class BillingCopyError(ValueError):
@@ -913,23 +965,34 @@ def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def is_supabase_host(host: str) -> bool:
+    """True for any Supabase-hosted Postgres (db.*.supabase.co, the
+    *.pooler.supabase.com poolers, …). Takes a hostname, never a DSN."""
+    h = (host or "").strip().lower().rstrip(".")
+    return any(h == s or h.endswith("." + s) for s in _SUPABASE_HOST_SUFFIXES)
+
+
 def billing_temp_table(table: str) -> str:
     return f"cutover_billing_{table}"
 
 
 def billing_columns_sql() -> str:
-    """One `billing_col|table|column|nullable|has_default` line per column."""
+    """One `billing_col|table|column|nullable|has_default` line per column.
+    pg_catalog, not information_schema: the latter hides columns the role
+    has no privilege on, which would silently shrink the copy."""
     names = ", ".join(
         sql_literal(t) for t in (*BILLING_COPY_ORDER, LEGACY_APPLE_LEDGER)
     )
     return (
-        "SELECT 'billing_col|' || table_name || '|' || column_name || '|' || "
-        "is_nullable || '|' || "
-        "(column_default IS NOT NULL OR is_identity = 'YES' "
-        "OR is_generated <> 'NEVER')::text "
-        "FROM information_schema.columns "
-        f"WHERE table_schema = 'public' AND table_name IN ({names}) "
-        "ORDER BY table_name, ordinal_position"
+        "SELECT 'billing_col|' || c.relname || '|' || a.attname || '|' || "
+        "CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END || '|' || "
+        "(a.atthasdef OR a.attidentity <> '' OR a.attgenerated <> '')::text "
+        "FROM pg_catalog.pg_attribute a "
+        "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        f"WHERE n.nspname = 'public' AND c.relname IN ({names}) "
+        "AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped "
+        "ORDER BY c.relname, a.attnum"
     )
 
 
@@ -950,20 +1013,50 @@ def parse_billing_columns(text: str) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
+def _refuse_source_only(
+    table: str, source_only: list[str], drop_list: dict[str, frozenset[str]]
+) -> list[str]:
+    """Source-only columns must be on the reviewed drop-list. Returns the
+    dropped names (reported); raises for anything unreviewed."""
+    allowed = drop_list.get(table, frozenset())
+    unreviewed = [c for c in source_only if c not in allowed]
+    if unreviewed:
+        raise BillingCopyError(
+            f"source {table} has column(s) the target lacks: {', '.join(unreviewed)} "
+            "— add them to worker/schema/neon.sql, or (after review) to "
+            "BILLING_DROPPED_SOURCE_COLUMNS"
+        )
+    return list(source_only)
+
+
 def billing_common_columns(
     table: str,
     source_cols: list[dict[str, Any]] | None,
     target_cols: list[dict[str, Any]] | None,
+    *,
+    drop_list: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
     """Columns in both, in target order. Refuses a target NOT NULL column
-    without a default that the source cannot fill."""
+    without a default that the source cannot fill, and a source column the
+    target lacks unless it is on the reviewed drop-list."""
+    return _billing_columns(table, source_cols, target_cols, drop_list=drop_list)[0]
+
+
+def _billing_columns(
+    table: str,
+    source_cols: list[dict[str, Any]] | None,
+    target_cols: list[dict[str, Any]] | None,
+    *,
+    drop_list: dict[str, frozenset[str]] | None = None,
+) -> tuple[list[str], list[str]]:
     if not target_cols:
         raise BillingCopyError(f"target is missing public.{table}")
     if not source_cols:
         raise BillingCopyError(f"source is missing public.{table}")
     key = BILLING_COPY_KEYS[table]
     have = {c["name"] for c in source_cols}
-    if key not in have or key not in {c["name"] for c in target_cols}:
+    target_names = {c["name"] for c in target_cols}
+    if key not in have or key not in target_names:
         raise BillingCopyError(f"{table}.{key} must exist on both sides")
     for col in target_cols:
         if col["name"] in have:
@@ -973,29 +1066,36 @@ def billing_common_columns(
                 f"target {table}.{col['name']} is NOT NULL without a default "
                 "and the source has no such column"
             )
+    dropped = _refuse_source_only(
+        table,
+        [c["name"] for c in source_cols if c["name"] not in target_names],
+        BILLING_DROPPED_SOURCE_COLUMNS if drop_list is None else drop_list,
+    )
     common = [c["name"] for c in target_cols if c["name"] in have]
     if table == BILLING_UPSERT_TABLE and BILLING_UPSERT_STAMP not in common:
         raise BillingCopyError(
             f"{table}.{BILLING_UPSERT_STAMP} must exist on both sides (newer wins)"
         )
-    return common
+    return common, dropped
 
 
 def billing_plan(
     source_meta: dict[str, list[dict[str, Any]]],
     target_meta: dict[str, list[dict[str, Any]]],
+    *,
+    drop_list: dict[str, frozenset[str]] | None = None,
 ) -> dict[str, Any]:
-    """Tables, keys and common columns; legacy ledger only if the source has it."""
-    tables = [
-        {
-            "table": table,
-            "key": BILLING_COPY_KEYS[table],
-            "columns": billing_common_columns(
-                table, source_meta.get(table), target_meta.get(table)
-            ),
-        }
-        for table in BILLING_COPY_ORDER
-    ]
+    """Tables, keys, common columns and reviewed dropped columns; legacy
+    ledger only if the source has it."""
+    drops = BILLING_DROPPED_SOURCE_COLUMNS if drop_list is None else drop_list
+    tables = []
+    for table in BILLING_COPY_ORDER:
+        cols, dropped = _billing_columns(
+            table, source_meta.get(table), target_meta.get(table), drop_list=drops
+        )
+        tables.append(
+            {"table": table, "key": BILLING_COPY_KEYS[table], "columns": cols, "dropped": dropped}
+        )
     legacy: dict[str, Any] | None = None
     legacy_cols = source_meta.get(LEGACY_APPLE_LEDGER)
     if legacy_cols:
@@ -1019,7 +1119,15 @@ def billing_plan(
         cols = [LEGACY_APPLE_KEY]
         if LEGACY_APPLE_STAMP in names:
             cols.append(LEGACY_APPLE_STAMP)
-        legacy = {"table": LEGACY_APPLE_LEDGER, "key": LEGACY_APPLE_KEY, "columns": cols}
+        dropped = _refuse_source_only(
+            LEGACY_APPLE_LEDGER, [n for n in names if n not in cols], drops
+        )
+        legacy = {
+            "table": LEGACY_APPLE_LEDGER,
+            "key": LEGACY_APPLE_KEY,
+            "columns": cols,
+            "dropped": dropped,
+        }
     return {"tables": tables, "legacy": legacy}
 
 
@@ -1030,26 +1138,42 @@ def billing_plan_entries(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
+def billing_dropped_columns(plan: dict[str, Any]) -> list[str]:
+    """`table.column` for every reviewed source column the copy leaves behind."""
+    return [
+        f"{e['table']}.{c}" for e in billing_plan_entries(plan) for c in e.get("dropped") or []
+    ]
+
+
 def billing_schema_missing(target_meta: dict[str, list[dict[str, Any]]]) -> list[str]:
     return [t for t in BILLING_COPY_ORDER if not target_meta.get(t)]
 
 
 def billing_schema_sql(neon_sql: str) -> str:
     """The billing DDL from worker/schema/neon.sql: set_updated_at() plus the
-    billing section to the end of the file. Idempotent (IF NOT EXISTS /
-    OR REPLACE). The restored Supabase schema has none of it, because the
-    dump excludes the billing tables and the restore drops functions."""
+    section between the billing marker and the end marker (each exactly
+    once). Idempotent (IF NOT EXISTS / OR REPLACE). The restored Supabase
+    schema has none of it, because the dump excludes the billing tables and
+    the restore drops functions. Nothing past the end marker is applied."""
     text = neon_sql or ""
     fn = re.search(
         r"CREATE OR REPLACE FUNCTION public\.set_updated_at\(\).*?\n\$\$;\n",
         text,
         re.S,
     )
-    at = text.find(BILLING_SCHEMA_MARKER)
-    if not fn or at < 0:
+    starts, ends = text.count(BILLING_SCHEMA_MARKER), text.count(BILLING_SCHEMA_END_MARKER)
+    if not fn or starts == 0:
         raise BillingCopyError("neon.sql billing section not found")
+    if ends == 0:
+        raise BillingCopyError("neon.sql billing section has no end marker")
+    if starts != 1 or ends != 1:
+        raise BillingCopyError("neon.sql billing markers must each appear exactly once")
+    at = text.find(BILLING_SCHEMA_MARKER)
+    end = text.find(BILLING_SCHEMA_END_MARKER)
+    if end < at:
+        raise BillingCopyError("neon.sql billing end marker precedes the start marker")
     start = text.rfind("\n-- ----", 0, at)
-    section = text[(start + 1 if start >= 0 else at):]
+    section = text[(start + 1 if start >= 0 else at) : end + len(BILLING_SCHEMA_END_MARKER)]
     for table in BILLING_COPY_ORDER:
         if f"CREATE TABLE IF NOT EXISTS public.{table} " not in section:
             raise BillingCopyError(f"neon.sql billing section has no {table}")
@@ -1080,6 +1204,17 @@ def _billing_count_hash(kind: str, entry: dict[str, Any], source: str) -> str:
     )
 
 
+def _billing_column_md5_sql(kind: str, entry: dict[str, Any], source: str) -> str:
+    """`billing_colmd5|kind|table|column|md5` per column: names + md5 only."""
+    parts = [
+        f"SELECT 'billing_colmd5|{kind}|{entry['table']}|{c}|' || "
+        f"{billing_hash_expr([c], entry['key'])} FROM {source}"
+        for c in entry["columns"]
+        if _BARE_IDENT.match(c)
+    ]
+    return ";\n".join(parts)
+
+
 def billing_source_copy_query(entry: dict[str, Any]) -> str:
     """Single line — psql's \\copy takes the rest of the line."""
     cols = ", ".join(_ident(c) for c in entry["columns"])
@@ -1093,25 +1228,70 @@ def billing_source_hash_sql(entry: dict[str, Any]) -> str:
     return _billing_count_hash("src", entry, f"public.{_ident(entry['table'])} a")
 
 
+def billing_source_column_md5_sql(entry: dict[str, Any]) -> str:
+    return _billing_column_md5_sql("src", entry, f"public.{_ident(entry['table'])} a")
+
+
 def billing_source_begin_sql() -> str:
     return "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
 
 
 def compose_billing_source_script(plan: dict[str, Any], files: dict[str, str]) -> str:
-    """psql -f on the source: one read-only snapshot for every copy + hash."""
-    lines = [billing_session_sql(), billing_source_begin_sql() + ";"]
+    """psql -f on the source: one read-only snapshot for every copy + hash.
+    VERBOSITY sqlstate first, so a source-side error prints no message text."""
+    lines = [
+        psql_verbosity_sql(),
+        "SET client_min_messages = error;",
+        billing_session_sql(),
+        billing_source_begin_sql() + ";",
+    ]
     for entry in billing_plan_entries(plan):
         path = files[entry["table"]]
         lines.append(
             f"\\copy ({billing_source_copy_query(entry)}) TO {sql_literal(path)} WITH CSV"
         )
         lines.append(billing_source_hash_sql(entry) + ";")
+        lines.append(billing_source_column_md5_sql(entry) + ";")
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n"
 
 
+# --- target side -----------------------------------------------------------
+
+BILLING_EXPECT_TABLE = "cutover_billing_expect"
+BILLING_OPTS_TABLE = "cutover_billing_opts"
+BILLING_CHECK_TABLE = "cutover_billing_check"
+
+
+def billing_psql_var(kind: str, table: str, field: str) -> str:
+    """psql variable name, e.g. src_subscriptions_n / fp_pre_subscriptions_md5."""
+    return f"{kind}_{table}_{field}"
+
+
+def billing_target_psql_vars(
+    source: dict[str, dict[str, Any]], plan: dict[str, Any], *, phase: str
+) -> list[str]:
+    """`-v name=value` args carrying the source snapshot's counts + md5s (and
+    the phase) into the target script, where they are asserted in-txn.
+    Raises if any source line is missing or malformed."""
+    if phase not in BILLING_PHASES:
+        raise BillingCopyError(f"billing phase must be one of {', '.join(BILLING_PHASES)}")
+    args = ["-v", f"billing_phase={phase}"]
+    for entry in billing_plan_entries(plan):
+        table = entry["table"]
+        src = (source.get(table) or {}).get("src")
+        n = src.get("n") if isinstance(src, dict) else None
+        digest = src.get("hash") if isinstance(src, dict) else None
+        if not isinstance(n, int) or n < 0 or not isinstance(digest, str) or not _MD5_HEX.match(digest):
+            raise BillingCopyError(f"no source count/md5 line for {table}")
+        args += ["-v", f"{billing_psql_var('src', table, 'n')}={n}"]
+        args += ["-v", f"{billing_psql_var('src', table, 'md5')}={digest}"]
+    return args
+
+
 def billing_target_prepare_sql(plan: dict[str, Any]) -> str:
-    """Temp tables typed like the target (so both hashes see the same types)."""
+    """Temp tables typed like the target (so both hashes see the same types),
+    plus the expected source numbers (from psql -v) and the check table."""
     stmts = []
     for entry in plan["tables"]:
         cols = ", ".join(_ident(c) for c in entry["columns"])
@@ -1128,6 +1308,22 @@ def billing_target_prepare_sql(plan: dict[str, Any]) -> str:
             f"CREATE TEMP TABLE {billing_temp_table(LEGACY_APPLE_LEDGER)} "
             f"({', '.join(cols)})"
         )
+    values = ",\n  ".join(
+        f"('{e['table']}', :'{billing_psql_var('src', e['table'], 'n')}', "
+        f":'{billing_psql_var('src', e['table'], 'md5')}')"
+        for e in billing_plan_entries(plan)
+    )
+    stmts.append(
+        f"CREATE TEMP TABLE {BILLING_EXPECT_TABLE} "
+        "(tbl text PRIMARY KEY, n bigint NOT NULL, md5 text NOT NULL)"
+    )
+    stmts.append(f"INSERT INTO {BILLING_EXPECT_TABLE} (tbl, n, md5) VALUES\n  {values}")
+    stmts.append(f"CREATE TEMP TABLE {BILLING_OPTS_TABLE} AS SELECT :'billing_phase'::text AS phase")
+    stmts.append(
+        f"CREATE TEMP TABLE {BILLING_CHECK_TABLE} "
+        "(tbl text NOT NULL, kind text NOT NULL, n bigint NOT NULL, md5 text, "
+        "PRIMARY KEY (tbl, kind))"
+    )
     return ";\n".join(stmts)
 
 
@@ -1178,13 +1374,22 @@ def billing_legacy_insert_sql(legacy: dict[str, Any]) -> str:
 
 def billing_trigger_toggle_sql(*, enable: bool) -> str:
     """The BEFORE UPDATE stamp would overwrite the copied updated_at with now()
-    and break parity. Off only inside the copy transaction (ALTER TABLE takes
-    ACCESS EXCLUSIVE, so no Worker write slips in), back on before COMMIT."""
+    and break parity. Off only around the subscriptions upsert, inside the
+    copy transaction, back on before COMMIT (and rolled back with it).
+
+    Lock: ALTER TABLE … DISABLE/ENABLE TRIGGER takes SHARE ROW EXCLUSIVE
+    (verified on PG 17.11) — the same mode the transaction already holds
+    from its LOCK TABLE, so no upgrade. Worker reads are never blocked;
+    Worker writes to the billing tables wait for the (sub-second)
+    transaction. `SET LOCAL session_replication_role = replica` is not used:
+    it needs superuser (or a GRANT SET Neon roles don't have) and it also
+    switches off FK and every other trigger, not just this one."""
     trig = BILLING_UPDATED_AT_TRIGGER
     if enable:
         body = (
             "  IF current_setting('cutover.billing_trigger_off', true) = 'on' THEN\n"
             f"    ALTER TABLE public.subscriptions ENABLE TRIGGER {trig};\n"
+            "    PERFORM set_config('cutover.billing_trigger_off', 'off', true);\n"
             "  END IF;\n"
         )
     else:
@@ -1207,126 +1412,341 @@ def billing_trigger_toggle_sql(*, enable: bool) -> str:
     )
 
 
-def billing_apply_txn_sql(plan: dict[str, Any]) -> str:
-    stmts = [
-        "BEGIN;",
-        f"SET LOCAL lock_timeout = '{BILLING_LOCK_TIMEOUT}';",
-        billing_trigger_toggle_sql(enable=False) + ";",
-    ]
-    for entry in plan["tables"]:
-        stmts.append(billing_upsert_sql(entry) + ";")
-    if plan.get("legacy"):
-        # After the real Apple ledger, so its created_at wins a shared id.
-        stmts.append(billing_legacy_insert_sql(plan["legacy"]) + ";")
-    stmts.append(billing_trigger_toggle_sql(enable=True) + ";")
-    stmts.append("COMMIT;")
-    return "\n".join(stmts)
+def billing_lock_sql() -> str:
+    """Writes to the billing tables wait while the copy transaction runs, so
+    the in-txn parity and the fingerprints see no concurrent change; reads
+    proceed (SHARE ROW EXCLUSIVE does not conflict with ACCESS SHARE)."""
+    tables = ", ".join(f"public.{t}" for t in BILLING_COPY_ORDER)
+    return f"LOCK TABLE {tables} IN SHARE ROW EXCLUSIVE MODE"
 
 
-def billing_target_parity_sql(plan: dict[str, Any]) -> str:
-    stmts: list[str] = []
+def _billing_fp_select(table: str) -> tuple[str, str]:
+    """(count, md5) expressions over every column of the live target table
+    (`t::text`), keyed like the copy, and the FROM clause."""
+    key = _ident(BILLING_COPY_KEYS[table])
+    return (
+        "COUNT(*), "
+        f"md5(COALESCE(string_agg(md5(t::text), '' ORDER BY t.{key}::text COLLATE \"C\"), ''))",
+        f"public.{_ident(table)} t",
+    )
+
+
+def billing_fingerprint_sql(tag: str, tables: Iterable[str] = BILLING_COPY_ORDER) -> str:
+    """`billing_fp|tag|table|n|md5` over the whole live target table. Used to
+    prove a restore loses nothing written after the billing commit."""
+    stmts = []
+    for table in tables:
+        cols, src = _billing_fp_select(table)
+        count, digest = cols.split(", ", 1)
+        stmts.append(
+            f"SELECT 'billing_fp|{tag}|{table}|' || {count}::text || '|' || {digest} FROM {src}"
+        )
+    return ";\n".join(stmts)
+
+
+def _billing_sets(entry: dict[str, Any], legacy: dict[str, Any] | None) -> dict[str, str]:
+    """FROM clauses (alias a) for each check kind of one copied table."""
+    table, key = entry["table"], _ident(entry["key"])
+    tmp = billing_temp_table(table)
+    real = f"public.{_ident(table)}"
+    sets = {"load": f"{tmp} a"}
+    if table == BILLING_UPSERT_TABLE:
+        stamp = BILLING_UPSERT_STAMP
+        sets["cmp"] = (
+            f"{tmp} a WHERE NOT EXISTS (SELECT 1 FROM {real} t "
+            f"WHERE t.{key} = a.{key} AND t.{stamp} > a.{stamp})"
+        )
+        sets["dst"] = (
+            f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s "
+            f"WHERE s.{key} = a.{key} AND NOT (a.{stamp} > s.{stamp}))"
+        )
+        sets["newer"] = (
+            f"{tmp} a JOIN {real} t ON t.{key} = a.{key} WHERE t.{stamp} > a.{stamp}"
+        )
+    else:
+        sets["cmp"] = f"{tmp} a"
+        sets["dst"] = f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = a.{key})"
+        sets["newer"] = ""
+    sets["missing"] = (
+        f"{tmp} a WHERE NOT EXISTS (SELECT 1 FROM {real} t WHERE t.{key} = a.{key})"
+    )
+    extra_where = f"NOT EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = a.{key})"
+    if legacy and table == "apple_webhook_events":
+        ltmp = billing_temp_table(LEGACY_APPLE_LEDGER)
+        extra_where += (
+            f" AND NOT EXISTS (SELECT 1 FROM {ltmp} l WHERE l.{LEGACY_APPLE_KEY} = a.event_id)"
+        )
+    sets["extra"] = f"{real} a WHERE {extra_where}"
+    return sets
+
+
+def billing_check_rows_sql(plan: dict[str, Any]) -> str:
+    """Fill the check table (count + md5 per table per kind) from the live
+    state. Run inside the copy transaction, and again after COMMIT."""
+    chk = BILLING_CHECK_TABLE
+    stmts = [f"DELETE FROM {chk}"]
     legacy = plan.get("legacy")
+
+    def hashed(kind: str, entry: dict[str, Any], src: str) -> str:
+        expr = billing_hash_expr(entry["columns"], entry["key"])
+        return (
+            f"INSERT INTO {chk} (tbl, kind, n, md5) "
+            f"SELECT '{entry['table']}', '{kind}', COUNT(*), {expr} FROM {src}"
+        )
+
+    def counted(kind: str, table: str, src: str) -> str:
+        return (
+            f"INSERT INTO {chk} (tbl, kind, n, md5) "
+            f"SELECT '{table}', '{kind}', COUNT(*), NULL FROM {src}"
+        )
+
     for entry in plan["tables"]:
-        table, key = entry["table"], _ident(entry["key"])
-        tmp = billing_temp_table(table)
-        real = f"public.{_ident(table)}"
-        stmts.append(_billing_count_hash("load", entry, f"{tmp} a"))
-        if table == BILLING_UPSERT_TABLE:
-            stamp = BILLING_UPSERT_STAMP
-            stmts.append(
-                _billing_count_hash(
-                    "cmp",
-                    entry,
-                    f"{tmp} a WHERE NOT EXISTS (SELECT 1 FROM {real} t "
-                    f"WHERE t.{key} = a.{key} AND t.{stamp} > a.{stamp})",
-                )
-            )
-            stmts.append(
-                _billing_count_hash(
-                    "dst",
-                    entry,
-                    f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s "
-                    f"WHERE s.{key} = a.{key} AND NOT (a.{stamp} > s.{stamp}))",
-                )
-            )
-            stmts.append(
-                _billing_line_sql(
-                    "newer",
-                    table,
-                    f"COUNT(*)::text || '|-' FROM {tmp} s JOIN {real} t "
-                    f"ON t.{key} = s.{key} WHERE t.{stamp} > s.{stamp}",
-                )
-            )
+        sets = _billing_sets(entry, legacy)
+        table = entry["table"]
+        for kind in ("load", "cmp", "dst"):
+            stmts.append(hashed(kind, entry, sets[kind]))
+        if sets["newer"]:
+            stmts.append(counted("newer", table, sets["newer"]))
         else:
-            stmts.append(_billing_count_hash("cmp", entry, f"{tmp} a"))
-            stmts.append(
-                _billing_count_hash(
-                    "dst",
-                    entry,
-                    f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = a.{key})",
-                )
-            )
-            stmts.append(_billing_line_sql("newer", table, "'0|-'"))
-        stmts.append(
-            _billing_line_sql(
-                "missing",
-                table,
-                f"COUNT(*)::text || '|-' FROM {tmp} s "
-                f"WHERE NOT EXISTS (SELECT 1 FROM {real} t WHERE t.{key} = s.{key})",
-            )
-        )
-        extra_where = f"NOT EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = t.{key})"
-        if legacy and table == "apple_webhook_events":
-            ltmp = billing_temp_table(LEGACY_APPLE_LEDGER)
-            extra_where += (
-                f" AND NOT EXISTS (SELECT 1 FROM {ltmp} l "
-                f"WHERE l.{LEGACY_APPLE_KEY} = t.event_id)"
-            )
-        stmts.append(
-            _billing_line_sql(
-                "extra", table, f"COUNT(*)::text || '|-' FROM {real} t WHERE {extra_where}"
-            )
-        )
+            stmts.append(f"INSERT INTO {chk} (tbl, kind, n, md5) VALUES ('{table}', 'newer', 0, NULL)")
+        stmts.append(counted("missing", table, sets["missing"]))
+        stmts.append(counted("extra", table, sets["extra"]))
     if legacy:
         ltmp = billing_temp_table(LEGACY_APPLE_LEDGER)
-        stmts.append(_billing_count_hash("load", legacy, f"{ltmp} a"))
+        stmts.append(hashed("load", legacy, f"{ltmp} a"))
         stmts.append(
-            _billing_line_sql(
+            counted(
                 "missing",
                 LEGACY_APPLE_LEDGER,
-                f"COUNT(*)::text || '|-' FROM {ltmp} s "
-                "WHERE NOT EXISTS (SELECT 1 FROM public.apple_webhook_events t "
-                f"WHERE t.event_id = s.{LEGACY_APPLE_KEY})",
+                f"{ltmp} a WHERE NOT EXISTS (SELECT 1 FROM public.apple_webhook_events t "
+                f"WHERE t.event_id = a.{LEGACY_APPLE_KEY})",
             )
         )
     return ";\n".join(stmts)
 
 
-def compose_billing_target_script(plan: dict[str, Any], files: dict[str, str]) -> str:
-    """psql -f on the target: load the source CSVs, apply in one transaction,
-    then print parity lines (counts + md5 only)."""
-    lines = [
-        psql_verbosity_sql(),
-        "SET client_min_messages = error;",
-        billing_session_sql(),
-        billing_target_prepare_sql(plan) + ";",
+def billing_check_print_sql(prefix: str = "billing") -> str:
+    return (
+        f"SELECT '{prefix}|' || kind || '|' || tbl || '|' || n::text || '|' || "
+        f"COALESCE(md5, '-') FROM {BILLING_CHECK_TABLE} ORDER BY tbl, kind"
+    )
+
+
+def billing_column_diag_sql(plan: dict[str, Any]) -> str:
+    """S4 diagnosis, names only: per-column md5 of what was loaded (compared
+    to the source's in Python) and `billing_coldiff|table|column` for each
+    column whose target-over-source-keys md5 differs from the source's."""
+    stmts: list[str] = []
+    legacy = plan.get("legacy")
+    for entry in billing_plan_entries(plan):
+        tmp = billing_temp_table(entry["table"])
+        stmts.append(_billing_column_md5_sql("load", entry, f"{tmp} a"))
+    for entry in plan["tables"]:
+        sets = _billing_sets(entry, legacy)
+        for c in entry["columns"]:
+            if not _BARE_IDENT.match(c):
+                continue
+            expr = billing_hash_expr([c], entry["key"])
+            stmts.append(
+                f"SELECT 'billing_coldiff|{entry['table']}|{c}' WHERE "
+                f"(SELECT {expr} FROM {sets['cmp']}) IS DISTINCT FROM "
+                f"(SELECT {expr} FROM {sets['dst']})"
+            )
+    return ";\n".join(s for s in stmts if s)
+
+
+def billing_assert_sql(plan: dict[str, Any]) -> str:
+    """The parity rule as a DO block over the check + expect tables. RAISEs a
+    bare custom SQLSTATE (BILLING_ASSERT_SQLSTATES), no data, so psql with
+    ON_ERROR_STOP exits non-zero and the transaction never COMMITs."""
+    n_entries = len(billing_plan_entries(plan))
+    n_tables = len(plan["tables"])
+    chk, exp, opts = BILLING_CHECK_TABLE, BILLING_EXPECT_TABLE, BILLING_OPTS_TABLE
+
+    def fail(code: str) -> str:
+        return f"RAISE EXCEPTION USING ERRCODE = '{code}'"
+
+    return f"""DO $cutover_billing_assert$
+DECLARE
+  phase text;
+BEGIN
+  SELECT o.phase INTO phase FROM {opts} o;
+  IF phase IS NULL OR phase NOT IN ('copy', 'billing')
+     OR (SELECT count(*) FROM {exp}) <> {n_entries}
+     OR EXISTS (SELECT 1 FROM {exp} WHERE n < 0 OR md5 !~ '^[0-9a-f]{{32}}$') THEN
+    {fail('NVB00')};
+  END IF;
+  IF (SELECT count(*) FROM {chk} WHERE kind = 'load') <> {n_entries}
+     OR EXISTS (SELECT 1 FROM {exp} e LEFT JOIN {chk} c ON c.tbl = e.tbl AND c.kind = 'load'
+                WHERE c.n IS DISTINCT FROM e.n OR c.md5 IS DISTINCT FROM e.md5) THEN
+    {fail('NVB01')};
+  END IF;
+  IF (SELECT count(*) FROM {chk} WHERE kind = 'missing') <> {n_entries}
+     OR EXISTS (SELECT 1 FROM {chk} WHERE kind = 'missing' AND n <> 0) THEN
+    {fail('NVB02')};
+  END IF;
+  IF (SELECT count(*) FROM {chk} WHERE kind = 'cmp') <> {n_tables}
+     OR EXISTS (SELECT 1 FROM {chk} c LEFT JOIN {chk} d ON d.tbl = c.tbl AND d.kind = 'dst'
+                WHERE c.kind = 'cmp' AND (d.n IS DISTINCT FROM c.n OR d.md5 IS DISTINCT FROM c.md5)) THEN
+    {fail('NVB03')};
+  END IF;
+  IF phase <> 'billing' AND EXISTS (SELECT 1 FROM {chk} WHERE kind = 'newer' AND n <> 0) THEN
+    {fail('NVB04')};
+  END IF;
+  IF EXISTS (SELECT 1 FROM {chk} c
+             LEFT JOIN {chk} w ON w.tbl = c.tbl AND w.kind = 'newer'
+             LEFT JOIN {chk} l ON l.tbl = c.tbl AND l.kind = 'load'
+             WHERE c.kind = 'cmp' AND (c.n + w.n) IS DISTINCT FROM l.n) THEN
+    {fail('NVB05')};
+  END IF;
+  IF phase = 'copy' AND EXISTS (SELECT 1 FROM {chk} WHERE kind = 'extra' AND n <> 0) THEN
+    {fail('NVB06')};
+  END IF;
+END
+$cutover_billing_assert$"""
+
+
+def billing_target_sections(plan: dict[str, Any]) -> dict[str, str]:
+    """The target script in pieces (no psql meta-commands except `head`'s
+    \\set VERBOSITY and its :'var' interpolation), so PGlite can drive the
+    same SQL. compose_billing_target_script joins them around the \\copy
+    lines."""
+    apply = [
+        "BEGIN;",
+        f"SET LOCAL lock_timeout = '{BILLING_LOCK_TIMEOUT}';",
+        billing_lock_sql() + ";",
+        billing_fingerprint_sql("pre") + ";",
     ]
+    by_table = {e["table"]: e for e in plan["tables"]}
+    for table in BILLING_APPLY_ORDER:
+        entry = by_table[table]
+        if table == BILLING_UPSERT_TABLE:
+            apply.append(billing_trigger_toggle_sql(enable=False) + ";")
+            apply.append(billing_upsert_sql(entry) + ";")
+            apply.append(billing_trigger_toggle_sql(enable=True) + ";")
+        else:
+            apply.append(billing_upsert_sql(entry) + ";")
+        if table == "apple_webhook_events" and plan.get("legacy"):
+            # After the real Apple ledger, so its created_at wins a shared id.
+            apply.append(billing_legacy_insert_sql(plan["legacy"]) + ";")
+    apply.append(billing_check_rows_sql(plan) + ";")
+    apply.append(billing_check_print_sql("billing") + ";")
+    apply.append(billing_column_diag_sql(plan) + ";")
+    commit = [
+        billing_fingerprint_sql("post") + ";",
+        "COMMIT;",
+        "SELECT 'billing_committed|yes';",
+        billing_check_rows_sql(plan) + ";",
+        billing_check_print_sql("billing_post") + ";",
+    ]
+    return {
+        "head": "\n".join(
+            [
+                psql_verbosity_sql(),
+                "SET client_min_messages = error;",
+                billing_session_sql(),
+                billing_target_prepare_sql(plan) + ";",
+            ]
+        ),
+        "apply": "\n".join(apply),
+        "assert": billing_assert_sql(plan) + ";",
+        "commit": "\n".join(commit),
+    }
+
+
+def compose_billing_target_script(plan: dict[str, Any], files: dict[str, str]) -> str:
+    """psql -f on the target (with billing_target_psql_vars): load the source
+    CSVs, apply in one transaction, decide parity inside it (abort = roll
+    back everything), COMMIT, then re-check. Counts + md5 + names only."""
+    parts = billing_target_sections(plan)
+    lines = [parts["head"]]
     for entry in billing_plan_entries(plan):
         cols = ", ".join(_ident(c) for c in entry["columns"])
         lines.append(
             f"\\copy {billing_temp_table(entry['table'])} ({cols}) "
             f"FROM {sql_literal(files[entry['table']])} WITH CSV"
         )
-    lines.append(billing_apply_txn_sql(plan))
-    lines.append(billing_target_parity_sql(plan) + ";")
+    lines += [parts["apply"], parts["assert"], parts["commit"]]
     return "\n".join(lines) + "\n"
 
 
-def parse_billing_lines(text: str) -> dict[str, dict[str, Any]]:
-    """{table: {kind: {"n": int, "hash": str|None}}} from billing|… lines."""
+def billing_restore_psql_vars(fingerprints: dict[str, dict[str, Any]]) -> list[str]:
+    """`-v fp_pre_<t>_n=… -v fp_post_<t>_md5=…` from parse_billing_fingerprints."""
+    args: list[str] = []
+    for tag in ("pre", "post"):
+        rows = fingerprints.get(tag) or {}
+        for table in BILLING_COPY_ORDER:
+            row = rows.get(table)
+            if not isinstance(row, dict) or not _MD5_HEX.match(str(row.get("hash") or "")):
+                raise BillingCopyError(f"no {tag} fingerprint for {table}")
+            args += ["-v", f"{billing_psql_var('fp_' + tag, table, 'n')}={int(row['n'])}"]
+            args += ["-v", f"{billing_psql_var('fp_' + tag, table, 'md5')}={row['hash']}"]
+    return args
+
+
+def compose_billing_restore_script(backup_path: str) -> str:
+    """psql -f on the target (with billing_restore_psql_vars): put the
+    pre-write backup back, in one transaction, only if the target still is
+    exactly what the billing commit left (`post` fingerprint) — a Worker
+    write since then would be lost, so that refuses (NVB10) and the doc's
+    manual review applies. The restored rows must equal the `pre`
+    fingerprint taken under the copy's lock, or it rolls back (NVB11)."""
+    values = {
+        tag: ",\n  ".join(
+            f"('{t}', :'{billing_psql_var('fp_' + tag, t, 'n')}', "
+            f":'{billing_psql_var('fp_' + tag, t, 'md5')}')"
+            for t in BILLING_COPY_ORDER
+        )
+        for tag in ("pre", "post")
+    }
+    live = "cutover_billing_fp_live"
+
+    def compare(tag: str, code: str) -> str:
+        fill = ";\n".join(
+            f"INSERT INTO {live} (tbl, n, md5) SELECT '{t}', {_billing_fp_select(t)[0]} "
+            f"FROM {_billing_fp_select(t)[1]}"
+            for t in BILLING_COPY_ORDER
+        )
+        return (
+            f"DELETE FROM {live};\n{fill};\n"
+            "DO $cutover_billing_fp$\nBEGIN\n"
+            f"  IF EXISTS (SELECT 1 FROM cutover_billing_fp_{tag} e FULL JOIN {live} l ON l.tbl = e.tbl\n"
+            "             WHERE l.n IS DISTINCT FROM e.n OR l.md5 IS DISTINCT FROM e.md5) THEN\n"
+            f"    RAISE EXCEPTION USING ERRCODE = '{code}';\n"
+            "  END IF;\nEND\n$cutover_billing_fp$;"
+        )
+
+    tables = ", ".join(f"public.{t}" for t in BILLING_COPY_ORDER)
+    lines = [
+        psql_verbosity_sql(),
+        "SET client_min_messages = error;",
+        billing_session_sql(),
+        "CREATE TEMP TABLE cutover_billing_fp_pre (tbl text PRIMARY KEY, n bigint, md5 text);",
+        f"INSERT INTO cutover_billing_fp_pre VALUES\n  {values['pre']};",
+        "CREATE TEMP TABLE cutover_billing_fp_post (tbl text PRIMARY KEY, n bigint, md5 text);",
+        f"INSERT INTO cutover_billing_fp_post VALUES\n  {values['post']};",
+        f"CREATE TEMP TABLE {live} (tbl text PRIMARY KEY, n bigint, md5 text);",
+        "BEGIN;",
+        f"SET LOCAL lock_timeout = '{BILLING_LOCK_TIMEOUT}';",
+        f"LOCK TABLE {tables} IN EXCLUSIVE MODE;",
+        compare("post", "NVB10"),
+        *(f"DELETE FROM public.{t};" for t in BILLING_COPY_ORDER),
+        f"\\i {sql_literal(backup_path)}",
+        billing_session_sql(),
+        compare("pre", "NVB11"),
+        "COMMIT;",
+        "SELECT 'billing_restored|yes';",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# --- parsing + the parity decision (Python mirror of billing_assert_sql) ----
+
+
+def _parse_kind_lines(text: str, pattern: re.Pattern[str]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for raw in (text or "").splitlines():
-        match = _BILLING_LINE.match(raw.strip())
+        match = pattern.match(raw.strip())
         if not match:
             continue
         kind, table, n, digest = match.groups()
@@ -1335,6 +1755,61 @@ def parse_billing_lines(text: str) -> dict[str, dict[str, Any]]:
             "hash": None if digest == "-" else digest,
         }
     return out
+
+
+def parse_billing_lines(text: str) -> dict[str, dict[str, Any]]:
+    """{table: {kind: {"n": int, "hash": str|None}}} from billing|… lines
+    (the source snapshot, the writes, and the in-transaction checks)."""
+    return _parse_kind_lines(text, _BILLING_LINE)
+
+
+def parse_billing_post_lines(text: str) -> dict[str, dict[str, Any]]:
+    """The post-COMMIT re-check (billing_post|… lines), same shape."""
+    return _parse_kind_lines(text, _BILLING_POST_LINE)
+
+
+def parse_billing_fingerprints(text: str) -> dict[str, dict[str, Any]]:
+    """{tag: {table: {"n", "hash"}}} from billing_fp|… lines."""
+    out: dict[str, dict[str, Any]] = {}
+    for raw in (text or "").splitlines():
+        match = _BILLING_FP_LINE.match(raw.strip())
+        if match:
+            tag, table, n, digest = match.groups()
+            out.setdefault(tag, {})[table] = {"n": int(n), "hash": digest}
+    return out
+
+
+def billing_committed(text: str) -> bool:
+    return any(l.strip() == "billing_committed|yes" for l in (text or "").splitlines())
+
+
+def billing_error_sqlstate(stderr: str) -> str | None:
+    match = _BILLING_SQLSTATE.search(stderr or "")
+    return match.group(1) if match else None
+
+
+def billing_column_differences(source_text: str, target_text: str) -> list[str]:
+    """S4: `table.column differs (…)` from the per-column md5 / coldiff lines.
+    Names only — the md5s themselves never leave this function."""
+    def colmd5(text: str, kind: str) -> dict[tuple[str, str], str]:
+        out: dict[tuple[str, str], str] = {}
+        for raw in (text or "").splitlines():
+            m = _BILLING_COLMD5_LINE.match(raw.strip())
+            if m and m.group(1) == kind:
+                out[(m.group(2), m.group(3))] = m.group(4)
+        return out
+
+    src, load = colmd5(source_text, "src"), colmd5(target_text, "load")
+    diffs = [
+        f"{t}.{c} differs (loaded vs source snapshot)"
+        for (t, c), h in src.items()
+        if load and (t, c) in load and load[(t, c)] != h
+    ]
+    for raw in (target_text or "").splitlines():
+        m = _BILLING_COLDIFF_LINE.match(raw.strip())
+        if m:
+            diffs.append(f"{m.group(1)}.{m.group(2)} differs (target vs source over the source keys)")
+    return diffs
 
 
 def _same_count_hash(a: Any, b: Any) -> bool:
@@ -1358,8 +1833,13 @@ def billing_parity_problems(
     plan: dict[str, Any],
     *,
     allow_target_newer: bool,
+    fatal_target_extra: bool | None = None,
 ) -> list[str]:
-    """Empty list = parity holds. Counts and hashes only, never row data."""
+    """Empty list = parity holds. Counts and hashes only, never row data.
+    Mirrors billing_assert_sql; target_extra is fatal when
+    fatal_target_extra (default: not allow_target_newer, i.e. phase=copy)."""
+    if fatal_target_extra is None:
+        fatal_target_extra = not allow_target_newer
     problems: list[str] = []
     for entry in billing_plan_entries(plan):
         table = entry["table"]
@@ -1382,6 +1862,13 @@ def billing_parity_problems(
                 f"{table}: target {_n(got)}/{(got or {}).get('hash')} "
                 f"!= source {_n(cmp_)}/{(cmp_ or {}).get('hash')} over the source keys"
             )
+        extra = _n(dst.get("extra"))
+        if extra is None:
+            problems.append(f"{table}: no target_extra count")
+        elif extra and fatal_target_extra:
+            problems.append(
+                f"{table}: {extra} target row(s) not on source (phase=copy: target must equal source)"
+            )
         newer = _n(dst.get("newer"))
         if newer is None:
             problems.append(f"{table}: no target_newer count")
@@ -1398,6 +1885,31 @@ def billing_parity_problems(
     return problems
 
 
+def billing_target_extra_gate(
+    target: dict[str, dict[str, Any]], *, phase: str, allow_target_extra: str | None
+) -> list[str]:
+    """phase=billing: subscriptions rows on the target with no source key are
+    never deleted (they are live entitlements — Neon-born signups, or a row
+    Supabase deleted after the copy). The run fails until the operator has
+    reviewed them (docs § Billing port) and passes allow_target_extra equal
+    to the observed count. phase=copy is handled by the parity rule."""
+    if phase != "billing":
+        return []
+    observed = _n((target.get(BILLING_UPSERT_TABLE) or {}).get("extra"))
+    if observed is None:
+        return [f"{BILLING_UPSERT_TABLE}: no target_extra count"]
+    if observed == 0:
+        return []
+    allowed = (allow_target_extra or "").strip()
+    if allowed == str(observed):
+        return []
+    return [
+        f"{BILLING_UPSERT_TABLE}: target_extra {observed} not reviewed "
+        f"(allow_target_extra={allowed or 'unset'}); review per docs § Billing port, "
+        f"then re-run with allow_target_extra={observed}"
+    ]
+
+
 def billing_report_lines(
     source: dict[str, dict[str, Any]],
     target: dict[str, dict[str, Any]],
@@ -1405,15 +1917,22 @@ def billing_report_lines(
     problems: list[str],
     *,
     phase: str,
+    column_diffs: list[str] | None = None,
+    outcome: str | None = None,
+    post_problems: list[str] | None = None,
+    backup_sha256: str | None = None,
 ) -> list[str]:
-    """Markdown for cutover-report.md. Table names, counts and md5s only."""
+    """Markdown for cutover-report.md. Table/column names, counts and md5s only."""
     lines = [
         "",
         f"## Billing copy (phase={phase})",
         "",
-        "Supabase snapshot (REPEATABLE READ READ ONLY) → target. Rule: target ⊇ source; "
-        "target rows over the source keys hash like the source; subscriptions rows "
-        "newer on the target are counted, not compared (phase=billing only).",
+        "Supabase snapshot (REPEATABLE READ READ ONLY) → target. Parity is decided "
+        "inside the target transaction before COMMIT (a mismatch rolls everything "
+        "back). Rule: every source key on the target; target rows over the source "
+        "keys hash like the source; subscriptions rows newer on the target are "
+        "counted, not compared (phase=billing only); rows only on the target are "
+        "fatal in phase=copy and a reviewed warning in phase=billing.",
         "",
         "| table | source_count | source_md5 | written | target_count | target_md5 "
         "| missing | target_newer | target_extra | ok |",
@@ -1436,8 +1955,114 @@ def billing_report_lines(
             f"| {cell(got)} | {cell(got, 'hash')} | {cell(dst.get('missing'))} "
             f"| {cell(dst.get('newer'))} | {cell(dst.get('extra'))} | {'yes' if ok else 'NO'} |"
         )
+    lines.append("")
     if not plan.get("legacy"):
-        lines.append("")
         lines.append(f"- {LEGACY_APPLE_LEDGER}: not on source, skipped")
+    dropped = billing_dropped_columns(plan)
+    lines.append(
+        "- dropped source columns (reviewed drop-list): "
+        + (", ".join(dropped) if dropped else "none")
+    )
+
+    def per_table(kind: str) -> str:
+        cells = []
+        for e in plan["tables"]:
+            n = _n((target.get(e["table"]) or {}).get(kind))
+            cells.append(f"{e['table']}={'-' if n is None else n}")
+        return ", ".join(cells)
+
+    lines.append(f"- billing target_newer (reviewed; Neon newer wins, kept): {per_table('newer')}")
+    lines.append(
+        f"- billing WARNING target_extra (on target, not on source; never deleted): "
+        f"{per_table('extra')}"
+    )
+    if column_diffs:
+        lines.append("- column differences: " + "; ".join(column_diffs))
+    if outcome:
+        lines.append(f"- in-transaction parity: {outcome}")
+    if post_problems is not None:
+        lines.append(
+            "- post-commit re-check: "
+            + ("ok" if not post_problems else f"{len(post_problems)} problem(s)")
+        )
+    if backup_sha256:
+        lines.append(
+            f"- target pre-write backup: sha256={backup_sha256} (runner temp only, never uploaded)"
+        )
     lines.extend(["", f"billing mismatches: {len(problems)}", ""])
     return lines
+
+
+def billing_outcome(
+    plan: dict[str, Any],
+    *,
+    phase: str,
+    source_out: str,
+    target_rc: int,
+    target_out: str,
+    target_err: str,
+    allow_target_extra: str | None = None,
+) -> dict[str, Any]:
+    """Everything the workflow decides from one billing run, in one place
+    (the workflow and the real-psql probe both call this).
+
+    fatal: the step must exit non-zero. restore: a post-COMMIT parity
+    failure — arm the guarded restore from the pre-write backup. A failure
+    before COMMIT needs no restore (the transaction rolled back)."""
+    source = parse_billing_lines(source_out)
+    target = parse_billing_lines(target_out)
+    committed = billing_committed(target_out)
+    allow_newer = phase == "billing"
+    problems = billing_parity_problems(source, target, plan, allow_target_newer=allow_newer)
+    fatal: list[str] = []
+    post_problems: list[str] | None = None
+    restore = False
+    sqlstate = billing_error_sqlstate(target_err) if target_rc != 0 else None
+    if target_rc != 0:
+        meaning = BILLING_ASSERT_SQLSTATES.get(sqlstate or "", "psql error")
+        if committed:
+            fatal.append(f"target psql exited {target_rc} after COMMIT (SQLSTATE {sqlstate or '?'})")
+            outcome = f"committed; post-commit step failed (SQLSTATE {sqlstate or '?'})"
+        else:
+            fatal.append(
+                f"target transaction aborted before COMMIT — target unchanged "
+                f"(SQLSTATE {sqlstate or '?'}: {meaning})"
+            )
+            outcome = f"aborted before COMMIT (SQLSTATE {sqlstate or '?'}), target unchanged"
+    elif not committed:
+        fatal.append("target script finished without the billing_committed line")
+        outcome = "unknown (no commit line)"
+    else:
+        outcome = "passed; committed"
+        if problems:
+            # The SQL assert passed but the Python mirror disagrees: treat as
+            # a post-commit failure (the write is in) and arm the restore.
+            fatal.append("in-transaction assert passed but parity lines disagree")
+            restore = True
+        post = parse_billing_post_lines(target_out)
+        post_problems = billing_parity_problems(
+            source, post, plan, allow_target_newer=allow_newer
+        )
+        if post_problems:
+            fatal.append("post-commit parity re-check failed")
+            restore = True
+        fps = parse_billing_fingerprints(target_out)
+        if not all(fps.get(tag, {}).get(t) for tag in ("pre", "post") for t in BILLING_COPY_ORDER):
+            fatal.append("missing billing_fp line (pre/post fingerprint)")
+    gate = billing_target_extra_gate(
+        target, phase=phase, allow_target_extra=allow_target_extra
+    ) if committed else []
+    return {
+        "source": source,
+        "target": target,
+        "problems": problems,
+        "post_problems": post_problems,
+        "column_diffs": billing_column_differences(source_out, target_out),
+        "extra_gate": gate,
+        "committed": committed,
+        "sqlstate": sqlstate,
+        "outcome": outcome,
+        "restore": restore,
+        "fingerprints": parse_billing_fingerprints(target_out),
+        "fatal": fatal + problems + (post_problems or []) + gate,
+    }
