@@ -3,6 +3,7 @@ import { MutationCache, QueryCache, QueryClient, notifyManager } from "@tanstack
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
+import { launchBackendResolved, resolveLaunchBackendCapped } from "./lib/maintenance";
 import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
 import { reportAppError } from "./lib/appError";
@@ -376,6 +377,26 @@ function SyncHost({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Decide Supabase vs the Worker before anything reads a session or drains the
+ * outbox. A build without a baked `VITE_API_BASE_URL` never waits (today's
+ * path); a baked one waits on `GET /api/maintenance` (hard cap `LAUNCH_TIMEOUT_MS`,
+ * then the app shows on Supabase or a sticky flip). The choice holds for the
+ * whole session; a flip or rollback lands on the next cold start.
+ * Wraps SyncHost too: its transport reads the session and starts the drain on
+ * mount, and those must already be on the right backend.
+ */
+function BackendGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(() => launchBackendResolved());
+  useEffect(() => {
+    if (ready) return;
+    // Capped at LAUNCH_TIMEOUT_MS: startup is never blocked on the probe.
+    void resolveLaunchBackendCapped().finally(() => setReady(true));
+  }, [ready]);
+  if (!ready) return <LoadingCanvas showWordmark={false} />;
+  return <>{children}</>;
+}
+
 const persister = createIdbPersister();
 
 export default function App() {
@@ -394,13 +415,15 @@ export default function App() {
         buster: "sync-v2",
       }}
     >
-      <SyncHost>
-        <UndoProvider>
-          <ErrorBoundary>
-            <Shell />
-          </ErrorBoundary>
-        </UndoProvider>
-      </SyncHost>
+      <BackendGate>
+        <SyncHost>
+          <UndoProvider>
+            <ErrorBoundary>
+              <Shell />
+            </ErrorBoundary>
+          </UndoProvider>
+        </SyncHost>
+      </BackendGate>
     </PersistQueryClientProvider>
   );
 }

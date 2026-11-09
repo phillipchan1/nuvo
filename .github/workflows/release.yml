@@ -170,7 +170,11 @@ jobs:
       - id: build
         name: Build, sign, and notarize
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          # The Worker's public address, baked so an installed desktop app can
+          # switch without another update. Inert until GET /api/maintenance says
+          # cutover_flipped: true at runtime; until then (and on any probe
+          # failure) the app stays on Supabase. See src/lib/maintenance.ts.
+          VITE_API_BASE_URL: https://api.nuvo.day/api
           # Cutover step 0 (docs/cloudflare-cutover.md): the armed build. Unset = today.
           VITE_MAINTENANCE_URL: ${{ vars.VITE_MAINTENANCE_URL }}
           VITE_CUTOVER_ARMED: ${{ vars.VITE_CUTOVER_ARMED }}
