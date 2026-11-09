@@ -6838,6 +6838,23 @@ into the draft, its alternatives and **Find time**. That includes standing slots
 belongs in one is routed in first, and nothing else lands on top. Mid-week repair already did
 this. Guarded in `tests/plan-v2.test.ts`.
 
+*Follow-up, same day (ⓟ: "allow me to change the slot time … I can imagine showing all the
+different slots available so we can quickly put it in and automatically fit"):* three acts on the
+walk. **(1) How long.** Length chips on the block under review (15m to 2h). Picking one sends the
+block back to the engine at that length, with the rest of the draft frozen in place
+(`setBlockLength`). Your estimate beats the sum of its tasks. Dragging a draft block's edge on the
+calendar does the same and keeps it where it is. **(2) Open time.** While a block is selected (or
+being placed), every open gap on the week is shaded in `--slot`, labelled with its length, and
+numbered when it holds one of Nuvo's picks. Gaps come from the one busy rule (`toBusyBlocks` →
+`readDay`) over events, slots, kept-clear time and the rest of the draft (`openGaps`). Clicking a gap
+puts the block there: at Nuvo's pick inside it if it has one, otherwise at the gap's start. A gap
+shorter than the block **cuts the block to fit** (`placeInGap`). **(3) A block that didn't fit** gets
+**Pick a time**, which opens the same gaps, and **Shorten to <the longest gap>**, both beside
+Split and Skip. The numbered alternative outlines are no longer drawn: the gaps say the same and more.
+**Also fixed:** the overlay was handed up to Planner as state and rebuilt on every render, a loop
+that kept the Schedule reconciling the draft for as long as the plan was open. The overlay now
+changes only when what it draws changes. Guarded in `tests/plan-walk.test.tsx`.
+
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*
 Nuvo already looked native and mostly behaved native. What read as "website" was the browser's

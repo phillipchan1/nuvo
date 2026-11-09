@@ -30,7 +30,7 @@ import {
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import { alternativesFor as composeAlternatives, asBusyBlock, composeWeek, slotsAsBusy, draftableKept, type ComposeInput, type DayContext, type Placement } from "../lib/compose";
-import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import { eventKey, eventSeriesKey, isEventHidden, readDay, toBusyBlocks } from "../lib/now";
 import { batchLooseWork, clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
@@ -240,9 +240,15 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     return out;
   }, [projectSlots, looseBatches, runs, splits, runCap, taskById]);
   const slotById = useMemo(() => new Map(draftBlocks.map((b) => [b.id, b])), [draftBlocks]);
+  /** Lengths you set while planning ("I only want 30 minutes on this"), by block
+   *  id. The composer places the block at that length — a draft, until commit. */
+  const [lengths, setLengths] = useState<Record<string, number>>({});
   const composeTasks = useMemo<Task[]>(
-    () => [...draftBlocks.map(synthTask), ...looseTasks],
-    [draftBlocks, looseTasks],
+    () =>
+      [...draftBlocks.map(synthTask), ...looseTasks].map((t) =>
+        lengths[t.id] ? ({ ...t, duration_minutes: lengths[t.id] } as Task) : t,
+      ),
+    [draftBlocks, looseTasks, lengths],
   );
 
   // boundaries: working hours are a SETTING (not a step); per-day contexts live
@@ -497,10 +503,10 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
    * just not reshuffled), except the ones the move lands on — those alone go
    * back to the composer and find a new place around everything else.
    */
-  const moveLocally = (key: string, dayISO: string, startMin: number) =>
+  const moveLocally = (key: string, dayISO: string, startMin: number, length?: number) =>
     setOverrides((prev) => {
       const base = placements.find((p) => placementKey(p) === key);
-      const durationMin = prev[key]?.durationMin ?? base?.durationMin ?? 30;
+      const durationMin = length ?? prev[key]?.durationMin ?? base?.durationMin ?? 30;
       const end = startMin + durationMin;
       const next = { ...prev };
       for (const p of placements) {
@@ -516,6 +522,65 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
       next[key] = { dayISO, startMin, durationMin };
       return next;
     });
+
+  /**
+   * Change a block's length and let the composer place it again ("I only want to
+   * spend 30 minutes on this"). Like a move, it's local: every other block stays
+   * where it stands, and only this one goes back to the engine — even if you'd
+   * accepted it, because its old place was chosen for its old length.
+   */
+  const setBlockLength = (key: string, mins: number) => {
+    if (key.includes("#")) {
+      resizePlacement(key, mins);
+      return;
+    }
+    setLengths((prev) => ({ ...prev, [key]: mins }));
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const p of placements) {
+        const k = placementKey(p);
+        if (k === key || next[k] || k.includes("#")) continue;
+        next[k] = { dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin, soft: true };
+      }
+      delete next[key];
+      return next;
+    });
+  };
+  /** Put a block into a gap you picked, cut to the gap when it's shorter. */
+  const placeInGap = (key: string, dayISO: string, startMin: number, mins: number) => {
+    if (!key.includes("#")) setLengths((prev) => ({ ...prev, [key]: mins }));
+    moveLocally(key, dayISO, startMin, mins);
+  };
+  /**
+   * Every open stretch on the week that this block could go into — the time the
+   * calendar, the slots, kept-clear time and the REST of the draft leave free,
+   * inside working hours. Read through the one "what counts as busy" rule
+   * (`toBusyBlocks` → `readDay`), not a private one. The block's own span counts
+   * as taken, so a gap never sits beside it in the same column.
+   */
+  const openGaps = (): { dayISO: string; startMin: number; endMin: number }[] => {
+    const draftBusy = placements.map((x) => asBusyBlock(`busy-${placementKey(x)}`, x.task.title, x.dayISO, x.startMin, x.durationMin));
+    const busy = toBusyBlocks(visibleEvents, [...fixedBlocks, ...clearBlocks, ...draftBusy]);
+    const now = new Date();
+    const out: { dayISO: string; startMin: number; endMin: number }[] = [];
+    for (const iso of planDays) {
+      const day = parseDateISO(iso);
+      if (iso < today || !workingDays.includes(day.getDay()) || dayContexts[iso] === "off") continue;
+      const from = new Date(day);
+      from.setHours(Math.floor(workStart / 60), workStart % 60, 0, 0);
+      const to = new Date(day);
+      to.setHours(Math.floor(workEnd / 60), workEnd % 60, 0, 0);
+      const start = iso === today && now > from ? now : from;
+      if (start >= to) continue;
+      for (const g of readDay(start, busy, start, to).gaps) {
+        // snap the start up to a quarter hour — a block doesn't start at 10:52
+        const s = Math.ceil((g.start.getHours() * 60 + g.start.getMinutes()) / 15) * 15;
+        const e = g.end.getHours() * 60 + g.end.getMinutes() || 24 * 60;
+        if (e - s >= 15) out.push({ dayISO: iso, startMin: s, endMin: e });
+      }
+    }
+    return out;
+  };
 
   /** Where else this block fits: the composer asked again, with every other block
    *  on the week held still (lib/compose `alternativesFor`). */
@@ -887,6 +952,9 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     holdPlacement,
     isHeld,
     moveLocally,
+    setBlockLength,
+    placeInGap,
+    openGaps,
     addClear,
     setDayContext,
     splitBlock,

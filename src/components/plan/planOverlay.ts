@@ -32,6 +32,8 @@ export interface PlanOverlayGhost {
   end: string;
   /** what the ghost says — the alternative's number, or the block it previews */
   label: string;
+  /** "gap": open time the selected block could go into (click → it goes there) */
+  kind?: "alt" | "gap";
 }
 
 export interface PlanOverlay {
@@ -41,6 +43,8 @@ export interface PlanOverlay {
   onSelect: (key: string | null) => void;
   /** a draft block dragged to a new start */
   onMove: (key: string, start: Date) => void;
+  /** a draft block's edge dragged: its new length, kept where it is */
+  onResize?: (key: string, start: Date, mins: number) => void;
   onPickGhost: (id: string) => void;
   /** time kept clear (rules you kept + what you painted) — drawn hatched behind */
   clears?: { id: string; start: string; end: string; label: string }[];

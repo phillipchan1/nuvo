@@ -2539,6 +2539,17 @@ select.field { appearance: none; -webkit-appearance: none; }
   border: 1.5px dashed var(--accent) !important;
   cursor: default;
 }
+/* open time the selected block could go into — the claimable colour (--slot),
+   quiet until you point at it */
+.fc-event.evt-plan-ghost.evt-plan-gap {
+  border: 1px dashed color-mix(in srgb, var(--slot) 55%, transparent) !important;
+}
+@media (hover: hover) {
+  .fc-event.evt-plan-ghost.evt-plan-gap:hover {
+    background: color-mix(in srgb, var(--slot) 18%, transparent) !important;
+    border-color: var(--slot) !important;
+  }
+}
 /* While planning, what's already fixed recedes so the net-new reads at a glance
    (the old walk's "set aside" view, on the real Schedule). Opacity only — no
    filter or blur, these repeat per event (tests/perf-budget.test.ts). */
