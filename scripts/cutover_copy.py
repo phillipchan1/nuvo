@@ -13,8 +13,11 @@ from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-# Billing stays on Supabase. Webhooks keep writing these; they are not
-# frozen, not dumped, and not in the snapshot/parity proof.
+# Billing webhooks keep writing these on Supabase during the copy window, so
+# they are not frozen, not dumped, and not in the frozen snapshot/parity
+# proof. They move by the separate scripted billing copy below
+# (compose_billing_*), with its own read-only snapshot and parity, and
+# re-run as phase=billing for the post-switch delta.
 BILLING_TABLES = frozenset(
     {
         "subscriptions",
@@ -749,3 +752,599 @@ WHERE c.table_schema = 'public'
       AND NOT t.tgisinternal
   )
 """
+
+
+# ---------------------------------------------------------------------------
+# Billing copy (docs/cloudflare-cutover.md § Billing port → Flip night 1 and 5).
+#
+# Billing tables stay out of pg_dump and the frozen snapshot: Stripe / Apple
+# webhooks keep writing Supabase through the copy window by design. Instead
+# this copies them Supabase → target (Neon in cutover, scratch in dry-run)
+# over the columns both sides have, from ONE read-only REPEATABLE READ
+# snapshot on the source, then proves parity with counts + md5 only.
+#
+#   subscriptions          upsert by user_id; newer updated_at wins
+#   stripe_webhook_events  insert, ON CONFLICT (event_id) DO NOTHING
+#   apple_webhook_events   insert, ON CONFLICT (event_id) DO NOTHING
+#   apple_notification_events (legacy, source only, optional)
+#       notification_uuid → apple_webhook_events.event_id,
+#       received_at       → apple_webhook_events.created_at (now() if absent),
+#       ON CONFLICT (event_id) DO NOTHING. Neon has no such table: the
+#       ledger only has to recognise the id so a retry is still deduped.
+#
+# Parity rule (billing_parity_problems): target ⊇ source.
+#   1. The rows loaded into the target's temp table hash exactly like the
+#      source snapshot (count + md5) — what was copied is what was read.
+#   2. Every source key exists on the target (missing = 0). For the legacy
+#      ledger that is every notification_uuid as an apple_webhook_events
+#      event_id.
+#   3. Over the source keys, the target's rows hash exactly like the source
+#      rows (same columns, same canonical text, same order). For
+#      subscriptions a key whose target updated_at is strictly newer (the
+#      Worker wrote it after the flip) is left out of both sides and
+#      counted as target_newer — allowed only in phase=billing; in the
+#      copy phase the target was just created, so it must be 0.
+#   4. Target rows with no source key (target_extra) are reported, never
+#      fatal: after the flip the Worker creates rows Supabase never sees.
+# ---------------------------------------------------------------------------
+
+BILLING_COPY_KEYS: dict[str, str] = {
+    "subscriptions": "user_id",
+    "stripe_webhook_events": "event_id",
+    "apple_webhook_events": "event_id",
+}
+BILLING_COPY_ORDER = ("subscriptions", "stripe_webhook_events", "apple_webhook_events")
+LEGACY_APPLE_LEDGER = "apple_notification_events"
+LEGACY_APPLE_KEY = "notification_uuid"
+LEGACY_APPLE_STAMP = "received_at"
+BILLING_UPSERT_TABLE = "subscriptions"
+BILLING_UPSERT_STAMP = "updated_at"
+BILLING_UPDATED_AT_TRIGGER = "subscriptions_set_updated_at"
+BILLING_LOCK_TIMEOUT = "10s"
+BILLING_SCHEMA_MARKER = "-- Billing (the Worker port"
+
+_BILLING_LINE = re.compile(
+    r"^billing\|(src|load|cmp|dst|missing|newer|extra|written)\|(\w+)\|(\d+)\|([0-9a-f]{32}|-)$"
+)
+_BILLING_COL_LINE = re.compile(r"^billing_col\|(\w+)\|([^|]+)\|(YES|NO)\|(t|f|true|false)$")
+_BARE_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+class BillingCopyError(ValueError):
+    """The billing copy cannot run safely; nothing has been written."""
+
+
+def _ident(name: str) -> str:
+    if _BARE_IDENT.match(name):
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
+
+def billing_temp_table(table: str) -> str:
+    return f"cutover_billing_{table}"
+
+
+def billing_columns_sql() -> str:
+    """One `billing_col|table|column|nullable|has_default` line per column."""
+    names = ", ".join(
+        sql_literal(t) for t in (*BILLING_COPY_ORDER, LEGACY_APPLE_LEDGER)
+    )
+    return (
+        "SELECT 'billing_col|' || table_name || '|' || column_name || '|' || "
+        "is_nullable || '|' || "
+        "(column_default IS NOT NULL OR is_identity = 'YES' "
+        "OR is_generated <> 'NEVER')::text "
+        "FROM information_schema.columns "
+        f"WHERE table_schema = 'public' AND table_name IN ({names}) "
+        "ORDER BY table_name, ordinal_position"
+    )
+
+
+def parse_billing_columns(text: str) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for raw in (text or "").splitlines():
+        match = _BILLING_COL_LINE.match(raw.strip())
+        if not match:
+            continue
+        table, column, nullable, has_default = match.groups()
+        out.setdefault(table, []).append(
+            {
+                "name": column,
+                "nullable": nullable == "YES",
+                "has_default": has_default in {"t", "true"},
+            }
+        )
+    return out
+
+
+def billing_common_columns(
+    table: str,
+    source_cols: list[dict[str, Any]] | None,
+    target_cols: list[dict[str, Any]] | None,
+) -> list[str]:
+    """Columns in both, in target order. Refuses a target NOT NULL column
+    without a default that the source cannot fill."""
+    if not target_cols:
+        raise BillingCopyError(f"target is missing public.{table}")
+    if not source_cols:
+        raise BillingCopyError(f"source is missing public.{table}")
+    key = BILLING_COPY_KEYS[table]
+    have = {c["name"] for c in source_cols}
+    if key not in have or key not in {c["name"] for c in target_cols}:
+        raise BillingCopyError(f"{table}.{key} must exist on both sides")
+    for col in target_cols:
+        if col["name"] in have:
+            continue
+        if not col["nullable"] and not col["has_default"]:
+            raise BillingCopyError(
+                f"target {table}.{col['name']} is NOT NULL without a default "
+                "and the source has no such column"
+            )
+    common = [c["name"] for c in target_cols if c["name"] in have]
+    if table == BILLING_UPSERT_TABLE and BILLING_UPSERT_STAMP not in common:
+        raise BillingCopyError(
+            f"{table}.{BILLING_UPSERT_STAMP} must exist on both sides (newer wins)"
+        )
+    return common
+
+
+def billing_plan(
+    source_meta: dict[str, list[dict[str, Any]]],
+    target_meta: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Tables, keys and common columns; legacy ledger only if the source has it."""
+    tables = [
+        {
+            "table": table,
+            "key": BILLING_COPY_KEYS[table],
+            "columns": billing_common_columns(
+                table, source_meta.get(table), target_meta.get(table)
+            ),
+        }
+        for table in BILLING_COPY_ORDER
+    ]
+    legacy: dict[str, Any] | None = None
+    legacy_cols = source_meta.get(LEGACY_APPLE_LEDGER)
+    if legacy_cols:
+        names = [c["name"] for c in legacy_cols]
+        if LEGACY_APPLE_KEY not in names:
+            raise BillingCopyError(
+                f"source {LEGACY_APPLE_LEDGER} has no {LEGACY_APPLE_KEY} column"
+            )
+        allowed = {"event_id", "created_at"}
+        for col in target_meta.get("apple_webhook_events") or []:
+            if col["name"] in allowed:
+                continue
+            if not col["nullable"] and not col["has_default"]:
+                raise BillingCopyError(
+                    f"target apple_webhook_events.{col['name']} is NOT NULL "
+                    f"without a default; {LEGACY_APPLE_LEDGER} cannot fill it"
+                )
+        target_names = {c["name"] for c in target_meta.get("apple_webhook_events") or []}
+        if "created_at" not in target_names:
+            raise BillingCopyError("target apple_webhook_events.created_at is missing")
+        cols = [LEGACY_APPLE_KEY]
+        if LEGACY_APPLE_STAMP in names:
+            cols.append(LEGACY_APPLE_STAMP)
+        legacy = {"table": LEGACY_APPLE_LEDGER, "key": LEGACY_APPLE_KEY, "columns": cols}
+    return {"tables": tables, "legacy": legacy}
+
+
+def billing_plan_entries(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = list(plan["tables"])
+    if plan.get("legacy"):
+        entries.append(plan["legacy"])
+    return entries
+
+
+def billing_schema_missing(target_meta: dict[str, list[dict[str, Any]]]) -> list[str]:
+    return [t for t in BILLING_COPY_ORDER if not target_meta.get(t)]
+
+
+def billing_schema_sql(neon_sql: str) -> str:
+    """The billing DDL from worker/schema/neon.sql: set_updated_at() plus the
+    billing section to the end of the file. Idempotent (IF NOT EXISTS /
+    OR REPLACE). The restored Supabase schema has none of it, because the
+    dump excludes the billing tables and the restore drops functions."""
+    text = neon_sql or ""
+    fn = re.search(
+        r"CREATE OR REPLACE FUNCTION public\.set_updated_at\(\).*?\n\$\$;\n",
+        text,
+        re.S,
+    )
+    at = text.find(BILLING_SCHEMA_MARKER)
+    if not fn or at < 0:
+        raise BillingCopyError("neon.sql billing section not found")
+    start = text.rfind("\n-- ----", 0, at)
+    section = text[(start + 1 if start >= 0 else at):]
+    for table in BILLING_COPY_ORDER:
+        if f"CREATE TABLE IF NOT EXISTS public.{table} " not in section:
+            raise BillingCopyError(f"neon.sql billing section has no {table}")
+    return fn.group(0) + "\n" + section.rstrip() + "\n"
+
+
+def billing_session_sql() -> str:
+    """Same canonical text on both sides: row text of timestamptz depends on these."""
+    return "SET TIME ZONE 'UTC';\nSET datestyle = 'ISO, MDY';\nSET intervalstyle = 'postgres';"
+
+
+def billing_hash_expr(columns: list[str], key: str, alias: str = "a") -> str:
+    row = ", ".join(f"{alias}.{_ident(c)}" for c in columns)
+    return (
+        f"md5(COALESCE(string_agg(md5(ROW({row})::text), '' "
+        f"ORDER BY {alias}.{_ident(key)}::text COLLATE \"C\"), ''))"
+    )
+
+
+def _billing_line_sql(kind: str, table: str, rest: str) -> str:
+    return f"SELECT 'billing|{kind}|{table}|' || {rest}"
+
+
+def _billing_count_hash(kind: str, entry: dict[str, Any], source: str) -> str:
+    expr = billing_hash_expr(entry["columns"], entry["key"])
+    return _billing_line_sql(
+        kind, entry["table"], f"COUNT(*)::text || '|' || {expr} FROM {source}"
+    )
+
+
+def billing_source_copy_query(entry: dict[str, Any]) -> str:
+    """Single line — psql's \\copy takes the rest of the line."""
+    cols = ", ".join(_ident(c) for c in entry["columns"])
+    return (
+        f"SELECT {cols} FROM public.{_ident(entry['table'])} "
+        f"ORDER BY {_ident(entry['key'])}"
+    )
+
+
+def billing_source_hash_sql(entry: dict[str, Any]) -> str:
+    return _billing_count_hash("src", entry, f"public.{_ident(entry['table'])} a")
+
+
+def billing_source_begin_sql() -> str:
+    return "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+
+
+def compose_billing_source_script(plan: dict[str, Any], files: dict[str, str]) -> str:
+    """psql -f on the source: one read-only snapshot for every copy + hash."""
+    lines = [billing_session_sql(), billing_source_begin_sql() + ";"]
+    for entry in billing_plan_entries(plan):
+        path = files[entry["table"]]
+        lines.append(
+            f"\\copy ({billing_source_copy_query(entry)}) TO {sql_literal(path)} WITH CSV"
+        )
+        lines.append(billing_source_hash_sql(entry) + ";")
+    lines.append("COMMIT;")
+    return "\n".join(lines) + "\n"
+
+
+def billing_target_prepare_sql(plan: dict[str, Any]) -> str:
+    """Temp tables typed like the target (so both hashes see the same types)."""
+    stmts = []
+    for entry in plan["tables"]:
+        cols = ", ".join(_ident(c) for c in entry["columns"])
+        stmts.append(
+            f"CREATE TEMP TABLE {billing_temp_table(entry['table'])} AS "
+            f"SELECT {cols} FROM public.{_ident(entry['table'])} WITH NO DATA"
+        )
+    legacy = plan.get("legacy")
+    if legacy:
+        cols = [f"{LEGACY_APPLE_KEY} text"]
+        if LEGACY_APPLE_STAMP in legacy["columns"]:
+            cols.append(f"{LEGACY_APPLE_STAMP} timestamptz")
+        stmts.append(
+            f"CREATE TEMP TABLE {billing_temp_table(LEGACY_APPLE_LEDGER)} "
+            f"({', '.join(cols)})"
+        )
+    return ";\n".join(stmts)
+
+
+def billing_upsert_sql(entry: dict[str, Any]) -> str:
+    table, key = entry["table"], entry["key"]
+    cols = ", ".join(_ident(c) for c in entry["columns"])
+    tmp = billing_temp_table(table)
+    if table == BILLING_UPSERT_TABLE:
+        sets = ",\n    ".join(
+            f"{_ident(c)} = EXCLUDED.{_ident(c)}" for c in entry["columns"] if c != key
+        )
+        conflict = (
+            f"  ON CONFLICT ({_ident(key)}) DO UPDATE SET\n"
+            f"    {sets}\n"
+            f"  WHERE EXCLUDED.{BILLING_UPSERT_STAMP} > t.{BILLING_UPSERT_STAMP}\n"
+        )
+    else:
+        conflict = f"  ON CONFLICT ({_ident(key)}) DO NOTHING\n"
+    return (
+        "WITH w AS (\n"
+        f"  INSERT INTO public.{_ident(table)} AS t ({cols})\n"
+        f"  SELECT {cols} FROM {tmp}\n"
+        f"{conflict}"
+        "  RETURNING 1\n"
+        ")\n"
+        + _billing_line_sql("written", table, "COUNT(*)::text || '|-' FROM w")
+    )
+
+
+def billing_legacy_insert_sql(legacy: dict[str, Any]) -> str:
+    tmp = billing_temp_table(LEGACY_APPLE_LEDGER)
+    stamp = (
+        f"COALESCE(s.{LEGACY_APPLE_STAMP}, now())"
+        if LEGACY_APPLE_STAMP in legacy["columns"]
+        else "now()"
+    )
+    return (
+        "WITH w AS (\n"
+        "  INSERT INTO public.apple_webhook_events AS t (event_id, created_at)\n"
+        f"  SELECT s.{LEGACY_APPLE_KEY}, {stamp} FROM {tmp} s\n"
+        f"  WHERE s.{LEGACY_APPLE_KEY} IS NOT NULL\n"
+        "  ON CONFLICT (event_id) DO NOTHING\n"
+        "  RETURNING 1\n"
+        ")\n"
+        + _billing_line_sql("written", LEGACY_APPLE_LEDGER, "COUNT(*)::text || '|-' FROM w")
+    )
+
+
+def billing_trigger_toggle_sql(*, enable: bool) -> str:
+    """The BEFORE UPDATE stamp would overwrite the copied updated_at with now()
+    and break parity. Off only inside the copy transaction (ALTER TABLE takes
+    ACCESS EXCLUSIVE, so no Worker write slips in), back on before COMMIT."""
+    trig = BILLING_UPDATED_AT_TRIGGER
+    if enable:
+        body = (
+            "  IF current_setting('cutover.billing_trigger_off', true) = 'on' THEN\n"
+            f"    ALTER TABLE public.subscriptions ENABLE TRIGGER {trig};\n"
+            "  END IF;\n"
+        )
+    else:
+        body = (
+            "  IF EXISTS (\n"
+            "    SELECT 1 FROM pg_trigger\n"
+            "    WHERE tgrelid = 'public.subscriptions'::regclass\n"
+            f"      AND tgname = '{trig}' AND tgenabled <> 'D'\n"
+            "  ) THEN\n"
+            f"    ALTER TABLE public.subscriptions DISABLE TRIGGER {trig};\n"
+            "    PERFORM set_config('cutover.billing_trigger_off', 'on', true);\n"
+            "  END IF;\n"
+        )
+    return (
+        "DO $cutover_billing_trigger$\n"
+        "BEGIN\n"
+        f"{body}"
+        "END\n"
+        "$cutover_billing_trigger$"
+    )
+
+
+def billing_apply_txn_sql(plan: dict[str, Any]) -> str:
+    stmts = [
+        "BEGIN;",
+        f"SET LOCAL lock_timeout = '{BILLING_LOCK_TIMEOUT}';",
+        billing_trigger_toggle_sql(enable=False) + ";",
+    ]
+    for entry in plan["tables"]:
+        stmts.append(billing_upsert_sql(entry) + ";")
+    if plan.get("legacy"):
+        # After the real Apple ledger, so its created_at wins a shared id.
+        stmts.append(billing_legacy_insert_sql(plan["legacy"]) + ";")
+    stmts.append(billing_trigger_toggle_sql(enable=True) + ";")
+    stmts.append("COMMIT;")
+    return "\n".join(stmts)
+
+
+def billing_target_parity_sql(plan: dict[str, Any]) -> str:
+    stmts: list[str] = []
+    legacy = plan.get("legacy")
+    for entry in plan["tables"]:
+        table, key = entry["table"], _ident(entry["key"])
+        tmp = billing_temp_table(table)
+        real = f"public.{_ident(table)}"
+        stmts.append(_billing_count_hash("load", entry, f"{tmp} a"))
+        if table == BILLING_UPSERT_TABLE:
+            stamp = BILLING_UPSERT_STAMP
+            stmts.append(
+                _billing_count_hash(
+                    "cmp",
+                    entry,
+                    f"{tmp} a WHERE NOT EXISTS (SELECT 1 FROM {real} t "
+                    f"WHERE t.{key} = a.{key} AND t.{stamp} > a.{stamp})",
+                )
+            )
+            stmts.append(
+                _billing_count_hash(
+                    "dst",
+                    entry,
+                    f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s "
+                    f"WHERE s.{key} = a.{key} AND NOT (a.{stamp} > s.{stamp}))",
+                )
+            )
+            stmts.append(
+                _billing_line_sql(
+                    "newer",
+                    table,
+                    f"COUNT(*)::text || '|-' FROM {tmp} s JOIN {real} t "
+                    f"ON t.{key} = s.{key} WHERE t.{stamp} > s.{stamp}",
+                )
+            )
+        else:
+            stmts.append(_billing_count_hash("cmp", entry, f"{tmp} a"))
+            stmts.append(
+                _billing_count_hash(
+                    "dst",
+                    entry,
+                    f"{real} a WHERE EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = a.{key})",
+                )
+            )
+            stmts.append(_billing_line_sql("newer", table, "'0|-'"))
+        stmts.append(
+            _billing_line_sql(
+                "missing",
+                table,
+                f"COUNT(*)::text || '|-' FROM {tmp} s "
+                f"WHERE NOT EXISTS (SELECT 1 FROM {real} t WHERE t.{key} = s.{key})",
+            )
+        )
+        extra_where = f"NOT EXISTS (SELECT 1 FROM {tmp} s WHERE s.{key} = t.{key})"
+        if legacy and table == "apple_webhook_events":
+            ltmp = billing_temp_table(LEGACY_APPLE_LEDGER)
+            extra_where += (
+                f" AND NOT EXISTS (SELECT 1 FROM {ltmp} l "
+                f"WHERE l.{LEGACY_APPLE_KEY} = t.event_id)"
+            )
+        stmts.append(
+            _billing_line_sql(
+                "extra", table, f"COUNT(*)::text || '|-' FROM {real} t WHERE {extra_where}"
+            )
+        )
+    if legacy:
+        ltmp = billing_temp_table(LEGACY_APPLE_LEDGER)
+        stmts.append(_billing_count_hash("load", legacy, f"{ltmp} a"))
+        stmts.append(
+            _billing_line_sql(
+                "missing",
+                LEGACY_APPLE_LEDGER,
+                f"COUNT(*)::text || '|-' FROM {ltmp} s "
+                "WHERE NOT EXISTS (SELECT 1 FROM public.apple_webhook_events t "
+                f"WHERE t.event_id = s.{LEGACY_APPLE_KEY})",
+            )
+        )
+    return ";\n".join(stmts)
+
+
+def compose_billing_target_script(plan: dict[str, Any], files: dict[str, str]) -> str:
+    """psql -f on the target: load the source CSVs, apply in one transaction,
+    then print parity lines (counts + md5 only)."""
+    lines = [
+        psql_verbosity_sql(),
+        "SET client_min_messages = error;",
+        billing_session_sql(),
+        billing_target_prepare_sql(plan) + ";",
+    ]
+    for entry in billing_plan_entries(plan):
+        cols = ", ".join(_ident(c) for c in entry["columns"])
+        lines.append(
+            f"\\copy {billing_temp_table(entry['table'])} ({cols}) "
+            f"FROM {sql_literal(files[entry['table']])} WITH CSV"
+        )
+    lines.append(billing_apply_txn_sql(plan))
+    lines.append(billing_target_parity_sql(plan) + ";")
+    return "\n".join(lines) + "\n"
+
+
+def parse_billing_lines(text: str) -> dict[str, dict[str, Any]]:
+    """{table: {kind: {"n": int, "hash": str|None}}} from billing|… lines."""
+    out: dict[str, dict[str, Any]] = {}
+    for raw in (text or "").splitlines():
+        match = _BILLING_LINE.match(raw.strip())
+        if not match:
+            continue
+        kind, table, n, digest = match.groups()
+        out.setdefault(table, {})[kind] = {
+            "n": int(n),
+            "hash": None if digest == "-" else digest,
+        }
+    return out
+
+
+def _same_count_hash(a: Any, b: Any) -> bool:
+    return (
+        isinstance(a, dict)
+        and isinstance(b, dict)
+        and isinstance(a.get("n"), int)
+        and a.get("n") == b.get("n")
+        and bool(a.get("hash"))
+        and a.get("hash") == b.get("hash")
+    )
+
+
+def _n(row: Any) -> int | None:
+    return row.get("n") if isinstance(row, dict) else None
+
+
+def billing_parity_problems(
+    source: dict[str, dict[str, Any]],
+    target: dict[str, dict[str, Any]],
+    plan: dict[str, Any],
+    *,
+    allow_target_newer: bool,
+) -> list[str]:
+    """Empty list = parity holds. Counts and hashes only, never row data."""
+    problems: list[str] = []
+    for entry in billing_plan_entries(plan):
+        table = entry["table"]
+        src = (source.get(table) or {}).get("src")
+        dst = target.get(table) or {}
+        load = dst.get("load")
+        if not _same_count_hash(src, load):
+            problems.append(
+                f"{table}: loaded {_n(load)}/{(load or {}).get('hash')} "
+                f"!= source snapshot {_n(src)}/{(src or {}).get('hash')}"
+            )
+        missing = _n(dst.get("missing"))
+        if missing != 0:
+            problems.append(f"{table}: {missing} source key(s) missing on target")
+        if table == LEGACY_APPLE_LEDGER:
+            continue
+        cmp_, got = dst.get("cmp"), dst.get("dst")
+        if not _same_count_hash(cmp_, got):
+            problems.append(
+                f"{table}: target {_n(got)}/{(got or {}).get('hash')} "
+                f"!= source {_n(cmp_)}/{(cmp_ or {}).get('hash')} over the source keys"
+            )
+        newer = _n(dst.get("newer"))
+        if newer is None:
+            problems.append(f"{table}: no target_newer count")
+            continue
+        if newer and not allow_target_newer:
+            problems.append(
+                f"{table}: {newer} target row(s) newer than source "
+                "(only allowed in phase=billing, after the flip)"
+            )
+        if _n(cmp_) is not None and _n(load) is not None and _n(cmp_) + newer != _n(load):
+            problems.append(
+                f"{table}: compared {_n(cmp_)} + target_newer {newer} != loaded {_n(load)}"
+            )
+    return problems
+
+
+def billing_report_lines(
+    source: dict[str, dict[str, Any]],
+    target: dict[str, dict[str, Any]],
+    plan: dict[str, Any],
+    problems: list[str],
+    *,
+    phase: str,
+) -> list[str]:
+    """Markdown for cutover-report.md. Table names, counts and md5s only."""
+    lines = [
+        "",
+        f"## Billing copy (phase={phase})",
+        "",
+        "Supabase snapshot (REPEATABLE READ READ ONLY) → target. Rule: target ⊇ source; "
+        "target rows over the source keys hash like the source; subscriptions rows "
+        "newer on the target are counted, not compared (phase=billing only).",
+        "",
+        "| table | source_count | source_md5 | written | target_count | target_md5 "
+        "| missing | target_newer | target_extra | ok |",
+        "| --- | ---: | --- | ---: | ---: | --- | ---: | ---: | ---: | --- |",
+    ]
+    for entry in billing_plan_entries(plan):
+        table = entry["table"]
+        src = (source.get(table) or {}).get("src") or {}
+        dst = target.get(table) or {}
+        got = dst.get("dst") or {}
+        ok = not any(p.startswith(f"{table}:") for p in problems)
+
+        def cell(row: Any, key: str = "n") -> str:
+            if not isinstance(row, dict) or row.get(key) is None:
+                return "-"
+            return str(row.get(key))
+
+        lines.append(
+            f"| {table} | {cell(src)} | {cell(src, 'hash')} | {cell(dst.get('written'))} "
+            f"| {cell(got)} | {cell(got, 'hash')} | {cell(dst.get('missing'))} "
+            f"| {cell(dst.get('newer'))} | {cell(dst.get('extra'))} | {'yes' if ok else 'NO'} |"
+        )
+    if not plan.get("legacy"):
+        lines.append("")
+        lines.append(f"- {LEGACY_APPLE_LEDGER}: not on source, skipped")
+    lines.extend(["", f"billing mismatches: {len(problems)}", ""])
+    return lines
