@@ -132,8 +132,9 @@ export default function MobileTaskList({
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
   // The day's clock with each slot whole — the same read the desktop rail draws
-  // (lib/slotRuns). Under a filter a slot with nothing matching is dropped:
-  // "open" would claim a gap the filter only hid.
+  // (lib/slotRuns — which leaves out a slot with nothing in it, D-188). Under a
+  // filter a slot with nothing matching is dropped: it would claim an outcome the
+  // filter only hid.
   const clock = useMemo(() => {
     const all = clockEntries(todaySections.scheduled, slots, todaySections.done);
     return filterNote ? all.filter((e) => e.kind === "task" || e.open.length > 0) : all;

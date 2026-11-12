@@ -270,9 +270,10 @@ function LeftRail({
   const suppressTabClickRef = useRef(false);
 
   // The day's clock, with each slot kept whole (lib/slotRuns — the phone draws
-  // from the same read). Filtering narrows the day, and a slot with nothing left
-  // that matches must not stand there reading "open": that would claim a gap the
-  // filter merely hid (the "never claim a false empty" rule).
+  // from the same read, which leaves out a slot with nothing in it — D-188).
+  // Filtering narrows the day, and a slot with nothing left that matches must not
+  // stand there as if the block were done: it would claim an outcome the filter
+  // merely hid (the "never claim a false empty" rule).
   const clock: ClockEntry[] = useMemo(() => {
     const all = clockEntries(todaySections.scheduled, slots, todaySections.done);
     return filtering ? all.filter((e) => e.kind === "task" || e.open.length > 0) : all;

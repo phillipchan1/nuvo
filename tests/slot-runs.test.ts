@@ -56,10 +56,18 @@ describe("clockEntries", () => {
     expect(run.open.map((t) => t.id)).toEqual(["early", "late"]);
   });
 
-  it("still lists an EMPTY slot — held time with nothing in it is a fact worth saying", () => {
+  it("does NOT list an EMPTY slot — it is time, not work, and the calendar already draws it (D-188)", () => {
     const out = clockEntries([task("call", 9)], [slot("s1", 6)]);
-    expect(out[0].kind).toBe("slot");
-    expect(slotState(out[0] as SlotRun)).toBe("empty");
+    expect(out.map((e) => e.kind)).toEqual(["task"]);
+    // …so a day whose only entry is an empty block has no clock at all, and the
+    // rail doesn't open an "On the clock" section over nothing.
+    expect(clockEntries([], [slot("s1", 6)])).toEqual([]);
+  });
+
+  it("still lists a slot that holds open work, however little", () => {
+    const out = clockEntries([task("a", 6, { slot_id: "s1" })], [slot("s1", 6)]);
+    expect(out).toHaveLength(1);
+    expect(slotState(out[0] as SlotRun)).toBe("open");
   });
 
   it("reads a slot whose work is all done as done, not empty", () => {
@@ -70,7 +78,7 @@ describe("clockEntries", () => {
   });
 
   it("stands the slot before a lone task at the same minute — the container comes first", () => {
-    const out = clockEntries([task("solo", 6)], [slot("s1", 6)]);
+    const out = clockEntries([task("solo", 6), task("in", 6, { slot_id: "s1" })], [slot("s1", 6)]);
     expect(out.map((e) => e.kind)).toEqual(["slot", "task"]);
   });
 

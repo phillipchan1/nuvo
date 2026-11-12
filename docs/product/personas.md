@@ -154,7 +154,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
 | D1 | What's the one thing today that actually matters? | Sunrise · Today list · Now | ✅ |
-| D2 | What's already decided so I don't have to re-decide it? | Sunday-composed blocks · **a slot's header in the day list** | ✅ *2026-11-05 (D-178): a slot's tasks used to read as loose rows, and on the phone weren't on Today at all; the list now keeps each slot whole. Holds ✅.* |
+| D2 | What's already decided so I don't have to re-decide it? | Sunday-composed blocks · **a slot's header in the day list** | ✅ *2026-11-05 (D-178): a slot's tasks used to read as loose rows, and on the phone weren't on Today at all; the list now keeps each slot whole. Holds ✅. 2026-11-12 (D-188): an EMPTY slot no longer stands in the list — the answer was always the slot's tasks, not the block.* |
 | D3 | I have 40 minutes — what fits? | availability gaps (`readDay` / `toBusyBlocks`) · **the month's selected-day list** | ◐ *gap→task matching is manual. **2026-08-27 (D-121):** the phone's month list is finally reachable for a day that isn't today — first tap selects, so "what's on Thursday / am I free" can be read without leaving the month. Stays ◐ for the original reason.* |
 | D4 | What did I say I'd do and haven't? | rollover ↻ badge · anytime row · overdue pinning | ✅ |
 | D5 | Who is waiting on me? | — | ○ *no waiting-on/blocked-by surface; "In the way" lens is spec* |

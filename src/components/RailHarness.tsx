@@ -9,8 +9,8 @@
 //    stay up over the pick, and the first row was never in it);
 //  - ⇧-click a range; ⌘A; ⇧↓ / ⇧↑; Esc; click empty paper; "Select all N";
 //  - a slot's tasks sit under ONE header (name · span · what it holds), the
-//    ring on it picks the whole group, an empty slot reads "open", a finished
-//    one reads "all done";
+//    ring on it picks the whole group, a finished one reads "all done", and an
+//    EMPTY slot ("Held", 3pm) is simply absent — time, not work (D-188);
 //  - on the phone: hold a row, tap more, tap a header's ring, the bar's ✕, and
 //    that a header tap opens the slot (here: a status line, the real sheet is
 //    MobileEventSheet — see ?sheets).

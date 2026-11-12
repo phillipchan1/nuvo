@@ -6806,6 +6806,35 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-188 · 2026-11-12 · An empty slot does not stand in the Today list.** *(Amends D-178 part 2.)*
+D-178 listed a slot with nothing in it ("held time with nothing in it is a fact the list should be
+able to say"). In the running app it was a permanent row: *Leadership strategy · open · 1h*, alone
+under **On the clock** — a label that claims *commitments with a time* — on a day it held nothing.
+It offered no act the calendar beside it didn't, and there was nothing to do to make it go away
+short of deleting the block. A list that answers "what's on today" was carrying time rather than
+work, and the *same* mark on the same day on the calendar was already saying it.
+
+→ `clockEntries` (the one read both shells draw) leaves out a slot that holds no open work and has
+none done today. A slot with open work still heads its tasks; a slot whose work is all done still
+reads **all done** (a fact about what landed). The "On the clock" section no longer opens over
+nothing. The phone follows, because it is the same read — its Calendar tab is one tap from the
+block, and a Tasks list that claims open time is the same distraction there.
+
+**Anchor.** Closes no new ledger row; it **walks back** a claim D-178 made under **D2** (*what's
+already decided so I don't have to re-decide it?*) — the answer to D2 is a slot's *tasks*, which
+the list still keeps whole; the empty block was never what answered it. Relieves the **P8** strain
+D-178 named (a slot header is a second kind of line in a list asking one question). Four no's: no
+pool, no name; it only removes a row, so an empty account is unchanged (P7); and the objection
+that this is one operator's irritation (P16) is answered by the reasoning above, which doesn't
+depend on whose account it is — an empty block has no act on this surface for *anyone*.
+
+**Not done.** Offering an empty slot as somewhere to drop or capture a task from the rail — the
+calendar and the task sheet's *Put in a slot* (D-172) are already those paths.
+
+*Status: built — `lib/slotRuns.ts`; `tests/slot-runs.test.ts` updated (an empty slot is absent; a
+slot with any open work is not). Rail and phone both read it. D-178's "empty slot is listed" line
+above is superseded by this entry.*
+
 **D-185 · 2026-11-09 · App Store data is trusted only when Apple signed it, and a sandbox
 purchase is entitled only until its verified period end.** *(Extends D-118; mechanism in
 [`billing-setup.md`](../billing-setup.md) — "The `apple-iap` confirm", "Sandbox entitlement",
@@ -7020,6 +7049,7 @@ Split and Skip. The numbered alternative outlines are no longer drawn: the gaps 
 **Also fixed:** the overlay was handed up to Planner as state and rebuilt on every render, a loop
 that kept the Schedule reconciling the draft for as long as the plan was open. The overlay now
 changes only when what it draws changes. Guarded in `tests/plan-walk.test.tsx`.
+
 
 **D-182 · 2026-11-07 · The browser's defaults are switched off at the system level, by input
 capability, in one file.** *(Spec: [`native-feel/`](../native-feel/00-summary.md).)*
