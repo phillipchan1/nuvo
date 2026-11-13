@@ -20,6 +20,20 @@
    opacity are the only things that move.
    ════════════════════════════════════════════════════════════════════════ */
 
+/* A field that draws its own focus (a wash, a ring on its frame) doesn't also
+   wear the global keyboard outline — that read as a ring around a ring. */
+html:root .insp-title-input:focus-visible,
+html:root .insp-input:focus-visible,
+html:root .insp-text:focus-visible,
+html:root .insp-drop input:focus-visible,
+html:root .k-msearch input:focus-visible,
+html:root .insp .k-field input:focus-visible,
+html:root .k-pop .k-field input:focus-visible,
+html:root .capture-door .k-field input:focus-visible,
+html:root .gi .k-field input:focus-visible,
+html:root .rem-custom .k-field input:focus-visible,
+html:root .rp-sheet .k-field input:focus-visible { outline: none; }
+
 /* ── Inspector ──────────────────────────────────────────────────────────── */
 .insp {
   display: flex;
@@ -379,7 +393,7 @@ html:root .insp-v:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--acc
 .rem-default { color: var(--faint); font-weight: 400; }
 .rem-read { color: var(--muted); font-size: 12px; font-weight: 400; }
 .rem-chev { flex: none; margin-left: auto; color: var(--faint); pointer-events: none; }
-.rem-add { margin-left: -8px; color: var(--muted); }
+.rem-add { align-self: flex-start; margin-left: -8px; color: var(--muted); }
 .rem-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 0; }
 .k-field.rem-amount { width: 64px; }
 .k-field.rem-unit { width: auto; height: var(--h-sm); padding: 0 8px; font: 400 13px/1 var(--font-sans); }
@@ -781,6 +795,9 @@ html:root .insp-v:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--acc
 
 .capture-door { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .capture-door .task-composer-hints { display: none; }
+/* The line is the field — no ring around a ring. */
+html:root .capture-door .task-composer-input:focus-visible { outline: none; }
+.capture-door .cd-body:empty { display: none; }
 
 /* The door's parsed tokens wear kit chips. */
 .capture-door .task-composer-chips { gap: 4px; }
@@ -921,12 +938,12 @@ html:root .insp-v:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--acc
 .capture-door-sheet .task-composer-context { height: 28px; font-size: 13px; }
 .capture-door-sheet .task-composer-unparse { width: 28px; height: 28px; }
 .capture-door-sheet .k-seg { display: flex; }
-.capture-door-sheet .k-seg button { flex: 1; justify-content: center; height: 36px; font-size: 14px; }
+.capture-door-sheet .k-seg button { flex: 1; justify-content: center; height: 44px; font-size: 15px; }
 .capture-door-sheet .cd-body { gap: 12px; }
 .capture-door-sheet .cd-row { flex-direction: column; gap: 6px; }
 .capture-door-sheet .cd-label { width: auto; padding: 0; }
 .capture-door-sheet .cd-ctl { gap: 6px; }
-.capture-door-sheet .cd-ctl .k-btn { height: 36px; padding: 0 12px; font-size: 14px; }
+.capture-door-sheet .cd-ctl .k-btn { height: 44px; padding: 0 14px; font-size: 15px; }
 .capture-door-sheet .cd-ctl > .k-field { height: 44px; }
 .capture-door-sheet .cd-ctl > .k-field input { font-size: 16px; }
 .capture-door-sheet .cd-foot > .k-btn { flex: 1; height: 48px; font-size: 15px; }

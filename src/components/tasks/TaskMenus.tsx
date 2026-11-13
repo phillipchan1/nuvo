@@ -123,7 +123,7 @@ export function TaskDateMenu({
       query={query}
       onQuery={setQuery}
       items={items}
-      empty="Type a day, or pick one"
+      empty="Not a day"
       onClose={onClose}
     />
   );

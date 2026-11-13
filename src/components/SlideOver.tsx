@@ -1118,7 +1118,16 @@ function TimePicker({
 
   return (
     <div ref={ref} className="relative shrink-0">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-label={ariaLabel} aria-expanded={open} className="insp-v">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        className="insp-v"
+        // A shrink-to-fit wrapper: a percentage cap here clips the clock by a
+        // sub-pixel into an ellipsis.
+        style={{ maxWidth: "none" }}
+      >
         <span>{current?.show ?? value}</span>
       </button>
       {open && (

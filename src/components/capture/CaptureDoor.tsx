@@ -29,7 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
 import { Icon } from "../Icon";
-import { Button, Chip, Dot, Input } from "../kit";
+import { Button, Dot, Input } from "../kit";
 import { PopSegmented } from "../PopoverParts";
 import { format } from "date-fns";
 import { captureTitle, parseCapture, resolveRoute } from "../../lib/nlp";
@@ -382,35 +382,31 @@ export default function CaptureDoor({
 
   const whenRow = row(
     "When",
-    dayLocked ? (
-      <Chip tone="accent">{parsed?.doDate ? fmtDayLabel(parsed.doDate) : null}</Chip>
-    ) : (
-      <>
-        {dayChips.map((c) => choice(c.label, chipOn(c.value), () => pickDay(c.value), c.label))}
-        <Button
-          size={ctlSize}
-          kind="ghost"
-          active={pickDateOpen}
-          aria-expanded={pickDateOpen}
-          icon={<Icon name="calendar" size={13} />}
-          onClick={() => setPickDateOpen((v) => !v)}
-        >
-          Pick date…
-        </Button>
-        {pickDateOpen && (
-          <Input
-            type="date"
-            size="sm"
-            value={day ?? todayISO()}
-            aria-label="Date"
-            onChange={(e) => {
-              if (e.target.value) pickDay(e.target.value);
-            }}
-            frameClassName="w-full"
-          />
-        )}
-      </>
-    ),
+    <>
+      {dayChips.map((c) => choice(c.label, chipOn(c.value), () => pickDay(c.value), c.label))}
+      <Button
+        size={ctlSize}
+        kind="ghost"
+        active={pickDateOpen}
+        aria-expanded={pickDateOpen}
+        icon={<Icon name="calendar" size={13} />}
+        onClick={() => setPickDateOpen((v) => !v)}
+      >
+        Pick date…
+      </Button>
+      {pickDateOpen && (
+        <Input
+          type="date"
+          size="sm"
+          value={day ?? todayISO()}
+          aria-label="Date"
+          onChange={(e) => {
+            if (e.target.value) pickDay(e.target.value);
+          }}
+          frameClassName="w-full"
+        />
+      )}
+    </>,
   );
 
   const addLabel = kind === "slot" ? "Add slot" : claimedStart ? "Add block" : "Add task";
@@ -468,60 +464,41 @@ export default function CaptureDoor({
       {/* On the phone the switch sits under the line, where the thumb is. */}
       {!panel && kindSwitch}
 
+      {/* What the sentence didn't say. Whatever it DID say (a day, a clock, an
+          @home) is already a chip under the line — said once, not again here. */}
       {kind !== "event" && (
         <div className="cd-body">
-          {whenRow}
+          {!dayLocked && whenRow}
           {kind === "task" &&
-            (timeLocked && claimedStart && claimedEnd ? (
-              row(
-                "Time",
-                <Chip tone="accent" title={`Scheduled ${span(claimedStart, claimedEnd)}`}>
-                  <span aria-label={`Scheduled ${span(claimedStart, claimedEnd)}`}>{span(claimedStart, claimedEnd)}</span>
-                </Chip>,
-              )
-            ) : claimedStart && claimedEnd ? (
-              clock(claimedStart, claimedEnd, claimedMins, effectiveDay ?? todayISO(), defaultMins, true)
-            ) : (
-              row(
-                "Time",
-                <Button size={ctlSize} kind="ghost" icon={<Icon name="clock" size={13} />} onClick={addTime}>
-                  Add time
-                </Button>,
-              )
-            ))}
-          {kind === "slot" && (
-            <>
-              {timeLocked
-                ? row(
-                    "Time",
-                    <Chip tone="accent">
-                      <span aria-label={`Holds ${span(slotStart, slotEnd)}`}>{span(slotStart, slotEnd)}</span>
-                    </Chip>,
-                  )
-                : clock(slotStart, slotEnd, slotMins, slotDay, DEFAULT_SLOT_MINUTES, false)}
-              {domains.length > 0 &&
-                row(
-                  "For",
-                  routedHome ? (
-                    <Chip tone="accent">{routedHome.name}</Chip>
-                  ) : (
+            !timeLocked &&
+            (claimedStart && claimedEnd
+              ? clock(claimedStart, claimedEnd, claimedMins, effectiveDay ?? todayISO(), defaultMins, true)
+              : row(
+                  "Time",
+                  <Button size={ctlSize} kind="ghost" icon={<Icon name="clock" size={13} />} onClick={addTime}>
+                    Add time
+                  </Button>,
+                ))}
+          {kind === "slot" && !timeLocked && clock(slotStart, slotEnd, slotMins, slotDay, DEFAULT_SLOT_MINUTES, false)}
+          {kind === "slot" &&
+            domains.length > 0 &&
+            !routedHome &&
+            row(
+              "For",
+              <>
+                {[{ id: null as string | null, name: "Anything", color: null as string | null }, ...domains].map((d) =>
+                  choice(
                     <>
-                      {[{ id: null as string | null, name: "Anything", color: null as string | null }, ...domains].map((d) =>
-                        choice(
-                          <>
-                            {d.color && <Dot color={d.color} />}
-                            {d.name}
-                          </>,
-                          slotDomain === d.id,
-                          () => setSlotDomain(d.id),
-                          d.id ?? "none",
-                        ),
-                      )}
-                    </>
+                      {d.color && <Dot color={d.color} />}
+                      {d.name}
+                    </>,
+                    slotDomain === d.id,
+                    () => setSlotDomain(d.id),
+                    d.id ?? "none",
                   ),
                 )}
-            </>
-          )}
+              </>,
+            )}
         </div>
       )}
 

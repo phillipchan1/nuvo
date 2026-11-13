@@ -91,8 +91,10 @@ export function RecurrenceScopeDialog({
       }
       footer={
         <>
-          <Button onClick={onCancel}>Cancel</Button>
-          <Button kind={mode === "delete" ? "danger-solid" : "primary"} onClick={() => onConfirm(scope)}>
+          <Button className="tap" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button className="tap" kind={mode === "delete" ? "danger-solid" : "primary"} onClick={() => onConfirm(scope)}>
             {mode === "delete" ? "Delete" : "Done"}
           </Button>
         </>

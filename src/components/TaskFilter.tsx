@@ -172,7 +172,7 @@ export function FilterBody({
       <Group label="Priority">
         {PRIORITIES.map((p) => (
           <Chip key={p} on={(query.priorities ?? []).includes(p)} onClick={() => patch({ priorities: toggle(query.priorities, p) })}>
-            {p === "none" ? "No priority" : p}
+            {p === "none" ? "No priority" : p[0].toUpperCase() + p.slice(1)}
           </Chip>
         ))}
       </Group>
@@ -356,7 +356,7 @@ export default function TaskFilter(props: {
       {open &&
         (isMobile ? (
           <Sheet onClose={() => setOpen(false)} title="Filter">
-            {body}
+            <div className="px-4 pb-4">{body}</div>
           </Sheet>
         ) : (
           pos && (
