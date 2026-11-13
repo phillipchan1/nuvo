@@ -1,35 +1,35 @@
-// Initiatives — the "All initiatives" table: every initiative across every domain as a
-// filterable, sortable, bulk-editable Notion-style collection. On Deck (quarter
-// kanban) is the visual surface and Grooming is where you shape them; this is the
-// pure browse/bulk filing cabinet. Click any to drill into its record.
+// Initiatives → Table — the List layout (D-190), the twin of the projects
+// Table: every initiative across every domain as a grouped, sortable,
+// bulk-editable row. On Deck (the quarter deck) is the visual surface and Groom
+// is where you shape them; this is the filing cabinet. Click any to open its
+// record. No hero — the PageBar names it, and the bar's tabs are the doors to
+// the other faces, so the old "Groom the initiatives →" button is gone.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 
-import {
-  domainById,
-  initiativeProgress,
-  isProjectInFlight,
-  projectsOf,
-} from "../../lib/vertical";
+import { domainById, initiativeProgress, isProjectComplete, projectsOf } from "../../lib/vertical";
 import { ripenessOfInitiative, verdictOf } from "../../lib/tending";
-import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
+import { spanElapsed } from "../../lib/pace";
+import { PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import ShippedStrip from "./ShippedStrip";
 import FloorStanding from "./FloorStanding";
 
+// Momentum is a read, said in words (↑ rising) — tabular, never tinted: the
+// signal is spent on *now* only (D-187), and the accent on intent.
 const MOMENTUM = {
-  up: { value: "↑ rising", color: "var(--accent)" },
-  flat: { value: "→ steady", color: "var(--muted)" },
-  down: { value: "↓ stalled", color: "var(--signal)" },
+  up: { value: "↑ Rising" },
+  flat: { value: "→ Steady" },
+  down: { value: "↓ Stalled" },
 };
 
 export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
   const { openFloorModal, setInitiativeView } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const now = useMemo(() => new Date(), []);
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -49,6 +49,9 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
       ripeness: ripe.stage,
       unsound: ripe.stage === "active" && verdictOf(data, "initiative", i.id)?.sound !== true,
       progress: initiativeProgress(data, i),
+      // An initiative's pieces are its projects; the pace track counts them shipped.
+      pieces: projects.length > 0 ? { done: projects.filter((p) => isProjectComplete(p.status)).length, total: projects.length } : undefined,
+      elapsed: i.status === "complete" ? null : spanElapsed(i, now),
       startDate: i.startDate,
       targetDate: i.targetDate,
       meta: {
@@ -70,58 +73,29 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
   });
 
   return (
-    <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
-      <FloorHeader
-        eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => isProjectInFlight(i.status)).length} in flight`}
-        actions={
-          <>
-            <ShippedStrip rung="initiative" />
-            <button
-              onClick={() => setInitiativeView("groom")}
-              className="tap fast rounded-lg px-3.5 py-2 text-caption font-medium text-white active:scale-[.98]"
-              style={{ background: "var(--accent)" }}
-            >
-              Groom the initiatives →
-            </button>
-          </>
-        }
-      >
-        <h1 className="text-display masthead">Table</h1>
-      </FloorHeader>
-
-      {/* The Standing — the floor's readiness echo of the spine gauge (Defined ·
-          Capacity · Motion), status folded under the one "Table" hero. */}
-      <FloorStanding
-        kind="initiative"
-        onRefine={() => setInitiativeView("groom")}
-        onAllocate={() => setInitiativeView("ondeck")}
-        quietSynthesis
-      />
-
-      <DomainFilter value={domainFilter} onChange={setDomainFilter} />
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Collection
-          config={{
-            records,
-            statusOptions: [...PROJECT_STATUS],
-            statusColors: PROJECT_STATUS_COLORS,
-            statusLabels: PROJECT_STATUS_LABEL,
-            extraColumns: [
-              { key: "momentum", label: "Momentum" },
-              { key: "projects", label: "Projects" },
-            ],
-            onNew: () => openFloorModal("new-initiative"),
-            newLabel: "+ new initiative",
-            newKey: "I",
-            storageKey: "initiatives",
-            selectable: true,
-            onBulkDelete: deleteInitiatives,
-            domains: data.domains,
-            recordKind: "initiative",
-          }}
-        />
-      </div>
-    </div>
+    <Collection
+      config={{
+        records,
+        statusOptions: [...PROJECT_STATUS],
+        statusColors: PROJECT_STATUS_COLORS,
+        statusLabels: PROJECT_STATUS_LABEL,
+        extraColumns: [
+          { key: "momentum", label: "Momentum" },
+          { key: "projects", label: "Projects" },
+        ],
+        onNew: () => openFloorModal("new-initiative"),
+        newLabel: "New initiative",
+        newKey: "I",
+        storageKey: "initiatives",
+        selectable: true,
+        onBulkDelete: deleteInitiatives,
+        domains: data.domains,
+        recordKind: "initiative",
+        filter: <DomainFilter value={domainFilter} onChange={setDomainFilter} />,
+        aside: (
+          <FloorStanding kind="initiative" onRefine={() => setInitiativeView("groom")} onAllocate={() => setInitiativeView("ondeck")} />
+        ),
+      }}
+    />
   );
 }

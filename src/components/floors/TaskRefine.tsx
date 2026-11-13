@@ -12,17 +12,19 @@ import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import { projectById, type VTask } from "../../lib/vertical";
 import { suggestRouteForProject } from "../../lib/initiativeDeck";
 import DomainSymbol from "../domain/DomainSymbol";
+import { Icon } from "../Icon";
+import { Button, Checkbox, IconButton } from "../kit";
 
 interface RefineEdit { id: string; original: string; title: string; reason?: string }
 
 export default function TaskRefine({
   projectId,
-  accent,
   onClose,
 }: {
   projectId: string;
   parent: TaskParent;
   tasks: VTask[];
+  /** @deprecated the diff wears the kit's accent now — kept for call-site compat. */
   accent: string;
   onClose: () => void;
 }) {
@@ -102,33 +104,31 @@ export default function TaskRefine({
     (route.initiative && keepInitiative ? 1 : route.domain && keepDomain ? 1 : 0);
 
   return (
-    <div className="glass-card mt-2 rounded-[var(--radius)] border border-line p-3.5">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="mono text-micro font-semibold tracking-widest" style={{ color: accent }}>✦ NUVO GROOM</span>
-        <div className="h-px flex-1" style={{ background: "var(--line)" }} />
-        <button onClick={onClose} className="fast text-meta text-muted hover:text-ink" title="Dismiss">✕</button>
+    <div className="fl-panel mt-2">
+      <div className="fl-panel-head">
+        <span className="inline-flex" style={{ color: "var(--accent)" }}>
+          <Icon name="sparkles" size={13} />
+        </span>
+        <span>Groom with Nuvo</span>
+        <span className="k-grow" />
+        <IconButton size="xs" label="Dismiss" icon={<Icon name="close" size={13} />} onClick={onClose} />
       </div>
 
-      {error && <p className="text-label text-signal">{error}</p>}
+      {error && <p className="fl-note" style={{ color: "var(--danger)" }}>{error}</p>}
 
-      {!edits && !error && (
-        <p className="flex items-center gap-2 text-label text-muted">
-          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-line border-t-current" style={{ color: accent }} />
-          Proofreading the task wording…
-        </p>
-      )}
+      {!edits && !error && <p className="fl-note">Proofreading the wording…</p>}
 
-      {nothing && <p className="text-label text-muted">Nothing to groom — wording reads clean and it's well filed. ✓</p>}
+      {nothing && <p className="fl-note">Nothing to groom — the wording reads clean and it's well filed.</p>}
 
       {edits && !nothing && (
-        <div className="space-y-4">
+        <div className="grid gap-4">
           {edits.length > 0 && (
             <RefineSection title="Tighten wording">
               {edits.map((e) => (
-                <Row key={e.id} checked={keepEdits.has(e.id)} onToggle={() => setKeepEdits((s) => toggle(s, e.id))} accent={accent}>
+                <Row key={e.id} checked={keepEdits.has(e.id)} onToggle={() => setKeepEdits((s) => toggle(s, e.id))} label={e.title}>
                   <span className="text-caption text-muted line-through">{e.original}</span>
-                  <span className="text-caption">→ {e.title}</span>
-                  {e.reason && <span className="mono text-micro text-muted">{e.reason}</span>}
+                  <span className="text-body">→ {e.title}</span>
+                  {e.reason && <span className="text-caption text-muted">{e.reason}</span>}
                 </Row>
               ))}
             </RefineSection>
@@ -137,34 +137,31 @@ export default function TaskRefine({
           {(route.domain || route.initiative) && (
             <RefineSection title="File it right">
               {route.initiative ? (
-                <Row checked={keepInitiative} onToggle={() => setKeepInitiative((v) => !v)} accent={accent}>
-                  <span className="text-caption">Attach to</span>
-                  <span className="text-caption font-medium" style={{ color: accent }}>{route.initiative.initiative.name}</span>
-                  <span className="mono text-micro text-muted">initiative · confident match</span>
+                <Row checked={keepInitiative} onToggle={() => setKeepInitiative((v) => !v)} label={`Attach to ${route.initiative.initiative.name}`}>
+                  <span className="text-body">Attach to</span>
+                  <span className="text-body font-semibold">{route.initiative.initiative.name}</span>
+                  <span className="text-caption text-muted">initiative · confident match</span>
                 </Row>
               ) : route.domain ? (
-                <Row checked={keepDomain} onToggle={() => setKeepDomain((v) => !v)} accent={accent}>
-                  <span className="text-caption">Move to</span>
-                  <span className="flex items-center gap-1 text-caption font-medium" style={{ color: route.domain.domain.color }}>
-                    <DomainSymbol value={route.domain.domain.icon} size={14} />
+                <Row checked={keepDomain} onToggle={() => setKeepDomain((v) => !v)} label={`Move to ${route.domain.domain.name}`}>
+                  <span className="text-body">Move to</span>
+                  <span className="flex items-center gap-1 text-body font-semibold">
+                    <span className="inline-flex" style={{ color: route.domain.domain.color }}>
+                      <DomainSymbol value={route.domain.domain.icon} size={14} />
+                    </span>
                     {route.domain.domain.name}
                   </span>
-                  <span className="mono text-micro text-muted">domain · confident match</span>
+                  <span className="text-caption text-muted">domain · confident match</span>
                 </Row>
               ) : null}
             </RefineSection>
           )}
 
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={apply}
-              disabled={applying || keptCount === 0}
-              className="fast rounded-md border px-2.5 py-1 text-meta font-medium disabled:opacity-40"
-              style={{ borderColor: `${accent}55`, color: accent, background: `${accent}12` }}
-            >
+          <div className="fl-work-row">
+            <Button kind="primary" size="xs" className="tap" onClick={apply} disabled={applying || keptCount === 0}>
               {applying ? "Applying…" : `Apply ${keptCount}`}
-            </button>
-            <button onClick={onClose} className="fast text-meta text-muted hover:text-ink">Dismiss</button>
+            </Button>
+            <Button kind="ghost" size="xs" className="tap" onClick={onClose}>Dismiss</Button>
           </div>
         </div>
       )}
@@ -174,9 +171,9 @@ export default function TaskRefine({
 
 function RefineSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="section-label mb-1">{title}</div>
-      <div className="space-y-1">{children}</div>
+    <div className="grid gap-1">
+      <span className="fl-label">{title}</span>
+      <div className="grid gap-0.5">{children}</div>
     </div>
   );
 }
@@ -184,24 +181,20 @@ function RefineSection({ title, children }: { title: string; children: React.Rea
 function Row({
   checked,
   onToggle,
-  accent,
+  label,
   children,
 }: {
   checked: boolean;
   onToggle: () => void;
-  accent: string;
+  label: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-accent-soft">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        className="mt-[3px] h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
-        style={{ accentColor: accent }}
-      />
+    <div className="flex items-start gap-2 py-1">
+      <span className="mt-[2px] inline-flex">
+        <Checkbox checked={checked} onChange={onToggle} label={label} />
+      </span>
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">{children}</span>
-    </label>
+    </div>
   );
 }

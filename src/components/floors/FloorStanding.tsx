@@ -1,12 +1,17 @@
-// The Standing — the interpretive front door of the Project / Initiative floors.
-// Three honest axes (Defined · Capacity · Motion) read off the live snapshot, a
-// Fraunces synthesis, and the single handoff to the Refine run. Assessment only —
-// it reports where you stand and names the one convergent exception; the play that
-// moves it is Refine. See src/lib/standing.ts and docs/refine-run.md.
+// The Standing — where the Project / Initiative floor stands, on three honest
+// axes (Defined · Capacity · Motion) read off the live snapshot. Assessment
+// only: it reports, and each axis that isn't calm is the door to the play that
+// moves it (Defined → Groom, Capacity → On Deck to triage). See
+// src/lib/standing.ts and docs/refine-run.md.
+//
+// On the List layout (D-190) the Table has no hero, so the standing no longer
+// stands above it as three cards and a sentence: it folds into the filter row
+// as three readouts — a label, a 3px meter, the value — and the synthesis and
+// each axis's blurb ride their tooltips.
 
 import { useVertical } from "../../hooks/useVertical";
 import { readStanding, type Band, type Kind } from "../../lib/standing";
-import { PROJECT_STATUS_COLORS } from "./parts";
+import { PROJECT_STATUS_COLORS } from "./statusColors";
 import { READY } from "./ReadinessBanner";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting; // the one caution amber — tight & over
@@ -23,10 +28,9 @@ const BAND_LABEL: Record<Band, string> = {
   overcommitted: "Overcommitted",
 };
 
-function Gauge({
+function Readout({
   label,
   value,
-  valueColor,
   fill,
   fillColor,
   blurb,
@@ -35,53 +39,35 @@ function Gauge({
 }: {
   label: string;
   value: string;
-  valueColor?: string;
   fill: number; // 0..1
   fillColor: string;
   blurb: string;
-  /** when present, the whole gauge becomes the doorway to the play that moves it. */
+  /** when present, the readout is the doorway to the play that moves it. */
   onClick?: () => void;
-  /** the always-visible affordance label (e.g. "Groom") — no hover-only actions. */
+  /** what the door does — named in the tooltip and the accessible label. */
   action?: string;
 }) {
   const inner = (
     <>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="section-label !p-0">{label}</span>
-        <span className="mono shrink-0 text-meta" style={{ color: valueColor ?? "var(--ink)" }}>
-          {value}
-        </span>
-      </div>
-      <div className="relative mt-2.5 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <div
-          className="fast absolute inset-y-0 left-0 rounded-full"
-          style={{ width: `${Math.round(fill * 100)}%`, background: fillColor }}
-        />
-      </div>
-      <p className="mt-2.5 text-caption text-muted">{blurb}</p>
-      {action && (
-        <div className="mt-3 flex items-center gap-1 text-caption font-medium" style={{ color: "var(--accent)" }}>
-          {action}
-          <span className="fast transition-transform group-hover:translate-x-0.5">›</span>
-        </div>
-      )}
+      <span>{label}</span>
+      <span className="fl-stand-meter" aria-hidden>
+        <i style={{ width: `${Math.round(Math.max(0, Math.min(1, fill)) * 100)}%`, ["--fill" as string]: fillColor }} />
+      </span>
+      <b>{value}</b>
     </>
   );
-
+  const title = action ? `${blurb} — ${action}` : blurb;
   if (onClick) {
     return (
-      <button
-        onClick={onClick}
-        className="glass-card lift-anim group rounded-xl border border-line p-4 text-left shadow-[var(--shadow-2)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] active:scale-[.99]"
-      >
+      <button type="button" className="fl-stand-read" onClick={onClick} title={title} aria-label={`${label} ${value}. ${title}`}>
         {inner}
       </button>
     );
   }
   return (
-    <div className="glass-card rounded-xl border border-line p-4" style={{ boxShadow: "var(--shadow-2)" }}>
+    <span className="fl-stand-read" title={title}>
       {inner}
-    </div>
+    </span>
   );
 }
 
@@ -90,64 +76,49 @@ export default function FloorStanding({
   onRefine,
   onAllocate,
   showCapacity = true,
-  quietSynthesis = false,
 }: {
   kind: Kind;
   onRefine: () => void;
   onAllocate: () => void;
-  /** When false, the WIP Capacity gauge is omitted — the surface owns that read
-   *  elsewhere (e.g. the projects Commitment meter folds it in). */
+  /** When false, the WIP Capacity readout is omitted — the surface owns that
+   *  read elsewhere (e.g. the projects Commitment meter folds it in). */
   showCapacity?: boolean;
-  /** Under a floor that already owns a `masthead` hero (the "Table" header), the
-   *  synthesis renders as a quiet muted line instead of a second serif hero —
-   *  one hero per surface. Standalone (Standing view), it stays the hero. */
+  /** @deprecated the synthesis rides the tooltip now — kept for call-site compat. */
   quietSynthesis?: boolean;
 }) {
   const { data } = useVertical();
   const s = readStanding(data, kind);
-
   const definedPct = Math.round(s.defined * 100);
 
   return (
-    <div className="mb-6 max-w-[920px]">
-      <div className={`grid grid-cols-1 gap-3 ${showCapacity ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-        <Gauge
-          label="Defined"
-          value={`${definedPct}%`}
-          valueColor={s.defined >= 0.85 ? READY : "var(--muted)"}
-          fill={s.defined}
-          fillColor={READY}
-          blurb={s.definedBlurb}
-          onClick={s.calm ? undefined : onRefine}
-          action={s.calm ? undefined : "Groom"}
+    <div className="fl-stand" role="group" aria-label="Standing" title={s.synthesis}>
+      <Readout
+        label="Defined"
+        value={`${definedPct}%`}
+        fill={s.defined}
+        fillColor={READY}
+        blurb={s.definedBlurb}
+        onClick={s.calm ? undefined : onRefine}
+        action={s.calm ? undefined : "Groom"}
+      />
+      {showCapacity && (
+        <Readout
+          label="Capacity"
+          value={BAND_LABEL[s.capacity]}
+          fill={bandFill(s.capacity)}
+          fillColor={bandColor(s.capacity)}
+          blurb={s.capacityBlurb}
+          onClick={s.capacity === "comfortable" ? undefined : onAllocate}
+          action={s.capacity === "comfortable" ? undefined : "Triage on On Deck"}
         />
-        {showCapacity && (
-          <Gauge
-            label="Capacity"
-            value={BAND_LABEL[s.capacity]}
-            valueColor={bandColor(s.capacity)}
-            fill={bandFill(s.capacity)}
-            fillColor={bandColor(s.capacity)}
-            blurb={s.capacityBlurb}
-            onClick={s.capacity === "comfortable" ? undefined : onAllocate}
-            action={s.capacity === "comfortable" ? undefined : "Triage"}
-          />
-        )}
-        <Gauge
-          label="Motion"
-          value={s.motionTotal ? `${s.motionMoving} / ${s.motionTotal} moving` : "—"}
-          valueColor={s.motionTotal && s.motionMoving < s.motionTotal ? CAUTION : READY}
-          fill={s.motionTotal ? s.motionMoving / s.motionTotal : 1}
-          fillColor={READY}
-          blurb={s.motionBlurb}
-        />
-      </div>
-
-      {quietSynthesis ? (
-        <p className="mt-4 max-w-[52ch] text-body text-muted">{s.synthesis}</p>
-      ) : (
-        <p className="masthead mt-5 max-w-[44ch] text-lead text-ink">{s.synthesis}</p>
       )}
+      <Readout
+        label="Motion"
+        value={s.motionTotal ? `${s.motionMoving}/${s.motionTotal}` : "—"}
+        fill={s.motionTotal ? s.motionMoving / s.motionTotal : 1}
+        fillColor={s.motionTotal && s.motionMoving < s.motionTotal ? CAUTION : READY}
+        blurb={s.motionBlurb}
+      />
     </div>
   );
 }

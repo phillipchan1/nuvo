@@ -1,76 +1,72 @@
-// Your Reviews — the wall of weeks. Every sealed week is stored forever
-// (weekly-review.md's "the archive is the product"); this is the one place you
-// can actually browse them, rather than walking ‹ › one week at a time. Opens
-// from inside the Week's Plan / Review door — deliberately not a nav
+// Your Reviews — the archive of weeks, on the List layout (D-190). Every sealed
+// week is stored forever (weekly-review.md's "the archive is the product"); this
+// is the one place you can browse them, rather than walking ‹ › one week at a
+// time. Opens from inside the Week's Plan / Review door — deliberately not a nav
 // destination (docs/weekly-review.md's 70/30 doctrine, revised D-070): the
-// emblem gallery lives *behind* the one door, not beside it.
+// archive lives *behind* the one door, not beside it.
+//
+// No hero: the bar names it. Weeks are rows grouped by year on --sunk — the
+// week's sealed emblem leading, its name, its span, what landed — newest first.
 
 import { weekName, weekSpan } from "../../lib/week";
 import { Icon } from "../Icon";
 import { useWeekReviewList } from "../../hooks/useWeekReview";
 import WeekEmblem from "./WeekEmblem";
+import { EmptyState, IconButton, PageBar } from "../kit";
 
 export interface WeekArchiveGalleryProps {
   onSelectWeek: (weekISO: string) => void;
   onClose: () => void;
 }
 
-/** The grid, usable standalone inside either shell's own overlay chrome. */
+/** The list, usable standalone inside either shell's own overlay chrome. */
 export default function WeekArchiveGallery({ onSelectWeek, onClose }: WeekArchiveGalleryProps) {
   const { data: rows = [], isLoading } = useWeekReviewList();
 
-  return (
-    <div
-      className="atmosphere fixed inset-0 z-[70] overflow-y-auto"
-      style={{
-        background: "color-mix(in srgb, var(--bg) 96%, transparent)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-      }}
-    >
-      <div className="mx-auto w-full max-w-3xl px-6 py-10 pb-28 md:px-10">
-        <div className="mb-8 flex items-start gap-4 pt-safe">
-          <div className="min-w-0 flex-1">
-            <div className="section-label mb-1">The archive</div>
-            <h1 className="masthead text-display leading-tight text-ink">Your Reviews</h1>
-          </div>
-          <button
-            onClick={onClose}
-            className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
-            aria-label="Close"
-          >
-            <Icon name="close" size={16} />
-          </button>
-        </div>
+  // newest first, grouped by the year the week starts in
+  const years: { year: string; rows: typeof rows }[] = [];
+  for (const row of rows) {
+    const y = row.week_start.slice(0, 4);
+    const g = years.find((x) => x.year === y);
+    if (g) g.rows.push(row);
+    else years.push({ year: y, rows: [row] });
+  }
 
+  return (
+    <div className="fl-archive" role="dialog" aria-label="Your Reviews">
+      <div className="pt-safe">
+        <PageBar
+          icon={<Icon name="calendar" size={16} />}
+          trail={["Your Reviews"]}
+          actions={<IconButton className="tap" label="Close" icon={<Icon name="close" size={14} />} onClick={onClose} />}
+        />
+      </div>
+
+      <div className="fl-archive-body pb-safe">
         {isLoading ? null : rows.length === 0 ? (
-          <p className="text-body text-muted">
-            Your Reviews will collect here once a week ends — every one, stored for good.
-          </p>
+          <EmptyState>No reviews yet</EmptyState>
         ) : (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-            {rows.map((row) => {
-              const total = row.report.priorityTotal ?? 0;
-              return (
-                <button
-                  key={row.id}
-                  onClick={() => onSelectWeek(row.week_start)}
-                  className="tap fast glass-lift flex min-h-[44px] flex-col items-center gap-2 rounded-2xl border border-line px-3 py-4 text-center hover:border-line-strong"
-                >
-                  <WeekEmblem spec={row.report.emblem} state="sealed" size={72} hideAmbient />
-                  <div className="min-w-0 w-full">
-                    <div className="truncate text-caption font-medium text-ink">{weekName(row.week_start)}</div>
-                    <div className="truncate text-micro text-muted">{weekSpan(row.week_start)}</div>
-                    {total > 0 && (
-                      <div className="mt-0.5 truncate text-micro text-muted">
-                        {row.report.landedCount} of {total} landed
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          years.map((g) => (
+            <div key={g.year} role="group" aria-label={g.year}>
+              <div className="fl-grp">
+                <span>{g.year}</span>
+                <span className="k-count">{g.rows.length}</span>
+              </div>
+              {g.rows.map((row) => {
+                const total = row.report.priorityTotal ?? 0;
+                return (
+                  <button key={row.id} type="button" className="fl-archive-row" onClick={() => onSelectWeek(row.week_start)}>
+                    <WeekEmblem spec={row.report.emblem} state="sealed" size={28} hideAmbient />
+                    <span className="min-w-0 flex-1 truncate">{weekName(row.week_start)}</span>
+                    <span className="fl-cell">{weekSpan(row.week_start)}</span>
+                    <span className="fl-cell hidden sm:block" style={{ width: 96, textAlign: "right" }}>
+                      {total > 0 ? `${row.report.landedCount} of ${total} landed` : "—"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))
         )}
       </div>
     </div>

@@ -454,7 +454,7 @@ button.k-chip { padding-right: 4px; }
   transition: box-shadow var(--d-base) var(--ease-out), transform var(--d-base) var(--ease-out);
 }
 @media (hover: hover) {
-  .k-card[data-interactive]:hover { box-shadow: 0 0 0 1px var(--line-2), var(--sh-1); transition-duration: 0ms; }
+  .k-card[data-interactive]:not([aria-selected="true"]):hover { box-shadow: 0 0 0 1px var(--line-2), var(--sh-1); transition-duration: 0ms; }
 }
 .k-card[aria-selected="true"] { box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop); }
 

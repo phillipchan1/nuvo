@@ -10,6 +10,8 @@ import "./styles/kit.css";
 import "./styles/frame.css";
 // The decks — the project and initiative planners on the kit (D-190).
 import "./styles/decks.css";
+// The Build floors' List, Board and Document layouts (D-190).
+import "./styles/floors.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";
