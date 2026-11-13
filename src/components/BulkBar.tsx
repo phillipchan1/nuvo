@@ -160,34 +160,46 @@ export default function BulkBar({
 
   return (
     <div className="bulk-bar shrink-0">
-      <span className="bulk-count" role="status" aria-live="polite">
-        {count} selected
-      </span>
-      {onSelectAll && total != null && count < total && (
-        <Button size="xs" kind="ghost" onClick={onSelectAll}>
-          Select all {total}
-        </Button>
-      )}
-      <span className="bulk-grow" />
+      <div className="bulk-head">
+        <span className="bulk-count" role="status" aria-live="polite">
+          {count} selected
+        </span>
+        {onSelectAll && total != null && count < total && (
+          <Button size="xs" kind="ghost" onClick={onSelectAll}>
+            Select all {total}
+          </Button>
+        )}
+      </div>
 
-      <BulkMenu label="When" title="Plan these for" choices={when} />
-      <BulkMenu label="Priority" title="Set priority" choices={priority} />
-      {labels.length > 0 && <BulkMenu label="Label" title="Add a label" choices={label} />}
-      {projects.length > 0 && <BulkMenu label="Move" title="File under a project" choices={move} />}
+      {/* The acts. On a phone they are one line you can slide, so the bar is
+          two lines tall at any width, never three. */}
+      <div className="bulk-acts">
+        <BulkMenu label="When" title="Plan these for" choices={when} />
+        <BulkMenu label="Priority" title="Set priority" choices={priority} />
+        {labels.length > 0 && <BulkMenu label="Label" title="Add a label" choices={label} />}
+        {projects.length > 0 && <BulkMenu label="Move" title="File under a project" choices={move} />}
 
-      <Button size="xs" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
-        Done
-      </Button>
-      <Button size="xs" onClick={ops.backToInbox}>
-        Inbox
-      </Button>
-      {onTrash && (
-        <Button size="xs" kind="danger" onClick={ops.trash}>
-          Trash
+        <Button size="xs" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
+          Done
         </Button>
-      )}
+        <Button size="xs" onClick={ops.backToInbox}>
+          Inbox
+        </Button>
+        {onTrash && (
+          <Button size="xs" kind="danger" onClick={ops.trash}>
+            Trash
+          </Button>
+        )}
+      </div>
       {/* The way out is the one control that must always be reachable by thumb. */}
-      <IconButton size="xs" label="Clear selection" shortcut="Esc" icon={<Icon name="close" size={12} />} onClick={ops.clear} />
+      <IconButton
+        size="xs"
+        className="bulk-clear"
+        label="Clear selection"
+        shortcut="Esc"
+        icon={<Icon name="close" size={12} />}
+        onClick={ops.clear}
+      />
     </div>
   );
 }

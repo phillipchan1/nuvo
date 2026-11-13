@@ -705,12 +705,13 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
 .defer-card-body { padding: 0 8px 6px; }
 
 /* ── Bulk bar ───────────────────────────────────────────────────────────── */
+/* Two lines at any width: the count and the way out, then the acts. */
 .bulk-bar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 6px 8px;
+  padding: 8px 10px 10px;
   border-top: 1px solid var(--line-1);
   background: var(--raised);
   box-shadow: 0 -1px 0 var(--line-1);
@@ -728,13 +729,24 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
   font-variant-numeric: tabular-nums;
   color: var(--accent-ink);
 }
-.bulk-grow { flex: 1 1 auto; }
-/* A phone: the same buttons at 36px, each with an invisible 44px hit area
-   (the bar's 8px gaps keep neighbours' areas from overlapping). */
+.bulk-head { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.bulk-clear { grid-column: 2; grid-row: 1; }
+.bulk-acts { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+/* A phone: the acts slide on one line. The same buttons at 36px, each with an
+   invisible 44px hit area (the 8px gaps keep neighbours' areas apart). */
 @media (max-width: 767px) {
-  .bulk-bar { padding: 8px 12px; gap: 8px; }
-  .bulk-grow { display: none; }
-  .bulk-bar .k-btn { position: relative; height: 36px; padding: 0 12px; font-size: 13px; }
+  .bulk-bar { padding: 8px 12px 10px; }
+  .bulk-acts {
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    margin: 0 -12px;
+    padding: 4px 12px;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .bulk-acts::-webkit-scrollbar { display: none; }
+  .bulk-bar .k-btn { position: relative; flex: none; height: 36px; padding: 0 12px; font-size: 13px; }
   .bulk-bar .k-btn[data-icon] { width: 44px; padding: 0; }
   .bulk-bar .k-btn::before { content: ""; position: absolute; inset: -4px 0; }
 }
