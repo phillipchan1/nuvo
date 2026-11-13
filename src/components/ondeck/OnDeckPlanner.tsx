@@ -26,22 +26,19 @@ import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/v
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
 import { weekName, weekSpan as weekDates } from "../../lib/week";
 import { noticeIfUnready } from "../../lib/readyNotice";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
-import { LANE_GUTTER, LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
+import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
-import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 import { SlotCreateHint } from "./SlotCreateButton";
 import { pressable } from "../../lib/a11y";
-
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
+import { Dot, EmptyState } from "../kit";
 
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
@@ -53,7 +50,7 @@ const LABEL_W = 96;
 // An empty lane is still a full row: the gap IS the information, so it can't be
 // allowed to collapse into a hairline. (The lane parts — gutter, label, cell, socket,
 // which domains get a lane — are shared with the initiative deck: DomainLanes.tsx.)
-const LANE_ROW_MIN = 56;
+const LANE_ROW_MIN = 62;
 // A fixed near-term horizon — the deck is for scaffolding the next stretch; coverage
 // measures load per domain over it. (A window selector proved to be noise once the
 // pips carried "how much" per lane.)
@@ -275,7 +272,7 @@ export default function OnDeckPlanner() {
   // composeRowIdx below.
   const composerCell =
     cw == null ? null : (
-      <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: 1 }} className="pointer-events-auto mx-1 self-start">
+      <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: 1 }} className="pointer-events-auto mx-1.5 self-start">
         <InlineAdd
           placeholder={composeDomain ? `Name a ${composeDomain.name} project…` : "Name a project…"}
           accent={composeDom?.color ?? "var(--accent)"}
@@ -302,15 +299,14 @@ export default function OnDeckPlanner() {
         key={l.project.id}
         dragAttr={{ "data-project-drag": l.project.id }}
         onContextMenu={onContextMenu("project", l.project.id)}
-        className={`pointer-events-auto mx-1 min-h-[62px] cursor-grab justify-center active:cursor-grabbing ${byDomain ? "my-1" : ""}`}
-        style={{
-          gridColumn: `${start + 2} / ${end + 3}`,
-          gridRow,
-          ...(dragging
-            ? { borderColor: dot, boxShadow: "var(--shadow-lift)", transform: "translateY(-3px)" }
-            : { boxShadow: beyond ? `5px 0 0 -1px ${dot}` : undefined }),
-        }}
+        className={`pointer-events-auto mx-1.5 min-h-[54px] cursor-grab active:cursor-grabbing ${byDomain ? "my-1" : ""}`}
+        style={{ gridColumn: `${start + 2} / ${end + 3}`, gridRow }}
+        lifted={dragging}
+        beyond={beyond}
         spine={dot}
+        // By domain the lane names the area, so the card neither draws nor
+        // writes it (D-122) — its meta line keeps only the weight.
+        mark={!byDomain}
         eyebrow={byDomain ? (weight ?? "") : (dom?.name ?? "no area")}
         title={l.project.name}
         // the weight the pinch math actually runs on — a column of
@@ -329,7 +325,7 @@ export default function OnDeckPlanner() {
   };
 
   // ── a lane (By domain): label · per-week create cells · its own packed rows ──
-  const renderLane = (lane: (typeof lanes)[number], li: number) => {
+  const renderLane = (lane: (typeof lanes)[number]) => {
     const { domain } = lane;
     const name = laneName(domain);
     const color = laneColor(domain);
@@ -348,13 +344,12 @@ export default function OnDeckPlanner() {
         key={lane.key}
         role="group"
         aria-label={`${name} — ${count > 0 ? `${count} project${count === 1 ? "" : "s"}` : "nothing placed"}`}
-        className="grid"
+        className="dk-lane"
         style={{
           gridTemplateColumns: cols,
           // a 10px tail under the last row: the strip where a covered week can
           // still take a second project (the cell above it is all card).
           gridTemplateRows: `repeat(${nRows}, minmax(${LANE_ROW_MIN}px, auto)) 10px`,
-          borderTop: li === 0 ? undefined : "1px solid var(--line)",
         }}
       >
         <LaneLabel domain={domain} count={count} noun="project" gridRow={span} />
@@ -383,7 +378,7 @@ export default function OnDeckPlanner() {
           </div>
         ))}
         {composing && cw != null && (
-          <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: laneComposeRow + 1 }} className="relative z-[1] mx-1 my-1 self-start">
+          <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: laneComposeRow + 1 }} className="relative z-[1] mx-1.5 my-1 self-start">
             <InlineAdd
               placeholder={`Name a ${name} project…`}
               accent={color}
@@ -539,13 +534,16 @@ export default function OnDeckPlanner() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  // "You are here" — a quiet band down the current week (idx 0). Orientation, not
-  // alarm: `--signal` stays for at-risk / overdue; `--slot` is the drop target.
-  const DROP_BAND = "color-mix(in srgb, var(--slot) 14%, transparent)";
-  const cellBg = (i: number) => (dropWeek === i ? DROP_BAND : i === 0 ? NOW_BAND : undefined);
+  // Column state, as data attributes the stylesheet draws (styles/decks.css):
+  // the current week (idx 0) wears the faintest ember — the same "now" as the
+  // Schedule's today column — and the live drop target wears open time.
+  const colState = (i: number) => ({
+    "data-now": i === 0 ? "" : undefined,
+    "data-drop": dropWeek === i ? "" : undefined,
+  });
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="dk">
       {menu}
       {/* ── the pool — the same rail the Schedule wears, one clock speed up:
           "needs a week" instead of "needs a time". Structure, not a panel. ──── */}
@@ -555,7 +553,7 @@ export default function OnDeckPlanner() {
         crown={{
           eyebrow: `Next ${H} weeks`,
           // a finished project isn't waiting on you either — it counts as ready,
-          // so the meter can actually reach full at the end of a week.
+          // so the count can actually reach full at the end of a week.
           done: readyN + doneN,
           total: placed.length,
           noun: "ready",
@@ -575,15 +573,14 @@ export default function OnDeckPlanner() {
         footLabel="project"
         footTitle="New project"
         footTeach="project-new"
+        footShortcut="P"
         onFoot={() => openFloorModal("new-project")}
         groomAction={<GroomingSessionAction kind="project" />}
       >
         {inbox.length === 0 ? (
-          <p className="px-1 py-6 text-center text-caption text-muted">
-            Nothing waiting
-          </p>
+          <EmptyState>Nothing waiting</EmptyState>
         ) : (
-          <div className="mt-1.5 flex flex-col gap-2">
+          <div className="pr-list">
             {inbox.map((p) => {
               const dom = domainById(data, p.domainId);
               return (
@@ -604,11 +601,10 @@ export default function OnDeckPlanner() {
       </PlannerRail>
 
       {/* ── the grid ──────────────────────────────────────────────────────────
-          No hero here: the crown is this surface's one anchor (execution voice),
-          and the floor's top bar already names On Deck — the same reason the
-          Schedule has no header over its calendar. */}
-      <div className="flex min-w-0 flex-1 flex-col px-5 pb-3 pt-2">
-        {/* coverage controls — collapse + domain filter. One quiet toolbar over the grid. */}
+          No hero here: the crown is this surface's one hero, and the bar above
+          already names the page — the same reason the Schedule has no header
+          over its calendar. */}
+      <div className="dk-pane">
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}
@@ -623,207 +619,168 @@ export default function OnDeckPlanner() {
           setByDomain={(v) => { closeCompose(); setByDomain(v); }}
         />
 
-        {/* The grid FILLS the pane (flex-1, per the design language's "grid views go
-            single-plane, full-height" rule — flex-1, never min-h-full). Short column
-            stubs floating in a tall pane were the surface's real imbalance: with
-            nothing running down beside it, the coverage label gutter read as a hole
-            in the middle of the page rather than as the grid's margin. */}
-        {/* The horizon is "the next 4 weeks", and at 1280 the strip showed two
-            and a half of them: clientWidth 580 against scrollWidth 960, the
-            third column cut mid-card and the fourth invisible. With macOS
-            overlay scrollbars there was nothing at rest to say the rest of the
-            plan existed — a planner that misrepresents its own horizon. The
-            fade is the resting affordance; it appears only when there is
-            genuinely more to the right, and retires when you reach the end.
+        {/* The grid FILLS the pane (single plane, full height). The horizon is
+            "the next 4 weeks", and on a narrow window the strip can't show all
+            of it; with overlay scrollbars nothing at rest would say the rest of
+            the plan exists, so a fade appears only while there is genuinely more
+            to the right. It hangs off this wrapper rather than living inside the
+            scroller: as a child of a `flex-col` scroll container it became a flex
+            ROW, took the full height, and collapsed the grid beside it to zero. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={stripRef} className="dk-scroll">
+            <div className="dk-canvas" style={{ minWidth: gridMinW }}>
+              {/* domain coverage — a NAMED read aligned OVER the week columns
+                  (shares the grid template), so a lit cell points straight down at
+                  its week. By domain, the lanes below ARE this read — drawing it
+                  twice would be two surfaces claiming one question (P8). */}
+              {!byDomain && !coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
 
-            It hangs off this wrapper rather than living inside the scroller: as
-            a child of a `flex-col` scroll container it became a flex ROW, took
-            the full height, and collapsed the grid beside it to zero. */}
-        <div className="relative mt-1 flex min-h-0 flex-1 flex-col">
-        <div ref={stripRef} className="flex min-h-0 flex-1 flex-col overflow-auto pb-1">
-          <div className="relative flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
-            {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
-                the grid template), so a lit cell points straight down at its sprint.
-                Collapsible: the deck is the primary surface. */}
-            {/* By domain, the lanes below ARE this read — drawing it twice would be
-                two surfaces claiming one question (P8). */}
-            {!byDomain && !coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
-            {/* week headers — label · date, with the week's committed load folded in
-                (amber past the max). Faint column rules only — no frame, no gauge row. */}
-            <div
-              className="grid shrink-0"
-              style={{
-                gridTemplateColumns: cols,
-                borderTop: coverageCollapsed || byDomain ? undefined : "1px solid var(--line)",
-              }}
-            >
-              {/* By domain the gutter is the lane-name column, so it stays put over
-                  a horizontal scroll here too — one continuous column, not lane
-                  labels under a header gutter that slides away. */}
-              <div aria-hidden className={byDomain ? "sticky left-0 z-10" : undefined} style={byDomain ? LANE_GUTTER : undefined} />
-              {board.weeks.map((w) => {
-                const n = weekLoad[w.idx];
-                const over = n > maxPerWeek;
-                return (
-                  <div
-                    key={w.idx}
-                    data-week={w.idx}
-                    className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-2"
-                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? NOW_BORDER : undefined }}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? NOW_INK : "var(--ink)" }}>
-                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
-                        {weekName(w.weekStart)}
-                      </span>
-                      <span className="mono text-micro tabular-nums" title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`} style={{ color: over ? CAUTION : n > 0 ? "var(--muted)" : "var(--line-strong)" }}>
-                        {n}/{maxPerWeek}{over ? " ⚠" : ""}
+              {/* the column header — the Schedule's day header, one clock speed
+                  up: the week's month and its first day, the current week on the
+                  ember disc, and the week's committed load against your cap. */}
+              <div className="dk-head" style={{ gridTemplateColumns: cols }}>
+                <div aria-hidden className="dk-gutter" />
+                {board.weeks.map((w) => {
+                  const n = weekLoad[w.idx];
+                  const over = n > maxPerWeek;
+                  return (
+                    <div
+                      key={w.idx}
+                      data-week={w.idx}
+                      className="dk-head-cell"
+                      {...colState(w.idx)}
+                      title={`${weekName(w.weekStart)} · ${weekDates(w.weekStart)}`}
+                    >
+                      <span>{format(w.weekStart, "MMM")}</span>
+                      <span className="dk-head-num">{format(w.weekStart, "d")}</span>
+                      <span className="dk-grow" />
+                      <span
+                        className="dk-load"
+                        data-some={n > 0 ? "" : undefined}
+                        data-over={over ? "" : undefined}
+                        title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`}
+                      >
+                        {n}/{maxPerWeek}
                       </span>
                     </div>
-                    <div className="mono mt-0.5 text-micro text-muted">
-                      {weekDates(w.weekStart)}
+                  );
+                })}
+              </div>
+
+              {/* the timeline body — one relative box. Behind: full-height week
+                  columns (drop targets, the now wash, the rules), each composing a
+                  project in that week on a click, with "+ project" at its base. In
+                  front: the lane-packed cards, whose wrapper ignores the pointer so
+                  a click on empty space falls through to the column beneath. */}
+              <div className="dk-body">
+                <div className="dk-cols" style={{ gridTemplateColumns: cols }}>
+                  <div aria-hidden className={byDomain ? "dk-gutter" : undefined} />
+                  {byDomain ? board.weeks.map((w) => (
+                    // By domain, each lane's cell is the create control (it knows its
+                    // domain); the column underneath is the now wash, the drop wash
+                    // and the rule.
+                    <div key={w.idx} data-week={w.idx} className="dk-col" {...colState(w.idx)} />
+                  )) : board.weeks.map((w) => (
+                    <div
+                      key={w.idx}
+                      data-week={w.idx}
+                      data-compose=""
+                      onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
+                      // A grid cell, so it stays a div — a <button> here would drop
+                      // out of the column track. `pressable` gives it the tab stop
+                      // and Enter/Space, so starting a project *in a chosen week*
+                      // is never a mouse-only act.
+                      {...pressable(() => { setComposeDomain(null); setComposeWeek(w.idx); }, {
+                        label: `New project — ${weekName(w.weekStart).toLowerCase()}`,
+                      })}
+                      title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
+                      className="dk-col"
+                      {...colState(w.idx)}
+                    >
+                      {/* the base affordance — "+ project", presentational on
+                          purpose: the column is the control (pressable, above).
+                          Hidden while this week is the one being composed. */}
+                      {composeWeek !== w.idx && (
+                        <div className="dk-col-foot">
+                          <SlotCreateHint noun="project" />
+                        </div>
+                      )}
                     </div>
+                  ))}
+                </div>
+
+                {/* cards — lane-packed rows float on top. The inline composer slots
+                    into the grid right under the clicked week's last card.
+
+                    NO HORIZONTAL PADDING ON THESE ROWS. They carry the same `cols`
+                    template as the week headers and the column rules, and three
+                    grids only line up if they resolve it over the SAME width — a
+                    row padding once made every card column 3px narrower than its
+                    rule column, and the error accumulated across the deck. The
+                    card's own margin is the gutter (D-097). */}
+                {byDomain ? (
+                  // Lanes stack in the domains' order; the body still fills the pane
+                  // (the columns run beneath) so a short deck doesn't float.
+                  <div className="relative pb-6">
+                    {lanes.length === 0 ? (
+                      <div className="dk-empty">
+                        <EmptyState>All domains hidden</EmptyState>
+                      </div>
+                    ) : (
+                      lanes.map(renderLane)
+                    )}
                   </div>
-                );
-              })}
-            </div>
-            <div className="h-px w-full shrink-0" style={{ background: "var(--line)" }} />
-
-            {/* the timeline body — one relative box. Behind: full-height,
-                clickable week columns, each with a "+ project" pinned at its
-                base, so the whole empty area of a column starts a project in
-                that week (not just a hover sliver). In front: the lane-packed
-                cards, whose wrapper ignores the pointer so a click on empty space
-                falls through to the week column beneath. */}
-            <div className="relative flex-1" style={{ minHeight: 320 }}>
-              {/* week columns — drop targets + click-to-create + faint rules. The
-                  leading spacer holds the label gutter so columns align with coverage. */}
-              <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
-                <div aria-hidden className={byDomain ? "sticky left-0 z-10" : undefined} style={byDomain ? LANE_GUTTER : undefined} />
-                {byDomain ? board.weeks.map((w) => (
-                  // By domain, each lane's cell is the create control (it knows its
-                  // domain); the column underneath is just the now band, the drop
-                  // band and the rule.
-                  <div key={w.idx} data-week={w.idx} className="border-l border-line transition-colors" style={{ background: cellBg(w.idx) }} />
-                )) : board.weeks.map((w) => (
-                  <div
-                    key={w.idx}
-                    data-week={w.idx}
-                    onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
-                    // A grid cell, so it stays a div — a <button> here would drop
-                    // out of the column track. `pressable` gives it the tab stop
-                    // and Enter/Space it was missing, without touching layout.
-                    // Without this, starting a project *in a chosen week* was a
-                    // mouse-only act.
-                    {...pressable(() => { setComposeDomain(null); setComposeWeek(w.idx); }, {
-                      label: `New project — ${weekName(w.weekStart).toLowerCase()}`,
-                    })}
-                    title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
-                    className="group/col slot-col relative border-l border-line transition-colors"
-                    style={{ background: cellBg(w.idx) }}
-                  >
-                    {/* the base affordance — a pinned "+ project" hint. Clicking it
-                        (or anywhere in the column) drops the inline composer into the
-                        card flow above, right under this week's last card. Hidden while
-                        this week is the one being composed. */}
-                    {composeWeek !== w.idx && (
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2.5">
-                        {/* Presentational on purpose — the column is the control
-                            (pressable, above). Shares its voice with the
-                            initiative deck's button so the same act cannot read
-                            two ways again. See SlotCreateButton.tsx. */}
-                        <SlotCreateHint noun="project" />
+                ) : rows.length === 0 ? (
+                  cw != null ? (
+                    <div className="dk-rows">
+                      <div className="dk-row" style={{ gridTemplateColumns: cols }}>
+                        {composerCell}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="dk-empty">
+                      <EmptyState>Nothing placed</EmptyState>
+                    </div>
+                  )
+                ) : (
+                  <div className="dk-rows pointer-events-none">
+                    {rows.map((row, ri) => (
+                      <div key={ri} className="dk-row" style={{ gridTemplateColumns: cols }}>
+                        {row.map((g) => renderCard(g, 1))}
+                        {composeRowIdx === ri && composerCell}
+                      </div>
+                    ))}
+                    {composeRowIdx === rows.length && (
+                      <div className="dk-row" style={{ gridTemplateColumns: cols }}>
+                        {composerCell}
                       </div>
                     )}
                   </div>
-                ))}
+                )}
               </div>
-
-              {/* cards — lane-packed rows float on top. items-stretch equalizes a
-                  row's card heights; pb clears the pinned + project button. The
-                  inline composer slots into the grid right under the clicked week's
-                  last card (composeRowIdx).
-
-                  NO HORIZONTAL PADDING ON THESE ROWS. They carry the same `cols`
-                  template as the week headers and the background column rules, and
-                  three grids only line up if they resolve it over the SAME width.
-                  These rows used to add `px-1.5`, which took 12px out of the box
-                  the `minmax(…, 1fr)` columns divide — so each card column came out
-                  3px narrower than the rule column it sits in, and the error
-                  ACCUMULATED: week 1's card sat 10px off its left rule and 1px off
-                  its right, week 4 the mirror image. Read as drifting gutters down
-                  the deck. The card's own `mx-1` is the gutter; the rules and the
-                  cards must share one box (D-097). */}
-              {byDomain ? (
-                // Lanes stack in the domains' order; the body still fills the pane
-                // (the background columns run beneath) so a short deck doesn't float.
-                <div className="relative pb-6">
-                  {lanes.length === 0 ? (
-                    <div className="px-4 pt-14 text-center text-caption text-muted">
-                      Every domain is hidden — choose some under Domains.
-                    </div>
-                  ) : (
-                    lanes.map(renderLane)
-                  )}
-                </div>
-              ) : rows.length === 0 ? (
-                cw != null ? (
-                  <div className="relative pb-16 pt-2.5">
-                    <div className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
-                      {composerCell}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="pointer-events-none relative px-4 pt-14 text-center text-caption text-muted">
-                    No projects placed
-                  </div>
-                )
-              ) : (
-                <div className="pointer-events-none relative pb-16 pt-2.5">
-                  {rows.map((row, ri) => (
-                    <div key={ri} className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
-                    {row.map((g) => renderCard(g, 1))}
-                    {composeRowIdx === ri && composerCell}
-                    </div>
-                  ))}
-                  {composeRowIdx === rows.length && (
-                    <div className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
-                      {composerCell}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
-        </div>
-        {moreRight && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 z-20 w-12"
-            style={{ background: "linear-gradient(to right, transparent, var(--bg))" }}
-          />
-        )}
+          {moreRight && <div aria-hidden className="dk-fade" />}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+        <div className="dk-foot">
           <ShippedStrip rung="project" />
         </div>
       </div>
 
-      {/* drag ghost — a lifted copy of the inbox card (placed bars preview in
-          place). Positioned by transform only (compositor-friendly), written
-          directly per rAF while the pointer moves. */}
+      {/* drag ghost — a pool card in your hand (placed bars preview in place).
+          Positioned by transform only, written directly per rAF. */}
       {drag && (
         <div
           ref={ghostRef}
-          className="glass-grab pointer-events-none fixed left-0 top-0 z-[60] w-60 rounded-lg border border-line bg-surface px-3 py-2.5"
-          style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y), willChange: "transform" }}
+          className="deck-ghost"
+          style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y) }}
         >
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: drag.dot }} />
-            <span className="truncate text-caption text-ink">{drag.name}</span>
+          <div className="deck-ghost-name">
+            <Dot color={drag.dot} />
+            <span>{drag.name}</span>
           </div>
-          <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
+          <div className="deck-ghost-sub">{drag.sub}</div>
         </div>
       )}
     </div>

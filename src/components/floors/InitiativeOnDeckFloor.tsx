@@ -12,14 +12,14 @@ export default function InitiativeOnDeckFloor() {
   const { data } = useVertical();
   const { openFloorModal } = useAppNavigation();
 
-  // First visit: no initiatives yet → teach where this altitude sits in the funnel,
-  // then hand over the first-create. Self-cleans once an initiative exists.
+  // First visit: no initiatives yet → one line of where this altitude sits, then
+  // the first-create. Self-cleans once an initiative exists.
   if (data.initiatives.length === 0) {
     return (
       <FloorGuide
-        eyebrow="Initiatives · ⌘3"
+        eyebrow="No initiatives yet"
         title="Set the arcs you're pursuing."
-        teach="Initiatives are the big, multi-project arcs under a domain — like “Present, unhurried dad.” Projects live beneath them."
+        teach="The big, multi-project arcs under a domain. Projects live beneath them."
         Visual={FlowVisual}
         actionLabel="Add your first initiative"
         onAction={() => openFloorModal("new-initiative")}

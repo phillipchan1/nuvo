@@ -1,16 +1,20 @@
-// The coverage strip's toolbar: a collapse toggle (the deck is the primary surface,
-// so coverage folds to a one-line summary) and a domain filter (which domains the
-// strip watches — hide the ones you don't need to balance). Persist via usePlannerPrefs;
-// the filter stores the HIDDEN set so a new domain is watched by default.
+// The deck's own controls, over the grid (`.dk-tools`, styles/decks.css):
 //
-// "By domain" (optional — the initiative deck doesn't pass it yet) splits the deck
-// into one lane per domain. Then the lanes ARE coverage, so the collapse toggle has
-// nothing to fold and the left side becomes the read itself: how many of the
-// watched domains have something placed in the horizon.
+//   · Coverage — a kit section header with its count. Packed, it is a disclosure
+//     that folds the strip away (the deck is the primary surface). By domain the
+//     lanes below ARE the strip, so there is nothing to fold: it is the read alone.
+//   · By domain — a kit Button that stays pressed. A toggle, not a two-option
+//     switch: the off state needs no name of its own (every candidate — "All",
+//     "Mixed" — collides with one already in use, P11). Pressed = the accent wash:
+//     intent, not status.
+//   · Domains — a kit Button opening a kit Picker (multi): which domains the strip
+//     watches / get a lane. Persisted as the HIDDEN set (usePlannerPrefs), so a new
+//     domain is watched by default.
 
+import { useState } from "react";
 import type { Domain } from "../../lib/vertical";
 import { Icon } from "../Icon";
-import { useEscape } from "../../hooks/useEscape";
+import { Button, Dot, Picker, SectionHeader } from "../kit";
 
 export default function CoverageControls({
   collapsed,
@@ -28,7 +32,7 @@ export default function CoverageControls({
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
-  /** domains with work in the window / total tracked — the collapsed summary. */
+  /** domains with work in the window / total tracked — the strip's count. */
   covered: number;
   tracked: number;
   domains: Domain[];
@@ -39,101 +43,66 @@ export default function CoverageControls({
   /** lane mode — omit both to hide the toggle (the deck has no lane layout). */
   byDomain?: boolean;
   setByDomain?: (v: boolean) => void;
-  /** what the deck holds — "project" / "initiative" — for the lane-mode read. */
+  /** what the deck holds — "project" / "initiative" — for the accessible names. */
   itemNoun?: string;
 }) {
-  const shown = domains.length - domains.filter((d) => hidden.has(d.id)).length;
-  useEscape(open, () => setOpen(false));
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const shown = domains.filter((d) => !hidden.has(d.id));
+  const count = `${covered}/${tracked}`;
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="dk-tools">
       {byDomain ? (
-        // Lane mode: nothing to collapse — the lanes below are the strip. Say the
-        // read in words once, so the answer doesn't depend on counting rows.
-        <div className="flex items-center gap-1.5 py-1">
-          <span className="section-label !p-0">Coverage</span>
-          <span className="text-micro text-muted">
-            · {covered} of {tracked} domain{tracked === 1 ? "" : "s"} with {/^[aeiou]/i.test(itemNoun) ? "an" : "a"} {itemNoun}
-          </span>
-        </div>
+        <SectionHeader title="Coverage" count={<span title={`${covered} of ${tracked} domains with ${/^[aeiou]/i.test(itemNoun) ? "an" : "a"} ${itemNoun}`}>{count}</span>} />
       ) : (
-        /* collapse toggle — the deck is the primary surface; fold coverage away */
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="fast tap flex items-center gap-1.5 text-left"
-          title={collapsed ? "Show coverage" : "Hide coverage"}
-          aria-expanded={!collapsed}
-        >
-          <span className="text-micro text-muted transition-transform" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(90deg)" }}>▸</span>
-          <span className="section-label !p-0">Coverage</span>
-          {collapsed && (
-            <span className="text-micro text-muted">· {covered}/{tracked} tracked</span>
-          )}
-        </button>
+        <SectionHeader
+          title="Coverage"
+          count={count}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed(!collapsed)}
+        />
       )}
 
-      <div className="flex items-center gap-1">
+      <span className="dk-grow" />
+
       {setByDomain && (
-        // A toggle, not a two-option switch: the off state needs no name of its
-        // own (and every candidate — "All", "Mixed" — collides with one already
-        // in use, P11). Pressed wears --accent-soft: intent, not status.
-        <button
-          onClick={() => setByDomain(!byDomain)}
+        <Button
+          kind="ghost"
+          active={!!byDomain}
           aria-pressed={!!byDomain}
-          title={byDomain ? "Back to one deck — projects packed together" : "Split the deck into one row per domain, so a gap shows as an empty cell"}
-          className="fast tap tap-desk-h flex items-center gap-1.5 rounded-md px-2 py-1 text-caption transition-colors"
-          style={
-            byDomain
-              ? { background: "var(--accent-soft)", color: "var(--ink)" }
-              : { color: "var(--muted)" }
-          }
+          icon={<LanesGlyph />}
+          title={byDomain ? "One deck, packed together" : "One row per domain, so a gap shows as an empty cell"}
+          onClick={() => setByDomain(!byDomain)}
         >
-          <LanesGlyph />
           By domain
-        </button>
+        </Button>
       )}
-      {/* domain filter — which domains the coverage strip watches */}
-      <div className="relative">
-        <button
-          onClick={() => setOpen(!open)}
-          className="fast tap flex items-center gap-1.5 px-1 py-1 text-caption text-muted hover:text-ink"
-          title="Choose which domains coverage tracks"
-        >
-          Domains
-          <span className="mono text-micro">{shown}/{domains.length}</span>
-          <span className="text-micro">▾</span>
-        </button>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-            <div className="glass-card absolute right-0 z-50 mt-1 w-56 rounded-xl border border-line p-1.5" style={{ boxShadow: "var(--shadow-lift)" }}>
-              <div className="section-label px-1.5 pb-1">{byDomain ? "Give a row" : "Track in coverage"}</div>
-              {domains.map((d) => {
-                const on = !hidden.has(d.id);
-                return (
-                  <button
-                    key={d.id}
-                    onClick={() => toggleHidden(d.id)}
-                    className="tap fast flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-surface-2"
-                  >
-                    <span
-                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
-                      style={on ? { background: d.color, borderColor: d.color } : { borderColor: "var(--line-strong)" }}
-                    >
-                      {on && (
-                        <Icon name="check" size={9} style={{ color: "#fff" }} />
-                      )}
-                    </span>
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color }} />
-                    <span className="truncate text-caption" style={{ color: on ? "var(--ink)" : "var(--muted)" }}>{d.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
-      </div>
+
+      <Button
+        ref={setAnchor}
+        kind="ghost"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        trailing={<Icon name="chevron-down" size={12} />}
+        title={byDomain ? "Which domains get a row" : "Which domains coverage tracks"}
+        onClick={() => setOpen(!open)}
+      >
+        Domains
+        <span className="k-count">
+          {shown.length}/{domains.length}
+        </span>
+      </Button>
+      <Picker
+        anchor={anchor}
+        open={open}
+        onClose={() => setOpen(false)}
+        placement="bottom-end"
+        label={byDomain ? "Domains with a row" : "Domains in coverage"}
+        multiple
+        options={domains.map((d) => ({ value: d.id, label: d.name, icon: <Dot color={d.color} /> }))}
+        value={shown.map((d) => d.id)}
+        onChange={toggleHidden}
+      />
     </div>
   );
 }
@@ -141,7 +110,7 @@ export default function CoverageControls({
 /** Three stacked rows, each led by a dot — the lane layout drawn small. */
 function LanesGlyph() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+    <svg width="14" height="14" viewBox="0 0 13 13" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
       <circle cx="2" cy="2.5" r="1" fill="currentColor" stroke="none" />
       <circle cx="2" cy="6.5" r="1" fill="currentColor" stroke="none" />
       <circle cx="2" cy="10.5" r="1" fill="currentColor" stroke="none" />

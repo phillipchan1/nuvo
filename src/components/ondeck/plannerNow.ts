@@ -1,11 +1,14 @@
-// Planner "you are here" — orientation on the paper, not alarm.
-// `--signal` stays for urgency (at risk, overdue, the calendar now-line).
+// Planner "you are here" — the current week / quarter. Instrument spends
+// `--signal` on NOW and only now (D-189), so the planners mark the present the
+// way the Schedule marks today: the faintest ember down the column, an ember
+// numeral in the header. The desktop decks draw it through styles/decks.css
+// (`[data-now]`); the phone's deck reads these constants, so both shells agree.
 
-/** Soft wash down the current week / quarter column. */
-export const NOW_BAND = "var(--now-band)";
-/** Structural top rule — present, not shouting. */
-export const NOW_BORDER = "1px solid var(--line-strong)";
-/** Column title reads like its neighbors; the dot carries orientation. */
+/** The faint wash down the current week / quarter column. */
+export const NOW_BAND = "color-mix(in srgb, var(--signal) 2.5%, transparent)";
+/** The current column's top rule. */
+export const NOW_BORDER = "1px solid color-mix(in srgb, var(--signal) 45%, transparent)";
+/** The current column's title — ink, like its neighbours; the mark says now. */
 export const NOW_INK = "var(--ink)";
 /** The small mark beside "This week" / "This quarter". */
-export const NOW_MARK = "var(--now-mark)";
+export const NOW_MARK = "var(--signal)";

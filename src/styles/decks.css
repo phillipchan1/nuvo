@@ -1,0 +1,602 @@
+/* ════════════════════════════════════════════════════════════════════════
+   THE DECKS (D-190) — the project deck (weeks) and the initiative deck
+   (quarters), rebuilt on the kit. Same act as the Schedule at two slower
+   clock speeds: a POOL on the left (PlannerRail), a GRID of time on the
+   right, and you drag from one into the other.
+
+   Everything here is geometry from the kit tokens: radii --r-*, heights
+   --h-*, surfaces --panel/--raised/--sunk, hairlines --line-1/2, shadows
+   --sh-1/--sh-pop. Colour is semantic: --signal = now (the current week /
+   quarter's disc and its faint column), --accent = intent (a selection, the
+   composer), --slot = open time (an empty cell, a drop target, the pool you
+   release into), the domain hue = identity.
+
+   Native feel: no cursor-pointer; every :hover sits behind (hover: hover);
+   motion is transform / opacity / colour only, and nothing repeats a blur.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── The pool rail ──────────────────────────────────────────────────────── */
+.pr {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 100%;
+  border-right: 1px solid var(--line-1);
+  transition: background-color var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+}
+/* Dropping here RELEASES time, so the receptive wash is open time (--slot). */
+.pr[data-over] {
+  background: color-mix(in srgb, var(--slot) 7%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 50%, transparent);
+  transition-duration: 0ms;
+}
+
+/* The crown — the surface's one hero: readiness, as a fact. */
+.pr-crown {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px 14px;
+  border-bottom: 1px solid var(--line-1);
+  flex: none;
+}
+.pr-k {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--h-xs);
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+}
+.pr-k > .pr-grow { flex: 1; }
+.pr-k .k-btn { margin-right: -6px; color: var(--faint); }
+.pr-hero {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-hero > .pr-of { color: var(--faint); }
+.pr-hero[data-empty] { color: var(--muted); }
+
+/* The one debt still owed to the floor below — a fact that is also a door. */
+.pr-gap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--h-xs);
+  margin: 2px -8px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--muted);
+  font: 450 12.5px/1.3 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  min-width: 0;
+  transition: background-color var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
+}
+.pr-gap b { color: var(--ink); font-weight: 600; }
+.pr-gap > .pr-gap-mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.pr-gap > .pr-gap-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-gap > svg { flex: none; margin-left: auto; color: var(--faint); }
+@media (hover: hover) {
+  .pr-gap:hover { background: var(--hover); color: var(--ink); transition-duration: 0ms; }
+}
+html:root .pr-gap:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.pr-groom:empty { display: none; }
+.pr-groom { margin: 2px -8px 0; }
+
+/* The pool: the loose items, scrolling. */
+.pr-pool {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 8px 12px;
+}
+.pr-pool > .k-section { flex: none; margin-bottom: 2px; }
+.pr-list { display: grid; gap: 6px; }
+.pr-empty { flex: 1; display: grid; place-items: center; }
+.pr-foot { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--line-1); }
+.pr-foot .k-btn { justify-content: flex-start; color: var(--ink-2); }
+.pr-foot .k-btn .k-kbds { margin-left: auto; }
+
+/* ── The deck card — one object at two altitudes (D-048) ─────────────────
+   A kit Card: --raised, an 8px corner, a --line-1 ring and --sh-1. The name
+   is the hero (13/600); the readiness pie leads it; one meta line carries the
+   area, the weight and the one status word. The altitude tell is structural
+   and only that: a project wears its hue as a MARK (the Dot before the area);
+   a bet wears it as its EDGE (a 2px inset on the left), so scope reads as
+   mass, never as a different kind of thing. */
+.k-card.deck-card {
+  --deck-edge: 0 0 0 0 transparent;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 10px;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: var(--deck-edge), 0 0 0 1px var(--line-1), var(--sh-1);
+}
+.k-card.deck-card[data-variant="bounded"] { --deck-edge: inset 2px 0 0 var(--h); padding-left: 12px; }
+.k-card.deck-card[data-size="phone"] { padding: 12px 14px; gap: 6px; }
+.k-card.deck-card[data-size="phone"][data-variant="bounded"] { padding-left: 16px; }
+.k-card.deck-card[data-dim] { opacity: 0.55; }
+.k-card.deck-card[data-shipped] .deck-card-title { color: var(--ink); }
+
+@media (hover: hover) {
+  .k-card.deck-card[data-interactive]:hover {
+    box-shadow: var(--deck-edge), 0 0 0 1px var(--line-2), var(--sh-1);
+    transition-duration: 0ms;
+  }
+}
+/* Selected — an accent ring and a lift, in place. */
+.k-card.deck-card[aria-selected="true"] {
+  box-shadow: var(--deck-edge), 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop);
+  transform: translateY(-1px);
+}
+/* Held — a placed bar following the pointer to its new span: picked up. */
+.k-card.deck-card[data-lifted] {
+  box-shadow: var(--deck-edge), 0 0 0 1px var(--line-2), var(--sh-pop);
+  transform: translateY(-2px);
+  z-index: 2;
+  transition-duration: 0ms;
+}
+html:root .k-card.deck-card:focus-visible {
+  outline: none;
+  box-shadow: var(--deck-edge), 0 0 0 1px var(--line-1), 0 0 0 2px var(--panel), 0 0 0 4px var(--accent-ring);
+}
+
+.deck-card-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.deck-card-head > .k-rdy { margin-top: 2px; }
+.deck-card-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font: 600 13px/18px var(--font-sans);
+  letter-spacing: -0.006em;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.k-card.deck-card[data-dim] .deck-card-title { color: var(--muted); }
+.k-card.deck-card[data-size="phone"] .deck-card-title { font-size: 15px; line-height: 20px; }
+.k-card.deck-card[data-size="phone"] .deck-card-head > .k-rdy { margin-top: 3px; }
+
+.deck-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
+  padding-left: 22px;
+  color: var(--muted);
+  font: 500 12px/16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+/* The area is the card's identity for anyone who hasn't memorised the palette,
+   so a long status word is never allowed to eat it down to "Tr…". */
+.deck-card-area {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 4.25rem;
+  overflow: hidden;
+}
+.deck-card-area > .k-dot { flex: none; }
+.deck-card-area > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-card-weight { color: var(--faint); }
+.deck-card-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-card-foot { padding-left: 22px; }
+/* No readiness to lead with (a pool card): the meta sits under the name. */
+.k-card.deck-card[data-bare] .deck-card-meta,
+.k-card.deck-card[data-bare] .deck-card-foot { padding-left: 0; }
+.deck-card-foot:empty { display: none; }
+
+/* A bar that runs past the horizon: its right end is cut square, flush to
+   the column — the bar continues off the page rather than ending on it. */
+.k-card.deck-card[data-beyond] { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+/* Resize grips: a bar's ends are its handles (data-resize), drawn only on
+   hover so the resting wall stays quiet. */
+.deck-card [data-resize]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 1px;
+  background: var(--line-2);
+  opacity: 0;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+.deck-card [data-resize="start"]::after { left: 3px; }
+.deck-card [data-resize="end"]::after { right: 3px; }
+@media (hover: hover) {
+  .deck-card:hover [data-resize]::after { opacity: 1; transition-duration: 0ms; }
+}
+
+/* ── The drag ghost — a pool card in your hand: lifted onto --sh-pop ───── */
+.deck-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  pointer-events: none;
+  display: grid;
+  gap: 2px;
+  width: 232px;
+  padding: 8px 10px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2), var(--sh-pop);
+  will-change: transform;
+}
+.deck-ghost-name { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink); font: 600 13px/18px var(--font-sans); }
+.deck-ghost-name > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-ghost-sub { padding-left: 16px; color: var(--muted); font: 500 12px/16px var(--font-sans); font-variant-numeric: tabular-nums; }
+
+/* ── The inline composer — the card you are naming, focused ─────────────── */
+.deck-compose {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-1);
+}
+.deck-compose-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.deck-compose input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: 600 13px/18px var(--font-sans);
+  letter-spacing: -0.006em;
+}
+.deck-compose input::placeholder { color: var(--faint); font-weight: 450; }
+.deck-compose-hint { padding-left: 16px; color: var(--muted); font: 500 12px/16px var(--font-sans); }
+
+/* ── The grid ───────────────────────────────────────────────────────────── */
+.dk {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.dk-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/* The deck's own controls — coverage, By domain, which domains. Quiet: no
+   fill, no rule; the column header below draws the first line. */
+.dk-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  flex: none;
+  padding: 0 10px 0 8px;
+}
+.dk-tools > .k-section { padding-left: 8px; }
+.dk-tools > .dk-grow { flex: 1; }
+.dk-tools .k-btn .k-count { color: var(--faint); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.dk-tools .k-btn[data-active] .k-count { color: inherit; opacity: 0.7; }
+
+.dk-scroll {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.dk-canvas { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+/* The column header — the Schedule's day header, one clock speed up: 44px,
+   a 12/500 label and a 16/650 numeral; the current week or quarter puts its
+   numeral on the ember disc. Sticky, so a tall deck keeps its dates. */
+.dk-head {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  display: grid;
+  flex: none;
+  background: var(--panel);
+  border-top: 1px solid var(--line-1);
+  border-bottom: 1px solid var(--line-1);
+}
+.dk-head-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 10px 0 12px;
+  min-width: 0;
+  color: var(--muted);
+  font: 500 12px/1 var(--font-sans);
+  white-space: nowrap;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.dk-head-num {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink);
+  font: 650 16px/1 var(--font-sans);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dk-head-cell[data-now] .dk-head-num {
+  padding: 3px 6px;
+  margin-left: -1px;
+  border-radius: var(--r-ctl);
+  background: var(--signal);
+  color: var(--on-signal);
+}
+.dk-head-cell > .dk-grow { flex: 1; }
+.dk-load { color: var(--faint); font: 500 12px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.dk-load[data-some] { color: var(--muted); }
+.dk-load[data-over] { color: var(--warn); font-weight: 600; }
+.dk-head-cell[data-drop] { background: color-mix(in srgb, var(--slot) 10%, transparent); transition-duration: 0ms; }
+
+/* The sticky name column (gutter) — painted --panel so the columns slide
+   under it on a horizontal scroll. Opaque, not frosted: the panel is flat,
+   and a blur over a flat panel is full price for nothing (perf rule 1). */
+.dk-gutter { position: sticky; left: 0; z-index: 10; background: var(--panel); }
+.dk-head > .dk-gutter { z-index: 16; }
+
+/* The body's columns — drop targets and rules, drawn once behind the cards. */
+.dk-body { position: relative; flex: 1; min-height: 320px; }
+.dk-cols { position: absolute; inset: 0; display: grid; }
+.dk-col {
+  position: relative;
+  border-left: 1px solid var(--line-1);
+  transition: background-color var(--d-base) var(--ease-out);
+}
+/* You are here: the faintest ember down the current column — the same wash
+   the Schedule's today column wears. */
+.dk-col[data-now] { background: color-mix(in srgb, var(--signal) 2.5%, transparent); }
+/* The live drop target wins over everything. */
+.dk-col[data-drop] {
+  background: color-mix(in srgb, var(--slot) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 40%, transparent);
+  transition-duration: 0ms;
+}
+/* A whole column that composes on a click: open time on hover. */
+@media (hover: hover) {
+  .dk-col[data-compose]:not([data-drop]):hover { background: color-mix(in srgb, var(--slot) 5%, transparent); transition-duration: 0ms; }
+}
+html:root .dk-col[data-compose]:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-ring); }
+.dk-col-foot { position: absolute; inset: auto 0 0; display: flex; justify-content: center; padding-bottom: 10px; pointer-events: none; }
+
+.dk-rows { position: relative; padding: 8px 0 64px; }
+.dk-row { display: grid; align-items: stretch; padding: 3px 0; }
+.dk-empty { position: relative; padding-top: 56px; pointer-events: none; }
+
+.dk-fade {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 20;
+  width: 40px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--panel));
+}
+.dk-foot { display: flex; align-items: center; justify-content: flex-end; flex: none; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid var(--line-1); }
+
+/* "+ project" / "+ initiative" — the one quiet create voice, both decks.
+   Faint at rest; open time (--slot) when its column is receptive. */
+.slot-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--faint);
+  font: 500 12px/1 var(--font-sans);
+  transition: color var(--d-base) var(--ease-out);
+}
+.slot-hint > svg { flex: none; }
+.dk-col[data-compose]:focus-visible .slot-hint { color: var(--slot); }
+@media (hover: hover) {
+  .dk-col[data-compose]:hover .slot-hint,
+  .dk-qcol:hover .slot-hint,
+  button.slot-hint:hover { color: var(--slot); transition-duration: 0ms; }
+}
+button.slot-hint {
+  width: 100%;
+  height: var(--h-sm);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+}
+html:root button.slot-hint:focus-visible { outline: none; color: var(--slot); box-shadow: 0 0 0 2px var(--accent-ring); }
+
+/* ── The initiative deck's quarter columns (a kanban: cards stack) ──────── */
+.dk-qcols { display: grid; flex: 1; min-height: 0; }
+.dk-qcol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 6px 6px;
+  border-left: 1px solid var(--line-1);
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.dk-qcol[data-now] { background: color-mix(in srgb, var(--signal) 2.5%, transparent); }
+.dk-qcol[data-drop] {
+  background: color-mix(in srgb, var(--slot) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 40%, transparent);
+  transition-duration: 0ms;
+}
+/* The rest of a quarter: a click target for a pointer, "add here" for a
+   keyboard (its words appear on focus — an invisible tab stop is worse than
+   none). */
+.dk-filler {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-height: var(--h-sm);
+  padding-top: 6px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--slot);
+  font: 500 12px/1 var(--font-sans);
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.dk-filler > span { opacity: 0; transition: opacity var(--d-base) var(--ease-out); }
+html:root .dk-filler:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-ring); }
+.dk-filler:focus-visible > span { opacity: 1; }
+@media (hover: hover) {
+  .dk-filler:hover { background: color-mix(in srgb, var(--slot) 5%, transparent); transition-duration: 0ms; }
+}
+
+/* ── Coverage — which domains, how much, when ───────────────────────────── */
+.dk-cov { padding: 2px 0 8px; }
+.dk-cov-row { display: grid; align-items: center; }
+.dk-cov-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  height: 20px;
+  padding: 0 10px 0 4px;
+  min-width: 0;
+  color: var(--muted);
+  font: 500 11px/1 var(--font-sans);
+}
+.dk-cov-label > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-cov-label[data-on] { color: var(--ink-2); }
+.dk-cov-label > .dk-hollow { box-shadow: inset 0 0 0 1.25px var(--line-2); background: transparent; }
+.dk-cov-cell {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-left: 1px solid var(--line-1);
+  min-width: 0;
+}
+.dk-cov-cell[data-flush] { border-left: 0; }
+.dk-cov-cell[data-now] { background: color-mix(in srgb, var(--signal) 2.5%, transparent); }
+.dk-cov-pip { flex: none; width: 22px; height: 6px; border-radius: 2px; background: var(--h); }
+.dk-cov-more { color: var(--h); font: 600 11px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+button.dk-cov-cell { width: 100%; border-top: 0; border-right: 0; border-bottom: 0; background-color: transparent; }
+button.dk-cov-cell[data-now] { background: color-mix(in srgb, var(--signal) 2.5%, transparent); }
+/* An unlit cell is absence — the quietest thing on the surface, a sunk track
+   at pip height that blooms to open time under the pointer. */
+.dk-cov-gap {
+  flex: 1;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  transition: background-color var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  button.dk-cov-cell:hover .dk-cov-gap {
+    background: color-mix(in srgb, var(--slot) 30%, transparent);
+    box-shadow: none;
+    transition-duration: 0ms;
+  }
+}
+html:root button.dk-cov-cell:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-ring); }
+
+/* ── By domain (D-179) — one lane per domain, hairline-separated rows ───── */
+.dk-lane { display: grid; }
+.dk-lane + .dk-lane { border-top: 1px solid var(--line-1); }
+.lane-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 10px 0 16px;
+}
+.lane-label > .k-dot { margin-top: 4px; }
+.lane-label-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font: 600 13px/16px var(--font-sans);
+  letter-spacing: -0.005em;
+}
+.lane-label-count { color: var(--faint); font: 500 12px/16px var(--font-sans); font-variant-numeric: tabular-nums; }
+.lane-label[data-empty] .lane-label-name { color: var(--muted); font-weight: 500; }
+.lane-label[data-empty] > .k-dot { background: transparent; box-shadow: inset 0 0 0 1.25px var(--line-2); }
+
+/* Each lane × column cell is a create control (the whole height of the lane);
+   an empty one wears a SOCKET — a card-sized soft hollow in the lane's first
+   row, so a gap reads as a missing card before anything is read. The socket
+   is the cell's next sibling (the cell spans the lane, the socket only its
+   first row), hence `+`. Solid, never dashed. */
+.lane-cell { transition: background-color var(--d-base) var(--ease-out); }
+html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srgb, var(--slot) 5%, transparent); }
+.lane-cell[data-landing] { background: color-mix(in srgb, var(--slot) 10%, transparent); transition-duration: 0ms; }
+@media (hover: hover) {
+  .lane-cell:hover { background: color-mix(in srgb, var(--slot) 5%, transparent); transition-duration: 0ms; }
+}
+.lane-socket {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 6px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  pointer-events: none;
+  transition: background-color var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+}
+.lane-socket-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--slot);
+  font: 500 12px/1 var(--font-sans);
+  opacity: 0;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+.lane-cell:focus-visible + .lane-socket,
+.lane-cell[data-landing] + .lane-socket {
+  background: color-mix(in srgb, var(--slot) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
+}
+.lane-cell:focus-visible + .lane-socket .lane-socket-hint { opacity: 1; }
+@media (hover: hover) {
+  .lane-cell:hover + .lane-socket {
+    background: color-mix(in srgb, var(--slot) 8%, var(--panel));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
+    transition-duration: 0ms;
+  }
+  .lane-cell:hover + .lane-socket .lane-socket-hint { opacity: 1; transition-duration: 0ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k-card.deck-card[aria-selected="true"],
+  .k-card.deck-card[data-lifted] { transform: none; }
+}

@@ -1,16 +1,19 @@
 // The coverage strip — a NAMED read of "which domains am I working, how much, and
 // when?", aligned OVER the deck's columns (it shares the deck's grid template, so a
-// cell sits directly above its sprint/quarter). Color alone can't answer it — you
-// don't memorize the palette — so every row is labeled in the left gutter; the cells
+// cell sits directly above its week / quarter). Colour alone can't answer it — you
+// don't memorise the palette — so every row is named in the left gutter; the cells
 // carry the rest. Each unit of work (a project / an initiative in that column) is one
-// IDENTICAL accumulating pip: more work = more pips = more ink (never diluted, unlike
-// subdividing a fixed bar). Countable at a glance, and it self-quiets — light domains
-// shrink to a single pip. An empty cell is a one-tap "start it there".
+// IDENTICAL accumulating pip in the domain's hue: more work = more pips = more ink.
+// Countable at a glance, and it self-quiets. An empty cell is a sunk track — the
+// quietest thing on the surface — and a one-tap "start it there".
+//
+// The strip is an ANNOTATION over the grid, not a table of its own: 11px labels,
+// 20px rows, and unlit cells that barely register until the pointer finds one.
+// Drawn by styles/decks.css (`.dk-cov-*`).
 
 import type { Domain } from "../../lib/vertical";
+import { Dot } from "../kit";
 
-import { NOW_BAND } from "./plannerNow";
-const PIP_W = 22; // each unit of work is one fixed-size block
 const MAX_PIPS = 8; // clamp (a domain rarely carries this many in one column)
 
 export interface CoverageRow {
@@ -31,9 +34,9 @@ export default function DomainCoverage({
   rows: CoverageRow[];
   /** the deck's grid template, so cells align to the columns. */
   gridTemplate: string;
-  /** px gap between columns — 0 for the Gantt (adjacent + rules), 12 for the kanban. */
+  /** px gap between columns — 0 for ruled, adjacent columns. */
   columnGap?: number;
-  /** whether cells carry a left rule line — the Gantt's demarcation; off when gapped. */
+  /** whether cells carry the column's left rule. */
   ruled?: boolean;
   /** what an empty cell starts — "project" (weeks) or "initiative" (quarters). */
   itemNoun?: string;
@@ -43,69 +46,49 @@ export default function DomainCoverage({
   onAdd: (domain: Domain, weekIdx: number) => void;
 }) {
   if (rows.length === 0) return null;
-  // a gap between columns makes the left rule redundant (and misplaced), so drop it
-  const rule = ruled && columnGap === 0 ? "border-l border-line" : "";
+  const flush = !ruled || columnGap > 0 ? "" : undefined;
+  const when = (i: number) => (i === 0 ? `this ${colNoun}` : i === 1 ? `next ${colNoun}` : `in ${i} ${colNoun}s`);
 
-  // No ruler — the deck's week headers directly below label the (aligned) columns,
-  // so coverage stays a compact band that doesn't crowd the deck.
-  // The strip is an ANNOTATION over the grid, not a table of its own. It sits
-  // above the deck, so at full contrast its empty cells — always the majority —
-  // become the first and heaviest thing on the page, and a block of nothing
-  // out-shouts the eight cards that are the actual content. Everything here is
-  // sized to keep it a band of marks on the paper: micro labels, tight rows, and
-  // unlit cells that barely register until you hover one.
   return (
-    <div className="pb-1.5 pt-0.5">
+    <div className="dk-cov">
       {rows.map((r) => {
         const { domain: d } = r;
         const covered = r.cells.some((n) => n > 0);
         return (
-          <div key={d.id} className="grid items-center" style={{ gridTemplateColumns: gridTemplate, columnGap }}>
-            {/* The label gutter has to occlude the scrolling cells, but an opaque
-                fill would cover the atmosphere — so it's frosted glass instead. */}
-            <div
-              // Right-aligned against the grid: the labels then share one clean edge
-              // with the columns instead of leaving a ragged one, and the leftover
-              // gutter reads as the grid's margin rather than a hole beside it.
-              className="sticky left-0 z-10 flex min-w-0 items-center justify-end gap-1.5 py-[3px] pl-0.5 pr-2.5"
-              style={{
-                background: "color-mix(in srgb, var(--bg) 82%, transparent)",
-                backdropFilter: "blur(6px)",
-                WebkitBackdropFilter: "blur(6px)",
-              }}
-            >
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={covered ? { background: d.color } : { background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-strong)" }}
-              />
-              <span className="truncate text-micro leading-none" style={{ color: covered ? "var(--ink)" : "var(--muted)" }} title={d.name}>
-                {d.name}
-              </span>
+          <div key={d.id} className="dk-cov-row" style={{ gridTemplateColumns: gridTemplate, columnGap }}>
+            {/* Right-aligned against the grid, so the names share one clean edge
+                with the columns and the gutter reads as the grid's margin. */}
+            <div className="dk-cov-label dk-gutter" data-on={covered ? "" : undefined}>
+              {covered ? <Dot color={d.color} size="sm" /> : <span className="k-dot dk-hollow" data-size="sm" aria-hidden />}
+              <span title={d.name}>{d.name}</span>
             </div>
             {r.cells.map((count, i) =>
               count > 0 ? (
-                <div key={i} className={`${rule} px-1 py-[2px]`} style={i === 0 ? { background: NOW_BAND } : undefined} title={`${d.name} · ${count} ${itemNoun}${count === 1 ? "" : "s"} ${i === 0 ? `this ${colNoun}` : `${colNoun} +${i}`}`}>
-                  {/* accumulating pips — one identical block per unit of work; more = more */}
-                  <div className="flex items-center gap-[3px]">
-                    {Array.from({ length: Math.min(count, MAX_PIPS) }).map((_, k) => (
-                      <span key={k} className="h-[6px] shrink-0 rounded-[2px]" style={{ width: PIP_W, background: d.color }} />
-                    ))}
-                    {count > MAX_PIPS && <span className="mono text-micro leading-none" style={{ color: d.color }}>+{count - MAX_PIPS}</span>}
-                  </div>
+                <div
+                  key={i}
+                  className="dk-cov-cell"
+                  data-flush={flush}
+                  data-now={i === 0 ? "" : undefined}
+                  style={{ ["--h" as string]: d.color }}
+                  title={`${d.name} · ${count} ${itemNoun}${count === 1 ? "" : "s"} ${when(i)}`}
+                >
+                  {Array.from({ length: Math.min(count, MAX_PIPS) }).map((_, k) => (
+                    <span key={k} className="dk-cov-pip" />
+                  ))}
+                  {count > MAX_PIPS && <span className="dk-cov-more">+{count - MAX_PIPS}</span>}
                 </div>
               ) : (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => onAdd(d, i)}
-                  aria-label={`Start a ${d.name} ${itemNoun} ${i === 0 ? `this ${colNoun}` : i === 1 ? `next ${colNoun}` : `in ${i} ${colNoun}s`}`}
+                  aria-label={`Start a ${d.name} ${itemNoun} ${when(i)}`}
                   title={`Start a ${d.name} ${itemNoun} here`}
-                  className={`group/cell fast ${rule} px-1 py-[2px]`}
-                  style={i === 0 ? { background: NOW_BAND } : undefined}
+                  className="dk-cov-cell"
+                  data-flush={flush}
+                  data-now={i === 0 ? "" : undefined}
                 >
-                  {/* open time for this domain — a soft full-width recess at pip
-                      height. Solid, not dashed — empty cells dissolve into the
-                      paper until hover blooms them to `--slot`. */}
-                  <div className="coverage-gap h-[6px] w-full rounded-[2px] transition-colors" />
+                  <span className="dk-cov-gap" />
                 </button>
               ),
             )}

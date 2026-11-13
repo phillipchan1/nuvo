@@ -6,34 +6,36 @@
 //   · LaneLabel     — the lane's name in the deck's left gutter
 //   · LaneCell      — the create control for one domain in one column, plus the
 //                     SOCKET an empty column wears
-//   · LANE_GUTTER   — the frost the sticky name column wears
+//   · LANE_GUTTER   — the surface the sticky name column wears
 //
 // Each deck keeps only its own geometry (the Gantt packs bars into rows; the kanban
 // stacks cards in a cell). Never re-decide in a deck which domains get a lane or what
 // an empty cell looks like: two copies of this drifted apart the first time the
-// coverage strip was copied between the decks.
+// coverage strip was copied between the decks. The drawing is styles/decks.css —
+// lanes are hairline-separated rows (`.dk-lane`), the label is a kit Dot + name +
+// count, the socket a soft --sunk hollow that turns to open time (--slot).
 
 import type { CSSProperties } from "react";
 import { domainById, type Domain, type VerticalData } from "../../lib/vertical";
 import { pressable } from "../../lib/a11y";
+import { Icon } from "../Icon";
+import { Dot } from "../kit";
 
 /** The gutter width By domain — wide enough to read a lane's name at a glance. The
  *  extra over the packed deck's gutter comes out of the columns' minimum, so the
  *  toggle never changes the deck's total width (see each deck's `cols`). */
-export const LANE_LABEL_W = 120;
+export const LANE_LABEL_W = 132;
 
 /** Projects / bets whose domain no longer resolves still need a lane — never hide work. */
 export const NO_AREA = "__no_area__";
 
-/** The sticky name gutter's surface — the same frost DomainCoverage's labels wear in
- *  this exact column. Painted twice per deck (header gutter + one full-height body
- *  gutter), never per lane — perf rule 2. Its backdrop is cards sliding under it on a
- *  horizontal scroll, so it isn't a no-op blur (rule 1); a translucent fill alone let
- *  a card's pips read straight through. */
+/** The sticky name gutter's surface — the panel itself, opaque, so the columns
+ *  slide under it on a horizontal scroll. Painted twice per deck (header gutter +
+ *  one full-height body gutter), never per lane. It used to be a frosted blur;
+ *  over Instrument's flat panel a blur is full price for no visible change
+ *  (perf rule 1), so it is simply the panel. */
 export const LANE_GUTTER: CSSProperties = {
-  background: "color-mix(in srgb, var(--bg) 84%, transparent)",
-  backdropFilter: "blur(8px)",
-  WebkitBackdropFilter: "blur(8px)",
+  background: "var(--panel)",
 };
 
 export interface DomainLane<T> {
@@ -70,12 +72,12 @@ export function domainLanes<T>(
 }
 
 export const laneName = (d: Domain | null) => d?.name ?? "No area";
-export const laneColor = (d: Domain | null) => d?.color ?? "var(--line-strong)";
+export const laneColor = (d: Domain | null) => d?.color ?? "var(--faint)";
 
 /** The lane's name — sticky so it survives a horizontal scroll. It carries no
- *  surface of its own: the deck's ONE frosted gutter column behind every lane does
- *  the occluding, so there's a single blur for the whole column and its tone can't
- *  step at a lane boundary. A hollow dot + muted name = nothing placed. */
+ *  surface of its own: the deck's ONE gutter column behind every lane does the
+ *  occluding, so its tone can't step at a lane boundary. A hollow Dot and a muted
+ *  name = nothing placed; the count says how much otherwise. */
 export function LaneLabel({
   domain,
   count,
@@ -84,27 +86,22 @@ export function LaneLabel({
 }: {
   domain: Domain | null;
   count: number;
-  /** "project" / "initiative" — the count's noun. */
+  /** "project" / "initiative" — the count's noun (for the accessible name). */
   noun: string;
   gridRow: string;
 }) {
   const name = laneName(domain);
   const any = count > 0;
   return (
-    <div className="sticky left-0 z-10 flex min-w-0 flex-col pl-1 pr-3 pt-3.5" style={{ gridColumn: 1, gridRow }}>
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={any ? { background: laneColor(domain) } : { boxShadow: "inset 0 0 0 1.5px var(--line-strong)" }}
-          aria-hidden
-        />
-        <span className="truncate text-caption font-semibold" style={{ color: any ? "var(--ink)" : "var(--muted)" }} title={name}>
-          {name}
-        </span>
-      </div>
-      <span className="mono mt-0.5 pl-4 text-micro tabular-nums text-muted">
-        {any ? `${count} ${noun}${count === 1 ? "" : "s"}` : "nothing placed"}
-      </span>
+    <div
+      className="lane-label sticky left-0 z-10"
+      data-empty={any ? undefined : ""}
+      style={{ gridColumn: 1, gridRow }}
+      title={any ? `${name} · ${count} ${noun}${count === 1 ? "" : "s"}` : `${name} · nothing placed`}
+    >
+      <Dot color={laneColor(domain)} />
+      <span className="lane-label-name">{name}</span>
+      {any && <span className="lane-label-count">{count}</span>}
     </div>
   );
 }
@@ -112,13 +109,13 @@ export function LaneLabel({
 /** One domain × one column: the create control (the whole height of the lane) and,
  *  when the column holds nothing for this domain, a SOCKET — a card-sized soft hollow,
  *  so the gap reads as a missing card before anything is read. Quiet at rest (it's the
- *  commonest thing on the page); it blooms to --slot on hover/focus, and lights when a
- *  card of this domain is being dragged over this column (`landing`).
+ *  commonest thing on the page); it turns to open time on hover/focus, and lights when
+ *  a card of this domain is being dragged over this column (`landing`).
  *
- *  The socket is the cell's NEXT SIBLING (`.lane-cell + .lane-socket` in index.css),
- *  because the cell spans the whole lane and the socket only its first row. A lane
- *  with no domain ("No area") gets a drop target but no create control: there is no
- *  domain to start one in. */
+ *  The socket is the cell's NEXT SIBLING (`.lane-cell + .lane-socket`), because the
+ *  cell spans the whole lane and the socket only its first row. A lane with no domain
+ *  ("No area") gets a drop target but no create control: there is no domain to start
+ *  one in. */
 export function LaneCell({
   domain,
   column,
@@ -151,19 +148,18 @@ export function LaneCell({
       <div
         {...dropAttr}
         data-landing={landing || undefined}
-        className="lane-cell fast"
+        className="lane-cell"
         style={{ gridColumn: column, gridRow }}
         onClick={onAdd}
         {...pressable(onAdd, { label })}
         title={label}
       />
       {socket && (
-        <div
-          className="lane-socket pointer-events-none mx-1 my-1 flex items-center justify-center rounded-lg"
-          style={{ gridColumn: column, gridRow: 1, ...socketStyle }}
-          aria-hidden
-        >
-          <span className="lane-socket-hint text-micro font-medium">+ {domain.name}</span>
+        <div className="lane-socket" style={{ gridColumn: column, gridRow: 1, ...socketStyle }} aria-hidden>
+          <span className="lane-socket-hint">
+            <Icon name="plus" size={12} />
+            {domain.name}
+          </span>
         </div>
       )}
     </>
