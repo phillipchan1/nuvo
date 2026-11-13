@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { LADDER, type Rung } from "./AppShell";
 import { getUiScale, useUiScale } from "../hooks/useUiScale";
 import { useVerticalSelector } from "../hooks/useVertical";
@@ -9,6 +9,39 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Dot, Kbd, NuvoMark } from "./kit";
 import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
 import GettingStarted from "./orientation/GettingStarted";
+import { useMemory } from "../hooks/useMemory";
+import { MemoryIcon } from "./memory/MemoryIcon";
+
+const MemoryPanel = lazy(() => import("./memory/MemoryPanel"));
+const RhythmIntro = lazy(() => import("./memory/RhythmIntro"));
+
+/** The sidebar's way into Memory (docs/memory.md §4.1): always there, one quiet
+ *  dot when something new is sure enough to show you, never a count. */
+function MemoryRow({ railed }: { railed: boolean }) {
+  const memory = useMemory();
+  const [open, setOpen] = useState(false);
+  const label = memory.hasNew ? "Memory · something new" : memory.learning ? "Memory" : "Memory · paused";
+  return (
+    <>
+      <button onClick={() => setOpen(true)} title={label} aria-label={label} className="sb-item" data-railed={railed || undefined}>
+        <span className={`sb-icon${memory.hasNew ? " sb-icon-dot" : ""}`}>
+          <MemoryIcon />
+        </span>
+        <span className="sb-label">Memory</span>
+      </button>
+      {open && (
+        <Suspense fallback={null}>
+          <MemoryPanel onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+      {memory.available && !memory.introduced && (
+        <Suspense fallback={null}>
+          <RhythmIntro />
+        </Suspense>
+      )}
+    </>
+  );
+}
 
 // Top-to-bottom: Schedule (immediate) → Domain (widest). ⌘1 at top, ⌘4 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
@@ -314,6 +347,7 @@ const SpineBody = memo(function SpineBody({
           {/* First-run reward spine — derived 5-milestone tracker; retires itself
               for established users, always dismissible. */}
           <GettingStarted compact={railed} />
+          <MemoryRow railed={railed} />
           {utility({ icon: <SettingsIcon size={16} />, label: "Settings", hint: "⌘,", onClick: openSettings })}
           {utility({
             icon: <span className="text-caption leading-none">?</span>,

@@ -14,6 +14,7 @@ import AgentSuggestionChips from "../AgentSuggestionChips";
 import AgentThinking from "../AgentThinking";
 import { Icon } from "../Icon";
 import { Button, IconButton } from "../kit";
+import { MemoryIcon } from "../memory/MemoryIcon";
 
 // The Nuvo chat body. It rides inside a full-screen overlay summoned by the
 // floating ✦ launcher — a permanent action reachable from any screen, not a
@@ -25,10 +26,13 @@ export default function ChatPane({
   agent,
   hint,
   onClose,
+  onMemory,
 }: {
   agent: AgentHandle;
   hint: AgentHintContext;
   onClose?: () => void;
+  /** Opens Memory — on the phone it lives behind the chat (docs/memory.md §4.1). */
+  onMemory?: () => void;
 }) {
   const hints = useMemo(() => agentHints(hint), [hint]);
   const { messages, loading, error, sendMessage, clear } = agent;
@@ -156,6 +160,16 @@ export default function ChatPane({
           <Button kind="ghost" size="sm" onClick={clear} onPointerDown={(e) => e.stopPropagation()} className="tap-icon">
             Clear
           </Button>
+        )}
+        {onMemory && (
+          <IconButton
+            label="Memory"
+            size="md"
+            icon={<MemoryIcon size={18} />}
+            onClick={onMemory}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="tap-icon"
+          />
         )}
         {onClose && (
           <IconButton

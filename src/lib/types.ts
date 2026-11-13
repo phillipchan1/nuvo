@@ -301,6 +301,10 @@ export type RecurrenceScope = "THIS" | "FOLLOWING" | "ALL";
 
 export interface UserSettings {
   user_id: string;
+  /** What you've answered Nuvo about what it learned (docs/memory.md, migration
+   *  94). ABSENT on the row until that migration has run, and never written
+   *  until it's there. Shape: `MemoryState` in lib/memory.ts. */
+  memory?: import("./memory").MemoryState;
   theme: "system" | "light" | "dark";
   day_start_hour: number;
   day_end_hour: number;

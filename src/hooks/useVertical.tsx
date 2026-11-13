@@ -882,6 +882,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.icon != null) rowPatch.icon = normalizeDomainSymbol(patch.icon);
         if (patch.intention != null) rowPatch.intention = patch.intention;
         if (patch.charter != null) rowPatch.charter = patch.charter;
+        if (patch.kind !== undefined) rowPatch.kind = patch.kind;
         if (patch.context !== undefined) {
           rowPatch.context = patch.context;
           rowPatch.context_at = new Date().toISOString();

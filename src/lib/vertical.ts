@@ -49,6 +49,11 @@ export interface Domain {
   icon: string; // stable DomainSymbol key — compact identity, distinct from the living sigil
   intention: string; // the standing mandate — what it asks of you
   charter: string; // plain-line "what this domain IS" — the routing source of truth
+  /** Which kind of domain this is (work, community…), when said. Memory reads it
+   *  to tell your work hours from the rest of your calendar. */
+  kind?: DomainKind | null;
+  /** The row has the column — only then may `kind` be written (migration 94). */
+  kindStored?: boolean;
   context: DomainContext | null; // AI-expanded routing metadata (entities, boundary…)
   weeklyTargetHours: number;
   investedThisWeek: number; // derived: hours invested this week (completed blocks + attended meetings)
@@ -242,7 +247,12 @@ export interface DomainRow {
   context_at?: string | null;
   weekly_target_hours: number | null;
   sort_order: number;
+  /** Which first-run kind this domain is (migration 94). ABSENT on the row until
+   *  that migration has run — `kindStored` on the Domain says which. */
+  kind?: DomainKind | null;
 }
+
+export type DomainKind = "work" | "community" | "discipline" | "people" | "stewardship";
 
 export interface KeyResultRow {
   id: string;
@@ -671,6 +681,8 @@ export function buildVertical(
         icon: normalizeDomainSymbol(d.icon),
         intention: d.intention,
         charter: d.charter ?? "",
+        kind: d.kind ?? null,
+        kindStored: "kind" in d,
         context: d.context ?? null,
         weeklyTargetHours: d.weekly_target_hours ?? 0,
         investedThisWeek: led ? led.week / 60 : 0,

@@ -207,6 +207,12 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
 );
 
 ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS charter TEXT NOT NULL DEFAULT '';
+-- Memory (supabase/migrations/00000000000094_memory.sql, docs/memory.md): what
+-- you answered about what Nuvo learned, and which kind each domain is. The
+-- cutover's pg_dump carries both from Supabase; this keeps the rehearsal DB the same shape.
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS memory JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS kind TEXT
+  CHECK (kind IS NULL OR kind IN ('work', 'community', 'discipline', 'people', 'stewardship'));
 ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS context JSONB;
 ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS icon TEXT;
 

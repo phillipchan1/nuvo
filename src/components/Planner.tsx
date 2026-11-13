@@ -53,6 +53,7 @@ const EMPTY_SLOTS: Slot[] = [];
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
+import { useMemory } from "../hooks/useMemory";
 
 export default function Planner({
   openFlow,
@@ -68,6 +69,9 @@ export default function Planner({
    *  slack back to the calendar. See AppShellInner for the arithmetic. */
   squeezed?: boolean;
 }) {
+  // Memory (docs/memory.md): the Schedule draws its Rhythm view from it, and
+  // Plan the week's What I noticed reads its sure observations.
+  const learned = useMemory();
   const railRef = useRef<HTMLDivElement | null>(null);
   const {
     nav,
@@ -608,7 +612,7 @@ export default function Planner({
         <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
         {planning ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
-            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} />
+            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} />
           </Suspense>
         ) : (
         <LeftRail
@@ -644,6 +648,7 @@ export default function Planner({
               slid shut: one door, always visible, never two opposite corners. */}
           <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
+            learned={learned}
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}

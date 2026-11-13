@@ -6843,6 +6843,78 @@ example data in persona kinds (P16).
 the Memory section is in the static HTML), driven at 1440 and 375 (no horizontal scroll, no
 console errors). Pushed to `master` 2026-11-13 (marketing and this entry only), which deploys nuvo.day.*
 
+**D-194 · 2026-11-13 · Memory: what Nuvo learns about you lives in one place, says where it
+came from, and says where it's used. Rhythm (time) is the first chapter.** *(Asked by the
+operator: a learning engine that "quietly learns about you over time", with "observations about
+my schedule, when I usually do things", an indicator "because otherwise I'm never going to go
+there", and "behind the hood… memory and things I've learned about you". Spec:
+[`memory.md`](../memory.md); prototypes linked from it.)*
+
+→ **One store, not a feature per surface.** The week planner already kept corrections (in one
+device's storage), the router learns from re-files, and Draft the path will see your drops.
+Memory is where all of that becomes something you can see and edit. A memory is a fact *you*
+confirmed, with its evidence; everything else is visibly a hypothesis.
+
+→ **It strains P10 hard, knowingly.** Memory is a new place. Justified by P10's own test: one
+memory feeds five altitudes (§6 of the spec), so it can't live inside any one. Mitigated: it is
+a panel (the kit `Dialog`, a bottom `Sheet` on the phone) over the page you're on, reached from
+one row at the foot of the sidebar, not a sixth navigation destination.
+
+→ **The indicator is one dot, never a count, never a notification (N-07, P9).** It appears only
+when a Sure or Fairly sure observation is new to you, and opening Memory clears it whether or not
+you answer. On the phone the dot rides the ✦ launcher and Memory opens from the chat's header
+(settled by Phil the same day; replaced by a chat row if it reads as "Nuvo replied").
+
+→ **Confidence decides where, not how loudly.** Sure / Fairly sure / Not sure yet — three words,
+no score (N-04). Only Sure reaches Plan the week, the Schedule or first run; Not sure yet is
+visible only inside Memory, under **Still watching**.
+
+→ **Every answer says what it changes before you press it**, and every Keep writes something
+that already exists — working hours, a standing slot, a repeating task — so Forget can take
+exactly that back. A habit that is already a repeating calendar event is remembered, not
+slotted: a slot would double-book what the calendar already holds.
+
+→ **"Suggest tasks" stops at repeating what you already keep writing (N-20).** The app never
+invents work.
+
+→ **The chat may read memories but not keep, refuse or forget one.** That is a writing
+capability deliberately without an agent twin: an answer about yourself should be given where
+its consequence is printed, not inferred from a sentence. (Not built yet — the chat doesn't
+read Memory in this pass.)
+
+→ **Settled calls (Phil, 2026-11-13):** the calendar sync window widens from 30 to 56 days ·
+only calendars you own count (a shared family calendar is someone else's rhythm) · domains store
+their kind (`domains.kind`) · the phone dot as above.
+
+→ **Storage deviates from the spec's first draft, on purpose.** Answers live in one column,
+`user_settings.memory` (migration 94), not a `memories` table: `user_settings` already rides the
+offline outbox (`apply_patch` allows it) and the Cloudflare copy, where a new table would need
+both. Observations are never stored.
+
+*Status: partly built — the store (migration 94, not applied to any project yet), the pure
+detectors (`_shared/memory/rhythm.ts`, imports only the kernel's date math), `useMemory`, the
+panel, the sidebar row with its dot, and the phone's dot + chat entry. Keep writes working
+hours, standing slots (recurring slot series) and repeating tasks; hours also write the planner's
+existing per-day end rule. Guarded by `tests/memory-rhythm.test.ts` (17 fixture accounts unlike
+persona zero's). Driven at `?memory` (a teacher's eight weeks, the real detectors and panel) on
+desktop and at 375px — **not** against a live account: this checkout has no `.env`, and the
+migration isn't applied. **Also built, same day:** Plan the week's What I noticed takes Memory's
+Sure observations (desktop rail rows, and a card on the phone's first step), three noticed at most
+in all; the Schedule's **Rhythm** button draws your hours and noticed habits/windows as
+background events under the real week, answered from a popover beside it (pointing at a row
+lights its band); and "Your week, as your calendar tells it" appears once, the first time there
+are two or more Sure time observations. Memory reaches the Schedule and the rail as a prop from
+`Planner`, not a hook inside them, so the harnesses and tests that mount them without the app's
+data layer are untouched. **Not built:** dragging a ghost's edges to adjust it (§5.2), `planMemory` moving into the database, the other chapters (Work,
+Projects, Initiatives, Domains, Words), the chat reading Memory, and setting `domains.kind` from
+the first-run picker. "Owned calendars" is approximated: Google calendars don't say who owns
+them in what we sync, so only the primary counts there. **Not run:** `npm run perf` (the hook
+loads eight weeks of events on app start). Wider sync window needs the sync functions deployed.
+**Neon / Cloudflare:** the cutover pg_dumps Supabase's `public` schema, so migration 94 carries
+across by itself once applied; `worker/schema/neon.sql` (the rehearsal schema) got the same two
+columns by hand, and the Worker keeps its own copy of the window (`worker/src/lib/syncWindow.ts`, read by its
+iCloud sync), now also 56 days. Its ICS sync keeps 30: an ICS feed is never your own calendar.*
+
 **D-192 · 2026-11-13 · The small pages say the ambition out loud: statement pages.** *(Asked by
 the operator: "redesign the login page… every little page to highlight this ambition.")*
 

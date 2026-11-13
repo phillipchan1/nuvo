@@ -107,6 +107,9 @@ been used to argue against things it doesn't forbid.
 | **Capacity** | Real available hours this week, calendar-derived. |
 | **Commitment** | `Demand ÷ Capacity`. `<0.7` under · `0.7–1.0` healthy · `>1.0` over. |
 | **Pace** | `remaining effort ÷ weeks until target` — the portfolio→week conversion. `src/lib/pace.ts` |
+| **Memory** | What Nuvo has learned about you and you answered: kept (Nuvo plans with it) or refused (it stops looking). One panel from the sidebar's foot (the ✦ in a ring) or the phone chat's header; tabs **Noticed** · **What Nuvo uses** · **Still watching** · **You said no**. Answers in `user_settings.memory`; observations are recomputed, never stored. [`memory.md`](../memory.md), D-194 |
+| **Rhythm** | Memory's time chapter: your working hours, habits, open windows and chores you keep writing, read from 8 weeks of your own calendar and tasks. `_shared/memory/rhythm.ts`. (The Schedule's Rhythm *view* is spec, not built.) |
+| **Still watching** | An observation Nuvo isn't sure of yet. Shown only inside Memory, with what it still needs; nothing else in the app acts on it. |
 | **Calibration** | Proven weekly pace from the last 4 weeks of completed blocks, capping the composer (+15% room to grow). No history → it says so. `src/lib/calibration.ts` |
 | **The Find** | At most **one** evidence-backed discovery per Review. Hidden when nothing is notable — never manufactured. |
 | **Actuals** | What actually happened (completed blocks, attended events, activity sources) vs. tasks (what was planned). |

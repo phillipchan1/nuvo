@@ -1,0 +1,65 @@
+/* Memory (docs/memory.md) — the panel inside the kit Dialog, and the sidebar's
+   one quiet dot. Tokens only; nothing moves on its own (P9). */
+
+.memory { display: grid; gap: 10px; }
+.memory-lead { margin: 0; color: var(--muted); font-size: 13px; }
+.memory-note {
+  margin: 0; display: grid; gap: 8px;
+  font-size: 12.5px; color: var(--ink-2);
+  background: var(--sunk); border-radius: var(--r-ctl); padding: 8px 10px;
+}
+.memory-intro { margin: 2px 0 0; font-size: 12px; color: var(--faint); }
+.memory-item { display: grid; gap: 7px; padding: 12px 0; border-bottom: 1px solid var(--line-1); }
+.memory-say { margin: 0; font-size: 14px; color: var(--ink); text-wrap: pretty; }
+.memory-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.memory-src { margin: 0; font-size: 12px; color: var(--faint); }
+.memory-sure { font-size: 11.5px; font-weight: 600; color: var(--accent-ink); }
+.memory-sure[data-level="watch"] { color: var(--faint); font-weight: 500; }
+.memory-pips { display: inline-flex; gap: 3px; }
+.memory-pips i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.25px var(--line-2); }
+.memory-pips i[data-on] { background: var(--accent); box-shadow: none; }
+.memory-uses { display: flex; flex-wrap: wrap; gap: 4px; }
+.memory-uses span {
+  height: 22px; padding: 0 8px; border-radius: 11px; display: inline-flex; align-items: center;
+  font-size: 11.5px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.memory-conseq { margin: 0; font-size: 12.5px; color: var(--muted); background: var(--sunk); border-radius: var(--r-ctl); padding: 7px 10px; }
+.memory-conseq b { color: var(--ink-2); font-weight: 600; }
+.memory-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.memory-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; width: 100%; }
+.memory-learn { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.memory-confirm { display: grid; gap: 8px; width: 100%; font-size: 12.5px; color: var(--ink-2); grid-template-columns: 1fr auto auto; align-items: center; }
+@media (max-width: 767px) { .memory-confirm { grid-template-columns: 1fr 1fr; } .memory-confirm > span { grid-column: 1 / -1; } }
+
+/* The sidebar's Memory row carries one dot when something new is sure enough
+   to show you. No count, no motion; opening Memory clears it. */
+.sb-icon-dot { position: relative; }
+.sb-icon-dot::after {
+  content: ""; position: absolute; top: -2px; right: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--ground);
+}
+
+/* A row's quiet acts start on the text's left edge, not the button's padding. */
+.memory-acts > .k-btn[data-kind="ghost"]:first-child { margin-left: -8px; }
+
+/* Inside a ritual (the phone's Plan the week): the same rows, a little air above. */
+.memory-noticed { display: grid; gap: 2px; margin-top: 16px; }
+
+/* The Schedule's Rhythm view: background events, behind every block. Opacity
+   and fills only; nothing here blurs or animates (tests/perf-budget.test.ts). */
+.rhythm-list { width: min(360px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; display: grid; gap: 2px; padding: 4px 4px 0; }
+.fc .fc-bg-event.evt-rhythm-hours { background: color-mix(in srgb, var(--ink) 3.5%, transparent) !important; opacity: 1; }
+.fc .fc-bg-event.evt-rhythm-default {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 6%, transparent) 0 4px, transparent 4px 9px) !important;
+}
+.fc .fc-bg-event.evt-rhythm-default .fc-event-title,
+.fc .fc-bg-event.evt-rhythm-ghost .fc-event-title { margin: 4px 6px; font: 500 11px/1.2 var(--font-sans); font-style: normal; color: var(--faint); }
+.fc .fc-bg-event.evt-rhythm-ghost {
+  background: var(--accent-wash) !important; opacity: 1;
+  outline: 1.5px dashed var(--accent-ring); outline-offset: -1.5px;
+}
+.fc .fc-bg-event.evt-rhythm-ghost .fc-event-title { color: var(--accent-ink); }
+.fc .fc-bg-event.evt-rhythm-hot { outline-style: solid; outline-color: var(--accent); }
+.memory-item[data-off] .memory-say { color: var(--faint); text-decoration: line-through; }
+.memory-item[data-off] .memory-conseq { opacity: .5; }

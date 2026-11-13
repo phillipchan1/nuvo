@@ -2,7 +2,9 @@ import { duplicateEventInput } from "../lib/eventActs";
 import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Segmented } from "./kit";
+import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Popover, Segmented } from "./kit";
+import type { MemoryApi } from "./memory/MemoryPanel";
+import { RhythmList } from "./memory/RhythmList";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -294,6 +296,7 @@ function useOnScreen(ref: React.RefObject<HTMLElement | null>, x: number, y: num
 
 // ── Main component ─────────────────────────────────────────────────────────
 function CalendarPane({
+  learned,
   view,
   tasks,
   events,
@@ -358,6 +361,9 @@ function CalendarPane({
   slotTasks: Record<string, Task[]>;
   accounts: CalendarAccount[];
   settings: UserSettings | undefined;
+  /** Memory, when the host has it — draws the Rhythm view (docs/memory.md §5.2).
+   *  Omitted (harnesses, tests): no Rhythm button. */
+  learned?: MemoryApi | null;
   now: Date;
   /** Domain color per task — blocks carry their thread up the vertical. */
   taskAccent: (t: Task) => string | null;
@@ -529,6 +535,13 @@ function CalendarPane({
   const [monthTitle, setMonthTitle] = useState("");
   // What's drawn (activeStart → activeEnd) — where j / k start from (D-158).
   const [visibleSpan, setVisibleSpan] = useState({ start: 0, end: 0 });
+  // Rhythm (docs/memory.md §5.2): a view of this week with your hours and what
+  // Memory noticed drawn underneath it. Off by default; answers in its popover.
+  const [rhythmOn, setRhythmOn] = useState(false);
+  const [rhythmOpen, setRhythmOpen] = useState(false);
+  const [rhythmHot, setRhythmHot] = useState<string | null>(null);
+  const rhythmBtnRef = useRef<HTMLButtonElement | null>(null);
+  const memory = learned ?? null;
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
@@ -2009,10 +2022,56 @@ function CalendarPane({
     return [...clears, ...blocks, ...ghosts];
   }, [plan]);
 
+  // Background events only — they cost no layout among the blocks, and they
+  // never move: nothing here is draggable (§5.2's drag-to-adjust is not built).
+  const rhythmEvents = useMemo(() => {
+    if (!rhythmOn || !visibleSpan.start) return [];
+    const out: EventInput[] = [];
+    const startMin = settings?.work_start_minutes ?? 480;
+    const endMin = settings?.work_end_minutes ?? 990;
+    if (!memory) return [];
+    const learnedHours = memory.items.some((i) => i.section === "kept" && i.key.startsWith("hours:"));
+    const ghosts = memory.items.filter(
+      (i) => i.section === "new" && i.observation && (i.observation.kind === "habit" || i.observation.kind === "window"),
+    );
+    const at = (day: Date, min: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, min);
+    for (let t = visibleSpan.start; t < visibleSpan.end; t += 86_400_000) {
+      const day = new Date(t);
+      const wd = (day.getDay() + 6) % 7;
+      const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+      if (wd < 5) {
+        out.push({
+          id: `rhythm-hours:${key}`,
+          title: learnedHours ? "" : "Default hours",
+          start: at(day, startMin),
+          end: at(day, endMin),
+          display: "background",
+          classNames: ["evt-rhythm-hours", learnedHours ? "" : "evt-rhythm-default"].filter(Boolean),
+          extendedProps: { kind: "planghost" as const, refId: "" },
+        });
+      }
+      for (const g of ghosts) {
+        const o = g.observation;
+        if (!o || (o.kind !== "habit" && o.kind !== "window") || !o.weekdays.includes(wd)) continue;
+        out.push({
+          id: `rhythm-ghost:${g.key}:${key}`,
+          title: g.described.title,
+          start: at(day, o.startMin),
+          end: at(day, o.endMin),
+          display: "background",
+          classNames: ["evt-rhythm-ghost", rhythmHot === g.key ? "evt-rhythm-hot" : ""].filter(Boolean),
+          extendedProps: { kind: "planghost" as const, refId: "" },
+        });
+      }
+    }
+    return out;
+  }, [rhythmOn, visibleSpan, settings?.work_start_minutes, settings?.work_end_minutes, memory, rhythmHot]);
+
   const gridEvents = useMemo(() => {
-    const base = planEvents.length ? [...fcEvents, ...planEvents] : fcEvents;
+    const withPlan = planEvents.length ? [...fcEvents, ...planEvents] : fcEvents;
+    const base = rhythmEvents.length ? [...rhythmEvents, ...withPlan] : withPlan;
     return draftPreviewEvent ? [...base, draftPreviewEvent] : base;
-  }, [fcEvents, planEvents, draftPreviewEvent]);
+  }, [fcEvents, planEvents, rhythmEvents, draftPreviewEvent]);
 
   // FullCalendar treats a new `events` array as a new source and re-parses
   // every block. Keep the option stable, then reconcile only the blocks whose
@@ -4786,6 +4845,22 @@ function CalendarPane({
           <>
             {/* Only while you're away from home (the phone hides it too). */}
             <TimeZoneChip now={now} hideAtHome />
+            {memory && view !== "board" && !isYear && (
+              <Button
+                ref={rhythmBtnRef}
+                active={rhythmOn}
+                aria-pressed={rhythmOn}
+                onClick={() => {
+                  const next = !rhythmOn;
+                  setRhythmOn(next);
+                  setRhythmOpen(next);
+                  if (!next) setRhythmHot(null);
+                }}
+                title="Your hours and the habits Nuvo noticed, under this week"
+              >
+                Rhythm
+              </Button>
+            )}
             {onOpenWeekPlan && weekGlyph && (
               <Button
                 onClick={onOpenWeekPlan}
@@ -4910,6 +4985,18 @@ function CalendarPane({
         </div>
       </div>
 
+      {memory && <Popover
+        anchor={rhythmBtnRef.current}
+        open={rhythmOn && rhythmOpen}
+        onClose={() => {
+          setRhythmOpen(false);
+          setRhythmHot(null);
+        }}
+        placement="bottom-end"
+        label="Rhythm"
+      >
+        <RhythmList memory={memory} onHot={setRhythmHot} />
+      </Popover>}
       {wxPopover && (
         <WeatherPopover
           day={wxPopover.day}

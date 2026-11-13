@@ -2,7 +2,7 @@
  *  alike). The write-back functions expand a series they just wrote over the
  *  SAME window, so the two agree on which occurrence rows exist and the next
  *  poll has nothing to add or sweep. Pure — no imports. */
-export const SYNC_WINDOW_PAST_DAYS = 30;
+export const SYNC_WINDOW_PAST_DAYS = 56;
 export const SYNC_WINDOW_FUTURE_DAYS = 120;
 
 export function syncWindow(nowMs = Date.now()): { start: Date; end: Date } {

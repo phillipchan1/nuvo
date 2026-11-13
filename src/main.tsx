@@ -21,6 +21,7 @@ import "./styles/flows.css";
 // The statement pages — sign-in, first run, welcome, paywall (D-192).
 import "./styles/statement.css";
 import "./styles/popovers.css";
+import "./styles/memory.css";
 // The phone — the kit at touch size (src/components/mobile/).
 import "./styles/phone.css";
 import "./styles/native.css";
@@ -81,7 +82,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat / ?capture / ?sheets / ?rail / ?login, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat / ?capture / ?sheets / ?rail / ?login / ?memory, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -101,6 +102,7 @@ const showCaptureHarness = import.meta.env.DEV && params.has("capture");
 const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
+const showMemoryHarness = import.meta.env.DEV && params.has("memory");
 const showStatementHarness = import.meta.env.DEV && params.has("statement");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 // `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
@@ -159,6 +161,14 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <StatementHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showMemoryHarness) {
+  void import("./components/memory/MemoryHarness").then(({ default: MemoryHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <MemoryHarness />
       </React.StrictMode>,
     );
   });

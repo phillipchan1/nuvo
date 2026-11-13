@@ -47,6 +47,7 @@ Statuses are owned by each doc's own header.
 
 **Time**
 - [`standing-slots.md`](./standing-slots.md) — recurring time with an affinity that acts as a magnet.
+- [`memory.md`](./memory.md) — what Nuvo learns about you, how sure it is, and where each memory is used; Rhythm (your hours and habits) is its first chapter (proposed).
 - [`project-slots.md`](./project-slots.md) — protected project time, so capacity stops lying.
 - [`activity-sources.md`](./activity-sources.md) — actuals from the world; GitHub as instance #2.
 

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemory } from "../../hooks/useMemory";
 import { Icon } from "../Icon";
 import { IconButton } from "../kit";
 import { TouchSegmented, SegCount } from "./touch";
@@ -67,6 +68,9 @@ import MobileTaskSheet from "./MobileTaskSheet";
 import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
+
+const MemoryPanel = lazy(() => import("../memory/MemoryPanel"));
+const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
 
 // Top-level destinations — the five surfaces you work from on the phone, the
 // desktop altitudes in order: Calendar · Tasks, then the three strategic ones —
@@ -205,6 +209,10 @@ export default function MobileShell() {
   const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
   const [chatOpen, setChatOpen] = useState(false);
+  // Memory (docs/memory.md §4.1): on the phone its dot rides the ✦, and it opens
+  // from the chat's header.
+  const memory = useMemory();
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -787,14 +795,25 @@ export default function MobileShell() {
         badge={(id) => (id === "tasks" ? inbox.length : 0)}
         onCapture={!chatOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
         onAskNuvo={!chatOpen && pickedIds.size === 0 ? () => openChat() : undefined}
+        nuvoDot={memory.hasNew}
       />
 
       {/* The Nuvo chat — a full-screen overlay over the shell (its own scroll +
           pinned composer sit better here than in a swipe-to-dismiss sheet). */}
       {chatOpen && (
         <div className="ph-overlay">
-          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} />
+          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} onMemory={() => setMemoryOpen(true)} />
         </div>
+      )}
+      {memoryOpen && (
+        <Suspense fallback={null}>
+          <MemoryPanel onClose={() => setMemoryOpen(false)} />
+        </Suspense>
+      )}
+      {memory.available && !memory.introduced && (
+        <Suspense fallback={null}>
+          <RhythmIntro />
+        </Suspense>
       )}
 
       {/* Plan the week — the ritual, full-screen over the shell */}

@@ -48,6 +48,7 @@ import {
   Segmented,
 } from "../kit";
 import { Icon } from "../Icon";
+import type { MemoryApi } from "../memory/MemoryPanel";
 import { FlowHead, FlowMeter } from "../rituals/FlowShell";
 
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -103,6 +104,9 @@ type RailProps = {
   onOverlay: (o: PlanOverlay | null) => void;
   onClose: () => void;
   railRef?: React.MutableRefObject<HTMLDivElement | null>;
+  /** Memory, when the host has it (docs/memory.md §4.5) — its sure
+   *  observations join What I noticed. Omitted = the planner's own only. */
+  learned?: MemoryApi | null;
 };
 
 /**
@@ -151,6 +155,7 @@ function PlanRailWeek({
   onWeek,
   memory,
   setMemory,
+  learned,
 }: RailProps & {
   memory: PlanMemory;
   setMemory: (f: (m: PlanMemory) => PlanMemory) => void;
@@ -307,6 +312,20 @@ function PlanRailWeek({
   );
   const today = toDateISO(new Date());
   const noticed = useMemo(() => proposals(memory, weekStartISO, today), [memory, weekStartISO, today]);
+  // Memory's sure observations join the planner's own (docs/memory.md §4.5):
+  // hours first (they change every number below them), then open windows,
+  // habits and chores — three noticed things at most, all told.
+  const mem = learned ?? null;
+  const RANK = { hours: 0, window: 1, habit: 2, repeat: 3 } as const;
+  const memNoticed = useMemo(
+    () =>
+      (mem?.items ?? [])
+        .filter((i) => i.section === "new" && i.observation && i.described.confidence === "sure")
+        .sort((a, b) => RANK[a.observation!.kind] - RANK[b.observation!.kind])
+        .slice(0, Math.max(0, 3 - noticed.length)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mem?.items, noticed.length],
+  );
   const stack = useMemo<StackItem[]>(() => {
     const out: StackItem[] = [];
     // what Nuvo noticed — at most three, each kept or forgotten
@@ -332,6 +351,30 @@ function PlanRailWeek({
         },
       });
     }
+    // what Memory noticed — written into your settings, slots or repeats only on Keep
+    if (mem?.available)
+      for (const it of memNoticed) {
+        out.push({
+          id: `memory:${it.key}`,
+          glyph: "↻",
+          cause: "noticed",
+          label: it.described.statement,
+          chip: it.described.evidence,
+          why: it.described.keep,
+          sub: it.described.keep,
+          yesLabel: "Keep",
+          noLabel: "Not true",
+          pips: it.observation?.pips,
+          yes: () => {
+            void mem.keep(it, { quiet: true });
+            return `Kept · ${it.described.title}`;
+          },
+          no: () => {
+            mem.refuse(it, { quiet: true });
+            return "Nuvo stopped looking for that";
+          },
+        });
+      }
     for (const u of d.result.unplaced) {
       const b = slotById.get(u.task.id);
       // splitting only helps when the refusal was about one long stretch, and a half fits
@@ -400,7 +443,7 @@ function PlanRailWeek({
       });
     }
     return out.filter((s) => !dismissed.has(s.id));
-  }, [d, slotById, inboxIds, dismissed, noticed, setMemory, today, record, weekStartISO]);
+  }, [d, slotById, inboxIds, dismissed, noticed, memNoticed, mem, setMemory, today, record, weekStartISO]);
 
   const decide = useCallback(
     (id: string, yes: boolean) => {

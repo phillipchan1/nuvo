@@ -44,6 +44,7 @@ import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep } from "../ritua
 import DurationSelect from "../DurationSelect";
 import { Button, Card, Dot, IconButton } from "../kit";
 import { PhEmpty, TouchButton } from "./touch";
+import MemoryNoticed from "../memory/MemoryNoticed";
 
 /** The forward beat — named after the ACT, not the destination. "Leftovers →"
  *  said where you'd land and nothing about what pressing it does; each press
@@ -384,6 +385,7 @@ export function OpenStep({ blockedMins }: { blockedMins: number }) {
       <p className="text-body tabular-nums text-muted">
         <span className="font-semibold text-ink">{hrs(blockedMins)}h</span> already on the calendar
       </p>
+      <MemoryNoticed />
     </>
   );
 }

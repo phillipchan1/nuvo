@@ -142,6 +142,7 @@ export function PhoneNav<T extends string>({
   badge,
   onCapture,
   onAskNuvo,
+  nuvoDot,
   children,
 }: {
   places: readonly Place<T>[];
@@ -153,6 +154,8 @@ export function PhoneNav<T extends string>({
    *  selection owns the corner). */
   onCapture?: () => void;
   onAskNuvo?: () => void;
+  /** Memory has something new (docs/memory.md §4.1): one dot on the ✦, no count. */
+  nuvoDot?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -161,7 +164,9 @@ export function PhoneNav<T extends string>({
         // Nuvo — the floating chat launcher, beside capture: a --raised 44px
         // square. Screen-aware: its starters match wherever you are.
         <button type="button" onClick={onAskNuvo} aria-label="Ask Nuvo" data-teach="nuvo" className="ph-launch">
-          <Icon name="sparkles" size={20} />
+          <span className={nuvoDot ? "sb-icon-dot" : undefined}>
+            <Icon name="sparkles" size={20} />
+          </span>
         </button>
       )}
       {onCapture && (
