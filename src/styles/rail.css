@@ -621,8 +621,6 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
 }
 .rail-section + .rail-section { margin-top: 6px; }
 .rail-list .k-section { padding: 0 8px; }
-.rail-section[data-tone="late"] .k-section > button > span:first-child,
-.rail-section[data-tone="late"] .k-section > span:first-child { color: var(--signal); }
 .rail-empty {
   padding: 28px 16px;
   text-align: center;

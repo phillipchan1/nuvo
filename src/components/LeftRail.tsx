@@ -844,9 +844,8 @@ function LeftRail({
     title: string,
     count: number,
     body: React.ReactNode,
-    tone?: "late",
   ) => (
-    <section key={key} className="rail-section" data-tone={tone}>
+    <section key={key} className="rail-section">
       <SectionHeader title={title} count={count} collapsed={!todayOpen[key]} onToggle={() => toggleToday(key)} />
       {todayOpen[key] && body}
     </section>
@@ -1049,7 +1048,6 @@ function LeftRail({
                 "Overdue",
                 todaySections.pinned.length,
                 todaySections.pinned.map((t) => <TaskRow key={t.id} {...rowProps(t)} />),
-                "late",
               )}
             {/* The day's work, split by the one fact that says whether it will
                 happen: does it have a time? The work with no time comes first —
