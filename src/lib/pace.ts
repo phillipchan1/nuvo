@@ -196,3 +196,22 @@ export function deckWeight(mins: number): string | null {
   const h = mins / 60;
   return `${h < 10 ? Math.round(h * 10) / 10 : Math.round(h)}h`;
 }
+
+/** How far through its committed span a project's clock stands — 0 at the
+ *  start of its first day, 1 at the end of its target day, clamped. The pace
+ *  TICK on a progress track (D-187): drawn beside the fill, so "ahead" and
+ *  "behind" are a picture of two measured facts — work done and time gone —
+ *  and never a word or a colour (P4, P6). A span is On Deck's committed
+ *  start → target; without both there is no clock, so it says nothing (null).
+ *
+ *  Deliberately linear and deliberately a count: the tick assumes nothing about
+ *  which day the work was planned for, and the fill it sits beside is pieces
+ *  done, not hours. Both limits are stated in `docs/design-language.md`
+ *  § Momentum. */
+export function spanElapsed(p: Pick<Project, "startDate" | "targetDate">, now: Date): number | null {
+  if (!p.startDate || !p.targetDate) return null;
+  const start = new Date(p.startDate + "T00:00:00").getTime();
+  const end = new Date(p.targetDate + "T23:59:59").getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
+  return Math.max(0, Math.min(1, (now.getTime() - start) / (end - start)));
+}

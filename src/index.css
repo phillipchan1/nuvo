@@ -1752,8 +1752,8 @@ body.nuvo-selecting * {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: 0 0 0 2px var(--accent);
-  animation: bloom 180ms var(--ease-out) forwards;
+  box-shadow: 0 0 0 2px var(--landed, var(--accent));
+  animation: bloom var(--d-land, 180ms) var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -2067,7 +2067,7 @@ select.field { appearance: none; -webkit-appearance: none; }
    part of the box now arrives at 0 together, so the removal is a no-op and the
    rows below glide up on one continuous curve. The content fades out in the first
    half so it never looks squashed. */
-:root { --d-task-complete: 270ms; }
+/* `--d-task-complete` is declared with the momentum tokens (styles/momentum.css). */
 /* Two beats on separate clocks: the content lets go first (fade), the box then
    folds on a symmetric curve. One shared front-loaded curve did 90% of the fold
    in the first 80ms and then crept — read as a lurch, not a glide. */
@@ -2088,12 +2088,17 @@ select.field { appearance: none; -webkit-appearance: none; }
     border-bottom-width: 0;
   }
 }
+/* LAND, then LET GO (design-language.md § Momentum): the check stamps and the
+   strike draws in the first half (`.land-stamp` / `.land-strike`, momentum.css),
+   and only then does the row leave. Every beat is a fraction of
+   `--d-task-complete`, which TaskRow also waits on — so a material that moves
+   faster (or E-ink, which doesn't move) writes exactly when its row is gone. */
 .task-completing {
   overflow: hidden;
   pointer-events: none;
   animation:
-    task-fade 150ms ease-in-out forwards,
-    task-fold 230ms cubic-bezier(0.4, 0, 0.2, 1) 40ms forwards;
+    task-fade calc(var(--d-task-complete) * 0.32) ease-in-out calc(var(--d-task-complete) * 0.5) forwards,
+    task-fold calc(var(--d-task-complete) * 0.45) cubic-bezier(0.4, 0, 0.2, 1) calc(var(--d-task-complete) * 0.55) forwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .task-completing { animation-duration: 1ms; animation-delay: 0s; }
@@ -2234,9 +2239,24 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: transparent;
 }
 .fc .fc-timegrid-now-indicator-line {
-  border-width: 1.5px 0 0;
+  border-width: 2px 0 0;
   /* The now-line glows like a horizon — the one warm pulse on the canvas. */
   box-shadow: 0 0 8px 0 color-mix(in srgb, var(--signal) 55%, transparent);
+}
+/* Momentum (D-187): the line has a WAKE — a soft band of the signal over the
+   minutes that just went by — so the eye reads which way time is moving.
+   Static: the line moves with the clock and never to get your attention (P9).
+   One pseudo-element on one line; no layer, no blur. Materials restate it in
+   their own idiom (src/skins/*.css, MOMENTUM). */
+.fc .fc-timegrid-now-indicator-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--now-wake-h, 22px);
+  background: linear-gradient(to top, var(--signal-soft), transparent);
+  pointer-events: none;
 }
 .fc .fc-timegrid-now-indicator-arrow {
   white-space: nowrap;

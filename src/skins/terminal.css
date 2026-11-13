@@ -621,6 +621,37 @@ html[data-skin="terminal"] .masthead {
   letter-spacing: 0em;
 }
 
+/* — MOMENTUM (D-187): Terminal fills CELL BY CELL. A console doesn't ease; it
+     redraws. So the land is three discrete steps (a block cursor stamping in),
+     an advance is eight cells of a progress bar, the strike types across the
+     title. Rank is weight, never size (the one-cell ladder above), so the hero
+     says it at 700. Tracks are square block bars, 4px — a progress meter in a
+     TUI is a row of filled cells. No light in this material: no wake, no bloom
+     ring. The pace tick is the CURSOR: drawn in the foreground, the way a TUI
+     marks "you are here". Each theme's --signal measured 1.8–2.9:1 against its
+     own --line in Nord, Monokai, Gruvbox dark, Solarized dark, Dracula and One
+     light — a tick you can't find on its track is no tick (contrast.md, D-187). */
+html[data-skin="terminal"] {
+  --ease-land: steps(3, end);
+  --ease-momentum: steps(8, end);
+  --hero-weight: 700;
+  --track-h: 4px;
+  --pace-tick-w: 2px;
+  --pace-tick: var(--text);
+  --landed: var(--accent);
+  --now-wake-h: 0px;
+}
+html[data-skin="terminal"] .pace-seg,
+html[data-skin="terminal"] .pace-rail,
+html[data-skin="terminal"] .pace-now,
+html[data-skin="terminal"] .commit-band,
+html[data-skin="terminal"] .commit-seal {
+  border-radius: 0;
+}
+html[data-skin="terminal"] .bloom::after {
+  display: none;
+}
+
 /* …and the INHERITED base, which the token ladder never touched: `body` is
    13px globally, so every element that never took a text-* utility — the spine
    rungs, plain buttons, bare spans — was rendering a full size ABOVE the cell.

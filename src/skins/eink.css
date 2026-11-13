@@ -161,6 +161,29 @@ html[data-skin="eink"] {
   --ease-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
 }
 
+/* — MOMENTUM (D-187): E-ink does not move. The panel refreshes; anything
+     between two states is ghosting. So every momentum motion is OFF here — the
+     1ms ladder above makes `lib/motion.ts` treat the material as reduced
+     motion, and the CSS keyframes collapse to their last frame — and ambition
+     is carried the reader's way: by SIZE and CONTRAST. The hero grows (26px,
+     still inside the 400–500 weight band), a progress track is a 4px ink bar
+     rather than a tinted hairline, the pace tick is full ink (E-ink's grey
+     --signal measured too faint against --line to read as a mark), and a
+     landed mark is ink. No gradients: no wake. No light: no bloom. */
+html[data-skin="eink"] {
+  --ease-land: steps(1, end);
+  --ease-momentum: steps(1, end);
+  --hero-weight: 500;
+  --track-h: 4px;
+  --pace-tick-w: 2px;
+  --pace-tick: var(--text);
+  --landed: var(--text);
+  --now-wake-h: 0px;
+}
+html[data-skin="eink"] .bloom::after {
+  display: none;
+}
+
 /* E-Ink: a reader doesn't shout — drop the caps and the tracking. */
 html[data-skin="eink"] .section-label {
   text-transform: none;
@@ -206,7 +229,7 @@ html[data-skin="eink"] [style*="font-weight: 7"] {
 }
 
 /* The heroes fold down with everything else and lead on size alone — the
-     masthead is 23px against a 14px body, which is rank enough. */
+     masthead is 26px against a 14px body, which is rank enough (D-187). */
 html[data-skin="eink"] .masthead,
 html[data-skin="eink"] .serif {
   font-variation-settings: normal;
@@ -218,7 +241,9 @@ html[data-skin="eink"] .serif {
      UI's, and the tracking comes back to zero (the base scale's negative
      tracking tightens a UI up; a panel read at arm's length wants the room). */
 html[data-skin="eink"] {
-  --text-display: 23px;
+  /* 26px (was 23): ambition on a reader is SIZE — the one rank lever the
+     material has (D-187). */
+  --text-display: 26px;
   --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.01em;
 

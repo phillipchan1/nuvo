@@ -86,6 +86,28 @@ html[data-skin="blueprint"] {
   --ease-out: cubic-bezier(0, 0, 1, 1); --ease-in-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
 }
 
+/* — MOMENTUM (D-187): Blueprint DRAFTS. Every motion is a line drawn at plotter
+     speed — linear, no overshoot: a ticked box is inked in, a fill is ruled
+     across, the commit seal is a line drawn under the week. The track is a 2px
+     drafted rule with square ends; the pace tick is the drafting orange. The
+     wake is shorter — a pencil shadow, not a glow. Durations derive from the
+     115ms base above, so the land is ~184ms. */
+html[data-skin="blueprint"] {
+  --ease-land: cubic-bezier(0, 0, 1, 1);
+  --ease-momentum: cubic-bezier(0, 0, 1, 1);
+  --hero-weight: 600;
+  --track-h: 2px;
+  --pace-tick-w: 2px;
+  --pace-tick: var(--signal);
+  --landed: var(--accent);
+  --now-wake-h: 12px;
+}
+html[data-skin="blueprint"] .pace-seg,
+html[data-skin="blueprint"] .pace-rail,
+html[data-skin="blueprint"] .commit-band {
+  border-radius: 0;
+}
+
 /* Blueprint: a drafting callout — wider tracking. */
 html[data-skin="blueprint"] .section-label {
   letter-spacing: 0.18em;

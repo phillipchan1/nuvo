@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import "./styles/native.css";
+import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";
 import { PostHogProvider } from "@posthog/react";
 import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";

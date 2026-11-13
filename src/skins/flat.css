@@ -606,3 +606,20 @@ html[data-skin="flat"] {
   --d-fast: 90ms; --d-base: 150ms;
   background: var(--bg);
 }
+
+/* — MOMENTUM (D-187): Flat SNAPS. The modern-app land is crisp and exact — it
+     arrives and stops, no overshoot (a spring on a flat UI reads as a toy).
+     The hero is the sans at a heavier step, because Flat has no serif to carry
+     ceremony. No gradients in this material, so the now-line keeps its weight
+     and loses the wake. Colour roles come from each scheme's own --signal /
+     --accent (Snow · Chalk · Ink · Arctic · Linen), never Paper's. */
+html[data-skin="flat"] {
+  --ease-land: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-momentum: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hero-weight: 700;
+  --track-h: 3px;
+  --pace-tick-w: 2px;
+  --pace-tick: var(--signal);
+  --landed: var(--accent);
+  --now-wake-h: 0px;
+}

@@ -1,0 +1,229 @@
+/* ════════════════════════════════════════════════════════════════════════
+   MOMENTUM — the ambition axis of the design language (D-187).
+
+   Warm Paper said where things are. This file says how they MOVE when you
+   move them: a task you tick lands, a project you push advances, a week you
+   commit locks in, and the hero of a surface carries the weight of what it
+   names. The grammar is in docs/design-language.md § Momentum; this is the
+   one home for its tokens and its keyframes.
+
+   Every token here is a ROLE that each material re-expresses in its own idiom
+   (src/skins/*.css, the MOMENTUM block in each). Paper settles on a spring,
+   Flat snaps, Blueprint draws at plotter speed, Terminal fills cell by cell,
+   E-ink does not move at all and carries ambition as size and contrast.
+   `tests/momentum.test.ts` fails if a material forgets one.
+
+   Four laws the whole block keeps:
+     · TRANSFORM AND OPACITY ONLY. No layout, no filter, no blur — and nothing
+       here repeats per row except on the one row you just acted on.
+     · ONLY WHAT YOU DID. A motion is the visible consequence of the user's own
+       act, in the moment of the act. Data loading, a realtime echo and a write
+       the assistant made arrive still (P3, P9).
+     · FORWARD ONLY. Progress advances; a reversal (undo, reopen) snaps.
+     · REDUCED MOTION WINS. The global rule in index.css zeroes every CSS
+       animation; `lib/motion.ts` refuses to start a WAAPI one.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Registered, so `getComputedStyle` hands `lib/motion.ts` a resolved time
+   ("352ms") instead of the unevaluated `calc(220ms * 1.6)` an unregistered
+   custom property would return. */
+@property --d-land { syntax: "<time>"; inherits: true; initial-value: 352ms; }
+@property --d-advance { syntax: "<time>"; inherits: true; initial-value: 680ms; }
+@property --d-commit { syntax: "<time>"; inherits: true; initial-value: 864ms; }
+@property --d-stagger { syntax: "<time>"; inherits: true; initial-value: 72ms; }
+@property --d-task-complete { syntax: "<time>"; inherits: true; initial-value: 440ms; }
+
+:root {
+  /* ── durations: DERIVED from the material's own ladder ──────────────────
+     A skin that speeds up its base speeds these up with it — the D-096 rule
+     (a material that changes its easing must change its durations) holds by
+     construction, not by remembering. */
+  --d-land: calc(var(--d-base) * 1.6);        /* 352ms — a thing becomes true */
+  --d-advance: calc(var(--d-slow) * 2);       /* 680ms — a fill catches up    */
+  --d-commit: calc(var(--d-moment) * 1.6);    /* 864ms — the week locks in    */
+  --d-stagger: calc(var(--d-fast) * 0.55);    /*  72ms — one beat per item     */
+  /* The whole completion: land (stamp + strike), then let go (fade + fold).
+     TaskRow waits exactly this long before it writes — read through
+     `motionMs`, never hard-coded, so E-ink's instant refresh writes at once. */
+  --d-task-complete: calc(var(--d-land) * 1.25); /* 440ms */
+
+  /* ── easings ────────────────────────────────────────────────────────────
+     LAND: a damped spring sampled into linear() — ~8% overshoot, then rest.
+     The overshoot IS the weight: a thing set down lightly doesn't bounce.
+     MOMENTUM: fast off the mark, a long glide in — progress that was already
+     moving, not a bar that starts from rest. */
+  --ease-land: cubic-bezier(0.3, 1.35, 0.55, 1);
+  --ease-momentum: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── weight ─────────────────────────────────────────────────────────────
+     --hero-weight: the Fraunces weight of a surface's one hero (a floor, a
+     record, the committed week). 500 read as a caption set large; 600 is a
+     name that means it.
+     --track-h: a progress track's thickness. Progress has mass — 2px read as
+     a hairline, i.e. as structure, not as work done.
+     --pace-tick: the "now" tick on a track — where the span's clock stands. */
+  --hero-weight: 600;
+  --track-h: 3px;
+  --pace-tick-w: 2px;
+  --pace-tick: var(--signal);
+  /* the landed mark (a ticked box, a filled pip) — intent made true */
+  --landed: var(--accent);
+  /* the now-line's wake (the minutes just gone) — 0 where a material has no
+     gradients to draw one with */
+  --now-wake-h: 22px;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-land: linear(
+      0, 0.0453, 0.1569, 0.3034, 0.4608, 0.6121, 0.7466, 0.8582, 0.9451, 1.0081,
+      1.0496, 1.0732, 1.0828, 1.0821, 1.0748, 1.0635, 1.0505, 1.0375, 1.0256,
+      1.0154, 1.0073, 1.0013, 0.9971, 0.9945, 0.9933, 0.993, 0.9934, 0.9943, 1
+    );
+  }
+}
+
+/* ── type: the hero carries weight ──────────────────────────────────────────
+   A surface's one hero is `text-display masthead`. Display grows a step and
+   the masthead at that size drops its softened terminals: the editorial voice,
+   said with conviction. `:root` lifts this over each skin's `.masthead` rule so
+   a material speaks through --hero-weight instead of being overruled. */
+/* Plain CSS on purpose: this file is not run through Tailwind, and an
+   unlayered :root beats the `@layer theme` value the utility reads — while a
+   skin's own `html[data-skin]` ladder (Terminal's one cell, E-ink's reader
+   sizes) still outranks both. */
+:root {
+  --text-display: 28px;
+  --text-display--line-height: 1.08;
+  --text-display--letter-spacing: -0.024em;
+}
+@media (max-width: 767px) {
+  :root { --text-display: 25px; }
+}
+:root .masthead.text-display {
+  font-weight: var(--hero-weight);
+  font-variation-settings: "SOFT" 0, "WONK" 0;
+}
+
+/* ── LAND · the check stamps ────────────────────────────────────────────────
+   Starts small and lands at full size; the overshoot comes from --ease-land,
+   so a material whose land easing is linear or stepped gets no bounce for free. */
+@keyframes land-stamp {
+  from { transform: scale(0.62); }
+  to { transform: scale(1); }
+}
+.land-stamp {
+  animation: land-stamp var(--d-land) var(--ease-land) both;
+}
+
+/* ── LAND · the strike is drawn, not switched on ───────────────────────────
+   Sits on an inline span around the title so it is exactly as long as the
+   words. One element, one row, once. */
+.land-strike {
+  position: relative;
+}
+.land-strike::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 54%;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: left center;
+  animation: land-strike calc(var(--d-land) * 0.7) var(--ease-momentum) calc(var(--d-land) * 0.1) both;
+}
+@keyframes land-strike {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ── PACE TRACK (components/progress/PaceTrack.tsx) ────────────────────────
+   Track `--line`, fill the domain hue, a `--pace-tick` where now stands in the
+   span. The fill moves by transform only. */
+.pace-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--track-h);
+}
+.pace-seg,
+.pace-rail {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.pace-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+}
+.pace-now {
+  position: absolute;
+  top: 50%;
+  width: var(--pace-tick-w);
+  height: calc(var(--track-h) + 6px);
+  margin-left: calc(var(--pace-tick-w) / -2);
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--pace-tick);
+  pointer-events: none;
+}
+
+/* ── COMMIT · the week locks in (components/plan/WeekSetMoment.tsx) ───────── */
+@keyframes commit-band {
+  from { transform: scaleY(0.2) translateY(-6px); opacity: 0; }
+  to { transform: scaleY(1) translateY(0); opacity: 1; }
+}
+.commit-band {
+  transform-origin: bottom center;
+  animation: commit-band var(--d-land) var(--ease-land) both;
+  animation-delay: calc(var(--d-stagger) * var(--i, 0));
+}
+@keyframes commit-seal {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.commit-seal {
+  transform-origin: left center;
+  animation: commit-seal calc(var(--d-commit) * 0.6) var(--ease-momentum) both;
+  animation-delay: calc(var(--d-commit) * 0.4);
+}
+
+/* ── NOW · the leading edge has a wake ──────────────────────────────────────
+   The desktop Schedule draws it on FullCalendar's own line (index.css,
+   `.fc-timegrid-now-indicator-line::before`); the phone's Day canvas wears this
+   class. A soft band of the signal over the minutes that just went by, so the
+   eye reads which way time is moving. Static — never a pulse (P9). */
+.now-wake::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--now-wake-h, 22px);
+  background: linear-gradient(to top, var(--signal-soft), transparent);
+  pointer-events: none;
+}
+
+/* ── ARRIVE · a hero takes its place (no fade — it is readable on frame one) */
+@keyframes arrive {
+  from { transform: translateY(6px); }
+  to { transform: translateY(0); }
+}
+.arrive {
+  animation: arrive var(--d-slow) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .land-stamp,
+  .land-strike::after,
+  .commit-band,
+  .commit-seal,
+  .arrive {
+    animation: none;
+  }
+}
