@@ -200,6 +200,7 @@ const AppShellInner = memo(function AppShellInner() {
   const {
     nav,
     goRung,
+    jumpToRung,
     openFlow,
     closeFlow,
     focusDomain: navFocusDomain,
@@ -349,11 +350,19 @@ const AppShellInner = memo(function AppShellInner() {
   // must mean "you went there", never "something had to be picked".
 
   // ⌘1–4 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
+  //
+  // Chords, not characters: they can never be something the user is mid-way
+  // through typing, so — like ⌘J — they have NO text-field guard and NO "a modal
+  // is open" guard. Both used to be here, and the app lost its navigation the
+  // moment a modal autofocused its field (or simply was open). A rung jump lifts
+  // whatever modal is on top, then goes. Two honest exceptions: a surface that
+  // already spent the chord (the capture door owns ⌘1–3 for Task · Event · Slot
+  // and says so with preventDefault), and a flow, which owns the whole screen.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey) return;
       const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      if (!(e.metaKey || e.ctrlKey)) return;
+      const typing = el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 
       // ⌘[ — back navigation (standard macOS convention)
       if (e.key === "[") {
@@ -363,12 +372,14 @@ const AppShellInner = memo(function AppShellInner() {
         return;
       }
 
-      // Travelling the ladder while another surface owns the screen steered the
-      // floor BEHIND it — ⌘↓ with a record open moved a rung you couldn't see.
-      // ⌘[ stays live above this: it's a legitimate way *out* of an overlay.
-      if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
+      // A flow owns the whole screen; navigating the floor behind it is a lie.
+      if (nav.flow) return;
 
+      // ⌘↑ / ⌘↓ are also "caret to start / end" inside a field, so they keep the
+      // text guard — and, travelling the ladder one rung at a time, they stay out
+      // of a modal: ⌘↓ with a record open would move a rung you can't see.
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        if (typing || nav.overlay !== "none" || nav.floorModal) return;
         e.preventDefault();
         const i = LADDER.indexOf(rung);
         const next = e.key === "ArrowDown" ? Math.min(LADDER.length - 1, i + 1) : Math.max(0, i - 1);
@@ -376,19 +387,20 @@ const AppShellInner = memo(function AppShellInner() {
         // synchronous discrete update it blocked the keydown handler for ~51ms
         // (every other handler in the app is ~0.1ms). The nav write is all that
         // happens before paint; React renders the floor without blocking input.
-        startTransition(() => goRung(LADDER[next]));
+        startTransition(() => jumpToRung(LADDER[next]));
         return;
       }
 
+      if (e.shiftKey) return;
       const num = Number(e.key);
       if (num >= 1 && num <= LADDER.length) {
         e.preventDefault();
-        startTransition(() => goRung(LADDER[num - 1]));
+        startTransition(() => jumpToRung(LADDER[num - 1]));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goRung, rung, back, canGoBack, closeOverlay, nav.overlay, nav.flow, nav.floorModal]);
+  }, [jumpToRung, rung, back, canGoBack, closeOverlay, nav.overlay, nav.flow, nav.floorModal]);
 
   // ⌘J toggles Nuvo from any floor — not just the schedule view.
   useEffect(() => {
