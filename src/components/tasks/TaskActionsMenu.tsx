@@ -18,7 +18,9 @@
  * did nothing while the menu was open was a lie in a menu's own words.
  */
 
-import { shortcutLabel } from "../../lib/shortcutLabel";
+import type { IconName } from "../Icon";
+import { Kbd } from "../kit";
+import { PopIcon, keycaps as shortcutLabel, type PopGlyphName } from "../PopoverParts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Task } from "../../lib/types";
@@ -170,7 +172,7 @@ export default function TaskActionsMenu({
   };
 
   type Item =
-    | { kind: "action"; label: string; key?: string; danger?: boolean; action: () => void }
+    | { kind: "action"; label: string; key?: string; icon?: IconName | PopGlyphName; danger?: boolean; action: () => void }
     | { kind: "sep" }
     | { kind: "label"; label: string };
 
@@ -215,6 +217,7 @@ export default function TaskActionsMenu({
       : [{
           kind: "action",
           label: clock ? `${label} · ${clock}` : label,
+          icon: dateISO === todayISO(now) ? "sun" : "calendar",
           action: () => { moveToDay(mutations, task, dateISO); onClose(); },
         }];
 
@@ -223,22 +226,23 @@ export default function TaskActionsMenu({
     : [
     ...(onMakeSlot
       ? [
-          { kind: "action" as const, label: "Make one slot", key: "⌘G", action: () => { onClose(); onMakeSlot(); } },
+          { kind: "action" as const, label: "Make one slot", key: "⌘G", icon: "duration" as const, action: () => { onClose(); onMakeSlot(); } },
           { kind: "sep" as const },
         ]
       : []),
     {
-      kind: "action", label: "Open", key: "↵",
+      kind: "action", label: "Open", key: "↵", icon: "arrow-right" as const,
       action: () => {
         const el = document.querySelector<HTMLElement>(`[data-task-drag="${task.id}"]`);
         onOpen(el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40));
       },
     },
-    ...(onRename ? [{ kind: "action" as const, label: "Rename", key: "⌘E", action: () => { onClose(); onRename(); } }] : []),
+    ...(onRename ? [{ kind: "action" as const, label: "Rename", key: "⌘E", icon: "pen" as const, action: () => { onClose(); onRename(); } }] : []),
     {
       kind: "action",
       label: done ? "Reopen" : "Mark done",
       key: "E",
+      icon: done ? ("refresh" as const) : ("check" as const),
       action: () => { toggleDone(); onClose(); },
     },
     { kind: "sep" },
@@ -246,38 +250,41 @@ export default function TaskActionsMenu({
     ...dayItem("Tomorrow", tomorrowISO()),
     ...dayItem("Next week", nextWeekISO()),
     ...(timed
-      ? [{ kind: "action" as const, label: "Anytime that day", action: () => { mutations.unblock(task, TRIAGE_UNDO); onClose(); } }]
+      ? [{ kind: "action" as const, label: "Anytime that day", icon: "clock" as const, action: () => { mutations.unblock(task, TRIAGE_UNDO); onClose(); } }]
       : []),
-    ...(onDate ? [{ kind: "action" as const, label: "When…", key: "T", action: () => { onClose(); onDate(); } }] : []),
-    ...(onSchedule ? [{ kind: "action" as const, label: "Pick a time…", action: onSchedule }] : []),
+    ...(onDate ? [{ kind: "action" as const, label: "When…", key: "T", icon: "calendar" as const, action: () => { onClose(); onDate(); } }] : []),
+    ...(onSchedule ? [{ kind: "action" as const, label: "Pick a time…", icon: "clock" as const, action: onSchedule }] : []),
     { kind: "sep" },
-    ...(onMove ? [{ kind: "action" as const, label: "Move to…", key: "V", action: () => { onClose(); onMove(); } }] : []),
+    ...(onMove ? [{ kind: "action" as const, label: "Move to…", key: "V", icon: "arrow-right" as const, action: () => { onClose(); onMove(); } }] : []),
     ...(task.status !== "inbox"
       ? [{
           kind: "action" as const,
           // Say where it lands: project work rests in its project, not the Inbox.
           label: task.project_id ? "Back to its project" : "Return to inbox",
+          icon: task.project_id ? ("folder" as const) : ("inbox" as const),
           action: () => { mutations.backToInbox(task, TRIAGE_UNDO); onClose(); },
         }]
       : []),
     ...(task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id)
-      ? [{ kind: "action" as const, label: "File to project", action: () => { mutations.fileToProject(task); onClose(); } }]
+      ? [{ kind: "action" as const, label: "File to project", icon: "folder" as const, action: () => { mutations.fileToProject(task); onClose(); } }]
       : []),
     {
       kind: "action",
       label: inWeek ? "Remove from week" : "Commit to this week",
+      icon: "week",
       action: () => { commitToWeek(task); onClose(); },
     },
     ...(onDuplicate || onToEvent || onLabel ? [{ kind: "sep" as const }] : []),
-    ...(onDuplicate ? [{ kind: "action" as const, label: "Duplicate", action: () => { onDuplicate(); onClose(); } }] : []),
-    ...(onToEvent ? [{ kind: "action" as const, label: onToEvent.label, action: onToEvent.action }] : []),
-    ...(onLabel ? [{ kind: "action" as const, label: "Label…", key: "#", action: onLabel }] : []),
+    ...(onDuplicate ? [{ kind: "action" as const, label: "Duplicate", icon: "copy" as const, action: () => { onDuplicate(); onClose(); } }] : []),
+    ...(onToEvent ? [{ kind: "action" as const, label: onToEvent.label, icon: "calendar" as const, action: onToEvent.action }] : []),
+    ...(onLabel ? [{ kind: "action" as const, label: "Label…", key: "#", icon: "tag" as const, action: onLabel }] : []),
     { kind: "sep" },
     recurring
       ? {
           kind: "action" as const,
           label: "Trash…",
           key: "⌫",
+          icon: "trash" as const,
           danger: true,
           action: () => setDeleteMode(true),
         }
@@ -285,6 +292,7 @@ export default function TaskActionsMenu({
           kind: "action" as const,
           label: "Trash",
           key: "⌫",
+          icon: "trash" as const,
           danger: true,
           action: () => { mutations.trash(task); onClose(); },
         },
@@ -361,28 +369,23 @@ export default function TaskActionsMenu({
       role="menu"
       aria-label={task.title}
       data-nested-surface=""
-      className="pop-in [--pop-origin:top_left] elev-3 fixed z-[70] w-[224px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+      className="k-pop"
       // Client px measured, CSS px placed — under UI zoom the two differ, and the
       // calendar's block menu (which now IS this menu) had always corrected it.
-      style={{ top: fixedCssPx(pos.top), left: fixedCssPx(pos.left), maxHeight: "calc(100vh - 16px)" }}
+      style={{ top: fixedCssPx(pos.top), left: fixedCssPx(pos.left), width: 240, maxHeight: "calc(100vh - 16px)", zIndex: 70 }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Whose menu this is — on a narrow calendar block it's the only place
           the full title shows, and every calendar menu already led with it. */}
-      <div className="truncate border-b border-line px-3 pb-1.5 pt-0.5 text-meta text-muted">{task.title}</div>
+      <div className="k-mtitle">{task.title}</div>
       {items.map((item, i) => {
         if (item.kind === "sep") {
           // Leading, trailing and doubled rules come from optional items.
           const prev = items[i - 1];
           if (i === 0 || i === items.length - 1 || prev?.kind === "sep") return null;
-          return <div key={i} className="my-1 border-t border-line" />;
+          return <div key={i} className="k-msep" role="separator" />;
         }
-        if (item.kind === "label")
-          return (
-            <div key={i} className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              {item.label}
-            </div>
-          );
+        if (item.kind === "label") return <div key={i} className="k-mlabel">{item.label}</div>;
         actionIndex += 1;
         const on = actionIndex === lit;
         const idx = actionIndex;
@@ -391,22 +394,21 @@ export default function TaskActionsMenu({
             key={i}
             type="button"
             role="menuitem"
+            tabIndex={-1}
             onMouseEnter={() => setLit(idx)}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               item.action();
             }}
-            // Destructive in ink at rest, `--danger` when lit (D-101) — not
-            // `--signal`, which on this screen means "now".
-            className={`fast flex min-h-7 w-full items-center gap-2 px-3 py-1.5 text-left text-caption ${
-              on ? "bg-bg" : ""
-            } ${item.danger && on ? "text-danger" : "text-text"}`}
+            className="k-mi"
+            data-lit={on || undefined}
+            // Destructive in `--danger` — not `--signal`, which means "now".
+            data-danger={item.danger || undefined}
           >
-            <span className="flex-1 truncate">{item.label}</span>
-            {item.key && (
-              <span className="mono text-meta text-muted">{shortcutLabel(item.key)}</span>
-            )}
+            {item.icon ? <PopIcon name={item.icon} /> : <span className="k-mi-ico" aria-hidden />}
+            <span className="k-mi-label">{item.label}</span>
+            {item.key && <Kbd keys={shortcutLabel(item.key)} />}
           </button>
         );
       })}

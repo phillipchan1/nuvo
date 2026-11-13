@@ -16,12 +16,12 @@ import {
 const SETPOS_SHORT: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", [-1]: "Last" };
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 import { parseDateISO } from "../lib/dates";
-import { Btn, Modal } from "./ui";
 import { useEscape } from "../hooks/useEscape";
 import { useIsMobile } from "../hooks/useIsMobile";
 import type { RecurrenceScope } from "../lib/types";
 import Sheet from "./mobile/Sheet";
 import { FactRow, SHEET_SCROLL } from "./mobile/sheetKit";
+import { Button, Dialog, IconButton, Input, Menu, MenuItem, MenuLabel, MenuSeparator, Segmented } from "./kit";
 
 /** edit/move/delete offer all three scopes. `answer` (RSVP, guests, Meet)
  *  has no "following" — that would split the series to answer an invite.
@@ -33,7 +33,7 @@ export type RecurrenceScopeMode = "edit" | "move" | "delete" | "answer" | "rule"
  * The this-vs-series prompt. Every write on a repeating event uses this one
  * dialog — title, place, notes, schedule, RSVP, guests, Meet, drag, delete.
  * A recurring edit that writes THIS without asking is how an all-day flip
- * silently became a one-off exception.
+ * silently became a one-off exception. A kit Dialog: a Sheet on the phone.
  */
 export function RecurrenceScopeDialog({
   onConfirm,
@@ -78,66 +78,45 @@ export function RecurrenceScopeDialog({
   );
 
   return (
-    <Modal onClose={onCancel} width="max-w-[320px]" align="center">
-      <div className="p-5">
-        <p className="mb-1 text-label font-semibold uppercase tracking-widest text-muted">
-          Recurring event
-        </p>
-        <h2 className="mb-4 text-head font-semibold leading-snug text-text">
-          {mode === "delete"
-            ? "Delete this event or the whole series?"
-            : mode === "rule"
-              ? "Change the repeat from here, or for the whole series?"
-              : "Edit this event or the whole series?"}
-        </h2>
-
-        <div className="mb-5 flex flex-col gap-1.5">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setScope(opt.value)}
-              className={`tap fast flex w-full items-start gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-left transition-colors ${
-                scope === opt.value
-                  ? "border-accent bg-accent-soft"
-                  : "border-line hover:border-line-strong hover:bg-surface-2"
-              }`}
-            >
-              <span
-                className={`mt-[3px] h-3.5 w-3.5 shrink-0 rounded-full border-2 transition-colors ${
-                  scope === opt.value ? "border-accent bg-accent" : "border-muted"
-                }`}
-              />
-              <span>
-                <span className="block text-caption font-medium leading-tight text-text">
-                  {opt.label}
-                </span>
-                <span className="mt-0.5 block text-meta leading-snug text-muted">{opt.sub}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="tap fast rounded-[var(--radius-sm)] px-3 py-1.5 text-caption text-muted hover:bg-bg"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onConfirm(scope)}
-            className={`tap fast rounded-[var(--radius-sm)] px-3 py-1.5 text-caption font-medium hover:opacity-90 ${
-              mode === "delete" ? "bg-signal text-on-accent" : "bg-accent text-on-accent"
-            }`}
-          >
+    <Dialog
+      onClose={onCancel}
+      width={380}
+      align="center"
+      title={
+        mode === "delete"
+          ? "Delete this event or the whole series?"
+          : mode === "rule"
+            ? "Change the repeat from here, or for the whole series?"
+            : "Edit this event or the whole series?"
+      }
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button kind={mode === "delete" ? "danger-solid" : "primary"} onClick={() => onConfirm(scope)}>
             {mode === "delete" ? "Delete" : "Done"}
+          </Button>
+        </>
+      }
+    >
+      <div role="radiogroup" aria-label="Which events" className="k-choices">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={scope === opt.value}
+            onClick={() => setScope(opt.value)}
+            className="k-choice"
+          >
+            <span className="k-choice-mark" aria-hidden />
+            <span className="k-choice-text">
+              <b>{opt.label}</b>
+              <small>{opt.sub}</small>
+            </span>
           </button>
-        </div>
+        ))}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -185,10 +164,50 @@ export function useRecurringScope(recurring: boolean) {
   return { pending, commit, confirm, cancel, dismiss };
 }
 
+/** The delete act in a card's footer: a quiet glyph that reddens under the
+ *  pointer — or, outside a footer, a danger button. */
+function DeleteTrigger({
+  quiet,
+  label,
+  open,
+  setRef,
+  onClick,
+}: {
+  quiet?: boolean;
+  label: string;
+  open?: boolean;
+  setRef?: (el: HTMLButtonElement | null) => void;
+  onClick: () => void;
+}) {
+  return quiet ? (
+    <IconButton
+      ref={setRef}
+      size="xs"
+      label={label}
+      icon={<Icon name="trash" size={14} />}
+      onClick={onClick}
+      aria-haspopup={setRef ? "menu" : undefined}
+      aria-expanded={setRef ? Boolean(open) : undefined}
+      data-quiet-danger=""
+    />
+  ) : (
+    <Button
+      ref={setRef}
+      kind="danger"
+      icon={<Icon name="trash" size={14} />}
+      onClick={onClick}
+      aria-haspopup={setRef ? "menu" : undefined}
+      aria-expanded={setRef ? Boolean(open) : undefined}
+    >
+      {label}
+    </Button>
+  );
+}
+
 /**
  * A delete control that fans out into series scopes when the item repeats.
- * Non-recurring → a plain signal button (onSimple). Recurring → a menu:
- * this occurrence · this & following · whole series.
+ * Non-recurring → one act (onSimple). Recurring → a menu: this occurrence ·
+ * this & following · whole series.
  */
 export function RecurrenceDeleteButton({
   recurring,
@@ -201,8 +220,8 @@ export function RecurrenceDeleteButton({
 }: {
   recurring: boolean;
   label?: string;
-  /** Footer voice: plain text that only turns `--signal` on hover / when the
-   *  scope menu is open. A permanently-red button in a detail card's footer
+  /** Footer voice: a glyph that only reddens under the pointer / while its
+   *  menu is open. A permanently-red button in a detail card's footer
    *  outshouts the act the card is actually for. */
   quiet?: boolean;
   onSimple: () => void;
@@ -210,50 +229,19 @@ export function RecurrenceDeleteButton({
   onFollowing: () => void;
   onSeries: () => void;
 }) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
-  // Declared before the early return — a hook can't sit behind a condition.
-  useEscape(open, () => setOpen(false));
-  const quietCls = `fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
-    open ? "text-signal" : "text-muted hover:text-signal"
-  }`;
-  if (!recurring)
-    return quiet ? (
-      <button type="button" onClick={onSimple} className={quietCls}>{label}</button>
-    ) : (
-      <Btn kind="signal" onClick={onSimple}>{label}</Btn>
-    );
-  const items: { label: string; fn: () => void }[] = [
-    { label: "This occurrence", fn: onThis },
-    { label: "This & following", fn: onFollowing },
-    { label: "Whole series", fn: onSeries },
-  ];
+  if (!recurring) return <DeleteTrigger quiet={quiet} label={label} onClick={onSimple} />;
   return (
-    <div className="relative shrink-0">
-      {quiet ? (
-        <button type="button" onClick={() => setOpen((o) => !o)} className={quietCls}>{label} ▾</button>
-      ) : (
-        <Btn kind="signal" onClick={() => setOpen((o) => !o)}>{label} ▾</Btn>
-      )}
-      {open && (
-        <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full right-0 z-[61] mb-1 w-44 overflow-hidden rounded-md border border-line bg-surface elev-3">
-            <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              Delete
-            </div>
-            {items.map((o) => (
-              <button
-                key={o.label}
-                onClick={() => { o.fn(); setOpen(false); }}
-                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    <>
+      <DeleteTrigger quiet={quiet} label={`${label}…`} open={open} setRef={setBtn} onClick={() => setOpen((o) => !o)} />
+      <Menu anchor={btn} open={open} onClose={() => setOpen(false)} placement="top-end" label={label}>
+        <MenuLabel>{label}</MenuLabel>
+        <MenuItem danger onSelect={onThis}>This occurrence</MenuItem>
+        <MenuItem danger onSelect={onFollowing}>This & following</MenuItem>
+        <MenuItem danger onSelect={onSeries}>Whole series</MenuItem>
+      </Menu>
+    </>
   );
 }
 
@@ -279,22 +267,13 @@ export function SlotDeleteButton({
   quiet?: boolean;
   onDelete: (scope: SlotDeleteScope, deleteTasks: boolean) => void;
 }) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [deleteTasks, setDeleteTasks] = useState(false);
-  useEscape(open, () => setOpen(false));
-  const quietCls = `fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
-    open ? "text-signal" : "text-muted hover:text-signal"
-  }`;
 
   // Nothing to decide — a plain, empty, non-recurring slot deletes outright.
   if (!recurring && taskCount === 0) {
-    return quiet ? (
-      <button type="button" onClick={() => onDelete("simple", false)} className={quietCls}>
-        Delete
-      </button>
-    ) : (
-      <Btn kind="signal" onClick={() => onDelete("simple", false)}>Delete slot</Btn>
-    );
+    return <DeleteTrigger quiet={quiet} label="Delete slot" onClick={() => onDelete("simple", false)} />;
   }
 
   const scopes: { scope: SlotDeleteScope; label: string }[] = recurring
@@ -306,67 +285,36 @@ export function SlotDeleteButton({
     : [{ scope: "simple", label: "Delete slot" }];
 
   return (
-    <div className="relative shrink-0">
-      {quiet ? (
-        <button type="button" onClick={() => setOpen((o) => !o)} className={quietCls}>Delete ▾</button>
-      ) : (
-        <Btn kind="signal" onClick={() => setOpen((o) => !o)}>Delete slot ▾</Btn>
-      )}
-      {open && (
-        <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full right-0 z-[61] mb-1 w-60 overflow-hidden rounded-md border border-line bg-surface elev-3">
-            {taskCount > 0 && (
-              <div className="border-b border-line px-3 py-2.5">
-                <label className="flex items-start gap-2 text-caption text-text">
-                  <input
-                    type="checkbox"
-                    checked={deleteTasks}
-                    onChange={(e) => setDeleteTasks(e.target.checked)}
-                    className="mt-0.5 shrink-0"
-                  />
-                  <span>
-                    Also delete {taskCount} task{taskCount === 1 ? "" : "s"} inside
-                    <span className="mt-0.5 block text-label text-muted">
-                      {deleteTasks
-                        ? "The tasks are trashed with the slot."
-                        : `Kept on ${dayLabel}, just un-slotted.`}
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-            <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              Delete
-            </div>
-            {scopes.map((s) => (
-              <button
-                key={s.scope}
-                onClick={() => { onDelete(s.scope, taskCount > 0 && deleteTasks); setOpen(false); }}
-                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** A small repeat icon shared by the chip and the picker header. */
-function RepeatGlyph({ className = "" }: { className?: string }) {
-  return (
-    <Icon name="repeat" size={11} className={className} />
+    <>
+      <DeleteTrigger quiet={quiet} label="Delete slot…" open={open} setRef={setBtn} onClick={() => setOpen((o) => !o)} />
+      <Menu anchor={btn} open={open} onClose={() => setOpen(false)} placement="top-end" label="Delete slot">
+        {taskCount > 0 && (
+          <>
+            <MenuItem checked={deleteTasks} keepOpen onSelect={() => setDeleteTasks((v) => !v)}>
+              Also delete {taskCount} task{taskCount === 1 ? "" : "s"} inside
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuLabel>{taskCount > 0 && !deleteTasks ? `Tasks stay on ${dayLabel}` : "Delete"}</MenuLabel>
+        {scopes.map((s) => (
+          <MenuItem key={s.scope} danger onSelect={() => onDelete(s.scope, taskCount > 0 && deleteTasks)}>
+            {s.label}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
   );
 }
 
 /**
  * The control the user clicks to set/edit a repeat — owns the picker's open
  * state. Shows the humanized rule when one is set, "Repeat" otherwise.
- * Default `chip` variant drops among the schedule chips in a detail popover;
- * `block` is a full-width, tall row for composers where it's a primary action.
+ *
+ *   value  a value in an inspector row (the row's glyph says "repeat")
+ *   chip   a small button among other controls
+ *   block  a full-width row for composers where it's a primary action
+ *   row    the phone sheets' hairline settings row (label · value · ›)
  */
 export function RepeatControl({
   anchorISO,
@@ -380,8 +328,7 @@ export function RepeatControl({
   value: RecurrenceRule | null;
   onChange: (rule: RecurrenceRule | null) => void;
   disabled?: boolean;
-  /** `row` is the phone sheets' hairline settings row (label · value · ›). */
-  variant?: "chip" | "block" | "row";
+  variant?: "chip" | "block" | "row" | "value";
   /** What the `row` says when there is no rule to describe. An event flagged as
    *  repeating whose rule hasn't arrived yet is NOT "Does not repeat". */
   emptyLabel?: string;
@@ -390,47 +337,58 @@ export function RepeatControl({
   const on = Boolean(value);
   const open = (e: React.MouseEvent<HTMLButtonElement>) =>
     setAnchor(e.currentTarget.getBoundingClientRect());
-  const label = value ? describeRule(value, anchorISO) : "Repeat";
+  const rule = value ? describeRule(value, anchorISO) : null;
+  const label = rule ?? "Repeat";
   return (
     <>
       {variant === "row" ? (
         <FactRow
           icon="repeat"
           label="Repeat"
-          value={value ? describeRule(value, anchorISO) : (emptyLabel ?? "Does not repeat")}
+          value={rule ?? (emptyLabel ?? "Does not repeat")}
           valueColor={on ? "var(--accent)" : null}
           onClick={open}
         />
+      ) : variant === "value" ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={open}
+          // The name is "Repeat" (what the row is); the rule rides after it.
+          aria-label={rule ? `Repeat: ${rule}` : "Repeat"}
+          title={rule ?? "Set a repeat"}
+          aria-haspopup="dialog"
+          className="insp-v"
+          data-empty={on ? undefined : ""}
+        >
+          <span>{rule ?? (emptyLabel ?? "Doesn't repeat")}</span>
+        </button>
       ) : variant === "block" ? (
         <button
+          type="button"
           disabled={disabled}
           onClick={open}
-          title={value ? describeRule(value, anchorISO) : "Set a repeat"}
-          className={`fast flex w-full items-center gap-3 rounded-[var(--radius)] border px-3.5 py-3 text-body disabled:opacity-40 ${
-            on
-              ? "border-accent/35 bg-accent-soft text-accent"
-              : "border-line bg-surface-2 text-ink hover:border-line-strong hover:bg-bg"
-          }`}
+          title={rule ?? "Set a repeat"}
+          className="k-field k-select tap-h w-full"
+          data-on={on || undefined}
         >
-          <RepeatGlyph className="shrink-0" />
-          <span className={`flex-1 truncate text-left ${on ? "font-medium" : ""}`}>{label}</span>
-          {!on && <span className="shrink-0 text-meta text-muted">Does not repeat</span>}
-          <Icon name="chevron-right" size={14} className="shrink-0 text-muted" />
+          <span className="k-select-val">
+            <Icon name="repeat" size={14} />
+            {rule ?? "Does not repeat"}
+          </span>
+          <Icon name="chevron-right" size={12} />
         </button>
       ) : (
-        <button
+        <Button
+          size="xs"
           disabled={disabled}
           onClick={open}
-          title={value ? describeRule(value, anchorISO) : "Set a repeat"}
-          className={`fast inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label disabled:opacity-40 ${
-            on
-              ? "bg-accent-soft font-medium text-accent"
-              : "bg-bg text-muted hover:brightness-95 dark:hover:brightness-110"
-          }`}
+          title={rule ?? "Set a repeat"}
+          active={on}
+          icon={<Icon name="repeat" size={12} />}
         >
-          <RepeatGlyph />
           <span className="max-w-[150px] truncate">{label}</span>
-        </button>
+        </Button>
       )}
       {anchor && (
         <RecurrencePicker
@@ -445,20 +403,7 @@ export function RepeatControl({
   );
 }
 
-const POP_W = 288;
-
-/** A small radio dot used by the preset rows. */
-function Dot({ on }: { on: boolean }) {
-  return (
-    <span
-      className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border-2 transition-colors ${
-        on ? "border-accent" : "border-line-strong"
-      }`}
-    >
-      {on && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-    </span>
-  );
-}
+const POP_W = 296;
 
 type EndMode = "never" | "on" | "after";
 
@@ -547,19 +492,32 @@ type RepeatPickerProps = {
 
 /**
  * The repeat editor. On a desktop it is a popover anchored beside the control
- * that opened it; on a phone it is a bottom sheet — a 288px floating card with
- * 28px rows and a custom builder wider than itself is exactly the cursor-
- * anchored popover the phone's golden rule bans. Returns a RecurrenceRule (or
- * null for "does not repeat") via onPick.
+ * that opened it; on a phone it is a bottom sheet — a small floating card with
+ * a custom builder wider than itself is exactly the cursor-anchored popover the
+ * phone's golden rule bans. Returns a RecurrenceRule (or null for "does not
+ * repeat") via onPick.
  */
 export default function RecurrencePicker(props: RepeatPickerProps) {
   const mobile = useIsMobile();
   return mobile ? <RepeatSheet {...props} /> : <RecurrencePopover {...props} />;
 }
 
+const FREQS = [
+  { value: "daily" as const, label: "Day" },
+  { value: "weekly" as const, label: "Week" },
+  { value: "monthly" as const, label: "Month" },
+  { value: "yearly" as const, label: "Year" },
+];
+const ENDS = [
+  { value: "never" as const, label: "Never" },
+  { value: "on" as const, label: "On date" },
+  { value: "after" as const, label: "After" },
+];
+
 /**
- * The desktop face: contextual presets up top, an expandable custom builder
- * below, anchored beside the control that opened it.
+ * The desktop face: a Picker of contextual presets (checked), then a custom
+ * builder that opens in place below them, anchored beside the control that
+ * opened it.
  */
 function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: RepeatPickerProps) {
   const {
@@ -574,10 +532,10 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
   const popRef = useRef<HTMLDivElement>(null);
   // The popover is only mounted while open, so it is always active here.
   useEscape(true, onClose);
-  const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
+  const [pos, setPos] = useState<{ top: number; left: number; origin: string }>({
     top: anchor.bottom + 6,
     left: anchor.left,
-    side: "right",
+    origin: "top left",
   });
 
   useLayoutEffect(() => {
@@ -590,96 +548,74 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
     if (left + POP_W > vw - 8) left = vw - 8 - POP_W;
     left = Math.max(8, left);
     let top = anchor.bottom + 6;
-    if (top + h > vh - 8) top = Math.max(8, anchor.top - 6 - h);
-    setPos({ top, left, side: "right" });
+    let origin = "top left";
+    if (top + h > vh - 8) {
+      top = Math.max(8, anchor.top - 6 - h);
+      origin = "bottom left";
+    }
+    setPos({ top, left, origin });
   }, [anchor]);
 
-  const seg = (active: boolean) =>
-    `fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-label font-medium transition-colors ${
-      active ? "bg-accent text-on-accent" : "text-muted hover:text-ink"
-    }`;
-
   // `data-nested-surface`: a floating layer of its own — a press in it (or on
-  // its scrim) belongs to it, not to the composer it was opened from, which
-  // closes on any press outside itself (DraftComposer, D-158).
+  // its scrim) belongs to it, not to the card it was opened from, which closes
+  // on any press outside itself (DraftComposer, D-158; the inspectors).
   return createPortal(
     <>
       <div data-nested-surface="" className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
         ref={popRef}
         data-nested-surface=""
-        className="moment fixed z-[61] flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
-        style={{ top: pos.top, left: pos.left, width: POP_W, boxShadow: "var(--shadow-3)" }}
+        data-repeat-picker=""
+        className="k-pop"
+        style={{ top: pos.top, left: pos.left, width: POP_W, zIndex: 61, ["--pop-origin" as string]: pos.origin }}
         onKeyDown={(e) => onCustomFieldEnter(e, custom, () => onPick(buildCustom()))}
       >
-        <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-2">
-          <Icon name="repeat" size={13} className="text-accent" />
-          <span className="text-caption font-semibold text-text">Repeat</span>
-        </div>
+        {/* Presets — one of them, checked. */}
+        {presets.map((p) => {
+          const on = !custom && rulesEqual(p.rule, current);
+          return (
+            <button key={p.label} type="button" onClick={() => onPick(p.rule)} className="k-mi" aria-pressed={on}>
+              <span className="k-mi-label">{p.label}</span>
+              {on && <Icon name="check" size={14} className="k-mi-check" />}
+            </button>
+          );
+        })}
+        <div className="k-msep" role="separator" />
+        <button type="button" onClick={() => setCustom((c) => !c)} className="k-mi" aria-expanded={custom}>
+          <span className="k-mi-label">Custom…</span>
+          {custom && <Icon name="check" size={14} className="k-mi-check" />}
+        </button>
 
-        {/* Presets */}
-        <div className="flex flex-col px-1.5 pb-1">
-          {presets.map((p) => {
-            const on = !custom && rulesEqual(p.rule, current);
-            return (
-              <button
-                key={p.label}
-                onClick={() => onPick(p.rule)}
-                className="fast flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-bg"
-              >
-                <Dot on={on} />
-                <span className={`text-caption ${on ? "font-medium text-text" : "text-text"}`}>{p.label}</span>
-              </button>
-            );
-          })}
-
-          {/* Custom toggle */}
-          <button
-            onClick={() => setCustom((c) => !c)}
-            className="fast flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-bg"
-          >
-            <Dot on={custom} />
-            <span className={`text-caption ${custom ? "font-medium text-text" : "text-text"}`}>Custom…</span>
-          </button>
-        </div>
-
-        {/* Custom builder */}
+        {/* Custom builder — opens in place. */}
         {custom && (
-          <div className="space-y-2.5 border-t border-line px-3.5 py-3">
-            <div className="flex items-center gap-2">
-              <span className="text-label text-muted">Every</span>
-              <input
+          <div className="rp-build">
+            <div className="rp-line">
+              <span className="rp-label">Every</span>
+              <Input
                 type="number"
+                size="sm"
                 min={1}
                 value={interval}
                 onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
-                className="w-12 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-caption outline-none focus:border-accent"
+                aria-label="Repeat every"
+                frameClassName="rp-num"
               />
-              <div className="flex flex-1 gap-1 rounded-[var(--radius)] bg-bg p-0.5">
-                {(["daily", "weekly", "monthly", "yearly"] as const).map((f) => (
-                  <button key={f} onClick={() => setFreq(f)} className={seg(freq === f)}>
-                    {f === "daily" ? "Day" : f === "weekly" ? "Week" : f === "monthly" ? "Month" : "Year"}
-                  </button>
-                ))}
-              </div>
+              <Segmented size="sm" className="k-seg-full" label="Unit" options={FREQS} value={freq} onChange={(f) => setFreq(f)} />
             </div>
 
             {freq === "weekly" && (
-              <div className="flex justify-between gap-1">
-                {WEEKDAY_LABELS.map((lbl, d) => {
-                  const on = weekdays.includes(d);
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => toggleWeekday(d)}
-                      className={`fast grid h-7 w-7 place-items-center rounded-full text-meta font-semibold transition-colors ${
-                        on ? "bg-accent text-on-accent" : "bg-bg text-muted hover:text-ink"
-                      }`}
-                    >
-                      {lbl[0]}
-                    </button>
-                  );
-                })}
+              <div className="rp-days" role="group" aria-label="Repeat on">
+                {WEEKDAY_LABELS.map((lbl, d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={weekdays.includes(d)}
+                    aria-label={new Date(2023, 0, 1 + d).toLocaleDateString([], { weekday: "long" })}
+                    onClick={() => toggleWeekday(d)}
+                  >
+                    {lbl[0]}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -687,68 +623,68 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
                 stated, never chosen — so "the last Friday of the month", the
                 shape most standing commitments take, could not be said at all. */}
             {(freq === "monthly" || freq === "yearly") && (
-              <div className="space-y-1.5">
-                <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
-                  <button onClick={() => setDayRule("date")} className={seg(dayRule === "date")}>
-                    {freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}`}
-                  </button>
-                  <button onClick={() => setDayRule("position")} className={seg(dayRule === "position")}>
-                    On the {SETPOS_SHORT[setpos] ?? setpos} {WEEKDAY_LABELS[anchorWeekday]}
-                  </button>
-                </div>
+              <>
+                <Segmented
+                  size="sm"
+                  className="k-seg-full"
+                  label="Which day"
+                  value={dayRule}
+                  onChange={(v) => setDayRule(v)}
+                  options={[
+                    {
+                      value: "date" as const,
+                      label: freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}`,
+                    },
+                    { value: "position" as const, label: `The ${SETPOS_SHORT[setpos] ?? setpos} ${WEEKDAY_LABELS[anchorWeekday]}` },
+                  ]}
+                />
                 {dayRule === "position" && (
-                  <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
-                    {SETPOS_VALUES.map((p) => (
-                      <button key={p} onClick={() => setSetpos(p)} className={seg(setpos === p)}>
-                        {SETPOS_SHORT[p]}
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    size="sm"
+                    className="k-seg-full"
+                    label="Which one"
+                    value={String(setpos)}
+                    onChange={(v) => setSetpos(Number(v))}
+                    options={SETPOS_VALUES.map((p) => ({ value: String(p), label: SETPOS_SHORT[p] }))}
+                  />
                 )}
+              </>
+            )}
+
+            <div className="rp-line">
+              <span className="rp-label">Ends</span>
+              <Segmented size="sm" className="k-seg-full" label="Ends" options={ENDS} value={endMode} onChange={(m) => setEndMode(m)} />
+            </div>
+            {endMode === "on" && (
+              <Input
+                type="date"
+                size="sm"
+                value={untilDate}
+                min={anchorISO}
+                onChange={(e) => setUntilDate(e.target.value)}
+                aria-label="Ends on"
+              />
+            )}
+            {endMode === "after" && (
+              <div className="rp-line">
+                <Input
+                  type="number"
+                  size="sm"
+                  min={1}
+                  value={count}
+                  onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                  aria-label="Number of occurrences"
+                  frameClassName="rp-num"
+                />
+                <span className="rp-label">times</span>
               </div>
             )}
 
-            {/* End condition */}
-            <div className="space-y-1.5 pt-0.5">
-              <span className="text-label text-muted">Ends</span>
-              <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
-                {(["never", "on", "after"] as const).map((m) => (
-                  <button key={m} onClick={() => setEndMode(m)} className={seg(endMode === m)}>
-                    {m === "never" ? "Never" : m === "on" ? "On date" : "After"}
-                  </button>
-                ))}
-              </div>
-              {endMode === "on" && (
-                <input
-                  type="date"
-                  value={untilDate}
-                  min={anchorISO}
-                  onChange={(e) => setUntilDate(e.target.value)}
-                  className="w-full rounded-md border border-line bg-surface-2 px-2 py-1 text-caption outline-none focus:border-accent"
-                />
-              )}
-              {endMode === "after" && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    value={count}
-                    onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-14 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-caption outline-none focus:border-accent"
-                  />
-                  <span className="text-label text-muted">occurrences</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-0.5">
-              <span className="truncate text-meta text-muted">{describeRule(buildCustom(), anchorISO)}</span>
-              <button
-                onClick={() => onPick(buildCustom())}
-                className="fast shrink-0 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90"
-              >
+            <div className="rp-foot">
+              <span className="rp-read">{describeRule(buildCustom(), anchorISO)}</span>
+              <Button size="xs" kind="primary" onClick={() => onPick(buildCustom())}>
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -758,35 +694,10 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
   );
 }
 
-/** A full-width exclusive choice, n-up, at thumb size. */
-function Seg({ items, active, onPick }: { items: { key: string; label: string }[]; active: string; onPick: (k: string) => void }) {
-  return (
-    <div
-      className="grid gap-0.5 rounded-[var(--radius)] border border-line bg-surface-2 p-0.5"
-      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
-    >
-      {items.map((it) => (
-        <button
-          key={it.key}
-          type="button"
-          aria-pressed={active === it.key}
-          onClick={() => onPick(it.key)}
-          className={`tap fast flex items-center justify-center rounded-[calc(var(--radius)-3px)] px-1 text-body font-medium ${
-            active === it.key ? "bg-accent text-on-accent" : "text-muted active:bg-accent-soft"
-          }`}
-        >
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /**
  * The phone face: the same presets and the same custom builder, as a bottom
- * sheet. Rows are 44px, the Day/Week/Month/Year control is a full-width four-up
- * of 44px targets (the popover's overflowed its own card), and the weekday strip
- * is seven 44px circles where the popover's were 28px.
+ * sheet. Rows are 48px, the Day/Week/Month/Year control is a full-width four-up
+ * of 40px targets, and the weekday strip is seven 40px circles.
  */
 function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps) {
   const {
@@ -800,147 +711,107 @@ function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps)
 
   return (
     <Sheet title="Repeat" onClose={onClose} contentClassName={SHEET_SCROLL}>
-      <div className="px-4 pb-6" onKeyDown={(e) => onCustomFieldEnter(e, custom, () => onPick(buildCustom()))}>
-        <div className="divide-y divide-line border-y border-line">
+      <div className="rp-sheet px-4 pb-6" onKeyDown={(e) => onCustomFieldEnter(e, custom, () => onPick(buildCustom()))}>
+        <div className="rp-rows">
           {presets.map((p) => {
             const on = !custom && rulesEqual(p.rule, current);
             return (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => onPick(p.rule)}
-                className="tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft"
-              >
-                <Dot on={on} />
-                <span className={`text-body text-ink ${on ? "font-medium" : ""}`}>{p.label}</span>
+              <button key={p.label} type="button" onClick={() => onPick(p.rule)} className="rp-row" aria-pressed={on}>
+                <span>{p.label}</span>
+                {on && <Icon name="check" size={16} />}
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => setCustom((c) => !c)}
-            className="tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft"
-          >
-            <Dot on={custom} />
-            <span className={`text-body text-ink ${custom ? "font-medium" : ""}`}>Custom…</span>
+          <button type="button" onClick={() => setCustom((c) => !c)} className="rp-row" aria-expanded={custom}>
+            <span>Custom…</span>
+            {custom && <Icon name="check" size={16} />}
           </button>
         </div>
 
         {custom && (
-          <div className="mt-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <span className="text-body text-muted">Every</span>
-              <input
+          <div className="rp-build">
+            <div className="rp-line">
+              <span className="rp-label">Every</span>
+              <Input
                 type="number"
                 inputMode="numeric"
                 min={1}
                 value={interval}
                 onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
                 aria-label="Repeat every"
-                className="field mono w-16 text-center"
+                frameClassName="rp-num"
               />
-              <div className="min-w-0 flex-1">
-                <Seg
-                  items={[
-                    { key: "daily", label: "Day" },
-                    { key: "weekly", label: "Week" },
-                    { key: "monthly", label: "Month" },
-                    { key: "yearly", label: "Year" },
-                  ]}
-                  active={freq}
-                  onPick={(k) => setFreq(k as RecurrenceFreq)}
-                />
-              </div>
             </div>
+            <Segmented className="k-seg-full" label="Unit" options={FREQS} value={freq} onChange={(f) => setFreq(f as RecurrenceFreq)} />
 
             {freq === "weekly" && (
-              <div className="grid grid-cols-7 gap-1" role="group" aria-label="Repeat on">
-                {WEEKDAY_LABELS.map((lbl, i) => {
-                  const on = weekdays.includes(i);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      aria-pressed={on}
-                      // "Wed" read aloud is a fragment; the circle shows one letter.
-                      aria-label={new Date(2023, 0, 1 + i).toLocaleDateString([], { weekday: "long" })}
-                      onClick={() => toggleWeekday(i)}
-                      className={`tap fast grid aspect-square place-items-center rounded-full text-body font-semibold ${
-                        on ? "bg-accent text-on-accent" : "bg-surface-2 text-muted active:bg-accent-soft"
-                      }`}
-                    >
-                      {lbl[0]}
-                    </button>
-                  );
-                })}
+              <div className="rp-days" role="group" aria-label="Repeat on">
+                {WEEKDAY_LABELS.map((lbl, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-pressed={weekdays.includes(i)}
+                    // "Wed" read aloud is a fragment; the circle shows one letter.
+                    aria-label={new Date(2023, 0, 1 + i).toLocaleDateString([], { weekday: "long" })}
+                    onClick={() => toggleWeekday(i)}
+                  >
+                    {lbl[0]}
+                  </button>
+                ))}
               </div>
             )}
 
             {(freq === "monthly" || freq === "yearly") && (
-              <div className="space-y-2">
-                <Seg
-                  items={[
-                    { key: "date", label: freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}` },
-                    { key: "position", label: `On the ${SETPOS_SHORT[setpos] ?? setpos} ${WEEKDAY_LABELS[anchorWeekday]}` },
+              <>
+                <Segmented
+                  className="k-seg-full"
+                  label="Which day"
+                  value={dayRule}
+                  onChange={(v) => setDayRule(v)}
+                  options={[
+                    {
+                      value: "date" as const,
+                      label: freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}`,
+                    },
+                    { value: "position" as const, label: `The ${SETPOS_SHORT[setpos] ?? setpos} ${WEEKDAY_LABELS[anchorWeekday]}` },
                   ]}
-                  active={dayRule}
-                  onPick={(k) => setDayRule(k as "date" | "position")}
                 />
                 {dayRule === "position" && (
-                  <Seg
-                    items={SETPOS_VALUES.map((p) => ({ key: String(p), label: SETPOS_SHORT[p] }))}
-                    active={String(setpos)}
-                    onPick={(k) => setSetpos(Number(k))}
+                  <Segmented
+                    className="k-seg-full"
+                    label="Which one"
+                    value={String(setpos)}
+                    onChange={(v) => setSetpos(Number(v))}
+                    options={SETPOS_VALUES.map((p) => ({ value: String(p), label: SETPOS_SHORT[p] }))}
                   />
                 )}
+              </>
+            )}
+
+            <span className="rp-label">Ends</span>
+            <Segmented className="k-seg-full" label="Ends" options={ENDS} value={endMode} onChange={(m) => setEndMode(m)} />
+            {endMode === "on" && (
+              <Input type="date" value={untilDate} min={anchorISO} onChange={(e) => setUntilDate(e.target.value)} aria-label="Ends on" />
+            )}
+            {endMode === "after" && (
+              <div className="rp-line">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={count}
+                  onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                  aria-label="Number of occurrences"
+                  frameClassName="rp-num"
+                />
+                <span className="rp-label">times</span>
               </div>
             )}
 
-            <div className="space-y-2">
-              <div className="section-label !p-0">Ends</div>
-              <Seg
-                items={[
-                  { key: "never", label: "Never" },
-                  { key: "on", label: "On date" },
-                  { key: "after", label: "After" },
-                ]}
-                active={endMode}
-                onPick={(k) => setEndMode(k as EndMode)}
-              />
-              {endMode === "on" && (
-                <input
-                  type="date"
-                  value={untilDate}
-                  min={anchorISO}
-                  onChange={(e) => setUntilDate(e.target.value)}
-                  aria-label="Ends on"
-                  className="field mono w-full"
-                />
-              )}
-              {endMode === "after" && (
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    value={count}
-                    onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-                    aria-label="Number of occurrences"
-                    className="field mono w-20 text-center"
-                  />
-                  <span className="text-body text-muted">occurrences</span>
-                </div>
-              )}
-            </div>
-
-            <p className="text-caption text-muted">{describeRule(buildCustom(), anchorISO)}</p>
-            <button
-              type="button"
-              onClick={() => onPick(buildCustom())}
-              className="tap fast w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent active:translate-y-px"
-            >
+            <p className="rp-read">{describeRule(buildCustom(), anchorISO)}</p>
+            <Button kind="primary" size="md" full onClick={() => onPick(buildCustom())}>
               Done
-            </button>
+            </Button>
           </div>
         )}
       </div>

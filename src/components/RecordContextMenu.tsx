@@ -1,8 +1,7 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useMenuFocus } from "../hooks/useMenuFocus";
-import { shortcutLabel } from "../lib/shortcutLabel";
-import { createPortal } from "react-dom";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Button, Menu, MenuItem, MenuSeparator } from "./kit";
+import { keycaps } from "./PopoverParts";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useRecordWeekActs } from "../hooks/useProjectTime";
@@ -78,15 +77,6 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
   const { openRecord } = useAppNavigation();
   const [confirm, setConfirm] = useState<Item | null>(null);
   const week = useRecordWeekActs(state.kind, state.id);
-  const menuRef = useRef<HTMLDivElement>(null);
-  // Arrow keys, type-ahead, focus in on open and back to the row on close.
-  useMenuFocus(menuRef);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const items = buildRecordActions(state.kind, state.id, data, {
     openRecord,
@@ -99,20 +89,10 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     week,
   });
 
-  // Anchored at the pointer and FLIPPED by its measured size, the way an
-  // NSMenu opens up/left when it would run off the screen (a fixed 280px guess
-  // left short menus floating far above the cursor near the bottom edge).
-  const POP_W = 210;
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = el?.offsetHeight ?? 280;
-    const left = state.x + POP_W > vw - 8 ? Math.max(8, state.x - POP_W) : state.x;
-    const top = state.y + h > vh - 8 ? Math.max(8, state.y - h) : state.y;
-    setPos({ top, left });
-  }, [state.x, state.y, confirm]);
+  // Anchored at the pointer and FLIPPED by its measured size (the kit's
+  // placement), the way an NSMenu opens up/left near a screen edge. A new
+  // anchor when the confirm step swaps in re-measures the taller face.
+  const anchor = useMemo(() => ({ x: state.x, y: state.y }), [state.x, state.y, confirm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = (item: Item) => {
     if (item.kind !== "action") return;
@@ -123,68 +103,49 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     item.action();
   };
 
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-50" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
-      <div
-        ref={menuRef}
-        role="menu"
-        // Lists behind the menu stand down while it owns the keys (useTaskListKeys).
-        data-nested-surface=""
-        aria-label={state.kind === "project" ? "Project actions" : "Initiative actions"}
-        className="pop-in [--pop-origin:top_left] elev-3 fixed z-50 overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1 outline-none"
-        style={{ top: pos?.top ?? state.y, left: pos?.left ?? state.x, width: POP_W, opacity: pos ? undefined : 0 }}
-        onContextMenu={(e) => e.preventDefault()}
-      >
+  // The kit popover: Escape and a press outside close it, arrows and
+  // type-ahead walk it (useMenuFocus), focus goes back to the row on close.
+  // Lists behind it stand down while it owns the keys (data-nested-surface).
+  return (
+    <Menu
+      anchor={anchor}
+      open
+      onClose={onClose}
+      label={state.kind === "project" ? "Project actions" : "Initiative actions"}
+      className="w-[220px]"
+    >
+      <div onContextMenu={(e) => e.preventDefault()}>
         {confirm && confirm.kind === "action" ? (
-          <div className="px-3 py-2">
-            <p className="text-caption text-ink">{confirm.confirm}</p>
-            <p className="mt-0.5 text-meta text-muted">
+          <div className="k-mconfirm">
+            <p>{confirm.confirm}</p>
+            <p className="k-mconfirm-sub">
               {confirm.undoable ? "The work stays in the project. You can undo this." : "This can't be undone."}
             </p>
-            <div className="mt-2.5 flex items-center gap-1.5">
-              <button
-                onClick={confirm.action}
-                className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
-                style={{ background: confirm.danger ? "var(--signal)" : "var(--accent)" }}
-              >
+            <div className="k-mconfirm-acts">
+              <Button onClick={() => setConfirm(null)}>Cancel</Button>
+              <Button kind={confirm.danger ? "danger-solid" : "primary"} onClick={confirm.action}>
                 {confirm.confirmLabel ?? "Delete"}
-              </button>
-              <button
-                onClick={() => setConfirm(null)}
-                className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
-              >
-                Cancel
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
           items.map((item, i) =>
             item.kind === "sep" ? (
-              <div key={i} role="separator" className="my-1 border-t border-line" />
+              <MenuSeparator key={i} />
             ) : (
-              <MenuButton key={i} item={item} onRun={run} />
+              <MenuItem
+                key={i}
+                danger={item.danger}
+                shortcut={item.key ? keycaps(item.key) : undefined}
+                keepOpen={Boolean(item.confirm)}
+                onSelect={() => run(item)}
+              >
+                {item.label}
+              </MenuItem>
             ),
           )
         )}
       </div>
-    </>,
-    document.body,
-  );
-}
-
-function MenuButton({ item, onRun }: { item: Extract<Item, { kind: "action" }>; onRun: (item: Item) => void }): ReactNode {
-  return (
-    <button
-      role="menuitem"
-      data-label={item.label}
-      onClick={() => onRun(item)}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption outline-none hover:bg-accent-soft focus-visible:bg-accent-soft focus:bg-accent-soft ${
-        item.danger ? "text-signal" : "text-text"
-      }`}
-    >
-      <span className="flex-1">{item.label}</span>
-      {item.key && <span className="mono text-meta text-muted">{shortcutLabel(item.key)}</span>}
-    </button>
+    </Menu>
   );
 }

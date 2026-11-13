@@ -53,7 +53,7 @@ describe("the Repeat picker — a sheet on a phone, a popover on a desktop", () 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Repeat")).toBeTruthy();
     // no floating card was mounted beside it
-    expect(document.querySelector(".moment.fixed")).toBeNull();
+    expect(document.querySelector("[data-repeat-picker]")).toBeNull();
 
     // A preset is one tap, and picks its rule.
     fireEvent.click(within(dialog).getByText("Every day"));
@@ -89,7 +89,7 @@ describe("the Repeat picker — a sheet on a phone, a popover on a desktop", () 
     stubViewport(false);
     render(<RecurrencePicker anchorISO="2026-10-14" current={null} anchor={rect} onPick={() => {}} onClose={() => {}} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.querySelector(".moment.fixed")).not.toBeNull();
+    expect(document.querySelector("[data-repeat-picker]")).not.toBeNull();
   });
 });
 

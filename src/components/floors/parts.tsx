@@ -111,12 +111,14 @@ export function FloatingMenu({
       <div
         ref={menuRef}
         data-nested-surface=""
-        className="pop-in [--pop-origin:top_left] elev-2 fixed z-[83] rounded-md border border-line bg-surface py-1"
+        // The kit's popover shell (z-90 in kit.css, above RecordScrim's 81).
+        className="k-pop"
         style={{
           top: pos?.top ?? -9999,
           left: pos?.left ?? -9999,
           minWidth,
           opacity: pos ? undefined : 0,
+          ["--pop-origin" as string]: align === "right" ? "top right" : "top left",
         }}
         onClick={(e) => e.stopPropagation()}
       >

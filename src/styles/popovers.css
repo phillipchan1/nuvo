@@ -1,0 +1,895 @@
+/* ════════════════════════════════════════════════════════════════════════
+   POPOVERS AND CAPTURE (D-190) — the six floating kinds, on the kit.
+
+     Menu        .k-pop + .k-mi (kit.css); the lit row and the whose-menu
+                 title below
+     Picker      kit Picker (search past seven, checks)
+     Date        kit MiniMonth + a typed line
+     Inspector   .insp — the event / task / slot card at the cursor
+                 (SlideOver), the create card (DraftComposer): 352px, flush,
+                 a head, a strip, hairline rows, a footer of ghost buttons
+     Tooltip · toast   kit.css
+     Command     .capture-door — ⌘K, ⌥Space and the phone's ＋ sheet
+
+   The inspector and the create card keep positioning logic of their own (they
+   follow a live calendar block, hold their side, budget their height), so they
+   wear `.insp` rather than `.k-pop`, whose fixed z-index and 480px budget are a
+   menu's. Same corner, same shadow, same 110ms grow from `--pop-origin`.
+
+   Native feel: hover only under (hover: hover); no cursor rules; transform and
+   opacity are the only things that move.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Inspector ──────────────────────────────────────────────────────────── */
+.insp {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  color: var(--ink);
+  font: 400 13px/1.4 var(--font-sans);
+  outline: none;
+  transform-origin: var(--pop-origin, top left);
+  animation: k-pop-in var(--d-fast) var(--ease-out) both;
+}
+/* The task card inside the slot inspector's slide-out: same parts, no shell. */
+.insp-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  color: var(--ink);
+  font: 400 13px/1.4 var(--font-sans);
+}
+
+.insp-head {
+  display: grid;
+  gap: 4px;
+  flex: none;
+  padding: 14px 14px 10px;
+  min-width: 0;
+}
+.insp-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.insp-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.insp-title > .k-dot { margin-top: 6px; }
+.insp-title > .insp-title-main { flex: 1; min-width: 0; }
+.insp-title .k-btn { margin: -2px -4px 0 0; flex: none; }
+.insp-title-text,
+.insp-title-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  font: 650 15px/1.35 var(--font-sans);
+  letter-spacing: -0.015em;
+}
+.insp-title-input {
+  margin: 0 -4px;
+  padding: 0 4px;
+  width: calc(100% + 8px);
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  outline: none;
+  transition: background-color var(--d-base) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.insp-title-input::placeholder { color: var(--faint); font-weight: 500; }
+.insp-title-input:focus { background: var(--sunk); box-shadow: 0 0 0 1px var(--accent-ring); }
+.insp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.insp-head[data-nodot] .insp-meta { padding-left: 0; }
+.insp-meta-sep { color: var(--faint); }
+.insp-meta [data-tone="danger"] { color: var(--danger); }
+.insp-under {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.insp-head[data-nodot] .insp-under { padding-left: 0; }
+
+.insp-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 0 14px 12px;
+  min-width: 0;
+}
+.insp-strip > .k-grow { flex: 1; }
+.insp-strip-note { width: 100%; color: var(--muted); font-size: 12px; }
+.insp-strip-note[data-tone="danger"] { color: var(--danger); }
+
+.insp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.insp-notice {
+  flex: none;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line-1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* A property row: a leading glyph, then the value(s) you change in place. */
+.insp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  min-width: 0;
+  padding: 4px 14px;
+  border-top: 1px solid var(--line-1);
+}
+.insp-row[data-top] { align-items: flex-start; padding-top: 6px; padding-bottom: 6px; }
+.insp-row[data-top] > .insp-ico { margin-top: 5px; }
+.insp-ico {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 14px;
+  color: var(--muted);
+}
+.insp-val {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  min-width: 0;
+}
+.insp-val > .k-grow { flex: 1; }
+.insp-sep { color: var(--faint); }
+.insp-hint { color: var(--faint); font-size: 12px; }
+
+/* A value you press — a date, a clock, a length, a project. Often a native
+   control sits invisibly on top of it (`absolute inset-0 opacity-0`). */
+.insp-v {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: var(--h-xs);
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 13px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+  min-width: 0;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.insp-v:first-child { margin-left: -6px; }
+.insp-v > svg { flex: none; color: var(--faint); }
+.insp-v > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.insp-v[data-empty] { color: var(--faint); font-weight: 400; }
+.insp-v[data-on] { background: var(--accent-wash); color: var(--accent-ink); }
+.insp-v[data-tone="danger"] { color: var(--danger); }
+.insp-v:disabled { opacity: 0.45; }
+.insp-v:focus-within,
+html:root .insp-v:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+@media (hover: hover) {
+  .insp-v:not(:disabled):not([data-on]):hover { background: var(--hover); transition-duration: 0ms; }
+}
+
+/* Inline text: an editable value that reads as text until you're in it. */
+.insp-input,
+.insp-text {
+  display: block;
+  width: calc(100% + 12px);
+  min-width: 0;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: 400 13px/1.5 var(--font-sans);
+  outline: none;
+  transition: background-color var(--d-base) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.insp-input { height: var(--h-xs); }
+.insp-text { padding-top: 4px; padding-bottom: 4px; resize: none; overflow-wrap: anywhere; }
+.insp-input::placeholder,
+.insp-text::placeholder { color: var(--faint); }
+.insp-input:focus,
+.insp-text:focus { background: var(--raised); box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-wash); }
+@media (hover: hover) {
+  .insp-input:not(:focus):hover,
+  .insp-text:not(:focus):hover { background: var(--hover); transition-duration: 0ms; }
+}
+
+/* A section — words, people, steps: a hairline, a quiet label, the content. */
+.insp-sec {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--line-1);
+}
+.insp-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+}
+.insp-sec-head > svg { color: var(--muted); }
+.insp-aside {
+  margin-left: auto;
+  color: var(--faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.insp-stamps {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--line-1);
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.insp-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line-1);
+}
+.insp-foot > .k-grow { flex: 1; min-width: 0; }
+.insp-foot-q {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A destructive act in the footer is quiet at rest; it reddens under the
+   pointer, and only stays red once it is asking. */
+.insp-foot .k-btn[data-quiet-danger][aria-expanded="true"] { color: var(--danger); }
+@media (hover: hover) {
+  .insp-foot .k-btn[data-quiet-danger]:not(:disabled):hover { color: var(--danger); }
+}
+
+/* An inline confirm or choice that opens in place, above the footer. */
+.insp-ask {
+  display: grid;
+  gap: 8px;
+  flex: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-1);
+}
+.insp-ask p { margin: 0; color: var(--ink); font-size: 13px; }
+.insp-ask .insp-ask-sub { color: var(--muted); font-size: 12px; }
+.insp-ask-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+/* A guest: their answer as a dot, then the name. */
+.insp-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  min-width: 0;
+  font-size: 13px;
+}
+.insp-person > .insp-person-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insp-person > .insp-person-role { flex: none; color: var(--faint); font-size: 12px; }
+
+/* A dropdown that opens inside the card (the time list, the calendar list). */
+.insp-drop {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  transform-origin: top left;
+  animation: k-pop-in var(--d-fast) var(--ease-out) both;
+}
+.insp-drop input {
+  display: block;
+  width: calc(100% + 8px);
+  height: 30px;
+  margin: -4px -4px 4px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--ink);
+  font: 400 13px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.insp-drop input::placeholder { color: var(--faint); }
+
+.pop-skeleton { border-radius: var(--r-chip); }
+
+/* ── Remind — a short list of leads, each a value over a native select (the
+      iOS wheel on a phone, the system menu on a Mac). ───────────────────── */
+.rem-list { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.rem-list[data-off] .rem-text,
+.rem-list[data-off] .rem-read { opacity: 0.6; }
+.rem-line { display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 100%; }
+.rem-row {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--h-xs);
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--ink);
+  font: 500 13px/1.2 var(--font-sans);
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.rem-row[data-empty] { color: var(--faint); font-weight: 400; }
+.rem-row:focus-within { box-shadow: 0 0 0 2px var(--accent-ring); }
+.rem-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rem-default { color: var(--faint); font-weight: 400; }
+.rem-read { color: var(--muted); font-size: 12px; font-weight: 400; }
+.rem-chev { flex: none; margin-left: auto; color: var(--faint); pointer-events: none; }
+.rem-add { margin-left: -8px; color: var(--muted); }
+.rem-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 0; }
+.k-field.rem-amount { width: 64px; }
+.k-field.rem-unit { width: auto; height: var(--h-sm); padding: 0 8px; font: 400 13px/1 var(--font-sans); }
+@media (hover: hover) {
+  .rem-row:hover { background: var(--hover); transition-duration: 0ms; }
+}
+/* On a phone the rows are the sheet's: full width, thumb height, 15px. */
+@media (max-width: 767px) {
+  .rem-list { align-items: stretch; }
+  .rem-line { max-width: none; }
+  .rem-row { flex: 1; min-height: 44px; margin-left: 0; padding: 0; font-size: 15px; font-weight: 400; }
+  .rem-row[data-empty] { color: var(--ink); }
+  .rem-add { min-height: 44px; margin-left: -8px; font-size: 14px; }
+  .rem-custom .k-field { height: 44px; }
+  .rem-custom .k-field input { font-size: 16px; }
+}
+
+/* ── The toggle segmented — a k-seg whose buttons are toggles (RSVP,
+      priority), so "nothing chosen" is a state it can hold. ─────────────── */
+.k-seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: var(--sh-1), 0 0 0 1px var(--line-1); }
+.k-seg button[aria-pressed="true"] > .k-dot { opacity: 1; }
+.k-seg button > .k-dot { opacity: 0.55; }
+.k-seg[data-full] { display: flex; width: 100%; }
+.k-seg[data-full] button { flex: 1; justify-content: center; }
+@media (hover: hover) {
+  .k-seg button[aria-pressed="false"]:not(:disabled):hover { color: var(--ink); }
+}
+.k-seg button:disabled { opacity: 0.45; }
+
+.k-seg.k-seg-full { display: flex; width: 100%; min-width: 0; }
+.k-seg.k-seg-full button { flex: 1; justify-content: center; min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Repeat — presets as a picker, the custom builder in place ──────────── */
+.k-mi[aria-pressed="true"] { color: var(--accent-ink); }
+.rp-build {
+  display: grid;
+  gap: 8px;
+  margin: 4px -4px -4px;
+  padding: 10px 10px 10px;
+  border-top: 1px solid var(--line-1);
+}
+.rp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rp-label { flex: none; color: var(--muted); font-size: 12px; }
+.rp-line > .rp-label:first-child { width: 36px; }
+.k-field.rp-num { flex: none; width: 52px; }
+.k-field.rp-num input { text-align: center; font-variant-numeric: tabular-nums; }
+.rp-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.rp-days button {
+  display: grid;
+  place-items: center;
+  height: var(--h-sm);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--sunk);
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+  transition: background-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+}
+.rp-days button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+@media (hover: hover) {
+  .rp-days button[aria-pressed="false"]:hover { background: var(--hover); color: var(--ink); }
+}
+.rp-foot { display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+.rp-read { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* The phone sheet: thumb-size rows, the same builder at 40px. */
+.rp-sheet .rp-rows { border-top: 1px solid var(--line-1); }
+.rp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--ink);
+  font: 400 15px/1.2 var(--font-sans);
+  text-align: left;
+}
+.rp-row[aria-pressed="true"],
+.rp-row[aria-expanded="true"] { color: var(--accent-ink); font-weight: 500; }
+.rp-sheet .rp-build { margin: 16px 0 0; padding: 0; border: 0; gap: 12px; }
+.rp-sheet .rp-label { font-size: 13px; }
+.rp-sheet .k-seg button { height: 36px; font-size: 14px; }
+.rp-sheet .rp-days button { height: 40px; border-radius: 50%; font-size: 14px; }
+.rp-sheet .k-field { height: 44px; }
+.rp-sheet .k-field input { font-size: 16px; }
+.rp-sheet .k-field.rp-num { width: 72px; }
+.rp-sheet .rp-read { white-space: normal; font-size: 13px; }
+
+/* ── A choice among a few, said in full (the series scope) ──────────────── */
+.k-choices { display: grid; gap: 6px; }
+.k-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--d-base) var(--ease-out), border-color var(--d-fast) var(--ease-out);
+}
+.k-choice[aria-checked="true"] { border-color: var(--accent); background: var(--accent-wash); }
+.k-choice-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+}
+.k-choice[aria-checked="true"] .k-choice-mark { border: 4px solid var(--accent); }
+.k-choice-text { display: grid; gap: 2px; min-width: 0; }
+.k-choice-text b { font: 500 13px/1.3 var(--font-sans); }
+.k-choice-text small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+@media (hover: hover) {
+  .k-choice[aria-checked="false"]:hover { background: var(--hover); transition-duration: 0ms; }
+}
+@media (max-width: 767px) {
+  .k-choice { min-height: 56px; padding: 12px 14px; }
+  .k-choice-text b { font-size: 15px; }
+  .k-choice-text small { font-size: 13px; }
+}
+
+/* The repeat value, as a composer's full-width field. */
+.k-field.k-select[data-on] { color: var(--accent-ink); }
+
+/* ── Menu extras ────────────────────────────────────────────────────────── */
+/* A menu that drives its own keys (the task menu) lights a row instead of
+   focusing it. Same wash as the kit's focused row. */
+.k-mi[data-lit] { background: var(--hover); }
+/* An item with no glyph keeps the label column. */
+.k-mi > .k-mi-ico { display: inline-flex; flex: none; width: 14px; justify-content: center; color: var(--muted); }
+/* Whose menu this is — the one place a long task title shows on a narrow block. */
+.k-mtitle {
+  margin: -4px -4px 4px;
+  padding: 7px 12px 6px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-1);
+  color: var(--muted);
+  font: 500 12px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-mconfirm { display: grid; gap: 8px; padding: 8px; }
+.k-mconfirm p { margin: 0; color: var(--ink); font-size: 13px; }
+.k-mconfirm .k-mconfirm-sub { color: var(--muted); font-size: 12px; }
+.k-mconfirm-acts { display: flex; gap: 6px; }
+.k-mconfirm-acts > .k-btn { flex: 1; }
+.k-mbody { padding: 4px 8px 8px; display: grid; gap: 8px; }
+.k-mcheck { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; color: var(--ink); font-size: 13px; }
+.k-mcheck .k-box { margin-top: 2px; }
+.k-mcheck small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+/* A phone action sheet's rows — FloatingMenu's children, framed by the Sheet. */
+.native-sheet-menu .k-mi { height: auto; min-height: 48px; font-size: 15px; border-radius: 0; }
+.native-sheet-menu .k-mi + .k-mi { border-top: 1px solid var(--line-1); }
+
+/* ── Picker field (the composers' Calendar) ─────────────────────────────── */
+.k-pick-group {
+  padding: 8px 8px 4px;
+  overflow: hidden;
+  color: var(--faint);
+  font: 600 11px/1 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-pick-default { color: var(--faint); font-size: 12px; font-weight: 400; }
+@media (max-width: 767px) {
+  .k-pick-row { height: auto; min-height: 44px; font-size: 15px; }
+  .k-pick-group { padding-top: 12px; }
+}
+
+/* ── Filter popover ─────────────────────────────────────────────────────── */
+.k-filter { display: grid; gap: 12px; }
+.k-filter-group { display: grid; gap: 6px; }
+.k-filter-label { color: var(--muted); font: 600 12px/1 var(--font-sans); }
+.k-filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.k-filter-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -12px -12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-1);
+}
+.k-filter-foot .k-filter-read {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-filter .k-chip { height: var(--h-xs); padding: 0 8px; font-size: 12px; }
+.k-filter .k-chip[aria-pressed="true"] { background: var(--accent-wash); border-color: transparent; color: var(--accent-ink); }
+@media (max-width: 767px) {
+  .k-filter .k-chip { height: 36px; padding: 0 12px; font-size: 13px; }
+  .k-filter-foot { margin: 0; padding: 12px 0 0; }
+}
+
+/* ── Weather ────────────────────────────────────────────────────────────── */
+.k-weather { display: grid; justify-items: center; gap: 4px; padding: 12px 16px 10px; min-width: 156px; }
+.k-weather-temp { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.k-weather-temp b { color: var(--ink); font: 700 28px/1 var(--font-sans); letter-spacing: -0.03em; }
+.k-weather-temp span { color: var(--muted); font-size: 13px; }
+.k-weather-what { color: var(--muted); font-size: 12px; }
+.k-weather-city {
+  justify-self: stretch;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-1);
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ── Notices — the update toast, the reconnect bar, Nuvo's return pill ──── */
+.k-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: grid;
+  gap: 8px;
+  width: 300px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  color: var(--ink);
+  font-size: 13px;
+  animation: k-pop-in var(--d-base) var(--ease-out) both;
+  transform-origin: bottom right;
+}
+.k-toast-title { font-weight: 600; }
+.k-toast-meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.k-toast-track { height: 3px; overflow: hidden; border-radius: 2px; background: var(--line-2); }
+.k-toast-track > i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform var(--d-base) var(--ease-out); }
+.k-toast details { color: var(--muted); font-size: 12px; }
+.k-toast summary { width: fit-content; list-style: none; color: var(--muted); font-weight: 500; user-select: none; }
+.k-toast summary::-webkit-details-marker { display: none; }
+.k-toast details[open] summary { color: var(--ink); }
+.k-toast details p { margin: 6px 0 0; line-height: 1.45; white-space: pre-line; }
+.k-toast-acts { display: flex; justify-content: flex-end; }
+@media (hover: hover) {
+  .k-toast summary:hover { color: var(--ink); }
+}
+
+.k-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 36px;
+  padding: 4px 8px 4px 16px;
+  border-bottom: 1px solid var(--line-1);
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+  color: var(--ink);
+  font-size: 13px;
+}
+.k-banner > svg { flex: none; color: var(--danger); }
+.k-banner-text { flex: 1; min-width: 0; }
+.k-banner-text b { font-weight: 600; }
+.k-banner-text span { color: var(--muted); }
+
+/* Nuvo's return pill — "brought you to Projects · Back". */
+.marquee-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  color: var(--ink);
+  font-size: 13px;
+  transform: translateX(-50%);
+  animation: marquee-pill-in var(--d-slow) var(--ease-out) both;
+}
+.marquee-pill.is-closing { animation: marquee-pill-out var(--d-base) var(--ease-out) both; }
+.marquee-pill-spark { display: inline-flex; color: var(--accent); }
+.marquee-pill-text { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.marquee-pill-text strong { color: var(--ink); font-weight: 600; }
+.marquee-pill-caption { color: var(--muted); }
+@keyframes marquee-pill-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes marquee-pill-out {
+  to { opacity: 0; transform: translate(-50%, 6px); }
+}
+@media (max-width: 767px) {
+  .marquee-pill { max-width: calc(100vw - 32px); }
+}
+
+/* ── Command · capture (⌘K, ⌥Space, the phone's ＋) ─────────────────────── */
+/* The ⌘K frame: a 600px kit dialog with no head — the line IS the head. */
+.k-command {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  max-height: calc(100vh - 12vh - 16px);
+  overflow: hidden;
+  border-radius: var(--r-dialog);
+  background: var(--raised);
+  box-shadow: var(--sh-modal);
+  outline: none;
+  animation: k-dialog-in var(--d-moment) var(--ease-spring) both;
+}
+
+.capture-door { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.capture-door .task-composer-hints { display: none; }
+
+/* The door's parsed tokens wear kit chips. */
+.capture-door .task-composer-chips { gap: 4px; }
+.capture-door .task-composer-chip,
+.capture-door .task-composer-context {
+  height: 20px;
+  gap: 5px;
+  border-radius: 5px;
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.capture-door .task-composer-chip {
+  padding: 0 2px 0 6px;
+  border: 1px solid var(--line-1);
+  background: var(--sunk);
+  color: var(--ink-2);
+}
+.capture-door .task-composer-chip > .text-muted { color: var(--faint); }
+.capture-door .task-composer-context { color: var(--muted); }
+.capture-door .task-composer-unparse { width: 16px; height: 16px; border-radius: var(--r-chip); color: var(--faint); }
+@media (hover: hover) {
+  .capture-door .task-composer-unparse:hover { background: var(--hover); color: var(--ink); }
+}
+.capture-door .task-composer-token { color: var(--accent-ink); background: var(--accent-wash); box-shadow: 0 0 0 2px var(--accent-wash); border-radius: 3px; }
+.capture-door .task-composer-swatch { width: 8px; height: 8px; border-radius: 2.5px; }
+
+/* The #/@ suggestions — a kit menu under the line. */
+.capture-door .task-composer-menu {
+  left: 0;
+  width: min(280px, 80vw);
+  padding: 4px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  transform-origin: top left;
+  animation: k-pop-in var(--d-fast) var(--ease-out) both;
+}
+.capture-door .task-composer-menu > div:first-child { padding: 6px 8px 4px !important; color: var(--faint) !important; font: 600 11.5px/1 var(--font-sans) !important; }
+.capture-door .task-composer-option {
+  min-height: var(--h-sm);
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.capture-door .task-composer-option.is-active { background: var(--hover); }
+
+/* The pasted-lines question. */
+.capture-door .task-composer-btn {
+  height: var(--h-xs);
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--ink);
+  font: 500 12px/1 var(--font-sans);
+}
+.capture-door .task-composer-btn.is-primary { border-color: transparent; background: var(--accent); color: var(--on-accent); }
+
+/* Body rows: a quiet label, then the face's controls. */
+.cd-body { display: grid; gap: 8px; min-width: 0; }
+.cd-row { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.cd-label {
+  flex: none;
+  width: 52px;
+  padding-top: 5px;
+  color: var(--faint);
+  font: 500 12px/1.2 var(--font-sans);
+}
+.cd-ctl { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.cd-ctl > .k-field { flex: 1; min-width: 96px; }
+.cd-ctl > .cd-dash { color: var(--faint); }
+.cd-alert {
+  padding: 8px 10px;
+  border-radius: var(--r-ctl);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}
+.cd-foot { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cd-foot > .k-grow { flex: 1; }
+.capture-door[data-noevent] .k-seg button[data-value="event"] { opacity: 0.45; }
+.cd-note { color: var(--faint); font-size: 12px; text-align: center; }
+
+/* ⌘K and ⌥Space: the line is the head — 54px, 16px type, hairline under. */
+.capture-door-panel .task-composer-field-box .task-composer-line {
+  min-height: 54px;
+  gap: 10px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.capture-door-panel .task-composer-field-box.is-open .task-composer-line { border: 0; box-shadow: none; }
+.capture-door-panel .task-composer-field-box .task-composer-glyph { color: var(--faint); }
+.capture-door-panel .task-composer-input,
+.capture-door-panel .task-composer-mirror {
+  font-size: 16px !important;
+  font-weight: 450;
+  line-height: 24px !important;
+  letter-spacing: -0.01em;
+}
+.capture-door-panel .task-composer-field-box { border-bottom: 1px solid var(--line-1); }
+.capture-door-panel .task-composer-field-box .task-composer-foot {
+  margin: 0;
+  padding: 0 16px 10px 41px;
+}
+.capture-door-panel .cd-body { padding: 12px 16px; }
+.capture-door-panel .cd-body:empty { display: none; }
+.capture-door-panel .cd-alert { margin: 0 16px 12px; }
+.capture-door-panel .cd-event { padding: 12px 16px; }
+.capture-door-panel .cd-foot {
+  min-height: 44px;
+  padding: 0 10px 0 12px;
+  border-top: 1px solid var(--line-1);
+}
+
+/* The phone's sheet: the same door at thumb size. */
+.capture-door-sheet { gap: 12px; }
+.capture-door-sheet .task-composer-field-box .task-composer-line {
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--sunk);
+}
+.capture-door-sheet .task-composer-field-box.is-open .task-composer-line {
+  border-color: var(--accent);
+  background: var(--raised);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.capture-door-sheet .task-composer-field-box .task-composer-glyph { color: var(--accent); }
+.capture-door-sheet .task-composer-field-box .task-composer-foot { margin-top: 8px; padding: 0; }
+.capture-door-sheet .task-composer-chip,
+.capture-door-sheet .task-composer-context { height: 28px; font-size: 13px; }
+.capture-door-sheet .task-composer-unparse { width: 28px; height: 28px; }
+.capture-door-sheet .k-seg { display: flex; }
+.capture-door-sheet .k-seg button { flex: 1; justify-content: center; height: 36px; font-size: 14px; }
+.capture-door-sheet .cd-body { gap: 12px; }
+.capture-door-sheet .cd-row { flex-direction: column; gap: 6px; }
+.capture-door-sheet .cd-label { width: auto; padding: 0; }
+.capture-door-sheet .cd-ctl { gap: 6px; }
+.capture-door-sheet .cd-ctl .k-btn { height: 36px; padding: 0 12px; font-size: 14px; }
+.capture-door-sheet .cd-ctl > .k-field { height: 44px; }
+.capture-door-sheet .cd-ctl > .k-field input { font-size: 16px; }
+.capture-door-sheet .cd-foot > .k-btn { flex: 1; height: 48px; font-size: 15px; }
+
+/* The ⌥Space window: transparent, only the card paints. */
+.k-spotlight {
+  display: flex;
+  height: 100vh;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  padding: 12px;
+}
+.k-spotlight > .k-command { max-height: none; animation-duration: var(--d-slow); }
+.k-spotlight-done { display: grid; justify-items: center; gap: 6px; padding: 28px 24px; text-align: center; }
+.k-spotlight-done .k-spotlight-ok {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--landed, var(--accent));
+  color: var(--on-accent);
+  animation: land-stamp var(--d-land, 352ms) var(--ease-land, var(--ease-spring)) both;
+}
+.k-spotlight-done h2 { margin: 4px 0 0; font: 650 15px/1.3 var(--font-sans); letter-spacing: -0.015em; }
+.k-spotlight-done p { margin: 0; max-width: 28rem; color: var(--ink-2); font-size: 13px; }
+.k-spotlight-done .k-spotlight-where { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+html.spotlight-window .tap,
+html.spotlight-window .tap-h { min-height: 0; min-width: 0; }
+html.spotlight-window .tap-bloom::before { content: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .insp,
+  .insp-drop,
+  .k-toast,
+  .k-command,
+  .marquee-pill,
+  .capture-door .task-composer-menu,
+  .k-spotlight-done .k-spotlight-ok { animation: none; }
+}

@@ -7,6 +7,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "../Icon";
+import { Dot } from "../kit";
 
 export interface RowMenuItem {
   id: string;
@@ -67,6 +69,8 @@ export default function RowMenu({
   };
 
   const list = useMemo(() => items, [items]);
+  // A row of identity dots needs a gutter on the rows without one.
+  const anySwatch = list.some((i) => i.swatch !== undefined);
 
   return createPortal(
     <div
@@ -74,37 +78,40 @@ export default function RowMenu({
       role="dialog"
       aria-label={title}
       data-nested-surface=""
-      className="pop-in [--pop-origin:top_left] elev-3 fixed z-[75] w-[260px] rounded-[var(--radius)] border border-line bg-surface p-1"
-      style={{ top: pos.top, left: pos.left }}
+      className="k-pop"
+      style={{ top: pos.top, left: pos.left, width: 280, zIndex: 75 }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="px-2 pb-1 pt-1.5 text-meta text-muted">{title}</div>
-      <input
-        autoFocus
-        value={query}
-        placeholder={placeholder}
-        aria-label={title}
-        onChange={(e) => onQuery(e.target.value)}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setIndex((i) => (list.length ? (i + 1) % list.length : 0));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setIndex((i) => (list.length ? (i - 1 + list.length) % list.length : 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            run(list[safe]);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-        className="nuvo-inline-input mb-1 w-full rounded-md border border-line bg-surface-2 px-2 py-1 text-caption outline-none"
-      />
-      <div role="listbox" className="max-h-[280px] overflow-y-auto">
-        {list.length === 0 && <div className="px-2 py-2 text-caption text-muted">{empty}</div>}
+      {/* The kit's search line: the menu's name is its placeholder. */}
+      <div className="k-msearch">
+        <Icon name="search" size={14} />
+        <input
+          autoFocus
+          value={query}
+          placeholder={placeholder}
+          aria-label={title}
+          onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setIndex((i) => (list.length ? (i + 1) % list.length : 0));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setIndex((i) => (list.length ? (i - 1 + list.length) % list.length : 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              run(list[safe]);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+        />
+      </div>
+      <div className="k-mlabel">{title}</div>
+      <div role="listbox" aria-label={title} className="max-h-[280px] overflow-y-auto">
+        {list.length === 0 && <div className="k-mlabel">{empty}</div>}
         {list.map((item, i) => (
           <button
             key={item.id}
@@ -113,13 +120,12 @@ export default function RowMenu({
             aria-selected={i === safe}
             onMouseEnter={() => setIndex(i)}
             onClick={() => run(item)}
-            className={`task-composer-option ${i === safe ? "is-active" : ""}`}
+            className="k-mi"
+            data-lit={i === safe || undefined}
           >
-            {item.swatch !== undefined && (
-              <span className="task-composer-swatch" style={{ background: item.swatch ?? "var(--line-strong)" }} />
-            )}
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            {item.hint && <span className="mono shrink-0 text-meta text-muted">{item.hint}</span>}
+            {item.swatch !== undefined ? <Dot color={item.swatch ?? "var(--line-2)"} /> : anySwatch && <span className="k-mi-ico" aria-hidden />}
+            <span className="k-mi-label">{item.label}</span>
+            {item.hint && <span className="k-mi-hint">{item.hint}</span>}
           </button>
         ))}
       </div>

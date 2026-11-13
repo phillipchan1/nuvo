@@ -385,20 +385,6 @@ html.spotlight-window #root {
   background: transparent !important;
 }
 
-/* The in-app ⌘K panel floats over the calm .atmosphere canvas, so the light
-   .glass-card frost reads fine. The detached ⌥Space window has NO atmosphere
-   behind it — it hovers over the live desktop (a call, a deck, a bright doc),
-   where 56% surface lets that chaos bleed through and muddies the text. Inside
-   the spotlight window only, thicken the frost to a near-opaque warm pane so
-   the capture line stays legible over anything. */
-html.spotlight-window .glass-card {
-  background:
-    linear-gradient(145deg, color-mix(in srgb, white 14%, transparent), transparent 58%),
-    color-mix(in srgb, var(--surface) 94%, transparent);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6);
-  backdrop-filter: blur(28px) saturate(1.6);
-}
-
 /* The atmosphere: the one ground every full-bleed surface shares. Under
    Instrument it is flat (D-189) — the warm-paper gradient is retired. The hook
    stays so the "paint it once, continuously" rule still has a name. */
@@ -1086,69 +1072,8 @@ body.odp-dragging [data-resize] {
   50% { opacity: 0.95; }
 }
 
-/* The return pill — "Nuvo brought you here · ← Back". Floats bottom-centre. */
-.marquee-pill {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 61;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 8px 7px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  color: var(--ink);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-lift);
-  animation: marquee-pill-in 360ms var(--ease-out) both;
-}
-.marquee-pill.is-closing { animation: marquee-pill-out 240ms ease-in both; }
-.marquee-pill-spark { color: var(--signal); font-size: 12px; }
-.marquee-pill-text { white-space: nowrap; color: var(--muted); }
-.marquee-pill-text strong { color: var(--ink); font-weight: 600; }
-.marquee-pill-caption { color: var(--muted); }
-.marquee-pill-back {
-  white-space: nowrap;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: white;
-  background: var(--accent);
-  transition: filter var(--d-fast, 120ms) ease;
-}
-@media (hover: hover) {
-.marquee-pill-back:hover { filter: brightness(1.08); }
-}
-.marquee-pill-x {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: var(--muted);
-  transition: background var(--d-fast, 120ms) ease, color var(--d-fast, 120ms) ease;
-}
-@media (hover: hover) {
-.marquee-pill-x:hover { background: var(--surface-2); color: var(--ink); }
-}
-@keyframes marquee-pill-in {
-  from { opacity: 0; transform: translate(-50%, 12px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-}
-@keyframes marquee-pill-out {
-  to { opacity: 0; transform: translate(-50%, 8px); }
-}
 @media (prefers-reduced-motion: reduce) {
   .marquee-orb-glow { animation: none; opacity: 0.85; }
-  .marquee-pill { animation: none; }
 }
 
 /* ── Week story (Wrapped-style recap) — paced scene reveals ────────────────── */
@@ -3512,25 +3437,3 @@ html .glass-grab {
 .task-composer-field-box .task-composer-glyph { color: var(--accent); }
 .task-composer-field-box .task-composer-foot { padding-left: 0; }
 
-/* ── The capture door (⌘K · ⌥Space · the phone's ＋) ─────────────────────
-   One body in three frames (components/capture/CaptureDoor.tsx). The door
-   draws its own key hints, so the composer's are hidden inside it. On the
-   desktop panel the line is the hero: lead-size text, with the highlight
-   mirror matched exactly (they must share every metric or the marks drift). */
-.capture-door .task-composer-hints { display: none; }
-.capture-door-panel .task-composer-line { min-height: 2.75rem; }
-.capture-door-panel .task-composer-input,
-.capture-door-panel .task-composer-mirror {
-  font-size: var(--text-lead) !important;
-  line-height: 26px !important;
-}
-
-/* The ⌥Space window is ~680px wide, so the phone block's media query matches
-   inside it — but it only ever runs on a Mac, under a mouse. Give it the
-   desktop's density back: no 44px thumb floors on its chips and pills. */
-html.spotlight-window .tap,
-html.spotlight-window .tap-h {
-  min-height: 0;
-  min-width: 0;
-}
-html.spotlight-window .tap-bloom::before { content: none; }

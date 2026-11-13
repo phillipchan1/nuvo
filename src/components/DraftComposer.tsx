@@ -1,22 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import { addDays, format } from "date-fns";
 import { span } from "./mobile/dayPlan";
 import { fmtDuration, parseDateISO, toDateISO } from "../lib/dates";
 import { describeRule, expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { anchoredTop } from "../lib/anchoredTop";
-import {
-  POP_W_NARROW,
-  POP_W_WIDE,
-  PopBody,
-  PopCol,
-  PopField,
-  PopFooter,
-  PopMetaDot,
-  PopSection,
-  PopStack,
-} from "./PopoverParts";
+import { INSPECTOR_W, PopBody, PopFooter, PopGrow, PopMetaDot, PopPick, PopRow, PopSection } from "./PopoverParts";
+import { Button, Chip, Dot, Segmented, Switch } from "./kit";
+import { AltitudeIcon } from "./icons";
 import { fixedCssPx, getUiScale } from "../hooks/useUiScale";
 import { RepeatControl } from "./RecurrencePicker";
 import { GuestsInput } from "./GuestsInput";
@@ -144,12 +135,9 @@ export default function DraftComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // The composer wears the same two widths as the detail popovers (D-101): only
-  // an Event has people to put in the right column, so a task and a slot stay
-  // one column rather than opening a wide card with an empty half. Declared
-  // above the placement effect, which measures against it.
-  const twoCol = kind === "event";
-  const popW = twoCol ? POP_W_WIDE : POP_W_NARROW;
+  // The composer wears the inspectors' one width (D-190). Declared above the
+  // placement effect, which measures against it.
+  const popW = INSPECTOR_W;
 
   const [pos, setPos] = useState<{ top: number; left: number }>(() => ({
     top: fixedCssPx(point.y),
@@ -359,37 +347,28 @@ export default function DraftComposer({
         // A floating surface: the grid's block keys and the Schedule's letters
         // stand down while it's up — ↑↓ here are the draft's.
         data-nested-surface=""
-        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className="insp fixed z-50"
         style={{
           top: pos.top,
           left: pos.left,
           width: popW,
           maxHeight: "calc(100vh - 16px)",
-          boxShadow: "var(--shadow-3)",
+          ["--pop-origin" as string]: placedRef.current?.side === "left" ? "top right" : "top left",
         }}
       >
-        {/* ── Masthead — what kind, what it's called, and when. The same three
-              lines the detail popovers open with (D-101): the kind switcher is
-              this card's identity, the title is its hero, and the meta line
-              carries the read the fields below let you change. ── */}
-        <div className="flex shrink-0 flex-col gap-2.5 px-4 pt-3.5 pb-3">
-          <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-1">
-            {kinds.map((k) => (
-              <button
-                key={k.value}
-                title={k.hint}
-                onClick={() => setKind(k.value)}
-                className={`fast flex flex-1 items-center justify-center rounded-[var(--radius-sm)] px-3 py-2 text-body font-semibold transition-colors ${
-                  kind === k.value
-                    ? "bg-surface text-accent shadow-[var(--shadow-1)]"
-                    : "text-muted hover:text-ink"
-                }`}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
-
+        {/* ── Head — what kind, what it's called, and when. The kind switch is
+              this card's identity, the name is its hero, and the meta line
+              carries the read the rows below let you change (D-101). ── */}
+        <div className="insp-head" data-nodot="">
+          {kinds.length > 1 && (
+            <Segmented
+              className="k-seg-full mb-1.5"
+              label="Make a"
+              value={kind}
+              onChange={setKind}
+              options={kinds.map((k) => ({ value: k.value, label: k.label, title: k.hint }))}
+            />
+          )}
           <input
             ref={inputRef}
             value={title}
@@ -404,166 +383,115 @@ export default function DraftComposer({
             }}
             placeholder={placeholder}
             aria-label={placeholder}
-            className="w-full rounded-[var(--radius)] border border-line bg-surface-2 px-3.5 py-2.5 text-head font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-muted/50 focus:border-accent focus:bg-surface focus:shadow-[0_0_0_3px_var(--accent-soft)]"
+            className="insp-title-input"
           />
-
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-meta text-muted">
-            <span className="mono">{whenSummary}</span>
+          <div className="insp-meta">
+            <span>{whenSummary}</span>
             {repeat && (
               <>
                 <PopMetaDot />
-                <span title="Repeats">↻ {describeRule(repeat, anchorISO)}</span>
+                <span title="Repeats">{describeRule(repeat, anchorISO)}</span>
               </>
             )}
           </div>
         </div>
 
-        {/* Left = what it is and when · right = who it involves. A task or a
-            slot has nobody to put on the right, so it stays one column. */}
         <PopBody>
-          <PopCol side={twoCol ? "left" : "only"}>
-            <PopStack>
-              <PopField label="When">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="mono rounded-full bg-bg px-2.5 py-1 text-label text-ink">
-                    {timeLabel}
-                  </span>
-                  {/* All day rides the time row as a chip — at 384px it used to
-                      be a full-width switch, the heaviest object in a card whose
-                      real primary is Create. */}
-                  {kind === "event" && !allDay && (
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={eventAllDay}
-                      onClick={() => setEventAllDay(!eventAllDay)}
-                      className={`fast rounded-full border px-2.5 py-1 text-label ${
-                        eventAllDay
-                          ? "border-accent/40 bg-accent-soft font-medium text-accent"
-                          : "border-line text-muted hover:border-line-strong hover:text-ink"
-                      }`}
-                    >
-                      All day
-                    </button>
-                  )}
-                  <RepeatControl anchorISO={anchorISO} value={repeat} onChange={setRepeat} />
-                </div>
-                {startsLater && (
-                  <span className="text-micro text-muted">
-                    First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")} — not this day
-                  </span>
-                )}
-              </PopField>
+          <PopRow icon="repeat" label="Repeat">
+            <RepeatControl variant="value" anchorISO={anchorISO} value={repeat} onChange={setRepeat} />
+            {startsLater && (
+              <span className="insp-hint">First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")}</span>
+            )}
+          </PopRow>
 
-              <PopField label="Remind">
-                <DraftReminderSelect
-                  defaultLeads={reminderDefaults}
-                  allDay={kind === "event" ? eventAllDay : kind === "task" && allDay}
-                  enabled={reminderPrefs.enabled}
-                  value={reminder}
-                  onChange={setReminder}
-                  block
-                />
-              </PopField>
-              {kind === "event" && calendar.choosable && (
-                <PopField label="Calendar">
-                  <EventCalendarPicker
-                    groups={calendar.groups}
-                    value={calendar.target}
-                    defaultTarget={calendar.defaultTarget}
-                    onChange={calendar.pick}
-                  />
-                </PopField>
+          {/* All day rides a row of its own — a switch you touch twice a year,
+              never the heaviest object in a card whose primary is Create. */}
+          {kind === "event" && !allDay && (
+            <PopRow icon="clock" label="All day">
+              <label className="flex flex-1 items-center justify-between gap-2">
+                <span>All day</span>
+                <Switch checked={eventAllDay} onChange={setEventAllDay} label="All day" />
+              </label>
+            </PopRow>
+          )}
+
+          <PopRow icon="bell" label="Remind" top>
+            <DraftReminderSelect
+              defaultLeads={reminderDefaults}
+              allDay={kind === "event" ? eventAllDay : kind === "task" && allDay}
+              enabled={reminderPrefs.enabled}
+              value={reminder}
+              onChange={setReminder}
+              block
+            />
+          </PopRow>
+
+          {kind === "event" && calendar.choosable && (
+            <PopRow icon="calendar" label="Calendar" top>
+              <EventCalendarPicker
+                variant="value"
+                groups={calendar.groups}
+                value={calendar.target}
+                defaultTarget={calendar.defaultTarget}
+                onChange={calendar.pick}
+              />
+            </PopRow>
+          )}
+
+          {/* ── Google Meet — a fact of the event (how you get in), so it files
+                with the calendar. Google never adds one to an event created
+                through the API, so this is the only thing that puts a way to
+                meet on the invite. ── */}
+          {kind === "event" && isGoogle && !eventAllDay && (
+            <PopRow icon="video" label="Google Meet">
+              <label className="flex flex-1 items-center justify-between gap-2">
+                <span>Google Meet</span>
+                <Switch checked={addMeet} onChange={() => setMeetChoice(!addMeet)} label="Google Meet" />
+              </label>
+            </PopRow>
+          )}
+
+          {/* ── Domain — Slot only: a standing "domain slot" the weekly plan
+                routes matching work into (docs/standing-slots.md) ── */}
+          {kind === "slot" && domains.length > 0 && (
+            <PopRow icon={<AltitudeIcon kind="domain" size={14} />} label="Domain">
+              <PopPick
+                label="Domain"
+                value={domainId ?? ""}
+                options={[
+                  { value: "", label: "No domain" },
+                  ...domains.map((d) => ({ value: d.id, label: d.name, icon: <Dot color={d.color} /> })),
+                ]}
+                onChange={(v) => setDomainId(v || null)}
+                empty={!domainId}
+                lead={domainId ? <Dot color={domains.find((d) => d.id === domainId)?.color ?? "var(--faint)"} /> : undefined}
+              >
+                {domains.find((d) => d.id === domainId)?.name ?? "No domain"}
+              </PopPick>
+              {domainId && (
+                <span
+                  className="insp-hint"
+                  title={
+                    repeat
+                      ? "The weekly plan routes this domain's work here."
+                      : "Add a repeat and the weekly plan routes this domain's work here."
+                  }
+                >
+                  {repeat ? "Standing" : "One-off"}
+                </span>
               )}
+            </PopRow>
+          )}
 
-              {/* ── Google Meet — a fact of the event (how you get in), not a
-                    fact about the guests, so it files with When and Calendar.
-                    Google never adds one to an event created through the API, so
-                    this toggle is the only thing that puts a way to meet
-                    digitally on the invite. ── */}
-              {kind === "event" && isGoogle && !eventAllDay && (
-                <PopField label="Meeting">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={addMeet}
-                    onClick={() => setMeetChoice(!addMeet)}
-                    className={`fast inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-label font-medium ${
-                      addMeet
-                        ? "border-accent/45 bg-accent-soft text-accent"
-                        : "border-line text-muted hover:border-line-strong hover:text-ink"
-                    }`}
-                  >
-                    <Icon name="video" size={11} className="shrink-0" />
-                    Google Meet
-                    <span className="opacity-60">{addMeet ? "on" : "off"}</span>
-                  </button>
-                  {addMeet && (
-                    <span className="text-micro text-muted">
-                      Google mints the link and puts it on the invite — no need to paste it into the notes.
-                    </span>
-                  )}
-                </PopField>
+          {/* ── Guests — calendar events only ── */}
+          {kind === "event" && (
+            <PopSection label="Guests" icon="users">
+              {isGoogle ? (
+                <GuestsInput value={attendees} onChange={setAttendees} placeholder="Name or email" />
+              ) : (
+                <span className="insp-hint">Guests need a Google calendar.</span>
               )}
-
-              {/* ── Domain — Slot tab only: makes a standing "domain slot" the weekly
-                    plan routes matching work into (docs/standing-slots.md) ── */}
-              {kind === "slot" && domains.length > 0 && (
-                <PopField label="Domain">
-                  <div className="flex flex-wrap gap-1.5">
-                    {domains.map((d) => {
-                      const on = domainId === d.id;
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => setDomainId(on ? null : d.id)}
-                          className={`fast inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label font-medium transition-colors ${
-                            on ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
-                          }`}
-                          // The domain's colour is the mark, never the label: it is
-                          // user-chosen, so nothing legible can be promised on top
-                          // of it (D-101).
-                          style={
-                            on
-                              ? {
-                                  borderColor: `color-mix(in srgb, ${d.color} 45%, transparent)`,
-                                  background: `color-mix(in srgb, ${d.color} 12%, transparent)`,
-                                }
-                              : undefined
-                          }
-                        >
-                          <span className="h-2 w-2 rounded-full" style={{ background: d.color }} />
-                          {d.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {domainId && (
-                    <span className="text-micro text-muted">
-                      {repeat
-                        ? "The weekly plan routes this domain's work here."
-                        : "Add a Repeat above to have the plan route this domain's work here."}
-                    </span>
-                  )}
-                </PopField>
-              )}
-            </PopStack>
-          </PopCol>
-
-          {twoCol && (
-            <PopCol side="right">
-              {/* ── Guests — only for calendar events ── */}
-              <PopSection label="Guests" className="flex-1">
-                {isGoogle ? (
-                  <GuestsInput value={attendees} onChange={setAttendees} />
-                ) : (
-                  <span className="text-meta text-muted">
-                    Guests can only be invited on a Google calendar.
-                  </span>
-                )}
-              </PopSection>
-            </PopCol>
+            </PopSection>
           )}
         </PopBody>
 
@@ -571,58 +499,34 @@ export default function DraftComposer({
         {confirmingGuests ? (
           /* Naming the recipients is the point: "3 guests" tells you a count,
              not who is about to hear from you. */
-          <div className="flex shrink-0 flex-col gap-3 border-t border-line p-3.5">
-            <div>
-              <div className="text-body font-medium text-ink">
-                {inviteConsentPrompt({ mode: "create", count: guests.length, addMeet })}
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {guests.map((email) => (
-                  <span key={email} className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-meta text-muted">
-                    {email}
-                  </span>
-                ))}
-              </div>
+          <div className="insp-ask">
+            <p>{inviteConsentPrompt({ mode: "create", count: guests.length, addMeet })}</p>
+            <div className="flex flex-wrap gap-1">
+              {guests.map((email) => (
+                <Chip key={email}>{email}</Chip>
+              ))}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                onClick={() => setConfirmingGuests(false)}
-                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] px-3 py-2 text-body font-medium text-muted hover:bg-bg"
-              >
+            <div className="insp-ask-acts">
+              <Button kind="ghost" onClick={() => setConfirmingGuests(false)}>
                 Back
-              </button>
-              <button
-                onClick={() => finish(false)}
-                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] border border-line px-3 py-2 text-body font-medium text-ink hover:bg-bg"
-                title={QUIET_HINT}
-              >
+              </Button>
+              <Button onClick={() => finish(false)} title={QUIET_HINT}>
                 Add without emailing
-              </button>
-              <button
-                onClick={() => finish(true)}
-                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] bg-accent px-4 py-2 text-body font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90"
-              >
+              </Button>
+              <Button kind="primary" onClick={() => finish(true)}>
                 Send invites
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
           <PopFooter>
-            <div className="min-w-0 flex-1" />
-            <button
-              onClick={onCancel}
-              className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] px-3 py-2 text-body font-medium text-muted hover:bg-bg"
-            >
+            <PopGrow />
+            <Button kind="ghost" onClick={onCancel}>
               Cancel
-            </button>
-            <button
-              onClick={submit}
-              disabled={!canCreate}
-              className="fast tap inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-5 py-2 text-body font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-            >
+            </Button>
+            <Button kind="primary" onClick={submit} disabled={!canCreate} shortcut={["⌘", "↵"]}>
               {sendsInvites ? "Create & invite…" : "Create"}
-              <span className="text-meta font-normal text-on-accent/65">⌘↵</span>
-            </button>
+            </Button>
           </PopFooter>
         )}
       </div>
