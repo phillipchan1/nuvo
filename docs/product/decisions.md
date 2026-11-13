@@ -6985,7 +6985,16 @@ background events under the real week, answered from a popover beside it (pointi
 lights its band); and "Your week, as your calendar tells it" appears once, the first time there
 are two or more Sure time observations. Memory reaches the Schedule and the rail as a prop from
 `Planner`, not a hook inside them, so the harnesses and tests that mount them without the app's
-data layer are untouched. **Not built:** dragging a ghost's edges to adjust it (§5.2), `planMemory` moving into the database, the other chapters (Work,
+data layer are untouched. **Changed the same day, after the first run on a real account:** Memory is its **own page** (a
+Flow surface, `MemoryPage`, overlay `"memory"` — Esc / Back leave it), not a dialog: it was
+cramped, more will live there, and a list in a box can't *show* what Nuvo learned. The page's hero
+is your eight weeks drawn as one week. Hours are now read **only** from domains you mark as paid
+work (several can be) — read from the whole weekday calendar they came out as nonsense on a real
+account; until you pick, Memory doesn't guess them. Days are said the way a person would ("every
+day", "weekdays", "Tuesdays and Thursdays"). The Schedule draws only hours you **kept** (no hatch
+for a default) and no band over a habit that is already a repeating event. The Rhythm popover
+shows three at most and hands the rest to the page — no scroll. This strains P10 harder than the
+dialog did, knowingly; the second-instance argument above is the defence. **Not built:** dragging a ghost's edges to adjust it (§5.2), `planMemory` moving into the database, the other chapters (Work,
 Projects, Initiatives, Domains, Words), the chat reading Memory, and setting `domains.kind` from
 the first-run picker. "Owned calendars" is approximated: Google calendars don't say who owns
 them in what we sync, so only the primary counts there. **Not run:** `npm run perf` (the hook

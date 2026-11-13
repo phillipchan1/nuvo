@@ -161,3 +161,25 @@ describe("rhythm · overlapping windows are one fact", () => {
     expect(ws[0].kind === "window" && [ws[0].weekdays, ws[0].startMin, ws[0].endMin]).toEqual([[0, 1, 2, 3], 690, 810]);
   });
 });
+
+describe("rhythm · hours need to know what work is", () => {
+  it("with no work domain named, no hours are claimed from the weekday calendar", () => {
+    const events = office().map((e) => ({ ...e, domainId: null }));
+    expect(readRhythm(base({ events })).some((o) => o.kind === "hours")).toBe(false);
+  });
+});
+
+import { recurringDays, listOf } from "../src/lib/memory";
+describe("memory · how days are said", () => {
+  it("says recurring days the way a person would", () => {
+    expect(recurringDays([0, 1, 2, 3, 4, 5, 6])).toBe("every day");
+    expect(recurringDays([0, 1, 2, 3, 4])).toBe("weekdays");
+    expect(recurringDays([5, 6])).toBe("weekends");
+    expect(recurringDays([0, 1, 2, 3])).toBe("Monday to Thursday");
+    expect(recurringDays([1, 3])).toBe("Tuesdays and Thursdays");
+    expect(recurringDays([6])).toBe("Sundays");
+  });
+  it("joins a list once", () => {
+    expect(listOf(["a", "b", "c"])).toBe("a, b and c");
+  });
+});

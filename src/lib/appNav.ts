@@ -27,7 +27,10 @@ export type OverlayKind =
   // The Week's Plan / Review — slides over the Schedule work area. History-
   // backed so Esc / browser-back / ⌘[ dismiss it like every other overlay.
   | "week-plan"
-  | "upkeep";
+  | "upkeep"
+  // Memory (docs/memory.md) — its own page over everything, history-backed
+  // so Esc / Back / ⌘[ leave it like every other overlay.
+  | "memory";
 
 export type SettingsSection = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "desktop" | "account" | "billing" | "about";
 

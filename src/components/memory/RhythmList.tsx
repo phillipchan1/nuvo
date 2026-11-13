@@ -1,32 +1,34 @@
 /**
- * The Schedule's Rhythm popover (docs/memory.md §5.2): what Memory noticed about
- * your time, answered beside the week it's drawn on. Pointing at a row lights
- * its band on the grid. Sure and Fairly sure only — nothing unsure is drawn.
+ * The Schedule's Rhythm popover (docs/memory.md §5.2): the few things Memory
+ * noticed about your time that are drawn on this week, answered beside it.
+ * Short on purpose — three at most, so it never scrolls. Everything else, and
+ * everything kept, lives on the Memory page. Pointing at a row lights its band.
  */
 
-import type { MemoryApi } from "./MemoryPanel";
+import type { MemoryApi } from "./MemoryPage";
 import { Button } from "../kit";
 
-export function RhythmList({ memory, onHot }: { memory: MemoryApi; onHot: (key: string | null) => void }) {
-  const items = memory.items.filter((i) => i.section === "new" && i.observation);
-  const kept = memory.items.filter((i) => i.section === "kept").length;
+const SHOWN = 3;
+
+export function RhythmList({
+  memory,
+  onHot,
+  onOpenMemory,
+}: {
+  memory: MemoryApi;
+  onHot: (key: string | null) => void;
+  onOpenMemory?: () => void;
+}) {
+  const all = memory.items.filter((i) => i.section === "new" && i.observation);
+  const items = all.slice(0, SHOWN);
   return (
     <div className="rhythm-list" onPointerLeave={() => onHot(null)}>
-      <p className="section-label">Rhythm</p>
       {!memory.available && <p className="memory-src">Memory isn't switched on for this account yet.</p>}
       {items.length === 0 ? (
-        <p className="memory-src">
-          {memory.learning ? "Nothing new about your time." : "Learning is paused."}
-          {kept ? ` ${kept} kept — see Memory.` : ""}
-        </p>
+        <p className="memory-src">{memory.learning ? "Nothing new about your time." : "Learning is paused."}</p>
       ) : (
         items.map((it) => (
-          <div
-            key={it.key}
-            className="memory-item"
-            onPointerEnter={() => onHot(it.key)}
-            onFocus={() => onHot(it.key)}
-          >
+          <div key={it.key} className="memory-item" onPointerEnter={() => onHot(it.key)} onFocus={() => onHot(it.key)}>
             <p className="memory-say">{it.described.statement}</p>
             <div className="memory-meta">
               <span className="memory-pips" aria-label={it.described.evidence}>
@@ -34,13 +36,23 @@ export function RhythmList({ memory, onHot }: { memory: MemoryApi; onHot: (key: 
               </span>
               <span>{it.described.evidence}</span>
             </div>
-            <p className="memory-conseq"><b>Keep:</b> {it.described.keep}</p>
             <div className="memory-acts">
-              <Button size="sm" kind="primary" disabled={!memory.available} onClick={() => void memory.keep(it)}>Keep</Button>
-              <Button size="sm" kind="ghost" disabled={!memory.available} onClick={() => memory.refuse(it)}>Not true</Button>
+              <Button size="sm" kind="primary" disabled={!memory.available} onClick={() => void memory.keep(it)} title={it.described.keep}>
+                Keep
+              </Button>
+              <Button size="sm" kind="ghost" disabled={!memory.available} onClick={() => memory.refuse(it)}>
+                Not true
+              </Button>
             </div>
           </div>
         ))
+      )}
+      {onOpenMemory && (
+        <div className="rhythm-list-foot">
+          <Button size="sm" kind="ghost" onClick={onOpenMemory}>
+            {all.length > SHOWN ? `See all ${all.length} in Memory` : "Open Memory"}
+          </Button>
+        </div>
       )}
     </div>
   );

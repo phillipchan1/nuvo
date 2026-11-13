@@ -45,6 +45,7 @@ const SettingsModal = lazy(() => import("./SettingsModal"));
 const TaskPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.TaskPopover })));
 const EventPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.EventPopover })));
 const SlotPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.SlotPopover })));
+const MemoryPage = lazy(() => import("./memory/MemoryPage"));
 
 // Stable empties: a fresh `[]` default on every render is a new calendar input.
 const EMPTY_TASKS: Task[] = [];
@@ -85,6 +86,7 @@ export default function Planner({
     panelAnchor,
     panelAnchorEl,
   } = useAppNavigation();
+  const openMemory = useCallback(() => openOverlay("memory"), [openOverlay]);
 
   const { tab, calView: view, overlay, overlayId, overlaySubId, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
@@ -649,6 +651,7 @@ export default function Planner({
           <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
             learned={learned}
+            onOpenMemory={openMemory}
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
@@ -819,6 +822,11 @@ export default function Planner({
           recurrenceMutations={recurrenceMutations}
           onClose={closeOverlay}
         />
+        </Suspense>
+      )}
+      {overlay === "memory" && (
+        <Suspense fallback={null}>
+          <MemoryPage memory={learned} onClose={closeOverlay} />
         </Suspense>
       )}
       {showSettings && (

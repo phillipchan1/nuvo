@@ -12,28 +12,22 @@ import GettingStarted from "./orientation/GettingStarted";
 import { useMemory } from "../hooks/useMemory";
 import { MemoryIcon } from "./memory/MemoryIcon";
 
-const MemoryPanel = lazy(() => import("./memory/MemoryPanel"));
 const RhythmIntro = lazy(() => import("./memory/RhythmIntro"));
 
 /** The sidebar's way into Memory (docs/memory.md §4.1): always there, one quiet
  *  dot when something new is sure enough to show you, never a count. */
 function MemoryRow({ railed }: { railed: boolean }) {
   const memory = useMemory();
-  const [open, setOpen] = useState(false);
+  const { openOverlay } = useAppNavigation();
   const label = memory.hasNew ? "Memory · something new" : memory.learning ? "Memory" : "Memory · paused";
   return (
     <>
-      <button onClick={() => setOpen(true)} title={label} aria-label={label} className="sb-item" data-railed={railed || undefined}>
+      <button onClick={() => openOverlay("memory")} title={label} aria-label={label} className="sb-item" data-railed={railed || undefined}>
         <span className={`sb-icon${memory.hasNew ? " sb-icon-dot" : ""}`}>
           <MemoryIcon />
         </span>
         <span className="sb-label">Memory</span>
       </button>
-      {open && (
-        <Suspense fallback={null}>
-          <MemoryPanel onClose={() => setOpen(false)} />
-        </Suspense>
-      )}
       {memory.available && !memory.introduced && (
         <Suspense fallback={null}>
           <RhythmIntro />

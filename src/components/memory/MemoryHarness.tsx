@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { MemoryPanelView, type MemoryApi } from "./MemoryPanel";
+import { MemoryPageView, type MemoryApi } from "./MemoryPage";
 import { MemoryIcon } from "./MemoryIcon";
 import { describe, sectionOf, addDaysISO, type MemoryAnswer } from "../../lib/memory";
 import type { MemoryItem } from "../../hooks/useMemory";
@@ -55,10 +55,23 @@ export default function MemoryHarness() {
   const [answers, setAnswers] = useState<MemoryAnswer[]>([]);
   const [learning, setLearning] = useState(true);
 
+  const fx = useMemo(() => fixture(today), [today]);
+  const heat = useMemo(() => {
+    const win = windowOf(today);
+    const seen = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => new Set<number>()));
+    for (const e of fx.events) {
+      const w = win.weekIndex(e.day);
+      if (w < 0) continue;
+      const wd = (new Date(`${e.day}T00:00:00Z`).getUTCDay() + 6) % 7;
+      for (let h = Math.floor(e.startMin / 60); h < Math.ceil(e.endMin / 60); h++) seen[wd][h].add(w);
+    }
+    return seen.map((r) => r.map((x) => x.size));
+  }, [fx, today]);
+  const [work, setWork] = useState<string[]>(["school"]);
   const observations = useMemo(() => {
-    const { events, tasks } = fixture(today);
-    return readRhythm({ today, events, tasks, workDomainIds: ["school"], repeatingTitles: [], fallbackHours: { startMin: 480, endMin: 990 } });
-  }, [today]);
+    const { events, tasks } = fx;
+    return readRhythm({ today, events, tasks, workDomainIds: work, repeatingTitles: [], fallbackHours: { startMin: 480, endMin: 990 } });
+  }, [today, fx, work]);
 
   const ctx = { domainName: (id: string | null) => DOMAINS.find((d) => d.id === id)?.name ?? null, currentHours: { startMin: 480, endMin: 990 } };
   const items: MemoryItem[] = [
@@ -100,9 +113,12 @@ export default function MemoryHarness() {
     setLearning,
     markSeen: () => {},
     forgetAll: () => setAnswers([]),
-    needsWorkDomain: false,
+    needsWorkDomain: work.length === 0,
     domains: DOMAINS as unknown as MemoryApi["domains"],
-    setWorkDomain: () => {},
+    workDomainIds: work,
+    setWorkDomain: (id: string, on = true) => setWork((w) => (on ? [...new Set([...w, id])] : w.filter((x) => x !== id))),
+    heat,
+    reading: { weeks: 8, events: fx.events.length, written: fx.tasks.length },
   };
 
   return (
@@ -114,7 +130,7 @@ export default function MemoryHarness() {
         <span className="sb-icon sb-icon-dot"><MemoryIcon /></span>
         <span className="sb-label">Memory</span>
       </button>
-      {open && <MemoryPanelView memory={memory} onClose={() => setOpen(false)} />}
+      {open && <MemoryPageView memory={memory} onClose={() => setOpen(false)} />}
     </div>
   );
 }
