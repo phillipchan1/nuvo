@@ -13,7 +13,7 @@ import { useState } from "react";
 import { useVertical } from "../hooks/useVertical";
 import { Button, Checkbox, Dot, FormField, Input } from "./kit";
 import { Icon } from "./Icon";
-import { FlowHead, FlowMark } from "./rituals/FlowShell";
+import { StatementPage } from "./statement/StatementPage";
 
 type Kind = {
   key: string;
@@ -111,20 +111,23 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
   };
 
   return (
-    // The window ground, one raised card (D-190): the mark, one hero, the kinds
-    // as kit rows, the act bottom-right. Scrolls as one page on a phone.
-    <div className="h-full overflow-y-auto" style={{ background: "var(--ground)" }}>
-      <div className="f-ground">
-        <div className="f-card" data-width="wide">
-          <div className="grid gap-5">
-            <FlowMark />
-            <FlowHead
-              hero="What are you carrying?"
-              fact="A domain is an area you're responsible for over the long run — not a project, not a list. Name them the way you'd say them out loud."
-            />
-          </div>
+    // A statement page (D-192): the stage asks the question, the door holds
+    // the kinds as kit rows and the act bottom-right. One page on a phone.
+    <div className="h-full overflow-y-auto">
+      <StatementPage
+        wide
+        kicker="Set up Nuvo"
+        hero={
+          <>
+            Name what
+            <br />
+            you&rsquo;re carrying
+          </>
+        }
+      >
+          <p className="st-lead">A domain is an area you're responsible for over the long run — not a project, not a list. Name them the way you'd say them out loud.</p>
 
-          <ul className="mt-6 grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1), inset 0 -1px 0 var(--line-1)" }}>
+          <ul className="grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1), inset 0 -1px 0 var(--line-1)" }}>
             {KINDS.map((k) => {
               const on = k.key in picked;
               return (
@@ -211,8 +214,7 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
                   : "Pick at least one"}
             </Button>
           </div>
-        </div>
-      </div>
+      </StatementPage>
     </div>
   );
 }

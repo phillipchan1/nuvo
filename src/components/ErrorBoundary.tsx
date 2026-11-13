@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Stop } from "./statement/StatementPage";
 import { rememberError } from "../lib/appError";
 import { captureAppException } from "../lib/posthog";
 import { Button } from "./kit";
@@ -52,7 +53,10 @@ export default class ErrorBoundary extends Component<
     return (
       <div className="atmosphere flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
         <div className="k-card w-96 max-w-full !gap-0 !p-6" style={{ boxShadow: "var(--sh-modal)" }}>
-          <h1 className="set-title !m-0">Something broke.</h1>
+          <h1 className="st-title">
+            Something broke
+            <Stop />
+          </h1>
           <p className="mt-2 text-body text-muted">
             {this.props.label ? `The ${this.props.label} hit an error` : "Nuvo hit an error"} it couldn't recover from.
             Your data is safe — reloading usually fixes it.

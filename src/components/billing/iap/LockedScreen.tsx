@@ -4,6 +4,7 @@ import { manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, type Subscription } from "../../../lib/subscription";
 import { useSubscription } from "../../../hooks/useSubscription";
 import { Button } from "../../kit";
+import { StatementPage } from "../../statement/StatementPage";
 import { IapChooser } from "./IapChooser";
 import { DeleteAccount } from "../../account/DeleteAccount";
 
@@ -18,12 +19,28 @@ export default function IapLockedScreen({
   if (status === "past_due") return <PastDue />;
 
   return (
-    <div className="atmosphere flex h-full items-start justify-center overflow-y-auto px-4 py-10 sm:items-center sm:py-12">
-      <div className="lock-card">
-        <h1 className="lock-title">
-          {status === "cancelled" ? "Welcome back any time" : "Your 14 days are up"}
-        </h1>
-        <p className="lock-lead">
+    // A statement page (D-192): the stage says why to stay, the door holds the plans.
+    <div className="h-full overflow-y-auto">
+      <StatementPage
+        wide
+        kicker={status === "cancelled" ? "Welcome back" : "Your 14 days are up"}
+        hero={
+          status === "cancelled" ? (
+            <>
+              Pick up where
+              <br />
+              you stopped
+            </>
+          ) : (
+            <>
+              Keep the
+              <br />
+              momentum
+            </>
+          )
+        }
+      >
+        <p className="st-lead">
           Everything you've built is still here, exactly where you left it. Subscribe to pick up where you stopped.
         </p>
 
@@ -43,7 +60,7 @@ export default function IapLockedScreen({
           </div>
           <DeleteAccount compact planSource={subscription?.plan_source ?? "apple"} />
         </div>
-      </div>
+      </StatementPage>
     </div>
   );
 }
@@ -79,10 +96,9 @@ function PastDue() {
   };
 
   return (
-    <div className="atmosphere flex h-full items-center justify-center px-4">
-      <div className="lock-card" data-narrow="">
-        <h1 className="lock-title">Your subscription needs a moment</h1>
-        <p className="lock-lead">
+    <div className="h-full overflow-y-auto">
+      <StatementPage kicker="Billing" hero={<>Your subscription needs a moment</>}>
+        <p className="st-lead">
           Your last period didn’t renew. Update payment in your Apple ID settings and
           everything comes straight back — nothing has been lost.
         </p>
@@ -107,7 +123,7 @@ function PastDue() {
           </div>
           <DeleteAccount compact planSource="apple" />
         </div>
-      </div>
+      </StatementPage>
     </div>
   );
 }

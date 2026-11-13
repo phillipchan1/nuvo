@@ -1,0 +1,247 @@
+/* ════════════════════════════════════════════════════════════════════════
+   STATEMENT PAGES (D-192) — sign-in, first run, the welcome, the paywall.
+
+   Two halves. The STAGE is always ink (it carries data-theme="dark", so every
+   token inside it resolves dark whatever the app's theme): the mark, one
+   statement set huge and ending on the ember full stop, and the landing week.
+   The DOOR is the theme's panel and holds the one thing to do.
+   On a phone the stage is a top band and the door rises over it as a sheet.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.st-page {
+  /* the landing week's hues: the dark theme's domain colours (the stage is ink) */
+  --dk-work: #8592f5;
+  --dk-health: #4cc493;
+  --dk-family: #e3a740;
+  --dk-writing: #ec7aa3;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(400px, 0.88fr);
+  min-height: 100dvh;
+  background: var(--panel);
+}
+
+/* ── The stage ─────────────────────────────────────────────────────────── */
+.st-stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 40px;
+  min-width: 0;
+  padding: max(32px, calc(var(--titlebar-h, 0px) + 20px)) clamp(32px, 4.5vw, 72px) 40px;
+  background: var(--ground);
+  color: var(--ink);
+  overflow: hidden;
+}
+.st-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 700 16px/1 var(--font-sans);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+html.tauri-macos .st-brand { padding-left: var(--titlebar-x, 0px); }
+.st-statement { align-self: center; display: grid; gap: 18px; }
+.st-kicker {
+  margin: 0;
+  color: var(--muted);
+  font: 600 13px/1.3 var(--font-sans);
+}
+.st-hero {
+  margin: 0;
+  font: 800 clamp(56px, 7.2vw, 120px)/0.88 var(--font-sans);
+  letter-spacing: -0.06em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.st-stop {
+  display: inline-block;
+  color: var(--signal);
+  transform-origin: 50% 80%;
+  animation: st-stop var(--d-moment) var(--ease-land) calc(var(--d-moment) * 1.4) both;
+}
+@keyframes st-stop {
+  from { opacity: 0; transform: scale(0.2); }
+  to { opacity: 1; transform: none; }
+}
+.st-visual { min-width: 0; }
+
+/* ── The landing week ──────────────────────────────────────────────────── */
+.ws {
+  max-width: 640px;
+  border-radius: var(--r-dialog);
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line-1), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.ws-days {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-bottom: 1px solid var(--line-1);
+}
+.ws-day {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 38px;
+  padding: 10px 10px 0;
+  color: var(--muted);
+  font: 500 11.5px/1 var(--font-sans);
+}
+.ws-day b { color: var(--ink); font: 650 14px/1 var(--font-sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.ws-day[data-today] b { color: var(--on-signal); background: var(--signal); border-radius: 5px; padding: 2px 5px; }
+.ws-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: 232px;
+}
+.ws-col {
+  position: relative;
+  border-left: 1px solid var(--line-1);
+  background-image: linear-gradient(var(--line-1) 1px, transparent 1px);
+  background-size: 100% calc(100% / 7);
+}
+.ws-col:first-child { border-left: 0; }
+.ws-block {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  padding: 4px 6px 4px 8px;
+  border-radius: 5px;
+  overflow: hidden;
+  font: 600 10.5px/1.2 var(--font-sans);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--h) 18%, var(--panel));
+  color: color-mix(in srgb, var(--h) 55%, var(--ink));
+  box-shadow: inset 2px 0 0 var(--h);
+  animation: ws-land var(--d-land) var(--ease-land) both;
+  animation-delay: calc(240ms + var(--i) * 70ms);
+}
+.ws-block[data-kind="task"] {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  padding-left: 18px;
+}
+.ws-block[data-kind="task"]::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--h);
+}
+@keyframes ws-land {
+  from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.ws-now {
+  position: absolute;
+  right: 0;
+  height: 2px;
+  background: var(--signal);
+  transform-origin: left center;
+  animation: ws-now var(--d-advance) var(--ease-momentum) calc(240ms + 12 * 70ms) both;
+}
+.ws-now::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+@keyframes ws-now {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── The door ──────────────────────────────────────────────────────────── */
+.st-door {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+  padding: max(40px, calc(var(--titlebar-h, 0px) + 24px)) clamp(24px, 4vw, 64px) 28px;
+  background: var(--panel);
+  box-shadow: -1px 0 0 var(--line-1);
+}
+.st-door-inner {
+  align-self: center;
+  justify-self: center;
+  width: min(380px, 100%);
+  display: grid;
+  gap: 20px;
+  animation: st-door-in var(--d-moment) var(--ease-spring) 120ms both;
+}
+.st-door[data-wide] .st-door-inner { width: min(560px, 100%); }
+/* Transform only — the door holds the sign-in, and it must never depend on
+   an animation having run to be visible (a background tab doesn't run them). */
+@keyframes st-door-in {
+  from { transform: translateY(10px); }
+  to { transform: none; }
+}
+.st-title {
+  margin: 0;
+  font: 750 36px/1 var(--font-sans);
+  letter-spacing: -0.045em;
+  color: var(--ink);
+}
+.st-title .st-stop { animation-delay: calc(var(--d-moment) * 0.8); }
+.st-lead { margin: -8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.st-actions { display: grid; gap: 8px; }
+/* The doors are the page's only acts: full-width and 44px, at every pointer. */
+.st-actions .k-btn { height: 44px; font-size: 14px; border-radius: 8px; }
+.st-actions .k-field { height: 44px; }
+.st-door-foot {
+  justify-self: center;
+  width: min(380px, 100%);
+  color: var(--faint);
+  font: 450 12px/1.45 var(--font-sans);
+  text-align: center;
+}
+.st-door[data-wide] .st-door-foot { width: min(560px, 100%); }
+.st-door-foot a { color: var(--muted); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 2px; }
+@media (hover: hover) {
+  .st-door-foot a:hover { color: var(--ink); }
+}
+
+/* ── Phone: the stage is a band, the door a sheet ──────────────────────── */
+@media (max-width: 899px) {
+  .st-page { grid-template-columns: 1fr; grid-template-rows: auto 1fr; background: var(--ground); }
+  .st-stage {
+    gap: 28px;
+    grid-template-rows: auto auto;
+    padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px 44px;
+  }
+  .st-hero { font-size: clamp(44px, 13vw, 64px); }
+  .st-visual { display: none; }
+  .st-door {
+    position: relative;
+    z-index: 1;
+    margin-top: -20px;
+    border-radius: 18px 18px 0 0;
+    padding: 28px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
+    box-shadow: 0 -1px 0 var(--line-1);
+  }
+  .st-door-inner { align-self: start; }
+  .st-title { font-size: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-stop, .ws-block, .ws-now, .st-door-inner { animation: none; }
+}
+
+/* ── Content moved into the door ───────────────────────────────────────── */
+/* The flows' card footer sat inside a padded card on negative margins; in the
+   door it is simply the last row, ruled off. */
+.st-door .f-card-foot { margin: 8px 0 0; padding: 16px 0 0; }
+.st-door .lock-foot { margin-top: 8px; }
+/* The welcome's diagram, on the stage, in the same frame as the landing week. */
+.st-welcome { height: 220px; padding: 0; }
+.st-welcome > * { width: 100%; height: 100%; }

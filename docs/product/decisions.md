@@ -6807,6 +6807,24 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-192 · 2026-11-13 · The small pages say the ambition out loud: statement pages.** *(Asked by
+the operator: "redesign the login page… every little page to highlight this ambition.")*
+
+**What.** Sign-in, first run, the welcome and the paywall (web and App Store, incl. past-due) share
+one layout: an always-ink stage with the mark, a statement set huge and ending on the ember full
+stop — the mark's dot, now a typographic device — and a landing week; and a door in the theme's
+panel. Statements: "Ambition, down to the hour." (sign-in, the site's line), "Name what you're
+carrying." (first run), "Your whole life, actually moving." (welcome), "Keep the momentum." /
+"Pick up where you stopped." (paywall). The error screen's title takes the full stop. Every
+handler, door order (Apple first, App Store 4.8) and test hook is unchanged; sign-in gains the
+Terms / Privacy line.
+
+**Anchor.** Visual; closes no ledger row. Strains P9 (quiet by default) at the landing week — held
+the D-187 way: it plays once, on arrival, transform/opacity only, and stops for reduced motion.
+The door never animates its opacity.
+
+*Status: built 2026-11-13 on `claude/statement-pages`.*
+
 **D-191 · 2026-11-13 · The mark is "Statement": an N with an ember full stop.** *(Chosen by the
 operator from four directions — Statement, Blocks, Now-line, Week — drawn in the "Nuvo Marks"
 artifact.)*

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../kit";
-import { FlowHead, FlowMark } from "../rituals/FlowShell";
+import { StatementPage } from "../statement/StatementPage";
 import { useOrientation } from "../../hooks/useOrientation";
 import type { OrientationAction } from "./steps";
 import { WelcomeHero } from "./Visuals";
@@ -61,33 +61,28 @@ export default function Orientation({
       aria-modal="true"
       aria-labelledby="orient-title"
     >
-      <div className="f-ground min-h-full">
-        <div ref={cardRef} tabIndex={-1} className="f-card outline-none" data-width="wide">
-          <div className="h-[132px] w-full overflow-hidden rounded-[var(--r-card)] sm:h-[160px]" style={{ background: "var(--sunk)", boxShadow: "inset 0 0 0 1px var(--line-1)" }}>
+      <StatementPage
+        stage={
+          <div className="ws st-welcome">
             <WelcomeHero />
           </div>
-
-          <div className="mt-6 grid gap-5">
-            <FlowMark />
-            {/* "Organized" was the first draft and it's the wrong verb: it's what
-                the tools this replaces already do. Tidiness is the failure mode,
-                not the promise. The promise is that it *moves*. */}
-            <FlowHead
-              hero={
-                <span id="orient-title">
-                  Your whole life,
-                  <br />
-                  actually moving.
-                </span>
-              }
-              /* Says what the diagram says: loose things in, one line out — Nuvo
-                 takes the complexity, and the deciding stays yours in the same
-                 breath (N-01: never Motion-style autopilot). Do NOT enumerate
-                 domains here (Principle 16). */
-              fact="The complexity is ours. The decisions stay yours."
-            />
-          </div>
-
+        }
+        hero={
+          <span id="orient-title">
+            Your whole life,
+            <br />
+            actually moving
+          </span>
+        }
+      >
+        <div ref={cardRef} tabIndex={-1} className="grid gap-5 outline-none">
+          {/* "Organized" was the first draft and it's the wrong verb: it's what
+              the tools this replaces already do. Tidiness is the failure mode,
+              not the promise. The promise is that it *moves*. Says what the
+              diagram says: loose things in, one line out — Nuvo takes the
+              complexity, and the deciding stays yours (N-01). Do NOT enumerate
+              domains here (Principle 16). */}
+          <p className="st-lead">The complexity is ours. The decisions stay yours.</p>
           <div className="f-card-foot">
             <span className="f-sum">Three minutes · stop anywhere</span>
             {/* Quiet, always available — leaving costs one click and no explanation. */}
@@ -99,7 +94,7 @@ export default function Orientation({
             </Button>
           </div>
         </div>
-      </div>
+      </StatementPage>
     </div>,
     document.body
   );

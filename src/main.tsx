@@ -18,6 +18,8 @@ import "./styles/rail.css";
 import "./styles/documents.css";
 // The Flow layout — rituals, Plan the week, onboarding, login (D-190).
 import "./styles/flows.css";
+// The statement pages — sign-in, first run, welcome, paywall (D-192).
+import "./styles/statement.css";
 import "./styles/popovers.css";
 // The phone — the kit at touch size (src/components/mobile/).
 import "./styles/phone.css";
@@ -99,6 +101,7 @@ const showCaptureHarness = import.meta.env.DEV && params.has("capture");
 const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
+const showStatementHarness = import.meta.env.DEV && params.has("statement");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 // `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
 const showDocsHarness = import.meta.env.DEV && params.has("docs");
@@ -148,6 +151,14 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <CalendarHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showStatementHarness) {
+  void import("./components/statement/StatementHarness").then(({ default: StatementHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <StatementHarness />
       </React.StrictMode>,
     );
   });
