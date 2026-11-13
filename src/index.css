@@ -1877,6 +1877,9 @@ select.field { appearance: none; -webkit-appearance: none; }
   --fc-event-border-color: transparent;
   --fc-event-text-color: var(--ink);
   --fc-highlight-color: var(--accent-wash);
+  /* FullCalendar greys a focused / touch-selected block with a 25% black
+     overlay; the selection here is the accent ring (`.evt-focused`). */
+  --fc-event-selected-overlay-color: transparent;
   --fc-small-font-size: 11px;
   font-size: 12px;
   height: 100%;
