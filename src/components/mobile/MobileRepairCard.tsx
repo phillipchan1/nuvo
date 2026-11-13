@@ -1,9 +1,10 @@
 // The week, repaired in place — the phone's face (docs/plan-the-week-v2.md §8).
 //
-// Same repairs as the desktop bar (useWeekRepair), same acts and dial
-// (useRepairs), by tap: one card per broken block above the Calendar, **Take it**
-// in one tap, **Other times** opens the composer's other fits as rows, ✕ leaves
-// it. Nothing renders when the week holds.
+// Same repairs as the desktop's repair rail (useWeekRepair), same acts and dial
+// (useRepairs), by tap: one card per broken block above the Calendar. The acts
+// name where the block goes (D-204): **Move to Wed 9–10am** in one tap, **Other
+// times** opens the composer's other fits as rows, ✕ is **Leave it where it is**.
+// Nothing renders when the week holds.
 
 import { Button, Card, IconButton } from "../kit";
 import { Icon } from "../Icon";
@@ -16,11 +17,9 @@ import { useSlotMutations, useSlots } from "../../hooks/useSlots";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useWeekRepair, type Repair } from "../../hooks/useWeekRepair";
-import { instantOf, useRepairs } from "../plan/RepairBar";
+import { fitOf, useRepairs } from "../plan/repairActs";
+import { LEAVE_IN_PLACE, moveLabel, whereSpan } from "../plan/destinations";
 import { toDateISO } from "../../lib/dates";
-import { at } from "./dayPlan";
-
-const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function MobileRepairCard({ now }: { now: Date }) {
   const range = useMemo(() => {
@@ -86,8 +85,7 @@ export default function MobileRepairCard({ now }: { now: Date }) {
       )}
       {r.staged.map((x) => {
         const i = r.ix[x.key] ?? 0;
-        const o = x.options[i];
-        const s = instantOf(o.dayISO, o.startMin);
+        const o = fitOf(x, r.ix);
         return (
           <Card key={x.key} className="ph-card">
             <div className="flex items-center gap-2">
@@ -96,20 +94,17 @@ export default function MobileRepairCard({ now }: { now: Date }) {
                 <span className="font-normal text-muted"> · {x.why === "missed" ? "missed" : `${x.event} landed on it`}</span>
               </span>
               <IconButton
-                label="Leave it"
+                label={LEAVE_IN_PLACE}
                 size="md"
                 icon={<Icon name="close" size={16} />}
                 onClick={() => r.leave(x)}
                 className="tap-icon -mr-2 shrink-0"
               />
             </div>
-            {/* Where it would go — the card's one figure, not a second hero. */}
-            <div className="ph-stat">
-              {DAY[s.getDay()]} {at(s)}
-            </div>
+            {/* Where it would go is said once — on the act that sends it there. */}
             <div className="flex gap-2">
               <TouchButton kind="primary" full onClick={() => r.take(x)}>
-                Take it
+                {moveLabel(o)}
               </TouchButton>
               <TouchButton full active={open === x.key} onClick={() => setOpen((k) => (k === x.key ? null : x.key))}>
                 Other times
@@ -118,7 +113,6 @@ export default function MobileRepairCard({ now }: { now: Date }) {
             {open === x.key && (
               <div className="ph-rows">
                 {x.options.map((alt, j) => {
-                  const st = instantOf(alt.dayISO, alt.startMin);
                   return (
                     <button
                       key={j}
@@ -131,7 +125,7 @@ export default function MobileRepairCard({ now }: { now: Date }) {
                       }}
                     >
                       <span className="ph-row-label" data-grow="">
-                        {DAY[st.getDay()]} {at(st)}
+                        {whereSpan(alt)}
                       </span>
                       {j === i ? (
                         <Icon name="check" size={18} className="shrink-0 text-accent" />

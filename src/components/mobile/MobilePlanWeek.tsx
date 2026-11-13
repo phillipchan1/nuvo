@@ -31,7 +31,8 @@ import { useDeferProject } from "../../hooks/useProjectTime";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
-import { domainById, sprintMinsByDomain, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
+import { domainById, projectById, sprintMinsByDomain, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
+import { backToLabel } from "../plan/destinations";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { weekName, weekSpan } from "../../lib/week";
@@ -927,6 +928,9 @@ export function WeekStep({
                   const slot = slotNameById.get(p.task.id);
                   const color = slot?.color ?? taskDomainColor(data, p.task) ?? "var(--accent)";
                   const title = slot ? slot.name : p.task.title;
+                  // the way out names where it goes (D-204): back to its project
+                  const home = projectById(data, slot?.projectId ?? p.task.project_id ?? null)?.name;
+                  const out = home ? backToLabel(home) : `Take ${title} out of the week`;
                   return (
                     // the phone's row: time in its gutter, the identity bar, the
                     // name, its length — and the way out of the week
@@ -946,7 +950,7 @@ export function WeekStep({
                         {p.durationMin}m{slot && slot.taskIds.length > 1 && ` · ${slot.taskIds.length}`}
                       </span>
                       <IconButton
-                        label={`Take ${title} out of the week`}
+                        label={out}
                         size="md"
                         icon={<Icon name="close" size={16} />}
                         onClick={() => onDrop(p.task.id)}

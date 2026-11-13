@@ -410,18 +410,6 @@ html.spotlight-window #root {
   position: relative;
   overflow: hidden;
 }
-/* The reveal: the SHEET moves, the chat was always there. Width (not transform)
-   so the sheet genuinely re-lays-out and the calendar reflows into the space.
-   `display: flex` is load-bearing: without it the <aside> inside is a block at
-   content height, the chat stops being full-height, and its composer floats in
-   the middle of the panel instead of sitting at the foot. */
-.app-chat-slot {
-  display: flex;
-  flex-shrink: 0;
-  overflow: hidden;
-  align-self: stretch;
-  transition: width var(--d-slow) var(--ease-out);
-}
 .app-titlebar-drag {
   display: none;
 }

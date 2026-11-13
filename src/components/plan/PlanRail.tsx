@@ -20,7 +20,9 @@ import { resolveDomainId } from "../../lib/batch";
 import { at, span } from "../mobile/dayPlan";
 import { revealOnCalendar } from "../../lib/calendarReveal";
 import { fmtMins } from "../../lib/now";
-import type { PlanOverlay } from "./planOverlay";
+import { PLAN_EVENT_PREFIX, type PlanOverlay } from "./planOverlay";
+import PinnedCrown from "./PinnedCrown";
+import { reachToCrown } from "../../lib/motion";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { THIN_MARKS_MAX, thinChip, thinPaths } from "../../lib/thinPath";
 import { requestPathDraft } from "../../lib/draftIntent";
@@ -33,11 +35,12 @@ import {
   type PlanMemory,
   type PlanSignal,
 } from "../../lib/planMemory";
-import { DIAL_NOTE, useDial } from "../../lib/planDial";
+import { LET_IT_MOVE, LOOK_LAST, OUT_OF_WEEK, backToLabel, holdLabel, splitLabel, whereSpan } from "./destinations";
 import type { DayContext } from "../../lib/compose";
 import {
   Button,
   Card,
+  Dest,
   Chip,
   ChipButton,
   Dot,
@@ -90,10 +93,11 @@ type StackItem = {
   label: string;
   chip: string;
   why: string;
-  /** what ✓ does, said on the button — never a bare tick */
-  yesLabel: string;
-  /** what ✕ does */
-  noLabel: string;
+  /** what ✓ does, said on the button — never a bare tick. A destination
+   *  (D-204): a time, a named place, or a state. */
+  yesLabel: React.ReactNode;
+  /** what ✕ does — a destination too */
+  noLabel: React.ReactNode;
   /** the yes is Nuvo drafting something — it wears the assistant's mark */
   yesDrafts?: boolean;
   /** shown under the label without a click: the reason this needs you */
@@ -187,7 +191,6 @@ function PlanRailWeek({
   // Deterministic runs by kind of action — the AI theming is not run on arrival
   // here: "the groupings weren't good" is where trust broke (ⓟ, 2026-11-06).
   const d = useWeekDraft({ autoTheme: false, weekStartISO, rules: memory.rules });
-  const [dial, setDial] = useDial();
   const record = useCallback(
     (sig: PlanSignal) => setMemory((m) => ({ ...m, signals: [...m.signals, { ...sig, at: new Date().toISOString() }] })),
     [setMemory],
@@ -403,6 +406,8 @@ function PlanRailWeek({
       }
     for (const u of d.result.unplaced) {
       const b = slotById.get(u.task.id);
+      const home = projectById(data, b?.projectId ?? u.task.project_id ?? null)?.name ?? null;
+      const back = home ? <Dest verb="Back to" name={home} /> : OUT_OF_WEEK;
       // splitting only helps when the refusal was about one long stretch, and a half fits
       const gap = gapMins(u.reason);
       const canSplit = (b?.taskIds.length ?? 0) >= 2 && gap != null && (b?.durationMins ?? 0) / 2 <= gap;
@@ -429,8 +434,8 @@ function PlanRailWeek({
               } }]
             : []),
         ],
-        yesLabel: canSplit ? "Split to fit" : "Skip this week",
-        noLabel: canSplit ? "Skip this week" : "Leave it",
+        yesLabel: canSplit ? splitLabel(null) : back,
+        noLabel: canSplit ? back : "Keep it with no time",
         yes: () => {
           d.remember();
           if (canSplit) {
@@ -439,13 +444,13 @@ function PlanRailWeek({
             return "Split in two — placing the halves";
           }
           d.dropBlock(u.task.id);
-          return "Off this week";
+          return backToLabel(home);
         },
         no: canSplit
           ? () => {
               d.remember();
               d.dropBlock(u.task.id);
-              return "Off this week";
+              return backToLabel(home);
             }
           : undefined,
       });
@@ -469,7 +474,7 @@ function PlanRailWeek({
             : `${when} is held for it, and its steps come to ${fmtMins(t.workMins)}.`,
         yesLabel: "Draft the path",
         yesDrafts: true,
-        noLabel: "Leave it",
+        noLabel: "Keep it as it is",
         yes: () => {
           requestPathDraft(t.projectId);
           openRecord("project", t.projectId);
@@ -597,15 +602,40 @@ function PlanRailWeek({
     [order, d],
   );
   const advance = useCallback((from: string | null) => setSel(nextOpen(from)), [nextOpen]);
+  // What the draft holds, as tasks — the pinned crown counts these as placed.
+  const heldTaskIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const p of placements) {
+      if (!d.isHeld(placementKey(p))) continue;
+      out.add(p.task.id);
+      for (const id of slotById.get(p.task.id)?.taskIds ?? []) out.add(id);
+    }
+    return out;
+  }, [placements, d, slotById]);
+  /** THE REACH (D-202): a block you just held sends one mark from itself on
+   *  the grid (or, when the grid hasn't drawn it, the Hold button) to its
+   *  project's pip in the pinned crown. Only ever called from an act handler,
+   *  once per act; a block with no project reaches nothing. */
+  const reachHeld = useCallback(
+    (key: string) => {
+      const p = byKey.get(key);
+      const projectId = p ? slotById.get(p.task.id)?.projectId ?? p.task.project_id ?? null : null;
+      if (!projectId) return;
+      const block = document.querySelector(`.fc [data-block-id="${CSS.escape(PLAN_EVENT_PREFIX + key)}"]`);
+      void reachToCrown(block ?? document.querySelector("[data-plan-hold]"), projectId);
+    },
+    [byKey, slotById],
+  );
   const accept = useCallback(
     (key: string) => {
       if (!d.isHeld(key)) {
         d.remember();
         d.holdPlacement(key);
+        reachHeld(key);
       }
       advance(key);
     },
-    [d, advance],
+    [d, advance, reachHeld],
   );
   // open on the first group, once the draft has one
   const walkStarted = useRef(false);
@@ -688,8 +718,8 @@ function PlanRailWeek({
   // Schedule reconciling the draft for as long as you planned (the acts below
   // close over `d`, a new object every render). So the acts go through a ref,
   // and "held" is read as a key string, not a function identity.
-  const acts = useRef({ select, moveTo, pickAlt, pickGap, d });
-  acts.current = { select, moveTo, pickAlt, pickGap, d };
+  const acts = useRef({ select, moveTo, pickAlt, pickGap, d, reachHeld });
+  acts.current = { select, moveTo, pickAlt, pickGap, d, reachHeld };
   const heldSig = placements.map(placementKey).filter((k) => d.isHeld(k)).join("|");
   const overlay = useMemo<PlanOverlay | null>(() => {
     if (done) return null;
@@ -724,7 +754,11 @@ function PlanRailWeek({
       }),
       onSelect: (key) => acts.current.select(key),
       onMove: (key, start) => {
+        // A drag holds the block where you let go — the same act as Hold, so
+        // the first one reaches too (a re-drag of a held block doesn't).
+        const wasHeld = acts.current.d.isHeld(key);
         acts.current.moveTo(key, toDateISO(start), start.getHours() * 60 + start.getMinutes());
+        if (!wasHeld) acts.current.reachHeld(key);
         setSel(key);
       },
       onPickGhost: (id) => (id.startsWith("gap:") ? acts.current.pickGap(Number(id.slice(4))) : acts.current.pickAlt(Number(id))),
@@ -767,9 +801,10 @@ function PlanRailWeek({
         d.remember();
         if (d.isHeld(key)) {
           d.unpinPlacement(key);
-          toast("Released");
+          toast("Nuvo can move it again");
         } else {
           d.holdPlacement(key);
+          reachHeld(key);
           record({ kind: "held", week: weekStartISO });
           toast("Held · Nuvo won't move it");
         }
@@ -781,7 +816,7 @@ function PlanRailWeek({
         d.dropBlock(p.task.id);
         setChanges((n) => n + 1);
         record({ kind: "removed", week: weekStartISO, isRun: !slotById.get(p.task.id)?.projectId });
-        toast("Off this week");
+        toast(backToLabel(projectById(data, slotById.get(p.task.id)?.projectId ?? p.task.project_id ?? null)?.name));
         setSel(null);
       },
       split: (key: string) => {
@@ -797,7 +832,7 @@ function PlanRailWeek({
         setSel(null);
       },
     }),
-    [d, byKey, slotById, record, weekStartISO],
+    [d, byKey, slotById, record, weekStartISO, data],
   );
 
   // ── keep clear: a drag across empty time, then "this day or every weekday?" ─
@@ -957,7 +992,10 @@ function PlanRailWeek({
             { value: weeks.nextWeek, label: weekLabel(weeks.nextWeek) },
           ]}
         />
-        <span className="min-w-0 flex-1" />
+        {/* the crown, pinned (rail-modes §2) — this week's slate, shut */}
+        <span className="flex min-w-0 flex-1 justify-center">
+          <PinnedCrown weekISO={weekStartISO} heldTaskIds={heldTaskIds} />
+        </span>
         <IconButton label="Close the plan" shortcut="Esc" icon={<Icon name="close" size={14} />} onClick={requestClose} />
       </div>
 
@@ -1171,12 +1209,13 @@ function PlanRailWeek({
                           ))}
                       </div>
                     </div>
-                    <div className="flex gap-1.5 pt-0.5">
-                      <Button kind="primary" size="md" shortcut="↵" onClick={() => accept(sel!)} style={{ flex: 1 }}>
-                        {held ? "Keep · next" : "Looks good"}
+                    {/* Every act names where the block goes (D-204) — same acts, same keys. */}
+                    <div className="flex min-w-0 gap-1.5 pt-0.5">
+                      <Button kind="primary" size="md" shortcut="↵" onClick={() => accept(sel!)} style={{ flex: 1 }} data-plan-hold="">
+                        {holdLabel(selP)}
                       </Button>
                       <Button size="md" shortcut="J" onClick={() => advance(sel)}>
-                        Later
+                        {LOOK_LAST}
                       </Button>
                     </div>
                     {altList.length > 1 && (
@@ -1193,18 +1232,31 @@ function PlanRailWeek({
                         </div>
                       </div>
                     )}
-                    <div className="flex flex-wrap gap-0.5" style={{ boxShadow: "inset 0 1px 0 var(--line-1)", paddingTop: 6 }}>
-                      {(
-                        [
-                          ...(held ? ([["H", "Release", () => act.hold(sel!)]] as const) : []),
-                          ["S", "Split", () => act.split(sel!)],
-                          ["X", "Off this week", () => act.off(sel!)],
-                        ] as const
-                      ).map(([key, label, run]) => (
-                        <Button key={key} size="xs" kind="ghost" shortcut={key} onClick={run} className={key === "X" ? "f-danger" : undefined}>
-                          {label}
+                    <div className="grid gap-1" style={{ boxShadow: "inset 0 1px 0 var(--line-1)", paddingTop: 6 }}>
+                      <div className="flex flex-wrap gap-0.5">
+                        {held && (
+                          <Button size="xs" kind="ghost" shortcut="H" onClick={() => act.hold(sel!)}>
+                            {LET_IT_MOVE}
+                          </Button>
+                        )}
+                        {/* the halves' places are the composer's to find, after the split,
+                            so the label can't name them yet (rail-modes §4) */}
+                        <Button size="xs" kind="ghost" shortcut="S" onClick={() => act.split(sel!)}>
+                          {splitLabel(null)}
                         </Button>
-                      ))}
+                      </div>
+                      {(() => {
+                        const home = projectById(data, slotById.get(selP.task.id)?.projectId ?? selP.task.project_id ?? null)?.name ?? null;
+                        return (
+                          <div className="grid min-w-0 justify-items-start gap-0.5">
+                            <Button size="xs" kind="ghost" shortcut="X" onClick={() => act.off(sel!)} className="f-danger">
+                              {home ? <Dest verb="Back to" name={home} /> : OUT_OF_WEEK}
+                            </Button>
+                            {/* D-150: leaving the week says what comes off the calendar */}
+                            <span className="pl-2 text-caption text-muted">{whereSpan(selP)} comes off the calendar</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </Card>
                 );
@@ -1322,15 +1374,6 @@ function PlanRailWeek({
               </section>
             )}
 
-            <section className="grid gap-1.5">
-              <span className="text-caption font-semibold text-muted">During the week</span>
-              <Segmented
-                label="How much Nuvo moves"
-                value={dial}
-                onChange={setDial}
-                options={(["ask", "suggest", "handle"] as const).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), title: DIAL_NOTE[v] }))}
-              />
-            </section>
           </div>
 
           {leaving ? (

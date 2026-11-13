@@ -1,8 +1,8 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import type { Label, Slot, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
-import { acceptPatch, dismissPatch, undoAutoPatch } from "../lib/grooming";
+import { undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
@@ -25,6 +25,18 @@ import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
+import {
+  FileOffer,
+  HoldOffer,
+  HoldsProbe,
+  fileCandidates,
+  holdCandidates,
+  holdable,
+  useOfferBudget,
+  useStableCandidates,
+} from "./nuvo/RailOffers";
+import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../lib/railOffers";
+import type { Placement } from "../lib/compose";
 import { InboxAddressHint } from "./InboxAddress";
 import { skipWhenAsleep } from "./KeepAlive";
 import { Button, Dot, Input, IconButton, MenuLabel, Picker, Popover, SectionHeader } from "./kit";
@@ -88,6 +100,8 @@ function LeftRail({
   slots = NO_SLOTS,
   slotTitle,
   onOpenSlot,
+  crownLine,
+  onGetReady,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -120,6 +134,14 @@ function LeftRail({
   /** Names an untitled slot from what's inside it — lives with the vertical. */
   slotTitle?: (s: Slot, children: Task[]) => string;
   onOpenSlot?: (s: Slot, anchor: DOMRect) => void;
+  /** The crown's one line at rest (docs/rail-modes.md §3), handed to WeekPanel's
+   *  `crownLine` — today the repair line ("Tue 10am broke · Repair ›").
+   *  Undefined says nothing (the track carries "no time", D-206). Memoize it:
+   *  the rail is memo'd. */
+  crownLine?: ReactNode;
+  /** Get ready (D-206) — forwarded to WeekPanel, whose door becomes
+   *  "Get ready ›" when it is given. */
+  onGetReady?: () => void;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -726,6 +748,41 @@ function LeftRail({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // ── Nuvo's offers at rest (D-205, docs/rail-modes.md §3) ─────────────────
+  // One chip per row, written as the destination, three at most across the
+  // whole rail — the crown's open rows first, then the face showing (Today's
+  // holds, earliest first; the Inbox's filings, top first). The budget is
+  // decided once (lib/railOffers `budgetOffers`); past it, nothing. The rail is
+  // only mounted at rest — Plan and Repair replace it — so it never offers
+  // while a mode owns it.
+  const [pathCands, setPathCands] = useState<RailOfferCandidate[]>([]);
+  const [holds, setHolds] = useState<Map<string, Placement>>(() => new Map());
+  const today0 = todayISO(now);
+  const holdPool = useMemo(
+    () => (tab === "today" ? holdable(todaySections.unblocked, today0) : []),
+    [tab, todaySections.unblocked, today0],
+  );
+  const offerCands = useStableCandidates([
+    ...pathCands,
+    ...(tab === "today" ? holdCandidates(holds).filter((c) => holdPool.some((t) => t.id === c.rowId)) : []),
+    ...(tab === "inbox" ? fileCandidates(inboxOrdered) : []),
+  ]);
+  const offers = useOfferBudget(offerCands, RAIL_OFFERS_MAX);
+  const homeOfProject = (id: string) => {
+    const p = projectById(vertical, id);
+    return p ? { initiativeId: p.initiativeId, domainId: p.domainId } : null;
+  };
+  const offerFor = (t: Task) => {
+    const o = offers.get(t.id);
+    if (!o) return undefined;
+    if (o.kind === "hold") {
+      const p = holds.get(t.id);
+      return p ? <HoldOffer task={t} placement={p} mutations={mutations} /> : undefined;
+    }
+    if (o.kind === "file") return <FileOffer task={t} mutations={mutations} homeOfProject={homeOfProject} />;
+    return undefined;
+  };
+
   const rowProps = (t: Task) => ({
     ref: (el: TaskRowHandle | null) => {
       if (el) rowHandles.current.set(t.id, el);
@@ -749,6 +806,7 @@ function LeftRail({
     dragGroup: selectedIds.has(t.id) ? dragGroupStr : undefined,
     accent: accentOf(t),
     meta: metaOf(t),
+    offer: offerFor(t),
     onSelect: () => plainSelect(t.id),
     onOpen: (anchor: DOMRect) => {
       setSelectedIds(new Set());
@@ -758,8 +816,8 @@ function LeftRail({
     onMultiToggle: () => toggleMultiSelect(t.id),
     onRangeSelect: () => selectRangeTo(t.id),
     onContextMenu: (e: React.MouseEvent) => openContextMenu(t, e),
-    onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
-    onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
+    // The router's guess is no longer an Accept / ✕ pair on every inbox row: it
+    // is "File in <place>", one of the rail's offers, inside the budget (D-205).
     onUndoAutoFile: () => mutations.patchTask(t.id, undoAutoPatch(t)),
   });
 
@@ -912,6 +970,7 @@ function LeftRail({
               {...rowProps(t)}
               ref={undefined}
               meta={undefined}
+              offer={undefined}
               dayShown={false}
               draggable={draggable ?? false}
               action={action}
@@ -919,6 +978,12 @@ function LeftRail({
               dragData={dragData}
             />
           )}
+          // The line under the week's track (D-204 §3): the repair line while
+          // the week is broken; undefined says nothing (D-206).
+          crownLine={crownLine}
+          onGetReady={onGetReady}
+          offers={offers}
+          onPathCandidates={setPathCands}
         />
         {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
             sits as an icon at the strip's end, only while it holds something
@@ -999,6 +1064,7 @@ function LeftRail({
             and the "you're about to…" chip are plain DOM it repaints per frame)
             — the list never reflows to show it. */}
 
+        {holdPool.length > 0 && <HoldsProbe tasks={holdPool} now={now} onHolds={setHolds} />}
         {tab === "inbox" && (
           <>
             {inboxOrdered.map((t) => (

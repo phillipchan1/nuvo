@@ -4,7 +4,7 @@
  *
  * Overlays are history-backed: closing one is `history.back()`. That assumed the
  * entry before the overlay is one step back. It isn't once anything navigates
- * while the overlay is up (⌘J opening the chat pushes an entry that still says
+ * while the overlay is up (switching the rail's face pushes an entry that still says
  * `overlay: "cmd"`): Esc stepped onto the overlay again, QuickAdd's close-once
  * latch had already fired, and from then on every Escape and every scrim click
  * was swallowed — an unclosable modal over the whole app.
@@ -32,6 +32,12 @@ function Probe() {
   return null;
 }
 
+/** A navigation made while the overlay is up — swinging the rail between
+ *  Today and Inbox pushes an entry of its own. (It was ⌘J opening the chat
+ *  until the panel retired, D-205.) */
+const flip = () => nav.setTab(nav.nav.tab === "today" ? "inbox" : "today");
+const other = (t: string) => (t === "today" ? "inbox" : "today");
+
 const stackIndex = () => (history.state as Record<string, number> | null)?.[NAV_STACK_INDEX_KEY];
 
 beforeEach(() => {
@@ -50,35 +56,35 @@ describe("closing an overlay that was navigated over", () => {
   it("lifts it, keeps what the user did meanwhile, and strands no entry showing it", async () => {
     mountNav();
     const base = stackIndex() ?? 0;
-    const agentBefore = nav.nav.agentOpen;
+    const tabBefore = nav.nav.tab;
 
     act(() => nav.openOverlay("cmd"));
-    act(() => nav.toggleAgent());
+    act(() => flip());
     expect(nav.nav.overlay).toBe("cmd");
-    expect(nav.nav.agentOpen).toBe(!agentBefore);
+    expect(nav.nav.tab).toBe(other(tabBefore));
 
     act(() => nav.closeOverlay());
     await waitFor(() => expect(nav.nav.overlay).toBe("none"));
-    // The chat they opened is theirs — closing ⌘K must not close it.
-    expect(nav.nav.agentOpen).toBe(!agentBefore);
+    // The face they switched to is theirs — closing ⌘K must not undo it.
+    expect(nav.nav.tab).toBe(other(tabBefore));
     expect(stackIndex()).toBe(base + 1);
 
     // …and Back from here is the page, not the overlay again.
     act(() => nav.back());
     await waitFor(() => expect(stackIndex()).toBe(base));
     expect(nav.nav.overlay).toBe("none");
-    expect(nav.nav.agentOpen).toBe(agentBefore);
+    expect(nav.nav.tab).toBe(tabBefore);
   });
 
   it("steps straight onto the page when nothing else changed", async () => {
     mountNav();
     const base = stackIndex() ?? 0;
-    const agentBefore = nav.nav.agentOpen;
+    const tabBefore = nav.nav.tab;
 
     act(() => nav.openOverlay("cmd"));
-    act(() => nav.toggleAgent());
-    act(() => nav.toggleAgent());
-    expect(nav.nav.agentOpen).toBe(agentBefore);
+    act(() => flip());
+    act(() => flip());
+    expect(nav.nav.tab).toBe(tabBefore);
 
     act(() => nav.closeOverlay());
     await waitFor(() => expect(nav.nav.overlay).toBe("none"));
@@ -122,11 +128,11 @@ describe("⌘K quick add, through the real navigation store", () => {
   }
   const field = () => screen.getByLabelText("Capture a task, event or slot");
 
-  it("Escape closes it after the chat was toggled over it", async () => {
+  it("Escape closes it after the rail was navigated under it", async () => {
     mount();
     act(() => nav.openOverlay("cmd"));
     await screen.findByRole("dialog");
-    act(() => nav.toggleAgent());
+    act(() => flip());
 
     await act(async () => {
       fireEvent.keyDown(field(), { key: "Escape" });

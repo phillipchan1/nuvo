@@ -32,7 +32,6 @@ export type TeachTargetKey =
 export type TeachArm =
   | "rail-inbox"   // swing the rail to its Inbox tab
   | "rail-today"   // …and back, so the timing step shows the day
-  | "close-agent"  // fold the Nuvo panel shut, so its ✦ door is what's lit
   | "open-calendars" // Settings, on the Calendars section
   | "open-plan";   // the weekly ritual, already on its Projects step
 
@@ -119,16 +118,15 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
     mobileSelector: '[data-teach="domain-card"], [data-teach="mtab-domains"]',
   },
 
-  // 7 · The ✦ door, shut. Nuvo is no longer a chat to type into; it's a panel
-  // of recommendations for the page beside it (D-198), and on day one it has
-  // none (no held time → no thin path, nothing Memory is sure of). So the step
-  // lights the DOOR — the thing that wears the dot when it does have something —
-  // rather than opening an empty panel and lighting nothing. The panel is folded
-  // shut first so the door is on screen; opening it is the reader's own act.
+  // 7 · Where Nuvo speaks. There is no panel any more (D-205): its offers ride
+  // the rows they would change — "Hold 2–2:30pm" on a today task with no time,
+  // "File in …" on a capture. On day one there may be none (P7), so the step
+  // lights the list they ride rather than inventing a first offer.
   nuvo: {
-    selector: '[data-teach="nuvo"]',
-    arm: "close-agent",
-    mobileSelector: '[data-teach="nuvo"]',
+    selector: '[data-teach="day-list"]',
+    rung: "day",
+    arm: "rail-today",
+    mobileSelector: '[data-teach="mtab-tasks"]',
   },
 
   // 8 · Settings, already on Calendars, with the pane lit. No phone entry on

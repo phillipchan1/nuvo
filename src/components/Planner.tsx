@@ -35,9 +35,12 @@ import type { FlowName } from "./Spine";
 const CalendarPane = lazy(() => import("./CalendarPane"));
 import type { PlanOverlay } from "./plan/planOverlay";
 import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
+import { useRepairs } from "./plan/repairActs";
+import RepairLine, { repairLineText } from "./plan/RepairLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
-const RepairBar = lazy(() => import("./plan/RepairBar"));
+const RepairRail = lazy(() => import("./plan/RepairRail"));
+const GetReadyRail = lazy(() => import("./plan/GetReadyRail").then((m) => ({ default: m.LiveGetReadyRail })));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
@@ -88,6 +91,7 @@ export default function Planner({
     navigate,
     panelAnchor,
     panelAnchorEl,
+    openRecord,
   } = useAppNavigation();
   const openMemory = useCallback(() => openOverlay("memory"), [openOverlay]);
 
@@ -460,6 +464,52 @@ export default function Planner({
     [mutations, slotMutations],
   );
   const [repairOverlay, setRepairOverlay] = useState<PlanOverlay | null>(null);
+  // Repair is a rail mode (docs/rail-modes.md §2, D-204): the rail becomes the
+  // repair walk only on your press of the crown's line, and one mode shows at
+  // a time — Plan hides it. The acts and the dial's Handle live in useRepairs,
+  // owned here so the line and the rail read one state.
+  const repairState = useRepairs(repairs, repairActs);
+  const [repairMode, setRepairMode] = useState(false);
+  const repairing = repairMode && !planning;
+  useEffect(() => {
+    if (planning) setRepairMode(false);
+  }, [planning]);
+  const { dial: repairDial, setAsked: setRepairAsked } = repairState;
+  const openRepair = useCallback(() => {
+    // under Ask, the press IS the ask (plan-the-week-v2 §7)
+    if (repairDial === "ask") setRepairAsked(true);
+    setRepairMode(true);
+  }, [repairDial, setRepairAsked]);
+  const closeRepair = useCallback(() => setRepairMode(false), []);
+
+  // Get ready is the third rail mode (D-206): the crown's one door. A stack of
+  // cards that take this screen to ready; Plan and Repair stay their own modes
+  // that a card can open — and opening one ends this one (one mode at a time).
+  const [readyMode, setReadyMode] = useState(false);
+  const gettingReady = readyMode && !planning && !repairing;
+  useEffect(() => {
+    if (planning || repairMode) setReadyMode(false);
+  }, [planning, repairMode]);
+  const openGetReady = useCallback(() => setReadyMode(true), []);
+  const closeGetReady = useCallback(() => setReadyMode(false), []);
+  const readyToPlan = useCallback(() => {
+    setReadyMode(false);
+    openFlow("sunday");
+  }, [openFlow]);
+  const readyToRepair = useCallback(() => {
+    setReadyMode(false);
+    openRepair();
+  }, [openRepair]);
+  const readyOpenProject = useCallback((id: string) => openRecord("project", id), [openRecord]);
+
+  // Rhythm (docs/memory.md §5.2): no button on the Schedule any more (D-206) —
+  // Memory is the door, and its "Show on the Schedule" turns the view on here.
+  const [rhythmOn, setRhythmOn] = useState(false);
+  // Undefined while nothing broke, so the crown keeps its own line ("N with no time").
+  const repairLine = useMemo(() => {
+    const s = { open: repairState.open, applied: repairState.applied, dial: repairState.dial };
+    return repairLineText(s) ? <RepairLine state={s} onOpen={openRepair} /> : undefined;
+  }, [repairState.open, repairState.applied, repairState.dial, openRepair]);
 
   // Anything droppable that the render set doesn't hold. The week crown offers a
   // project's loose work for drag, and that work is deliberately outside all six
@@ -599,7 +649,7 @@ export default function Planner({
       {/* The Planner layout (D-190): the pool left (the rail, or Plan the week's
           rail while planning), the grid right, both on the one panel. The page's
           bar is the grid's own PageBar (CalendarPane) — the Planner draws none.
-          Plan/Shutdown → ⌘K + the morning prompt; Nuvo → ⌘J; settings → ⌘,. */}
+          Plan/Shutdown → ⌘K + the morning prompt; Nuvo → the rows it offers on (D-205); settings → ⌘,. */}
 
       <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
 
@@ -618,6 +668,24 @@ export default function Planner({
         {planning ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
             <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} />
+          </Suspense>
+        ) : repairing ? (
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
+            <RepairRail state={repairState} onOverlay={setRepairOverlay} onClose={closeRepair} railRef={railRef} />
+          </Suspense>
+        ) : gettingReady ? (
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
+            <GetReadyRail
+              onClose={closeGetReady}
+              railRef={railRef}
+              now={now}
+              mutations={mutations}
+              repairState={repairState}
+              learned={learned}
+              onPlanWeek={readyToPlan}
+              onRepair={readyToRepair}
+              onOpenProject={readyOpenProject}
+            />
           </Suspense>
         ) : (
         <LeftRail
@@ -638,6 +706,8 @@ export default function Planner({
           slots={todaySlots}
           slotTitle={slotTitle}
           onOpenSlot={openSlotAt}
+          crownLine={onSchedule ? repairLine : undefined}
+          onGetReady={openGetReady}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -655,11 +725,13 @@ export default function Planner({
           <CalendarPane
             learned={learned}
             onOpenMemory={openMemory}
+            rhythm={rhythmOn}
+            onRhythmChange={setRhythmOn}
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
             live={onSchedule}
-            plan={planning ? planOverlay : repairOverlay}
+            plan={planning ? planOverlay : repairing ? repairOverlay : null}
             tasks={allTasksArray}
             events={events}
             slots={slots}
@@ -701,11 +773,6 @@ export default function Planner({
           />
           </Suspense>
 
-          {onSchedule && !planning && repairs.length > 0 && (
-            <Suspense fallback={null}>
-              <RepairBar repairs={repairs} acts={repairActs} onOverlay={setRepairOverlay} />
-            </Suspense>
-          )}
 
           {onSchedule && openTask && taskPanel && overlay !== "slot" && (
             <Suspense fallback={null}>
@@ -830,7 +897,16 @@ export default function Planner({
       )}
       {overlay === "memory" && (
         <Suspense fallback={null}>
-          <MemoryPage memory={learned} onClose={closeOverlay} />
+          <MemoryPage
+            memory={learned}
+            onClose={closeOverlay}
+            onShowOnSchedule={() => {
+              closeOverlay();
+              if (rung !== "day") navigate({ rung: "day" }, "replace");
+              if (nav.calView !== "timeGridWeek") setCalView("timeGridWeek");
+              setRhythmOn(true);
+            }}
+          />
         </Suspense>
       )}
       {showSettings && (

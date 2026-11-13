@@ -22,6 +22,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
+import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
 import { Icon } from "./Icon";
@@ -37,6 +38,19 @@ import { toggleGroup } from "../lib/selection";
 import type { Slot, Task } from "../lib/types";
 import type { VerticalData } from "../lib/vertical";
 import type { useTaskMutations } from "../hooks/useTasks";
+import { OFFERS_NOW, OFFERS_SLOTS, OFFERS_VERTICAL, offersClient, offersInbox, offersToday } from "./nuvo/OffersFixture";
+
+/** `?rail=offers` / `?rail=offers-phone`: the busy rail (D-205) — every offer
+ *  budget overflowing, to see what the rail says when Nuvo has more to say
+ *  than it may. `?rail=ready` / `?rail=ready-phone`: Get ready (D-206) over a
+ *  busy fixture — the card stack, its refill, "Ready." (plan/ReadyHarness). */
+interface Fixture {
+  seed: () => Task[];
+  inbox: () => Task[];
+  slots: Slot[];
+  vertical: VerticalData;
+  now: Date;
+}
 
 const DAY = startOfDay(new Date());
 const at = (h: number, m = 0) => new Date(DAY.getTime() + (h * 60 + m) * 60_000);
@@ -114,6 +128,9 @@ const VERTICAL: VerticalData = {
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
+const BASE: Fixture = { seed, inbox: () => [], slots: SLOTS, vertical: VERTICAL, now: at(10, 15) };
+const BUSY: Fixture = { seed: offersToday, inbox: offersInbox, slots: OFFERS_SLOTS, vertical: OFFERS_VERTICAL, now: OFFERS_NOW };
+
 function useStubMutations(setTasks: React.Dispatch<React.SetStateAction<Task[]>>, log: (s: string) => void) {
   return useMemo(() => {
     const patch = (id: string, p: Partial<Task>) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)));
@@ -147,30 +164,31 @@ function PopoverStandIn({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function Desktop({ embedded = false, bar }: { embedded?: boolean; bar?: ReactNode }) {
-  const [tasks, setTasks] = useState(seed);
+function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar?: ReactNode; fx?: Fixture }) {
+  const [tasks, setTasks] = useState(() => [...fx.seed(), ...fx.inbox()]);
   const [tab, setTab] = useState<RailTab>("today");
   const [lines, setLines] = useState<string[]>([]);
   const log = useCallback((s: string) => setLines((l) => [s, ...l].slice(0, 6)), []);
   const mutations = useStubMutations(setTasks, log);
   const railRef = useRef<HTMLDivElement | null>(null);
   const { openOverlay, nav } = useAppNavigation();
-  const now = useMemo(() => at(10, 15), []);
+  const now = fx.now;
 
+  const inbox = useMemo(() => tasks.filter((t) => t.status === "inbox"), [tasks]);
   const today = useMemo(() => {
-    const byId = new Map(SLOTS.map((s) => [s.id, s]));
+    const byId = new Map(fx.slots.map((s) => [s.id, s]));
     return tasks
-      .filter((t) => t.status !== "trashed")
+      .filter((t) => t.status !== "trashed" && t.status !== "inbox" && t.do_date)
       .map((t) => (t.slot_id && byId.get(t.slot_id) ? { ...t, start_time: byId.get(t.slot_id)!.start_time } : t));
-  }, [tasks]);
-  const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, VERTICAL), []);
+  }, [tasks, fx.slots]);
+  const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, fx.vertical), [fx.vertical]);
 
   return (
     <div className={embedded ? "flex min-h-0 flex-1" : "flex h-screen gap-6 p-0"}>
       <LeftRail
         tab={tab}
         setTab={setTab}
-        inbox={[]}
+        inbox={inbox}
         today={today}
         labels={[]}
         mutations={mutations}
@@ -178,7 +196,7 @@ function Desktop({ embedded = false, bar }: { embedded?: boolean; bar?: ReactNod
         hotkeysEnabled
         now={now}
         railRef={railRef}
-        slots={SLOTS}
+        slots={fx.slots}
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
       />
@@ -245,51 +263,63 @@ function Frame() {
             </div>
           </div>
         </div>
-        <div className="app-chat-slot" style={{ width: 64 }} />
       </div>
     </div>
   );
 }
 
-function Phone() {
-  const [tasks, setTasks] = useState(seed);
+function Phone({ fx = BASE }: { fx?: Fixture }) {
+  const [tasks, setTasks] = useState(() => [...fx.seed(), ...fx.inbox()]);
+  const [tab, setTab] = useState<"today" | "inbox">("today");
   const [lines, setLines] = useState<string[]>([]);
   const log = useCallback((s: string) => setLines((l) => [s, ...l].slice(0, 4)), []);
   const mutations = useStubMutations(setTasks, log);
-  const now = useMemo(() => at(10, 15), []);
+  const now = fx.now;
+  const inbox = useMemo(() => tasks.filter((t) => t.status === "inbox"), [tasks]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const clear = useCallback(() => setPicked(new Set()), []);
   const today = useMemo(() => {
-    const byId = new Map(SLOTS.map((s) => [s.id, s]));
+    const byId = new Map(fx.slots.map((s) => [s.id, s]));
     return tasks
-      .filter((t) => t.status !== "trashed")
+      .filter((t) => t.status !== "trashed" && t.status !== "inbox" && t.do_date)
       .map((t) => (t.slot_id && byId.get(t.slot_id) ? { ...t, start_time: byId.get(t.slot_id)!.start_time } : t));
-  }, [tasks]);
+  }, [tasks, fx.slots]);
   const bulkOps = useBulkOps({
     selected: [...picked].map((id) => tasks.find((t) => t.id === id)).filter((t): t is Task => !!t),
     mutations,
     clear,
   });
-  const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, VERTICAL), []);
+  const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, fx.vertical), [fx.vertical]);
 
   return (
     <div className="flex h-screen flex-col bg-bg">
-      <div className="px-4 py-2 text-meta text-muted" data-testid="status">
-        {lines[0] ?? "—"}
+      <div className="flex items-center gap-2 px-4 py-2 text-meta text-muted" data-testid="status">
+        {fx !== BASE && (
+          <Segmented
+            label="Face"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "today", label: "Today" },
+              { value: "inbox", label: "Inbox" },
+            ]}
+          />
+        )}
+        <span className="min-w-0 truncate">{lines[0] ?? "—"}</span>
       </div>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <MobileTaskList
-          tab="today"
-          inbox={[]}
+          tab={tab}
+          inbox={inbox}
           today={today}
           week={[]}
           trashed={[]}
           labels={[]}
-          vertical={VERTICAL as never}
+          vertical={fx.vertical as never}
           mutations={mutations}
           now={now}
           onTapTask={(t) => log(`opened · ${t.title}`)}
-          slots={SLOTS}
+          slots={fx.slots}
           slotTitle={slotTitle}
           onOpenSlot={(_run, title) => log(`opened slot · ${title}`)}
           selection={{
@@ -310,7 +340,7 @@ function Phone() {
           count={picked.size}
           ops={bulkOps}
           labels={[]}
-          vertical={VERTICAL}
+          vertical={fx.vertical}
           total={today.filter((t) => t.status !== "done").length}
           onSelectAll={() => setPicked(new Set(today.filter((t) => t.status !== "done").map((t) => t.id)))}
         />
@@ -321,14 +351,31 @@ function Phone() {
 }
 
 export default function RailHarness() {
-  const qc = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }), []);
-  const store = useMemo(() => ({ data: VERTICAL }) as unknown as VerticalStore, []);
   const mode = new URLSearchParams(window.location.search).get("rail");
-  const phone = mode === "phone";
+  const busy = mode === "offers" || mode === "offers-phone";
+  const fx = busy ? BUSY : BASE;
+  const qc = useMemo(
+    () => (busy ? offersClient(offersToday()) : new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })),
+    [busy],
+  );
+  const store = useMemo(() => ({ data: fx.vertical, ready: true, togglePushLanded: () => {} }) as unknown as VerticalStore, [fx]);
+  const phone = mode === "phone" || mode === "offers-phone";
   return (
     <QueryClientProvider client={qc}>
       <VerticalStoreProvider value={store}>
-        <AppNavigationProvider>{phone ? <Phone /> : mode === "frame" ? <AgentProvider><Frame /></AgentProvider> : <Desktop />}</AppNavigationProvider>
+        <AppNavigationProvider>
+          {mode === "ready" || mode === "ready-phone" ? (
+            <ReadyHarness phone={mode === "ready-phone"} />
+          ) : phone ? (
+            <Phone fx={fx} />
+          ) : mode === "frame" ? (
+            <AgentProvider>
+              <Frame />
+            </AgentProvider>
+          ) : (
+            <Desktop fx={fx} />
+          )}
+        </AppNavigationProvider>
       </VerticalStoreProvider>
     </QueryClientProvider>
   );

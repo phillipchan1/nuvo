@@ -117,15 +117,14 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     Visual: DomainVisual,
   },
   {
-    // Nuvo doesn't chat; it recommends, for the page beside it (D-198). On a
-    // day-one account it has nothing to say yet — a recommendation needs held
-    // time or something Memory is sure of — so, like the Initiative step, this
-    // shows where it lives and asks for nothing. Saying "it's quiet now" is the
-    // honest version (P7); a fake first recommendation would be the lie.
+    // Nuvo doesn't chat, and it has no panel (D-205): its offers ride the rows
+    // they would change. On a day-one account there may be none yet, so, like
+    // the Initiative step, this shows where they appear and asks for nothing. A
+    // fake first offer would be the lie (P7).
     id: "nuvo",
-    where: { label: "Nuvo", keys: "⌘J" },
-    title: "Nuvo works the page beside it",
-    teach: "When a week holds time for a project with no steps, it drafts them. Nothing is yours until you keep it — and a dot on ✦ means it has something.",
+    where: { label: "Nuvo" },
+    title: "Nuvo speaks on the row it would change",
+    teach: "A task with no time can carry “Hold 2–2:30pm”; a capture it can place, “File in …”. Nothing is written until you press it.",
     target: "nuvo",
   },
   {

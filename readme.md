@@ -145,7 +145,7 @@ npm run dev             # or: npm run build → dist/ static bundle
 - **One task world** — the floors (`useVertical`) read/write live Supabase rows; the
   localStorage prototype is gone. Domain invested/quarter/last-touched derive from
   completed blocks. Calendar blocks and rail rows are tinted by domain color.
-- **The assistant** (Nuvo, ⌘J) — one principle everywhere: it proposes into quiet
+- **The assistant** (Nuvo, offers on the rows they change, D-205) — one principle everywhere: it proposes into quiet
   pools; only you promote work toward the calendar. Endpoints on the `agent` edge
   function: `{scaffold:{projectId}}` (ordered project tasks), `{blueprint:{…}}`
   (initiative subtree), `{prepare:{taskId}}` (pre-work written to the task: approach,
@@ -222,7 +222,7 @@ password, entered in the app.
 
 ## Keyboard
 
-`⌘K` capture/command bar · `⌘J` Nuvo assistant · `C` focus capture · `P` new project · `I` new initiative ·
+`⌘K` capture/command bar · `C` focus capture · `P` new project · `I` new initiative ·
 `1/2/3` inbox/week/today · `↑↓/jk` navigate · `Enter` open · `E` today · `T` tomorrow · `W` next week ·
 `S` pick date/time · `D` done · `X` trash · `#` labels · `Esc` close
 

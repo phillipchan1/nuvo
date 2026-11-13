@@ -26,7 +26,6 @@ import type { FlowName } from "../components/Spine";
 import type { ProjectView, DetailView } from "../components/FloorPane";
 import type { RailTab } from "../components/LeftRail";
 import type { CalView } from "../components/CalendarPane";
-import { writeAgentOpen } from "../components/AgentSidebar";
 
 export type HistoryMode = "push" | "replace" | "none";
 
@@ -65,7 +64,6 @@ interface AppNavigationContextValue {
   openRecord: (kind: "project" | "initiative", id: string) => void;
   openFloorModal: (modal: FloorModal) => void;
   closeFloorModal: () => void;
-  toggleAgent: () => void;
   focusDomain: (focus: Focus) => void;
   openInitiative: (focus: Focus) => void;
   openProject: (focus: Focus) => void;
@@ -91,10 +89,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
    *  the first of them, then rewrites that entry with the overlay lifted —
    *  `closeOverlay` sets it, the popstate that follows applies it. */
   const liftRef = useRef<{ index: number; state: AppNavState } | null>(null);
-
-  useEffect(() => {
-    writeAgentOpen(nav.agentOpen);
-  }, [nav.agentOpen]);
 
   const writeHistory = useCallback((state: AppNavState, index: number, mode: HistoryMode) => {
     if (mode === "none") return;
@@ -389,7 +383,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       const cur = navRef.current;
       const at = indexRef.current;
       // Where this overlay's entries begin. Anything that navigates while it is
-      // up (⌘J opening the chat, an agent move) pushes an entry that still
+      // up (switching the rail's face, an agent move) pushes an entry that still
       // carries the overlay, so "one step back" can land on the overlay again —
       // and an overlay you can't close with Esc is a trapped app (⌘K did exactly
       // this). Unwind to its first entry, the way `closeFlow` does for a flow.
@@ -430,10 +424,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       setRung("day");
     }
   }, [back, canGoBack, navigate, closeFlow, setRung]);
-
-  const toggleAgent = useCallback(() => {
-    navigate({ agentOpen: !navRef.current.agentOpen });
-  }, [navigate]);
 
   const focusDomain = useCallback(
     (focus: Focus) => navigate({ focus }),
@@ -505,7 +495,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       openRecord,
       openFloorModal,
       closeFloorModal,
-      toggleAgent,
       focusDomain,
       openInitiative,
       openProject,
@@ -535,7 +524,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       openRecord,
       openFloorModal,
       closeFloorModal,
-      toggleAgent,
       focusDomain,
       openInitiative,
       openProject,

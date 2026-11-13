@@ -178,6 +178,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
   meta?: TaskMeta;
   /** Optional trailing control (e.g. "▸ today" in the Week rail). */
   action?: React.ReactNode;
+  /** Nuvo's offer for this row (D-205) — an `OfferChip`. While it shows it
+   *  TAKES the trailing meta's place (the clock, the length, the state), so the
+   *  row never grows a second mark or a second line. */
+  offer?: React.ReactNode;
   /** The surface already states this row's *when* in its own voice, so the row
    *  must not restate it — neither the date word nor the clock. Set by the
    *  rail's crown, where a placed piece carries a `Tue 7:15am ↗` chip: "45m ·
@@ -239,6 +243,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     accent,
     meta,
     action,
+    offer,
     whenShown,
     dayShown,
     dragData,
@@ -696,7 +701,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
           </span>
         )}
 
-        {(showState || showTime || task.recurrence_id) && (
+        {offer ??
+          ((showState || showTime || task.recurrence_id) && (
           <span className="task-row-meta">
             {task.recurrence_id && <Icon name="repeat" size={12} title="Repeats" />}
             {showState && (
@@ -710,7 +716,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
             )}
             {showTime && <span>{showTime}</span>}
           </span>
-        )}
+        ))}
 
         {action}
 

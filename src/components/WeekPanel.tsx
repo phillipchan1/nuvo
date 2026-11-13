@@ -1,9 +1,11 @@
 // The pool's crown — the planner's ONE hero, and the week's projects under it.
 //
 // Instrument (D-190, "The frame"): the crown carries the surface's one loud
-// line — the week's span as `text-display masthead` — and a single fact under
-// it in tabular figures (what's placed · what has no time · pieces done). The
-// door ("Plan the week") rides the hero's line as a quiet button. Below, the
+// line — the week's span as `text-display masthead` — and under it the week as
+// ONE track (D-206): a piece per task, done toward an initiative · done, other
+// · placed · no time, the week's pace tick, and one number ("13/17 done"). The
+// door ("Get ready ›", or the old "Plan the week" when the host has no Get
+// ready mode) rides the hero's line as a quiet button. Below, the
 // week's projects as a kit section (name · count · disclosure), each one the
 // deck card's anatomy at rail density, because a project on the On Deck board
 // and a project in this week's crown are the same object:
@@ -30,7 +32,11 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useThinPaths } from "../hooks/useThinPaths";
+import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
+import type { RailOfferCandidate } from "../lib/railOffers";
+import type { ThinPath } from "../lib/thinPath";
 import { useRecordContextMenu } from "./RecordContextMenu";
 import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
@@ -43,7 +49,7 @@ import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
-import { PaceTrack } from "./progress/PaceTrack";
+import { PaceTrack, WeekTrack } from "./progress/PaceTrack";
 import { Button, Chip, IconButton, SectionHeader } from "./kit";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
@@ -69,9 +75,27 @@ function readOpen(): boolean {
 export default function WeekPanel({
   door,
   renderTask,
+  crownLine,
+  offers,
+  onPathCandidates,
+  onGetReady,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
+  /** A line under the week's track (D-204 §3) — a repair ("Tue 10am broke… ·
+   *  Repair ›") passes its own. Omitted or `null`, nothing: the track's
+   *  outlined pieces already say what has no time (D-206). */
+  crownLine?: ReactNode;
+  /** The one door (D-206): when given, the header's button is **Get ready ›**
+   *  and opens the Get ready rail mode. Omitted, the old week door stays. */
+  onGetReady?: () => void;
+  /** The rail's offer budget (D-205): a project row whose id is here carries
+   *  Draft the path. The host decides the budget; this only draws it. */
+  offers?: ReadonlyMap<string, RailOfferCandidate>;
+  /** Which open rows COULD carry Draft the path — reported up so the host can
+   *  rank them against the day's offers. Empty while the list is folded: the
+   *  shut crown never carries a chip. */
+  onPathCandidates?: (cands: RailOfferCandidate[]) => void;
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -95,9 +119,28 @@ export default function WeekPanel({
   // Right-click a project for its lifecycle acts — the same menu every other
   // surface wears.
   const recordMenu = useRecordContextMenu();
+  // Draft the path's candidates (D-205): open, unlanded rows with a thin path.
+  // Reported up; the rail's budget decides which, if any, show.
+  const thin = useThinPaths();
+  const pathCands =
+    onPathCandidates && crown && listOpen
+      ? pathCandidates(
+          crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
+          thin,
+        )
+      : [];
+  const pathSig = pathCands.map((c) => c.key).join("|");
+  const reportRef = useRef(onPathCandidates);
+  reportRef.current = onPathCandidates;
+  const candsRef = useRef(pathCands);
+  candsRef.current = pathCands;
+  useEffect(() => {
+    reportRef.current?.(candsRef.current);
+  }, [pathSig]);
+  useEffect(() => () => reportRef.current?.([]), []);
   if (!data || !crown) return null;
 
-  const { rows, landed, looseCount } = crown;
+  const { rows, landed } = crown;
   // The hero follows the sprint the way the label always has: no sprint row,
   // no span — the week is then simply "This week".
   const hero = data.sprint?.week_start ? crown.weekLabel : "This week";
@@ -126,24 +169,13 @@ export default function WeekPanel({
     setShipId(row.projectId);
   };
 
-  // The fact under the hero — what the week's work is doing, in figures.
-  // Composed from the read model, never re-derived (useWeekCrown).
-  let placedMins = 0;
-  let piecesDone = 0;
-  let piecesTotal = 0;
-  for (const r of rows) {
-    piecesDone += r.work.done;
-    piecesTotal += r.work.total;
-    for (const p of r.placed) placedMins += p.task.duration_minutes ?? 0;
-  }
-  const placed = deckWeight(placedMins);
-
   // The scoreboard, kept as WORDS for anyone who can't read the marks.
   const slateSentence =
-    rows.length === 0
-      ? "No projects on this week yet"
-      : `${landed} of ${rows.length} landed` +
-        (looseCount > 0 ? ` · ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time` : "");
+    rows.length === 0 ? "No projects on this week yet" : `${landed} of ${rows.length} landed · ${crown.track.label}`;
+
+  // Under the track, only a line someone hands in (the repair) — the "N with no
+  // time · Plan the week ›" line retired into the track's outlined pieces.
+  const line = crownLine ?? null;
 
   const toggleList = () =>
     setListOpen((v) => {
@@ -160,42 +192,51 @@ export default function WeekPanel({
       <div className="crown-hero">
         <div className="crown-hero-line">
           <h2 className="crown-title text-display masthead">{hero}</h2>
-          <Button
-            size="xs"
-            kind={mode === "view" ? "ghost" : "secondary"}
-            onClick={openWeekPlan}
-            title={door?.title ?? `The week's plan — ${slateSentence}`}
-            aria-label={`${action}. ${slateSentence}.`}
-            icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
-            trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
-          >
-            {action}
-          </Button>
+          {onGetReady ? (
+            // The one door (D-206): Get ready opens the rail's card stack for
+            // this screen. Plan and Repair stay modes its cards can open.
+            <Button
+              size="xs"
+              kind="ghost"
+              onClick={onGetReady}
+              title={`Get this week ready — ${slateSentence}`}
+              aria-label={`Get ready. ${slateSentence}.`}
+              icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
+              trailing={<Icon name="chevron-right" size={12} />}
+              data-get-ready=""
+            >
+              Get ready
+            </Button>
+          ) : (
+            <Button
+              size="xs"
+              kind={mode === "view" ? "ghost" : "secondary"}
+              onClick={openWeekPlan}
+              title={door?.title ?? `The week's plan — ${slateSentence}`}
+              aria-label={`${action}. ${slateSentence}.`}
+              icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
+              trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
+            >
+              {action}
+            </Button>
+          )}
         </div>
-        {rows.length > 0 ? (
-          <p className="crown-fact">
-            {placed && (
-              <>
-                <b>{placed}</b> placed ·{" "}
-              </>
-            )}
-            {looseCount > 0 && (
-              <>
-                <span data-warn="">
-                  <b>{looseCount}</b> with no time
-                </span>{" "}
-                ·{" "}
-              </>
-            )}
-            <b>
-              {piecesDone} of {piecesTotal}
-            </b>{" "}
-            done
-          </p>
+        {rows.length > 0 && crown.track.total > 0 ? (
+          // The week as ONE track (D-206) and one number — the drawing each
+          // project row makes of its project, made of the week.
+          <div className="crown-track">
+            <WeekTrack track={crown.track} />
+            <span className="crown-track-num">
+              <b>
+                {crown.track.done}/{crown.track.total}
+              </b>{" "}
+              done
+            </span>
+          </div>
         ) : (
           <p className="crown-fact">
-            No projects yet
-            {mode !== "plan" && (
+            {rows.length > 0 ? "Nothing shaped yet" : "No projects yet"}
+            {rows.length === 0 && mode !== "plan" && !onGetReady && (
               <>
                 {" · "}
                 <button type="button" className="crown-fact-link" onClick={() => openFlow("sunday")}>
@@ -205,6 +246,7 @@ export default function WeekPanel({
             )}
           </p>
         )}
+        {line}
       </div>
 
       {rows.length > 0 && (
@@ -224,6 +266,8 @@ export default function WeekPanel({
                   onOpen={() => openRecord("project", row.projectId)}
                   onContextMenu={recordMenu.onContextMenu("project", row.projectId)}
                   canPlace={canPlaceProjects}
+                  pathOffer={offers?.get(row.projectId)?.kind === "path" ? thin.get(row.projectId) ?? null : null}
+                  onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
                   onExpand={() =>
                     setOpenIds((prev) => {
@@ -302,6 +346,8 @@ function ProjectStackRow({
   onOpen,
   onContextMenu,
   canPlace,
+  pathOffer,
+  onOpenProject,
   expanded,
   onExpand,
 }: {
@@ -313,6 +359,9 @@ function ProjectStackRow({
   onContextMenu: (e: ReactMouseEvent) => void;
   /** the Schedule is showing a time grid, so a sitting has somewhere to land */
   canPlace: boolean;
+  /** Draft the path, when the rail's budget gave this row the offer (D-205). */
+  pathOffer: ThinPath | null;
+  onOpenProject: (projectId: string) => void;
   expanded: boolean;
   onExpand: () => void;
 }) {
@@ -350,7 +399,13 @@ function ProjectStackRow({
     (open > 0 ? ` · ${placedLabel}` : "");
 
   return (
-    <div className="crown-proj" data-done={done ? "" : undefined}>
+    <div
+      className="crown-proj"
+      data-done={done ? "" : undefined}
+      // Where the Reach lands (D-202): `reachToCrown` finds this row's track.
+      data-crown-project={row.projectId}
+      data-crown-color={color}
+    >
       <div
         {...dragProps}
         data-drag={canDrag ? "" : undefined}
@@ -406,6 +461,9 @@ function ProjectStackRow({
             >
               Ship
             </Button>
+          ) : pathOffer ? (
+            // The offer takes the weight's place — never a second mark (D-205).
+            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} />
           ) : (
             weight && <span className="crown-meta" title={`${weight} of work left`}>{weight}</span>
           )}
@@ -428,7 +486,15 @@ function ProjectStackRow({
             A piece ticked below lands here. Then what's wrong, if anything. */}
         <div className="crown-proj-marks" aria-label={marksLabel}>
           {work.total > 0 ? (
-            <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} width={120} />
+            <PaceTrack
+              done={work.done}
+              total={work.total}
+              placed={done ? 0 : placed.length}
+              color={color}
+              elapsed={row.elapsed}
+              width={120}
+              reachKey={row.projectId}
+            />
           ) : (
             // The stranger's account, and every honest new project: nothing to
             // draw yet, so say the fact rather than an empty line (P7).

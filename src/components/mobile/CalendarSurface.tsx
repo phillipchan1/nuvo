@@ -144,6 +144,7 @@ export default function CalendarSurface({
   onOpenProject,
   renderCrownTask,
   onPlanWeek,
+  onGetReady,
 }: {
   now: Date;
   ctx: DayCtx;
@@ -170,6 +171,8 @@ export default function CalendarSurface({
   onOpenProject?: (id: string) => void;
   renderCrownTask?: RenderCrownTask;
   onPlanWeek?: () => void;
+  /** Get ready (D-206) — the week crown's door when given. */
+  onGetReady?: () => void;
 }) {
   const persistMode = initialMode == null;
   const [win, setWin] = useState<CalWindow>(() => initialCalendarWindow(now, initialMode));
@@ -594,6 +597,7 @@ export default function CalendarSurface({
           renderTask={renderCrownTask!}
           onOpenDay={(d) => openDay(d, "day")}
           onPlanWeek={onPlanWeek!}
+          onGetReady={onGetReady}
           anchored
           // Month and Year answer a different question (D-119), so the slate
           // cannot open over them; the strip stays, because it is the one line

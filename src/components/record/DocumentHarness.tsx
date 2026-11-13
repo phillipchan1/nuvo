@@ -22,7 +22,6 @@ import ShipAssess from "./ShipAssess";
 import SettingsModal from "../SettingsModal";
 import ShortcutsModal from "../ShortcutsModal";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
-import AgentSidebar from "../AgentSidebar";
 import { Button, Segmented } from "../kit";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } });
@@ -204,7 +203,7 @@ function harnessSink(store: VerticalStore): TaskCaptureSink {
 
 
 
-type Mode = "project" | "initiative" | "new-project" | "new-initiative" | "settings" | "shortcuts" | "ship" | "upkeep" | "nuvo";
+type Mode = "project" | "initiative" | "new-project" | "new-initiative" | "settings" | "shortcuts" | "ship" | "upkeep";
 
 const SECTIONS: SettingsSection[] = ["appearance", "schedule", "reminders", "connections", "inbound", "apps", "labels", "account", "billing", "about"] as SettingsSection[];
 
@@ -250,7 +249,6 @@ export default function DocumentHarness() {
                     { value: "shortcuts", label: "Shortcuts" },
                     { value: "ship", label: "Ship" },
                     { value: "upkeep", label: "Upkeep" },
-                    { value: "nuvo", label: "Nuvo panel" },
                   ]}
                 />
                 </div>
@@ -266,14 +264,6 @@ export default function DocumentHarness() {
                 </Button>
               </div>
 
-              {mode === "nuvo" && (
-                <div className="flex h-[calc(100vh-64px)] app-ground">
-                  <div className="app-panel !m-2 flex-1" data-land="page" />
-                  <div className="app-chat-slot" style={{ width: 380 }}>
-                    <AgentSidebar open onToggle={() => setMode("project")} />
-                  </div>
-                </div>
-              )}
               {mode === "project" && <RecordModal kind="project" id="p1" onClose={close} onOpenProject={() => setMode("project")} onOpenInitiative={() => setMode("initiative")} />}
               {mode === "initiative" && <RecordModal kind="initiative" id="i1" onClose={close} onOpenProject={() => setMode("project")} onOpenInitiative={() => setMode("initiative")} />}
               {mode === "new-project" && <CreateRecord kind="project" initialDomainId="d1" onClose={close} onCreated={close} />}

@@ -55,18 +55,42 @@ export type MemoryApi = Pick<
   | "recent"
 >;
 
-export default function MemoryPage({ onClose, memory }: { onClose: () => void; memory?: MemoryApi }) {
-  return memory ? <MemoryPageView memory={memory} onClose={onClose} /> : <LiveMemoryPage onClose={onClose} />;
+export default function MemoryPage({
+  onClose,
+  memory,
+  onShowOnSchedule,
+}: {
+  onClose: () => void;
+  memory?: MemoryApi;
+  /** Memory is the Rhythm view's door (D-206): turns it on on the Schedule.
+   *  Omitted where there is no Schedule to show it on (the phone). */
+  onShowOnSchedule?: () => void;
+}) {
+  return memory ? (
+    <MemoryPageView memory={memory} onClose={onClose} onShowOnSchedule={onShowOnSchedule} />
+  ) : (
+    <LiveMemoryPage onClose={onClose} onShowOnSchedule={onShowOnSchedule} />
+  );
 }
 
-function LiveMemoryPage({ onClose }: { onClose: () => void }) {
-  return <MemoryPageView memory={useMemory()} onClose={onClose} />;
+function LiveMemoryPage({ onClose, onShowOnSchedule }: { onClose: () => void; onShowOnSchedule?: () => void }) {
+  return <MemoryPageView memory={useMemory()} onClose={onClose} onShowOnSchedule={onShowOnSchedule} />;
 }
 
 type Face = "now" | "all";
 const SURE_WORD = { sure: "Sure", fairly: "Fairly sure", watch: "Not sure yet" } as const;
 
-export function MemoryPageView({ memory, onClose, initialFace = "now" }: { memory: MemoryApi; onClose: () => void; initialFace?: Face }) {
+export function MemoryPageView({
+  memory,
+  onClose,
+  initialFace = "now",
+  onShowOnSchedule,
+}: {
+  memory: MemoryApi;
+  onClose: () => void;
+  initialFace?: Face;
+  onShowOnSchedule?: () => void;
+}) {
   const [face, setFace] = useState<Face>(initialFace);
   const [forgetting, setForgetting] = useState<string | null>(null);
   const [wiping, setWiping] = useState(false);
@@ -136,10 +160,17 @@ export function MemoryPageView({ memory, onClose, initialFace = "now" }: { memor
         />
       }
       right={
-        <label className="memory-learn">
-          <Switch checked={memory.learning} onChange={memory.setLearning} label="Keep learning" disabled={!memory.available} />
-          <span>Keep learning</span>
-        </label>
+        <>
+          {onShowOnSchedule && (
+            <Button size="sm" kind="ghost" onClick={onShowOnSchedule} title="Your hours and the habits Nuvo noticed, under this week">
+              Show on the Schedule
+            </Button>
+          )}
+          <label className="memory-learn">
+            <Switch checked={memory.learning} onChange={memory.setLearning} label="Keep learning" disabled={!memory.available} />
+            <span>Keep learning</span>
+          </label>
+        </>
       }
     >
       <div className="f-scroll">

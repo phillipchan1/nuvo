@@ -128,7 +128,8 @@ Showing the whole draft at once over a full week was unreadable (ⓟ, 2026-11-09
 opens **on the earliest block**. The calendar scrolls to it and it lifts. The rest of the draft
 goes quiet, and **everything already on the calendar fades**, so only the net-new reads. The rail
 shows what the block holds (each task and its minutes), why it's there, and its other open times
-(numbered on the grid). **Looks good ↵** holds it and moves to the next; **Later J** moves on;
+(numbered on the grid). **Hold <day time> ↵** holds it and moves to the next; **Look at it last J** moves on
+(acts are named by where the block goes since D-204: **Let it move**, **Split in two**, **Back to <project>**);
 dragging it holds it where it lands. A pip per block, in time order, shows what's accepted.
 
 **How long** chips re-place the block at a length you choose (or drag its edge). While a block is
@@ -258,11 +259,13 @@ budget, and still says how many moves it made before you take them.
 
 ### On the Schedule
 
-The repair stages as a ghost at its target, with one line in the rail:
-*"Call with Dana landed on Proposal draft. Thu 9am?"* — `↵` take it · `←/→` other times ·
-`Esc` leave it. On the phone it is a card on the Calendar tab with the same three acts.
+*Since D-204:* repair is a **rail mode**, not a bar over the Schedule. The crown's line says
+*"Thu 9am broke: a meeting landed · Repair ›"*; your press turns the rail into the repair walk,
+one broken block at a time, its target ghosted on the grid — **Move to <day time>** `↵` ·
+`←/→` other times · **Leave it where it is** · `Esc` back to rest. On the phone it is a card on
+the Calendar tab with the same acts and words.
 
-### The dial — *How much Nuvo moves* (Settings → Schedule, and in the rail)
+### The dial — *How much Nuvo moves* (Settings → Schedule only, since D-204)
 
 | Setting | Behaviour |
 |---|---|

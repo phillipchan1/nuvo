@@ -38,7 +38,6 @@ const GROUPS: Group[] = [
       { keys: [["A"], ["C"]], sep: "or", label: "Add a task (the rail's box)" },
       { keys: [["⌘", "K"]], label: "Quick add — a task, event or slot" },
       { keys: [["⌘", "1"], ["⌘", "3"]], sep: "–", label: "In quick add: Task · Event · Slot" },
-      { keys: [["⌘", "J"]], label: "Toggle Nuvo" },
       { keys: [["⌘", ","]], label: "Settings" },
       { keys: [["⌘", "+"], ["⌘", "−"]], sep: "/", label: "Zoom in / out" },
       { keys: [["⌘", "0"]], label: "Reset zoom" },

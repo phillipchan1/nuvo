@@ -40,6 +40,7 @@ import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
+import { DIAL_NOTE, useDial } from "../lib/planDial";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useOrientation } from "../hooks/useOrientation";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -242,6 +243,10 @@ function SchedulePane({
 }) {
   const [maxPerWeek, setMaxPerWeekPref] = useMaxPerWeek();
   const [maxPerQuarter, setMaxPerQuarterPref] = useMaxPerQuarter();
+  // How much Nuvo moves when the week breaks (docs/plan-the-week-v2.md §7).
+  // Its one home (D-204): not in the walk, not in the repair rail. Q-14 is
+  // open, so this only moves the control — what each setting does is unchanged.
+  const [dial, setDial] = useDial();
 
   // The weekly Review reveal — a per-device nudge, so it lives in localStorage
   // (not the synced settings row). Default Friday 1pm.
@@ -381,6 +386,15 @@ function SchedulePane({
           aria-label="Review time"
         />
         <Toggle checked={reveal.enabled} onChange={(v) => patchReveal({ enabled: v })} label="Weekly Review reveal" />
+      </Row>
+
+      <Row title="When the week breaks" desc={DIAL_NOTE[dial]}>
+        <Segmented
+          value={dial}
+          onChange={setDial}
+          label="How much Nuvo moves"
+          options={(["ask", "suggest", "handle"] as const).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))}
+        />
       </Row>
 
       <Row title="Weather" desc="Beside each day. Needs your location.">

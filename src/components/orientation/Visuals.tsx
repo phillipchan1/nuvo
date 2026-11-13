@@ -255,7 +255,6 @@ export function NuvoVisual() {
         <div className="orient-stagger flex items-center gap-2" style={at(0)}>
           <span className="text-body" style={{ color: "var(--accent)" }}>✦</span>
           <span className="section-label flex-1">Nuvo</span>
-          <KeyBadge k="⌘J" />
         </div>
         <div className="orient-stagger rounded-[var(--r-card)] rounded-tl-sm border border-[color:var(--line-1)] px-3 py-2.5" style={at(1)}>
           <p className="text-meta leading-relaxed text-ink">

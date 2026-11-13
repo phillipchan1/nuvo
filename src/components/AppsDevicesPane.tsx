@@ -287,7 +287,7 @@ export function AppsDevicesPane() {
           <div className="grid gap-2">
             <div className="set-row-title">Full account</div>
             <p className="set-note">
-              A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools as ⌘J. Destructive acts still
+              A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools Nuvo does. Destructive acts still
               ask first. The token is this account; never drop it into a team-wide connector.
             </p>
             <StepList

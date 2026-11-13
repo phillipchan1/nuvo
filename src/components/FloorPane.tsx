@@ -7,9 +7,8 @@ import { memo, useEffect } from "react";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
-import { Icon } from "./Icon";
 import { AltitudeIcon } from "./icons";
-import { IconButton, PageBar, Tabs } from "./kit";
+import { PageBar, Tabs } from "./kit";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
@@ -63,8 +62,7 @@ function FloorPane({
   /** False while Schedule covers this overlay — skip reconciling under KeepAlive. */
   live?: boolean;
 }) {
-  const { openRecord, toggleAgent, nav } = useAppNavigation();
-  const { agentOpen } = nav;
+  const { openRecord } = useAppNavigation();
 
   // Clicking a project / initiative anywhere opens its Record modal (the
   // beautiful, fully-editable command center). Neither rung has a full page — the
@@ -122,8 +120,8 @@ function FloorPane({
           works the same way: no chrome header, drag on the toolbar's empty spacer).
           The face switcher rides the RIGHT cluster in the calendar toolbar's own
           idiom, so "which shape of this altitude" reads identically everywhere. */}
-      {/* The one bar (D-190): breadcrumb · the altitude's four faces as tabs ·
-          the chat. The sidebar already carries the Schedule, so the bar doesn't. */}
+      {/* The one bar (D-190): breadcrumb · the altitude's four faces as tabs.
+          The sidebar already carries the Schedule, so the bar doesn't. */}
       <PageBar
         icon={<AltitudeIcon kind={rung} size={16} />}
         trail={[RUNG_LABEL[rung]]}
@@ -143,15 +141,6 @@ function FloorPane({
               tabs={FACES}
             />
           ) : undefined
-        }
-        actions={
-          <IconButton
-            label="Ask Nuvo"
-            shortcut={["⌘", "J"]}
-            active={agentOpen}
-            icon={<Icon name="sparkles" size={14} />}
-            onClick={toggleAgent}
-          />
         }
       />
 

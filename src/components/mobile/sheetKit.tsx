@@ -598,6 +598,8 @@ export function PickSheet({
       type="button"
       onClick={() => pick(r.id)}
       aria-pressed={on}
+      // So an act can start a motion FROM the row you picked (the Reach, D-202).
+      data-pick-id={r.id || undefined}
       className="ph-row row-hover"
     >
       <span className="ph-row-lead" style={r.color ? { color: r.color } : undefined}>

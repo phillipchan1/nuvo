@@ -76,9 +76,28 @@ describe("the week, repaired in place", () => {
   });
 });
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import RepairBar from "../src/components/plan/RepairBar";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { useState } from "react";
 import { vi } from "vitest";
+import RepairRail from "../src/components/plan/RepairRail";
+
+vi.mock("../src/hooks/useWeekCrown", () => ({
+  SIGNIFICANCE_FLOOR_MINS: 120,
+  useWeekCrown: () => ({
+    weekISO: "2026-11-09",
+    weekLabel: "Nov 9 – 15",
+    rows: [{ rock: { id: "r1" }, projectId: "p", title: "Pricing", color: "#2563EB", state: "in-motion", loose: [], placed: [], open: 1 }],
+    landed: 0,
+    total: 1,
+    looseCount: 0,
+    composed: true,
+    significance: null,
+  }),
+}));
+import RepairLine from "../src/components/plan/RepairLine";
+import { useRepairs, type RepairActs } from "../src/components/plan/repairActs";
+import type { Repair } from "../src/hooks/useWeekRepair";
 
 const memStore = () => {
   const m = new Map<string, string>();
@@ -90,31 +109,113 @@ const memStore = () => {
   };
 };
 
-describe("the repair bar", () => {
-  it("stages the repair under Suggest and moves it only on ✓", () => {
+/** The Planner's wiring, in miniature: one useRepairs, the line at rest, the rail on a press. */
+function Host({
+  repairs,
+  acts,
+  onOverlay = () => {},
+  onClose,
+}: {
+  repairs: Repair[];
+  acts: RepairActs;
+  onOverlay?: (o: unknown) => void;
+  onClose?: () => void;
+}) {
+  const state = useRepairs(repairs, acts);
+  const [mode, setMode] = useState(false);
+  if (!mode)
+    return (
+      <div data-rest-rail="">
+        <RepairLine
+          state={state}
+          onOpen={() => {
+            if (state.dial === "ask") state.setAsked(true);
+            setMode(true);
+          }}
+        />
+      </div>
+    );
+  return (
+    <RepairRail
+      state={state}
+      onOverlay={onOverlay as never}
+      onClose={() => {
+        onClose?.();
+        setMode(false);
+      }}
+    />
+  );
+}
+// Pricing, Wed 2–3:30pm; a call lands on it at 2pm
+const broken = () => run([task("Pricing", iso(11, 14), 90)], [meeting("Call with Dana", iso(11, 14), iso(11, 15))]);
+
+describe("repair — a rail mode, not a floating bar (D-204)", () => {
+  it("rests as one --warn line in the rail; nothing opens repair by itself", () => {
     vi.stubGlobal("localStorage", memStore());
-    const [r] = run([task("Pricing", iso(11, 14), 90)], [meeting("Call with Dana", iso(11, 14), iso(11, 15))]);
+    const apply = vi.fn(() => () => {});
+    const { container } = render(<Host repairs={broken()} acts={{ apply }} />);
+    expect(screen.getByText("Wed 2pm broke: a meeting landed")).toBeTruthy();
+    const line = container.querySelector("[data-repair-line]") as HTMLElement;
+    // the fact is --warn (never --signal) — the crown line's warn grammar
+    expect(line.querySelector("[data-warn]")?.textContent).toBe("Wed 2pm broke: a meeting landed");
+    expect(container.querySelector("[data-repair-rail]")).toBeNull();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("the press takes the rail over: the block, its target ghosted, acts that name the destination", () => {
+    vi.stubGlobal("localStorage", memStore());
     const undo = vi.fn();
     const apply = vi.fn(() => undo);
     const onOverlay = vi.fn();
-    render(<RepairBar repairs={[r]} acts={{ apply }} onOverlay={onOverlay} />);
+    const onClose = vi.fn();
+    const { container } = render(<Host repairs={broken()} acts={{ apply }} onOverlay={onOverlay} onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Repair/ }));
+    // in the rail, not floating over the Schedule
+    expect(container.querySelector("[data-repair-rail]")).toBeTruthy();
+    // the crown stays pinned while you repair (rail-modes §2): the slate's pips
+    expect(container.querySelector('[data-repair-rail] [data-pinned-crown] [data-crown-project="p"]')).toBeTruthy();
+    expect(container.querySelector(".f-dock")).toBeNull();
     expect(screen.getByText("Pricing")).toBeTruthy();
-    // its target is drawn on the calendar as a ghost
     expect(onOverlay.mock.calls.at(-1)?.[0]?.ghosts).toHaveLength(1);
-    expect(apply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByLabelText("Take it"));
+    // the old words are gone; the acts say where it goes
+    expect(screen.queryByLabelText("Take it")).toBeNull();
+    expect(screen.queryByLabelText("Leave it")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Move to \w{3} \d/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Leave it where it is/ })).toBeTruthy();
+    // the dial isn't here — it's in Settings → Schedule
+    expect(screen.queryByRole("radiogroup", { name: "How much Nuvo moves" })).toBeNull();
+    // ↵ moves it; deciding the last one hands the rail back
+    act(() => void fireEvent.keyDown(window, { key: "Enter" }));
     expect(apply).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByText("Undo"));
-    expect(undo).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-repair-rail]")).toBeNull();
   });
 
-  it("stages nothing under Ask until you re-plan", () => {
+  it("Esc hands the rail back without moving anything", () => {
+    vi.stubGlobal("localStorage", memStore());
+    const apply = vi.fn(() => () => {});
+    const { container } = render(<Host repairs={broken()} acts={{ apply }} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Repair/ }));
+    act(() => void fireEvent.keyDown(window, { key: "Escape" }));
+    expect(container.querySelector("[data-repair-rail]")).toBeNull();
+    expect(apply).not.toHaveBeenCalled();
+    expect(screen.getByText("Wed 2pm broke: a meeting landed")).toBeTruthy();
+  });
+
+  it("under Ask, nothing stages until the press — the press is the ask", () => {
     vi.stubGlobal("localStorage", memStore());
     localStorage.setItem("nuvo.planDial.v1", "ask");
-    const [r] = run([task("Pricing", iso(11, 14), 90)], [meeting("Call with Dana", iso(11, 14), iso(11, 15))]);
-    render(<RepairBar repairs={[r]} acts={{ apply: vi.fn(() => () => {}) }} onOverlay={vi.fn()} />);
-    expect(screen.queryByLabelText("Take it")).toBeNull();
-    fireEvent.click(screen.getByText("Re-plan the rest of the week"));
-    expect(screen.getByLabelText("Take it")).toBeTruthy();
+    const apply = vi.fn(() => () => {});
+    render(<Host repairs={broken()} acts={{ apply }} />);
+    expect(screen.queryByRole("button", { name: /^Move to/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Repair/ }));
+    expect(screen.getByRole("button", { name: /^Move to/ })).toBeTruthy();
+  });
+
+  it("the Planner mounts the rail mode, never the floating bar", () => {
+    const src = readFileSync("src/components/Planner.tsx", "utf8");
+    expect(src).not.toMatch(/RepairBar/);
+    expect(src).toMatch(/<RepairRail/);
+    expect(src).toMatch(/repairing \? repairOverlay : null/);
   });
 });

@@ -198,6 +198,7 @@ durations) holds by construction. The ms below are Paper's.
 | **Commit** | `--d-commit`, `--d-stagger` | bands land 72ms apart, then the seal sweeps (≈860ms) | **the week is locked** | `WeekSetMoment` — Plan the week's last screen, both shells | anywhere but a commit; more than once per commit |
 | **Arrive** | `--d-slow`, `--ease-out` | 340ms, 6px rise, **no fade** | a hero takes its place | `WeekSetMoment`'s hero (`.arrive`); floors already rise on `floor-enter` | fading a hero in (it must be readable on frame one) |
 | **Now** | — | **static** | which way time is moving | the now-line's **wake** (a `--signal-soft` band over the minutes just gone, `--now-wake-h`) on the desktop Schedule and the phone's Day canvas | a pulse, a breathe, a glow that animates — the line moves only with the clock |
+| **Reach** | `--d-advance`, `--ease-momentum` | one 8px mark in the project's hue, arcing from what you touched to the bar it moved | **where the change came from**: an act climbs one altitude to the reading it moved (D-202) | `reachToCrown` from a held plan block, a loose piece dropped on the grid, the phone's Put in a slot | more than one mark per project per act, more than one altitude, a chat or assistant write, to anything off-screen or unmounted |
 | Travel · Zoom · Lift | existing | — | unchanged: `TimePager`, `LensZoom`, `.glass-lift` | | |
 
 Laws that hold for every row of that table:
@@ -766,10 +767,9 @@ hand-roll a fifth stack of `border-t` sections.
 
 ## Layout signatures
 
-- **Spine left, Nuvo right, work between** — all the same paper, divided only by
-  `border-l/-r` hairlines, and all of it inside the one sheet (see *The frame*). The Nuvo
-  agent rail (`AgentSidebar`) is the one home for chat on desktop (⌘J); it stays
-  transparent like the spine and separates with a single `border-l`.
+- **Spine left, work beside it** — the same paper, divided only by hairlines, all inside the
+  one sheet (see *The frame*). There is no right-hand Nuvo panel since D-205: Nuvo's offers
+  ride the rows they change, as quiet `OfferChip`s inside the rail's balance budget.
 - **Only the user's line gets a bubble.** Nuvo's half of the conversation is *the page* —
   no box, no fill, generous leading, straight on the paper (`.agent-turn`). A reply boxed
   in `--surface-2` reads as a quotation from somewhere else, and it nests a frame around

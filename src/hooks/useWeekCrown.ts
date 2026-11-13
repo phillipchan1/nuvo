@@ -30,6 +30,7 @@ import {
 } from "../lib/priorities";
 import { projectPace, spanElapsed } from "../lib/pace";
 import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
+import { composeWeekTrack, weekElapsed, type WeekTrack } from "../lib/weekTrack";
 import type { ReactNode } from "react";
 import type { BigRock, Task } from "../lib/types";
 
@@ -116,16 +117,30 @@ export interface WeekCrown {
   looseCount: number;
   /** the week has been composed (the ritual ran) */
   composed: boolean;
+  /** The week as ONE track (D-206): a piece per slate task — done toward an
+   *  initiative · done, other · placed · no time — with the week's pace tick
+   *  and one number. Significant, in the crown, is this done split, counted in
+   *  tasks (the kernel's `doneTaskSignificance`); meetings never enter it. The
+   *  hours reading (`weekSignificance`) is kept for the Review. */
+  track: WeekTrack;
 }
 
-/** The week's crown. `null` until the vertical has loaded. */
-export function useWeekCrown(): WeekCrown | null {
-  const { data } = useVertical();
-  const weekISO = data?.sprint?.week_start ?? planningWeekStartISO();
+/** The week's crown. `null` until the vertical has loaded.
+ *
+ *  `forWeekISO` reads the crown of a NAMED week — Plan the week can plan the
+ *  next one (`planSessionWeekStart`), and its pinned crown must be that week's
+ *  slate (rail-modes §2). Omitted, it is the sprint's week, as always. The
+ *  stored verdicts (`bigRocks`) and "composed" belong to the sprint's week
+ *  only, so another week reads with neither: nothing has landed there yet. */
+export function useWeekCrown(forWeekISO?: string): WeekCrown | null {
+  const { data: vertical } = useVertical();
+  const weekISO = forWeekISO ?? vertical?.sprint?.week_start ?? planningWeekStartISO();
   const { splitFor } = useLooseWork(weekISO);
 
   return useMemo<WeekCrown | null>(() => {
-    if (!data) return null;
+    if (!vertical) return null;
+    const ownWeek = !forWeekISO || forWeekISO === (vertical.sprint?.week_start ?? planningWeekStartISO());
+    const data = ownWeek ? vertical : { ...vertical, bigRocks: [] };
 
     // `projectPace` wants a clock for its trailing-throughput read; the only
     // field this hook takes from it — `remainingMins` — doesn't depend on one.
@@ -181,7 +196,12 @@ export function useWeekCrown(): WeekCrown | null {
       landed: rows.filter((r) => r.state === "landed" || r.state === "shipped").length,
       total: rows.length,
       looseCount: rows.reduce((n, r) => n + r.loose.length, 0),
-      composed: Boolean(data.sprint?.reviewed_at),
+      composed: ownWeek && Boolean(data.sprint?.reviewed_at),
+      track: composeWeekTrack(
+        rows,
+        { projects: data.projects, initiativeIds: data.initiatives.map((i) => i.id) },
+        weekElapsed(weekISO, now),
+      ),
     };
-  }, [data, weekISO, splitFor]);
+  }, [vertical, forWeekISO, weekISO, splitFor]);
 }

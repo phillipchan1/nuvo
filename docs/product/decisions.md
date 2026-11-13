@@ -2263,7 +2263,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-01** | Auto-schedule the day (Motion-style) | Removes the judgment the product exists to build; when it's wrong you have no model of why | Never — this is identity, not a feature gap |
 | **N-02** | Multi-**player**: shared funnels, assignees, someone else's dashboard | Consensus objects blunt every altitude (D-003). ⚠️ **Not** an argument against multi-tenancy — that's D-024, and it's a yes | A separate product, not this one |
 | **N-03** | A separate "event" entity for scheduled tasks | Doubles every sync path (D-001) | Never |
-| **N-04** | Streaks, scores, karma, debt ledgers | Serves *optimizer*; we serve *steward* | Never |
+| **N-04** | Streaks, scores, karma, debt ledgers — and running tallies of acts ("12 tasks groomed today"), which are a score however they glow (D-202) | Serves *optimizer*; we serve *steward* | Never |
 | **N-05** | Notion-style databases / custom fields | A blank canvas is a product you have to finish | Never |
 | **N-06** | A fifth pool | The funnel's power is its small vocabulary (Principle 10) | Two independent instances prove the need |
 | **N-07** | Push notifications for planning **nudges** | The app reports, you decide (Principle 4) | ⚠️ **Narrowed and partly overturned, 2026-08-13 (D-102, D-105); horizon of a lead widened 2026-09-04 (D-138).** Push itself is no longer refused — Phil ruled it acceptable **with explicit user consent**. What this row still refuses is the *nudge*: an unprompted message about your planning rather than about a commitment that is about to happen. That refusal stands regardless of consent |
@@ -3443,6 +3443,7 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-13** | **Who wins when a mirrored block is moved on both sides?** D-107 closed the "iCloud gets no mirror at all" half of audit rank 3 and deliberately left this half open: mirroring is still one-directional, so dragging a Nuvo block in Google Calendar is silently reverted on the next reconcile. This is the only place in the app that **actively discards something the user did**, so it can't stay unanswered forever — but it is a model decision, not a bug fix. Three shapes, and each costs something real: **app always wins** (today — honest and simple, but the provider's UI lies to you the moment you touch a block there; the mitigation is to say so rather than to silently revert); **provider always wins for time** — needs Nuvo to start *reading back* its own mirror calendar, which it deliberately never does, and hands Google's quirks (a moved recurring instance, a declined invite) the power to rewrite planning state; **per-field last-writer-wins**, the model `lib/sync/ops.ts` already uses for tasks — but that model works because Nuvo stamps every field itself, and neither provider returns per-field timestamps, so this degrades to row-level LWW on the mirror's fields and a stale `updated` can still clobber a deliberate edit | **Answered 2026-08-15 — app always wins, and says so** (see D-107). Reopens if the warning proves insufficient: the thing to watch for is Phil losing an edit he made in Google *despite* the note, which is the only evidence that would justify paying for one of the other two shapes |
 | **Q-14** | **May Plan the week move a block mid-week without asking?** The v2 spec ([`plan-the-week-v2.md`](../plan-the-week-v2.md) §7) gives the planner a dial — *How much Nuvo moves*: Ask · Suggest · Handle. Ask and Suggest stage every change for one key; **Handle** would apply a least-change repair to unheld blocks and show an Undo afterwards. That is a partial reversal of **N-01** (auto-schedule, "never — this is identity"), asked for by the operator (ⓟ, 2026-11-06: *"turn up the temperature or down the temperature"*). | Decides whether the planner that stays with the week is a stager or an actor, which is exactly the line between Nuvo and Motion | Phase 1–2 of v2 built and used; evidence that Suggest's ↵ is still too slow. Until then Suggest is the ceiling |
 | **Q-15** | **Does the chat become the Nuvo panel, with conversation moving to your own assistant?** Asked by the operator (2026-11-13: *"instead of chat… Nuvo side bar should be the intelligent recommendations UI area where it can automatically interact with the stuff to the left of it… removing chat feature anyway to have people bring their own MCPs"*). The proposed shape, prototyped as [Nuvo panel](https://claude.ai/artifact/MJ1dQ8BFhRyWmsSmKpdtih) (private, example data): the panel docks where the chat is, opened with ⌘J and named **Nuvo** (no new name, P11). It holds at most a few recommendations for the page beside it, each with evidence and what Keep does. "Interact with the stuff to the left" means **preview in place**: a draft laid over the real surface, the way Draft the path works, never a write (P3, P4, N-01). It's quiet when it has nothing sure to say (P9), and silent on a domain (D-061). On the phone the ✦ opens it as a sheet. Conversation moves to the user's own assistant through the existing MCP server (D-112). | Removing the chat removes the surface that fails quietly, and its per-message model cost. But bring-your-own MCP is still a technical act for most people, and the chat currently carries the phone's ✦ launcher, Memory's phone entry, the marketing site's chat line and the agent battery's prompt half. | **Answered 2026-11-13 by the anchor pass: two ideas, split.** The panel passes as D-198 (smallest version: suggestions in the existing Nuvo panel, no new place). Removing the chat fails for now as N-22, which says what would reopen it |
+| **Q-16** | ~~Where do Nuvo's offers live: the right panel, or on the left?~~ **Resolved 2026-11-13 by D-205: on the left, on the rows they change; the right panel retires.** | — |
 
 **D-099 · 2026-08-12 · The phone gets the Build altitudes' other two faces — and the acts a
 record has, including the one it could not perform.** *(A desktop→mobile parity audit,
@@ -6808,6 +6809,187 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-206 · 2026-11-13 · The week is one track, and Get ready turns the rail into a stack of cards
+that take this screen to ready.** *(Asked by the operator on the preview: "intelligence should
+proactively help me get everything on this screen to health", "the metrics are hard to read… 3–5
+different metrics all looking differently", "I like the idea of showing multiple cards… to help
+drive one readiness". Prototype: [Nuvo Crown Header](https://claude.ai/artifact/PLqpHWnkLkQcv5BGNSYLD6).)*
+
+→ **"Health" is Readiness** (`readiness-model.md`), given an act. No new name (P11).
+
+→ **One track for the week.** The crown header draws the week the way each project row draws a
+project: one piece per task on the slate, *done toward an initiative* (accent) · *done, other*
+(grey) · *placed* (tint) · *no time* (amber outline), with the pace tick, and **one number**
+("13/17 done"). It replaces "N of M done", "N with no time" and the Significant bar. **Amends
+D-203:** in the crown, Significant is the split of the done pieces, counted in tasks; hours stay
+for the Review. Meetings no longer enter it (they can't point at a project).
+
+→ **One door: Get ready ›** replaces the Plan the week button and the crown's line. It opens the
+**Get ready** rail mode: a stack of cards for this screen, worst first — a broken block (*Move to
+Wed 9am*), today's work with no time (*Hold 3:30pm*, or the next opening when today is full),
+the week's loose work (*Hold Tue 10am* / *Back to <project>*), inbox captures (*→ <place>*), thin
+projects (*Draft the path*), one sure Memory observation (*Keep: …*), and *Plan the whole week* as
+a card when there's more loose work than cards. Each card names its destination, writes nothing
+until pressed (P3), lands and Reaches (D-202), and leaves; the track advances under it. At most 5
+cards show; as one leaves the next arrives; never a count of what's left (P4). When nothing is
+left the rail says "Ready" once and hands itself back. Plan and Repair stay as modes the cards
+can open.
+
+→ **Also:** Hold falls back to the next open time this week when today is full; an inbox chip
+shows only its destination ("→ Frontier Church"); the Schedule's **Rhythm** button is removed
+(Memory in the sidebar is the door; it keeps a "Show on the Schedule" act).
+
+→ **Anchor.** W2 · W3 · A1 · A2 · Q4, one walk. Strains **P4** (a screen of fixes can read as a
+debt list: no total, no red, a cap of 5 with refill) and **P9** (held by Momentum's laws). The
+rest state keeps D-205's budget.
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`. The week track (`lib/weekTrack.ts`,
+`WeekTrack`; the kernel's `ladderedProjectIds` / `doneTaskSignificance`; with no initiatives done is
+one plain state), the Get ready door, the card mode (`lib/readyCards.ts`, `GetReadyRail`, kit
+`OfferCard`, phone `MobileGetReady`), Hold's fallback to later this week, the "→ <place>" chip,
+and Rhythm moved behind Memory's **Show on the Schedule** (a pressed Rhythm button shows only while
+it's on, to turn it off). **Deviations:** no repair cards on the phone (its repair card already
+owns that state); loose work with no fit goes to the *Plan the week* card, not *Back to
+<project>*; up to 2 breaks are fixed from cards, more open Repair. Typecheck and build clean;
+`npm test` 2595 pass, the 18 known failures. Driven at `?weekcrown`, `?rail=offers`,
+`?rail=ready` (desktop) and `?rail=ready-phone` (375px). **Not driven** on a signed-in account;
+`npm run perf` not run (Planner, CalendarPane and the crown changed).*
+
+**D-205 · 2026-11-13 · Nuvo's offers live on the left, on the rows they change. The right panel
+retires.** *(Resolves Q-16. The operator's call: "Left, on the rows.")*
+
+→ **Supersedes D-198's home** (the offers in the right-hand panel) and D-201's "the panel stays".
+The panel's two kinds already had a place on the left: a thin path is marked on its row in Plan
+the week, the phone's Projects and the deck (D-196), and Memory's sure observations appear in Plan
+the week's What I noticed and the Schedule's Rhythm view (D-194). The panel was a second place to
+be told the same thing (P8).
+
+→ **What moves.** The thin-path offer gains the one row it lacked: the week crown's project row
+(desktop and phone), as a **Draft the path** chip naming its evidence. D-204's chips arrive: a
+today task with no time carries **Hold <time>** (Find time, `useFindTime`); an inbox item the
+router has a guess for carries **File in <project>**. One chip per row, written as the
+destination, nothing written until pressed (P3); Not now snoozes it for two weeks, as the panel
+did (`nuvoOffers.isSnoozed`).
+
+→ **What goes.** The desktop panel (`AgentSidebar`) and ⌘J. **Connect an assistant** stays where
+it already lives, Settings → Apps & devices. Memory keeps its sidebar row and dot. On the phone the
+✦ launcher stays as the door to Memory and Connect an assistant (it carries Memory's dot, D-194);
+the offers leave it. The `chat` shortcut keeps opening that door (installed phones carry it).
+
+→ **Anchor.** Mends P8. No pool, no new name, no new place (one retired). The suggestion log
+(D-197) keeps grading each act through the paths it already takes.
+
+→ **Built with the balance budget** (the operator: "it has to be elegant and balance all that is
+going on in the left"): `budgetOffers` (`lib/railOffers.ts`) ranks crown row → Today → Inbox and
+shows at most 3 in the desktop rail, 2 per phone screen, nothing past the cap and no count, none
+in Plan or Repair. A chip (`OfferChip`, kit) replaces the row's trailing meta, so no row grows.
+Not now has no visible button: right-click, ⌫, or a long press on the chip.
+
+→ **Consequences.** The Inbox's Accept / ✕ pair on every guessed row is gone; **File in <place>**
+replaces it, inside the budget, so a guess past the cap shows nothing until the rows above it are
+handled. The orientation's Nuvo step now lights the day list ("Nuvo speaks on the row it would
+change"), and Getting Started loses *Open Nuvo* (four steps). `TaskRow` gained one prop, `offer`.
+Hold computes with Find time's own compose, today only, capped at 6 tasks.
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`. Typecheck and build clean; `npm
+test` 2558 pass, the 18 failures `maintenance` / `guard-public-ci`. Checked at `?rail=offers`,
+`?rail=offers-phone`, `?weekcrown` (desktop and 375px). **Not driven** on a signed-in account;
+`npm run perf` not run (Hold adds a calendar-week query and a compose per minute while Today
+shows); long-press on a real iPhone unchecked.*
+
+**D-204 · 2026-11-13 · The rail has three modes, not four sections — and every act says where
+the thing goes.** *(Asked by the operator: "the left bar would be doing a lot… projects, current
+schedule, tasks, then recommendations would need a way to elegantly do this… how to integrate plan
+the week… the mid-week corrector… did we decide passive or actively shown?… looks good, inbox,
+later means nothing to me. I want to feel confident that it's going somewhere." Spec:
+[`rail-modes.md`](../rail-modes.md).)*
+
+→ **Rest · Plan · Repair, one at a time.** At rest the rail is your day under a pinned crown, and
+Nuvo's offers ride the rows they'd change as one chip each ("Hold 2–2:30pm", "File in Garage
+studio"). Plan already takes the rail over (`PlanRail`). Repair moves from the bar floating over
+the Schedule (`RepairBar`) into the rail as the same walk. Nothing starts a mode but your press.
+
+→ **Passive or active: always present, never pushed.** The crown's one line says "4 with no time ·
+Plan the week" or "Tue 10am broke: a meeting landed · Repair" only while it's true. No badge, no
+modal, no push (N-07), `--warn` not `--signal`.
+
+→ **An act's label is its destination**: a time, a named place, or a state. *Looks good* →
+**Hold Tue 10–11am**; *Later* → **Look at it last**; *Off this week* → **Back to <project>**;
+*Take it* → **Move to Wed 9–10am**; *Leave it* → **Leave it where it is**. Same acts, same keys,
+new words. Generalizes D-194's "every answer says what it changes".
+
+→ **Anchor.** W2 · W3 · A2. Strains P9 at the crown's line (fact-only, appears only when true). No
+pool, no new place (one floating bar retired). "Ask me Thursday" and a project deck walk are left
+out on purpose, each needing its own anchor pass.
+
+→ **Settled by Phil the same day:** the repair dial lives in Settings → Schedule, not in the
+walk; inline offer chips at rest, yes.
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`, except §3's inline chips (waiting on **Q-16**): the destination labels on both shells (`plan/destinations.ts`, kit `Dest`), repair as a rail mode (`RepairRail`, `RepairLine` on the crown; `RepairBar` deleted), the dial in Settings → Schedule only, the crown's "N with no time · Plan the week" line. Deviations: Split reads "Split in two" (the halves aren't known before the press); repair keeps only Move / Leave (no Back to <project>); a block with no project reads "Out of the week"; the phone's shut strip carries no sentence (D-110/D-123). Not driven against a live account (no `.env.local`); checked in harnesses (`?weekcrown`, `?planweek`) and unit tests. Typecheck clean; `npm test` 2545 pass, the 18 failures are `maintenance` / `guard-public-ci`, reported as pre-existing; `npm run build` green. **Not run:** `npm run perf`; the feel test on the tinted *placed* piece and pip.*
+
+
+**D-203 · 2026-11-13 · Four readings, one chain: Ready → Placed → Done → Significant.
+Persistent where their question is asked, moving only when you act.** *(Asked by the operator:
+"the right amount of statistics and outcomes to track… number of loose items that have a time,
+because those are the only guarantees… completions… what would someone ambitious love and feel
+good about? Significance, completion, readiness." Spec:
+[`outcome-readings.md`](../outcome-readings.md).)*
+
+→ **Three already existed** under names we use: Ready (the checklist), placed (`useWeekCrown`),
+done (`PaceTrack`, calibration). **Significant is new**: finished minutes on work whose project
+**belongs to an initiative** ÷ all finished minutes, shown in hours ("6.5h of 9h toward an
+initiative"), never a percentage. *Settled by Phil the same day:* "significant is measured by
+initiative and whether there's a project attached to it — that's the discipline we need." First
+drafted as "on this week's slate"; changed because scheduling something doesn't make it matter,
+and laddering to a bet does. One rule at every altitude; an account with no initiatives shows
+none (P7, P16).
+It's W6's question ("or was I just busy?") answered during the week instead of only in the
+Review.
+
+→ **Per altitude, on surfaces that already exist** (the week crown, the deck card and record,
+the initiative card, the domain tile). No stats page (P10). No history, target, streak or
+combined number on any surface: that is where a reading becomes a score (N-04).
+
+→ **Each act moves one reading, and the Reach climbs exactly one altitude** to the bar it moved:
+a completed checklist reaches the deck card, a placement or a tick reaches the crown row, a ship
+reaches the initiative. Nothing extra when a chain completes.
+
+→ **Anchor.** Strains **P9** (held by Momentum's laws), **P4** (Significant can read as a
+verdict; hours not percent, *other* in `--muted`, no target line) and **P6** (estimates stand in
+for minutes on unblocked work, and it says so). One new name, *Significant* (glossary,
+proposed). Q-03 is its blind spot: calendar-less work is invisible.
+
+*Status: Significant built 2026-11-13 on `worktree-intelligence-readings`: `weekSignificance` in the planning kernel, `SignificanceLine` under both crowns, hidden under 2h and with no initiatives. **Deviation:** an event's *Counts toward* resolves to a domain, never a project, so meetings always count as *other* for now. Ready / Placed / Done stay as the crown already shows them; the project, initiative and domain slices are not built. Not driven against a live account (no `.env.local`); checked in harnesses (`?weekcrown`, `?planweek`) and unit tests. Typecheck clean; `npm test` 2545 pass, the 18 failures are `maintenance` / `guard-public-ci`, reported as pre-existing; `npm run build` green. **Not run:** `npm run perf`; the feel test on the tinted *placed* piece and pip.*
+
+**D-202 · 2026-11-13 · The Reach: keeping an offer lands the block *and* advances the
+project it serves, in one beat. The game is the hit and the bar, never the score.** *(Asked by
+the operator: "for ambitious people… feel like a video game… when Nuvo suggests and I accept,
+something animates which tells me I'm moving closer towards my outcome… number of tasks groomed
+kind of lights up". Spec: [`intelligence-home.md`](../intelligence-home.md) §5.)*
+
+→ **Split the request in two.** A game has *juice* (the hit, the bar that jumps when you land a
+blow) and an *economy* (points, streaks, tallies). Juice is a yes, and D-187 already built its
+grammar. The economy is N-04, and a running "tasks groomed" counter is a score. It is refused,
+and N-04 now names it so it doesn't come back.
+
+→ **What was missing is the link, not the motion.** A placed block already lands (D-187); the
+project's crown row changed out of sight. The Reach sends one mark from the landed block to its
+project's row in the week crown (desktop `WeekPanel`, the phone's crown strip), and the row's
+placed piece on its `PaceTrack` advances and its `placedLabel` swaps ("2 of 5 placed" → "3 of
+5"). Every number is one `useWeekCrown` already measures (P6). **This amends D-187's track**:
+it drew only *done*, and placing isn't doing, so the track gains a *placed* state (tinted hue
+between done and loose). The pace tick still reads done alone. Prototype:
+[Nuvo Reach](https://claude.ai/artifact/Y7ZB6hQWShuuaZ35eBXJFP).
+
+→ **Anchor.** Ledger **Q1** (on pace?) and **W6** (did anything move?), answered at the moment of
+the act rather than in the Review. **Strains P9**, held the D-093 / D-187 way: only your own tap,
+drag or key, once; never on load, a refetch or a chat-made write (Momentum law 2); undo snaps;
+one mark per project, never per task; reduced motion changes the facts at once. Four no's: no
+pool; no user-facing name (*Reach* is a motion's name in the design language, like *Land*); a
+task with no project, or an empty week, reaches nothing (P7); nothing about one account (P16).
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`: `PaceTrack`'s placed state, `reachMark` / `reachToCrown` (`lib/motion.ts`), the Reach on a loose piece dropped on the grid, on the phone's Put in a slot, and on Plan the week's Hold (the crown is now pinned in the plan and repair rails). Not on the phone's Plan the week (no per-block accept, no crown on screen). Not driven against a live account (no `.env.local`); checked in harnesses (`?weekcrown`, `?planweek`) and unit tests. Typecheck clean; `npm test` 2545 pass, the 18 failures are `maintenance` / `guard-public-ci`, reported as pre-existing; `npm run build` green. **Not run:** `npm run perf`; the feel test on the tinted *placed* piece and pip. Other altitudes stay separate decisions.*
 
 **D-201 · 2026-11-13 · The in-app chat is removed. Nuvo offers; to talk to it, connect your own assistant.** *(The operator's call, overturning N-22 the same day: "lets remove the chat. offer MCP connection" and "our engine suggesting things for schedule tasks, projects etc is more valuable than open ended chat".)*
 

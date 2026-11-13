@@ -36,14 +36,18 @@
 // that couldn't. The row still carries no swipe here: the calendar under this
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { useThinPaths } from "../../hooks/useThinPaths";
+import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
+import type { ThinPath } from "../../lib/thinPath";
+import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
 import { Button, Chip } from "../kit";
 import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
-import { PaceTrack, SlatePips } from "../progress/PaceTrack";
+import { PaceTrack, SlatePips, WeekTrack } from "../progress/PaceTrack";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -70,6 +74,8 @@ export default function MobileWeekCrown({
   anchored = false,
   expandable = true,
   onExpandElsewhere,
+  crownLine,
+  onGetReady,
 }: {
   /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
    *  which holds the mutations and the task sheet, exactly as the rail owns it
@@ -94,14 +100,37 @@ export default function MobileWeekCrown({
   expandable?: boolean;
   /** Where a tap goes when the slate can't open here. */
   onExpandElsewhere?: () => void;
+  /** A line under the open crown's track (D-204 §3) — a repair passes its
+   *  own. Omitted or `null`, nothing: the track's outlined pieces carry "no
+   *  time" (D-206). */
+  crownLine?: ReactNode;
+  /** The one door (D-206): when given, the open header's button is
+   *  **Get ready ›** (the phone's Get ready sheet). Omitted, the old door. */
+  onGetReady?: () => void;
 }) {
   const crown = useWeekCrown();
   const [open, setOpenState] = useState(readOpen);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
+  // Draft the path on the open slate's rows (D-205) — the shut strip and the
+  // pinned pips never carry a chip. Two at most on a phone screen, through the
+  // same budget the rail uses.
+  const thin = useThinPaths();
+  const showing = open && expandable && !!crown;
+  const pathOffers = useOfferBudget(
+    useStableCandidates(
+      showing
+        ? pathCandidates(
+            crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
+            thin,
+          )
+        : [],
+    ),
+    PHONE_OFFERS_MAX,
+  );
 
   if (!crown) return null;
-  const { rows, landed, total, looseCount, composed, weekLabel, weekISO } = crown;
+  const { rows, landed, total, looseCount, composed, weekLabel, weekISO, track } = crown;
 
   const setOpen = (v: boolean) => {
     setOpenState(v);
@@ -117,6 +146,10 @@ export default function MobileWeekCrown({
   const planned = composed || total > 0;
   const action = planned ? "The plan ›" : "Plan the week";
   const openDoor = () => (planned ? setPlanOpen(true) : onPlanWeek());
+
+  // Under the track, only a line someone hands in (a repair). "N with no time
+  // · Plan the week ›" retired into the track's outlined pieces (D-206).
+  const line = crownLine ?? null;
 
   // ── shut: a picture, not a sentence ──────────────────────────────────────
   // "2 of 6 landed · 3 loose" is still six words to read, at the top of a page
@@ -202,10 +235,41 @@ export default function MobileWeekCrown({
           <Icon name="chevron-down" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
 
-        <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
-          {action}
-        </Button>
+        {onGetReady ? (
+          <Button
+            kind="ghost"
+            size="md"
+            onClick={onGetReady}
+            className="tap-icon shrink-0"
+            aria-label={`Get ready. ${track.label}`}
+            trailing={<Icon name="chevron-right" size={14} />}
+            data-get-ready=""
+          >
+            Get ready
+          </Button>
+        ) : (
+          <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
+            {action}
+          </Button>
+        )}
       </div>
+
+      {/* The week as ONE track and one number (D-206) — the rail crown's own
+          drawing. The shut strip stays one line of pips: its amber light is
+          the outlined pieces' fact, and a strip that grew a track would resize
+          under the thumb (D-123). */}
+      {track.total > 0 && (
+        <div className="crown-track pb-1 pt-1">
+          <WeekTrack track={track} />
+          <span className="crown-track-num">
+            <b>
+              {track.done}/{track.total}
+            </b>{" "}
+            done
+          </span>
+        </div>
+      )}
+      {line}
 
       {open && total > 0 && (
         <ul className="mt-1 flex flex-col">
@@ -223,6 +287,8 @@ export default function MobileWeekCrown({
                 })
               }
               onOpen={() => onOpenProject(row.projectId)}
+              pathOffer={pathOffers.has(row.projectId) ? thin.get(row.projectId) ?? null : null}
+              onOpenProject={onOpenProject}
               onOpenDay={onOpenDay}
               renderTask={renderTask}
             />
@@ -251,6 +317,8 @@ function CrownRow({
   expanded,
   onExpand,
   onOpen,
+  pathOffer,
+  onOpenProject,
   onOpenDay,
   renderTask,
 }: {
@@ -258,6 +326,10 @@ function CrownRow({
   expanded: boolean;
   onExpand: () => void;
   onOpen: () => void;
+  /** Draft the path, when the budget gave this row the offer (D-205). It takes
+   *  the track's place — never a second mark, never a taller row. */
+  pathOffer: ThinPath | null;
+  onOpenProject: (id: string) => void;
   onOpenDay: (d: Date) => void;
   renderTask: RenderCrownTask;
 }) {
@@ -266,7 +338,12 @@ function CrownRow({
   const done = shipped || row.state === "landed";
 
   return (
-    <li className="border-t border-[var(--line-1)]">
+    <li
+      className="border-t border-[var(--line-1)]"
+      // Where the Reach lands when the crown is open (D-202).
+      data-crown-project={row.projectId}
+      data-crown-color={color}
+    >
       <div className="flex items-center gap-1">
         <button
           onClick={onOpen}
@@ -298,7 +375,7 @@ function CrownRow({
             // A statement, not a button: shipping is the record sheet's act, and
             // a second ship path is how the two shells drift.
             <Chip tone="accent">Ready to ship</Chip>
-          ) : (
+          ) : pathOffer ? null : (
             <span className="flex shrink-0 items-center gap-1.5">
               {/* Carried — the same words the rail crown uses (D-108), because
                   the phone inherited the carry the moment the slate became a
@@ -315,13 +392,29 @@ function CrownRow({
                   fill in the domain's hue, and the pace tick where the span
                   stands today. Ticking a piece below advances it here. */}
               {work.total > 0 && (
-                <span aria-label={`${work.done} of ${work.total} done`}>
-                  <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} width={48} />
+                <span aria-label={`${work.done} of ${work.total} done · ${placedLabel}`}>
+                  <PaceTrack
+                    done={work.done}
+                    total={work.total}
+                    placed={placed.length}
+                    color={color}
+                    elapsed={row.elapsed}
+                    width={48}
+                    reachKey={row.projectId}
+                  />
                 </span>
               )}
             </span>
           )}
         </button>
+
+        {/* The offer stands where the track stood — a sibling of the row's
+            button (a button can't hold a button), at the same height. */}
+        {pathOffer && !done && row.state !== "ready-to-ship" && (
+          <span className="flex shrink-0 items-center">
+            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} phone />
+          </span>
+        )}
 
         {canExpand && (
           <button
