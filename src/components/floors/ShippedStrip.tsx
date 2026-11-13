@@ -1,8 +1,8 @@
-// Shipped strip — the compact, everyday glimpse of the Shipped wall. A quiet
-// celebratory line for the deck / table footers: "N shipped this quarter", the
-// domains they landed in, and a tap through to the full wall. Self-contained
-// (reads the vertical + drives its own nav) so any Build surface can drop it in.
-// Renders nothing when nothing has shipped — it never nags an empty state.
+// Shipped strip — the compact, everyday glimpse of the Shipped wall: "N shipped
+// this quarter" and the domains they landed in, as one kit ghost button that
+// opens the wall. Self-contained (reads the vertical + drives its own nav) so any
+// Build surface can drop it in. Renders nothing when nothing has shipped — it
+// never nags an empty state.
 
 import { useMemo } from "react";
 import { Icon } from "../Icon";
@@ -10,6 +10,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { readShipped } from "../../lib/shipped";
 import { READY } from "./ReadinessBanner";
+import { Button, Dot } from "../kit";
 
 export default function ShippedStrip({ rung }: { rung: "project" | "initiative" }) {
   const { data } = useVertical();
@@ -23,40 +24,26 @@ export default function ShippedStrip({ rung }: { rung: "project" | "initiative" 
   const dots = board.byDomain.slice(0, 5);
 
   return (
-    <button
+    <Button
+      kind="ghost"
+      size="sm"
+      className="tap"
       onClick={openWall}
-      className="fast group/strip flex items-center gap-2.5 rounded-full border border-line bg-surface px-3.5 py-1.5 hover:border-line-strong"
       title="Open the Shipped wall"
+      icon={<Icon name="check" size={14} style={{ color: READY }} />}
+      trailing={
+        dots.length > 0 ? (
+          <span className="flex items-center gap-[3px]" aria-hidden>
+            {dots.map((b, i) => (
+              <Dot key={b.domain?.id ?? `none-${i}`} color={b.domain?.color ?? "var(--faint)"} shape="round" size="sm" />
+            ))}
+          </span>
+        ) : undefined
+      }
     >
-      <span
-        className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full"
-        style={{ background: `color-mix(in srgb, ${READY} 15%, transparent)` }}
-      >
-        <Icon name="check" size={10} style={{ color: READY }} />
+      <span className="tabular-nums">
+        {n > 0 ? `${n} shipped ${board.periodNoun}` : `${board.total} shipped`}
       </span>
-      <span className="text-caption text-ink">
-        {n > 0 ? (
-          <>
-            <span className="font-semibold">{n}</span> shipped {board.periodNoun}
-          </>
-        ) : (
-          <>
-            <span className="font-semibold">{board.total}</span> shipped
-          </>
-        )}
-      </span>
-      {dots.length > 0 && (
-        <span className="flex items-center -space-x-0.5">
-          {dots.map((b, i) => (
-            <span
-              key={b.domain?.id ?? `none-${i}`}
-              className="h-2 w-2 rounded-full ring-1 ring-surface"
-              style={{ background: b.domain?.color ?? "var(--line-strong)" }}
-            />
-          ))}
-        </span>
-      )}
-      <span className="mono text-micro text-muted transition-colors group-hover/strip:text-ink">wall →</span>
-    </button>
+    </Button>
   );
 }

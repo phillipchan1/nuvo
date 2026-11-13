@@ -476,7 +476,7 @@ html:root .fl-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pa
   .fl-rail { padding-left: 24px; border-left: 1px solid var(--line-1); }
 }
 .fl-gain { display: flex; align-items: baseline; gap: 8px; padding-top: 6px; }
-.fl-gain > b { font: 700 28px/1 var(--font-sans); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.fl-gain > b { font: 600 20px/1 var(--font-sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .fl-gain > span { color: var(--muted); font: 450 13px/1 var(--font-sans); }
 
 /* ══ WEEK ARCHIVE (a list, over either shell) ═══════════════════════════ */
