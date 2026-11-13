@@ -1,14 +1,20 @@
-// Domain — the anchor of presence, reimagined as a place you ENTER, not a
-// dashboard you scan. The wall is a set of glass cards, each carrying one domain
-// mark: its chosen symbol and color inside a halo generated from the domain's
-// 13-week pulse — warm when tended, a cold ember when you've gone quiet — plus a
-// balance strip that answers "am I starving a domain to feed another?". Click a
-// card to open that domain: the standing mandate as a Fraunces inscription, the
-// presence pulse, the Gain you've banked, what you've built, the portfolio
-// pointed at outcomes, and Nuvo's derived read. Domains don't ask for action —
-// they ask to be kept.
+// Domains — the anchor of presence. Two layouts over one voice (D-086, D-190):
+//
+//  · The WALL (Board): one hero — the hours kept this week — the week's shape
+//    under it, then a kit Card per domain: its mark (symbol and color inside a
+//    halo generated from its 13-week pulse: warm when tended, a cold ember when
+//    you've gone quiet), its name, its state, its mandate, this week's and the
+//    quarter's hours, and whether Nuvo can route captures there.
+//  · The OPEN DOMAIN (Document): the mark and name as the title, the standing
+//    mandate as its lead, then sections under kit SectionHeaders on hairline
+//    rows — the last quarter's pulse, the Gain, what shipped, what's in flight,
+//    Nuvo's derived read, how Nuvo files things here — and a property panel
+//    (the mark, the weekly intent, the routing, delete).
+//
+// Domains don't ask for action — they ask to be kept. The voice lives in
+// lib/domainRead.ts and the marks in components/domain, shared with the phone.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { FloorGuide } from "../orientation/FloorGuide";
 import { WelcomeVisual } from "../orientation/Visuals";
@@ -42,7 +48,6 @@ import {
   ClarityMark,
   DomainGroom,
   PresencePulse,
-  Flourish,
   DomainSymbolPicker,
   SwatchGrid,
   WeekShape,
@@ -57,15 +62,17 @@ import {
   InlineText,
   InlineTextarea,
   DeleteBtn,
-  Bar,
   PROJECT_STATUS_COLORS,
   PROJECT_STATUS_LABEL,
   RefinedSeal,
   useRefinedCelebration,
 } from "./parts";
 import { readSpine } from "../../lib/readiness";
+import { pressable } from "../../lib/a11y";
+import { Icon } from "../Icon";
+import { Button, Card, Chip, Dot, IconButton, Popover, Row, SectionHeader } from "../kit";
 
-// ══ The wall — glass cards + a balance strip ═════════════════════════════════
+// ══ The wall ═════════════════════════════════════════════════════════════════
 export default function DomainFloor({
   focus,
   onSwitchDomain,
@@ -91,6 +98,7 @@ export default function DomainFloor({
   const open = openIdx >= 0 ? domains[openIdx] : (openId && freshDomain?.id === openId ? freshDomain : null);
 
   const totalWeek = domains.reduce((s, d) => s + d.investedThisWeek, 0);
+  const create = () => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); });
 
   if (open) {
     return (
@@ -110,7 +118,7 @@ export default function DomainFloor({
         teach="Domains are your standing commitments — Family, Work, Health, Finances. Everything you plan hangs off one of them."
         Visual={WelcomeVisual}
         actionLabel="Add your first domain"
-        onAction={() => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); })}
+        onAction={create}
       />
     );
   }
@@ -121,24 +129,21 @@ export default function DomainFloor({
         actions={
           <>
             {atRest && <RefinedSeal noun="domains" celebrate={celebrate} />}
-            <button
-              onClick={() => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); })}
-              className="fast rounded-md border border-line px-2.5 py-1 text-label text-muted hover:border-muted hover:text-ink"
-            >
-              + domain
-            </button>
+            <Button kind="secondary" size="sm" icon={<Icon name="plus" size={14} />} onClick={create}>
+              New domain
+            </Button>
           </>
         }
       >
-        <h1 className="text-display masthead">Domains</h1>
+        <h1 className="text-display masthead">{totalWeek > 0 ? `${fmtH(totalWeek)} kept this week` : "Nothing kept this week"}</h1>
       </FloorHeader>
 
       {totalWeek > 0 && (
         <div className="mb-5">
-          <WeekShape domains={domains} />
+          <WeekShape domains={domains} head={false} />
         </div>
       )}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-teach="domain-wall">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-teach="domain-wall">
         {/* The walkthrough lights the FIRST card, not the wall — a named thing they
             typed themselves reads as "this is yours"; a lit grid reads as nothing. */}
         {domains.map((d, i) => (
@@ -160,63 +165,45 @@ function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: b
   const lit = st.tone === "lit";
   const mark = domainMarkSpec(domain);
   return (
-    <button
-      onClick={onEnter}
+    <Card
+      interactive
+      selected={focused}
+      className="fl-card fl-dcard"
+      data-quiet={lit ? undefined : ""}
       data-teach={teach}
-      className="fast group flex flex-col rounded-xl p-5 text-left hover:-translate-y-1 hover:[box-shadow:var(--shadow-lift)]"
-      style={{
-        border: "1px solid var(--line)",
-        borderTop: `1.5px solid color-mix(in srgb, ${domain.color} ${lit ? 55 : 28}%, var(--line))`,
-        background: "color-mix(in srgb, var(--surface) 60%, transparent)",
-        backdropFilter: "blur(12px) saturate(1.3)",
-        WebkitBackdropFilter: "blur(12px) saturate(1.3)",
-        ...(focused ? { boxShadow: "var(--shadow-lift)", transform: "translateY(-4px)" } : {}),
-      }}
+      {...pressable(onEnter, { label: domain.name })}
+      onClick={onEnter}
     >
-      <div className="flex items-start gap-3.5">
-        <DomainMark spec={mark} size={64} className="shrink-0" />
+      <div className="fl-dcard-top">
+        <DomainMark spec={mark} size={52} className="shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="serif text-lead" style={{ color: lit ? "var(--text)" : "color-mix(in srgb, var(--text) 68%, var(--muted))" }}>
-            {domain.name}
-          </div>
-          <div className="mt-0.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
-            {st.short}
-          </div>
+          <div className="fl-dcard-name">{domain.name}</div>
+          <div className="fl-dcard-state">{st.short}</div>
         </div>
       </div>
 
-      {domain.intention.trim() && (
-        <div className="serif mt-3 line-clamp-2 text-body italic text-muted">{domain.intention}</div>
-      )}
+      {domain.intention.trim() && <p className="fl-dcard-mandate">{domain.intention}</p>}
 
-      <div className="mt-4 flex items-end gap-4 border-t border-line pt-3">
-        <Stat n={`${fmtH(domain.investedThisWeek)}`} sub={domain.weeklyTargetHours > 0 ? `/ ${fmtH(domain.weeklyTargetHours)}` : ""} label="this week" />
-        <Stat n={`${domain.quarterHours}h`} label="quarter" />
-        <div className="ml-auto">
-          <ClarityMark domain={domain} />
-        </div>
+      <div className="fl-dcard-foot">
+        <span className="fl-meta-fact">
+          <b className="font-semibold text-ink">{fmtH(domain.investedThisWeek)}</b>
+          {domain.weeklyTargetHours > 0 && ` / ${fmtH(domain.weeklyTargetHours)}`} week
+        </span>
+        <span className="fl-meta-fact">
+          <b className="font-semibold text-ink">{domain.quarterHours}h</b> quarter
+        </span>
+        <span className="k-grow" />
+        <ClarityMark domain={domain} />
       </div>
-    </button>
+    </Card>
   );
 }
 
-function Stat({ n, sub, label }: { n: string; sub?: string; label: string }) {
-  return (
-    <div>
-      <div className="mono text-body" style={{ fontWeight: 600 }}>
-        {n}{sub && <span className="text-muted" style={{ fontWeight: 500 }}> {sub}</span>}
-      </div>
-      <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.07em" }}>{label}</div>
-    </div>
-  );
-}
-
-// ══ The open domain — a single domain, entered ════════════════════════════════════
+// ══ The open domain — a document ═════════════════════════════════════════════
 function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { domain: Domain; onBack: () => void; onOpenInitiative: (id: string) => void; onOpenProject: (id: string) => void }) {
   const { data, updateDomain, deleteDomain, addInitiative, addProject } = useVertical();
   const now = useMemo(() => new Date(), []);
   const st = stateOf(domain);
-  const lit = st.tone === "lit";
   const inits = initiativesOf(data, domain.id);
   const openInits = inits.filter((i) => isOpenStatus(i.status));
   const looseProjects = openLooseProjectsOf(data, domain.id);
@@ -247,240 +234,254 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const panelHead = (title: string, hint?: string, actions?: React.ReactNode) => (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div>
-        <div className="section-label">{title}</div>
-        {hint && <div className="serif mt-0.5 text-body italic text-muted">{hint}</div>}
-      </div>
-      {actions}
-    </div>
-  );
+  const inFlight = openInits.length + looseProjects.length;
+  const meetTone = `color-mix(in srgb, ${accent} 38%, var(--line-2))`;
 
   return (
-    <div
-      className="group relative mx-auto overflow-hidden rounded-[18px] border"
-      style={{
-        maxWidth: 1080, minHeight: 640, borderColor: "var(--line)",
-        background: `radial-gradient(120% 80% at 50% -5%, color-mix(in srgb, ${accent} 16%, var(--bg)) 0%, color-mix(in srgb, ${accent} 5%, var(--bg)) 45%, var(--bg) 100%)`,
-      }}
-    >
-      <button onClick={onBack} className="fast absolute left-4 top-4 z-10 text-caption text-muted hover:text-ink">‹ all domains</button>
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        <MarkPicker domain={domain} />
-        <span className="opacity-0 transition-opacity group-hover:opacity-100">
-          <DeleteBtn what="domain" onDelete={() => { deleteDomain(domain.id); onBack(); }} />
-        </span>
-      </div>
-
-      {/* faint watermark of the same mark behind the mandate */}
-      <DomainMark spec={mark} size={360} className="pointer-events-none absolute left-1/2 -translate-x-1/2" style={{ top: 44, opacity: 0.06 }} />
-
-      {/* ── the hero: mark · name · mandate · showing up voice ── */}
-      <div className="relative mx-auto flex max-w-[560px] flex-col items-center px-6 pb-8 pt-14 text-center">
-        <DomainMark spec={mark} size={120} />
-        <div className="serif mt-3 text-[42px]">
-          <InlineText value={domain.name} onChange={(v) => updateDomain(domain.id, { name: v })} inputClassName="serif text-[42px] text-center" />
+    <div className="fl-doc">
+      <div className="fl-doc-main">
+        <div>
+          <Button kind="ghost" size="sm" icon={<Icon name="chevron-left" size={14} />} onClick={onBack} title="All domains (Esc)" style={{ marginLeft: -8 }}>
+            All domains
+          </Button>
         </div>
-        <div className="mt-1.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
-          {st.short}
-        </div>
-        <div className="my-3.5"><Flourish color={accent} /></div>
-        <InlineTextarea
-          value={domain.intention}
-          onChange={(v) => updateDomain(domain.id, { intention: v })}
-          placeholder="State the standing mandate for this domain…"
-          className="serif line-clamp-1 text-body italic text-muted"
-        />
-      </div>
 
-      {/* ── the last quarter — the pulse ── */}
-      <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
-        {panelHead("The last quarter")}
-        <div style={{ maxWidth: 320 }}>
-          <PresencePulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} />
-        </div>
-        <div className="mono mt-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-meta text-muted">
-          <span><span style={{ color: accent }}>Showed up {kept} of the last 13 weeks.</span>{longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}</span>
-          <span className="text-micro uppercase" style={{ letterSpacing: "0.08em" }}>dashed line · your {fmtH(domain.weeklyTargetHours)}/wk intent</span>
-        </div>
-      </div>
-
-      {/* ── the Gain · what you've built (two-up) ── */}
-      <div className="relative grid border-t md:grid-cols-2" style={{ borderColor: "var(--line)" }}>
-        <div className="px-7 py-6">
-          {panelHead("The Gain")}
-          <div className="flex flex-wrap gap-x-7 gap-y-3">
-            <GainNum n={`${domain.quarterHours}`} unit="h" label="this quarter" />
-            <div>
-              <div className="text-display" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
-                <span className="mono">{fmtH(domain.investedThisWeek)}</span>
-                <span className="text-muted" style={{ fontSize: 13, fontWeight: 500 }}> / <InlineNumber value={domain.weeklyTargetHours} onChange={(v) => updateDomain(domain.id, { weeklyTargetHours: v })} suffix="h" /></span>
-              </div>
-              <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>this week</div>
+        {/* ── the title: mark · name · state · the mandate as the lead ── */}
+        <header className="grid gap-3">
+          <div className="fl-doc-title">
+            <DomainMark spec={mark} size={64} className="shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-display masthead m-0">
+                <InlineText value={domain.name} onChange={(v) => updateDomain(domain.id, { name: v })} placeholder="Name this domain" />
+              </h1>
+              <p className="fl-doc-state">{st.line}</p>
             </div>
-            <GainNum n={`${streak}`} unit="wk" label="current streak" />
-            <GainNum n={`${doneCount}`} unit="" label="blocks done" />
+          </div>
+          <InlineTextarea
+            value={domain.intention}
+            onChange={(v) => updateDomain(domain.id, { intention: v })}
+            placeholder="The standing mandate for this domain"
+            className="fl-doc-lead"
+          />
+        </header>
+
+        {/* ── the last quarter — the pulse ── */}
+        <section className="fl-sec">
+          <SectionHeader title="The last quarter" count={`${kept} of 13 weeks`} />
+          <div className="pt-2" style={{ maxWidth: 360 }}>
+            <PresencePulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} />
+          </div>
+          <p className="fl-note">
+            Showed up {kept} of the last 13 weeks.
+            {longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}
+            {domain.weeklyTargetHours > 0 ? ` The dashed line is your ${fmtH(domain.weeklyTargetHours)} a week.` : ""}
+          </p>
+        </section>
+
+        {/* ── the Gain ── */}
+        <section className="fl-sec">
+          <SectionHeader title="The Gain" />
+          <div className="fl-nums">
+            <div className="fl-num"><b>{domain.quarterHours}<small>h</small></b><span>this quarter</span></div>
+            <div className="fl-num">
+              <b>{fmtH(domain.investedThisWeek)}{domain.weeklyTargetHours > 0 && <small> / {fmtH(domain.weeklyTargetHours)}</small>}</b>
+              <span>this week</span>
+            </div>
+            <div className="fl-num"><b>{streak}<small>wk</small></b><span>current streak</span></div>
+            <div className="fl-num"><b>{doneCount}</b><span>blocks done</span></div>
           </div>
           {domain.investedThisWeek > 0 && (
-            <>
-              <div className="mt-4 flex h-2 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                {deep > 0 && <span style={{ width: `${(deep / domain.investedThisWeek) * 100}%`, background: accent }} />}
-                {meet > 0 && <span style={{ width: `${(meet / domain.investedThisWeek) * 100}%`, background: `color-mix(in srgb, ${accent} 38%, var(--surface))` }} />}
+            <div className="grid gap-2 pt-3">
+              <div className="fl-split" aria-hidden>
+                {deep > 0 && <i style={{ width: `${(deep / domain.investedThisWeek) * 100}%`, background: accent }} />}
+                {meet > 0 && <i style={{ width: `${(meet / domain.investedThisWeek) * 100}%`, background: meetTone }} />}
               </div>
-              <div className="mt-2 flex gap-4 text-meta text-muted">
-                <span><i className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-middle" style={{ background: accent }} />Deep work · {fmtH(deep)}</span>
-                {meet > 0 && <span><i className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-middle" style={{ background: `color-mix(in srgb, ${accent} 38%, var(--surface))` }} />Meetings · {fmtH(meet)}</span>}
+              <div className="fl-legend">
+                <span><Dot color={accent} />Deep work · {fmtH(deep)}</span>
+                {meet > 0 && <span><Dot color={meetTone} />Meetings · {fmtH(meet)}</span>}
               </div>
-            </>
+            </div>
           )}
-        </div>
+        </section>
 
-        <div className="border-t px-7 py-6 md:border-l md:border-t-0" style={{ borderColor: "var(--line)" }}>
-          {panelHead("What you've built")}
+        {/* ── what shipped here ── */}
+        <section className="fl-sec">
+          <SectionHeader title="Shipped" count={shipped.length || undefined} />
           {shipped.length > 0 ? (
-            <div className="flex flex-col">
+            <div className="fl-rows">
               {shipped.map((it) => (
-                <div key={it.id} className="flex items-baseline gap-2.5 border-t py-2 text-body first:border-t-0" style={{ borderColor: "var(--line)" }}>
-                  <span style={{ color: "var(--slot)" }}>✓</span>
-                  <span className="min-w-0 flex-1 truncate">{it.name}</span>
-                  {it.at && <span className="mono ml-auto text-meta text-muted">{shipWhen(it.at)}</span>}
-                </div>
+                <Row
+                  key={it.id}
+                  density="comfy"
+                  leading={<Icon name="check" size={14} style={{ color: "var(--ok)" }} />}
+                  title={it.name}
+                  meta={it.at ? shipWhen(it.at) : undefined}
+                />
               ))}
             </div>
           ) : (
-            <div className="serif text-body italic text-muted">
-              {doneCount > 0
-                ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept this quarter`
-                : "Nothing shipped yet"}
+            <p className="fl-note pt-2">
+              {doneCount > 0 ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept this quarter` : "Nothing shipped yet"}
+            </p>
+          )}
+        </section>
+
+        {/* ── what's in flight — outcome vs effort ── */}
+        <section className="fl-sec">
+          <SectionHeader
+            title="In flight"
+            count={inFlight || undefined}
+            actions={
+              <span className="flex items-center gap-1">
+                <Button kind="ghost" size="xs" icon={<Icon name="plus" size={13} />} onClick={() => void addProject(domain.id, null).then((p) => onOpenProject(p.id))}>
+                  Project
+                </Button>
+                <Button kind="ghost" size="xs" icon={<Icon name="plus" size={13} />} onClick={() => void addInitiative(domain.id).then((i) => onOpenInitiative(i.id))}>
+                  Initiative
+                </Button>
+              </span>
+            }
+          />
+
+          {inFlight === 0 ? (
+            <p className="fl-note pt-2">{shipped.length > 0 ? "Nothing in flight" : "No initiatives yet"}</p>
+          ) : (
+            <div className="fl-rows">
+              {openInits.map((i) => {
+                const attain = initiativeAttainment(data, i);
+                const outcome = attain ?? initiativeProgress(data, i);
+                const exec = initiativeExecution(data, i);
+                const risk = initiativeAtRisk(data, i, now);
+                return (
+                  <div key={i.id} className="fl-hrow">
+                    <span className="w-3 shrink-0 text-center text-caption" style={{ color: "var(--muted)" }} title="Momentum">
+                      {mom(i.momentum)}
+                    </span>
+                    <button type="button" onClick={() => onOpenInitiative(i.id)} className="inline-edit min-w-0 flex-1 truncate text-left font-semibold" style={{ border: 0, background: "transparent", color: "var(--ink)", padding: "2px 4px", marginLeft: -4 }}>
+                      {i.name}
+                    </button>
+                    {risk.atRisk && <Chip title={risk.reasons.join(" · ")}>{risk.reasons[0]}</Chip>}
+                    <div className="fl-twin" aria-label={`Outcome ${attain != null ? `${outcome}%` : "not measured"}, build ${exec}%`}>
+                      <div className="fl-twin-row">
+                        <span>Outcome</span>
+                        <span className="fl-bar" style={{ height: 3 }}><i style={{ width: `${outcome}%`, background: accent }} /></span>
+                        <span>{attain != null ? `${outcome}%` : "—"}</span>
+                      </div>
+                      <div className="fl-twin-row">
+                        <span>Build</span>
+                        <span className="fl-bar" style={{ height: 3 }}><i style={{ width: `${exec}%`, background: meetTone }} /></span>
+                        <span>{exec}%</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {looseProjects.map((p) => (
+                <Row
+                  key={p.id}
+                  density="comfy"
+                  leading={<Dot color={PROJECT_STATUS_COLORS[p.status]} shape="round" />}
+                  title={p.name}
+                  meta={PROJECT_STATUS_LABEL[p.status]}
+                  onActivate={() => onOpenProject(p.id)}
+                />
+              ))}
             </div>
           )}
-        </div>
-      </div>
+          {loose.length > 0 && (
+            <p className="fl-note pt-1">
+              {loose.length} loose {loose.length === 1 ? "task" : "tasks"} here
+            </p>
+          )}
+        </section>
 
-      {/* ── the portfolio — outcome vs effort ── */}
-      <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
-        {panelHead("What you're building toward", undefined, (
-          <div className="flex items-center gap-2.5">
-            <button onClick={() => void addProject(domain.id, null).then((p) => onOpenProject(p.id))} className="fast text-meta text-muted hover:text-ink">+ project</button>
-            <button onClick={() => void addInitiative(domain.id).then((i) => onOpenInitiative(i.id))} className="fast text-meta text-muted hover:text-ink">+ initiative</button>
-          </div>
-        ))}
-
-        {openInits.length === 0 && looseProjects.length === 0 ? (
-          <div className="serif text-body italic text-muted">
-            {shipped.length > 0
-              ? "Nothing in flight"
-              : "No initiatives yet"}
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            {openInits.map((i) => {
-              const attain = initiativeAttainment(data, i);
-              const outcome = attain ?? initiativeProgress(data, i);
-              const exec = initiativeExecution(data, i);
-              const risk = initiativeAtRisk(data, i, now);
-              return (
-                <div key={i.id} className="flex items-center gap-3 border-t py-3 first:border-t-0" style={{ borderColor: "var(--line)" }}>
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accent }} />
-                  <span className="text-micro shrink-0" style={{ color: accent, width: 10 }}>{mom(i.momentum)}</span>
-                  <button onClick={() => onOpenInitiative(i.id)} className="serif fast min-w-0 flex-1 truncate text-left text-head hover:underline">{i.name}</button>
-                  {risk.atRisk && (
-                    <span className="whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-medium" style={{ background: "var(--signal-soft)", color: "var(--signal)" }}>{risk.reasons[0]}</span>
-                  )}
-                  <div className="w-[148px] shrink-0">
-                    <div className="flex justify-between text-micro uppercase text-muted"><span>outcome</span><span className="mono">{attain != null ? `${outcome}%` : "—"}</span></div>
-                    <Bar pct={outcome} color={accent} h={1} />
-                    <div className="flex justify-between text-micro uppercase text-muted"><span>build</span><span className="mono">{exec}%</span></div>
-                    <Bar pct={exec} color={`color-mix(in srgb, ${accent} 45%, var(--surface))`} h={1} />
+        {/* ── Nuvo's read — derived interpretation ── */}
+        {reads.length > 0 && (
+          <section className="fl-sec">
+            <SectionHeader title="Nuvo's read" />
+            <div className="fl-rows">
+              {reads.map((r, i) => {
+                const c = r.tone === "warn" ? "var(--warn)" : r.tone === "good" ? "var(--ok)" : "var(--faint)";
+                return (
+                  <div key={i} className="fl-hrow" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 10 }}>
+                    <span className="mt-[5px]"><Dot color={c} shape="round" /></span>
+                    <p className="m-0 min-w-0 flex-1 text-body">{r.text}</p>
                   </div>
-                </div>
-              );
-            })}
-
-            {looseProjects.map((p) => (
-              <button key={p.id} onClick={() => onOpenProject(p.id)} className="fast group/p flex items-center gap-2 border-t py-2.5 text-body first:border-t-0" style={{ borderColor: "var(--line)" }}>
-                <span style={{ color: PROJECT_STATUS_COLORS[p.status], fontSize: 7, lineHeight: 1 }}>●</span>
-                <span className="min-w-0 flex-1 truncate text-left group-hover/p:underline">{p.name}</span>
-                <span className="text-meta" style={{ color: PROJECT_STATUS_COLORS[p.status] }}>{PROJECT_STATUS_LABEL[p.status]}</span>
-              </button>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          </section>
         )}
-        {loose.length > 0 && (
-          <div className="mono mt-3 text-meta text-muted">+ {loose.length} loose {loose.length === 1 ? "task" : "tasks"} parked here</div>
-        )}
-      </div>
-
-      {/* ── Nuvo's read — derived interpretation ── */}
-      <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
-        {panelHead("Nuvo's read")}
-        <div className="flex flex-col gap-2.5">
-          {reads.map((r, i) => {
-            const c = r.tone === "warn" ? "var(--signal)" : r.tone === "good" ? accent : "var(--muted)";
-            const bg = r.tone === "warn" ? "var(--signal-soft)" : r.tone === "good" ? "var(--accent-soft)" : "color-mix(in srgb, var(--surface) 55%, transparent)";
-            return (
-              <div key={i} className="flex items-start gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: bg, border: `1px solid color-mix(in srgb, ${c} 20%, var(--line))` }}>
-                <span style={{ color: c, fontSize: 13, lineHeight: 1.4 }}>{r.tone === "warn" ? "◈" : r.tone === "good" ? "✦" : "·"}</span>
-                <p className="text-caption" style={{ margin: 0, lineHeight: 1.5 }}>{r.text}</p>
-              </div>
-            );
-          })}
-        </div>
 
         <DomainGroom domain={domain} />
       </div>
-    </div>
-  );
-}
 
-function GainNum({ n, unit, label }: { n: string; unit: string; label: string }) {
-  return (
-    <div>
-      <div className="mono text-display" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
-        {n}{unit && <span className="text-muted" style={{ fontSize: 13, fontWeight: 500 }}>{unit}</span>}
-      </div>
-      <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>{label}</div>
+      {/* ── the property panel ── */}
+      <aside className="fl-doc-props" aria-label="Properties">
+        <MarkPicker domain={domain} />
+        <div className="k-prop">
+          <span className="k-prop-label">Weekly intent</span>
+          <span className="k-prop-value">
+            <InlineNumber value={domain.weeklyTargetHours} onChange={(v) => updateDomain(domain.id, { weeklyTargetHours: v })} suffix="h" />
+          </span>
+        </div>
+        <div className="k-prop">
+          <span className="k-prop-label">State</span>
+          <span className="k-prop-value" style={{ fontWeight: 450 }}>{st.short}</span>
+        </div>
+        <div className="k-prop">
+          <span className="k-prop-label">Routing</span>
+          <span className="k-prop-value"><ClarityMark domain={domain} /></span>
+        </div>
+        <div className="fl-doc-props-foot">
+          <DeleteBtn what="domain" onDelete={() => { deleteDomain(domain.id); onBack(); }} />
+        </div>
+      </aside>
     </div>
   );
 }
 
 // One door for one identity. The symbol and its light are edited together; the
 // presence halo is always generated from the domain and never separately styled.
+// A property row whose value opens the mark in a kit popover.
 function MarkPicker({ domain }: { domain: Domain }) {
   const { updateDomain } = useVertical();
   const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
   return (
-    <span className="relative">
+    <div className="k-prop">
+      <span className="k-prop-label">Mark</span>
       <button
+        ref={btn}
+        type="button"
+        className="k-prop-value"
         onClick={() => setOpen((o) => !o)}
-        className="fast flex h-8 items-center gap-1.5 rounded-full border border-line px-2.5 text-micro text-muted hover:border-muted hover:text-ink"
+        aria-haspopup="dialog"
+        aria-expanded={open}
         title="Edit domain mark"
       >
-        <DomainSymbol value={domain.icon} size={15} />
-        <span className="h-2.5 w-2.5 rounded-full ring-1 ring-line" style={{ background: domain.color }} />
-        <span>Mark</span>
+        <span className="inline-flex" style={{ color: domain.color }}><DomainSymbol value={domain.icon} size={15} /></span>
+        <Dot color={domain.color} />
+        <span style={{ color: "var(--muted)", fontWeight: 450 }}>Edit</span>
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 w-[264px] rounded-lg border border-line bg-surface p-3" style={{ boxShadow: "var(--shadow-3)" }}>
-            <div className="section-label !p-0">Symbol</div>
-            <div className="mt-2">
-              <DomainSymbolPicker
-                value={domain.icon}
-                domainName={domain.name}
-                domainContext={domain.intention}
-                onPick={(icon) => updateDomain(domain.id, { icon })}
-              />
-            </div>
-            <div className="section-label mt-4 !p-0">Color</div>
-            <div className="mt-2">
-              <SwatchGrid value={domain.color} onPick={(color) => updateDomain(domain.id, { color })} />
-            </div>
+      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="bottom-end" label="Domain mark" className="w-[272px]">
+        <div className="grid gap-3 p-2">
+          <div className="fl-work-row">
+            <span className="fl-label">Symbol</span>
+            <span className="k-grow" />
+            <IconButton size="xs" label="Close" icon={<Icon name="close" size={13} />} onClick={() => setOpen(false)} />
           </div>
-        </>
-      )}
-    </span>
+          <DomainSymbolPicker
+            value={domain.icon}
+            domainName={domain.name}
+            domainContext={domain.intention}
+            onPick={(icon) => updateDomain(domain.id, { icon })}
+          />
+          <span className="fl-label">Color</span>
+          <SwatchGrid value={domain.color} onPick={(color) => updateDomain(domain.id, { color })} />
+        </div>
+      </Popover>
+    </div>
   );
 }

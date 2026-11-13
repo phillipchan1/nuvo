@@ -3,7 +3,7 @@ import type { DomainMarkSpec } from "../../lib/domainMark";
 import DomainSymbol from "./DomainSymbol";
 
 const CENTER = 100;
-const QUIET = "var(--muted)";
+const QUIET = "var(--faint)";
 
 function polar(radius: number, degrees: number): [number, number] {
   const radians = ((degrees - 90) * Math.PI) / 180;
@@ -66,8 +66,8 @@ export default function DomainMark({
         </defs>
         <circle cx={CENTER} cy={CENTER} r={58} fill={`url(#${gradientId})`} />
         <g transform={`rotate(${rotation} ${CENTER} ${CENTER})`}>
-          <circle cx={CENTER} cy={CENTER} r={48} fill="none" stroke="var(--line)" strokeWidth={1.2} opacity={0.7} />
-          <circle cx={CENTER} cy={CENTER} r={72} fill="none" stroke="var(--line)" strokeWidth={1} opacity={0.45} />
+          <circle cx={CENTER} cy={CENTER} r={48} fill="none" stroke="var(--line-2)" strokeWidth={1.2} />
+          <circle cx={CENTER} cy={CENTER} r={72} fill="none" stroke="var(--line-1)" strokeWidth={1} />
           <path
             d={arcPath(48, fullness)}
             fill="none"
@@ -100,7 +100,7 @@ export default function DomainMark({
           cx={CENTER}
           cy={CENTER}
           r={34}
-          fill="var(--surface)"
+          fill="var(--raised)"
           fillOpacity={0.72}
           stroke={lit ? color : QUIET}
           strokeWidth={1.4}

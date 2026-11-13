@@ -26,12 +26,12 @@ import {
 } from "../../lib/domainSymbols";
 import type { Domain, DomainContext } from "../../lib/vertical";
 import DomainSymbol from "./DomainSymbol";
-import { RefinedTick } from "../floors/parts";
+import { Icon } from "../Icon";
+import { Button, Chip, Dot, Readiness } from "../kit";
 import { AltitudeIcon } from "../icons";
 
 /** The domain's light — twenty identities, one step around the wheel.
- *  Tuned for warm paper: deep enough to read as text and as a 12% wash in
- *  both themes. Near-duplicates (rose/magenta/fuchsia) culled so each swatch
+ *  Deep enough to read as text and as a 12% wash in both themes. Near-duplicates (rose/magenta/fuchsia) culled so each swatch
  *  earns its slot — mustard holds "company yellow" without dying on cream. */
 export const SWATCHES = [
   "#DC2626", // red
@@ -105,22 +105,20 @@ export function Flourish({ color, width = 124 }: { color: string; width?: number
 }
 
 // ── Can Nuvo file things here? ───────────────────────────────────────────────
+// Drawn as a check on the kit's readiness pie: full when the domain routes
+// clean, a part-filled pie with its next step (faint) while it's partway, the
+// dashed raw ring when Nuvo files here by name alone. Why rides the tooltip.
+const CLARITY_STEP = { clear: 3, partial: 1, unrefined: 0 } as const;
+
 export function ClarityMark({ domain }: { domain: Domain }) {
   const c = clarityOf(domain);
-  if (c.level === "clear") {
-    return (
-      <div className="flex items-center gap-1.5 text-micro text-muted" title={c.why}>
-        <RefinedTick /> <span style={{ letterSpacing: "0.04em" }}>routes clean</span>
-      </div>
-    );
-  }
+  const clear = c.level === "clear";
+  const label = clear ? "Routes clean" : c.label.charAt(0).toUpperCase() + c.label.slice(1);
   return (
-    <div className="flex w-full max-w-[132px] items-center gap-2" title={c.why}>
-      <div className="h-[3px] flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <div style={{ width: `${Math.round(c.pct * 100)}%`, height: "100%", background: "var(--signal)", transition: "width .3s" }} />
-      </div>
-      <span className="whitespace-nowrap text-micro" style={{ color: "var(--signal)", letterSpacing: "0.04em" }}>✦ {c.label}</span>
-    </div>
+    <span className="fl-clarity" data-missing={clear ? undefined : ""} title={c.why}>
+      <Readiness step={c.level === "partial" && c.pct >= 0.5 ? 2 : CLARITY_STEP[c.level]} title={c.why} />
+      <span>{label}</span>
+    </span>
   );
 }
 
@@ -128,49 +126,44 @@ export function ClarityMark({ domain }: { domain: Domain }) {
 //
 // The old read was a 100%-stacked share bar, which hides the two things you
 // actually ask of it: how much, and *when*. Columns are on an absolute scale
-// (floor of an 8h day) so a light week reads light; today carries `--signal`,
-// days still ahead sit as open `--slot` track.
+// (floor of an 8h day) so a light week reads light; today's label is set in
+// ink at 700, days still ahead sit as open `--slot` track.
 export function WeekShape({
   domains,
   now,
   height = 64,
   legend = true,
+  head = true,
 }: {
   domains: Domain[];
   now?: Date;
   height?: number;
   legend?: boolean;
+  /** the "N h across M domains" line — off where a hero already says it */
+  head?: boolean;
 }) {
   const shape: WeekShapeRead = useMemo(() => readWeekShape(domains, now ?? new Date()), [domains, now]);
   const { active, dayTotals, scale, todayIdx, total } = shape;
 
   return (
-    <div
-      className="rounded-xl border border-line px-4 py-3.5"
-      style={{ background: "color-mix(in srgb, var(--surface) 60%, transparent)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="section-label whitespace-nowrap">This week's shape</span>
-        <span className="text-meta text-muted">
-          <span className="mono">{fmtH(total)}</span> across {active.length} {active.length === 1 ? "domain" : "domains"}
-        </span>
-      </div>
+    <div className="fl-shape">
+      {head && (
+        <div className="fl-shape-head">
+          <span className="fl-label">This week's shape</span>
+          <span className="fl-meta-fact">
+            {fmtH(total)} across {active.length} {active.length === 1 ? "domain" : "domains"}
+          </span>
+        </div>
+      )}
 
-      <div className="mt-3 flex items-end gap-1.5">
+      <div className="fl-shape-days">
         {DAY_LABELS.map((label, i) => {
           const dayTotal = dayTotals[i];
           const ahead = i > todayIdx;
           const isToday = i === todayIdx;
           return (
-            <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-              <div
-                className="flex w-full flex-col-reverse overflow-hidden rounded-[4px]"
-                style={{
-                  height,
-                  // days still ahead are open, not empty — the faintest --slot wash
-                  background: ahead ? "color-mix(in srgb, var(--slot) 14%, transparent)" : "var(--line)",
-                }}
-              >
+            <div key={label} className="fl-shape-day">
+              <div className="fl-shape-col" data-ahead={ahead ? "" : undefined} style={{ height }}>
                 {active.map((d) => {
                   const h = d.days[i] ?? 0;
                   if (h <= 0) return null;
@@ -183,13 +176,10 @@ export function WeekShape({
                   );
                 })}
               </div>
-              <span
-                className="text-micro uppercase"
-                style={{ letterSpacing: "0.07em", color: isToday ? "var(--signal)" : "var(--muted)" }}
-              >
+              <span className="fl-shape-dow" data-today={isToday ? "" : undefined}>
                 {label}
               </span>
-              <span className="mono text-micro" style={{ color: dayTotal > 0 ? "var(--muted)" : "color-mix(in srgb, var(--muted) 45%, transparent)" }}>
+              <span className="fl-shape-h" data-none={dayTotal > 0 ? undefined : ""}>
                 {dayTotal > 0 ? fmtH(dayTotal) : "—"}
               </span>
             </div>
@@ -197,12 +187,12 @@ export function WeekShape({
         })}
       </div>
 
-      {legend && (
-        <div className="mt-3 flex flex-wrap gap-x-3.5 gap-y-1 border-t border-line pt-2.5">
+      {legend && active.length > 0 && (
+        <div className="fl-legend" style={{ paddingTop: 10, borderTop: "1px solid var(--line-1)" }}>
           {active.map((d) => (
-            <span key={d.id} className="flex items-center gap-1.5 text-meta text-muted">
-              <i className="inline-block h-2 w-2 rounded-[2px]" style={{ background: d.color }} />
-              {d.name} <span className="mono">{fmtH(d.investedThisWeek)}</span>
+            <span key={d.id}>
+              <Dot color={d.color} />
+              {d.name} <span style={{ color: "var(--faint)" }}>{fmtH(d.investedThisWeek)}</span>
             </span>
           ))}
         </div>
@@ -226,13 +216,19 @@ export function SwatchGrid({
       {SWATCHES.map((c) => (
         <button
           key={c}
+          type="button"
           onClick={() => onPick(c)}
           aria-label={`Set the domain's light to ${c}`}
           aria-pressed={c === value}
-          // Twenty 44px circles don't fit a 375px row, so the drawn swatch stays
+          // Twenty 44px swatches don't fit a 375px row, so the drawn swatch stays
           // 32px and `.tap-bloom` grows the hit area past 44 invisibly.
-          className={`fast justify-self-center rounded-full ring-1 ring-line ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-5 w-5"}`}
-          style={{ background: c, ...(c === value ? { boxShadow: `0 0 0 2px var(--bg), 0 0 0 4px ${c}` } : {}) }}
+          className={`justify-self-center ${phone ? "tap-bloom h-8 w-8" : "h-5 w-5"}`}
+          style={{
+            background: c,
+            border: 0,
+            borderRadius: "var(--r-chip)",
+            boxShadow: c === value ? `0 0 0 2px var(--raised), 0 0 0 4px ${c}` : "inset 0 0 0 1px var(--line-1)",
+          }}
         />
       ))}
     </div>
@@ -263,24 +259,28 @@ export function DomainSymbolPicker({
   );
 
   return (
-    <div className="flex flex-col gap-2" style={{ width: phone ? undefined : 232 }}>
+    <div className="flex flex-col gap-2" style={{ width: phone ? undefined : 240 }}>
       <div className="flex items-center gap-1.5">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search…"
-          aria-label="Search domain symbols"
-          className={`fast flex-1 rounded-md border border-line bg-bg px-2 text-label outline-none focus:border-accent ${phone ? "h-9" : "h-7"}`}
-        />
+        <div className="k-field min-w-0 flex-1" data-size={phone ? undefined : "sm"}>
+          <Icon name="search" size={14} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            aria-label="Search domain symbols"
+          />
+        </div>
         {suggestion && suggestion !== normalizedValue && (
           <button
             type="button"
             onClick={() => onPick(suggestion)}
             title={`Suggested from “${domainName}”`}
-            className="fast flex shrink-0 items-center gap-1 rounded-full border border-accent/30 px-2 py-1 text-micro font-medium text-accent hover:bg-accent-soft"
+            aria-label={`Use the suggested symbol for “${domainName}”`}
+            className={`k-chip ${phone ? "tap-bloom" : ""}`}
+            data-tone="accent"
           >
-            <span aria-hidden>✦</span>
-            <DomainSymbol value={suggestion} size={15} />
+            <Icon name="sparkles" size={12} />
+            <DomainSymbol value={suggestion} size={14} />
           </button>
         )}
       </div>
@@ -293,17 +293,15 @@ export function DomainSymbolPicker({
             aria-label={`Set the domain symbol to ${entry.label}`}
             aria-pressed={entry.key === normalizedValue}
             title={entry.label}
-            className={`fast flex items-center justify-center rounded-md text-muted hover:bg-accent-soft hover:text-accent ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-7 w-7"}`}
-            style={
-              entry.key === normalizedValue
-                ? { background: "var(--accent-soft)", color: "var(--accent)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" }
-                : undefined
-            }
+            className={`k-btn ${phone ? "tap-bloom" : ""}`}
+            data-kind="ghost"
+            data-icon=""
+            style={phone ? { width: 32, height: 32 } : undefined}
           >
-            <DomainSymbol value={entry.key} size={phone ? 19 : 17} />
+            <DomainSymbol value={entry.key} size={phone ? 19 : 16} />
           </button>
         ))}
-        {results.length === 0 && <div className="col-span-full py-3 text-center text-micro text-muted">No matches</div>}
+        {results.length === 0 && <div className="col-span-full py-3 text-center text-caption text-muted">No matches</div>}
       </div>
     </div>
   );
@@ -315,7 +313,7 @@ export function DomainSymbolPicker({
 // captures here, and a mis-file catcher that re-homes work the charter says
 // doesn't belong. One component, both shells — a domain that routes differently
 // depending on which screen you groomed it from is the drift this file exists to
-// stop.
+// stop. A disclosure under a kit section header.
 type Misfiled = { kind: "initiative" | "project" | "task"; id: string; name: string; suggestDomain: string; suggestDomainId: string | null };
 type Refinement = { context: DomainContext; misfiled: Misfiled[]; routingNote?: string };
 
@@ -368,112 +366,117 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
     setMoved((s) => ({ ...s, [m.id]: true }));
   };
 
-  const chip = "rounded-sm px-1.5 py-px text-micro font-medium leading-none";
+  const size = phone ? "md" : "xs";
 
   return (
-    <div className={`w-full text-left ${phone ? "" : "mt-8 border-t pt-4"}`} style={phone ? undefined : { borderColor: "var(--line)" }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={`fast flex w-full items-center justify-between text-meta uppercase text-muted ${phone ? "tap active:text-ink" : "hover:text-ink"}`}
-        style={{ letterSpacing: "0.18em" }}
-        aria-expanded={open}
-      >
-        <span>How Nuvo files things here</span>
-        <span className="mono text-caption">{open ? "–" : "+"}</span>
-      </button>
+    <section className="fl-sec w-full text-left">
+      <div className="k-section" data-collapsed={open ? undefined : ""} style={phone ? { height: 44 } : undefined}>
+        <button type="button" className={`k-section-toggle ${phone ? "tap-h" : ""}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <span>How Nuvo files things here</span>
+          <Icon name="chevron-down" size={12} className="k-chev" />
+        </button>
+        <span className="k-grow" />
+        {domain.context && !open && <ClarityMark domain={domain} />}
+      </div>
 
       {open && (
-        <div className="mt-3 flex flex-col gap-3">
-          <textarea
-            value={charter}
-            onChange={(e) => setCharter(e.target.value)}
-            onBlur={() => charter.trim() !== domain.charter && updateDomain(domain.id, { charter: charter.trim() })}
-            placeholder="In a line — what is this domain? Who and what belongs here? (e.g. “My day job at SCE — Obi, the Enterprise rollout, Super Leader.”)"
-            rows={phone ? 3 : 2}
-            className="w-full resize-none rounded-md border border-line bg-surface/40 px-2.5 py-2 text-body placeholder:text-muted focus:border-line-strong focus:outline-none"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <button
+        <div className="grid gap-3 pt-2">
+          <div className="k-field" data-multiline="">
+            <textarea
+              value={charter}
+              onChange={(e) => setCharter(e.target.value)}
+              onBlur={() => charter.trim() !== domain.charter && updateDomain(domain.id, { charter: charter.trim() })}
+              placeholder="In a line — what is this domain? Who and what belongs here? (e.g. “My day job at SCE — Obi, the Enterprise rollout, Super Leader.”)"
+              rows={phone ? 3 : 2}
+              aria-label="What belongs in this domain"
+              style={{ minHeight: 0 }}
+            />
+          </div>
+          <div className="fl-work-row">
+            <Button
+              kind="primary"
+              size={size}
+              className={phone ? "tap" : undefined}
+              icon={<Icon name="sparkles" size={13} />}
               onClick={refine}
               disabled={busy}
-              className={`tap fast rounded-lg px-4 py-2.5 text-body font-medium text-white active:scale-[.98] disabled:cursor-wait disabled:opacity-75 ${busy ? "animate-pulse" : "hover:opacity-90"}`}
-              style={{ background: domain.color }}
             >
-              {busy ? "Grooming…" : shown ? "✦ Re-groom" : "✦ Groom with Nuvo"}
-            </button>
-            {err && <span className="text-meta text-signal">{err}</span>}
+              {busy ? "Grooming…" : shown ? "Re-groom" : "Groom with Nuvo"}
+            </Button>
+            {err && <span className="text-caption" style={{ color: "var(--danger)" }}>{err}</span>}
           </div>
 
-          {prop?.routingNote && <div className="text-meta text-muted">{prop.routingNote}</div>}
+          {prop?.routingNote && <p className="fl-note">{prop.routingNote}</p>}
 
           {shown && (
-            <div className="rounded-md border border-dashed border-line bg-surface/40 px-2.5 py-2">
+            <div className="fl-propose" data-dashed="">
               {prop && !accepted && (
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-micro uppercase text-muted" style={{ letterSpacing: "0.14em" }}>Nuvo proposes</span>
-                  <button onClick={accept} className={`fast rounded px-1.5 text-micro font-medium text-accent ${phone ? "tap py-1 active:bg-accent-soft" : "py-px hover:bg-accent-soft"}`}>Accept</button>
+                <div className="fl-work-row">
+                  <span className="fl-label">Nuvo proposes</span>
+                  <span className="k-grow" />
+                  <Button kind="secondary" size={size} className={phone ? "tap" : undefined} onClick={accept}>
+                    Accept
+                  </Button>
                 </div>
               )}
-              {accepted && <div className="mb-1.5 text-micro text-muted">✓ saved</div>}
-              {shown.scope && <div className="text-body italic text-muted">{shown.scope}</div>}
+              {accepted && <span className="fl-label" style={{ color: "var(--ok)" }}>Saved</span>}
+              {shown.scope && <p className="m-0 text-body" style={{ color: "var(--ink-2)" }}>{shown.scope}</p>}
               {shown.entities.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1">
                   {shown.entities.map((e) => (
-                    <span key={e} className={chip} style={{ background: `color-mix(in srgb, ${domain.color} 14%, var(--surface))`, color: domain.color }}>{e}</span>
+                    <Chip key={e} dot={domain.color}>{e}</Chip>
                   ))}
                 </div>
               )}
               {shown.keywords.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                  {shown.keywords.map((k) => <span key={k} className="text-meta text-muted">{k}</span>)}
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                  {shown.keywords.map((k) => <span key={k} className="fl-meta-fact">{k}</span>)}
                 </div>
               )}
-              {shown.boundary && <div className="mt-2 text-meta text-muted">⊘ {shown.boundary}</div>}
+              {shown.boundary && <p className="fl-note">Not here: {shown.boundary}</p>}
               {shown.entities.length === 0 && shown.keywords.length === 0 && (
-                <div className="text-meta text-muted">No proper nouns of its own yet — routes by the line above.</div>
+                <p className="fl-note">No names of its own yet — routes by the line above.</p>
               )}
             </div>
           )}
 
           {pendingMis.length > 0 && (
-            <div>
-              <div className="mb-1.5 text-micro uppercase text-signal" style={{ letterSpacing: "0.14em" }}>
-                Looks mis-filed here ({pendingMis.length})
+            <div className="grid gap-1.5">
+              <div className="fl-work-row">
+                <span className="fl-label" style={{ color: "var(--ink)" }}>Looks mis-filed here</span>
+                <span className="fl-meta-fact">{pendingMis.length}</span>
               </div>
-              <div className={`flex flex-col ${phone ? "gap-2.5" : "gap-1.5"}`}>
+              <div className={`grid ${phone ? "gap-2.5" : "gap-1"}`}>
                 {pendingMis.map((m) => (
                   // On a phone the name gets its own line — a truncated title, a
                   // <select> and a Move button never share 375px legibly.
-                  <div key={m.id} className={phone ? "flex flex-col gap-1.5" : "flex items-center gap-1.5 text-meta"}>
-                    <span className={`min-w-0 flex-1 truncate ${phone ? "text-body" : ""}`}>
-                      <span className="mr-1 inline-flex align-[-2px] text-muted">
+                  <div key={m.id} className={phone ? "flex flex-col gap-1.5" : "flex items-center gap-1.5 text-body"}>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+                      <span className="inline-flex shrink-0 text-muted">
                         <AltitudeIcon kind={m.kind} size={13} />
                       </span>
-                      {m.name}
+                      <span className="truncate">{m.name}</span>
                     </span>
                     <div className="flex items-center gap-1.5">
                       <select
                         value={targets[m.id] ?? m.suggestDomainId ?? ""}
                         onChange={(e) => setTargets((t) => ({ ...t, [m.id]: e.target.value }))}
                         aria-label={`Move ${m.name} to…`}
-                        className={
-                          phone
-                            ? "tap min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-2 text-body"
-                            : "max-w-[110px] rounded border border-line bg-surface px-1 py-px text-meta"
-                        }
+                        className={`k-field ${phone ? "tap min-w-0 flex-1" : "max-w-[132px]"}`}
+                        data-size={phone ? undefined : "sm"}
                       >
-                        <option value="">move to…</option>
+                        <option value="">Move to…</option>
                         {others.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                       </select>
-                      <button
+                      <Button
+                        kind="secondary"
+                        size={size}
+                        className={phone ? "tap shrink-0" : undefined}
                         onClick={() => rehome(m)}
                         disabled={!(targets[m.id] ?? m.suggestDomainId)}
-                        className={`fast rounded font-medium text-accent disabled:opacity-40 ${
-                          phone ? "tap shrink-0 px-3 py-2 text-body active:bg-accent-soft" : "px-1.5 py-px text-micro hover:bg-accent-soft"
-                        }`}
                       >
                         Move
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -482,6 +485,6 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
