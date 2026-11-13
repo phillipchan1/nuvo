@@ -3,12 +3,14 @@ import type { Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
 import { fmtDuration, tomorrowISO } from "../lib/dates";
-import { Btn, Modal } from "./ui";
+import { Button, Dialog, EmptyState, IconButton, Input } from "./kit";
+import { Icon } from "./Icon";
+import { FlowMeter } from "./rituals/FlowShell";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
 /** Evening shutdown (Sundown): the gain first, then triage the leftovers.
- *  Rollover runs regardless. */
+ *  Rollover runs regardless. A kit Dialog (D-190) — a bottom Sheet on a phone. */
 export function EveningShutdown({
   todayTasks,
   taskAccent,
@@ -39,76 +41,77 @@ export function EveningShutdown({
   }, [todayTasks, taskAccent]);
 
   return (
-    <Modal onClose={onClose} width="max-w-md">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-lead masthead">Evening shutdown</div>
-        <div className="flex items-center gap-2.5">
+    <Dialog
+      title="Evening shutdown"
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          <span className="f-sum">Anything left rolls to tomorrow at midnight.</span>
           {remaining.length > 0 && (
-            <button
+            <Button
               onClick={() => remaining.forEach((t) => mutations.planFor(t, tomorrowISO()))}
-              className="fast mono text-meta text-muted hover:text-accent"
               title="Send everything still open to tomorrow"
+              icon={<Icon name="arrow-right" size={14} />}
             >
-              roll all → tomorrow
-            </button>
+              Roll all to tomorrow
+            </Button>
           )}
-          <span className="mono text-caption text-muted">{remaining.length} open</span>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {/* the gain, before the gap */}
-      <div className="border-b border-line px-4 py-3">
-        {gain.count > 0 ? (
-          <>
-            <div className="text-body font-medium">
-              Today's gain: {gain.count} done · {fmtDuration(gain.mins)} logged.
-            </div>
-            {gain.byColor.length > 0 && gain.mins > 0 && (
-              <div className="grow-x mt-2 flex h-2 overflow-hidden rounded-full bg-bg">
-                {gain.byColor.map(([color, mins]) => (
-                  <div key={color} style={{ width: `${(mins / gain.mins) * 100}%`, background: color }} />
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="text-caption text-muted">Nothing checked off today — tomorrow is a fresh pull.</div>
+      <div className="grid gap-2 pb-4">
+        <div className="f-fact">
+          {gain.count > 0 ? (
+            <>
+              <b>{gain.count}</b> done · <b>{fmtDuration(gain.mins)}</b> logged · <b>{remaining.length}</b> open
+            </>
+          ) : (
+            <>
+              Nothing checked off today · <b>{remaining.length}</b> open
+            </>
+          )}
+        </div>
+        {gain.byColor.length > 0 && gain.mins > 0 && (
+          <FlowMeter
+            total={gain.mins}
+            segments={gain.byColor.map(([color, mins]) => ({ key: color, value: mins, color }))}
+            label={`${gain.count} done, ${fmtDuration(gain.mins)} logged`}
+          />
         )}
       </div>
 
-      <div className="max-h-[55vh] overflow-y-auto p-3">
-        {remaining.length === 0 && (
-          <div className="px-1 py-4 text-center text-body text-muted">
-            Clean slate. See you tomorrow.
-          </div>
-        )}
+      <div className="max-h-[55vh] overflow-y-auto" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
+        {remaining.length === 0 && <EmptyState icon={<Icon name="check" size={20} />}>Clean slate</EmptyState>}
         {remaining.map((t) => (
-          <div key={t.id} className="flex items-center gap-2 border-b border-line px-1 py-2">
-            <span className="min-w-0 flex-1 truncate text-body">{t.title}</span>
-            <Btn onClick={() => mutations.complete(t)}>Done</Btn>
-            <Btn onClick={() => mutations.planFor(t, tomorrowISO())}>Tomorrow</Btn>
+          <div key={t.id} className="flex flex-wrap items-center gap-1.5 py-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+            <span className="min-w-[140px] flex-1 truncate text-body">{t.title}</span>
+            <Button size="xs" icon={<Icon name="check" size={12} />} onClick={() => mutations.complete(t)}>
+              Done
+            </Button>
+            <Button size="xs" onClick={() => mutations.planFor(t, tomorrowISO())}>
+              Tomorrow
+            </Button>
             {/* only for THIS week's commitments — a stale sprint_id must not
                 offer a pool the rail no longer shows */}
             {t.sprint_id && t.sprint_id === vertical.sprint?.id && (
-              <Btn onClick={() => mutations.backToWeek(t)} title="Drop the date, keep the week commitment">
-                ↩ week
-              </Btn>
+              <Button size="xs" kind="ghost" onClick={() => mutations.backToWeek(t)} title="Drop the date, keep the week commitment">
+                ↩ Week
+              </Button>
             )}
-            <input
+            <Input
               type="date"
+              size="sm"
               title="Reschedule"
-              className="mono w-[120px] border border-line bg-bg px-1 py-1 text-label"
+              aria-label={`Reschedule ${t.title}`}
+              frameClassName="w-[136px]"
               onChange={(e) => e.target.value && mutations.planFor(t, e.target.value)}
             />
-            <Btn kind="signal" onClick={() => mutations.trash(t)}>
-              Trash
-            </Btn>
+            <IconButton size="xs" label="Trash" icon={<Icon name="trash" size={12} />} className="f-danger" onClick={() => mutations.trash(t)} />
           </div>
         ))}
       </div>
-      <div className="border-t border-line p-3 text-label text-muted">
-        ↩ week keeps the commitment without a date. Anything left rolls to tomorrow at midnight (↻ badge).
-      </div>
-    </Modal>
+    </Dialog>
   );
 }

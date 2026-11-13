@@ -351,6 +351,8 @@ html:root .f-receipt:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--
   .f-ground { align-items: flex-start; padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
   .f-card { padding: 22px 20px; }
   .f-card-foot { margin: 20px -20px -22px; padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 20px; }
+  .f-card-foot > .f-sum { display: none; }
+  .f-card-foot > .k-btn[data-kind="primary"] { margin-left: auto; }
 }
 /* A finger needs 44px; the kit's controls stay 28–32 under a mouse. */
 @media (pointer: coarse) {
