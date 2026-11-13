@@ -24,7 +24,7 @@ Closes the *follow-through* of ledger row **D6** (capture → where does it go) 
    | Top probability | What happens | Why |
    |---|---|---|
    | **≥ 0.8** | The domain is **written** onto the capture. It stays in the Inbox. The row shows it as filed, with **Undo**. | Measured 83% right on 36% of tasks. Visible and undoable, never silent. |
-   | **0.5 – 0.8** | **Proposed** — the Inbox's existing *Accept / ✕*. | 58–73% right. Good for a chip, not for a write. |
+   | **0.5 – 0.8** | **Proposed** — **File in <place>** on the row, inside the rail's balance budget (D-205). | 58–73% right. Good for a chip, not for a write. |
    | **< 0.5** | Nothing shown. | A bare title is genuinely ambiguous ("Deploy"). |
    | **≥ 0.9 and a specific project/initiative in that domain fits unmistakably** | Proposed *at that altitude* (a second, dependent request). Never auto-written. | Over-filing into a project is the expensive mistake. |
 

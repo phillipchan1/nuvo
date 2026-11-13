@@ -767,10 +767,9 @@ hand-roll a fifth stack of `border-t` sections.
 
 ## Layout signatures
 
-- **Spine left, Nuvo right, work between** — all the same paper, divided only by
-  `border-l/-r` hairlines, and all of it inside the one sheet (see *The frame*). The Nuvo
-  agent rail (`AgentSidebar`) is the one home for chat on desktop (⌘J); it stays
-  transparent like the spine and separates with a single `border-l`.
+- **Spine left, work beside it** — the same paper, divided only by hairlines, all inside the
+  one sheet (see *The frame*). There is no right-hand Nuvo panel since D-205: Nuvo's offers
+  ride the rows they change, as quiet `OfferChip`s inside the rail's balance budget.
 - **Only the user's line gets a bubble.** Nuvo's half of the conversation is *the page* —
   no box, no fill, generous leading, straight on the paper (`.agent-turn`). A reply boxed
   in `--surface-2` reads as a quotation from somewhere else, and it nests a frame around

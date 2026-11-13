@@ -20,7 +20,6 @@ import FirstRun from "./FirstRun";
 import Planner from "./Planner";
 import Spine from "./Spine";
 import ShortcutsModal from "./ShortcutsModal";
-import AgentSidebar from "./AgentSidebar";
 import Marquee from "./Marquee";
 import { useAgentContext } from "../hooks/useAgentContext";
 import { OrientationProvider, useOrientation } from "../hooks/useOrientation";
@@ -214,14 +213,13 @@ const AppShellInner = memo(function AppShellInner() {
     setProjectView,
     setInitiativeView,
     navigate,
-    toggleAgent,
     openFloorModal,
     closeFloorModal,
     back,
     canGoBack,
   } = useAppNavigation();
 
-  const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
+  const { rung, projectView, initiativeView, focus, flow, flowStep } = nav;
   const { agent, setNavFocus } = useAgentContext();
   const { visible: orientationVisible } = useOrientation();
 
@@ -250,48 +248,29 @@ const AppShellInner = memo(function AppShellInner() {
     });
   }, [rung, focus.domainId, focus.initiativeId, focus.projectId, setNavFocus]);
 
-  // Auto-collapse the agent sidebar on narrow viewports so the calendar isn't crushed.
-  // Spine (188) + LeftRail (360) + AgentSidebar (380) + Calendar min (280) = 1208px.
+  // The width budget. With the Nuvo panel retired (D-205) the work has two
+  // chrome columns, not three: Spine (188) + LeftRail (360) + Calendar min (420)
+  // = 968px, so the Schedule keeps every pixel the panel's 64px door (380 open)
+  // used to take. Below 1280 the chrome still yields first — the spine rails to
+  // 64 (−124) and the rail drops to its own minimum 240 (−120) — because at 1024
+  // a full spine and rail left the week ~476px, titles worn to "De…". Both are
+  // render-only clamps: neither touches the user's saved width, so widening past
+  // the threshold restores exactly what they had.
   const [narrowViewport, setNarrowViewport] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 1280
-  );
-  // The squeeze threshold. Below this, an open chat and a full-width spine +
-  // rail cannot both be paid for, and the calendar was the one silently picking
-  // up the bill: at 1280 it measured 298px wide — 34px per day column, event
-  // titles worn down to "c." and "K." — because the chat simply took its 380px
-  // out of the Schedule and neither rail yielded a pixel.
-  //
-  // The chat is meant to be a permanent first-class surface, so making it cost
-  // the primary surface teaches people not to open it. Instead the *chrome*
-  // gives way first: the spine rails to 64 (−124) and the rail drops to its own
-  // minimum 240 (−120), which hands the calendar ~244px back. Both are render-
-  // only clamps — neither touches the user's saved width — so closing the chat
-  // or widening past the threshold restores exactly what they had.
-  const [squeezeViewport, setSqueezeViewport] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 1600
   );
   useEffect(() => {
     if (!window.matchMedia) return;
     const narrow = window.matchMedia("(max-width: 1279px)");
-    const squeeze = window.matchMedia("(max-width: 1599px)");
-    const onChange = () => {
-      setNarrowViewport(narrow.matches);
-      setSqueezeViewport(squeeze.matches);
-    };
+    const onChange = () => setNarrowViewport(narrow.matches);
     onChange();
-    const subs = [narrow, squeeze];
-    for (const mq of subs) {
-      if (mq.addEventListener) mq.addEventListener("change", onChange);
-      else mq.addListener(onChange);
-    }
+    if (narrow.addEventListener) narrow.addEventListener("change", onChange);
+    else narrow.addListener(onChange);
     return () => {
-      for (const mq of subs) {
-        if (mq.removeEventListener) mq.removeEventListener("change", onChange);
-        else mq.removeListener(onChange);
-      }
+      if (narrow.removeEventListener) narrow.removeEventListener("change", onChange);
+      else narrow.removeListener(onChange);
     };
   }, []);
-  const effectiveAgentOpen = agentOpen && !narrowViewport;
 
   // Stable identities for the Spine's two door props — the Spine body is
   // memoized (it renders on every desktop surface), and an inline closure here
@@ -314,13 +293,8 @@ const AppShellInner = memo(function AppShellInner() {
   // Declared here rather than beside the media queries above because it reads
   // focusMode: focus mode already hands the calendar the whole workspace, so
   // there is no squeeze left to apply — the spine and rail are shut either way.
-  //
-  // Below 1280 the squeeze applies whether or not the chat is open. It used to
-  // require the chat — which below 1280 is auto-closed — so the narrowest
-  // windows were the one place the chrome never yielded: at 1024 the spine
-  // (188) and rail (360) left the week ~412px, 52px a day, titles worn to "De…".
-  // Squeezed there, the same window gives the grid ~656px (~86px a day).
-  const squeezed = !focusMode && (narrowViewport || (effectiveAgentOpen && squeezeViewport));
+  // Squeezed at 1024, the grid gets ~720px (~100px a day).
+  const squeezed = !focusMode && narrowViewport;
 
   // One create surface, summonable from anywhere. There is no "more options"
   // fork any more — it swapped in a second layout mid-typing and dropped the
@@ -355,7 +329,7 @@ const AppShellInner = memo(function AppShellInner() {
   // ⌘1–4 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
   //
   // Chords, not characters: they can never be something the user is mid-way
-  // through typing, so — like ⌘J — they have NO text-field guard and NO "a modal
+  // through typing, so they have NO text-field guard and NO "a modal
   // is open" guard. Both used to be here, and the app lost its navigation the
   // moment a modal autofocused its field (or simply was open). A rung jump lifts
   // whatever modal is on top, then goes. Two honest exceptions: a surface that
@@ -404,22 +378,6 @@ const AppShellInner = memo(function AppShellInner() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [jumpToRung, rung, back, canGoBack, closeOverlay, nav.overlay, nav.flow, nav.floorModal]);
-
-  // ⌘J toggles Nuvo from any floor — not just the schedule view.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "j") return;
-      // Deliberately NO text-field guard. ⌘J is a chord, not a character, so it
-      // can never be something the user is mid-way through typing — and the
-      // guard swallowed it exactly when the panel was open, because opening
-      // Nuvo autofocuses the composer, so the event target was always a
-      // TEXTAREA. ⌘J could open the panel and never close it.
-      e.preventDefault();
-      toggleAgent();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [toggleAgent]);
 
   // ⌘. slides the side panels away (and back) — focus the calendar from anywhere.
   useEffect(() => {
@@ -566,19 +524,8 @@ const AppShellInner = memo(function AppShellInner() {
       {/* The terminal skin's status bar — renders null on every other material. */}
       </div>
 
-      {/* Nuvo is NOT on the sheet — it is the shell the sheet rests on. No card,
-          no border, no fill of its own: it shows the shell's own material, and
-          the sheet slides off it to reveal it. The slot animates the width so
-          the reveal reads as the sheet moving, not the chat appearing; the
-          content inside keeps its natural width and gets clipped (the LeftRail
-          pattern) so nothing squashes mid-slide. */}
-      <div
-        className="app-chat-slot"
-        style={{ width: effectiveAgentOpen ? 380 : 64 }}
-        aria-hidden={false}
-      >
-        <AgentSidebar open={effectiveAgentOpen} onToggle={toggleAgent} />
-      </div>
+      {/* No Nuvo panel beside the sheet (D-205): its offers ride the rows they
+          change, on the left, and the sheet keeps the whole width. */}
 
       {/* the plan's step rides nav history, so browser/mouse back-forward walks
           the sources instead of dropping out of the flow */}

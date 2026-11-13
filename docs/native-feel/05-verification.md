@@ -55,7 +55,7 @@ Playwright (`display-mode: standalone` isn't settable). That stays on the real-d
 
 ### Existing shortcuts re-tested
 
-⌘A, ⇧↓, Esc and right-click in the rail are covered by e2e. ⌘Z / ⇧⌘Z, ⌘K, ⌘J, 1–3 and the
+⌘A, ⇧↓, Esc and right-click in the rail are covered by e2e. ⌘Z / ⇧⌘Z, ⌘K, 1–3 and the
 letter keys were **not touched** by this change: no handler was edited. The only key-path
 changes are additive: `armDragCancel` swallows Esc **only during a deck drag**, and `useMenuFocus`
 handles keys **only while focus is inside a menu**. The tooltip layer hides on any keydown and

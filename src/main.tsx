@@ -84,7 +84,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?capture / ?sheets / ?rail / ?login / ?memory / ?offers, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?capture / ?sheets / ?rail / ?login / ?memory, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -104,7 +104,6 @@ const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
 const showMemoryHarness = import.meta.env.DEV && params.has("memory");
-const showOffersHarness = import.meta.env.DEV && params.has("offers");
 const showStatementHarness = import.meta.env.DEV && params.has("statement");
 const showOrientationHarness = import.meta.env.DEV && params.has("orientation");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
@@ -156,14 +155,6 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <StatementHarness />
-      </React.StrictMode>,
-    );
-  });
-} else if (showOffersHarness) {
-  void import("./components/nuvo/OffersHarness").then(({ default: OffersHarness }) => {
-    ReactDOM.createRoot(document.getElementById("root")!).render(
-      <React.StrictMode>
-        <OffersHarness />
       </React.StrictMode>,
     );
   });

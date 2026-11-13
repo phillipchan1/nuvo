@@ -3,7 +3,6 @@ import type { Rung, Focus } from "../components/AppShell";
 import type { FlowName } from "../components/Spine";
 import type { ProjectView, DetailView } from "../components/FloorPane";
 import type { RailTab } from "../components/LeftRail";
-import { readAgentOpen } from "../components/AgentSidebar";
 
 export const NAV_HISTORY_KEY = "nuvo-nav";
 export const NAV_STACK_INDEX_KEY = "nuvo-nav-idx";
@@ -67,7 +66,6 @@ export interface AppNavState {
   /** Task id open inside the slot popover (overlay must be "slot"). History-backed. */
   overlaySubId: string | null;
   settingsSection: SettingsSection;
-  agentOpen: boolean;
   floorModal: FloorModal;
 }
 
@@ -86,7 +84,6 @@ export const DEFAULT_NAV: AppNavState = {
   overlayId: null,
   overlaySubId: null,
   settingsSection: "appearance",
-  agentOpen: readAgentOpen(),
   floorModal: null,
 };
 
@@ -135,7 +132,6 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.overlayId === b.overlayId &&
     a.overlaySubId === b.overlaySubId &&
     a.settingsSection === b.settingsSection &&
-    a.agentOpen === b.agentOpen &&
     a.floorModal === b.floorModal
   );
 }

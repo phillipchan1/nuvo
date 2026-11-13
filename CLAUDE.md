@@ -129,7 +129,8 @@ it needs to work on a phone.
   and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
   (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while Nuvo's
   sheet is open. Capture and Nuvo are *permanent first-class actions*. There is no in-app
-  chat (D-201): the ✦ opens Nuvo's offers for where you are (`mobile/NuvoSheet`, D-198),
+  chat (D-201): the ✦ opens Memory and Connect an assistant (`mobile/NuvoSheet`); Nuvo's
+  offers ride the rows they change, inside the rail's balance budget (`lib/railOffers`, D-205),
   and conversation happens in the user's own assistant over MCP. Today/Week/Inbox
   are a segmented control inside the Tasks screen; the week's readiness, the **Plan the
   week** card (`MobilePlanWeek` — the phone's weekly ritual: Slate → Pull → Shape) and the

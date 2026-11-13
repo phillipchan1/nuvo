@@ -57,7 +57,7 @@ describe("jumpToRung", () => {
 
 describe("the chord handler (AppShell)", () => {
   const src = readFileSync("src/components/AppShell.tsx", "utf8");
-  const handler = src.slice(src.indexOf("// ⌘1–4 jump to a rung"), src.indexOf("// ⌘J toggles Nuvo"));
+  const handler = src.slice(src.indexOf("// ⌘1–4 jump to a rung"), src.indexOf("// ⌘. slides the side panels away"));
 
   it("jumps through jumpToRung, not the overlay-blind goRung", () => {
     expect(handler).toContain("jumpToRung(LADDER[num - 1])");

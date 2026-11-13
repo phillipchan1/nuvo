@@ -15,6 +15,7 @@ import {
   Input,
   Kbd,
   Dest,
+  OfferChip,
   Menu,
   MenuItem,
   MenuLabel,
@@ -125,6 +126,14 @@ function Column({ theme }: { theme: "light" | "dark" }) {
         <Line label="Destination">
           <div style={{ display: "flex", gap: 6, width: 240, minWidth: 0 }}>
             <Button kind="primary" shortcut="X"><Dest verb="Back to" name="Launch pricing page for the spring catalogue" /></Button>
+          </div>
+        </Line>
+        <Line label="Offer">
+          {/* D-205: Nuvo's offer on a row — quiet, the row's trailing slot. */}
+          <div style={{ display: "flex", gap: 16, width: 280, minWidth: 0 }}>
+            <OfferChip verb="Hold" name="2–2:30pm" onPress={() => {}} onDismiss={() => {}} />
+            <OfferChip verb="File in" name="Garage studio and the long workbench" onPress={() => {}} onDismiss={() => {}} />
+            <OfferChip verb="Draft the path" onPress={() => {}} />
           </div>
         </Line>
         <Line label="Keycap">

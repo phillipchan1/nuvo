@@ -88,7 +88,6 @@ export default function TeachPanel({
     switch (arm) {
       case "rail-inbox": d.setTab("inbox"); break;
       case "rail-today": d.setTab("today"); break;
-      case "close-agent": d.navigate({ agentOpen: false }); break;
       case "open-calendars": d.setSettingsSection("connections"); d.openOverlay("settings"); break;
       // Straight to the Projects lane — "what are you moving this week?" — rather
       // than the ritual's first step, so the act the walkthrough is naming is the

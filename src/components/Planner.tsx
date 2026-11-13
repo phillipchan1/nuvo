@@ -620,7 +620,7 @@ export default function Planner({
       {/* The Planner layout (D-190): the pool left (the rail, or Plan the week's
           rail while planning), the grid right, both on the one panel. The page's
           bar is the grid's own PageBar (CalendarPane) — the Planner draws none.
-          Plan/Shutdown → ⌘K + the morning prompt; Nuvo → ⌘J; settings → ⌘,. */}
+          Plan/Shutdown → ⌘K + the morning prompt; Nuvo → the rows it offers on (D-205); settings → ⌘,. */}
 
       <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
 

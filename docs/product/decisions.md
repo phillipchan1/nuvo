@@ -3443,7 +3443,7 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-13** | **Who wins when a mirrored block is moved on both sides?** D-107 closed the "iCloud gets no mirror at all" half of audit rank 3 and deliberately left this half open: mirroring is still one-directional, so dragging a Nuvo block in Google Calendar is silently reverted on the next reconcile. This is the only place in the app that **actively discards something the user did**, so it can't stay unanswered forever — but it is a model decision, not a bug fix. Three shapes, and each costs something real: **app always wins** (today — honest and simple, but the provider's UI lies to you the moment you touch a block there; the mitigation is to say so rather than to silently revert); **provider always wins for time** — needs Nuvo to start *reading back* its own mirror calendar, which it deliberately never does, and hands Google's quirks (a moved recurring instance, a declined invite) the power to rewrite planning state; **per-field last-writer-wins**, the model `lib/sync/ops.ts` already uses for tasks — but that model works because Nuvo stamps every field itself, and neither provider returns per-field timestamps, so this degrades to row-level LWW on the mirror's fields and a stale `updated` can still clobber a deliberate edit | **Answered 2026-08-15 — app always wins, and says so** (see D-107). Reopens if the warning proves insufficient: the thing to watch for is Phil losing an edit he made in Google *despite* the note, which is the only evidence that would justify paying for one of the other two shapes |
 | **Q-14** | **May Plan the week move a block mid-week without asking?** The v2 spec ([`plan-the-week-v2.md`](../plan-the-week-v2.md) §7) gives the planner a dial — *How much Nuvo moves*: Ask · Suggest · Handle. Ask and Suggest stage every change for one key; **Handle** would apply a least-change repair to unheld blocks and show an Undo afterwards. That is a partial reversal of **N-01** (auto-schedule, "never — this is identity"), asked for by the operator (ⓟ, 2026-11-06: *"turn up the temperature or down the temperature"*). | Decides whether the planner that stays with the week is a stager or an actor, which is exactly the line between Nuvo and Motion | Phase 1–2 of v2 built and used; evidence that Suggest's ↵ is still too slow. Until then Suggest is the ceiling |
 | **Q-15** | **Does the chat become the Nuvo panel, with conversation moving to your own assistant?** Asked by the operator (2026-11-13: *"instead of chat… Nuvo side bar should be the intelligent recommendations UI area where it can automatically interact with the stuff to the left of it… removing chat feature anyway to have people bring their own MCPs"*). The proposed shape, prototyped as [Nuvo panel](https://claude.ai/artifact/MJ1dQ8BFhRyWmsSmKpdtih) (private, example data): the panel docks where the chat is, opened with ⌘J and named **Nuvo** (no new name, P11). It holds at most a few recommendations for the page beside it, each with evidence and what Keep does. "Interact with the stuff to the left" means **preview in place**: a draft laid over the real surface, the way Draft the path works, never a write (P3, P4, N-01). It's quiet when it has nothing sure to say (P9), and silent on a domain (D-061). On the phone the ✦ opens it as a sheet. Conversation moves to the user's own assistant through the existing MCP server (D-112). | Removing the chat removes the surface that fails quietly, and its per-message model cost. But bring-your-own MCP is still a technical act for most people, and the chat currently carries the phone's ✦ launcher, Memory's phone entry, the marketing site's chat line and the agent battery's prompt half. | **Answered 2026-11-13 by the anchor pass: two ideas, split.** The panel passes as D-198 (smallest version: suggestions in the existing Nuvo panel, no new place). Removing the chat fails for now as N-22, which says what would reopen it |
-| **Q-16** | **Where do Nuvo's offers live: the right panel, or on the left, riding the rows they change?** Two calls on the same day disagree. D-198 put offers in the Nuvo panel on the right (built, on `master`). A separate anchor pass the same day ([`intelligence-home.md`](../intelligence-home.md), prototype [Nuvo Reach](https://claude.ai/artifact/Y7ZB6hQWShuuaZ35eBXJFP)) argued for the left: P3 says AI output belongs in a quiet pool and the planner grammar puts the pool on the left, where every page already takes action; offers would ride the row they change as one chip naming its destination ([`rail-modes.md`](../rail-modes.md) §3). The operator leaned left in that conversation ("the place where you're supposed to take action in every single one of the screens… the right side might not even be necessary"). | Decide before building D-204's inline chips. If left: the panel's offers move onto rows and the ✦ door keeps Connect an assistant and Memory. If right: D-204 §3 drops the chips and the crown's line points at the panel. |
+| **Q-16** | ~~Where do Nuvo's offers live: the right panel, or on the left?~~ **Resolved 2026-11-13 by D-205: on the left, on the rows they change; the right panel retires.** | — |
 
 **D-099 · 2026-08-12 · The phone gets the Build altitudes' other two faces — and the acts a
 record has, including the one it could not perform.** *(A desktop→mobile parity audit,
@@ -6809,6 +6809,48 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-205 · 2026-11-13 · Nuvo's offers live on the left, on the rows they change. The right panel
+retires.** *(Resolves Q-16. The operator's call: "Left, on the rows.")*
+
+→ **Supersedes D-198's home** (the offers in the right-hand panel) and D-201's "the panel stays".
+The panel's two kinds already had a place on the left: a thin path is marked on its row in Plan
+the week, the phone's Projects and the deck (D-196), and Memory's sure observations appear in Plan
+the week's What I noticed and the Schedule's Rhythm view (D-194). The panel was a second place to
+be told the same thing (P8).
+
+→ **What moves.** The thin-path offer gains the one row it lacked: the week crown's project row
+(desktop and phone), as a **Draft the path** chip naming its evidence. D-204's chips arrive: a
+today task with no time carries **Hold <time>** (Find time, `useFindTime`); an inbox item the
+router has a guess for carries **File in <project>**. One chip per row, written as the
+destination, nothing written until pressed (P3); Not now snoozes it for two weeks, as the panel
+did (`nuvoOffers.isSnoozed`).
+
+→ **What goes.** The desktop panel (`AgentSidebar`) and ⌘J. **Connect an assistant** stays where
+it already lives, Settings → Apps & devices. Memory keeps its sidebar row and dot. On the phone the
+✦ launcher stays as the door to Memory and Connect an assistant (it carries Memory's dot, D-194);
+the offers leave it. The `chat` shortcut keeps opening that door (installed phones carry it).
+
+→ **Anchor.** Mends P8. No pool, no new name, no new place (one retired). The suggestion log
+(D-197) keeps grading each act through the paths it already takes.
+
+→ **Built with the balance budget** (the operator: "it has to be elegant and balance all that is
+going on in the left"): `budgetOffers` (`lib/railOffers.ts`) ranks crown row → Today → Inbox and
+shows at most 3 in the desktop rail, 2 per phone screen, nothing past the cap and no count, none
+in Plan or Repair. A chip (`OfferChip`, kit) replaces the row's trailing meta, so no row grows.
+Not now has no visible button: right-click, ⌫, or a long press on the chip.
+
+→ **Consequences.** The Inbox's Accept / ✕ pair on every guessed row is gone; **File in <place>**
+replaces it, inside the budget, so a guess past the cap shows nothing until the rows above it are
+handled. The orientation's Nuvo step now lights the day list ("Nuvo speaks on the row it would
+change"), and Getting Started loses *Open Nuvo* (four steps). `TaskRow` gained one prop, `offer`.
+Hold computes with Find time's own compose, today only, capped at 6 tasks.
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`. Typecheck and build clean; `npm
+test` 2558 pass, the 18 failures `maintenance` / `guard-public-ci`. Checked at `?rail=offers`,
+`?rail=offers-phone`, `?weekcrown` (desktop and 375px). **Not driven** on a signed-in account;
+`npm run perf` not run (Hold adds a calendar-week query and a compose per minute while Today
+shows); long-press on a real iPhone unchecked.*
 
 **D-204 · 2026-11-13 · The rail has three modes, not four sections — and every act says where
 the thing goes.** *(Asked by the operator: "the left bar would be doing a lot… projects, current

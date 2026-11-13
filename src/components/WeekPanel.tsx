@@ -30,7 +30,11 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useThinPaths } from "../hooks/useThinPaths";
+import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
+import type { RailOfferCandidate } from "../lib/railOffers";
+import type { ThinPath } from "../lib/thinPath";
 import { useRecordContextMenu } from "./RecordContextMenu";
 import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
@@ -71,6 +75,8 @@ export default function WeekPanel({
   door,
   renderTask,
   crownLine,
+  offers,
+  onPathCandidates,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
@@ -79,6 +85,13 @@ export default function WeekPanel({
    *  nothing otherwise. A repair ("Tue 10am broke… · Repair ›") passes its
    *  own line here; `null` says nothing. */
   crownLine?: ReactNode;
+  /** The rail's offer budget (D-205): a project row whose id is here carries
+   *  Draft the path. The host decides the budget; this only draws it. */
+  offers?: ReadonlyMap<string, RailOfferCandidate>;
+  /** Which open rows COULD carry Draft the path — reported up so the host can
+   *  rank them against the day's offers. Empty while the list is folded: the
+   *  shut crown never carries a chip. */
+  onPathCandidates?: (cands: RailOfferCandidate[]) => void;
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -102,6 +115,25 @@ export default function WeekPanel({
   // Right-click a project for its lifecycle acts — the same menu every other
   // surface wears.
   const recordMenu = useRecordContextMenu();
+  // Draft the path's candidates (D-205): open, unlanded rows with a thin path.
+  // Reported up; the rail's budget decides which, if any, show.
+  const thin = useThinPaths();
+  const pathCands =
+    onPathCandidates && crown && listOpen
+      ? pathCandidates(
+          crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
+          thin,
+        )
+      : [];
+  const pathSig = pathCands.map((c) => c.key).join("|");
+  const reportRef = useRef(onPathCandidates);
+  reportRef.current = onPathCandidates;
+  const candsRef = useRef(pathCands);
+  candsRef.current = pathCands;
+  useEffect(() => {
+    reportRef.current?.(candsRef.current);
+  }, [pathSig]);
+  useEffect(() => () => reportRef.current?.([]), []);
   if (!data || !crown) return null;
 
   const { rows, landed, looseCount } = crown;
@@ -248,6 +280,8 @@ export default function WeekPanel({
                   onOpen={() => openRecord("project", row.projectId)}
                   onContextMenu={recordMenu.onContextMenu("project", row.projectId)}
                   canPlace={canPlaceProjects}
+                  pathOffer={offers?.get(row.projectId)?.kind === "path" ? thin.get(row.projectId) ?? null : null}
+                  onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
                   onExpand={() =>
                     setOpenIds((prev) => {
@@ -326,6 +360,8 @@ function ProjectStackRow({
   onOpen,
   onContextMenu,
   canPlace,
+  pathOffer,
+  onOpenProject,
   expanded,
   onExpand,
 }: {
@@ -337,6 +373,9 @@ function ProjectStackRow({
   onContextMenu: (e: ReactMouseEvent) => void;
   /** the Schedule is showing a time grid, so a sitting has somewhere to land */
   canPlace: boolean;
+  /** Draft the path, when the rail's budget gave this row the offer (D-205). */
+  pathOffer: ThinPath | null;
+  onOpenProject: (projectId: string) => void;
   expanded: boolean;
   onExpand: () => void;
 }) {
@@ -436,6 +475,9 @@ function ProjectStackRow({
             >
               Ship
             </Button>
+          ) : pathOffer ? (
+            // The offer takes the weight's place — never a second mark (D-205).
+            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} />
           ) : (
             weight && <span className="crown-meta" title={`${weight} of work left`}>{weight}</span>
           )}

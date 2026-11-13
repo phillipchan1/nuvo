@@ -16,14 +16,14 @@
 // is left of this week.
 
 import { useCallback, useMemo } from "react";
-import { addDays } from "date-fns";
+import { addDays, startOfWeek } from "date-fns";
 import { useVertical } from "./useVertical";
 import { useSettings } from "./useSettings";
 import { useWorkingDays } from "./useWorkingDays";
 import { useExternalEvents } from "./useCalendar";
 import { useAllTasks, useScheduledTasks } from "./useTasks";
 import { useSlots } from "./useSlots";
-import { parseDateISO, todayISO } from "../lib/dates";
+import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { isPlacedInWeek } from "../lib/priorities";
 import { composeWeek, slotsAsBusy, type Placement } from "../lib/compose";
 import { isEventHidden } from "../lib/now";
@@ -193,4 +193,57 @@ export function useFindTime(weekStartISO: string) {
   );
 
   return { propose, place, looseFor };
+}
+
+/** How many of today's loose tasks Find time is asked about at once. The rail
+ *  shows three offers at most, so asking about more is work nobody sees. */
+export const HOLDS_CAP = 6;
+
+/** Find time, for today only (D-205 · "Hold <time>"): where each of today's
+ *  tasks with no time would go today, if anywhere. The same composer, the same
+ *  busy read and working hours as `useFindTime`, scoped to one day — placed
+ *  together, so two offers never claim the same half hour. Proposes, never
+ *  writes (P3). A task with no fit today gets no entry, and so no chip.
+ *
+ *  Mount it only where the offers can show: it reads the week's calendar. */
+export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Placement> {
+  const { settings } = useSettings();
+  const today = todayISO(now);
+  const range = useMemo(() => {
+    const monday = startOfWeek(parseDateISO(today), { weekStartsOn: 1 });
+    return { weekStartISO: toDateISO(monday), start: monday.toISOString(), end: addDays(monday, 7).toISOString() };
+  }, [today]);
+  const { data: timed = [] } = useScheduledTasks(range.start, range.end);
+  const { data: slots = [] } = useSlots(range.start, range.end);
+  const { data: events = [] } = useExternalEvents(range.start, range.end);
+  // Minutes, not the Date: the rail's clock ticks, and a fit only moves when
+  // the quarter hour does.
+  const nowKey = Math.floor(now.getTime() / 60_000);
+
+  return useMemo(() => {
+    const pool = tasks.slice(0, HOLDS_CAP);
+    if (!pool.length) return new Map<string, Placement>();
+    const hiddenCals = new Set(settings?.hidden_calendar_ids ?? []);
+    const hiddenKeys = new Set((settings?.hidden_events ?? []).map((h) => h.key));
+    const visible = events.filter((e) => !hiddenCals.has(e.calendar_id) && !isEventHidden(e, hiddenKeys));
+    const at = new Date(nowKey * 60_000);
+    const res = composeWeek({
+      weekStartISO: range.weekStartISO,
+      todayISO: today,
+      now: at,
+      tasks: pool as Task[],
+      events: visible,
+      blocks: [...timed, ...slotsAsBusy(slots)],
+      workStartMin: settings?.work_start_minutes ?? WORK_START_DEFAULT,
+      workEndMin: settings?.work_end_minutes ?? WORK_END_DEFAULT,
+      focusInitiativeIds: [],
+      // Today, and only today: the task is already dated today, so a fit on
+      // Thursday would be a different act (moving it), not a hold.
+      workingDays: [parseDateISO(today).getDay()],
+      weeklyBudgetMins: null,
+    });
+    const out = new Map<string, Placement>();
+    for (const p of res.placements) if (p.dayISO === today && !p.parts) out.set(p.task.id, p);
+    return out;
+  }, [tasks, timed, slots, events, settings, range.weekStartISO, today, nowKey]);
 }

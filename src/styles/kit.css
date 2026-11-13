@@ -100,6 +100,37 @@ html:root .k-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pane
 .k-dest-verb { flex: none; }
 .k-dest-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .k-btn .k-kbds { margin-left: 2px; margin-right: -3px; }
+/* OfferChip — Nuvo's offer on a row (D-205): text in accent ink, no fill, no
+   border. It takes the row's trailing slot and never its height; under a finger
+   the hit area grows invisibly to 44px (the .bulk-bar pattern). */
+.k-offer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 62%;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: 500 12px/1.4 var(--font-sans);
+  color: var(--accent-ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--r-chip);
+}
+.k-offer .k-dest-name { white-space: nowrap; }
+.k-offer[data-whole] { flex: none; max-width: none; }
+html:root .k-offer:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+@media (hover: hover) {
+  .k-offer:hover { text-decoration: underline; text-underline-offset: 2px; }
+}
+@media (pointer: coarse) {
+  .k-offer { font-size: 13px; }
+  .k-offer::before { content: ""; position: absolute; inset: 50% -6px auto; height: 44px; transform: translateY(-50%); }
+}
+
 
 /* ── Field — input, textarea, search, select trigger ────────────────────── */
 .k-field {

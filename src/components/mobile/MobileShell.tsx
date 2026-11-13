@@ -67,7 +67,6 @@ import MobileTaskSheet from "./MobileTaskSheet";
 import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
-import { useNuvoOffers } from "../nuvo/useNuvoOffers";
 
 const MemoryPage = lazy(() => import("../memory/MemoryPage"));
 const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
@@ -212,12 +211,6 @@ export default function MobileShell() {
   // Memory (docs/memory.md §4.1): on the phone its dot rides the ✦, and it opens
   // from the chat's header.
   const memory = useMemory();
-  // What the ✦ would offer here (D-198) — its dot, and the cards above the chat.
-  const offers = useNuvoOffers({ memory });
-  const { markSeen: markOffersSeen } = offers;
-  useEffect(() => {
-    if (nuvoOpen) markOffersSeen();
-  }, [nuvoOpen, markOffersSeen]);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
@@ -273,7 +266,7 @@ export default function MobileShell() {
       setCapture({ kind: "task" });
     } else if (act === "chat") {
       // The widget and icon shortcut still say "chat" (installed phones keep
-      // their links); since D-200 that door opens Nuvo's offers.
+      // their links); it opens the ✦'s sheet — Memory and Connect (D-205).
       setCapture(null);
       setNuvoOpen(true);
     } else {
@@ -527,7 +520,8 @@ export default function MobileShell() {
     "[data-deck-col], .mobile-scroll",
   );
 
-  // The ✦: Nuvo's offers for where you are (D-198), in a bottom sheet (D-200).
+  // The ✦: the door to Memory and Connect an assistant (D-205), in a bottom
+  // sheet. Nuvo's offers ride the rows they change, not this sheet.
   const openNuvo = () => setNuvoOpen(true);
 
   // Open a strategic-vertical item in the shared detail Sheet (nonce so the same
@@ -793,21 +787,16 @@ export default function MobileShell() {
         badge={(id) => (id === "tasks" ? inbox.length : 0)}
         onCapture={!nuvoOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
         onAskNuvo={!nuvoOpen && pickedIds.size === 0 ? openNuvo : undefined}
-        nuvoDot={memory.hasNew || offers.unseen}
+        nuvoDot={memory.hasNew}
       />
 
       {nuvoOpen && (
         <NuvoSheet
-          offers={offers}
-          memory={memory}
+          memoryNew={memory.hasNew}
           onClose={() => setNuvoOpen(false)}
           onMemory={() => {
             setNuvoOpen(false);
             setMemoryOpen(true);
-          }}
-          onOpenProject={(id) => {
-            setNuvoOpen(false);
-            openDetail("project", id);
           }}
           onConnect={() => {
             setNuvoOpen(false);

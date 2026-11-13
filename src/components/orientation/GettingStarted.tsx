@@ -21,7 +21,6 @@ const LS = {
   dismissed: "nuvo.gs.dismissed",
   completed: "nuvo.gs.completed",
   seen: "nuvo.gs.seen",
-  askedNuvo: "nuvo.gs.askedNuvo",
 };
 
 function lsGet(k: string): boolean {
@@ -43,22 +42,14 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
   const { data, ready } = useVertical();
   const { data: accounts = [], isLoading: accountsLoading } = useCalendarAccounts();
   const { data: allTasks = [], isLoading: tasksLoading } = useAllTasks();
-  const { nav, goRung, openOverlay, setSettingsSection, toggleAgent } = useAppNavigation();
+  const { goRung, openOverlay, setSettingsSection } = useAppNavigation();
 
-  const [askedNuvo, setAskedNuvo] = useState(() => lsGet(LS.askedNuvo));
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const wasIncomplete = useRef(false);
 
-  // Latch "met Nuvo" the first time its panel is opened (D-200: there's no chat
-  // to ask any more — the panel offers, and opening it is the step).
-  useEffect(() => {
-    if (askedNuvo) return;
-    if (nav.agentOpen) {
-      lsSet(LS.askedNuvo);
-      setAskedNuvo(true);
-    }
-  }, [nav.agentOpen, askedNuvo]);
+  // "Open Nuvo" was the fifth step while Nuvo was a panel to open. It has no
+  // panel now (D-205) — its offers ride the rows — so there is nothing to open.
 
   const loaded = ready && !accountsLoading && !tasksLoading;
 
@@ -77,7 +68,6 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
       done: allTasks.some((t) => t.start_time != null && t.do_date != null),
       go: () => goRung("day"),
     },
-    { id: "nuvo", label: "Open Nuvo", done: askedNuvo, go: () => toggleAgent() },
   ];
 
   const foundationalDone = steps.slice(0, 4).every((s) => s.done);

@@ -1,9 +1,9 @@
 # One home for Nuvo's suggestions — and the landing that reaches the outcome
 
 **Status: §5 (the Reach) built as D-202 on `worktree-intelligence-readings`; see D-202 for where it fires.
-§1–§4 (where offers live) are an open question, Q-16: the same day, D-198 put offers in the
-right-hand Nuvo panel and shipped it, and D-201 removed the chat but kept that panel. §2's
-"asked" column and §4 are history either way. The readings the Reach moves are specced in
+§1–§3 (where offers live) were settled by D-205: on the left, on the rows; the right panel
+retires. That supersedes D-198 (offers in the right-hand panel, shipped the same day) and D-201's
+"the panel stays". §2's "asked" column and §4 are history. The readings the Reach moves are specced in
 [`outcome-readings.md`](./outcome-readings.md) (D-203).** Anchor pass run the same day
 (Ledger W2 · W3 · Q1 · W6; strains P9; four no's clear). Prototype (private, example data):
 [Nuvo Reach](https://claude.ai/artifact/Y7ZB6hQWShuuaZ35eBXJFP): the desktop Schedule

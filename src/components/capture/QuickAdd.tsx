@@ -5,7 +5,7 @@
 // that resembled a record moved Enter onto the record, a leading space
 // switched you into the chat, and the close raced its own "Captured" beat into
 // a second history.back(). ⌘K now does the one thing (D-149). Navigation keeps
-// its own keys (⌘1–4, the spine), and Nuvo keeps ⌘J.
+// its own keys (⌘1–4, the spine).
 
 import { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";

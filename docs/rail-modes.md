@@ -59,6 +59,20 @@ The answer to "passive or actively shown" is: **always present, never pushed.**
 | An offer for one row | a chip on that row, naming its destination: **"Hold 2–2:30pm"** on a today task with no time; **"File in Garage studio"** on an inbox item the router has a guess for | a section of offers, a card above the list, more than one chip per row |
 | Nothing to offer | nothing | an empty state about offers |
 
+### The balance budget (D-205, the operator: "it has to be elegant and balance all that is going on in the left")
+
+The rail at rest carries the crown (its one line, Significant), Today or Inbox, and offers. It
+stays calm by rule, not by taste:
+
+| Rule | Why |
+|---|---|
+| **No row grows.** A chip sits in the row's trailing slot and *replaces* its meta while it shows | a list whose rows change height reads as noise and moves under the hand (D-123) |
+| **Quiet chips**: text in accent ink, 12px, no fill, no border; 44px tap target by an invisible hit area on the phone | an offer is a suggestion, not a button wall |
+| **At most 3 chips in the rail at once** (2 per phone screen), ranked crown row → Today (earliest first) → Inbox (top first), decided once in `budgetOffers`; nothing past the cap, never "+2 more" | a count of waiting offers is debt (P4); one place decides so both shells agree |
+| **Draft the path shows only on an open crown**; the shut crown and the pinned pips carry no chips | the anchor stays one line drawn |
+| **No rest chips while Plan or Repair owns the rail** | one mode at a time |
+| **Not now is not a second button**: it lives in the row's context menu / long-press, and ⌫ on the focused chip | one mark per row |
+
 An inline chip is the same engine as the walk (`composeWeek` / `slotPicksFor` for times, the router
 for filing), so the rail at rest and the walk never disagree about where something goes.
 

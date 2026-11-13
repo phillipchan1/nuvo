@@ -25,6 +25,9 @@ import MobileWeekCrown from "./MobileWeekCrown";
 import MobileCalendar from "./MobileCalendar";
 import WeekPanel from "../WeekPanel";
 import TaskRow from "../TaskRow";
+import { thinWindow } from "../../hooks/useThinPaths";
+import { useOfferBudget } from "../nuvo/RailOffers";
+import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../../lib/railOffers";
 
 const WEEK_ISO = planningWeekStartISO();
 const MONDAY = parseDateISO(WEEK_ISO);
@@ -241,6 +244,17 @@ function seededClient(): QueryClient {
   qc.setQueryData(["tasks", "all"], TASKS);
   qc.setQueryData(["tasks", "scheduled", WEEK_START_ISO, WEEK_END_ISO], BLOCKS);
   qc.setQueryData(["slots", WEEK_START_ISO, WEEK_END_ISO], SLOTS);
+  // Held time in the next two weeks with too little work in it (D-196): the
+  // morning routine and the training wheels are thin paths, so their open
+  // rows carry Draft the path (D-205).
+  const tw = thinWindow();
+  const tomorrow = addDays(parseDateISO(toDateISO(new Date())), 1);
+  const held = (id: string, projectId: string, hour: number, mins: number) => {
+    const d = new Date(tomorrow);
+    d.setHours(hour, 0, 0, 0);
+    return { id, user_id: "u", title: "", project_id: projectId, do_date: toDateISO(tomorrow), start_time: d.toISOString(), duration_minutes: mins } as unknown as Slot;
+  };
+  qc.setQueryData(["slots", tw.start, tw.end], [held("th1", "p2", 9, 180), held("th2", "p7", 14, 240)]);
   return qc;
 }
 
@@ -249,6 +263,9 @@ export default function WeekCrownHarness() {
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
   const store = useHarnessStore(doneIds);
   const [log, setLog] = useState<string[]>([]);
+  // The rail hosts the budget (D-205); here the crown is the whole rail.
+  const [pathCands, setPathCands] = useState<RailOfferCandidate[]>([]);
+  const pathOffers = useOfferBudget(pathCands, RAIL_OFFERS_MAX);
   const say = (s: string) => setLog((l) => [s, ...l].slice(0, 6));
   const tick = (t: Task) => {
     say(`toggle ${t.title}`);
@@ -344,6 +361,8 @@ export default function WeekCrownHarness() {
                           onToggleDone={() => tick(t)}
                         />
                       )}
+                      offers={pathOffers}
+                      onPathCandidates={setPathCands}
                     />
                   </div>
                 </div>

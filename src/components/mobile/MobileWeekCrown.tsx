@@ -37,6 +37,10 @@
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
 import { useState, type ReactNode } from "react";
+import { useThinPaths } from "../../hooks/useThinPaths";
+import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
+import type { ThinPath } from "../../lib/thinPath";
+import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
 import { Button, Chip } from "../kit";
 import { fmtDayTime } from "../../lib/dates";
@@ -105,6 +109,22 @@ export default function MobileWeekCrown({
   const [open, setOpenState] = useState(readOpen);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
+  // Draft the path on the open slate's rows (D-205) — the shut strip and the
+  // pinned pips never carry a chip. Two at most on a phone screen, through the
+  // same budget the rail uses.
+  const thin = useThinPaths();
+  const showing = open && expandable && !!crown;
+  const pathOffers = useOfferBudget(
+    useStableCandidates(
+      showing
+        ? pathCandidates(
+            crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
+            thin,
+          )
+        : [],
+    ),
+    PHONE_OFFERS_MAX,
+  );
 
   if (!crown) return null;
   const { rows, landed, total, looseCount, composed, weekLabel, weekISO, significance } = crown;
@@ -260,6 +280,8 @@ export default function MobileWeekCrown({
                 })
               }
               onOpen={() => onOpenProject(row.projectId)}
+              pathOffer={pathOffers.has(row.projectId) ? thin.get(row.projectId) ?? null : null}
+              onOpenProject={onOpenProject}
               onOpenDay={onOpenDay}
               renderTask={renderTask}
             />
@@ -288,6 +310,8 @@ function CrownRow({
   expanded,
   onExpand,
   onOpen,
+  pathOffer,
+  onOpenProject,
   onOpenDay,
   renderTask,
 }: {
@@ -295,6 +319,10 @@ function CrownRow({
   expanded: boolean;
   onExpand: () => void;
   onOpen: () => void;
+  /** Draft the path, when the budget gave this row the offer (D-205). It takes
+   *  the track's place — never a second mark, never a taller row. */
+  pathOffer: ThinPath | null;
+  onOpenProject: (id: string) => void;
   onOpenDay: (d: Date) => void;
   renderTask: RenderCrownTask;
 }) {
@@ -340,7 +368,7 @@ function CrownRow({
             // A statement, not a button: shipping is the record sheet's act, and
             // a second ship path is how the two shells drift.
             <Chip tone="accent">Ready to ship</Chip>
-          ) : (
+          ) : pathOffer ? null : (
             <span className="flex shrink-0 items-center gap-1.5">
               {/* Carried — the same words the rail crown uses (D-108), because
                   the phone inherited the carry the moment the slate became a
@@ -372,6 +400,14 @@ function CrownRow({
             </span>
           )}
         </button>
+
+        {/* The offer stands where the track stood — a sibling of the row's
+            button (a button can't hold a button), at the same height. */}
+        {pathOffer && !done && row.state !== "ready-to-ship" && (
+          <span className="flex shrink-0 items-center">
+            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} phone />
+          </span>
+        )}
 
         {canExpand && (
           <button

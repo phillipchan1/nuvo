@@ -1,48 +1,47 @@
 /**
- * Nuvo on the phone (D-198, D-200) — what the ✦ opens now that the chat is gone.
- * A bottom Sheet (golden rule 3): the offers for where you are, Memory one tap
- * away in the title row, and the card for talking to Nuvo from your own
- * assistant. Nothing here is typed into.
+ * Nuvo on the phone (D-198, D-200, D-205) — what the ✦ opens. Nuvo's offers
+ * left it for the rows they change (D-205), so the sheet is the door to the two
+ * things that have no row: Memory (whose dot the ✦ carries, D-194) and talking
+ * to Nuvo from your own assistant. A bottom Sheet (golden rule 3); nothing here
+ * is typed into.
  */
 
 import Sheet from "./Sheet";
-import { SHEET_SCROLL } from "./sheetKit";
-import { IconButton } from "../kit";
+import { RowList, SHEET_BODY, SHEET_SCROLL, FactRow } from "./sheetKit";
 import { MemoryIcon } from "../memory/MemoryIcon";
-import NuvoOffers from "../nuvo/NuvoOffers";
 import { NuvoConnect } from "../nuvo/NuvoConnect";
-import type { NuvoOffersState, OfferMemorySource } from "../nuvo/useNuvoOffers";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 
 export default function NuvoSheet({
-  offers,
-  memory,
+  memoryNew = false,
   onClose,
   onMemory,
-  onOpenProject,
   onConnect,
 }: {
-  offers: NuvoOffersState;
-  memory: OfferMemorySource | null;
+  /** Memory has something you haven't seen — said on its row, as the ✦'s dot. */
+  memoryNew?: boolean;
   onClose: () => void;
   onMemory: () => void;
-  onOpenProject: (projectId: string) => void;
   onConnect: () => void;
 }) {
   return (
-    <Sheet
-      title={ASSISTANT_NAME}
-      onClose={onClose}
-      contentClassName={SHEET_SCROLL}
-      action={<IconButton label="Memory" size="md" data-land="memory" icon={<MemoryIcon size={18} />} onClick={onMemory} className="tap-icon" />}
-    >
-      <div className="nuvo-sheet">
-        {offers.offers.length ? (
-          <NuvoOffers state={offers} memory={memory} phone onOpenProject={onOpenProject} />
-        ) : (
-          <p className="nuvo-quiet">Nothing to offer right now. {ASSISTANT_NAME} speaks when it's sure.</p>
-        )}
-        <NuvoConnect phone onConnect={onConnect} />
+    <Sheet title={ASSISTANT_NAME} onClose={onClose} contentClassName={SHEET_SCROLL}>
+      <div className={SHEET_BODY}>
+        <RowList>
+          <FactRow
+            lead={
+              <span data-land="memory" className="flex">
+                <MemoryIcon size={18} />
+              </span>
+            }
+            label="Memory"
+            value={memoryNew ? "Something new" : undefined}
+            onClick={onMemory}
+          />
+        </RowList>
+        <div className="mt-4">
+          <NuvoConnect phone onConnect={onConnect} />
+        </div>
       </div>
     </Sheet>
   );

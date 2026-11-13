@@ -800,30 +800,6 @@ html:root .band:focus-visible { box-shadow: 0 0 0 2px var(--accent-ring); }
 .chat-error > span { flex: 1; min-width: 0; }
 .chat-foot { flex: none; padding: 4px 12px 12px; }
 
-/* the collapsed chat: a mark and its name, standing on the ground */
-.chat-rail { display: flex; flex-direction: column; align-items: center; width: 64px; height: 100%; flex: none; }
-.chat-rail-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 100%;
-  padding: 14px 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  transition: color var(--d-base) var(--ease-out);
-}
-.chat-rail-btn > .chat-mark { width: 28px; height: 28px; border-radius: var(--r-card); transition: transform var(--d-fast) var(--ease-out); }
-.chat-rail-btn > span:last-child { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 12px/1 var(--font-sans); letter-spacing: -0.005em; }
-@media (hover: hover) {
-  .chat-rail-btn:hover { color: var(--ink); transition-duration: 0ms; }
-}
-@media (hover: hover) and (pointer: fine) {
-  .chat-rail-btn:active > .chat-mark { transform: scale(0.96); }
-}
-
 /* the transcript — Nuvo speaks in plain text; only you get a bubble */
 .agent-turn { animation: rise var(--d-base) var(--ease-out) both; }
 .agent-user { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; animation: rise var(--d-base) var(--ease-out) both; }
