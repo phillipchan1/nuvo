@@ -6882,8 +6882,8 @@ case in `tests/plan-walk.test.tsx`. Driven at `?drafts` (new harness: a stranger
 agent stubbed in the page) on desktop, light and dark, and at 375px: the door, the zoom, the
 stream-in, hold / version / move / drag / steer / hold all / esc, the deck's thin mark opening the
 record with Draft the path running, the phone's sheet (no sideways scroll, every act 44px). **Not
-driven against a real account**: no `.env.local` here. **Not deployed**: the `agent` function's
-`draftProjects` entry needs `supabase functions deploy agent` (Phil). Plan the week's rail row is
+driven against a real account**: no `.env.local` here. **Deployed 2026-11-13**: the `agent` function with
+`draftProjects` (Supabase, project `ebibzojtkzkphykznomv`; unauthenticated calls refused, 401). Plan the week's rail row is
 covered by the test, not seen in a browser. `npm run perf` not run (the deck reads one more slots
 query; `perf-budget` in `npm test` passes).*
 
