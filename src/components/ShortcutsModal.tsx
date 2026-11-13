@@ -1,5 +1,6 @@
 import { isMac } from "../lib/platform";
-import { Keycap, Modal } from "./ui";
+import { DialogHead, Modal } from "./ui";
+import { Kbd, SectionHeader } from "./kit";
 
 // A single shortcut: one label, and one-or-more key renderings. A string is a
 // keycap; nested arrays render as a combo with a "then/or" separator passed in.
@@ -117,15 +118,13 @@ const glyph = (k: string) => (MAC ? k : ({ "⌘": "Ctrl", "⌃": "Ctrl", "⌥": 
 
 function Row({ keys, sep, label }: Shortcut) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-caption text-muted">{label}</span>
-      <span className="flex shrink-0 items-center gap-1">
+    <div className="sc-row">
+      <span>{label}</span>
+      <span className="sc-keys">
         {keys.map((combo, i) => (
-          <span key={i} className="flex items-center gap-1">
-            {i > 0 && <span className="px-0.5 text-micro text-muted">{sep ?? "or"}</span>}
-            {combo.map((k, j) => (
-              <Keycap key={j}>{glyph(k)}</Keycap>
-            ))}
+          <span key={i} className="sc-combo">
+            {i > 0 && <span className="sc-sep">{sep ?? "or"}</span>}
+            <Kbd keys={combo.map(glyph)} />
           </span>
         ))}
       </span>
@@ -135,40 +134,20 @@ function Row({ keys, sep, label }: Shortcut) {
 
 export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
-    // Centered and bounded, with the body owning the scroll: a top-anchored Modal
-    // lets its children own the height at sm+, and this sheet is taller than a
-    // laptop window — everything below Task lists was simply unreachable.
+    // Centered and bounded, with the body owning the scroll: this dialog is
+    // taller than a laptop window, so the head stays and the groups scroll.
     <Modal onClose={onClose} width="max-w-2xl" align="center">
-      <div className="flex max-h-[90vh] flex-col sm:max-h-[92vh]">
-      <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
-        <div>
-          <h2 className="text-head font-semibold text-ink">Keyboard shortcuts</h2>
-          <p className="mt-0.5 text-caption leading-snug text-muted">
-            The Schedule is your home — letters switch the view, the rest moves you around.
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          className="fast -mr-1 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Two masonry-ish columns on desktop; a single column on a phone. */}
-      <div className="grid min-h-0 flex-1 gap-x-8 gap-y-5 overflow-y-auto px-5 py-4 sm:grid-cols-2">
+      <DialogHead title="Keyboard shortcuts" onClose={onClose} />
+      {/* Two columns on desktop; a single column on a phone. */}
+      <div className="dlg-body sc-grid">
         {GROUPS.map((g) => (
-          <section key={g.title} className="break-inside-avoid">
-            <div className="section-label pb-1">{g.title}</div>
-            <div className="divide-y divide-line/60">
-              {g.items.map((s) => (
-                <Row key={s.label} {...s} />
-              ))}
-            </div>
+          <section key={g.title}>
+            <SectionHeader title={g.title} className="!px-0" />
+            {g.items.map((s) => (
+              <Row key={s.label} {...s} />
+            ))}
           </section>
         ))}
-      </div>
       </div>
     </Modal>
   );

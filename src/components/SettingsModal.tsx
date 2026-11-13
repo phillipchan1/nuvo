@@ -298,7 +298,7 @@ function SchedulePane({
           step={900}
           minutes={settings?.work_start_minutes ?? 480}
           onCommit={(m) => updateSettings({ work_start_minutes: m })}
-          className="!w-28"
+          className="!w-32"
           aria-label="Working hours start"
         />
         <span className="text-caption text-muted">to</span>
@@ -306,7 +306,7 @@ function SchedulePane({
           step={900}
           minutes={settings?.work_end_minutes ?? 990}
           onCommit={(m) => updateSettings({ work_end_minutes: m })}
-          className="!w-28"
+          className="!w-32"
           aria-label="Working hours end"
         />
       </Row>
@@ -377,7 +377,7 @@ function SchedulePane({
           minutes={reveal.minutes}
           onCommit={(m) => patchReveal({ minutes: m })}
           disabled={!reveal.enabled}
-          className="!w-28"
+          className="!w-32"
           aria-label="Review time"
         />
         <Toggle checked={reveal.enabled} onChange={(v) => patchReveal({ enabled: v })} label="Weekly Review reveal" />
@@ -1130,7 +1130,7 @@ function RemindersPane({
           disabled={!prefs.enabled}
           minutes={prefs.deadline_time_minutes}
           onCommit={(m) => patch({ deadline_time_minutes: m })}
-          className="!w-28"
+          className="!w-32"
           aria-label="On the day, at"
         />
       </Row>
@@ -1283,7 +1283,7 @@ function AccountPane() {
                   <div className="set-row-desc">
                     {m.linked
                       ? m.relay
-                        ? `Linked. Apple hides your address behind ${m.email}; mail still reaches you.`
+                        ? `Linked. Apple is hiding your address behind ${m.email} — mail from Nuvo still reaches you.`
                         : m.email
                           ? `Linked as ${m.email}.`
                           : "Linked to this account."

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useSubscription } from "../../hooks/useSubscription";
 import { trialDaysRemaining } from "../../lib/subscription";
 import { UpgradeModal } from "./UpgradeModal";
+import { Icon } from "../Icon";
+import { Button, IconButton } from "../kit";
 
 /** Slim dismissible bar shown while trialing, in both shells. Dismiss is
  *  in-memory only — it reappears next load, same as the trial itself.
@@ -29,30 +31,14 @@ export function TrialBanner() {
   return (
     <>
       {!dismissed && (
-        <div
-          role="status"
-          className={`trial-banner flex shrink-0 items-center gap-3 border-b px-4 py-1.5 text-caption ${
-            urgent
-              ? "border-signal/30 bg-signal-soft font-medium text-signal"
-              : "border-line bg-signal-soft/60 text-signal"
-          }`}
-        >
-          <span className="min-w-0 flex-1 truncate">{message}</span>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="tap fast shrink-0 font-medium underline underline-offset-2 hover:no-underline"
-          >
+        // A countdown, not "now": it never wears the signal. The last stretch
+        // reads in the caution colour; the rest is a quiet line on a well.
+        <div role="status" className="trial-banner" data-urgent={urgent || undefined}>
+          <span className="trial-banner-text">{message}</span>
+          <Button kind={urgent ? "primary" : "secondary"} size="xs" className="tap" onClick={() => setOpen(true)}>
             {urgent ? "Keep Nuvo" : "See plans"}
-          </button>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => setDismissed(true)}
-            className="tap-icon fast flex shrink-0 items-center justify-center text-signal/70 hover:text-signal"
-          >
-            ✕
-          </button>
+          </Button>
+          <IconButton size="xs" label="Dismiss" icon={<Icon name="close" size={12} />} onClick={() => setDismissed(true)} className="tap-icon" />
         </div>
       )}
       {open && <UpgradeModal onClose={() => setOpen(false)} />}

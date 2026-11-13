@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Btn } from "../../ui";
+import { PaneHeader } from "../../form";
+import { Button } from "../../kit";
 import { useSubscription } from "../../../hooks/useSubscription";
 import { iapErrorMessage, manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, trialDaysRemaining, type Subscription } from "../../../lib/subscription";
@@ -15,17 +16,14 @@ export function IapBillingPane() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h2 className="text-head font-semibold text-ink">Billing</h2>
-        <p className="mt-0.5 text-caption leading-snug text-muted">Your plan.</p>
-      </div>
+      <PaneHeader title="Billing" />
 
       {plan === "trialing" && subscription ? (
         <TrialingCard subscription={subscription} onUpgrade={() => setUpgrading(true)} />
       ) : plan === "active" && subscription ? (
         <ActiveCard subscription={subscription} apple={source === "apple"} />
       ) : (
-        <div className="text-caption text-muted">Loading…</div>
+        <p className="set-note">Loading…</p>
       )}
 
       {(plan === "trialing" || plan === "active") && <RestorePurchases />}
@@ -41,9 +39,11 @@ function RestorePurchases() {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="mt-4">
-      <button
-        type="button"
+    <div className="mt-2">
+      <Button
+        kind="ghost"
+        size="md"
+        full
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -57,11 +57,11 @@ function RestorePurchases() {
             setBusy(false);
           }
         }}
-        className="tap fast w-full py-3 text-caption text-muted hover:text-ink"
+        className="tap"
       >
         Restore purchases
-      </button>
-      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+      </Button>
+      {error && <div className="mt-2 text-caption text-danger">{error}</div>}
     </div>
   );
 }
@@ -81,18 +81,17 @@ function TrialingCard({
   });
 
   return (
-    <div>
-      <div className="rounded-lg border border-line bg-surface-2 p-3">
-        <div className="text-label uppercase tracking-wider text-muted">Current plan</div>
-        <div className="mt-0.5 text-body text-ink">
+    <div className="set-row">
+      <div className="set-row-label">
+        <span className="set-row-title">
           Free trial · {days} day{days === 1 ? "" : "s"} left
-        </div>
-        <div className="mt-1 text-caption text-muted">Ends {ends}</div>
+        </span>
+        <div className="set-row-desc">Ends {ends}</div>
       </div>
-      <div className="mt-4">
-        <Btn kind="primary" onClick={onUpgrade}>
+      <div className="set-row-ctl">
+        <Button kind="primary" className="tap" onClick={onUpgrade}>
           See plans
-        </Btn>
+        </Button>
       </div>
     </div>
   );
@@ -125,30 +124,34 @@ function ActiveCard({ subscription, apple }: { subscription: Subscription; apple
 
   return (
     <div>
-      <div className="rounded-lg border border-line bg-surface-2 p-3">
-        <div className="text-label uppercase tracking-wider text-muted">Current plan</div>
-        <div className="mt-0.5 text-body text-ink">Nuvo · active</div>
-        {periodEnd && (
-          <div className={`mt-1 text-caption ${ending ? "text-signal" : "text-muted"}`}>
-            {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
-          </div>
-        )}
+      <div className="set-row">
+        <div className="set-row-label">
+          <span className="set-row-title">Nuvo · active</span>
+          {periodEnd && (
+            <div className="set-row-desc" style={ending ? { color: "var(--warn)" } : undefined}>
+              {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
+            </div>
+          )}
+        </div>
       </div>
       {apple ? (
         <>
-          <div className="mt-4">
-            <Btn kind={ending ? "primary" : "ghost"} disabled={busy} onClick={manage}>
-              {busy ? "Opening…" : "Manage subscription"}
-            </Btn>
+          <div className="set-row">
+            <div className="set-row-label">
+              <span className="set-row-title">Subscription</span>
+              <div className="set-row-desc">Change or cancel in your Apple ID settings.</div>
+            </div>
+            <div className="set-row-ctl">
+              <Button kind={ending ? "primary" : "secondary"} className="tap" disabled={busy} onClick={manage}>
+                {busy ? "Opening…" : "Manage subscription"}
+              </Button>
+            </div>
           </div>
-          <p className="mt-2 text-caption text-muted">
-            Change or cancel in your Apple ID subscription settings.
-          </p>
         </>
       ) : (
-        <p className="mt-3 text-caption leading-snug text-muted">Your subscription is active.</p>
+        null
       )}
-      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+      {error && <div className="mt-2 text-caption text-danger">{error}</div>}
     </div>
   );
 }

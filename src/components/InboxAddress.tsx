@@ -10,7 +10,7 @@ import { useSettings } from "../hooks/useSettings";
 import { supabase } from "../lib/supabase";
 import { Icon } from "./Icon";
 import { PaneHeader } from "./form";
-import { Btn } from "./ui";
+import { Button, SectionHeader } from "./kit";
 
 async function copyText(text: string, ok: string) {
   try {
@@ -50,69 +50,44 @@ export function InboxAddressCard({ rotate = false }: { rotate?: boolean }) {
 
   if (isLoading) return null;
   if (!address) {
-    return (
-      <p className="text-caption leading-snug text-muted">
-        No inbox address on this account yet.
-      </p>
-    );
+    return <p className="set-note">No address yet</p>;
   }
 
   return (
     <div data-marquee="inbox-address">
-      <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span
-            aria-hidden
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent"
-          >
-            <Icon name="mail" size={16} />
+      <div className="set-row">
+        <span className="set-acct-mark" aria-hidden>
+          <Icon name="mail" size={14} />
+        </span>
+        <div className="set-row-label">
+          <span className="set-row-title break-all" data-selectable>
+            {address}
           </span>
-          <div className="min-w-0">
-            <div className="mono break-all text-caption text-ink">{address}</div>
-            <p className="text-label leading-snug text-muted">
-              Subject becomes an inbox task. Nothing is scheduled.
-            </p>
-          </div>
+          <div className="set-row-desc">Subject becomes an inbox task. Nothing is scheduled.</div>
         </div>
-        <Btn
-          kind="primary"
-          className="tap shrink-0"
-          onClick={() => void copyText(address, "Address copied")}
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <Icon name="copy" size={13} />
+        <div className="set-row-ctl">
+          <Button kind="primary" className="tap" icon={<Icon name="copy" size={13} />} onClick={() => void copyText(address, "Address copied")}>
             Copy
-          </span>
-        </Btn>
+          </Button>
+        </div>
       </div>
       {rotate &&
         (confirmRotate ? (
-          <div className="mt-3 space-y-2">
-            <p className="text-caption leading-snug text-muted">
-              A new address replaces this one. Mail to the old address will stop
-              landing in your inbox.
-            </p>
+          <div className="set-well">
+            <p className="set-note">A new address replaces this one. Mail to the old one stops landing.</p>
             <div className="flex flex-wrap gap-2">
-              <Btn
-                className="tap"
-                disabled={mint.isPending}
-                onClick={() => mint.mutate()}
-              >
+              <Button kind="danger" className="tap" disabled={mint.isPending} onClick={() => mint.mutate()}>
                 {mint.isPending ? "Minting…" : "Replace address"}
-              </Btn>
-              <Btn className="tap" onClick={() => setConfirmRotate(false)}>
+              </Button>
+              <Button kind="ghost" className="tap" onClick={() => setConfirmRotate(false)}>
                 Keep this one
-              </Btn>
+              </Button>
             </div>
           </div>
         ) : (
-          <button
-            type="button"
-            className="tap mt-2 min-h-[44px] text-left text-label text-muted hover:text-ink"
-            onClick={() => setConfirmRotate(true)}
-          >
+          <Button kind="ghost" className="tap mt-2 -ml-2" onClick={() => setConfirmRotate(true)}>
             Get a new address
-          </button>
+          </Button>
         ))}
     </div>
   );
@@ -122,13 +97,8 @@ export function InboxAddressCard({ rotate = false }: { rotate?: boolean }) {
 export function InboxAddressPane() {
   return (
     <div>
-      <PaneHeader
-        title="Inbox address"
-        sub="Forward a mail and it lands in your inbox. The subject is the task. This is not a mailbox."
-      />
-      <div className="max-w-2xl">
-        <InboxAddressCard rotate />
-      </div>
+      <PaneHeader title="Inbox address" />
+      <InboxAddressCard rotate />
     </div>
   );
 }
@@ -137,10 +107,8 @@ export function InboxAddressPane() {
 export function InboxAddressHint() {
   return (
     <div className="mt-6 px-3 text-left sm:px-4">
-      <div className="section-label">Or forward a mail</div>
-      <div className="mt-2">
-        <InboxAddressCard />
-      </div>
+      <SectionHeader title="Or forward a mail" className="!px-0" />
+      <InboxAddressCard />
     </div>
   );
 }

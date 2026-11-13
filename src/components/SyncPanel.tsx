@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useOnline } from "../hooks/useOnline";
 import { useOutbox, useOutboxParked, outboxSummary } from "../hooks/useOutbox";
 import { discard, parkedOps, syncNowIfConfigured, unpark, type Op } from "../lib/sync";
+import { Button, SectionHeader } from "./kit";
 
 /**
  * The sync layer's one surface — and it lives in Settings, not above the app.
@@ -34,74 +35,62 @@ export default function SyncPanel() {
 
   return (
     <div>
-      <div className="section-label mb-2 mt-6">Sync</div>
-
-      <div className="rounded-lg border border-line bg-surface-2/40 px-3.5 py-3">
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className={`h-2 w-2 shrink-0 rounded-full ${
-              status.parked > 0 ? "bg-signal" : online ? "bg-accent" : "bg-muted"
-            }`}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="text-body text-ink">{summary ?? "Everything is saved"}</div>
-            <p className="text-caption text-muted">
-              {status.parked > 0
-                ? "These stayed on this device. Retry them, or discard them if they're no longer wanted."
-                : online
-                  ? "Changes are written here first, then sent. You don't have to watch this."
-                  : "Work you do now is kept on this device and sent when you're back."}
-            </p>
+      <SectionHeader title="Sync" className="set-group" />
+      <div className="set-row">
+        <span
+          aria-hidden
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: status.parked > 0 ? "var(--danger)" : online ? "var(--ok)" : "var(--faint)" }}
+        />
+        <div className="set-row-label">
+          <span className="set-row-title">{summary ?? "Everything is saved"}</span>
+          <div className="set-row-desc">
+            {status.parked > 0
+              ? "These stayed on this device. Retry them, or discard them."
+              : online
+                ? "Written here first, then sent."
+                : "Kept on this device until you're back."}
           </div>
-
-          {status.parked === 0 && status.pending > 0 && online && !status.syncing && (
-            <button
-              onClick={() => void syncNowIfConfigured()}
-              className="tap fast shrink-0 rounded-md border border-line px-2.5 py-1 text-label font-medium"
-            >
-              Sync now
-            </button>
-          )}
         </div>
-
-        {/* Two causes now, so the copy names neither: storage that was never
-            available (private browsing, an evicted origin) and storage that
-            refused a single write (a full disk). The second recovers on its
-            own the next time a write lands, so this must read as a current
-            state rather than a verdict on the browser. */}
-        {!status.durable && (
-          <p className="mt-2 border-t border-line pt-2 text-caption text-signal">
-            Local storage isn't accepting writes right now, so unsent work is being
-            kept in memory and won't survive a restart. It still sends normally.
-          </p>
-        )}
-
-        {ops.length > 0 && (
-          <ul className="mt-2 divide-y divide-line border-t border-line">
-            {ops.map((op) => (
-              <li key={op.seq} className="flex items-start gap-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-body">{describe(op)}</p>
-                  <p className="mt-0.5 text-meta text-muted">{op.lastError ?? "Rejected"}</p>
-                </div>
-                <button
-                  onClick={() => void unpark([op.seq]).then(() => syncNowIfConfigured()).then(reload)}
-                  className="tap fast shrink-0 rounded-md border border-line px-2 py-1 text-label"
-                >
-                  Retry
-                </button>
-                <button
-                  onClick={() => void discard([op.seq]).then(reload)}
-                  className="tap fast shrink-0 rounded-md border border-line px-2 py-1 text-label text-muted"
-                >
-                  Discard
-                </button>
-              </li>
-            ))}
-          </ul>
+        {status.parked === 0 && status.pending > 0 && online && !status.syncing && (
+          <div className="set-row-ctl">
+            <Button className="tap" onClick={() => void syncNowIfConfigured()}>
+              Sync now
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Two causes now, so the copy names neither: storage that was never
+          available (private browsing, an evicted origin) and storage that
+          refused a single write (a full disk). The second recovers on its
+          own the next time a write lands, so this must read as a current
+          state rather than a verdict on the browser. */}
+      {!status.durable && (
+        <p className="set-note border-b border-[var(--line-1)] py-2.5" style={{ color: "var(--warn)" }}>
+          Local storage isn't accepting writes right now, so unsent work is kept in memory and won't survive a restart.
+          It still sends normally.
+        </p>
+      )}
+
+      {ops.length > 0 && (
+        <ul className="set-list">
+          {ops.map((op) => (
+            <li key={op.seq} className="set-list-row">
+              <span className="set-list-main">
+                <span className="set-list-title">{describe(op)}</span>
+                <span className="set-list-meta">{op.lastError ?? "Rejected"}</span>
+              </span>
+              <Button size="sm" className="tap" onClick={() => void unpark([op.seq]).then(() => syncNowIfConfigured()).then(reload)}>
+                Retry
+              </Button>
+              <Button size="sm" kind="ghost" className="tap" onClick={() => void discard([op.seq]).then(reload)}>
+                Discard
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

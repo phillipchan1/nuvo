@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "../Icon";
+import { Button } from "../kit";
 import { startCheckout, openBillingUrl, type CheckoutPlan } from "../../lib/stripeBilling";
 import { INCLUDED, PLANS } from "./plans";
 
@@ -25,7 +26,7 @@ export function PlanChooser({ cta = "Continue to checkout" }: { cta?: string }) 
 
   return (
     <div>
-      <div role="radiogroup" aria-label="Choose a plan" className="grid gap-2 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Choose a plan" className="plan-grid">
         {PLANS.map((p) => {
           const selected = plan === p.id;
           return (
@@ -35,57 +36,44 @@ export function PlanChooser({ cta = "Continue to checkout" }: { cta?: string }) 
               role="radio"
               aria-checked={selected}
               onClick={() => setPlan(p.id)}
-              className={`tap fast rounded-lg border p-3.5 text-left ${
-                selected
-                  ? "glass-lift border-accent bg-accent-soft"
-                  : "border-line bg-surface-2 hover:border-line-strong"
-              }`}
+              className="plan-card tap"
             >
-              <div className="flex items-baseline gap-2">
-                <span className="text-body font-medium text-ink">{p.label}</span>
-                {p.badge && (
-                  <span className="section-label ml-auto text-accent">{p.badge}</span>
-                )}
-              </div>
-              <div className="mt-1.5 flex items-baseline gap-1">
-                <span className="mono text-lead text-ink">${p.perMonth}</span>
-                <span className="text-caption text-muted">/mo</span>
-              </div>
-              <div className="mt-0.5 text-caption text-muted">{p.billed}</div>
+              <span className="plan-card-head">
+                <span>{p.label}</span>
+                {p.badge && <span className="k-chip" data-tone="accent">{p.badge}</span>}
+              </span>
+              <span className="plan-card-price">
+                ${p.perMonth}
+                <small>/mo</small>
+              </span>
+              <span className="plan-card-sub">{p.billed}</span>
             </button>
           );
         })}
       </div>
 
-      <button
-        type="button"
-        disabled={busy}
-        onClick={go}
-        className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-4 py-3 text-body font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-      >
+      <Button kind="primary" size="md" full disabled={busy} onClick={go} className="tap mt-3">
         {busy ? "Taking you to checkout…" : cta}
-      </button>
+      </Button>
 
-      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+      {error && <div className="mt-2 text-caption text-danger">{error}</div>}
 
-      <ul className="mt-5 space-y-2">
+      <ul className="plan-included">
         {INCLUDED.map((line) => (
-          <li key={line} className="flex items-start gap-2.5 text-caption text-muted">
+          <li key={line}>
             <Check />
-            <span className="leading-snug">{line}</span>
+            <span>{line}</span>
           </li>
         ))}
       </ul>
 
-      <div className="mt-5 border-t border-line pt-3 text-micro text-muted">
-        Cancel anytime · Secure checkout by Stripe
-      </div>
+      <p className="set-note plan-fine">Cancel anytime · Secure checkout by Stripe</p>
     </div>
   );
 }
 
 function Check() {
   return (
-    <Icon name="check" size={14} className="mt-0.5 shrink-0 text-accent" />
+    <Icon name="check" size={14} />
   );
 }
