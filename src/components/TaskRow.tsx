@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { haptic } from "../lib/haptics";
 import { resistedTravel } from "../lib/gesture";
 import { Icon } from "./Icon";
@@ -6,15 +6,29 @@ import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { autoFiled, liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
-import { carriedTitle, RecurMark } from "./ui";
+import { carriedTitle } from "./ui";
 import { pressable } from "../lib/a11y";
 import { motionMs, motionOff } from "../lib/motion";
+import { at, span } from "./mobile/dayPlan";
+import { Button, Chip, Dot, IconButton, TaskCheck } from "./kit";
+
+// The task row — ONE row, wherever a task appears, on both shells (D-111).
+//
+// Instrument (D-190): a single line in the kit's list-row geometry — the round
+// TaskCheck · the title · where it belongs · the facts in tabular figures ·
+// the domain's Dot. 32px and inset on the desktop, 48px and full-bleed on a
+// phone (`.task-row`, styles/rail.css). Selected is an accent wash with an
+// accent edge, in place; done is faint; hover is instant in and fades out.
+//
+// Every row is identical in SHAPE, which is what makes a dense list calm: one
+// line, one height, the facts always in the same order. The title truncates —
+// a title you can open beats a column you can't scan.
 
 /** The whole completion — LAND (the check stamps, the strike draws), then LET
  *  GO (the row folds away) — read from the material's `--d-task-complete`
- *  (styles/momentum.css), so the write waits exactly as long as this skin's
- *  row takes to leave. 440ms is Paper's value, used only when no stylesheet
- *  answers (a test). D-187. */
+ *  (styles/momentum.css), so the write waits exactly as long as the row takes
+ *  to leave. 440ms is the fallback, used only when no stylesheet answers (a
+ *  test). D-187. */
 const COMPLETE_FALLBACK_MS = 440;
 
 export interface TaskMeta {
@@ -24,7 +38,7 @@ export interface TaskMeta {
   domainColor?: string | null;
 }
 
-/** Bottom status bar — domain hue on the strip, name states specificity. */
+/** Where a row belongs — the domain's hue, and the name that states it. */
 type RowIdentity = {
   barColor: string | null;
   placeName: string | null;
@@ -37,6 +51,9 @@ type RowIdentity = {
    *  one that's already set. Null when there's nothing to contrast against, or
    *  the suggestion agrees with the current place. */
   currentName: string | null;
+  /** The place is a project or initiative (named on the row), not just a
+   *  domain (which the Dot already says). */
+  filed: boolean;
 };
 
 /** The task's real, already-filed place — ignoring any live suggestion. */
@@ -52,6 +69,7 @@ function filedIdentity(
     proposal: false,
     proposalColor: null,
     currentName: null,
+    filed: false,
   };
   const domainColor = meta?.domainColor ?? accent ?? null;
   const domainName = meta?.domain ?? null;
@@ -63,6 +81,7 @@ function filedIdentity(
       barColor: domainColor,
       placeName: filedName,
       placeHint: domainName ? `${filedName} · ${domainName}` : filedName,
+      filed: true,
     };
   }
 
@@ -99,97 +118,34 @@ function resolveRowIdentity(
     proposal: true,
     proposalColor: groom.domainColor ?? domainColor,
     currentName: filed.placeName && filed.placeName !== name ? filed.placeName : null,
+    filed: true,
   };
 }
 
-/** Status/meta — two steps below the title so it reads as primary.
- *
- *  The desktop step used to be a bare `text-[8px]`: below the type scale's own
- *  floor, below any legibility floor, and applied to the highest-frequency
- *  loop in the product (inbox triage reads its Accept / ✕ through this class).
- *  It is now `--text-micro`, the smallest step the scale actually owns, which
- *  costs 1.5px of density and buys back a readable row. Phones keep the larger
- *  caption step. */
-const META = "text-caption md:text-micro";
-
+/** The place, said in words — only when the Dot alone can't say it: a project
+ *  or initiative by name, or a proposal (which must name what it proposes). */
 function PlaceTag({ identity }: { identity: RowIdentity }) {
   if (!identity.placeName || !identity.placeHint) return null;
-  const color = identity.proposal ? identity.proposalColor : identity.barColor;
-  const tinted = color
-    ? { color: `color-mix(in srgb, ${color} 55%, var(--muted))` }
-    : undefined;
-
-  if (identity.proposal && color) {
-    const hint = identity.currentName
-      ? `${identity.currentName} → ${identity.placeHint}`
-      : identity.placeHint;
+  if (identity.proposal) {
+    const hint = identity.currentName ? `${identity.currentName} → ${identity.placeHint}` : identity.placeHint;
     return (
-      <span title={hint} className={`flex min-w-0 max-w-full items-center gap-1 truncate ${META}`}>
-        {identity.currentName && (
-          <span className="shrink-0 text-muted/50 line-through">{identity.currentName}</span>
-        )}
-        <span
-          className="min-w-0 truncate rounded px-1.5 py-px"
-          style={{
-            ...tinted,
-            background: `color-mix(in srgb, ${color} 8%, transparent)`,
-          }}
-        >
-          {identity.placeName}
-        </span>
+      <span className="task-row-place" title={hint}>
+        {identity.currentName && <s>{identity.currentName}</s>}
+        <Chip dot={identity.proposalColor ?? undefined}>{identity.placeName}</Chip>
       </span>
     );
   }
-
+  if (!identity.filed) return null;
   return (
-    <span title={identity.placeHint} className={`min-w-0 truncate ${META} text-muted`} style={tinted}>
+    <span className="task-row-place" title={identity.placeHint}>
       {identity.placeName}
     </span>
   );
 }
 
-function StatsCluster({
-  showDur,
-  showState,
-  recurring,
-  acceptControls,
-}: {
-  showDur: string | null;
-  showState: { text: string; signal: boolean; title?: string } | null;
-  recurring: boolean;
-  acceptControls: ReactNode;
-}) {
-  if (!showDur && !showState && !recurring && !acceptControls) return null;
-
-  return (
-    <span className={`flex shrink-0 items-center gap-2 ${META}`}>
-      {recurring && (
-        <span className="text-muted" title="Repeats">
-          <RecurMark className="opacity-50" />
-        </span>
-      )}
-      {showDur && <span className="mono text-muted">{showDur}</span>}
-      {showDur && showState && (
-        <span className="text-muted/35 select-none" aria-hidden>
-          ·
-        </span>
-      )}
-      {showState && (
-        <span
-          title={showState.title}
-          className={`mono ${showState.signal ? "font-medium text-signal" : "text-muted"}`}
-        >
-          {showState.text}
-        </span>
-      )}
-      {acceptControls}
-    </span>
-  );
-}
-
 /** Imperative escape hatch for keyboard-driven completion, which has no click
- *  to hang the row's bloom-and-collapse animation off of — `triggerToggle()`
- *  runs the exact same path `toggle()` gives the checkbox. */
+ *  to hang the row's land-and-let-go off of — `triggerToggle()` runs the exact
+ *  same path `toggle()` gives the checkbox. */
 export interface TaskRowHandle {
   triggerToggle: () => void;
 }
@@ -223,12 +179,15 @@ const TaskRow = forwardRef<TaskRowHandle, {
   /** Optional trailing control (e.g. "▸ today" in the Week rail). */
   action?: React.ReactNode;
   /** The surface already states this row's *when* in its own voice, so the row
-   *  must not restate it as a bare date word. Set by the rail's crown, where a
-   *  placed piece carries a `Tue 7:15am ↗` chip: "45m · tomorrow" beside it is
-   *  the same day said twice, and two answers to one question is P8. Suppresses
-   *  ONLY the date label — lateness, a deadline and the roll count are different
+   *  must not restate it — neither the date word nor the clock. Set by the
+   *  rail's crown, where a placed piece carries a `Tue 7:15am ↗` chip: "45m ·
+   *  tomorrow" beside it is the same day said twice, and two answers to one
+   *  question is P8. Lateness, a deadline and the roll count are different
    *  facts the chip doesn't carry, and they stay. */
   whenShown?: boolean;
+  /** The surface already names the DAY (the rail's Today face) — the row drops
+   *  the date word but still says its clock. */
+  dayShown?: boolean;
   /** Extra `data-*` stamped on the row's ROOT, for drops that need more than the
    *  id. `CalendarPane` mounts one FullCalendar `Draggable` over the rail with
    *  `itemSelector: "[data-task-drag]"` and reads `data-task-week` /
@@ -246,7 +205,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
   /** The surface's ticking clock. Passed so a row can never disagree with the
    *  group it was sorted into — both sides must judge "overdue" off one now. */
   now?: Date;
-  /** Mobile-only: horizontal swipe actions — right completes (the same bloom
+  /** Mobile-only: horizontal swipe actions — right completes (the same land
    *  path as the checkbox), left defers via this handler (snooze, with its own
    *  undo toast). Pointer events, never HTML5 DnD (Tauri swallows it). Omitted
    *  on desktop, where the row is byte-identical to before. */
@@ -255,7 +214,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
   editing?: boolean;
   onRename?: (title: string | null) => void;
   /** The checkbox sits on the host's left edge (a record's spine) instead of
-   *  inset — the hover wash and the lift still get room either side. */
+   *  inset — the hover wash and the selection still get room either side. */
   flush?: boolean;
 }>(function TaskRow(
   {
@@ -277,6 +236,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     meta,
     action,
     whenShown,
+    dayShown,
     dragData,
     onAcceptSuggestion,
     onDismissSuggestion,
@@ -310,14 +270,13 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const toggle = () => {
     if (completing) return;
     if (!done) {
-      // Reduced motion, or a material that doesn't move (E-ink): the write is
-      // the whole act — no land, no wait.
+      // Reduced motion: the write is the whole act — no land, no wait.
       if (motionOff()) {
         onToggleDone();
         return;
       }
       // Pin the fold's starting box to what's actually on screen (see
-      // `task-complete` in index.css) — a row can be one line or three.
+      // `task-complete` in index.css).
       const el = rowEl.current;
       if (el) {
         const cs = getComputedStyle(el);
@@ -479,7 +438,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
         }
       : {};
 
-  // Format do_date relative
+  // ── the facts a row states ──────────────────────────────────────────────────
+  // WHERE it belongs (the Dot, and a project's name), WHEN or HOW LONG, and —
+  // only when abnormal — WHAT STATE it's in. In that order, every row.
   const dateLabel = (() => {
     if (!task.do_date) return null;
     const t = todayISO();
@@ -489,144 +450,99 @@ const TaskRow = forwardRef<TaskRowHandle, {
     return task.do_date.slice(5).replace("-", "/"); // MM/DD
   })();
 
-  // ── the three facts a row states ────────────────────────────────────────────
-  // WHERE it belongs, HOW LONG it takes, and — only when abnormal — WHAT STATE
-  // it's in. That's the set; everything else the row used to carry was ours, not
-  // the reader's.
-  //
-  // No clock time. On the Schedule the calendar sits inches away rendering the
-  // very same block, and design-language's own rule kills a list that restates
-  // the calendar.
+  // The clock, in the one spelling (`at` / `span`, dayPlan) — except where the
+  // surface already says when: the crown's time chip, or a slot's header (a
+  // slot's tasks share its start, so a clock on each would be one time, wrong
+  // N times).
+  const clockText = (() => {
+    if (!task.start_time || whenShown || task.slot_id) return null;
+    const start = new Date(task.start_time);
+    if (Number.isNaN(start.getTime())) return null;
+    return task.duration_minutes ? span(start, new Date(start.getTime() + task.duration_minutes * 60_000)) : at(start);
+  })();
   const durText = task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
-  const dateText = dateLabel && !task.start_time && !whenShown ? dateLabel : null;
+  const dateText = dateLabel && !task.start_time && !whenShown && !dayShown ? dateLabel : null;
   // `roll_count` is days carried (D-147), so the mark says how long, not how often.
   const rollText = task.roll_count > 0 ? `↻${task.roll_count}d` : null;
-  const rollTitle = task.roll_count > 0 ? carriedTitle(task.roll_count) : "Repeats";
   const pastDeadline = Boolean(task.deadline && !done && task.deadline < todayISO());
 
   // AT MOST ONE `--signal` item per row, and it says how far gone the work is
-  // rather than naming a state: "2d late" is the fact you decide on; "overdue" is
-  // a word you already knew from the group it's sitting in.
+  // rather than naming a state: "2d late" is the fact you decide on.
   const lateText = overdue ? fmtLateness(task, now) : null;
-  const state: { text: string; signal: boolean; title?: string } | null = lateText
-    ? { text: lateText, signal: true, title: task.start_time ? `Was ${fmtTime(task.start_time)}` : undefined }
+  type State = { text: string; kind: "late" | "deadline" | "roll" | "date"; title?: string };
+  const state: State | null = lateText
+    ? { text: lateText, kind: "late", title: task.start_time ? `Was ${fmtTime(task.start_time)}` : undefined }
     : pastDeadline && task.deadline
-      ? { text: `⚑${task.deadline.slice(5)}`, signal: true, title: `Deadline passed ${task.deadline}` }
+      ? { text: `⚑${task.deadline.slice(5)}`, kind: "late", title: `Deadline passed ${task.deadline}` }
       : task.deadline && !done
-        ? { text: `⚑${task.deadline.slice(5)}`, signal: false, title: `Deadline ${task.deadline}` }
+        ? { text: `⚑${task.deadline.slice(5)}`, kind: "deadline", title: `Deadline ${task.deadline}` }
         : rollText
-          ? { text: rollText, signal: false, title: rollTitle }
+          ? { text: rollText, kind: "roll", title: carriedTitle(task.roll_count) }
           : dateText
-            ? { text: dateText, signal: false }
+            ? { text: dateText, kind: "date" }
             : null;
 
   // Passive grooming's guess — surfaced only where the row wired up accept/dismiss
   // (the inbox), and only when fresh and actionable.
   const groom = onAcceptSuggestion ? liveSuggestion(task) : null;
-  // A domain Nuvo already wrote. It is not a proposal: the place tag shows it as
+  // A domain Nuvo already wrote. It is not a proposal: the place shows it as
   // filed (the task really carries that domain), and the only act left is Undo.
   const auto = !groom && onUndoAutoFile ? autoFiled(task) : null;
 
-  // ── one line, one height, one order ─────────────────────────────────────────
-  // Calm in a dense list comes from UNIFORMITY, not from showing less. Every row
-  // is one line of the same height: title left, then a narrow band of metadata
-  // right, always in the same order (state · weight · area). Six tasks are six eye
-  // stops. The two-line version was ragged — some rows one line, some two, the
-  // area chip landing at a different x on every row — and eleven eye stops at
-  // three indents is what actually reads as noise, whatever the palette. The
-  // reference list we kept losing to shows MORE metadata than we did and still
-  // reads quieter, because every row of it is identical in shape.
-  //
-  // The title truncates. That is the price, and it's the right price: a title you
-  // can open beats a column you can't scan.
-  // The INBOX wears the same row. A grooming guess used to get its own shape — a
-  // small-caps parent eyebrow, a third line for energy + estimate, `items-start`,
-  // 67px — so the inbox mixed 44px and 67px rows and stayed exactly as ragged as
-  // the Today list used to be. A guess is still distinguishable, but through the
-  // thing that actually differs: it carries Accept / ✕. Not through a different
-  // height. The suggested parent takes a pill (in its own hue, so a proposal
-  // still reads as a proposal), the estimate takes the weight slot, and the
-  // energy read survives in the row's tooltip rather than a whole line.
-  // Title on top; floating meta below — schedule · duration · place, fixed slots.
   const identity = resolveRowIdentity(meta, taskLabels, groom, accent);
-  const showDur = groom
-    ? (groom.durationMinutes ? fmtDuration(groom.durationMinutes) : null)
-    : durText;
+  // A guess carries its own estimate; a late row's clock is history, so its
+  // lateness stands in for it.
+  const showTime = groom
+    ? groom.durationMinutes
+      ? fmtDuration(groom.durationMinutes)
+      : null
+    : lateText
+      ? durText
+      : clockText ?? durText;
   const showState = groom ? null : state;
-  const hasPlace = Boolean(identity.placeName);
-  const hasMeta = Boolean(showState || showDur || task.recurrence_id || groom || auto);
 
   // Accept / dismiss — the one thing that genuinely distinguishes a guess from a
-  // filed fact, so it's what marks the row instead of a taller silhouette.
+  // filed fact. Opposite decisions sit 4px apart in different weights, never in
+  // identical type.
   const acceptControls = groom ? (
-    // gap-2 on the desk, not gap-1: Accept and ✕ are opposite decisions, and at
-    // 4px apart in identical type a misclick threw away the guess. 8px is the
-    // WCAG 2.5.8 spacing allowance and the smallest gap that reads as "two
-    // controls" rather than one cluster.
-    <span className="flex shrink-0 items-center gap-1 md:gap-2" onClick={(e) => e.stopPropagation()}>
-      {/* The desktop floor is written as `md:min-h-6` rather than a `.tap-desk`
-          class because these buttons already carry an explicit `md:min-h-0`
-          from the phone rule — two same-specificity declarations whose winner
-          would depend on stylesheet order. An explicit utility can't race. */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
-        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:px-2 md:py-px ${META} font-medium text-accent hover:bg-accent-soft`}
+    <span className="task-row-acts" onClick={(e) => e.stopPropagation()}>
+      <Button
+        size="xs"
+        className="tap-bloom"
+        onClick={(e) => {
+          e.stopPropagation();
+          onAcceptSuggestion?.();
+        }}
       >
         Accept
-      </button>
-      <button
-        aria-label="Dismiss suggestion"
-        onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
-        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:min-w-6 md:px-1 md:py-px ${META} text-muted hover:text-ink`}
-      >
-        ✕
-      </button>
+      </Button>
+      <IconButton
+        size="xs"
+        className="tap-bloom"
+        label="Dismiss suggestion"
+        icon={<Icon name="close" size={12} />}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismissSuggestion?.();
+        }}
+      />
     </span>
   ) : auto ? (
-    <span className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
-      <button
+    <span className="task-row-acts" onClick={(e) => e.stopPropagation()}>
+      <Button
+        size="xs"
+        kind="ghost"
+        className="tap-bloom"
         aria-label={`Undo: filed to ${auto.targetLabel}`}
-        onClick={(e) => { e.stopPropagation(); onUndoAutoFile?.(); }}
-        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:px-2 md:py-px ${META} font-medium text-muted hover:text-ink hover:bg-accent-soft`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onUndoAutoFile?.();
+        }}
       >
         Undo
-      </button>
+      </Button>
     </span>
   ) : null;
-
-  // Accept / ✕ deliberately do NOT travel inside StatsCluster any more. They
-  // used to ride whichever content line the stats landed on — the title line on
-  // a placeless row, the place line on a row carrying a domain chip — which put
-  // the same two controls at two different heights depending on the row's
-  // contents. Measured: 9.8px below the row's centre on a two-line row, dead
-  // centre on a one-line one. In a list you triage by clicking the same spot
-  // over and over, that is the whole cost. They are now a sibling of the
-  // content column, so the row's own `items-center` centres them against the
-  // full row height whatever it contains.
-  const stats = (
-    <StatsCluster
-      showDur={showDur}
-      showState={showState}
-      recurring={Boolean(task.recurrence_id)}
-      acceptControls={null}
-    />
-  );
-
-  // The rail is transparent, so its rows already sit ON `--bg` — which means the
-  // original `hover:bg-bg` / `selected:bg-bg` painted the row the exact colour it
-  // already was. Measured: canvas 0.8808 luminance, hover target 0.8808. Hover
-  // and selection were literal no-ops, which is why nothing here read as
-  // touchable.
-  // Then the first fix overshot: a full `bg-surface` row is a +11.6% luminance
-  // jump, which reads as the row lighting up rather than answering the pointer.
-  // `.row-hover` is 40% of that (~+3.9%) — see the note on it in index.css. The
-  // focal row still *lifts* rather than gaining a flat ring, and stays the louder
-  // of the two states, which is the correct order.
-  const bg = multiSelected
-    ? "bg-accent-soft"
-    : selected
-      ? "glass-lift-row"
-      : "row-hover";
 
   const rowHint = auto
     ? `Filed to ${auto.targetLabel} automatically${auto.rationale ? ` · ${auto.rationale}` : ""}`
@@ -635,6 +551,11 @@ const TaskRow = forwardRef<TaskRowHandle, {
         .filter(Boolean)
         .join(" · ")
     : undefined;
+
+  const checked = done || completing;
+  // The Dot is identity, so a proposal (which draws its own, in a chip) and a
+  // row with no place at all have none.
+  const dotColor = identity.proposal ? null : identity.barColor;
 
   return (
     <div
@@ -661,14 +582,17 @@ const TaskRow = forwardRef<TaskRowHandle, {
       )}
       // `aria-current`, not `aria-selected`: the row announces itself as a
       // button (Enter opens it), and `aria-selected` is only meaningful on an
-      // option inside a listbox. Claiming it here would describe a listbox the
-      // rail doesn't implement.
+      // option inside a listbox.
       aria-current={selected || multiSelected ? "true" : undefined}
       title={rowHint}
       data-swiping={swipeX !== 0 ? "true" : undefined}
-      className={`group select-none border-b border-line ${flush ? "-mx-2 px-2" : "px-3.5"} py-2.5 last:border-b-0 ${
-        completing ? "task-completing" : "row-lift-instant"
-      } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
+      data-selected={selected && !dragging ? "" : undefined}
+      data-multi={multiSelected && !selected && !dragging ? "" : undefined}
+      data-done={done ? "" : undefined}
+      data-completing={completing ? "" : undefined}
+      data-dragging={dragging ? "" : undefined}
+      data-flush={flush ? "" : undefined}
+      className={`task-row group ${completing ? "task-completing" : ""} ${swipeActions ? "overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
       {swipeActions && swipeX !== 0 && (() => {
@@ -677,38 +601,35 @@ const TaskRow = forwardRef<TaskRowHandle, {
         return (
           <div
             aria-hidden
-            className="absolute inset-0 flex items-center justify-between px-4 text-caption font-medium"
-            style={{
-              // A tint while you're deciding; solid once letting go will act.
-              background: armed ? hue : `color-mix(in srgb, ${hue} 14%, transparent)`,
-              transition: "background-color 120ms var(--ease-out)",
-            }}
+            className="task-row-swipe"
+            // A tint while you're deciding; solid once letting go will act.
+            style={{ background: armed ? hue : `color-mix(in srgb, ${hue} 14%, transparent)` }}
           >
             <span
               style={{
                 color: armed ? "var(--on-accent)" : "var(--ok)",
                 opacity: swipeX > 0 ? 1 : 0,
                 transform: `scale(${armed && swipeX > 0 ? 1.08 : 1})`,
-                transition: "transform 160ms var(--ease-spring), color 120ms",
               }}
             >
-              ✓ done
+              <Icon name="check" size={14} />
+              Done
             </span>
             <span
               style={{
                 color: armed ? "var(--on-accent)" : "var(--accent)",
                 opacity: swipeX < 0 ? 1 : 0,
                 transform: `scale(${armed && swipeX < 0 ? 1.08 : 1})`,
-                transition: "transform 160ms var(--ease-spring), color 120ms",
               }}
             >
-              tomorrow ↷
+              Tomorrow
+              <Icon name="arrow-right" size={14} />
             </span>
           </div>
         );
       })()}
       <div
-        className="flex min-w-0 items-center gap-3"
+        className="task-row-body"
         style={
           swipeActions
             ? {
@@ -718,72 +639,68 @@ const TaskRow = forwardRef<TaskRowHandle, {
             : undefined
         }
       >
-        <button
-          aria-label={done ? "Mark not done" : "Mark done"}
-          onClick={(e) => { e.stopPropagation(); toggle(); }}
-          // tap-bloom gives the phone 44px; tap-desk-bloom gives the mouse its
-          // own 24px floor. Both are invisible ::before area — the drawn 15px
-          // box is untouched, so the row's density reads exactly as before.
-          // LAND: the box stamps in on the material's land easing (a spring on
-          // Paper, a click on Terminal) with the bloom ring around it, once.
-          className={`tap-bloom tap-desk-bloom relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border transition-none ${
-            completing ? "bloom land-stamp" : ""
-          } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
-        >
-          {(done || completing) && (
-            <Icon name="check" size={9} />
-          )}
-        </button>
+        {/* LAND: the check stamps in on the material's land easing, once — the
+            kit's round TaskCheck, which keeps a 28px (44px under touch) hit
+            area around a 14px mark. */}
+        <TaskCheck
+          checked={checked}
+          onChange={() => toggle()}
+          label={done ? "Mark not done" : "Mark done"}
+          className={completing ? "land-stamp" : undefined}
+        />
 
-        <div className={`min-w-0 flex-1 ${hasPlace ? "flex flex-col gap-1" : ""}`}>
-          <div className="flex min-w-0 items-center gap-2">
-            {editing ? (
-              <RenameField title={task.title} onDone={(t) => onRename?.(t)} />
-            ) : (
+        {editing ? (
+          <RenameField title={task.title} onDone={(t) => onRename?.(t)} />
+        ) : (
+          <span className="task-row-title">
+            {/* While it lands, the strike is DRAWN across the words (an inline
+                span, so it is exactly as long as the title) rather than
+                switched on — the one beat that says "that's done". */}
+            {completing ? <span className="land-strike">{task.title}</span> : task.title}
+          </span>
+        )}
+
+        {!done && (task.priority === "high" || task.priority === "medium") && (
+          <span
+            // Priority isn't time: `--signal` is now / late (D-054 — one
+            // signal mark per row). Ink carries the weight instead.
+            className="task-row-flag"
+            data-tone={task.priority === "high" ? undefined : "medium"}
+            title={task.priority === "high" ? "High priority" : "Medium priority"}
+            aria-label={task.priority === "high" ? "High priority" : "Medium priority"}
+          >
+            !
+          </span>
+        )}
+
+        {task.prework_at && task.prework && !done && (
+          <span className="task-row-flag" data-tone="prework" title="Prework ready">
+            ✦
+          </span>
+        )}
+
+        <PlaceTag identity={identity} />
+
+        {(showState || showTime || task.recurrence_id) && (
+          <span className="task-row-meta">
+            {task.recurrence_id && <Icon name="repeat" size={12} title="Repeats" />}
+            {showState && (
               <span
-                className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done ? "text-muted line-through" : completing ? "text-muted" : ""}`}
+                title={showState.title}
+                data-late={showState.kind === "late" ? "" : undefined}
+                data-deadline={showState.kind === "deadline" ? "" : undefined}
               >
-                {/* While it lands, the strike is DRAWN across the words (an
-                    inline span, so it is exactly as long as the title) rather
-                    than switched on — the one beat that says "that's done". */}
-                {completing ? <span className="land-strike">{task.title}</span> : task.title}
+                {showState.text}
               </span>
             )}
+            {showTime && <span>{showTime}</span>}
+          </span>
+        )}
 
-            {!done && (task.priority === "high" || task.priority === "medium") && (
-              <span
-                // Priority isn't time: `--signal` is now / late (D-054 — one
-                // signal mark per row), and a late high-priority row spent it
-                // twice ("!" beside "4h late"). Ink carries the weight instead.
-                className={`mono shrink-0 text-meta font-bold ${task.priority === "high" ? "text-ink" : "text-muted"}`}
-                title={task.priority === "high" ? "High priority" : "Medium priority"}
-                aria-label={task.priority === "high" ? "High priority" : "Medium priority"}
-              >
-                !
-              </span>
-            )}
+        {action}
 
-            {task.prework_at && task.prework && !done && (
-              <span className="mono shrink-0 text-micro text-accent" title="Prework ready">
-                ✦
-              </span>
-            )}
+        {dotColor && <Dot color={dotColor} title={identity.placeHint ?? undefined} />}
 
-            {!hasPlace && hasMeta && stats}
-
-            {action}
-          </div>
-
-          {hasPlace && (
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <PlaceTag identity={identity} />
-              {stats}
-            </div>
-          )}
-        </div>
-
-        {/* Row-level, so it centres against the whole row rather than a text
-            line. See the note on `stats` above. */}
         {acceptControls}
       </div>
     </div>
@@ -823,8 +740,7 @@ function RenameField({ title, onDone }: { title: string; onDone: (title: string 
         }
       }}
       onBlur={() => finish(value)}
-      className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-head font-medium leading-snug outline-none md:text-caption"
-      style={{ boxShadow: "0 1px 0 var(--accent)" }}
+      className="nuvo-inline-input task-row-rename"
     />
   );
 }

@@ -1,0 +1,795 @@
+/* ════════════════════════════════════════════════════════════════════════
+   THE POOL — the Schedule rail and the task-list module (D-190).
+
+   Drawn from the kit's tokens only: radii --r-*, heights --h-*, surfaces
+   --panel/--raised/--sunk, hairlines --line-1/2, ink --ink/--ink-2/--muted/
+   --faint, intent --accent/--accent-wash/--accent-ring, --signal for now.
+
+   One task row (`.task-row`, TaskRow.tsx) serves every list on both shells:
+   32px and inset on the desktop, 48px and full-bleed on a phone. The row's
+   geometry is four numbers, so the slot header and the add box line up with
+   it by construction (one left edge per list).
+
+   Native feel: no cursor-pointer, hand-written :hover only under
+   (hover: hover), press feedback under (pointer: fine). Motion is transform
+   and opacity — rows repeat, so nothing per row costs a layer.
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --tr-pad: 8px;
+  --tr-check: 14px;
+  --tr-gap: 10px;
+  --tr-h: 32px;
+  --tr-title: 13px;
+}
+@media (pointer: coarse) {
+  :root { --tr-h: 48px; }
+}
+@media (max-width: 767px) {
+  :root {
+    --tr-pad: 16px;
+    --tr-check: 20px;
+    --tr-gap: 12px;
+    --tr-h: 48px;
+    --tr-title: 15px;
+  }
+}
+
+/* ── The task row ───────────────────────────────────────────────────────── */
+.task-row {
+  position: relative;
+  border-radius: var(--r-ctl);
+  color: var(--ink);
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Hover is a wash UNDER the row, on its own opacity: instant in, fades out —
+   and selection (the background) snaps both ways, because a transition on the
+   row's own fill would ease the previous selection out as lag. */
+.task-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .task-row:not([aria-current="true"]):hover::before {
+    opacity: 1;
+    transition-duration: 0ms;
+  }
+}
+.task-row-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--tr-gap);
+  min-height: var(--tr-h);
+  padding: 0 var(--tr-pad);
+  min-width: 0;
+}
+.task-row[data-flush] { margin: 0 calc(-1 * var(--tr-pad)); }
+.task-row[data-multi] { background: var(--accent-wash); }
+.task-row[data-selected] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.task-row[data-dragging] { opacity: 0.4; }
+html:root .task-row:focus-visible {
+  outline: none;
+  border-radius: var(--r-ctl);
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+}
+
+/* The check. The kit's TaskCheck lands whenever it reads checked; a row that
+   simply IS done (the Done tail opening, a refetch) must not stamp — only the
+   tick you just gave does (`.land-stamp`, D-187). */
+.task-row .k-check[aria-checked="true"]:not(.land-stamp) { animation: none; }
+.task-row .k-check { width: var(--tr-check); height: var(--tr-check); }
+
+.task-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 var(--tr-title) / 18px var(--font-sans);
+  letter-spacing: -0.003em;
+}
+.task-row[data-done] .task-row-title,
+.task-row[data-done] .task-row-meta { color: var(--faint); }
+.task-row[data-completing] .task-row-title { color: var(--muted); }
+.task-row-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: 450 var(--tr-title) / 18px var(--font-sans);
+  box-shadow: 0 1px 0 var(--accent);
+}
+
+/* Marks beside the title — priority and prework. Ink carries priority (never
+   the signal: that is now / late, D-054). */
+.task-row-flag {
+  flex: none;
+  font: 700 12px/1 var(--font-sans);
+  color: var(--ink);
+}
+.task-row-flag[data-tone="medium"] { color: var(--muted); }
+.task-row-flag[data-tone="prework"] { color: var(--accent); font-weight: 500; }
+
+/* Where it belongs — truncates first, before the title does. */
+.task-row-place {
+  flex: 0 4 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 12px/1 var(--font-sans);
+  color: var(--muted);
+}
+.task-row-place > s { color: var(--faint); margin-right: 4px; }
+.task-row-place .k-chip { max-width: 100%; }
+
+/* The facts on the right, in tabular figures. */
+.task-row-meta {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 450 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.task-row-meta [data-late] { color: var(--signal); font-weight: 600; }
+.task-row-meta [data-deadline] { color: var(--muted); }
+.task-row-meta > svg { color: var(--faint); }
+
+.task-row-acts {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Swipe (phone): the act's tint behind the row while you decide, solid once
+   letting go will act. */
+.task-row-swipe {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font: 600 13px/1 var(--font-sans);
+  transition: background-color var(--d-fast) var(--ease-out);
+}
+.task-row-swipe > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform var(--d-base) var(--ease-spring), color var(--d-fast);
+}
+
+/* The phone: full-bleed cells on hairlines, 48px, a 20px check. */
+@media (max-width: 767px) {
+  .task-row {
+    border-radius: 0;
+    border-bottom: 1px solid var(--line-1);
+  }
+  .task-row[data-flush] { margin: 0; }
+  .task-row-title { font-weight: 500; line-height: 20px; }
+  .task-row-meta { font-size: 12.5px; }
+}
+/* A row is a list cell, not a control: under a finger it greys rather than
+   dims, so its words stay legible (native.css's language for rows). */
+@media (hover: none) and (pointer: coarse) {
+  html .task-row[role="button"]:not([aria-disabled="true"]):active:not(:has(button:active, [role="button"]:active, input:active)) {
+    opacity: 1;
+    background-color: var(--press);
+  }
+}
+
+/* ── A task list (tasks/TaskListView) ──────────────────────────────────── */
+.task-list-empty {
+  padding: 6px var(--tr-pad);
+  font: 450 13px/1.4 var(--font-sans);
+  color: var(--faint);
+}
+@media (min-width: 768px) {
+  .task-composer-flush { margin: 0 calc(-1 * var(--tr-pad)); }
+}
+/* The phone's reorder grip — a hold on it reorders (a touch drag would fight
+   the scroll). */
+.task-list-grip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 32px;
+  touch-action: none;
+  color: var(--faint);
+  font: 500 13px/1 var(--font-sans);
+}
+.task-list-grip:active,
+.task-list-grip[data-arming] { color: var(--ink); }
+
+/* ── A slot, as the head of its tasks ───────────────────────────────────── */
+.slot-run-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--tr-gap);
+  min-height: var(--tr-h);
+  padding: 0 var(--tr-pad);
+  border-radius: var(--r-ctl);
+}
+.slot-run-ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--tr-check);
+  height: var(--tr-check);
+  padding: 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--on-accent);
+}
+.slot-run-ring::before { content: ""; position: absolute; inset: -7px; }
+.slot-run-ring[data-coverage="some"] { border-color: var(--accent); }
+.slot-run-ring[data-coverage="some"]::after {
+  content: "";
+  width: 50%;
+  height: 1.6px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.slot-run-ring[data-coverage="all"] { background: var(--accent); border-color: var(--accent); }
+.slot-run-ring-spacer { flex: none; width: var(--tr-check); }
+@media (hover: hover) {
+  .slot-run-ring[data-coverage="none"]:hover { border-color: var(--accent); background: var(--accent-wash); }
+}
+.slot-run-open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.slot-run-name {
+  flex: 0 0 auto;
+  max-width: 62%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 var(--tr-title) / 18px var(--font-sans);
+  color: var(--ink);
+}
+.slot-run-head[data-quiet] .slot-run-name { color: var(--muted); }
+.slot-run-dot { flex: none; }
+.slot-run-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 12px/1 var(--font-sans);
+  color: var(--faint);
+}
+.slot-run-head[data-state="empty"] .slot-run-note { color: var(--slot); }
+.slot-run-when {
+  flex: none;
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.slot-run-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .slot-run-head:has(.slot-run-open:hover)::before { opacity: 1; transition-duration: 0ms; }
+}
+html:root .slot-run-open:focus-visible { outline: none; box-shadow: inset 0 -2px 0 var(--accent-ring); border-radius: 0; }
+@media (max-width: 767px) {
+  .slot-run-head { border-radius: 0; border-bottom: 1px solid var(--line-1); }
+  .slot-run-ring::before { inset: -12px; }
+}
+/* The rail's slot group: its tasks hang off a hairline in the slot's hue, in
+   the list's gutter, so they read as inside it without a frame. */
+.slot-run-tasks { position: relative; }
+.slot-run-tasks::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--slot-h, var(--slot));
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ── The rail (LeftRail) ───────────────────────────────────────────────── */
+.rail-inner {
+  border-right: 1px solid var(--line-1);
+}
+.rail-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.rail-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .rail-resize:hover::after { opacity: 0.45; transition-duration: 0ms; }
+}
+.rail-resize:active::after { opacity: 0.8; }
+
+/* The crown — the planner's ONE hero, and the fact under it. */
+.crown {
+  border-bottom: 1px solid var(--line-1);
+}
+.crown-hero {
+  display: grid;
+  gap: 4px;
+  padding: 16px 16px 14px;
+}
+.crown-hero-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.crown-hero-line > .k-btn { margin-left: auto; }
+.crown-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.crown-fact-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+}
+@media (hover: hover) {
+  .crown-fact-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+}
+.crown-chev-spacer { flex: none; width: var(--h-xs); }
+.crown-fact {
+  margin: 0;
+  font: 450 12px/1.45 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.crown-fact b { color: var(--ink); font-weight: 600; }
+.crown-fact [data-warn] { color: var(--warn); }
+.crown-fact [data-warn] b { color: inherit; }
+.crown-door-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The week's projects — the deck card's anatomy at rail density: identity
+   (the ring, in the domain's hue) · the name · its weight, then the work as a
+   track with the pace tick. */
+.crown-projects { padding: 0 8px 6px; }
+.crown .k-section { padding: 0 16px; }
+.crown-proj { border-radius: var(--r-ctl); }
+.crown-proj-row {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  padding: 6px 8px 7px;
+  border-radius: var(--r-ctl);
+}
+.crown-proj-row[data-drag] { cursor: grab; }
+.crown-proj-row[data-drag]:active { cursor: grabbing; }
+.crown-proj-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .crown-proj-row:hover::before { opacity: 1; transition-duration: 0ms; }
+}
+.crown-proj-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 20px;
+}
+.crown-ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.crown-ring::before { content: ""; position: absolute; inset: -5px; }
+.crown-ring:disabled { opacity: 1; }
+html:root .crown-ring:focus-visible { outline: none; border-radius: 50%; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent-ring); }
+.crown-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 500 13px/18px var(--font-sans);
+  letter-spacing: -0.005em;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crown-proj[data-done] .crown-name { color: var(--faint); }
+html:root .crown-name:focus-visible { outline: none; border-radius: var(--r-chip); box-shadow: 0 0 0 2px var(--accent-ring); }
+.crown-meta {
+  flex: none;
+  font: 450 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.crown-proj-marks {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 22px;
+  min-height: 10px;
+}
+.crown-proj-marks .pace-track { flex: 1 1 auto; max-width: 160px; }
+.crown-proj-work { padding: 0 0 4px 14px; }
+.crown-time {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.crown-time > span { color: var(--faint); }
+@media (hover: hover) {
+  .crown-time:hover { background: var(--hover); color: var(--ink); }
+}
+
+/* The one mark that must never be missable: work with no time (--warn,
+   waiting-on-you — not --signal, which is now). */
+.no-time {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--warn);
+}
+.no-time::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+/* The faces — Today · Inbox (+ Trash, when it holds something) — the kit's
+   underline tabs, which double as the rail's drop router mid-drag. */
+.rail-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  height: 36px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line-1);
+}
+.rail-tab {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 13px/1 var(--font-sans);
+  transition: color var(--d-fast) var(--ease-out);
+}
+.rail-tab > .rail-tab-count {
+  color: var(--faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rail-tab[aria-pressed="true"] { color: var(--ink); }
+.rail-tab[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ink);
+}
+@media (hover: hover) {
+  .rail-tab[aria-pressed="false"]:hover { color: var(--ink); transition-duration: 0ms; }
+}
+html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow: 0 2px 0 var(--accent-ring); border-radius: 0; }
+.rail-tabs-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The day's list. */
+.rail-list {
+  padding: 4px 8px 16px;
+}
+.rail-section + .rail-section { margin-top: 6px; }
+.rail-list .k-section { padding: 0 8px; }
+.rail-section[data-tone="late"] .k-section > button > span:first-child,
+.rail-section[data-tone="late"] .k-section > span:first-child { color: var(--signal); }
+.rail-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font: 450 13px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+
+/* The add box at the foot. */
+.rail-foot {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line-1);
+}
+.rail-foot-error {
+  margin: 6px 2px 0;
+  font: 500 12px/1.35 var(--font-sans);
+  color: var(--danger);
+}
+
+/* ── Trash ──────────────────────────────────────────────────────────────── */
+.trash-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tr-h);
+  padding: 0 4px 0 var(--tr-pad);
+  border-radius: var(--r-ctl);
+}
+.trash-row[aria-selected="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+@media (hover: hover) {
+  .trash-row[aria-selected="false"]:hover { background: var(--hover); }
+}
+.trash-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 13px/18px var(--font-sans);
+  color: var(--muted);
+}
+.trash-when {
+  flex: none;
+  font: 450 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+@media (hover: hover) {
+  .trash-row .trash-acts { opacity: 0; transition: opacity var(--d-base) var(--ease-out); }
+  .trash-row:hover .trash-acts,
+  .trash-row:focus-within .trash-acts,
+  .trash-row[aria-selected="true"] .trash-acts { opacity: 1; transition-duration: 0ms; }
+}
+.trash-acts { display: inline-flex; gap: 2px; flex: none; }
+
+/* ── The rail's keyed pickers (# labels · r schedule · b remind) ───────── */
+.rail-pick { width: 280px; }
+.rail-pick-head {
+  padding: 6px 8px 4px;
+  font: 600 11.5px/1.3 var(--font-sans);
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-pick-body { display: grid; gap: 8px; padding: 4px; }
+.rail-pick-fields { display: flex; gap: 6px; }
+.rail-pick-fields > .k-field { flex: 1 1 0; }
+
+/* ── DeferCard — "can't get to this", on a block ──────────────────────── */
+.defer-card { width: 300px; }
+.defer-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 8px 6px;
+  font: 600 13px/1.3 var(--font-sans);
+  color: var(--ink);
+}
+.defer-card-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.defer-card-body { padding: 0 8px 6px; }
+
+/* ── Bulk bar ───────────────────────────────────────────────────────────── */
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-1);
+  background: var(--raised);
+  box-shadow: 0 -1px 0 var(--line-1);
+  animation: bulk-in var(--d-base) var(--ease-out) both;
+}
+@keyframes bulk-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.bulk-count {
+  flex: none;
+  margin-right: 2px;
+  padding: 0 4px;
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+.bulk-grow { flex: 1 1 auto; }
+@media (max-width: 767px) {
+  .bulk-bar { padding: 8px 12px; gap: 6px; }
+  .bulk-grow { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bulk-bar { animation: none; }
+}
+
+/* ── Steps (a task's checklist) ─────────────────────────────────────────── */
+.steps-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.steps-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.steps-track > span {
+  position: absolute;
+  inset: 0;
+  background: var(--landed, var(--accent));
+  transform-origin: left center;
+  transition: transform var(--d-slow) var(--ease-momentum, var(--ease-out));
+}
+.steps-count {
+  flex: none;
+  font: 450 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+.step-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--h-sm);
+  border-radius: var(--r-ctl);
+}
+.step-row[aria-current="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.step-row[data-touch] { min-height: 44px; }
+.step-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink);
+  font: 450 13px/1 var(--font-sans);
+  outline: none;
+}
+.step-row[data-touch] .step-input { height: 36px; font-size: 16px; }
+.step-row[data-done] .step-input { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--faint); }
+.step-input:focus { border-color: var(--accent); background: var(--raised); box-shadow: 0 0 0 3px var(--accent-wash); }
+@media (hover: hover) {
+  .step-input:not(:focus):hover { border-color: var(--line-1); background: var(--sunk); }
+  .step-row .step-remove { opacity: 0; }
+  .step-row:hover .step-remove,
+  .step-row .step-remove:focus-visible { opacity: 1; }
+}
+.step-row[data-touch] .step-remove { opacity: 0; pointer-events: none; }
+.step-row[data-touch]:focus-within .step-remove { opacity: 1; pointer-events: auto; }
+
+/* ── Progress marks (progress/PaceTrack) at the kit's geometry ─────────── */
+html:root .pace-track { --track-h: 4px; }
+html:root .pace-seg,
+html:root .pace-rail { background: var(--line-2); border-radius: 1px; }
+html:root .pace-now {
+  height: calc(var(--track-h) + 6px);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.slate-pip {
+  display: block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2.5px;
+}

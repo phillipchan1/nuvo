@@ -2622,8 +2622,8 @@ body.drag-cancelled .fc-event-resizing {
 
 /* The left rail as the Inbox drop zone while dragging a calendar item over it. */
 .rail-drop-active {
-  background: color-mix(in srgb, var(--accent) 5%, transparent) !important;
-  box-shadow: inset 1.5px 0 0 color-mix(in srgb, var(--accent) 45%, transparent) !important;
+  background: var(--accent-wash) !important;
+  box-shadow: inset -2px 0 0 var(--accent-ring) !important;
 }
 
 /* The tab strip is the rail's drop router. During a drag the tabs stop being
@@ -2632,35 +2632,42 @@ body.drag-cancelled .fc-event-resizing {
    about to" are different promises:
      · armed  — a compatible row is in hand. A dashed accent ring: the drop-zone
                 idiom, and the only dashed thing on the surface.
-     · ready  — the pointer is ON it. Solid fill + lift, so the commit reads as
-                imminent rather than merely possible.
+     · ready  — the pointer is ON it. A solid ring over a stronger wash, so the
+                commit reads as imminent rather than merely possible.
    `.rail-drop-active` is the third case, owned by the calendar: an item from
-   outside is over the rail, where the WHOLE rail is the zone. */
+   outside is over the rail, where the WHOLE rail is the zone.
+   The ring is a pseudo-element wider than the label, so arming moves nothing. */
 .rail-tab-armed,
+.rail-tab-ready,
 .rail-drop-active [data-inbox-tab] {
-  color: var(--accent);
-  border-bottom-color: transparent;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 6px;
+  color: var(--accent-ink);
 }
-.rail-tab-ready {
-  color: var(--accent);
-  border-bottom-color: transparent;
+.rail-tab-armed::before,
+.rail-tab-ready::before,
+.rail-drop-active [data-inbox-tab]::before {
+  content: "";
+  position: absolute;
+  inset: 5px -8px;
+  border-radius: var(--r-ctl);
+  background: var(--accent-wash);
+  outline: 1.5px dashed var(--accent-ring);
+  outline-offset: -1.5px;
+  pointer-events: none;
+  z-index: -1;
+}
+.rail-tab-ready::before {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 75%, transparent),
-    var(--shadow-lift);
-  border-radius: 6px;
-  transform: translateY(-1px);
+  outline: 1.5px solid var(--accent);
 }
+.rail-tab-armed::after,
+.rail-tab-ready::after,
+.rail-drop-active [data-inbox-tab]::after { display: none; }
 /* The count is metadata; it must not out-shout the word that names the act. */
-.rail-tab-armed .mono,
-.rail-tab-ready .mono {
+.rail-tab-armed .rail-tab-count,
+.rail-tab-ready .rail-tab-count {
   color: inherit;
   opacity: 0.6;
 }
-
 /* The row left behind while its ghost follows the cursor. It recedes rather
    than lifting — the copy under the pointer is the one in hand, and two lifted
    rows would be two answers to "which one am I moving?". */
@@ -3325,20 +3332,41 @@ html .glass-grab {
 /* ── Task composer: the one add box (components/tasks/TaskComposer) ─────────
    A plain input over a mirror that draws what the grammar understood. The two
    must share every metric that places a glyph — font, size, line-height,
-   letter-spacing, padding — or the highlights drift off their words. At rest a
-   `row` is a hairline line with a glyph in the list's gutter (D-050); open, it
-   floats as a card because it IS the focal thing. The pill is the rail's. */
+   letter-spacing, padding — or the highlights drift off their words.
+
+   Instrument (D-190): every face is the kit's field. A `row` sits in a list
+   on the task row's own geometry (styles/rail.css: --tr-*), its ＋ in the
+   check column, and becomes a field in place when you type — the border was
+   always there, transparent, so nothing moves. The `pill` is the rail's
+   capture field at the pool's foot, with its keycap; `field` is the phone
+   capture sheet's and the capture door's. */
 .task-composer { position: relative; }
-.task-composer-line { display: flex; align-items: center; gap: 0.75rem; min-height: 2.25rem; }
-.task-composer-glyph { display: inline-flex; width: 15px; flex-shrink: 0; justify-content: center; }
+.task-composer-line {
+  display: flex;
+  align-items: center;
+  gap: var(--tr-gap, 10px);
+  min-height: var(--tr-h, 32px);
+  padding: 0 calc(var(--tr-pad, 8px) - 1px);
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
+  transition: border-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out), background-color var(--d-fast) var(--ease-out);
+}
+.task-composer-glyph {
+  display: inline-flex;
+  width: var(--tr-check, 14px);
+  flex-shrink: 0;
+  justify-content: center;
+  color: var(--faint);
+}
+.task-composer.is-open .task-composer-glyph { color: var(--accent); }
 .task-composer-field { position: relative; min-width: 0; flex: 1 1 auto; }
 .task-composer-input,
 .task-composer-mirror {
   font-family: inherit;
-  font-size: var(--text-body);
+  font-size: 13px;
   line-height: 20px;
-  letter-spacing: var(--text-body--letter-spacing);
-  font-weight: 500;
+  letter-spacing: -0.003em;
+  font-weight: 450;
   padding: 0;
   border: 0;
   margin: 0;
@@ -3351,10 +3379,10 @@ html .glass-grab {
   width: 100%;
   background: transparent;
   color: transparent;
-  caret-color: var(--ink);
+  caret-color: var(--accent);
   outline: none;
 }
-.task-composer-input::placeholder { color: color-mix(in srgb, var(--muted) 85%, transparent); font-weight: 400; }
+.task-composer-input::placeholder { color: var(--faint); font-weight: 450; }
 .task-composer-input::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); color: transparent; }
 .task-composer-mirror {
   position: absolute;
@@ -3364,121 +3392,123 @@ html .glass-grab {
   color: var(--ink);
 }
 .task-composer-token {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--accent-ink);
+  background: var(--accent-wash);
   border-radius: 3px;
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-wash);
 }
 
-.task-composer-row { padding: 0.375rem 0; }
-.task-composer-row.is-open {
-  margin: 0.25rem -0.75rem 0;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-2);
+/* row — the list's add box. Open, it is the kit field in place. */
+.task-composer-row.is-open .task-composer-line {
+  border-color: var(--accent);
+  background: var(--raised);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.task-composer-row .task-composer-foot { padding-left: calc(var(--tr-pad, 8px) + var(--tr-check, 14px) + var(--tr-gap, 10px)); }
+@media (hover: hover) {
+  .task-composer-row:not(.is-open) .task-composer-line:hover { background: var(--hover); }
+  .task-composer-row:not(.is-open) .task-composer-line:hover .task-composer-glyph { color: var(--muted); }
 }
 
+/* pill — the rail's capture field: a kit field at rest, with its keycap. */
 .task-composer-pill .task-composer-line {
-  padding: 0 0.875rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 9999px;
-  background: var(--surface);
+  min-height: var(--h-md);
+  padding: 0 6px 0 10px;
+  gap: 8px;
+  border-color: var(--line-2);
+  background: var(--raised);
 }
-.task-composer-pill.is-open .task-composer-line { border-color: var(--accent); }
-.task-composer-pill .task-composer-foot { padding: 0.5rem 0.25rem 0.125rem; }
+.task-composer-pill .task-composer-glyph { width: 14px; }
+.task-composer-pill.is-open .task-composer-line {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+@media (hover: hover) {
+  .task-composer-pill:not(.is-open) .task-composer-line:hover { border-color: color-mix(in srgb, var(--line-2) 100%, var(--ink) 12%); }
+}
+.task-composer-pill .task-composer-foot { padding: 8px 2px 0; margin-top: 0; }
 
-.task-composer-kbd {
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 0.25rem;
-  font-size: var(--text-micro);
-  color: var(--muted);
-}
+.task-composer-kbd { flex-shrink: 0; }
 
 .task-composer-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding-left: 1.6875rem;
+  gap: 6px;
+  margin-top: 6px;
 }
-.task-composer-chips { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.task-composer-chips { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; }
 .task-composer-context,
 .task-composer-chip {
   display: inline-flex;
   max-width: 16rem;
   align-items: center;
-  gap: 0.3125rem;
-  height: 1.5rem;
-  font-size: var(--text-label);
+  gap: 5px;
+  height: 20px;
+  font: 500 12px/1 var(--font-sans);
   white-space: nowrap;
 }
-.task-composer-context { color: var(--muted); }
+.task-composer-context { color: var(--muted); padding: 0 2px; }
 .task-composer-context.is-overridden { text-decoration: line-through; opacity: 0.6; }
 .task-composer-chip {
-  padding: 0 0.125rem 0 0.5rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--surface-2);
+  padding: 0 2px 0 6px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-chip);
+  background: var(--sunk);
   color: var(--ink);
 }
+.task-composer-chip > .text-muted { color: var(--faint); }
 .task-composer-unparse {
+  position: relative;
   display: inline-flex;
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 16px;
+  height: 16px;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  color: var(--muted);
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--faint);
 }
 @media (hover: hover) {
-.task-composer-unparse:hover { background: var(--accent-soft); color: var(--ink); }
+.task-composer-unparse:hover { background: var(--hover); color: var(--ink); }
 }
-.task-composer-swatch { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
-.task-composer-hints { display: inline-flex; align-items: center; gap: 0.3125rem; font-size: var(--text-meta); color: var(--muted); white-space: nowrap; }
-.task-composer-hints kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 0.25rem; font-size: var(--text-micro); background: var(--surface); }
-.task-composer-hints kbd + kbd { margin-left: 0.375rem; }
+.task-composer-swatch { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2.5px; }
 
+/* The # / @ suggestions — the kit's menu shell. */
 .task-composer-menu {
   position: absolute;
-  left: -0.25rem;
-  top: calc(100% + 0.5rem);
+  left: -4px;
+  top: calc(100% + 8px);
   z-index: 40;
   width: min(17rem, 80vw);
-  padding: 0.25rem;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-3);
+  padding: 4px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  transform-origin: top left;
+  animation: k-pop-in var(--d-fast) var(--ease-out) both;
 }
-.task-composer-pill .task-composer-menu { top: auto; bottom: calc(100% + 0.75rem); }
+.task-composer-pill .task-composer-menu { top: auto; bottom: calc(100% + 10px); transform-origin: bottom left; }
+.task-composer-menu-label { padding: 6px 8px 4px; color: var(--faint); font: 600 11.5px/1 var(--font-sans); }
 .task-composer-option {
   display: flex;
   width: 100%;
-  min-height: 1.875rem;
+  height: var(--h-sm);
   align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.5rem;
-  border-radius: 6px;
-  font-size: var(--text-caption);
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font: 400 13px/1 var(--font-sans);
   text-align: left;
   color: var(--ink);
 }
-.task-composer-option.is-active { background: var(--accent-soft); }
-.task-composer-btn {
-  height: 1.75rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  font-size: var(--text-caption);
-  color: var(--ink);
-}
-.task-composer-btn.is-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.task-composer-option.is-active { background: var(--hover); }
+.task-composer-option-hint { color: var(--faint); font-size: 12px; }
 
 /* A phone: 16px text so iOS doesn't zoom (the global input rule sets it with
    !important — the mirror has to match it exactly), 44px lines and chips. */
@@ -3489,27 +3519,26 @@ html .glass-grab {
     line-height: 1.3 !important;
   }
   .task-composer-line { min-height: 2.75rem; }
-  .task-composer-row.is-open { margin-left: 0; margin-right: 0; }
-  .task-composer-foot { padding-left: 0; }
+  .task-composer-pill .task-composer-line { min-height: 2.75rem; }
+  .task-composer-row .task-composer-foot { padding-left: 0; }
   .task-composer-context,
-  .task-composer-chip { height: 2rem; font-size: var(--text-caption); }
+  .task-composer-chip { height: 2rem; font-size: 13px; }
   .task-composer-unparse { width: 1.75rem; height: 1.75rem; }
-  .task-composer-hints { display: none; }
-  .task-composer-option { min-height: 2.75rem; font-size: var(--text-body); }
+  .task-composer-option { height: 2.75rem; font-size: 15px; }
 }
 
-/* The phone capture sheet's box — the same composer in a bordered field. */
+/* The phone capture sheet's box — the same composer in a kit field. */
 .task-composer-field-box .task-composer-line {
   padding: 0.25rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: var(--surface-2);
+  border-color: var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--raised);
 }
 .task-composer-field-box.is-open .task-composer-line {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
-.task-composer-field-box .task-composer-glyph { color: var(--accent); }
+.task-composer-field-box .task-composer-glyph { color: var(--accent); width: 15px; }
 .task-composer-field-box .task-composer-foot { padding-left: 0; }
 
 /* ── The capture door (⌘K · ⌥Space · the phone's ＋) ─────────────────────

@@ -234,8 +234,8 @@ export default function TaskListView({
                       }}
                       onClick={(e) => e.stopPropagation()}
                       aria-label="Press and hold to reorder"
-                      className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
-                      style={hold.armingId === t.id ? { color: "var(--ink)" } : undefined}
+                      className="task-list-grip tap-icon"
+                      data-arming={hold.armingId === t.id ? "" : undefined}
                     >
                       ⠿
                     </span>
@@ -278,11 +278,13 @@ export default function TaskListView({
             />
           </div>
         ))}
-        {tasks.length === 0 && emptyHint && <div className="py-2 text-caption italic text-muted">{emptyHint}</div>}
+        {tasks.length === 0 && emptyHint && <div className="task-list-empty">{emptyHint}</div>}
       </div>
 
       <TaskComposer
         ref={composer}
+        // The add box sits on the rows' own left edge — flush rows, flush box.
+        className={flush ? "task-composer-flush" : ""}
         context={context}
         contextLabel={contextLabel}
         placeholder={composerPlaceholder}

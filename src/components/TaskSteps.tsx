@@ -5,7 +5,7 @@
 // short version is that a step is not a task, so this surface offers exactly
 // four acts — add, tick, rename, remove — and no scheduling of any kind.
 //
-// Warm Paper: hairline rows on the paper, never a bordered card. Nothing here
+// Instrument: list rows on the panel, never a bordered card. Nothing here
 // floats, so nothing here is framed (P14).
 //
 // Keyboard, which is most of the reason a checklist is worth having. The rows
@@ -31,6 +31,8 @@ import type { useTaskMutations } from "../hooks/useTasks";
 import { useTaskSteps } from "../hooks/useTasks";
 import { byManualOrder } from "../lib/taskOrder";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
+import { Icon } from "./Icon";
+import { Checkbox, IconButton } from "./kit";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -65,7 +67,6 @@ export default function TaskSteps({
     void mutations.addStep(task, title, nextPos.current++);
   };
 
-  const rowH = touch ? "tap-h" : "min-h-[26px]";
   const composerRef = useRef<TaskComposerHandle>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState(0);
@@ -170,14 +171,12 @@ export default function TaskSteps({
       className="flex flex-col outline-none"
     >
       {total > 0 && (
-        <div className="mb-1 flex items-center gap-2">
-          <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-[var(--line)]">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-200"
-              style={{ width: `${Math.round((done / total) * 100)}%` }}
-            />
+        <div className="steps-progress">
+          {/* The fill moves by transform (scaleX), never by width. */}
+          <div className="steps-track" aria-hidden>
+            <span style={{ transform: `scaleX(${done / total})` }} />
           </div>
-          <span className="mono shrink-0 text-micro text-muted/75">
+          <span className="steps-count">
             {done}/{total}
           </span>
         </div>
@@ -187,7 +186,7 @@ export default function TaskSteps({
         <StepRow
           key={s.id}
           step={s}
-          rowH={rowH}
+          touch={touch}
           current={resting && i === cursor}
           onRest={() => rest(i)}
           inputRef={(el) => {
@@ -222,7 +221,7 @@ export default function TaskSteps({
 
 function StepRow({
   step,
-  rowH,
+  touch,
   current,
   onRest,
   inputRef,
@@ -233,7 +232,8 @@ function StepRow({
   onRemove,
 }: {
   step: Task;
-  rowH: string;
+  /** Phone: 44px rows, a 16px field (iOS won't zoom). */
+  touch: boolean;
   /** The resting cursor is on this step. */
   current: boolean;
   /** Leave the field for the list (Escape). */
@@ -257,26 +257,18 @@ function StepRow({
   return (
     <div
       aria-current={current ? "true" : undefined}
-      className={`group flex items-center gap-2 border-b border-line/60 last:border-b-0 ${rowH} ${current ? "glass-lift-row" : ""}`}
+      data-done={done ? "" : undefined}
+      data-touch={touch ? "" : undefined}
+      className="step-row group"
     >
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? `Undo ${step.title}` : `Complete ${step.title}`}
-        onClick={onToggle}
-        // `tap-bloom`: a 14px box is the whole act on a phone (ticking a step), so
-        // its hit area grows to 44px without the drawn box growing.
-        className={`tap-bloom fast grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border ${
-          done ? "border-accent bg-accent text-on-accent" : "border-line-strong hover:border-accent"
-        }`}
-      >
-        {done && (
-          <svg viewBox="0 0 10 10" className="h-2 w-2" aria-hidden>
-            <path d="M1.5 5.2 3.9 7.5 8.5 2.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
+      {/* A step is not a task: it wears the kit's SQUARE check, so a step
+          inside a task never reads as the task's own round tick twice. Its
+          hit area grows to 44px under a finger without the box growing. */}
+      <Checkbox
+        checked={done}
+        onChange={onToggle}
+        label={done ? `Undo ${step.title}` : `Complete ${step.title}`}
+      />
 
       <input
         ref={inputRef}
@@ -330,26 +322,20 @@ function StepRow({
           }
         }}
         aria-label="Step"
-        className={`fast min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-body outline-none hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg ${
-          rowH === "tap-h" ? "tap-h" : ""
-        } ${done ? "text-muted line-through" : "text-ink"}`}
+        className="step-input"
       />
 
-      <button
-        type="button"
+      {/* Visible on hover and on focus — a hidden gesture must never be the
+          only path to an act. On a phone it stays inert until the step is
+          focused (tap the title): an invisible 44px target at the row's edge
+          removed steps by accident. */}
+      <IconButton
+        size="xs"
+        className="step-remove"
+        label={`Remove ${step.title}`}
+        icon={<Icon name="close" size={12} />}
         onClick={onRemove}
-        aria-label={`Remove ${step.title}`}
-        // Visible on focus as well as hover — a hidden gesture must never be
-        // the only path to an act.
-        // On a phone the ✕ is a 44px target that is also invisible at rest, so a
-        // stray tap near the row's right edge removed a step. Touch rows keep it
-        // inert until the step is focused (tap the title), when it appears.
-        className={`fast tap shrink-0 rounded px-1 text-label text-muted opacity-0 hover:text-signal focus-visible:opacity-100 group-hover:opacity-100 ${
-          rowH === "tap-h" ? "pointer-events-none group-focus-within:pointer-events-auto group-focus-within:opacity-100" : ""
-        }`}
-      >
-        ✕
-      </button>
+      />
     </div>
   );
 }

@@ -36,6 +36,7 @@ import type { CaptureAction, CaptureContext } from "../../lib/captureDraft";
 import { useTaskCapture, type CaptureResult } from "../../hooks/useTaskCapture";
 import { useTokenMenu } from "./useTokenMenu";
 import { Icon } from "../Icon";
+import { Button, Kbd } from "../kit";
 
 export interface TaskComposerHandle {
   /** Focus the box. `at` places the next tasks beside a row (a / ⇧A); it holds
@@ -419,14 +420,17 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
       className={`task-composer ${pill ? "task-composer-pill" : field ? "task-composer-field-box" : "task-composer-row"} ${open ? "is-open" : ""} ${className}`}
       data-tauri-drag-region="false"
     >
-      <div className="task-composer-line">
-        {pill || field ? (
-          <Icon name={pill ? "pen" : "plus"} size={15} className="task-composer-glyph text-accent" />
-        ) : (
-          <span className={`task-composer-glyph ${open ? "text-accent" : "text-muted"}`} aria-hidden>
-            <Icon name="plus" size={14} />
-          </span>
-        )}
+      <div className="task-composer-line" onMouseDown={(e) => {
+        // A press anywhere on the field's box (its glyph, its padding) is a
+        // press on the field — the box is the target, not just the text.
+        if (e.target !== inputRef.current) {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }
+      }}>
+        <span className="task-composer-glyph" aria-hidden>
+          <Icon name="plus" size={14} />
+        </span>
         <div className="task-composer-field">
           <div ref={mirrorRef} className="task-composer-mirror" aria-hidden>
             {segments.map((s, i) =>
@@ -480,7 +484,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
           />
           {menu.open && (
             <div className="task-composer-menu" role="listbox" aria-label={menu.trigger === "@" ? "File under" : "Labels"}>
-              <div className="px-2 pb-1 pt-0.5 text-meta text-muted">{menu.trigger === "@" ? "File under" : "Label"}</div>
+              <div className="task-composer-menu-label">{menu.trigger === "@" ? "File under" : "Label"}</div>
               {menu.matches.map((m, i) => (
                 <button
                   key={m.insert}
@@ -494,31 +498,29 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
                   }}
                   onMouseEnter={() => menu.setIndex(i)}
                 >
-                  <span className="task-composer-swatch" style={{ background: m.color ?? "var(--line-strong)" }} />
+                  <span className="task-composer-swatch" style={{ background: m.color ?? "var(--line-2)" }} />
                   <span className="min-w-0 flex-1 truncate">{m.label}</span>
-                  {m.hint && <span className="text-meta text-muted">{m.hint}</span>}
+                  {m.hint && <span className="task-composer-option-hint">{m.hint}</span>}
                 </button>
               ))}
             </div>
           )}
         </div>
-        {!open && shortcut && (
-          <kbd className="task-composer-kbd mono" aria-hidden>
-            {shortcut}
-          </kbd>
-        )}
+        {/* The key that reaches this box, on the box — the only place a
+            shortcut is named (no hint rows). */}
+        {!open && shortcut && <Kbd keys={shortcut} className="task-composer-kbd" />}
       </div>
 
       {pasted && (
         <div className="task-composer-foot" role="group" aria-label="Paste as tasks">
-          <span className="text-caption">Add {pasted.length} tasks?</span>
-          <span className="flex items-center gap-1.5">
-            <button type="button" className="task-composer-btn is-primary tap-h" onMouseDown={(e) => e.preventDefault()} onClick={addPasted}>
+          <span className="task-composer-context">{pasted.length} lines</span>
+          <span className="flex items-center gap-1">
+            <Button size="xs" kind="primary" className="tap-h" onMouseDown={(e) => e.preventDefault()} onClick={addPasted}>
               Add {pasted.length}
-            </button>
-            <button
-              type="button"
-              className="task-composer-btn tap-h"
+            </Button>
+            <Button
+              size="xs"
+              className="tap-h"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setText(pasted.join(" "));
@@ -526,7 +528,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
               }}
             >
               As one
-            </button>
+            </Button>
           </span>
         </div>
       )}
@@ -560,15 +562,6 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
               </span>
             ))}
           </div>
-          <span className="task-composer-hints" aria-hidden>
-            <kbd className="mono">↵</kbd> add
-            <kbd className="mono">esc</kbd> {text ? "clear" : "leave"}
-            {onArrowUp && !text && (
-              <>
-                <kbd className="mono">↑</kbd> list
-              </>
-            )}
-          </span>
         </div>
       )}
       {footer}

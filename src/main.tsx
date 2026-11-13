@@ -8,6 +8,8 @@ import "./styles/instrument.css";
 import "./styles/kit.css";
 // The frame — ground, sidebar, inset panel (D-190).
 import "./styles/frame.css";
+// The pool — the Schedule rail and the one task row / list / add box (D-190).
+import "./styles/rail.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

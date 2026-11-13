@@ -149,11 +149,13 @@ export function SlatePips({ rows }: { rows: WeekCrownRow[] }) {
             ref={(el) => {
               pips.current.set(r.rock.id, el);
             }}
-            className="block h-[7px] w-[7px] shrink-0 rounded-full"
+            // The kit's Dot geometry (8px, 2.5px corner): the project's
+            // identity, hollow until it lands.
+            className="slate-pip"
             style={{
               background: on ? r.color : "transparent",
               // A ring drawn with an inset shadow, so a hollow pip and a filled
-              // one occupy exactly the same 7px — a border would nudge the row.
+              // one occupy exactly the same box — a border would nudge the row.
               boxShadow: on ? undefined : `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 55%, transparent)`,
             }}
           />

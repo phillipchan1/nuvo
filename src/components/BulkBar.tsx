@@ -15,15 +15,19 @@
 // 2 · **Every bulk act is one undoable step**, not N. A bulk mutation that
 //     needed eight ⌘Z presses to reverse would be a worse trap than no bulk
 //     action at all, so the whole set rides a single `recordUndo` entry.
+//
+// Instrument (D-190): a raised strip of kit buttons. Choosing one of many
+// opens the kit's Menu beside the button on a desk and a PickSheet on a phone
+// (never a cursor-anchored popover on a thumb, never a wall of chips).
 
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import { Icon } from "./Icon";
-import Sheet from "./mobile/Sheet";
+import { PickSheet } from "./mobile/sheetKit";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import type { Label, Task, TaskPriority } from "../lib/types";
 import type { VerticalData } from "../lib/vertical";
+import { Button, Dot, IconButton, Menu, MenuItem, MenuSeparator } from "./kit";
 
 export interface BulkOps {
   /** Patch every selected task, as ONE undo entry. */
@@ -39,83 +43,58 @@ export interface BulkOps {
 }
 
 const PRIORITIES: TaskPriority[] = ["high", "medium", "low", "none"];
+const PRIORITY_WORD: Record<TaskPriority, string> = { high: "High", medium: "Medium", low: "Low", none: "No priority" };
 
-// ── a small menu that behaves on both shells ───────────────────────────────
+/** One choice: what it says, its identity mark, what it does. */
+type Choice = { id: string; name: string; color?: string | null; act: () => void; separated?: boolean };
 
-function Menu({
-  label,
-  children,
-  title,
-}: {
-  label: React.ReactNode;
-  title: string;
-  children: (close: () => void) => React.ReactNode;
-}) {
+// ── one menu that behaves on both shells ───────────────────────────────────
+
+function BulkMenu({ label, title, choices }: { label: string; title: string; choices: Choice[] }) {
   const isMobile = useIsMobile();
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
-
-  useEffect(() => {
-    if (!open || isMobile) return;
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 240)), bottom: window.innerHeight - r.top + 6 });
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!popRef.current?.contains(t) && !btnRef.current?.contains(t)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, isMobile]);
-
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
+      <Button
+        ref={setBtn}
+        size="xs"
+        className="tap"
+        aria-haspopup={isMobile ? "dialog" : "menu"}
         aria-expanded={open}
-        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
+        trailing={<Icon name="chevron-down" size={12} />}
+        onClick={() => setOpen((v) => !v)}
       >
         {label}
-      </button>
+      </Button>
       {open &&
         (isMobile ? (
-          <Sheet onClose={() => setOpen(false)} title={title}>
-            <div className="flex flex-wrap gap-1.5">{children(() => setOpen(false))}</div>
-          </Sheet>
+          <PickSheet
+            title={title}
+            rows={choices.map((c) => ({ id: c.id, name: c.name, color: c.color ?? undefined }))}
+            value={null}
+            onPick={(id) => choices.find((c) => c.id === id)?.act()}
+            onClose={() => setOpen(false)}
+          />
         ) : (
-          pos &&
-          createPortal(
-            <div
-              ref={popRef}
-              className="glass-card fixed z-[70] max-h-[50vh] w-[220px] overflow-y-auto rounded-xl p-2"
-              style={{ left: pos.left, bottom: pos.bottom, boxShadow: "var(--shadow-lift)" }}
-            >
-              <div className="section-label mb-1.5 !p-0">{title}</div>
-              <div className="flex flex-wrap gap-1.5">{children(() => setOpen(false))}</div>
-            </div>,
-            document.body,
-          )
+          <Menu anchor={btn} open onClose={() => setOpen(false)} label={title} placement="top-start">
+            {choices.map((c) => (
+              <BulkMenuItem key={c.id} choice={c} />
+            ))}
+          </Menu>
         ))}
     </>
   );
 }
 
-function Opt({ onClick, children, color }: { onClick: () => void; children: React.ReactNode; color?: string | null }) {
+function BulkMenuItem({ choice }: { choice: Choice }) {
   return (
-    <button
-      onClick={onClick}
-      className="tap-bloom tap-h fast inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-line px-2.5 text-label font-medium text-muted hover:border-accent hover:text-accent"
-    >
-      {color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
-      {children}
-    </button>
+    <>
+      {choice.separated && <MenuSeparator />}
+      <MenuItem icon={choice.color ? <Dot color={choice.color} shape="round" /> : undefined} onSelect={choice.act}>
+        {choice.name}
+      </MenuItem>
+    </>
   );
 }
 
@@ -143,117 +122,72 @@ export default function BulkBar({
 }) {
   const projects = (vertical?.projects ?? []).filter((p) => p.status !== "complete" && p.status !== "cancelled");
 
+  const when: Choice[] = [
+    { id: "today", name: "Today", act: () => ops.planFor(todayISO()) },
+    { id: "tomorrow", name: "Tomorrow", act: () => ops.planFor(tomorrowISO()) },
+    { id: "next-week", name: "Next week", act: () => ops.planFor(nextWeekISO()) },
+    {
+      id: "clear",
+      name: "Clear the date",
+      separated: true,
+      act: () => ops.patchAll({ do_date: null, start_time: null, slot_id: null }, "unscheduled"),
+    },
+  ];
+  const priority: Choice[] = PRIORITIES.map((p) => ({
+    id: p,
+    name: PRIORITY_WORD[p],
+    act: () => ops.patchAll({ priority: p }, `set to ${p} priority`),
+  }));
+  const label: Choice[] = labels.map((l) => ({ id: l.id, name: l.name, color: l.color, act: () => ops.addLabels([l.id]) }));
+  const move: Choice[] = [
+    ...projects.slice(0, 40).map((p) => ({
+      id: p.id,
+      name: p.name,
+      // The whole chain, together — see the header (D-088).
+      act: () =>
+        ops.patchAll(
+          { project_id: p.id, initiative_id: p.initiativeId ?? null, domain_id: p.domainId ?? null },
+          `filed under ${p.name}`,
+        ),
+    })),
+    {
+      id: "__none",
+      name: "No project",
+      separated: true,
+      act: () => ops.patchAll({ project_id: null, initiative_id: null }, "unfiled"),
+    },
+  ];
+
   return (
-    <div className="rise flex shrink-0 flex-wrap items-center gap-1.5 border-t border-accent/30 bg-accent-soft px-3 py-2">
-      <span className="mono shrink-0 text-label font-semibold text-accent" role="status" aria-live="polite">
+    <div className="bulk-bar shrink-0">
+      <span className="bulk-count" role="status" aria-live="polite">
         {count} selected
       </span>
       {onSelectAll && total != null && count < total && (
-        <button
-          type="button"
-          onClick={onSelectAll}
-          className="tap-bloom tap-h fast inline-flex shrink-0 items-center text-label text-muted underline-offset-2 hover:text-accent hover:underline"
-        >
+        <Button size="xs" kind="ghost" className="tap" onClick={onSelectAll}>
           Select all {total}
-        </button>
+        </Button>
       )}
-      <div className="hidden flex-1 sm:block" />
+      <span className="bulk-grow" />
 
-      <Menu label="When ▾" title="Plan these for">
-        {(close) => (
-          <>
-            <Opt onClick={() => (ops.planFor(todayISO()), close())}>Today</Opt>
-            <Opt onClick={() => (ops.planFor(tomorrowISO()), close())}>Tomorrow</Opt>
-            <Opt onClick={() => (ops.planFor(nextWeekISO()), close())}>Next week</Opt>
-            <Opt onClick={() => (ops.patchAll({ do_date: null, start_time: null, slot_id: null }, "unscheduled"), close())}>
-              Clear the date
-            </Opt>
-          </>
-        )}
-      </Menu>
+      <BulkMenu label="When" title="Plan these for" choices={when} />
+      <BulkMenu label="Priority" title="Set priority" choices={priority} />
+      {labels.length > 0 && <BulkMenu label="Label" title="Add a label" choices={label} />}
+      {projects.length > 0 && <BulkMenu label="Move" title="File under a project" choices={move} />}
 
-      <Menu label="Priority ▾" title="Set priority">
-        {(close) =>
-          PRIORITIES.map((p) => (
-            <Opt key={p} onClick={() => (ops.patchAll({ priority: p }, `set to ${p} priority`), close())}>
-              {p === "none" ? "No priority" : p}
-            </Opt>
-          ))
-        }
-      </Menu>
-
-      {labels.length > 0 && (
-        <Menu label="Label ▾" title="Add a label">
-          {(close) =>
-            labels.map((l) => (
-              <Opt key={l.id} color={l.color} onClick={() => (ops.addLabels([l.id]), close())}>
-                {l.name}
-              </Opt>
-            ))
-          }
-        </Menu>
-      )}
-
-      {projects.length > 0 && (
-        <Menu label="Move ▾" title="File under a project">
-          {(close) => (
-            <>
-              {projects.slice(0, 40).map((p) => (
-                <Opt
-                  key={p.id}
-                  onClick={() => {
-                    // The whole chain, together — see the header (D-088).
-                    ops.patchAll(
-                      { project_id: p.id, initiative_id: p.initiativeId ?? null, domain_id: p.domainId ?? null },
-                      `filed under ${p.name}`,
-                    );
-                    close();
-                  }}
-                >
-                  {p.name}
-                </Opt>
-              ))}
-              <Opt
-                onClick={() => (
-                  ops.patchAll({ project_id: null, initiative_id: null }, "unfiled"), close()
-                )}
-              >
-                No project
-              </Opt>
-            </>
-          )}
-        </Menu>
-      )}
-
-      <button
-        onClick={ops.complete}
-        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
-      >
-        ✓ Done
-      </button>
-      <button
-        onClick={ops.backToInbox}
-        className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
-      >
-        → Inbox
-      </button>
+      <Button size="xs" className="tap" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
+        Done
+      </Button>
+      <Button size="xs" className="tap" onClick={ops.backToInbox}>
+        Inbox
+      </Button>
       {onTrash && (
-        <button
-          onClick={ops.trash}
-          className="tap-bloom tap-h fast inline-flex shrink-0 items-center rounded border border-signal/30 px-2 py-0.5 text-label text-signal hover:bg-signal-soft"
-        >
+        <Button size="xs" kind="danger" className="tap" onClick={ops.trash}>
           Trash
-        </button>
+        </Button>
       )}
-      <button
-        onClick={ops.clear}
-        // The way out is the one control that must always be reachable by thumb.
-        className="tap-bloom tap fast ml-1 inline-flex shrink-0 items-center justify-center text-label text-muted hover:text-ink"
-        aria-label="Clear selection"
-        title="Clear selection (Esc)"
-      >
-        <Icon name="close" size={12} />
-      </button>
+      {/* The way out is the one control that must always be reachable by thumb. */}
+      <IconButton size="xs" className="tap" label="Clear selection" shortcut="Esc" icon={<Icon name="close" size={12} />} onClick={ops.clear} />
     </div>
   );
 }
