@@ -587,12 +587,10 @@ export default function Planner({
 
   return (
     <div className="flex h-full flex-col">
-      {/* No header bar at all. The macOS titlebar zone is filled by the rail and
-          the calendar toolbar themselves (each carries `titlebar-pad` so its own
-          surface rises to the window top, with the traffic lights floating over
-          the spine) — nothing reads as an empty band. Window-drag lives on the
-          spine top + the toolbar's empty spacer. Plan/Shutdown → ⌘K + the morning
-          prompt; Nuvo → right edge (⌘J); settings → spine (⌘,). */}
+      {/* The Planner layout (D-190): the pool left (the rail, or Plan the week's
+          rail while planning), the grid right, both on the one panel. The page's
+          bar is the grid's own PageBar (CalendarPane) — the Planner draws none.
+          Plan/Shutdown → ⌘K + the morning prompt; Nuvo → ⌘J; settings → ⌘,. */}
 
       <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
 
@@ -609,7 +607,7 @@ export default function Planner({
             cannot see. */}
         <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
         {planning ? (
-          <Suspense fallback={<div className="w-[340px] shrink-0 border-r border-line" />}>
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
             <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} />
           </Suspense>
         ) : (

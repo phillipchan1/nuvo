@@ -39,8 +39,8 @@ export default memo(function CalendarYear({
   );
 
   return (
-    // Transparent — the one warm-paper gradient has to read continuously from
-    // the spine through the rail to here. An opaque bg is the frost seam.
+    // Transparent — the Year rides the panel like the grid it replaces (D-190);
+    // its marks are drawn by index.css (`.yr-*`).
     //
     // `@container` and not a viewport breakpoint: this pane is not the window.
     // Opening the Nuvo chat takes ~380px out of it without the viewport moving
@@ -58,7 +58,7 @@ export default memo(function CalendarYear({
     // December. `h-full` + `min-h-0` keeps the chain rigid; a short window
     // scrolls before numerals crush (`min-h` on the inner shell).
     <div className="@container h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex h-full min-h-[36rem] w-full max-w-[1400px] flex-col px-4 pb-3 pt-2 @[660px]:px-5 @[980px]:min-h-[40rem] @[980px]:px-6">
+      <div className="mx-auto flex h-full min-h-[36rem] w-full max-w-[1400px] flex-col px-4 pb-4 pt-4 @[660px]:px-5 @[980px]:min-h-[40rem] @[980px]:px-6">
         {/* Column count is chosen so the narrowest month a breakpoint can
             produce still holds a two-digit numeral: the tightest case is 2
             columns at a 300px pane, which leaves ~124px per month and ~17px
