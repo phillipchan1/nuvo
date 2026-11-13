@@ -94,9 +94,11 @@
 /* ── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
-  --bg: #f8f8fa;
+  /* --bg is the PANEL the work sits on (D-190); the window behind the sidebar
+     is --ground (kit tokens, below). */
+  --bg: #fcfcfd;
   --surface: #ffffff;
-  --surface-2: #fcfcfd;
+  --surface-2: #fefefe;
   --line: #e6e5eb;
   --line-strong: #cfcdd6;
   --text: #121116;
@@ -125,8 +127,8 @@
 /* ── Dark — designed, not inverted: a near-black ground, ink held off pure
    white, shadows that read as depth on black (a 1px light edge + a deep drop). */
 [data-theme="dark"] {
-  --bg: #0c0c0e;
-  --surface: #16161a;
+  --bg: #0f0f12;
+  --surface: #17171b;
   --surface-2: #1c1c21;
   --line: #26252c;
   --line-strong: #3a3942;

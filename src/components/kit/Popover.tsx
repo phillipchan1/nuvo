@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import type React from "react";
 import { createPortal } from "react-dom";
 import { useMenuFocus } from "../../hooks/useMenuFocus";
 import { Icon } from "../Icon";
@@ -222,7 +223,8 @@ export function MenuItem({
   disabled?: boolean;
   /** draws a › — the item opens a submenu */
   submenu?: boolean;
-  onSelect?: () => void;
+  /** the click event rides along — a ⇧-click alternate act reads it */
+  onSelect?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   /** don't close after selecting (a multi-select picker) */
   keepOpen?: boolean;
 }) {
@@ -238,8 +240,8 @@ export function MenuItem({
       disabled={disabled}
       tabIndex={-1}
       className="k-mi"
-      onClick={() => {
-        onSelect?.();
+      onClick={(e) => {
+        onSelect?.(e);
         if (!keepOpen && !submenu) close?.();
       }}
     >

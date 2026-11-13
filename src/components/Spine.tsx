@@ -1,10 +1,12 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { LADDER, type Rung } from "./AppShell";
 import { useUiScale } from "../hooks/useUiScale";
 import { useVerticalSelector } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
-import { READY, toneColor } from "./floors/ReadinessBanner";
+import { toneColor } from "./floors/ReadinessBanner";
+import { useWeekCrown } from "../hooks/useWeekCrown";
+import { useAppNavigation } from "../hooks/useAppNavigation";
+import { Dot, Kbd } from "./kit";
 import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
 import GettingStarted from "./orientation/GettingStarted";
 
@@ -34,8 +36,8 @@ const BUILD = RUNGS.slice(1);
 // Two widths, one spine. Railed, the icons carry the whole table of contents —
 // the glyphs are the altitude, so the labels are what's spent, not the meaning.
 // (Focus mode is a third state above both: it slides the spine shut entirely.)
-const FULL_W = 188;
-const RAIL_W = 64;
+const FULL_W = 228;
+const RAIL_W = 52;
 
 const RAIL_KEY = "nuvo-spine-rail";
 function readRail(): boolean {
@@ -53,16 +55,6 @@ function writeRail(v: boolean) {
   }
 }
 
-// The one whisper of glass in the app's chrome: the active chapter rises on a
-// frosted pane over the atmosphere — present, never stark.
-const activePill: CSSProperties = {
-  background: "color-mix(in srgb, var(--surface) 72%, transparent)",
-  backdropFilter: "blur(8px)",
-  WebkitBackdropFilter: "blur(8px)",
-  boxShadow: "var(--shadow-1)",
-  borderColor: "color-mix(in srgb, var(--line) 85%, transparent)",
-};
-
 // The rung glyphs are the shared altitude family (`components/icons.tsx`) — the
 // same set the phone's bottom bar and the command palette draw from, so the
 // chrome and the surfaces never disagree about what a project looks like.
@@ -70,11 +62,6 @@ const activePill: CSSProperties = {
 // `READY` (the meter's ripe-green fill) and `toneColor` (cue tone → token) are
 // shared with the floor-level ReadinessBanner, so the gauge reads the same in
 // the chrome and inside the views.
-
-// Railed, a hovered rung names itself beside the rail: label, its ⌘-number, and
-// the one cue the meter is about. Glass on the paper, never a native tooltip —
-// it's the label the rail spent, handed back on demand.
-type Tip = { top: number; label: string; hint?: string; cue?: string; cueTone?: string } | null;
 
 interface SpineProps {
   rung: Rung;
@@ -133,12 +120,9 @@ const SpineBody = memo(function SpineBody({
   // what actually renders. They differ only while the workspace is squeezed.
   const [railedPref, setRailed] = useState(readRail);
   const railed = railedPref || forceRail;
-  const [tip, setTip] = useState<Tip>(null);
-
   const toggleRail = () =>
     setRailed((v) => {
       writeRail(!v);
-      setTip(null);
       return !v;
     });
 
@@ -201,313 +185,165 @@ const SpineBody = memo(function SpineBody({
 
   const width = railed ? RAIL_W : FULL_W;
 
-  // Hovering a railed control raises its flyout; the expanded spine already
-  // speaks in words, so it stays quiet.
-  const tipHandlers = (t: Omit<NonNullable<Tip>, "top">) =>
-    railed
-      ? {
-          onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setTip({ ...t, top: r.top + r.height / 2 });
-          },
-          onMouseLeave: () => setTip(null),
-          onFocus: (e: React.FocusEvent<HTMLElement>) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setTip({ ...t, top: r.top + r.height / 2 });
-          },
-          onBlur: () => setTip(null),
-        }
-      : {};
-
+  // One row shape for everything in the sidebar — a rung, the week's projects,
+  // the footer. Railed, the label is spent and the native tooltip (lib/tooltips)
+  // hands it back with the shortcut.
   const renderRung = (r: { id: Rung; label: string }) => {
     const on = r.id === rung;
     const n = LADDER.indexOf(r.id) + 1;
     const fs = spine?.floors[r.id] ?? null;
-    const cue = fs?.cue ?? null;
-    const statusColor = fs?.calm
-      ? `color-mix(in srgb, ${READY} 66%, var(--muted))`
-      : cue
-        ? toneColor(cue.tone)
-        : null;
-
-    // ── Railed: the glyph IS the row. Readiness survives the narrowing — a
-    // status dot on the shoulder, the meter as a hairline underscore — so the
-    // funnel is still legible at 64px.
-    if (railed) {
-      return (
-        <div key={r.id} className="flex justify-center py-0.5" data-teach={`rung-${r.id}`}>
-          <button
-            onClick={() => setRung(r.id)}
-            aria-label={`${r.label} (⌘${n})`}
-            aria-current={on}
-            className="fast relative flex h-12 w-12 items-center justify-center rounded-xl border border-transparent"
-            style={on ? activePill : undefined}
-            {...tipHandlers({ label: r.label, hint: `⌘${n}`, cue: cue?.label, cueTone: cue ? toneColor(cue.tone) : undefined })}
-          >
-            <span
-              className="spine-rung-n flex items-center justify-center leading-none"
-              data-on={on}
-              style={{ color: on ? "var(--accent)" : "var(--muted)" }}
-            >
-              <AltitudeIcon kind={r.id} />
-            </span>
-            {statusColor && (
-              <span
-                aria-hidden
-                className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full"
-                style={{ background: statusColor }}
-              />
-            )}
-            {fs && !fs.calm && (
-              <span
-                aria-hidden
-                className="absolute bottom-1.5 left-1/2 h-[2px] w-5 -translate-x-1/2 overflow-hidden rounded-full"
-                style={{ background: "var(--line)" }}
-              >
-                <span
-                  className="fast absolute inset-y-0 left-0 rounded-full"
-                  style={{ width: `${Math.round(fs.readiness * 100)}%`, background: READY }}
-                />
-              </span>
-            )}
-          </button>
-        </div>
-      );
-    }
-
+    const cue = fs && !fs.calm ? fs.cue : null;
+    const cueColor = cue ? toneColor(cue.tone) : null;
+    const tip = `${r.label} (⌘${n})${cue ? ` · ${cue.label}` : ""}`;
     return (
-      <div key={r.id} data-teach={`rung-${r.id}`}>
-        <button
-          onClick={() => setRung(r.id)}
-          title={`${r.label} (⌘${n})`}
-          aria-current={on}
-          className="fast relative flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 py-2 text-left"
-          style={on ? activePill : undefined}
-        >
-          {/* line 1 — navigation: the altitude glyph, the name, then a status at
-              the right. A floor at rest wears a check where an active floor wears
-              its cue dot, so the indicator lives in one place and the row
-              collapses to a single quiet line. */}
-          <span className="flex items-center gap-2.5">
-            <span
-              // `spine-rung-n` is the terminal skin's hook: the console hides the
-              // glyph and swaps in a ▸/▾ disclosure caret so the spine reads as a
-              // file tree. Inert on every other material.
-              className="spine-rung-n flex w-[19px] shrink-0 items-center justify-center leading-none"
-              data-on={on}
-              style={{ color: on ? "var(--accent)" : "var(--muted)" }}
-            >
-              <AltitudeIcon kind={r.id} />
+      <button
+        key={r.id}
+        data-teach={`rung-${r.id}`}
+        onClick={() => setRung(r.id)}
+        aria-current={on}
+        aria-label={`${r.label} (⌘${n})`}
+        title={railed ? tip : cue ? cue.label : undefined}
+        className="sb-item"
+      >
+        <span className="sb-icon">
+          <AltitudeIcon kind={r.id} size={16} />
+        </span>
+        <span className="sb-label">{r.label}</span>
+        <span className="sb-trail">
+          {/* the floor's one cue, in its tone — a calm floor shows its key */}
+          {cue ? (
+            <span className="truncate" style={{ color: cueColor ?? undefined, maxWidth: 84 }}>
+              {cue.label}
             </span>
-            <span
-              className="flex-1 text-caption leading-none"
-              style={{ color: on ? "var(--text)" : "var(--muted)", fontWeight: on ? 600 : 400 }}
-            >
-              {r.label}
-            </span>
-            {fs?.calm ? (
-              <span
-                aria-hidden
-                className="flex shrink-0 items-center leading-none"
-                style={{ color: `color-mix(in srgb, ${READY} 66%, var(--muted))` }}
-                title="At rest — nothing here needs you"
-              >
-                <svg
-                  viewBox="0 0 12 12"
-                  width="12"
-                  height="12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2.5 6.5 5 9l4.5-5.5" />
-                </svg>
-              </span>
-            ) : cue ? (
-              <span
-                aria-hidden
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ background: toneColor(cue.tone) }}
-              />
-            ) : null}
-          </span>
-
-          {/* line 2 — readiness. Only when there's still ground to cover: the
-              meter (a track begging to be filled) and the one cue. A calm floor
-              has neither — its check on line 1 says all it needs to. */}
-          {fs && !fs.calm && (
-            <span className="flex items-center gap-2" style={{ paddingLeft: 29 }}>
-              <span
-                className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full"
-                style={{ background: "var(--line)" }}
-              >
-                <span
-                  className="fast absolute inset-y-0 left-0 rounded-full"
-                  style={{ width: `${Math.round(fs.readiness * 100)}%`, background: READY }}
-                />
-              </span>
-              {cue && (
-                // `--text-meta`, not `--text-micro`: this is the navigation's
-                // ONLY status signal ("7 to ready"), and it was simultaneously
-                // the smallest step on the scale and — before --warn was
-                // recalibrated — the lowest-contrast text in the app. The token
-                // fix carried most of it; the last 1px is this.
-                <span
-                  className="mono shrink-0 truncate text-meta leading-none"
-                  style={{ color: toneColor(cue.tone), maxWidth: 88 }}
-                  title={cue.label}
-                >
-                  {cue.label}
-                </span>
-              )}
-            </span>
+          ) : (
+            <Kbd keys={["⌘", String(n)]} />
           )}
-        </button>
-      </div>
+        </span>
+        {railed && cueColor && <span aria-hidden className="sb-cue-rail" style={{ background: cueColor }} />}
+      </button>
     );
   };
 
-  // The footer utilities share one shape across both widths: glyph, then a name
-  // that the rail simply doesn't spend.
   const utility = (opts: { icon: ReactNode; label: string; hint: string; onClick: () => void }) => (
-    <div className={railed ? "flex justify-center py-0.5" : undefined}>
-      <button
-        onClick={opts.onClick}
-        title={railed ? undefined : `${opts.label} (${opts.hint})`}
-        aria-label={`${opts.label} (${opts.hint})`}
-        className={`fast flex items-center rounded-lg border border-transparent text-muted hover:text-ink ${
-          railed ? "h-11 w-11 justify-center" : "w-full gap-2.5 px-2.5 py-2 text-left"
-        }`}
-        {...tipHandlers({ label: opts.label, hint: opts.hint })}
-      >
-        <span className="flex w-[19px] shrink-0 items-center justify-center leading-none">{opts.icon}</span>
-        {!railed && <span className="text-caption leading-none">{opts.label}</span>}
-      </button>
-    </div>
+    <button
+      onClick={opts.onClick}
+      title={`${opts.label} (${opts.hint})`}
+      aria-label={`${opts.label} (${opts.hint})`}
+      className="sb-item"
+    >
+      <span className="sb-icon">{opts.icon}</span>
+      <span className="sb-label">{opts.label}</span>
+    </button>
   );
 
   return (
     <div
       className="spine relative z-40 shrink-0 overflow-hidden"
       data-rail={railed || undefined}
+      data-collapsed={collapsed || undefined}
       style={{
         width: collapsed ? 0 : width,
         transition: "width var(--d-slow) var(--ease-out)",
-        background: "transparent",
       }}
     >
       {/* Inner holds its natural width so the content never reflows while the
           outer clips it shut. */}
       <div
-        className="relative flex h-full flex-col"
+        className="sb-inner"
         style={{
           width,
           opacity: collapsed ? 0 : 1,
           transition: "opacity var(--d-base) var(--ease-out), width var(--d-slow) var(--ease-out)",
         }}
       >
-      {/* Right separator — runs the full height when the spine is wide enough to
-          clear the macOS traffic lights; railed, it starts below them. */}
-      <div className="spine-separator pointer-events-none absolute bottom-0 right-0 w-px bg-line" />
+        {/* Pure drag region — clears the macOS traffic lights. */}
+        <div data-tauri-drag-region className="spine-top w-full shrink-0" />
 
-      {/* Pure drag region — clears the macOS traffic lights. */}
-      <div data-tauri-drag-region className="spine-top shrink-0 w-full" />
+        {/* The workspace: the mark and the name. A tap goes home to the Schedule,
+            the surface the day actually runs on. */}
+        <button ref={wordmarkRef} onClick={() => setRung("day")} title="Schedule (⌘1)" className="sb-ws">
+          <span className="sb-mark" aria-hidden />
+          {!railed && <span className="truncate">Nuvo</span>}
+        </button>
 
-      {/* Wordmark home — brand + a tap back to the Schedule, the surface the
-          day actually runs on. Railed, the mark keeps its place as the initial. */}
-      <button
-        ref={wordmarkRef}
-        onClick={() => setRung("day")}
-        title="Home"
-        className={`fast wordmark select-none py-3 text-head leading-none ${railed ? "text-center" : "px-4 text-left"} ${rung === "day" ? "wordmark-grad" : ""}`}
-        style={rung === "day" ? {} : { color: "var(--muted)", opacity: 0.5 }}
-      >
-        {railed ? "N" : "Nuvo"}
-      </button>
+        <nav className="flex w-full flex-col gap-px" aria-label="Floors">
+          {EXECUTE.map(renderRung)}
+          <div className="sb-group">{!railed && <span className="sb-grow">Build</span>}</div>
+          {BUILD.map(renderRung)}
+        </nav>
 
-      <nav className={`flex flex-1 flex-col pt-3 ${railed ? "px-1.5" : "px-2"}`}>
-        {railed ? (
-          <div className="mx-auto mb-1.5 h-px w-5 bg-line" />
-        ) : (
-          <div className="section-label px-2.5 pb-1.5">Execute</div>
-        )}
-        {EXECUTE.map(renderRung)}
+        <SidebarWeek railed={railed} />
 
-        {railed ? (
-          <div className="mx-auto my-2.5 h-px w-5 bg-line" />
-        ) : (
+        <div className="sb-foot">
+          {/* First-run reward spine — derived 5-milestone tracker; retires itself
+              for established users, always dismissible. */}
+          <GettingStarted compact={railed} />
+          {utility({ icon: <SettingsIcon size={16} />, label: "Settings", hint: "⌘,", onClick: openSettings })}
+          {utility({
+            icon: <span className="text-caption leading-none">?</span>,
+            label: "Shortcuts",
+            hint: "?",
+            onClick: openShortcuts,
+          })}
+          {/* The width is a control, so it sits with the other chrome — never a
+              hover-only affordance. Not offered while the rail is forced (the
+              chat is open on a narrow window): an Expand that cannot expand is
+              worse than none. */}
+          {!forceRail &&
+            utility({
+              icon: <ChevronIcon dir={railed ? "right" : "left"} size={14} />,
+              label: railed ? "Expand" : "Collapse",
+              hint: "⌘\\",
+              onClick: toggleRail,
+            })}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// The week's committed projects, on every page (D-190): the answer to "what am
+// I carrying" no longer lives only on the Schedule. A read of `useWeekCrown`
+// (never re-derived here) in its own component, so only this list — not the
+// sidebar — re-renders when the vertical changes.
+const SidebarWeek = memo(function SidebarWeek({ railed }: { railed: boolean }) {
+  const crown = useWeekCrown();
+  const { openRecord } = useAppNavigation();
+  const rows = crown?.rows ?? [];
+  if (rows.length === 0) return null;
+  const landed = rows.filter((r) => r.state === "landed" || r.state === "shipped").length;
+  return (
+    <div className="sb-week">
+      <div className="sb-group">
+        {!railed && (
           <>
-            <div className="mx-2.5 my-3 border-t border-line" />
-            <div className="section-label px-2.5 pb-1.5">Build</div>
+            <span className="sb-grow">This week</span>
+            <span className="sb-count">
+              {landed}/{rows.length}
+            </span>
           </>
         )}
-        {BUILD.map(renderRung)}
-
-        {/* The reward state, gently: every floor settled — moving or at rest. */}
-        {spine?.allAtRest &&
-          (railed ? (
-            <div className="rise mt-3 flex justify-center" title="All at rest">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} />
-            </div>
-          ) : (
-            <div className="rise mt-3 flex items-center gap-1.5 px-2.5" title="All at rest">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} />
-            </div>
-          ))}
-      </nav>
-
-      <div className={`mt-auto pb-3 ${railed ? "px-1.5" : "px-2"}`}>
-        {/* First-run reward spine — derived 5-milestone tracker. Present on every
-            elevation (the Spine is the one persistent chrome), retires itself for
-            established users, and is always dismissible. */}
-        <GettingStarted compact={railed} />
-        {utility({ icon: <SettingsIcon />, label: "Settings", hint: "⌘,", onClick: openSettings })}
-        {utility({
-          icon: <span className="text-caption leading-none">⌘</span>,
-          label: "Shortcuts",
-          hint: "?",
-          onClick: openShortcuts,
-        })}
-
-        {/* The width itself is a control, so it sits with the other chrome —
-            always visible, never a hover-only affordance. The exception is a
-            forced rail: there is no room to expand into while the chat is open
-            on a narrow window, and an "Expand" that cannot expand is worse than
-            no control at all. Close the chat or widen the window and it returns,
-            still set to whatever the user last chose. */}
-        {!forceRail &&
-          utility({
-            icon: <ChevronIcon dir={railed ? "right" : "left"} />,
-            label: railed ? "Expand" : "Collapse",
-            hint: "⌘\\",
-            onClick: toggleRail,
-          })}
       </div>
-      </div>
-
-      {/* Railed flyout — portalled so the spine can stay clipped for its width
-          animation without shearing the label off. */}
-      {railed && tip && !collapsed &&
-        createPortal(
-          <div
-            className="glass elev-3 pointer-events-none fixed z-[60] flex items-center gap-2 rounded-lg border border-line py-1.5 pl-2.5 pr-3"
-            style={{ left: RAIL_W + 8, top: tip.top, transform: "translateY(-50%)" }}
-            role="tooltip"
+      {rows.map((r) => {
+        const done = r.state === "landed" || r.state === "shipped";
+        const count = r.work.total > 0 ? `${r.work.done}/${r.work.total}` : "";
+        return (
+          <button
+            key={r.projectId}
+            className="sb-item"
+            data-landed={done || undefined}
+            onClick={() => openRecord("project", r.projectId)}
+            title={railed ? `${r.title}${count ? ` · ${count}` : ""}` : undefined}
+            aria-label={r.title}
           >
-            <span className="text-caption leading-none text-ink">{tip.label}</span>
-            {tip.cue && (
-              <span className="mono text-micro leading-none" style={{ color: tip.cueTone }}>
-                {tip.cue}
-              </span>
-            )}
-            {tip.hint && (
-              <span className="mono text-micro leading-none text-muted opacity-70">{tip.hint}</span>
-            )}
-          </div>,
-          document.body
-        )}
+            <span className="sb-icon">
+              <Dot color={r.color} shape={done ? "round" : "square"} />
+            </span>
+            <span className="sb-label">{r.title}</span>
+            <span className="sb-trail">{count}</span>
+          </button>
+        );
+      })}
     </div>
   );
 });

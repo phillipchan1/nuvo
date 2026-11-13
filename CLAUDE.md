@@ -59,6 +59,8 @@ Exact chrome, heroes that mean it. Full grammar: **`docs/design-language.md`** �
 building any new surface. Tokens in `index.css` (Light and Dark, nothing else); chrome and motion
 in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain** wall.
 
+- **The frame** (D-190): sidebar on a `--ground`, all work in one inset `.app-panel`, one
+  `PageBar` per page (breadcrumb · tabs · actions). No page draws its own toolbar. `?rail=frame`.
 - **Build from the kit** (`src/components/kit/`, D-190). A button, field, choice, chip, row,
   menu, picker, popover or dialog is a kit part — never hand-rolled, never re-styled at the call
   site. Need something it lacks? Add it to the kit (and to `?kit`) first. Verify at `?kit`.

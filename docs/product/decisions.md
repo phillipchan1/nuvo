@@ -6825,7 +6825,7 @@ artifact.
 **Anchor.** Visual; closes no ledger row. Strains nothing beyond D-189's P14 rewrite. Four
 no's: no pool, no user-facing name, nothing data-dependent, nothing account-specific.
 
-*Status: kit built 2026-11-12 on `claude/instrument-design-language`; no page uses it yet. Verified:
+*Status: kit built 2026-11-12 on `claude/instrument-design-language`. **The frame** followed the same day: the sidebar replaces the Spine (incl. the week's projects on every page), the work sits in one inset panel on a darker ground, and the Schedule and every floor wear one PageBar (the Schedule's ⋯ is a kit Menu). Verified at `?rail=frame` in Light and Dark, expanded and railed; not yet against live data. Verified:
 typecheck, build, `tests/kit.test.tsx` (placement, month grid, keycaps, keyboard, menu dismissal,
 CSS guards), `?kit` at 1440 and 375 in Light and Dark, the live menu (↑/↓, Esc returns focus),
 the dialog (scrim, focus).*

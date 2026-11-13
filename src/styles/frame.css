@@ -1,0 +1,142 @@
+/* ════════════════════════════════════════════════════════════════════════
+   THE FRAME (D-190) — the window every desktop page lives in.
+
+   The window is a darker GROUND. The sidebar (Spine.tsx) sits on it, and all
+   the work sits in one inset PANEL with a 12px corner — the Planner and the
+   floor overlay above it. Every page in the panel wears the same 48px bar
+   (kit PageBar). The chat slot sits on the ground to the panel's right.
+
+   Desktop only: MobileShell is the other branch of ResponsiveShell and has
+   no ground/panel distinction.
+   ════════════════════════════════════════════════════════════════════════ */
+
+@media (min-width: 768px) {
+  html:root,
+  html:root body {
+    background: var(--ground);
+  }
+}
+.app-ground { background: var(--ground); }
+.app-canvas { background: transparent; }
+
+/* The panel. Everything that paints `.atmosphere` inside it paints the panel,
+   so the Schedule, the floors and their overlays read as one sheet. */
+.app-panel {
+  position: relative;
+  isolation: isolate;
+  margin: 8px 8px 8px 0;
+  border-radius: var(--r-dialog);
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line-1), var(--sh-1);
+  overflow: hidden;
+  --atmosphere-base: var(--panel);
+}
+.spine[data-collapsed] + .app-panel { margin-left: 8px; }
+/* The chat sits on the ground beside the panel: the panel keeps its right
+   gutter only when the chat rail is shut (a 64px strip of its own). */
+
+/* ── The sidebar ────────────────────────────────────────────────────────── */
+.sb-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 8px 10px;
+}
+.spine[data-rail] .sb-inner { padding: 0 8px 10px; align-items: center; }
+
+.sb-ws {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  margin: 2px 0 10px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ink);
+  font: 650 14px/1 var(--font-sans);
+  letter-spacing: -0.015em;
+  text-align: left;
+  width: 100%;
+}
+.spine[data-rail] .sb-ws { width: 36px; padding: 0; justify-content: center; }
+.sb-mark {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.sb-mark::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-left: 2px solid var(--on-accent);
+  border-right: 2px solid var(--on-accent);
+  transform: skewX(-14deg);
+}
+
+.sb-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 4px;
+  color: var(--faint);
+  font: 600 12px/1 var(--font-sans);
+  width: 100%;
+}
+.sb-group > .sb-grow { flex: 1; }
+.sb-group > .sb-count { font-weight: 500; font-variant-numeric: tabular-nums; }
+.spine[data-rail] .sb-group { padding: 10px 0 4px; justify-content: center; }
+.spine[data-rail] .sb-group::before { content: ""; width: 16px; height: 1px; background: var(--line-2); }
+
+.sb-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--h-sm);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 13px/1 var(--font-sans);
+  text-align: left;
+  min-width: 0;
+  transition: background-color var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
+}
+.sb-item > .sb-icon { display: inline-flex; flex: none; width: 16px; justify-content: center; color: var(--muted); }
+.sb-item > .sb-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item > .sb-trail { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font: 500 12px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.sb-item > .sb-trail .k-kbds { opacity: 0; transition: opacity var(--d-base) var(--ease-out); }
+.sb-item[aria-current="true"] {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: var(--sh-1), 0 0 0 1px var(--line-1);
+}
+.sb-item[aria-current="true"] > .sb-icon { color: var(--accent); }
+@media (hover: hover) {
+  .sb-item:not([aria-current="true"]):hover { background: var(--hover); color: var(--ink); transition-duration: 0ms; }
+  .sb-item:hover > .sb-trail .k-kbds { opacity: 1; transition-duration: 0ms; }
+}
+html:root .sb-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.spine[data-rail] .sb-item { width: 36px; padding: 0; justify-content: center; }
+.spine[data-rail] .sb-item > .sb-label,
+.spine[data-rail] .sb-item > .sb-trail { display: none; }
+
+/* a floor's one status mark, where the trailing slot is */
+.sb-cue { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.spine[data-rail] .sb-item .sb-cue-rail { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; }
+
+.sb-week { display: grid; gap: 1px; width: 100%; }
+.sb-week .sb-item > .sb-icon .k-dot { width: 8px; height: 8px; }
+.sb-week .sb-item[data-landed] > .sb-label { color: var(--muted); }
+
+.sb-foot { margin-top: auto; display: grid; gap: 1px; width: 100%; padding-top: 8px; }
+.spine[data-rail] .sb-foot { justify-items: center; }

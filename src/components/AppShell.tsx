@@ -466,10 +466,8 @@ const AppShellInner = memo(function AppShellInner() {
   }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal, openOverlay]);
 
   return (
-    // The app is one sheet on a ground: a single hairline wraps spine · work ·
-    // Nuvo, so the chat reads as part of the app rather than a column stuck to
-    // its side. `.atmosphere` lives on the frame now, not here — it still paints
-    // exactly once and still runs continuously across everything inside.
+    // The frame (D-190, styles/frame.css): a darker ground; the sidebar and the
+    // chat sit on it, and the work sits in one inset panel between them.
     // Desktop only; MobileShell is the other branch of ResponsiveShell.
     <div className="app-ground h-full">
       {/* macOS only: the ground's top band holds the traffic lights, so it has
@@ -481,7 +479,7 @@ const AppShellInner = memo(function AppShellInner() {
           that was underneath all along. `.atmosphere` lives here, on the sheet,
           so it still paints once and still runs continuously across spine ·
           rail · calendar — the cardinal rule is untouched. */}
-      <div className="app-canvas atmosphere flex min-w-0 flex-1 flex-col">
+      <div className="app-canvas flex min-w-0 flex-1 flex-col">
       <TrialBanner />
       <div className="flex min-h-0 flex-1">
       <Spine
@@ -493,7 +491,9 @@ const AppShellInner = memo(function AppShellInner() {
         openShortcuts={openShortcuts}
       />
 
-      <div className="flex min-w-0 flex-1">
+      {/* The panel (D-190): all the work sits on one inset sheet with a 12px
+          corner, on the darker ground the sidebar and the chat share. */}
+      <div className="app-panel flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
           <Planner
             openFlow={openFlow}

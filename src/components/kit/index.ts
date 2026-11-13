@@ -22,4 +22,5 @@ export {
 } from "./Popover";
 export { MiniMonth, monthGrid } from "./MiniMonth";
 export { Dialog } from "./Dialog";
+export { PageBar } from "./PageBar";
 export { PaceTrack } from "../progress/PaceTrack";

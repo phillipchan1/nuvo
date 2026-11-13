@@ -6,6 +6,8 @@ import "./index.css";
 import "./styles/instrument.css";
 // The kit's parts (D-190) — src/components/kit/.
 import "./styles/kit.css";
+// The frame — ground, sidebar, inset panel (D-190).
+import "./styles/frame.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

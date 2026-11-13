@@ -2,6 +2,7 @@ import { duplicateEventInput } from "../lib/eventActs";
 import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
+import { Button, IconButton, Menu, MenuItem, PageBar, Segmented } from "./kit";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -88,6 +89,15 @@ import {
 const FC_PLUGINS = [timeGridPlugin, dayGridPlugin, interactionPlugin];
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
+
+// The view switch's five faces, in the bar's Segmented (D-190).
+const CAL_VIEWS = [
+  { value: "board", label: "Spread" },
+  { value: "timeGridDay", label: "Day" },
+  { value: "timeGridWeek", label: "Week" },
+  { value: "dayGridMonth", label: "Month" },
+  { value: "year", label: "Year" },
+] as const satisfies readonly { value: CalView; label: string }[];
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
  *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
@@ -439,6 +449,7 @@ function CalendarPane({
   const { scale: uiScale } = useUiScale();
   const { recordUndo } = useOptionalUndoStack();
   const [utilsOpen, setUtilsOpen] = useState(false);
+  const utilsBtn = useRef<HTMLButtonElement>(null);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
   const eventsRef = useRef(events);
@@ -4898,221 +4909,79 @@ function CalendarPane({
         />
       )}
 
-      {/* ── Navigation bar — two clusters (nav · altitude/door) with a flexible
-            drag-region gap between. Also fills the macOS titlebar zone (titlebar-pad). */}
-      <div
-        data-tauri-drag-region="deep"
-        // `pb-2`, not `py-2`: `.titlebar-pad` owns the top (its own 0.5rem base
-        // plus the macOS titlebar inset), and declaring padding-top here too
-        // just re-creates the collision that flattened it — see index.css.
-        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 pb-2"
-      >
-        {/* Left — Show panels (focus exit only) + period nav */}
-        <div className="flex min-w-0 items-center gap-1">
-          {onToggleFocus && focusMode && (
-            <button
-              onClick={onToggleFocus}
-              className="fast mr-0.5 flex h-6 shrink-0 items-center gap-1.5 rounded-full border py-0.5 pl-1.5 pr-2.5 text-label font-medium"
-              style={{ borderColor: "var(--accent)", color: "var(--accent)", background: "var(--accent-soft)" }}
-              title="Show panels (⌘.)"
-              aria-pressed={true}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" strokeWidth="1.3" />
-                <line x1="6" y1="2.75" x2="6" y2="13.25" strokeWidth="1.3" />
-                <path d="M8.75 6 10.75 8l-2 2" strokeWidth="1.2" />
-              </svg>
-              <span className="leading-none">Show panels</span>
-            </button>
-          )}
-
-          {view !== "board" && (
-            <>
-              <button
-                onClick={() => pageBy(-1)}
-                className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-                title="Previous (⌘← or −)"
+      {/* ── The one bar (D-190) — breadcrumb (the span on screen) · travel ·
+            the view · tools. The span is the crumb's last word for every view,
+            so the pane never repeats it (the Year's numeral too, D-129). */}
+      <PageBar
+        leading={
+          onToggleFocus && focusMode ? (
+            <Button size="xs" active onClick={onToggleFocus} title="Show panels (⌘.)" aria-pressed={true}>
+              Show panels
+            </Button>
+          ) : undefined
+        }
+        icon={<Icon name="calendar" size={16} />}
+        trail={["Schedule", view === "board" ? "Spread" : isYear ? String(yearCursor) : monthTitle]}
+        actions={
+          <>
+            {/* Only while you're away from home (the phone hides it too). */}
+            <TimeZoneChip now={now} hideAtHome />
+            {onOpenWeekPlan && weekGlyph && (
+              <Button
+                onClick={onOpenWeekPlan}
+                title={weekButtonTitle ?? weekButtonLabel}
+                icon={<WeekEmblem spec={weekGlyph} state="forming" size={18} hideAmbient />}
+                style={weekButtonGlow ? { boxShadow: "0 0 0 1px var(--signal), 0 0 0 4px var(--signal-soft)" } : undefined}
               >
-                <Icon name="chevron-left" size={14} />
-              </button>
-              <button
-                onClick={() => pageBy(1)}
-                className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-                title="Next (⌘→ or =)"
-              >
-                <Icon name="chevron-right" size={14} />
-              </button>
-              <button
-                onClick={pageToday}
-                className="fast shrink-0 rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-                title="Go to today (⌘T)"
-              >
-                Today
-              </button>
-            </>
-          )}
-          <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
-        </div>
-
-        {/* Center — what span you're looking at, for every view. Week and Day
-              used to lean on the rail's "THIS WEEK" label, but that names the
-              week you PLANNED (the sprint), not the one on screen: page forward
-              and nothing said which week this was, and in focus mode there was
-              no label at all. The Year's numeral sits in this seat so the pane
-              itself does not repeat it (D-129). */}
-        {view !== "board" ? (
-          <div
-            data-tauri-drag-region
-            className="pointer-events-none flex max-w-[220px] select-none justify-center truncate leading-none"
-          >
-            <span className="masthead truncate text-lead leading-none text-text">
-              {isYear ? yearCursor : monthTitle}
-            </span>
-          </div>
-        ) : (
-          <div className="w-0" data-tauri-drag-region />
-        )}
-
-        {/* Right — quiet clock · week door · altitude · overflow. No overflow-hidden
-            here — the ··· menu drops below and must be allowed to paint. */}
-        <div className="flex min-w-0 items-center justify-end gap-1">
-          <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
-          {/* Only while you're away from home — at home it said "you are where
-              you live" in the busiest strip on screen (the phone hides it too). */}
-          <TimeZoneChip now={now} hideAtHome />
-
-          {onOpenWeekPlan && weekGlyph && (
-            <button
-              onClick={onOpenWeekPlan}
-              className={`fast relative flex shrink-0 items-center gap-1 rounded-full border py-0.5 pl-0.5 pr-1.5 text-label font-medium ${
-                weekButtonGlow ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
-              }`}
-              style={weekButtonGlow ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
-              title={weekButtonTitle ?? weekButtonLabel}
-            >
-              <WeekEmblem spec={weekGlyph} state="forming" size={18} hideAmbient />
-              <span className="leading-none">{weekButtonLabel}</span>
-              {weekButtonGlow && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
-            </button>
-          )}
-
-          {onViewChange && (
-            <div data-tabs="views" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
-              {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth", "year"] as const).map((v) => {
-                const on = view === v;
-                return (
-                  <button
-                    key={v}
-                    data-on={on}
-                    onClick={() => onViewChange(v)}
-                    // The whole switcher measured 15px tall — half the WCAG
-                    // 2.5.8 floor on the control that changes what the primary
-                    // surface even shows. The pill grows to the 24px floor via
-                    // the hit box, not the type: `tap-desk-h` plus centring, so
-                    // the segmented control looks identical and is twice the
-                    // target.
-                    className="tap-desk-h fast inline-flex items-center justify-center rounded-full px-2 py-0.5 text-label leading-none"
-                    style={{
-                      background: on ? "var(--surface)" : "transparent",
-                      color: on ? "var(--accent)" : "var(--muted)",
-                      fontWeight: on ? 600 : 500,
-                      boxShadow: on ? "var(--shadow-1)" : "none",
-                    }}
-                  >
-                    {v === "board"
-                      ? "Spread"
-                      : v === "timeGridDay"
-                        ? "Day"
-                        : v === "timeGridWeek"
-                          ? "Week"
-                          : v === "dayGridMonth"
-                            ? "Month"
-                            : "Year"}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Overflow — refresh, show-hidden, recurring upkeep. */}
-          <div className="relative shrink-0">
-            <button
-              onClick={() => setUtilsOpen((o) => !o)}
-              className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-              title="More calendar tools"
-              aria-expanded={utilsOpen}
-              aria-haspopup="menu"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
-                <circle cx="3" cy="7" r="1.15" />
-                <circle cx="7" cy="7" r="1.15" />
-                <circle cx="11" cy="7" r="1.15" />
-              </svg>
-            </button>
-            {utilsOpen && (
+                {weekButtonLabel}
+              </Button>
+            )}
+            {view !== "board" && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setUtilsOpen(false)} />
-                <div
-                  role="menu"
-                  className="pop-in [--pop-origin:top_right] elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
-                >
-                  {onOpenUpkeep && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        onOpenUpkeep();
-                        setUtilsOpen(false);
-                      }}
-                      className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label text-ink hover:bg-accent-soft"
-                    >
-                      <span className="mono text-micro">↻</span>
-                      <span>Recurring upkeep</span>
-                    </button>
-                  )}
-                  {onRefreshCalendars && (
-                      <button
-                        role="menuitem"
-                        disabled={refreshingCalendars}
-                        onClick={(e) => {
-                          if (e.shiftKey && onFullRefreshCalendars) onFullRefreshCalendars();
-                          else onRefreshCalendars();
-                          setUtilsOpen(false);
-                        }}
-                        className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label text-ink hover:bg-accent-soft disabled:opacity-40"
-                      >
-                        <Icon name="refresh" size={14} className={refreshingCalendars ? "animate-spin" : undefined} />
-                        <span className="flex-1">Refresh calendars</span>
-                        <span className="text-micro text-muted">⇧ full</span>
-                      </button>
-                    )}
-                    {hiddenKeys.size > 0 && (
-                      <button
-                        role="menuitem"
-                        onClick={() => {
-                          setShowHidden((v) => !v);
-                          setUtilsOpen(false);
-                        }}
-                        className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
-                        style={showHidden ? { color: "var(--accent)" } : undefined}
-                      >
-                        {showHidden ? (
-                          <Icon name="eye" size={14} />
-                        ) : (
-                          <Icon name="eye-off" size={14} />
-                        )}
-                        <span>
-                          {showHidden
-                            ? `Hide ${hiddenKeys.size} again`
-                            : `Show ${hiddenKeys.size} hidden`}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                </>
+                <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} onClick={() => pageBy(-1)} />
+                <Button onClick={pageToday} title="Go to today (⌘T)">
+                  Today
+                </Button>
+                <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} onClick={() => pageBy(1)} />
+              </>
+            )}
+            {onViewChange && <Segmented label="Calendar view" value={view as CalView} onChange={onViewChange} options={CAL_VIEWS} />}
+            <IconButton
+              ref={utilsBtn}
+              label="More calendar tools"
+              icon={<Icon name="more" size={14} />}
+              aria-haspopup="menu"
+              aria-expanded={utilsOpen}
+              onClick={() => setUtilsOpen((o) => !o)}
+            />
+            <Menu anchor={utilsBtn.current} open={utilsOpen} onClose={() => setUtilsOpen(false)} placement="bottom-end" label="Calendar tools">
+              {onOpenUpkeep && (
+                <MenuItem icon={<Icon name="repeat" size={14} />} onSelect={onOpenUpkeep}>
+                  Recurring upkeep
+                </MenuItem>
               )}
-            </div>
-        </div>
-      </div>
+              {onRefreshCalendars && (
+                <MenuItem
+                  icon={<Icon name="refresh" size={14} className={refreshingCalendars ? "animate-spin" : undefined} />}
+                  disabled={refreshingCalendars}
+                  hint="⇧ full"
+                  onSelect={(e) => {
+                    if (e.shiftKey && onFullRefreshCalendars) onFullRefreshCalendars();
+                    else onRefreshCalendars();
+                  }}
+                >
+                  Refresh calendars
+                </MenuItem>
+              )}
+              {hiddenKeys.size > 0 && (
+                <MenuItem icon={<Icon name={showHidden ? "eye" : "eye-off"} size={14} />} onSelect={() => setShowHidden((v) => !v)}>
+                  {showHidden ? `Hide ${hiddenKeys.size} again` : `Show ${hiddenKeys.size} hidden`}
+                </MenuItem>
+              )}
+            </Menu>
+          </>
+        }
+      />
 
       {/* ── The Week Board — "which day" altitude, a toggle away from the grid ── */}
       {view === "board" && (

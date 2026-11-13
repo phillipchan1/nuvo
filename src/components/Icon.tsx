@@ -37,6 +37,7 @@ import {
   Users,
   Video,
   X,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -83,6 +84,7 @@ export type IconName =
   | "repeat"
   | "search"
   | "settings"
+  | "sparkles"
   | "sun"
   | "tag"
   | "trash"
@@ -124,6 +126,7 @@ const GLYPHS: Record<IconName, LucideIcon> = {
   repeat: Repeat,
   search: Search,
   settings: Settings,
+  sparkles: Sparkles,
   sun: Sun,
   tag: Tag,
   trash: Trash2,

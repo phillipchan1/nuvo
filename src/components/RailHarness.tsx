@@ -22,6 +22,10 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
+import Spine from "./Spine";
+import { AgentProvider } from "../hooks/useAgentContext";
+import { Icon } from "./Icon";
+import { Button, IconButton, PageBar, Segmented } from "./kit";
 import MobileTaskList from "./mobile/MobileTaskList";
 import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
@@ -143,7 +147,7 @@ function PopoverStandIn({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function Desktop() {
+function Desktop({ embedded = false }: { embedded?: boolean }) {
   const [tasks, setTasks] = useState(seed);
   const [tab, setTab] = useState<RailTab>("today");
   const [lines, setLines] = useState<string[]>([]);
@@ -162,7 +166,7 @@ function Desktop() {
   const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, VERTICAL), []);
 
   return (
-    <div className="flex h-screen gap-6 p-0">
+    <div className={embedded ? "flex min-h-0 flex-1 gap-6" : "flex h-screen gap-6 p-0"}>
       <LeftRail
         tab={tab}
         setTab={setTab}
@@ -187,6 +191,54 @@ function Desktop() {
             <div key={i}>{l}</div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// `?rail=frame` — the whole desktop frame (D-190) around the real rail: the
+// sidebar on the ground, the inset panel, the one bar. The grid is a stand-in.
+function Frame() {
+  const [rung, setRung] = useState<"day" | "project" | "initiative" | "domain">("day");
+  const [view, setView] = useState<"board" | "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "year">("timeGridWeek");
+  return (
+    <div className="app-ground h-screen">
+      <div className="app-shell flex h-full">
+        <div className="app-canvas flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1">
+            <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} />
+            <div className="app-panel flex min-w-0 flex-1 flex-col">
+              <PageBar
+                icon={<Icon name="calendar" size={16} />}
+                trail={["Schedule", "November 2026"]}
+                actions={
+                  <>
+                    <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
+                    <Button>Today</Button>
+                    <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
+                    <Segmented
+                      label="Calendar view"
+                      value={view}
+                      onChange={setView}
+                      options={[
+                        { value: "board", label: "Spread" },
+                        { value: "timeGridDay", label: "Day" },
+                        { value: "timeGridWeek", label: "Week" },
+                        { value: "dayGridMonth", label: "Month" },
+                        { value: "year", label: "Year" },
+                      ]}
+                    />
+                    <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
+                  </>
+                }
+              />
+              <div className="flex min-h-0 flex-1">
+                <Desktop embedded />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="app-chat-slot" style={{ width: 64 }} />
       </div>
     </div>
   );
@@ -264,11 +316,12 @@ function Phone() {
 export default function RailHarness() {
   const qc = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }), []);
   const store = useMemo(() => ({ data: VERTICAL }) as unknown as VerticalStore, []);
-  const phone = new URLSearchParams(window.location.search).get("rail") === "phone";
+  const mode = new URLSearchParams(window.location.search).get("rail");
+  const phone = mode === "phone";
   return (
     <QueryClientProvider client={qc}>
       <VerticalStoreProvider value={store}>
-        <AppNavigationProvider>{phone ? <Phone /> : <Desktop />}</AppNavigationProvider>
+        <AppNavigationProvider>{phone ? <Phone /> : mode === "frame" ? <AgentProvider><Frame /></AgentProvider> : <Desktop />}</AppNavigationProvider>
       </VerticalStoreProvider>
     </QueryClientProvider>
   );

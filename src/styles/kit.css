@@ -647,3 +647,38 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 @media (prefers-reduced-motion: reduce) {
   .k-pop, .k-dialog, .k-scrim::before, .k-tabs button[aria-selected="true"]::after, .k-check[aria-checked="true"] { animation: none; }
 }
+
+/* ── PageBar — the one bar every page wears (the frame) ─────────────────── */
+.k-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-bar);
+  flex: none;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--line-1);
+  min-width: 0;
+}
+.k-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: none;
+  max-width: 50%;
+  font: 500 13px/1 var(--font-sans);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.k-crumb-icon { display: inline-flex; color: var(--muted); flex: none; }
+.k-crumb-sep { color: var(--faint); }
+.k-crumb-up { overflow: hidden; text-overflow: ellipsis; }
+.k-crumb-here { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.005em; }
+.k-bar-tabs { display: flex; align-self: stretch; margin-left: 18px; }
+.k-bar-tabs .k-tabs { min-height: 0; }
+.k-bar-fill { flex: 1; align-self: stretch; min-width: 8px; }
+.k-bar-actions { display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+@media (max-width: 767px) {
+  .k-bar { padding: 0 8px 0 12px; }
+  .k-bar-tabs { margin-left: 8px; }
+}

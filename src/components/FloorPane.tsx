@@ -7,7 +7,9 @@ import { memo, useEffect } from "react";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
-import { Keycap } from "./ui";
+import { Icon } from "./Icon";
+import { AltitudeIcon } from "./icons";
+import { IconButton, PageBar, Tabs } from "./kit";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
@@ -18,6 +20,15 @@ import InitiativeGroomFloor from "./floors/InitiativeGroomFloor";
 import ShippedWall from "./floors/ShippedWall";
 import ProjectReadinessStrip from "./floors/ProjectReadinessStrip";
 import InitiativeReadinessStrip from "./floors/InitiativeReadinessStrip";
+
+const RUNG_LABEL: Record<Rung, string> = { day: "Schedule", project: "Projects", initiative: "Initiatives", domain: "Domains" };
+// The four faces of a build altitude (D-099), numbered 1–4 in their tooltips.
+const FACES = [
+  { value: "ondeck", label: "On Deck", title: "On Deck (1)" },
+  { value: "groom", label: "Groom", title: "Groom (2)" },
+  { value: "all", label: "Table", title: "Table (3)" },
+  { value: "shipped", label: "Shipped", title: "Shipped (4)" },
+] as const;
 
 // The faces of the project altitude: "ondeck" answers WHEN (time-box projects
 // across weeks, with the needs-a-week inbox); "groom" answers WHAT (shape each
@@ -33,7 +44,6 @@ function FloorPane({
   rung,
   focus,
   focusDomain,
-  goRung,
   projectView,
   setProjectView,
   initiativeView,
@@ -112,45 +122,38 @@ function FloorPane({
           works the same way: no chrome header, drag on the toolbar's empty spacer).
           The face switcher rides the RIGHT cluster in the calendar toolbar's own
           idiom, so "which shape of this altitude" reads identically everywhere. */}
-      <div
-        data-tauri-drag-region="deep"
-        className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-5"
-      >
-        {rung === "domain" && <span className="mono text-label font-medium text-ink">Domains</span>}
-        <div className="flex-1" />
-        {rung === "project" && (
-          <RungTabs
-            tabs={[
-              { id: "ondeck", label: "On Deck", on: backToProjects },
-              { id: "groom", label: "Groom", on: () => setProjectView("groom") },
-              { id: "all", label: "Table", on: () => setProjectView("all") },
-              { id: "shipped", label: "Shipped", on: () => setProjectView("shipped") },
-            ]}
-            active={projectView}
-            detailName={null}
+      {/* The one bar (D-190): breadcrumb · the altitude's four faces as tabs ·
+          the chat. The sidebar already carries the Schedule, so the bar doesn't. */}
+      <PageBar
+        icon={<AltitudeIcon kind={rung} size={16} />}
+        trail={[RUNG_LABEL[rung]]}
+        tabs={
+          rung === "project" ? (
+            <Tabs
+              label="Project views"
+              value={projectView}
+              onChange={(v) => (v === "ondeck" ? backToProjects() : setProjectView(v))}
+              tabs={FACES}
+            />
+          ) : rung === "initiative" ? (
+            <Tabs
+              label="Initiative views"
+              value={initiativeView}
+              onChange={(v) => (v === "ondeck" ? backToInitiatives() : setInitiativeView(v))}
+              tabs={FACES}
+            />
+          ) : undefined
+        }
+        actions={
+          <IconButton
+            label="Ask Nuvo"
+            shortcut={["⌘", "J"]}
+            active={agentOpen}
+            icon={<Icon name="sparkles" size={14} />}
+            onClick={toggleAgent}
           />
-        )}
-        {rung === "initiative" && (
-          <RungTabs
-            tabs={[
-              { id: "ondeck", label: "On Deck", on: backToInitiatives },
-              { id: "groom", label: "Groom", on: () => setInitiativeView("groom") },
-              { id: "all", label: "Table", on: () => setInitiativeView("all") },
-              { id: "shipped", label: "Shipped", on: () => setInitiativeView("shipped") },
-            ]}
-            active={initiativeView}
-            detailName={null}
-          />
-        )}
-        <button
-          onClick={toggleAgent}
-          className={`fast flex items-center gap-1 rounded-md px-2 py-1 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
-          title="Nuvo agent"
-        >
-          <Keycap>⌘J</Keycap>
-        </button>
-        <button onClick={() => goRung("day")} className="mono text-label text-muted hover:text-ink">Schedule ↓</button>
-      </div>
+        }
+      />
 
       {/* The On Deck faces are PLANNER surfaces, not documents: rail + grid filling
           the pane, scrolling inside themselves, exactly like the Schedule. Every
@@ -185,54 +188,3 @@ function FloorPane({
 }
 
 export default memo(FloorPane, skipWhenAsleep);
-
-// The face switcher — "which shape of this altitude am I looking at". It wears the
-// Schedule's view-switcher idiom verbatim (CalendarPane's Spread · Day · Week ·
-// Month pill: rounded-full, --surface-2 trough, the active face lifted onto
-// --surface in the accent) and sits in the same place, the toolbar's right
-// cluster. One control, one precedent — the number keys stay in the tooltip
-// rather than printed in the pill, exactly like the calendar's.
-function RungTabs({
-  tabs,
-  active,
-  detailName,
-}: {
-  tabs: { id: string; label: string; on: () => void }[];
-  active: string;
-  detailName: string | null;
-}) {
-  return (
-    <span className="flex shrink-0 items-center gap-2.5">
-      <span data-tabs="floor" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
-        {tabs.map((t, i) => {
-          const on = active === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={t.on}
-              data-on={on}
-              className="fast rounded-full px-2 py-0.5 text-label leading-none"
-              style={{
-                background: on ? "var(--surface)" : "transparent",
-                color: on ? "var(--accent)" : "var(--muted)",
-                fontWeight: on ? 600 : 500,
-                boxShadow: on ? "var(--shadow-1)" : "none",
-              }}
-              title={`${t.label}  ·  ${i + 1}`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </span>
-      {detailName && (
-        <>
-          <span className="text-muted">›</span>
-          <span className="mono max-w-[220px] truncate text-label font-medium" style={{ color: "var(--accent)" }}>
-            {detailName}
-          </span>
-        </>
-      )}
-    </span>
-  );
-}

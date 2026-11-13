@@ -104,31 +104,13 @@ html:root .wordmark:not(.wordmark-grad) {
    selected row with the accent and marks its leading edge; you can find your
    place in a 200px thumbnail. (The inline style is the documented hook — it
    has to be beaten with !important.) */
-html:root .spine [style*="backdrop-filter"],
-html:root .chapter-active {
-  background: var(--accent-soft) !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
 
-html:root .spine nav button[aria-current="true"]::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-}
+
 
 /* …and the row's ink comes with it. The glyph and the label are inline-styled
    (var(--text) / var(--muted)), so they need !important; the pair is targeted
    precisely so the readiness meter and cue below keep their own colours. */
-html:root .spine nav button[aria-current="true"] .spine-rung-n,
-html:root .spine nav button[aria-current="true"] .spine-rung-n + span {
-  color: var(--accent) !important;
-}
+
 
 /* Selection doesn't levitate here — it fills. The -3px rise + 1.5% scale is a
    paper gesture, and the grey border that replaced it said "disabled" more than
@@ -168,10 +150,7 @@ html:root .row-hover:hover {
    from the frost and flat had nowhere to get. Same wash, a touch lighter: the
    chrome should answer the pointer without competing with the filled active
    row sitting next to it. */
-html:root .spine nav button:not([aria-current="true"]):hover,
-html:root .spine button:hover {
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-}
+
 
 /* ── 4. VOICE — the eyebrow drops its ceremony ───────────────────────────
    Tracked micro-caps are an editorial device (and terminal's ▾-prefixed caps
@@ -194,10 +173,7 @@ html:root [data-breadcrumb] .masthead {
 
 /* Density: the register's rows are tighter than paper's, which is meant to
    breathe. Not terminal-tight — just a notch. */
-html:root .spine nav button {
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
+
 
 /* Calendar blocks: paper wants tinted glass (the frost above is already gone
    here) — flat wants a squarer chip, closer to a calendar app's. */
@@ -359,17 +335,13 @@ html:root .app-topbar button.fast.border {
    the loudest non-workspace tell left in the chrome. Every workspace sidebar
    in this register uses a soft rectangle at the same radius as everything
    else, so the nav reads as a list of rows rather than a stack of lozenges. */
-html:root .spine button {
-  border-radius: var(--radius);
-}
+
 
 /* Group labels ("Execute", "Build") sit flush against their first row with no
    space at all, so the label reads as part of the row beneath it instead of as
    a heading over the group. A workspace gives it a little air below and none
    above — the gap belongs BETWEEN groups, not inside one. */
-html:root .spine .section-label {
-  margin-bottom: 4px;
-}
+
 
 /* MODALS ARE SHEETS. The record and create frames paint themselves `bg-bg`,
    which on paper is harmless — the atmosphere gradient runs under everything

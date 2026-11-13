@@ -68,6 +68,17 @@ alpha. Shadows `--sh-1 · --sh-pop · --sh-modal`.
 accent ring outside a 2px panel gap; selected is an accent wash (rows) or an accent ring + lift
 (cards); disabled is 45%. Popovers are desktop only: a phone overlay is the Sheet.
 
+## The frame (D-190)
+
+The window is `--ground`. The **sidebar** (`Spine.tsx`, `styles/frame.css`) sits on it: the
+workspace mark, Schedule, then *Build* (Projects · Initiatives · Domains) with each floor's one
+cue in its tone (a calm floor shows its ⌘-key on hover), then **This week** — the week's
+committed projects with pieces landed, from `useWeekCrown` — and Settings · Shortcuts · Collapse
+(⌘\\, a 52px icon rail). All the work sits in one **inset panel** (`.app-panel`, 12px corner,
+`--panel`); every `.atmosphere` inside it paints the panel. Every page wears one **PageBar**:
+breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
+chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
+
 ## Momentum — the ambition axis (D-187)
 
 **Status:** built 2026-11-13 on branch `claude/ambition-design-language` (not merged).
