@@ -127,14 +127,17 @@ it needs to work on a phone.
 - **Mobile UI lives in `src/components/mobile/`.** Bottom bar = five equal navigation
   destinations **Calendar · Tasks · Projects · Initiatives · Domains**, opening on Calendar. Capture
   and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
-  (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while the chat
-  is open. Capture and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox
+  (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while Nuvo's
+  sheet is open. Capture and Nuvo are *permanent first-class actions*. There is no in-app
+  chat (D-201): the ✦ opens Nuvo's offers for where you are (`mobile/NuvoSheet`, D-198),
+  and conversation happens in the user's own assistant over MCP. Today/Week/Inbox
   are a segmented control inside the Tasks screen; the week's readiness, the **Plan the
   week** card (`MobilePlanWeek` — the phone's weekly ritual: Slate → Pull → Shape) and the
   week's plan card ride the top of the **Week** segment.
 - **Every door into the phone shares one launch vocabulary** — `src/lib/shortcuts.ts`.
   The PWA's icon shortcuts (`?shortcut=capture|chat|today`), the iOS lock-screen widgets
-  (`nuvo://capture`, `nuvo://chat` — Swift in `src-tauri/ios/NuvoWidgets/`, injected into
+  (`nuvo://capture`, `nuvo://chat` — the word stays for installed widgets and now opens
+  Nuvo's offers, D-201 — Swift in `src-tauri/ios/NuvoWidgets/`, injected into
   the Xcode project by `scripts/ios-widgets.rb`) and whatever App Intents land next all
   parse through it, and `MobileShell`'s `applyShortcut` is the only thing that acts on
   it. **Never add a second parser or a second applier** — a widget's ＋ and a long-pressed
@@ -342,7 +345,7 @@ disagreed about which week Saturday plans. So:
   it to the kernel, then call it from both ends. `npm test` fails on a second definition.
 - **Writes share the *act*, not the client.** The kernel returns a **patch**
   (`bringIntoWeekPatch` / `takeOffWeekPatch`); the browser applies it via `useVertical`, the
-  agent via the service role. So a tap and a chat message place a project identically.
+  agent via the service role. So a tap and an agent call (MCP, Shortcuts) place a project identically.
 - **A new agent tool that writes planning state needs its UI twin in the registry** — or a
   logged decision saying why it doesn't have one.
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
