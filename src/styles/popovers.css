@@ -33,6 +33,12 @@ html:root .capture-door .k-field input:focus-visible,
 html:root .gi .k-field input:focus-visible,
 html:root .rem-custom .k-field input:focus-visible,
 html:root .rp-sheet .k-field input:focus-visible { outline: none; }
+/* …and an input that sits inside a frame (a search line, a kit field) leaves
+   the ring to the frame — not the app-wide input ring inside it. */
+.k-msearch input:focus,
+.insp-drop input:focus,
+.k-field input:focus,
+.k-field textarea:focus { box-shadow: none; }
 
 /* ── Inspector ──────────────────────────────────────────────────────────── */
 .insp {
@@ -629,6 +635,11 @@ html:root .insp-v:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--acc
 /* A phone action sheet's rows — FloatingMenu's children, framed by the Sheet. */
 .native-sheet-menu .k-mi { height: auto; min-height: 48px; font-size: 15px; border-radius: 0; }
 .native-sheet-menu .k-mi + .k-mi { border-top: 1px solid var(--line-1); }
+
+/* ── Date — a typed line over the month ─────────────────────────────────── */
+.k-datepop { min-width: 0; }
+.k-datepop .k-msearch { margin-bottom: 0; }
+.k-datepop-read { flex: none; color: var(--accent-ink); font-size: 12px; font-weight: 500; }
 
 /* ── Picker field (the composers' Calendar) ─────────────────────────────── */
 .k-pick-group {

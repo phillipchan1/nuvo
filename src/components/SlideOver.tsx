@@ -36,6 +36,7 @@ import { DomainPicker } from "./floors/parts";
 import { rulesEqual, describeRule, eventRRule, readEventRRule, type RecurrenceRule } from "../lib/recurrence";
 import {
   INSPECTOR_W,
+  PopDate,
   POP_INPUT_CLS,
   PopBody,
   PopFootAct,
@@ -408,6 +409,20 @@ export function TaskPopover({
     ? format(new Date(task.start_time), "HH:mm")
     : "";
 
+  // A new day for a timed task keeps its clock (D-154) — moving the 2pm block
+  // to Friday used to turn it into an untimed chip in Friday's anytime row.
+  // No day sends it back to where it rests (its home's week, or the Inbox).
+  const setDoDate = (value: string) => {
+    const moved = value ? sameClockOn(task, value) : null;
+    return moved
+      ? mutations.block(task, moved, task.duration_minutes ?? undefined)
+      : value
+      ? mutations.planFor(task, value)
+      : task.project_id || task.initiative_id || task.domain_id
+        ? mutations.backToWeek(task)
+        : mutations.backToInbox(task);
+  };
+
   const setStart = (hhmm: string) => {
     if (!hhmm) {
       mutations.unblock(task);
@@ -676,39 +691,16 @@ export function TaskPopover({
 
         <PopBody>
           <PopRow icon="calendar" label="When">
-            <label className="insp-v" data-empty={task.do_date ? undefined : ""}>
-              <span>{doDateLabel ?? "No date"}</span>
-              <input
-                type="date"
-                aria-label="Do date"
-                value={task.do_date ?? ""}
-                onChange={(e) => {
-                  // A new day for a timed task keeps its clock (D-154) —
-                  // moving the 2pm block to Friday used to turn it into
-                  // an untimed chip in Friday's anytime row.
-                  const moved = e.target.value ? sameClockOn(task, e.target.value) : null;
-                  return moved
-                    ? mutations.block(task, moved, task.duration_minutes ?? undefined)
-                    : e.target.value
-                    ? mutations.planFor(task, e.target.value)
-                    : task.project_id || task.initiative_id || task.domain_id
-                      ? mutations.backToWeek(task)
-                      : mutations.backToInbox(task);
-                }}
-                className="absolute inset-0 w-full opacity-0"
-              />
-            </label>
-            <label className="insp-v" data-empty={task.start_time ? undefined : ""}>
-              <span>{task.start_time ? at(new Date(task.start_time)) : "No time"}</span>
-              <input
-                type="time"
-                step={900}
-                aria-label="Start time"
-                value={startHHMM}
-                onChange={(e) => setStart(e.target.value)}
-                className="absolute inset-0 w-full opacity-0"
-              />
-            </label>
+            <PopDate
+              label="Do date"
+              value={task.do_date}
+              onChange={setDoDate}
+              onClear={() => setDoDate("")}
+              empty={!task.do_date}
+            >
+              {doDateLabel ?? "No date"}
+            </PopDate>
+            <TimePicker value={startHHMM} onSelect={setStart} ariaLabel="Start time" placeholder="No time" />
             <PopPick
               label="Duration"
               value={String(durationNow)}
@@ -730,16 +722,16 @@ export function TaskPopover({
           </PopRow>
 
           <PopRow icon="deadline" label="Deadline">
-            <label className="insp-v" data-empty={task.deadline ? undefined : ""}>
-              <span>{task.deadline ? format(new Date(task.deadline + "T12:00:00"), "EEE MMM d") : "No deadline"}</span>
-              <input
-                type="date"
-                aria-label="Deadline"
-                value={task.deadline ?? ""}
-                onChange={(e) => mutations.patchTask(task.id, { deadline: e.target.value || null })}
-                className="absolute inset-0 w-full opacity-0"
-              />
-            </label>
+            <PopDate
+              label="Deadline"
+              value={task.deadline}
+              onChange={(iso) => mutations.patchTask(task.id, { deadline: iso })}
+              onClear={() => mutations.patchTask(task.id, { deadline: null })}
+              clearLabel="No deadline"
+              empty={!task.deadline}
+            >
+              {task.deadline ? format(new Date(task.deadline + "T12:00:00"), "EEE MMM d") : "No deadline"}
+            </PopDate>
           </PopRow>
 
           <PopRow icon="folder" label="Project">
@@ -1036,11 +1028,14 @@ function TimePicker({
   value,
   onSelect,
   ariaLabel,
+  placeholder,
 }: {
-  /** 24h "HH:mm", matching `toTimeInput`/`applyTime` below. */
+  /** 24h "HH:mm", matching `toTimeInput`/`applyTime` below; "" for none. */
   value: string;
   onSelect: (hhmm: string) => void;
   ariaLabel: string;
+  /** What the value says when there is no clock yet. */
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1063,7 +1058,8 @@ function TimePicker({
     if (!open) return;
     setQuery("");
     const idx = TIME_PICKER_OPTIONS.findIndex((o) => o.hhmm === value);
-    setHighlight(idx >= 0 ? idx : 0);
+    // No clock yet: start the list at 9am, where a day's work begins.
+    setHighlight(idx >= 0 ? idx : 36);
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -1124,11 +1120,12 @@ function TimePicker({
         aria-label={ariaLabel}
         aria-expanded={open}
         className="insp-v"
+        data-empty={value ? undefined : ""}
         // A shrink-to-fit wrapper: a percentage cap here clips the clock by a
         // sub-pixel into an ellipsis.
         style={{ maxWidth: "none" }}
       >
-        <span>{current?.show ?? value}</span>
+        <span>{current?.show ?? (value || placeholder)}</span>
       </button>
       {open && (
         <div className="insp-drop w-32">
@@ -1813,31 +1810,20 @@ export function EventPopover({
         <PopBody>
           {editable && (
             <PopRow icon="clock" label="When">
-              <label className="insp-v">
-                <span>{format(new Date(startAt), "EEE MMM d")}</span>
-                <input
-                  type="date"
-                  value={toDateInput(startAt)}
-                  onChange={(e) => commitDate(e.target.value)}
-                  onClick={showNativePicker}
-                  aria-label="Date"
-                  className="absolute inset-0 w-full opacity-0"
-                />
-              </label>
+              <PopDate label="Date" value={toDateInput(startAt)} onChange={commitDate}>
+                {format(new Date(startAt), "EEE MMM d")}
+              </PopDate>
               {allDay ? (
                 <>
                   <span className="insp-sep">–</span>
-                  <label className="insp-v">
-                    <span>{format(allDayInclusiveEnd(endAt), "EEE MMM d")}</span>
-                    <input
-                      type="date"
-                      value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
-                      onChange={(e) => commitAllDayEnd(e.target.value)}
-                      onClick={showNativePicker}
-                      aria-label="End date"
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
+                  <PopDate
+                    label="End date"
+                    value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
+                    min={toDateInput(startAt)}
+                    onChange={commitAllDayEnd}
+                  >
+                    {format(allDayInclusiveEnd(endAt), "EEE MMM d")}
+                  </PopDate>
                 </>
               ) : (
                 <>
@@ -2208,16 +2194,6 @@ export function EventPopover({
     </>,
     document.body,
   );
-}
-
-/** A native date / time control under a value, opened on a press: Chromium
- *  draws nothing for a transparent one until its picker is asked for. */
-function showNativePicker(e: React.MouseEvent<HTMLInputElement>) {
-  try {
-    e.currentTarget.showPicker?.();
-  } catch {
-    /* not allowed here (an iframe, an old engine) — the field still edits */
-  }
 }
 
 // ── SlotPopover — a time slot and the tasks it holds ─────────────────────
@@ -2602,29 +2578,10 @@ export function SlotPopover({
 
         <PopBody>
           <PopRow icon="calendar" label="When">
-            <label className="insp-v">
-              <span>{format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")}</span>
-              <input
-                type="date"
-                aria-label="Date"
-                value={slot.do_date}
-                onChange={(e) => setDate(e.target.value)}
-                onClick={showNativePicker}
-                className="absolute inset-0 w-full opacity-0"
-              />
-            </label>
-            <label className="insp-v">
-              <span>{at(startDate)}</span>
-              <input
-                type="time"
-                step={900}
-                aria-label="Start time"
-                value={startHHMM}
-                onChange={(e) => setTime(e.target.value)}
-                onClick={showNativePicker}
-                className="absolute inset-0 w-full opacity-0"
-              />
-            </label>
+            <PopDate label="Date" value={slot.do_date} onChange={setDate}>
+              {format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")}
+            </PopDate>
+            <TimePicker value={startHHMM} onSelect={setTime} ariaLabel="Start time" />
             <PopPick
               label="Duration"
               value={String(slot.duration_minutes)}

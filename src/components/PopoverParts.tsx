@@ -1,7 +1,10 @@
-import React, { useState, type CSSProperties } from "react";
+import React, { useMemo, useState, type CSSProperties } from "react";
 import { ArrowLeft, ArrowUpRight, CalendarX2, Flag, Folder, Inbox, NotebookPen, SignalHigh, Star, type LucideIcon } from "lucide-react";
 import { Icon, type IconName } from "./Icon";
-import { Button, Dot, IconButton, Picker, type PickerOption } from "./kit";
+import { Button, Dot, IconButton, MiniMonth, Picker, Popover, type PickerOption } from "./kit";
+import { useSettings, firstDayOfWeek } from "../hooks/useSettings";
+import { parseCapture } from "../lib/nlp";
+import { fmtDayLabel, parseDateISO, toDateISO } from "../lib/dates";
 import { shortcutLabel } from "../lib/shortcutLabel";
 
 /**
@@ -389,6 +392,112 @@ export function PopPick<T extends string>({
           setOpen(false);
         }}
       />
+    </>
+  );
+}
+
+/**
+ * The Date popover (D-190's third kind): a typed line ("fri", "next week",
+ * "dec 3" — the capture grammar, `parseCapture`) over the kit's MiniMonth.
+ * ↵ takes what the line says; a press on a day takes that day. `onClear`
+ * offers the way back to no date.
+ */
+export function PopDate({
+  value,
+  onChange,
+  onClear,
+  clearLabel = "No date",
+  label,
+  min,
+  children,
+  empty,
+}: {
+  /** The day showing, `YYYY-MM-DD`. */
+  value: string | null;
+  onChange: (iso: string) => void;
+  onClear?: () => void;
+  clearLabel?: string;
+  /** The popover's name — its aria-label and the value's tooltip. */
+  label: string;
+  /** Days before this aren't offered by the typed line. */
+  min?: string;
+  children: React.ReactNode;
+  empty?: boolean;
+}) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const { settings } = useSettings();
+  const typed = useMemo(() => {
+    const t = q.trim();
+    if (!t) return null;
+    const d = parseCapture(t).doDate;
+    return d && (!min || d >= min) ? d : null;
+  }, [q, min]);
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
+  const take = (iso: string) => {
+    onChange(iso);
+    close();
+  };
+  return (
+    <>
+      <button
+        ref={setBtn}
+        type="button"
+        className="insp-v"
+        data-empty={empty || undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <span>{children}</span>
+      </button>
+      <Popover anchor={btn} open={open} onClose={close} label={label} className="k-datepop">
+        <div className="k-msearch">
+          <Icon name="calendar" size={14} />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Type a day — fri, next week"
+            aria-label={`${label} — type a day`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && typed) {
+                e.preventDefault();
+                take(typed);
+              }
+            }}
+          />
+          {typed && <span className="k-datepop-read">{fmtDayLabel(typed)}</span>}
+        </div>
+        <MiniMonth
+          key={value ?? "none"}
+          value={value ? parseDateISO(value) : null}
+          weekStartsOn={firstDayOfWeek(settings)}
+          onChange={(d) => take(toDateISO(d))}
+        />
+        {onClear && value && (
+          <>
+            <div className="k-msep" role="separator" />
+            <button
+              type="button"
+              className="k-mi"
+              onClick={() => {
+                onClear();
+                close();
+              }}
+            >
+              <Icon name="close" size={14} />
+              <span className="k-mi-label">{clearLabel}</span>
+            </button>
+          </>
+        )}
+      </Popover>
     </>
   );
 }
