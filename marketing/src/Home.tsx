@@ -1,16 +1,18 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
+import { NuvoMark } from '@nuvo/mark'
 import { WORK } from './components/hues'
 import './home.css'
 import { ACCESS_MAILTO, APP_URL } from './config'
 import { appUrlWithCode } from './referral'
 import { CtaGroup, NavOpenAppCtas } from './components/CtaButtons'
-import { AMBITIONS, CASCADE_STEPS, WEEK_STEPS } from './home/data'
+import { AMBITIONS, CASCADE_STEPS, MEMORY_RULES, WEEK_STEPS } from './home/data'
 import {
   CaptureScene,
   CascadeCanvas,
   DayMoments,
   FridayScene,
   HeroSchedule,
+  MemoryScene,
   WeekScene,
 } from './home/Scenes'
 
@@ -105,17 +107,18 @@ export default function Home() {
 
   return (
     <div ref={root} className="hm" style={{ '--work': WORK } as CSSProperties}>
-      <div className="hm-grain" aria-hidden />
       <div className="hm-progress" data-progress aria-hidden />
 
       <header className="hm-nav">
-        <a href="/" className="wordmark hm-mark tap">
+        <a href="/" className="wordmark hm-mark tap" aria-label="Nuvo">
+          <NuvoMark size={24} />
           Nuvo
         </a>
         <nav className="hm-links">
           <a href="#system">The system</a>
           <a href="#week">The week</a>
           <a href="#day">The day</a>
+          <a href="#memory">Memory</a>
           <a href="#pricing">Pricing</a>
         </nav>
         <NavOpenAppCtas />
@@ -137,7 +140,9 @@ export default function Home() {
             </span>
             <span className="hero-line">
               <span>
-                <em>the hour.</em>
+                <em>
+                  the hour<span className="stop">.</span>
+                </em>
               </span>
             </span>
           </h1>
@@ -145,8 +150,8 @@ export default function Home() {
           <div className="hero-foot">
             <p className="hero-sub">
               Initiatives, projects, and every task beneath them — each with a time on your
-              calendar. Plus a planning partner that commits the week with you and keeps every
-              day on course.
+              calendar. Plus a planning partner that commits the week with you, keeps every day on
+              course, and learns how you actually work.
             </p>
             <div>
               <CtaGroup />
@@ -170,7 +175,7 @@ export default function Home() {
               <span className="mono">Tue 9–9:45am</span>
             </div>
             <div className="hero-device" data-hero-device>
-              <HeroSchedule />
+              <HeroSchedule mark={<NuvoMark size={18} />} />
             </div>
           </div>
         </section>
@@ -305,7 +310,7 @@ export default function Home() {
         </section>
 
         {/* ── THE DAY (the dark chapter) ──────────────────────────────────── */}
-        <section id="day" className="dy" data-day>
+        <section id="day" className="dy" data-day data-theme="dark">
           <div className="dy-inner">
             <div className="dy-side">
               <div className="dy-sticky">
@@ -323,6 +328,33 @@ export default function Home() {
             </div>
             <DayMoments />
           </div>
+        </section>
+
+        {/* ── MEMORY + THE CHAT — the learning engine (docs/memory.md) ─────────
+            What Nuvo learns from what you already do, how sure it is, and the
+            chat planning from it. The spec's line: a memory is never a guess
+            the app acts on — it's a fact you confirmed, evidence attached. */}
+        <section id="memory" className="mem" data-memory>
+          <div className="mem-copy">
+            <p className="k-label accent">Memory</p>
+            <h2 className="h2">
+              It learns how you <em>actually</em> work.
+            </h2>
+            <p className="body">
+              Your calendar, the blocks you finish, the drafts you correct. Nuvo notices the patterns
+              in what you already do. Keep one, and everything that plans for you uses it: your
+              hours, your week, the chat.
+            </p>
+            <ul className="mem-rules">
+              {MEMORY_RULES.map(([t, b]) => (
+                <li key={t} data-rise>
+                  <b>{t}</b>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <MemoryScene />
         </section>
 
         {/* ── ARITHMETIC + FRIDAY ─────────────────────────────────────────── */}
@@ -402,7 +434,9 @@ export default function Home() {
           <p className="cl-big">
             <span>Go build</span>
             <span>
-              <em>the thing.</em>
+              <em>
+                the thing<span className="stop">.</span>
+              </em>
             </span>
           </p>
           <p className="cl-sub">We’ll find it a time.</p>
@@ -415,7 +449,10 @@ export default function Home() {
       </main>
 
       <footer className="hm-foot">
-        <span className="wordmark">Nuvo</span>
+        <span className="wordmark hm-foot-mark">
+          <NuvoMark size={20} />
+          Nuvo
+        </span>
         <div>
           <a href="/share">Share</a>
           <a href="/support">Support</a>

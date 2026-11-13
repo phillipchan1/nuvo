@@ -1,3 +1,4 @@
+import { NuvoMark } from '@nuvo/mark'
 import { ACCESS_EMAIL, ACCESS_MAILTO } from '../config'
 
 export default function Privacy() {
@@ -6,7 +7,8 @@ export default function Privacy() {
   return (
     <div className="atmosphere min-h-dvh">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
+        <a href="/" className="wordmark text-[1.125rem] text-[var(--text)] tap inline-flex items-center gap-2">
+          <NuvoMark size={22} />
           Nuvo
         </a>
         <a href="/" className="btn-ghost tap text-[13px]">

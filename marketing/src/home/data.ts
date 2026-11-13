@@ -307,3 +307,62 @@ export const AMBITIONS = [
   'Start the podcast',
   'Hit the number',
 ]
+
+/* ── Memory — what Nuvo learns about you (docs/memory.md) ─────────────────
+   Every line here is the spec's own grammar: a statement, its evidence (a
+   count, a window, one pip per period oldest first), a confidence word — never
+   a percentage (N-04) — where it came from, and exactly what Keep would change.
+   Example data in the persona kinds, not one operator's life (P16). */
+
+export type Noticed = {
+  area: 'Time' | 'Work' | 'Projects'
+  statement: string
+  evidence: string
+  /** one per period, oldest first: true = the pattern held */
+  pips: boolean[]
+  confidence: 'Sure' | 'Fairly sure'
+  source: string
+  keep: string
+  hue: string
+}
+
+export const MEMORY_NOTICED: Noticed[] = [
+  {
+    area: 'Time',
+    statement: 'Training is Monday, Wednesday and Friday, 6–7am.',
+    evidence: '21 of 24 sessions',
+    pips: [true, true, true, true, true, true, true, true],
+    confidence: 'Sure',
+    source: 'From your calendar',
+    keep: 'A standing slot, Mon · Wed · Fri 6–7am. Plan the week works around it.',
+    hue: HEALTH,
+  },
+  {
+    area: 'Time',
+    statement: 'Your workday runs 7:30am–5pm, Monday to Thursday.',
+    evidence: 'Your first and last meetings, 6 of 8 weeks',
+    pips: [true, true, false, true, true, true, false, true],
+    confidence: 'Fairly sure',
+    source: 'From your calendar',
+    keep: 'Your working hours, per weekday. Capacity counts from them.',
+    hue: WORK,
+  },
+  {
+    area: 'Time',
+    statement: 'Tuesday and Thursday, 1–4pm, stay open.',
+    evidence: '7 of 8 weeks',
+    pips: [true, true, true, false, true, true, true, true],
+    confidence: 'Sure',
+    source: 'From your calendar',
+    keep: 'A Deep work slot. Project sittings land there first.',
+    hue: CRAFT,
+  },
+]
+
+export const MEMORY_TABS = ['Noticed', 'What Nuvo uses', 'Still watching', 'You said no'] as const
+
+export const MEMORY_RULES = [
+  ['It asks before it acts.', 'Nothing it notices changes your plan until you keep it.'],
+  ['It shows its evidence.', 'Sure, fairly sure, not sure yet — with the count behind each.'],
+  ['It stays yours.', 'Only you can see it. Forget one, or everything, any time.'],
+] as const

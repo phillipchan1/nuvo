@@ -86,20 +86,6 @@ export function initMotion(root: HTMLElement): () => void {
       }
       window.addEventListener('pointermove', onMove)
       disposers.push(() => window.removeEventListener('pointermove', onMove))
-      // magnetic buttons
-      q(root, '.btn-primary, .btn-ghost').forEach((btn) => {
-        const bx = gsap.quickTo(btn, 'x', { duration: 0.5, ease: 'power3' })
-        const by = gsap.quickTo(btn, 'y', { duration: 0.5, ease: 'power3' })
-        btn.addEventListener('pointermove', (e) => {
-          const r = btn.getBoundingClientRect()
-          bx((e.clientX - r.left - r.width / 2) * 0.25)
-          by((e.clientY - r.top - r.height / 2) * 0.35)
-        })
-        btn.addEventListener('pointerleave', () => {
-          bx(0)
-          by(0)
-        })
-      })
     }
 
     /* ── MARQUEE ── endless, and it leans into how fast you scroll */
@@ -335,6 +321,24 @@ export function initMotion(root: HTMLElement): () => void {
       ease: 'expo.out',
       scrollTrigger: { trigger: '[data-arith]', start: 'top 75%' },
     })
+
+    /* ── MEMORY ── the panel's rows arrive, then the chat plans from them */
+    gsap.from('[data-mem]', {
+      opacity: 0,
+      y: 16,
+      duration: 0.5,
+      stagger: 0.12,
+      ease: 'power3.out',
+      scrollTrigger: { trigger: '[data-memory]', start: 'top 65%' },
+    })
+    const memChat = root.querySelector<HTMLElement>('[data-mem-chat]')
+    if (memChat) {
+      gsap
+        .timeline({ scrollTrigger: { trigger: '[data-memory]', start: 'top 55%' } })
+        .from(memChat.querySelector('.mem-me'), { opacity: 0, x: 30, duration: 0.5, ease: 'power3.out' }, 0.6)
+        .from(memChat.querySelector('.mem-nuvo'), { opacity: 0, y: 16, duration: 0.5, ease: 'power3.out' }, '+=0.35')
+        .from(memChat.querySelectorAll('.mem-nuvo li'), { opacity: 0, y: 8, duration: 0.38, stagger: 0.1, ease: 'back.out(1.6)' }, '-=0.1')
+    }
 
     /* generic rises */
     q(root, '[data-rise]').forEach((el, i) => {

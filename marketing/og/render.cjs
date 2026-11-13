@@ -12,6 +12,7 @@ const path = require('path')
   await p.evaluate(() => document.fonts.ready)
   await p.evaluate(() => {
     const mock = document.querySelector('.mock').cloneNode(true)
+    const mark = document.querySelector('.hm-mark svg').outerHTML
     const work = getComputedStyle(document.querySelector('.hm')).getPropertyValue('--work')
     document.body.innerHTML = ''
     const stage = document.createElement('div')
@@ -23,14 +24,14 @@ const path = require('path')
         <div class="hero-h1" style="font-size:108px;line-height:.86">
           <span class="hero-line"><span>Ambition,</span></span>
           <span class="hero-line"><span>down to</span></span>
-          <span class="hero-line"><span><em>the hour.</em></span></span>
+          <span class="hero-line"><span><em>the hour<span class="stop">.</span></em></span></span>
         </div>
         <p style="margin-top:34px;font-size:21px;line-height:1.45;color:var(--muted);max-width:430px">
           Initiatives, projects and every task beneath them — each with a time on your calendar.</p>
       </div>
       <div id="dev" style="position:absolute;left:590px;top:96px;width:900px;transform:perspective(1600px) rotateY(-14deg) rotateX(6deg);transform-origin:0 50%"></div>
-      <div class="wordmark" style="position:absolute;left:64px;bottom:44px;font-size:28px;color:var(--text)">Nuvo</div>
-      <div style="position:absolute;left:150px;bottom:51px;font-size:15px;color:var(--muted)">nuvo.day</div>`
+      <div class="wordmark" style="position:absolute;left:64px;bottom:44px;font-size:28px;color:var(--text);display:flex;align-items:center;gap:12px">${mark.replace(/width="\d+" height="\d+"/, 'width="34" height="34"')}Nuvo</div>
+      <div style="position:absolute;left:200px;bottom:51px;font-size:15px;color:var(--muted)">nuvo.day</div>`
     document.body.appendChild(stage)
     document.body.style.margin = '0'
     stage.querySelector('#dev').appendChild(mock)

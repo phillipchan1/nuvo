@@ -4,39 +4,131 @@
 @import "@fontsource-variable/fraunces/full.css";
 @import "@fontsource-variable/fraunces/full-italic.css";
 
+/* Inter — the app's one UI face (D-189), declared the way ../src/index.css does:
+   latin only, so the page never downloads six scripts nobody reads. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
 /*
-  Daybreak light — curated subset of the product palette.
-  Source of truth: ../src/index.css (+ docs/design-language.md).
-  When packages/design lands, replace this block with an import.
+  INSTRUMENT (D-189) — the app's design language, on the site (D-195).
+  Source of truth: ../src/index.css + docs/design-language.md. Same tokens,
+  same flat ground, same hairlines, same mulberry and ember. One deliberate
+  difference: the site's headlines keep Fraunces (D-195) — everything else,
+  every product visual included, is Inter, exactly as the app draws it.
 */
 
 :root,
 [data-theme="light"] {
-  --bg: #f4f1ea;
-  --surface: #fffdf8;
-  --surface-2: #faf6ee;
-  --line: #e7e0d2;
-  --line-strong: #d8cfbc;
-  --text: #1f1a16;
-  --muted: #847b6b;
-  --accent: #92568a;
-  --accent-2: #b07fa8;
-  --accent-soft: rgba(146, 86, 138, 0.11);
-  --accent-glow: rgba(146, 86, 138, 0.20);
-  --slot: #2f8d86;
-  --signal: #e0620f;
-  --signal-soft: rgba(224, 98, 15, 0.11);
-  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
-  --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
-  --shadow-lift: 0 30px 60px -18px rgba(74, 52, 24, 0.36), 0 10px 24px -10px rgba(60, 42, 20, 0.22);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* surfaces by role (kit tokens) */
+  --ground: #f1f1f4;
+  --panel: #fcfcfd;
+  --raised: #ffffff;
+  --sunk: #f6f6f8;
+  --bg: var(--ground);
+  --surface: #ffffff;
+  --surface-2: #f6f6f8;
+  --line: #e6e5eb;
+  --line-strong: #cfcdd6;
+  --line-1: rgba(20, 18, 30, 0.085);
+  --line-2: rgba(20, 18, 30, 0.14);
+  --text: #121116;
+  --ink: var(--text);
+  --ink-2: #3d3b45;
+  --muted: #64626d;
+  --faint: #8d8b96;
+  --accent: #8e2fa3;
+  --accent-2: #a855bb;
+  --accent-ink: #7a228e;
+  --accent-soft: rgba(142, 47, 163, 0.08);
+  --accent-wash: rgba(142, 47, 163, 0.08);
+  --accent-ring: rgba(142, 47, 163, 0.38);
+  --on-accent: #ffffff;
+  --slot: #0b747e;
+  --ok: #0b6b62;
+  --warn: #8a5a10;
+  --signal: #c2410c;
+  --signal-soft: rgba(232, 80, 26, 0.10);
+  --on-signal: #ffffff;
+  --ember: #ff6a33; /* the mark's full stop — a brand colour, same on both themes */
+  --hover: rgba(20, 18, 30, 0.045);
+  --sh-1: 0 1px 1px rgba(20, 18, 30, 0.04), 0 1px 2px rgba(20, 18, 30, 0.04);
+  --sh-pop: 0 0 0 1px rgba(20, 18, 30, 0.07), 0 4px 8px -2px rgba(20, 18, 30, 0.07), 0 16px 32px -8px rgba(20, 18, 30, 0.16);
+  --sh-modal: 0 0 0 1px rgba(20, 18, 30, 0.07), 0 24px 64px -12px rgba(20, 18, 30, 0.28);
+  --shadow-1: var(--sh-1);
+  --shadow-2: 0 2px 8px -2px rgba(20, 16, 30, 0.10), 0 0 0 1px var(--line);
+  --shadow-3: var(--sh-pop);
+  --shadow-lift: 0 1px 1px rgba(20, 16, 30, 0.04), 0 10px 26px -10px rgba(20, 16, 30, 0.22);
+  color-scheme: light;
+}
+
+/* Dark — used by the page's one ink chapter (it carries data-theme="dark",
+   the way the app's statement stage does). */
+[data-theme="dark"] {
+  --ground: #08080a;
+  --panel: #0f0f12;
+  --raised: #17171b;
+  --sunk: #141418;
+  --bg: var(--panel);
+  --surface: #17171b;
+  --surface-2: #1c1c21;
+  --line: #26252c;
+  --line-strong: #3a3942;
+  --line-1: rgba(255, 255, 255, 0.075);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --text: #ededf0;
+  --ink: var(--text);
+  --ink-2: #c4c3ca;
+  --muted: #95929f;
+  --faint: #6f6d78;
+  --accent: #d58ae4;
+  --accent-2: #e2a8ee;
+  --accent-ink: #e0a3ec;
+  --accent-soft: rgba(213, 138, 228, 0.13);
+  --accent-wash: rgba(213, 138, 228, 0.12);
+  --accent-ring: rgba(213, 138, 228, 0.45);
+  --on-accent: #1a0b1e;
+  --slot: #37b1a4;
+  --ok: #2ab5a5;
+  --warn: #e9960f;
+  --signal: #ff6a33;
+  --signal-soft: rgba(255, 106, 51, 0.14);
+  --on-signal: #1f0d05;
+  --hover: rgba(255, 255, 255, 0.045);
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sh-pop: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 16px 40px -8px rgba(0, 0, 0, 0.8);
+  --sh-modal: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 32px 80px -12px rgba(0, 0, 0, 0.85);
+  --shadow-1: var(--sh-1);
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
+  --shadow-3: var(--sh-pop);
+  --shadow-lift: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 32px -10px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
+}
+
+:root {
+  /* geometry — four radii, as the kit */
+  --r-chip: 4px;
+  --r-ctl: 6px;
+  --r-card: 8px;
+  --r-dialog: 12px;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
   --font-display: "Fraunces Variable", Fraunces, Georgia, "Times New Roman", serif;
-  --font-serif: "Fraunces Variable", Fraunces, Georgia, "Times New Roman", serif;
+  --font-serif: var(--font-display);
   --font-brand: "Plus Jakarta Sans", var(--font-sans);
+  /* motion ladder (110 / 180 / 260 / 380) and the app's curves */
+  --d-1: 110ms;
+  --d-2: 180ms;
+  --d-3: 260ms;
+  --d-4: 380ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-land: cubic-bezier(0.34, 1.45, 0.55, 1);
 }
 
 @theme {
@@ -72,32 +164,33 @@ body,
 body {
   margin: 0;
   font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
 }
 
+/* Flat ground — Instrument has no gradient (kept as a class so the legal and
+   support pages need no edits). */
 .atmosphere {
-  background:
-    radial-gradient(1200px 600px at 0% 0%, rgba(255, 220, 180, 0.35), transparent 55%),
-    radial-gradient(1000px 700px at 100% 100%, rgba(146, 86, 138, 0.12), transparent 50%),
-    var(--bg);
+  background: var(--bg);
 }
 
+/* The site's headline voice: Fraunces, upright and tight (D-195). */
 .masthead {
   font-family: var(--font-display);
   font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 32, "WONK" 0;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  line-height: 1.12;
+  font-variation-settings: "SOFT" 0, "WONK" 0;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
 }
 
 .serif {
   font-family: var(--font-serif);
   font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 40, "WONK" 0;
+  font-variation-settings: "SOFT" 0, "WONK" 0;
   letter-spacing: -0.005em;
 }
 
@@ -117,12 +210,6 @@ body {
   line-height: 1.25;
 }
 
-/* Supporting hero line — body size, not lead (lead is for section titles) */
-.hero-support {
-  font-size: clamp(1.0625rem, 2.4vw, 1.25rem);
-  line-height: 1.55;
-}
-
 .text-body {
   font-size: 1.0625rem;
   line-height: 1.65;
@@ -134,18 +221,23 @@ body {
   letter-spacing: -0.03em;
 }
 
+/* Aligned numerics — the sans with tabular figures, never monospace. */
 .mono {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: -0.003em;
 }
 
+/* "Glass" is solid now (D-189: nothing blurs). Name kept for Support. */
 .glass-card {
-  background:
-    linear-gradient(145deg, color-mix(in srgb, white 12%, transparent), transparent 58%),
-    color-mix(in srgb, var(--surface) 56%, transparent);
-  -webkit-backdrop-filter: blur(10px) saturate(1.3);
-  backdrop-filter: blur(10px) saturate(1.3);
+  background: var(--raised);
+  box-shadow: var(--sh-1);
+}
+
+/* The ember full stop — the mark's dot, ending a statement (D-191/192). */
+.stop {
+  color: var(--ember);
+  font-style: normal;
 }
 
 html[data-ios='true'] .cta-mac-download {
@@ -188,465 +280,59 @@ html[data-ios='true'] .nav-cta-row .cta-app-store {
     max-width: none;
   }
 
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.7rem 1.25rem;
-    border-radius: 9999px;
-    background: var(--accent);
-    color: #fff;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    text-decoration: none;
-    box-shadow: var(--shadow-2);
-    transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
-  }
-
-  .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-lift);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
-  }
-
+  /* Kit buttons at touch size: 6px corner, flat fill, a 2% give under a press. */
+  .btn-primary,
   .btn-ghost {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.7rem 1.15rem;
-    border-radius: 9999px;
-    border: 1px solid var(--line-strong);
-    background: color-mix(in srgb, var(--surface) 55%, transparent);
-    color: var(--text);
+    gap: 8px;
+    min-height: 40px;
+    padding: 0.55rem 1.1rem;
+    border-radius: var(--r-ctl);
     font-size: 0.9375rem;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: -0.006em;
     text-decoration: none;
-    transition: border-color 0.2s ease, background 0.2s ease;
+    transition:
+      background-color var(--d-2) ease,
+      box-shadow var(--d-2) ease,
+      transform var(--d-1) var(--ease-out);
   }
 
-  .btn-ghost:hover {
-    border-color: var(--accent-2);
-    background: var(--accent-soft);
+  .btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: var(--sh-1), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .btn-ghost {
+    background: var(--raised);
+    color: var(--text);
+    box-shadow: 0 0 0 1px var(--line-2), var(--sh-1);
+    font-weight: 500;
+  }
+
+  .btn-primary:active,
+  .btn-ghost:active {
+    transform: scale(0.98);
+  }
+
+  .btn-primary:focus-visible,
+  .btn-ghost:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 
-/* Hero motion — 3 quiet beats */
-@keyframes rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.reveal {
-  animation: rise-in 0.85s var(--ease-out) both;
-}
-
-.reveal-delay-1 { animation-delay: 0.1s; }
-.reveal-delay-2 { animation-delay: 0.2s; }
-.reveal-delay-3 { animation-delay: 0.32s; }
-
-@media (prefers-reduced-motion: reduce) {
-  .reveal {
-    animation: none;
-  }
+@media (hover: hover) {
   .btn-primary:hover {
-    transform: none;
+    background: var(--accent-ink);
+    transition-duration: 0ms;
   }
-}
-
-/* Schedule product visual */
-.schedule-visual {
-  display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
-  min-height: 360px;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.schedule-spine {
-  width: 7.5rem;
-}
-
-.schedule-rail {
-  min-width: 0;
-}
-
-.schedule-cal {
-  min-width: 0;
-}
-
-@media (min-width: 768px) {
-  .schedule-visual {
-    grid-template-columns: 7.5rem minmax(0, 11.5rem) minmax(0, 1fr);
-  }
-}
-
-.schedule-block {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-/* The lives × altitude plane — a DIAGRAM, and it has to look like one. No card,
-   no glass, no chrome: hairlines on the paper, so it can never be mistaken for a
-   screen we haven't built. */
-.lives-grid {
-  display: grid;
-  grid-template-columns: 7rem repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-}
-
-.lives-head {
-  padding: 0 0 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.lives-life {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.7rem 0.75rem 0.7rem 0;
-  font-family: var(--font-display);
-  font-variation-settings: 'SOFT' 32, 'WONK' 0;
-  font-weight: 500;
-  font-size: 1rem;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  border-bottom: 1px solid var(--line);
-}
-
-.lives-dot {
-  height: 6px;
-  width: 6px;
-  border-radius: 9999px;
-  flex: none;
-}
-
-.lives-cell {
-  display: flex;
-  align-items: center;
-  padding: 0.45rem 0.35rem 0.45rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-  min-width: 0;
-}
-
-.lives-chip {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 4px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.3;
-}
-
-@media (max-width: 767px) {
-  .lives {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  .lives-grid {
-    min-width: 640px;
-  }
-}
-
-/* On Deck — rail beside the plane, exactly as the real floor lays out. The plane
-   scrolls inside itself on a phone rather than collapsing: six lives against
-   three sprints IS the picture, and a reflow destroys it. */
-.ondeck-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.ondeck-rail {
-  width: 13rem;
-}
-
-@media (min-width: 768px) {
-  .ondeck-body {
-    grid-template-columns: 13rem minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 767px) {
-  .ondeck-scroll {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  .ondeck-plane {
-    min-width: 520px;
-  }
-}
-
-/* Scattered, then held — the capture beat. A DIAGRAM, so it wears no card and
-   no chrome: things on the paper, finding a line. The travel is the argument,
-   so every chip animates position, not just opacity. */
-.converge {
-  --converge-held-x: 54%;
-  position: relative;
-  height: 320px;
-  max-width: 100%;
-}
-
-.converge-rule {
-  position: absolute;
-  left: 52.5%;
-  top: 4%;
-  bottom: 8%;
-  width: 1.5px;
-  background: var(--accent);
-  border-radius: 2px;
-  transition: opacity 0.9s var(--ease-out);
-}
-
-.converge-chip {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  max-width: 44%;
-  padding: 0.4rem 0.7rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition:
-    left 1.05s var(--ease-out),
-    top 1.05s var(--ease-out),
-    opacity 0.7s var(--ease-out),
-    background 0.7s var(--ease-out),
-    border-color 0.7s var(--ease-out),
-    color 0.7s var(--ease-out);
-}
-
-.converge-dot {
-  height: 5px;
-  width: 5px;
-  flex: none;
-  border-radius: 9999px;
-  transition: background 0.7s var(--ease-out);
-}
-
-.converge-caption {
-  position: absolute;
-  left: 54%;
-  bottom: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent);
-  transition: opacity 0.9s var(--ease-out) 0.6s;
-}
-
-/* Phone: the same gather, shorter throw. The chips have to shrink or the held
-   column runs off the right edge. */
-@media (max-width: 639px) {
-  .converge {
-    --converge-held-x: 40%;
-    height: 300px;
-  }
-  .converge-chip {
-    max-width: 56%;
-    padding: 0.32rem 0.5rem;
-    font-size: 0.75rem;
-    gap: 0.35rem;
-  }
-  .converge-rule {
-    left: 38.5%;
-  }
-  .converge-caption {
-    left: 40%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .converge-chip,
-  .converge-rule,
-  .converge-caption,
-  .converge-dot {
-    transition: none;
-  }
-}
-
-/* The hero — the same move at every altitude. Same grammar as every planner
-   surface in the product and as the Plan-the-week visual below it: pool left →
-   grid of time right. That the layout is identical at all three altitudes is
-   the argument, so nothing here may change shape between them. */
-.altitude {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 100%;
-}
-
-.altitude-rail {
-  min-width: 0;
-}
-
-/* Holds its height across the three altitudes, so taking a pill never resizes
-   the card under the reader's cursor. */
-.altitude-pool {
-  min-height: 176px;
-}
-
-.altitude-body {
-  min-width: 0;
-}
-
-.altitude-scroll {
-  min-width: 0;
-}
-
-.altitude-line {
-  animation: rise-in 0.5s var(--ease-out) both;
-}
-
-.altitude-landed {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  animation: rise-in 0.45s var(--ease-out) both;
-}
-
-/* The card in flight and the hand carrying it. Both ride the same transform so
-   they arrive together; neither is interactive. */
-.altitude-ghost,
-.altitude-cursor {
-  position: absolute;
-  z-index: 20;
-  pointer-events: none;
-  transition:
-    transform 0.72s var(--ease-out),
-    opacity 0.28s ease;
-}
-
-.altitude-ghost {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.6rem;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow-lift);
-  transform-origin: left center;
-}
-
-.altitude-cursor {
-  line-height: 0;
-  filter: drop-shadow(0 2px 4px rgba(60, 42, 20, 0.3));
-}
-
-@media (min-width: 768px) {
-  .altitude {
-    grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
-  }
-  .altitude-pool {
-    min-height: 232px;
-  }
-}
-
-/* Phone: the pool stacks above and the drag travels straight down, which reads
-   better than a cramped diagonal. The grid keeps its columns by scrolling
-   inside its own container — the page itself never scrolls sideways. */
-@media (max-width: 767px) {
-  .altitude-scroll {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  /* Wide enough that a column still fits a legible card — at 420 the quarter
-     columns squeezed the landed block's eyebrow down to "INITIATIV…", which
-     tells the reader nothing. */
-  .altitude-grid {
-    min-width: 540px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .altitude-line,
-  .altitude-landed {
-    animation: none;
-  }
-  .altitude-ghost,
-  .altitude-cursor {
-    transition: none;
-  }
-}
-
-/* Plan the week — pool left, the week right. Same grammar as the Schedule
-   visual (and as the real planner surfaces: pool left → grid of time right). */
-.planweek {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.planweek-rail {
-  min-width: 0;
-}
-
-/* Keeps the four steps the same height, so advancing doesn't resize the card
-   under the reader's cursor. */
-.planweek-pool {
-  min-height: 190px;
-}
-
-.planweek-week {
-  min-width: 0;
-  padding-bottom: 0.25rem;
-}
-
-.planweek-scroll {
-  min-width: 0;
-}
-
-.planweek-block {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  animation: rise-in 0.5s var(--ease-out) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .planweek-block {
-    animation: none;
-  }
-}
-
-@media (min-width: 768px) {
-  .planweek {
-    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
-  }
-  .planweek-pool {
-    min-height: 210px;
-  }
-}
-
-/* Phone: the pool stacks above, and the week keeps its five days by scrolling
-   inside its own container — the page itself never scrolls sideways. */
-@media (max-width: 767px) {
-  .planweek-scroll {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  .planweek-grid {
-    min-width: 460px;
+  .btn-ghost:hover {
+    background: var(--surface-2);
+    transition-duration: 0ms;
   }
 }
 
@@ -666,8 +352,10 @@ html[data-ios='true'] .nav-cta-row .cta-app-store {
   content: '';
 }
 
-.disclose > summary:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .disclose > summary:hover {
+    color: var(--accent);
+  }
 }
 
 .disclose > summary:focus-visible {
@@ -691,37 +379,9 @@ html[data-ios='true'] .nav-cta-row .cta-app-store {
   content: '−';
 }
 
-@media (max-width: 639px) {
-  .schedule-visual {
-    grid-template-columns: 1fr;
-  }
-  .schedule-rail {
-    max-height: 200px;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-  }
-  .schedule-cal {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  .schedule-cal > :last-child,
-  .schedule-cal > :nth-child(2) {
-    min-width: 520px;
-  }
-}
-
-/* ── Scroll reveal ───────────────────────────────────────────────────────────
-   A section rises as it arrives. Deliberately one beat and deliberately small
-   (10px, 0.7s): the page is an argument made of screens, and a reader who is
-   waiting for content to finish moving isn't reading it. The `.is-in` class is
-   added by an IntersectionObserver (useReveal), never by scroll position, so
-   the cost is one observer callback per section for the life of the page.
-
-   The un-observed default is *visible*, not hidden. This page is prerendered
-   and the crawler runs no JS — an opacity:0 default would ship a blank page to
-   Google's OAuth reviewer. The hook adds `.rise` itself on mount, which is the
-   only moment we know JS is running. */
+/* ── Scroll reveal (legal pages) ─────────────────────────────────────────────
+   The un-observed default is *visible*: the page is prerendered and a crawler
+   runs no JS. The hook adds `.rise` itself on mount. */
 .rise {
   opacity: 0;
   transform: translateY(10px);
@@ -742,230 +402,5 @@ html[data-ios='true'] .nav-cta-row .cta-app-store {
     opacity: 1;
     transform: none;
     transition: none;
-  }
-}
-
-/* ── The stack that can't answer the question ────────────────────────────────
-   A DIAGRAM on the paper — no card, no glass. The scrub drives one class per
-   source; everything else is a transition, so scrolling costs a class swap and
-   never a layout. */
-.scatter-track {
-  position: relative;
-  height: var(--scatter-vh, 260vh);
-}
-
-.scatter-frame {
-  position: sticky;
-  top: 0;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2rem;
-  padding: 3rem 0;
-}
-
-/* The question is the subject of the section, so it sits at display size and
-   never as a caption. It arrives muted, sharpens the moment the first tool is
-   asked, and is left standing — `is-open` is the unanswered state, and it's the
-   only place on this page where --signal (the "now" colour) marks a *problem*,
-   which is deliberate: it's the one thing on the page that is genuinely wrong. */
-.scatter-q {
-  max-width: 34ch;
-  font-size: clamp(1.35rem, 2.9vw, 1.95rem);
-  line-height: 1.28;
-  font-style: italic;
-  color: var(--muted);
-  transition:
-    color 0.6s var(--ease-out),
-    opacity 0.6s var(--ease-out);
-}
-
-.scatter-q.is-asked {
-  color: var(--text);
-}
-
-.scatter-q.is-open {
-  color: var(--text);
-  border-left: 2px solid var(--signal);
-  padding-left: 1rem;
-  margin-left: -1rem;
-}
-
-.scatter-desk {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0 1.75rem;
-  align-items: start;
-}
-
-.scatter-src {
-  border-top: 1px solid var(--line);
-  padding-top: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  transition:
-    border-color 0.5s var(--ease-out),
-    transform 0.55s var(--ease-out);
-}
-
-.scatter-src.is-answering {
-  border-top-color: var(--accent);
-  transform: translateY(-4px);
-}
-
-.scatter-src.is-answered {
-  border-top-color: var(--line-strong);
-}
-
-.scatter-kind {
-  color: var(--muted);
-  transition: color 0.5s var(--ease-out);
-}
-
-.scatter-src.is-answering .scatter-kind {
-  color: var(--accent);
-}
-
-/* The interface fragment. It dims once it has answered — the tool is still
-   there, it just stops being where the reader is looking. */
-.scatter-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  opacity: 0.9;
-  transition: opacity 0.55s var(--ease-out);
-}
-
-.scatter-src.is-answered .scatter-rows {
-  opacity: 0.32;
-}
-
-.scatter-row {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-  font-size: 0.8125rem;
-  line-height: 1.3;
-}
-
-.scatter-box {
-  flex: none;
-  height: 10px;
-  width: 10px;
-  border: 1.5px solid var(--line-strong);
-  border-radius: 3px;
-}
-
-.scatter-box.is-done {
-  background: var(--line-strong);
-}
-
-.scatter-dot {
-  flex: none;
-  height: 7px;
-  width: 7px;
-  border-radius: 9999px;
-}
-
-.scatter-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-}
-
-.scatter-text.is-done {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-
-.scatter-meta {
-  margin-left: auto;
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-/* The reply. Held at zero height until asked so the desk reads as four tools
-   rather than four paragraphs, then stays once answered — by the end of the
-   scrub all four verdicts are on screen together, which is the argument. */
-.scatter-reply {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 0.55s var(--ease-out),
-    opacity 0.5s var(--ease-out);
-}
-
-.scatter-src.is-answering .scatter-reply,
-.scatter-src.is-answered .scatter-reply {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-.scatter-reply > * {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.scatter-knows {
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--muted);
-}
-
-.scatter-stops {
-  margin-top: 0.4rem;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.scatter-verdict {
-  max-width: 46ch;
-  font-size: 1.0625rem;
-  line-height: 1.6;
-  color: var(--muted);
-  opacity: 0;
-  transform: translateY(6px);
-  transition:
-    opacity 0.6s var(--ease-out),
-    transform 0.6s var(--ease-out);
-}
-
-.scatter-verdict.is-open {
-  opacity: 1;
-  transform: none;
-}
-
-/* Phone: no scrub, no sticky. The section is simply true on arrival — four
-   tools, four verdicts, one open question — which is also the prerendered
-   state and the reduced-motion state. */
-@media (max-width: 767px) {
-  .scatter-track {
-    height: auto;
-  }
-  .scatter-frame {
-    position: static;
-    min-height: 0;
-    padding: 0;
-    gap: 1.75rem;
-  }
-  .scatter-desk {
-    grid-template-columns: 1fr;
-    gap: 1.5rem 0;
-  }
-  .scatter-q {
-    font-size: 1.3rem;
   }
 }

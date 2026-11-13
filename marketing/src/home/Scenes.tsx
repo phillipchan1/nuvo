@@ -5,7 +5,7 @@
  * owns a position the markup doesn't already hold.
  */
 import type { CSSProperties } from 'react'
-import { WORK } from '../components/hues'
+import { CRAFT, WORK } from '../components/hues'
 import {
   CASCADE_GRID,
   CASCADE_INITIATIVE,
@@ -22,6 +22,8 @@ import {
   HERO_CARRIES,
   HERO_MEETINGS,
   HERO_TASKS,
+  MEMORY_NOTICED,
+  MEMORY_TABS,
   WEEK_DRAFT,
   WEEK_MEETINGS,
   place,
@@ -89,25 +91,54 @@ function TaskBlock({ b, i = 0, className = '', ...rest }: { b: Block; i?: number
 
 /* ── Hero: the Schedule, lived in ─────────────────────────────────────────── */
 
-export function HeroSchedule() {
+/* the sidebar's icons — Lucide's shapes, as the app uses (D-189: Lucide only) */
+const ICONS = {
+  schedule: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  projects: 'M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z',
+  initiatives: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
+  domains: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
+} as const
+
+function NavIcon({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  )
+}
+
+export function HeroSchedule({ mark }: { mark?: React.ReactNode }) {
   return (
     <div className="mock" aria-label="The Nuvo Schedule: a week of meetings and project work on one calendar" role="img">
-      <div className="mock-bar">
-        <span className="mock-dots" aria-hidden>
-          <i />
-          <i />
-          <i />
-        </span>
-        <span className="mock-title">Week of November 16</span>
-        <span className="mock-seg" aria-hidden>
-          <span>Day</span>
-          <span className="on">Week</span>
-          <span>Month</span>
-        </span>
-      </div>
       <div className="mock-body">
         <aside className="mock-rail">
-          <p className="k-label">This week carries</p>
+          <span className="mock-dots" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="mock-ws">
+            {mark}
+            Nuvo
+          </span>
+          <span className="mock-nav is-on">
+            <NavIcon d={ICONS.schedule} />
+            Schedule
+          </span>
+          <p className="mock-sec">Build</p>
+          <span className="mock-nav">
+            <NavIcon d={ICONS.projects} />
+            Projects
+          </span>
+          <span className="mock-nav">
+            <NavIcon d={ICONS.initiatives} />
+            Initiatives
+          </span>
+          <span className="mock-nav">
+            <NavIcon d={ICONS.domains} />
+            Domains
+          </span>
+          <p className="mock-sec">This week</p>
           <ul>
             {HERO_CARRIES.map((p) => (
               <li key={p.name} style={{ '--hue': p.hue } as CSSProperties}>
@@ -123,20 +154,35 @@ export function HeroSchedule() {
             ))}
           </ul>
           <div className="mock-fit">
-            <span className="k-label">Commitment</span>
             <span className="mono big">86%</span>
-            <span className="note">Fits, with room for one more.</span>
+            <span className="note">Committed. Room for one more.</span>
           </div>
         </aside>
-        <WeekGrid today={2} className="mock-week">
-          {HERO_MEETINGS.map((b, i) => (
-            <Meeting key={i} b={b} />
-          ))}
-          {HERO_TASKS.map((b, i) => (
-            <TaskBlock key={i} i={i} b={b} className="hero-ev" />
-          ))}
-          <div className="now" style={{ top: pct(((13.4 - H0) / (H1 - H0)) * 100), left: '40%', width: '20%' }} />
-        </WeekGrid>
+        <div className="mock-panel">
+          <div className="mock-bar">
+            <span className="mock-crumb">
+              Schedule <span aria-hidden>/</span> <b>Nov 16 – 20</b>
+            </span>
+            <span className="mock-tabs" aria-hidden>
+              <span>Day</span>
+              <span className="on">Week</span>
+              <span>Month</span>
+            </span>
+            <span className="mock-acts" aria-hidden>
+              <span className="mock-btn">Today</span>
+              <span className="mock-btn is-primary">Plan the week</span>
+            </span>
+          </div>
+          <WeekGrid today={2} className="mock-week">
+            {HERO_MEETINGS.map((b, i) => (
+              <Meeting key={i} b={b} />
+            ))}
+            {HERO_TASKS.map((b, i) => (
+              <TaskBlock key={i} i={i} b={b} className="hero-ev" />
+            ))}
+            <div className="now" style={{ top: pct(((13.4 - H0) / (H1 - H0)) * 100), left: '40%', width: '20%' }} />
+          </WeekGrid>
+        </div>
       </div>
     </div>
   )
@@ -412,6 +458,92 @@ export function FridayScene() {
           ))}
         </ul>
         <p className="fri-foot">Meetings you attended and blocks you finished, counted for you. No timesheet.</p>
+      </div>
+    </div>
+  )
+}
+
+/* ── Memory + the chat ────────────────────────────────────────────────────
+   The Inspector the app opens over the page (docs/memory.md §4.3), and the
+   chat answering from what you kept (§7). The chat reads Memory; it never
+   keeps or forgets one — that act lives in the panel. */
+
+export function MemoryScene() {
+  return (
+    <div className="mem-stage">
+      <div
+        className="mem-panel"
+        role="img"
+        aria-label="Nuvo's Memory panel: three patterns it noticed in your calendar and finished work, each with its evidence, how sure it is, and what keeping it would change"
+      >
+        <div className="mem-head">
+          <span className="mem-icon" aria-hidden>
+            ✦
+          </span>
+          <b>Memory</b>
+          <span className="mem-x" aria-hidden>
+            ✕
+          </span>
+        </div>
+        <div className="mem-tabs" aria-hidden>
+          {MEMORY_TABS.map((t, i) => (
+            <span key={t} className={i === 0 ? 'on' : ''}>
+              {t}
+            </span>
+          ))}
+        </div>
+        <ul className="mem-list">
+          {MEMORY_NOTICED.map((m, i) => (
+            <li key={m.statement} className={`mem-item ${i === 0 ? 'is-on' : ''}`} data-mem style={{ '--hue': m.hue } as CSSProperties}>
+              <p className="mem-meta">
+                <span>{m.area}</span>
+                <span className={`mem-conf ${m.confidence === 'Sure' ? 'is-sure' : ''}`}>{m.confidence}</span>
+              </p>
+              <p className="mem-stmt">{m.statement}</p>
+              <p className="mem-ev">
+                <span className="mem-pips" aria-hidden>
+                  {m.pips.map((on, k) => (
+                    <i key={k} className={on ? 'on' : ''} />
+                  ))}
+                </span>
+                <span className="mono">{m.evidence}</span>
+                <span className="mem-src">· {m.source}</span>
+              </p>
+              <p className="mem-keep">
+                <span>Keep:</span> {m.keep}
+              </p>
+              {i === 0 && (
+                <div className="mem-acts" aria-hidden>
+                  <span className="mem-btn is-primary">
+                    Keep <kbd>↵</kbd>
+                  </span>
+                  <span className="mem-btn">Not true</span>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mem-foot">Only you can see it. It never leaves your account.</p>
+      </div>
+
+      <div className="mem-chat" data-mem-chat>
+        <p className="mem-me">Find time for Chapter 4 this week.</p>
+        <div className="mem-nuvo">
+          <p>Two sittings in your Deep work afternoons, Tuesday and Thursday.</p>
+          <ul>
+            <li style={{ '--hue': CRAFT } as CSSProperties}>
+              <span>Chapter 4 · Draft</span>
+              <span className="mono">Tue 1–2:30pm</span>
+            </li>
+            <li style={{ '--hue': CRAFT } as CSSProperties}>
+              <span>Chapter 4 · Revise</span>
+              <span className="mono">Thu 1–2:30pm</span>
+            </li>
+          </ul>
+          <p className="mem-trace">
+            <span aria-hidden>✦</span> In Deep work · from Memory
+          </p>
+        </div>
       </div>
     </div>
   )

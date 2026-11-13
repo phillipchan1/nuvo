@@ -1,3 +1,4 @@
+import { NuvoMark } from '@nuvo/mark'
 import { APP_URL, SUPPORT_EMAIL, SUPPORT_MAILTO } from '../config'
 import { appUrlWithCode } from '../referral'
 import { NavOpenAppCtas } from '../components/CtaButtons'
@@ -11,7 +12,8 @@ export default function Share() {
   return (
     <div className="atmosphere min-h-dvh">
       <header className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
+        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center gap-2">
+          <NuvoMark size={22} />
           Nuvo
         </a>
         <NavOpenAppCtas />

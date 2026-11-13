@@ -35,7 +35,7 @@ Optional: Ignored Build Step so commits that only touch `src/` / `supabase/` ski
 
 ## Design
 
-Follow Warm Paper — see `../docs/design-language.md`. Prefer tokens from `../packages/design` once extracted; until then keep the marketing palette in lockstep with Daybreak light in `../src/index.css`.
+Instrument (D-189), with one difference (D-195): headlines keep Fraunces; everything else — every product visual included — is Inter, as the app draws it. Grammar: `../docs/design-language.md`. Keep the tokens in `src/index.css` in lockstep with Light/Dark in `../src/index.css`. The mark is the app's `NuvoMark`, imported as `@nuvo/mark` — never redraw it. Regenerate the social image with `node og/render.cjs` while the dev server runs on 5174.
 
 ## Content job
 

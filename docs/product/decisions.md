@@ -6807,6 +6807,42 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-195 · 2026-11-13 · The site follows Instrument, keeps Fraunces for its headlines, and sells
+Memory.** *(Asked by the operator: "make those same updates to the marketing website… I do really
+like the font in the web marketing website… include the learning engine.")*
+
+→ **Instrument on nuvo.day**, closing D-189's and D-191's "Open" lines: the app's Light tokens
+(ground, panel, raised, alpha hairlines, mulberry `#8e2fa3`, ember), Inter for every word that
+isn't a headline, kit radii (4/6/8/12) and shadows, flat ground (the cream gradient and the film
+grain are gone), nothing blurs, no "magnetic" buttons. The day chapter carries
+`data-theme="dark"` the way the statement stage does. The nav, footer and every page header wear
+`NuvoMark`, imported from the app (`@nuvo/mark`), never redrawn. Hero and close end on the ember
+full stop (D-192). `--signal` now marks only *now* on the site too: the 112% over-commitment reads
+`--warn`, "1 wk behind" reads `--warn`.
+
+→ **One deliberate difference: headlines stay in Fraunces** (incl. its italic emphasis), chosen
+by the operator over all-Inter. Every product visual on the page is drawn as the app draws it, in
+Inter — so the site is the app's material with an editorial voice on top, not a second brand.
+
+→ **The scenes are redrawn, not captured.** The hero Schedule is now the D-190 frame (sidebar on
+the ground — Schedule, Build, This week — and the work in one inset panel under a PageBar); blocks
+are the app's tint + 2px edge. `public/og.jpg` regenerated from it (`og/render.cjs`).
+
+→ **A Memory section (#memory), presented as shipped — the operator's call.** The Inspector
+with Noticed rows (statement, pips, a confidence word, source, the line Keep would write), and the
+chat planning into a kept Deep work slot. Examples are limited to the built Rhythm chapter (a
+habit, working hours, an open window). **Ahead of the code:** the chat citing Memory ("In Deep work
+· from Memory") — D-194 says the chat doesn't read Memory yet. **Kept and shipped (operator,
+2026-11-13): the line goes live now, ahead of the chat; it becomes true when the chat reads Memory.**
+
+**Anchor.** Marketing; closes no ledger row by itself (Memory's rows are D-194's). Strains
+**P14** knowingly at the headline face only. Four no's: no pool, no new name (Memory is D-194's),
+example data in persona kinds (P16).
+
+*Status: built 2026-11-13 in `marketing/`. Verified: typecheck, `npm run build` (incl. prerender —
+the Memory section is in the static HTML), driven at 1440 and 375 (no horizontal scroll, no
+console errors). Pushed to `master` 2026-11-13 (marketing and this entry only), which deploys nuvo.day.*
+
 **D-192 · 2026-11-13 · The small pages say the ambition out loud: statement pages.** *(Asked by
 the operator: "redesign the login page… every little page to highlight this ambition.")*
 

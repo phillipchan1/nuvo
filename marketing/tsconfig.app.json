@@ -19,7 +19,10 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@nuvo/design/*": ["../packages/design/*"]
+      "@nuvo/design/*": ["../packages/design/*"],
+      "@nuvo/mark": ["../src/components/kit/Mark.tsx"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
     }
   },
   "include": ["src"]
