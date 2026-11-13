@@ -33,12 +33,10 @@
 }
 .spine[data-collapsed] + .app-panel { margin-left: 8px; }
 /* macOS: the traffic lights live over the sidebar, at fixed window points.
-   Expanded, the sidebar is wide enough to hold them. Railed (52px) the
-   cluster is wider than the rail, and in focus mode there is no sidebar at
-   all — either way the lights would sit on the panel's top-left corner. So
-   the panel drops below the title-bar band and the lights sit on the ground.
+   Expanded or railed, the sidebar holds them (Spine.tsx widens the Mac rail
+   to fit the cluster). In focus mode there is no sidebar at all, so there the
+   panel drops below the title-bar band and the lights sit on the ground.
    Sized in points (css = points / zoom), like the spine's own reserve. */
-html.tauri-macos .spine[data-rail] + .app-panel,
 html.tauri-macos .spine[data-collapsed] + .app-panel {
   margin-top: calc(30px / var(--ui-scale, 1));
 }
