@@ -59,7 +59,7 @@ function BulkMenu({ label, title, choices }: { label: string; title: string; cho
       <Button
         ref={setBtn}
         size="xs"
-        className="tap"
+       
         aria-haspopup={isMobile ? "dialog" : "menu"}
         aria-expanded={open}
         trailing={<Icon name="chevron-down" size={12} />}
@@ -164,7 +164,7 @@ export default function BulkBar({
         {count} selected
       </span>
       {onSelectAll && total != null && count < total && (
-        <Button size="xs" kind="ghost" className="tap" onClick={onSelectAll}>
+        <Button size="xs" kind="ghost" onClick={onSelectAll}>
           Select all {total}
         </Button>
       )}
@@ -175,19 +175,19 @@ export default function BulkBar({
       {labels.length > 0 && <BulkMenu label="Label" title="Add a label" choices={label} />}
       {projects.length > 0 && <BulkMenu label="Move" title="File under a project" choices={move} />}
 
-      <Button size="xs" className="tap" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
+      <Button size="xs" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
         Done
       </Button>
-      <Button size="xs" className="tap" onClick={ops.backToInbox}>
+      <Button size="xs" onClick={ops.backToInbox}>
         Inbox
       </Button>
       {onTrash && (
-        <Button size="xs" kind="danger" className="tap" onClick={ops.trash}>
+        <Button size="xs" kind="danger" onClick={ops.trash}>
           Trash
         </Button>
       )}
       {/* The way out is the one control that must always be reachable by thumb. */}
-      <IconButton size="xs" className="tap" label="Clear selection" shortcut="Esc" icon={<Icon name="close" size={12} />} onClick={ops.clear} />
+      <IconButton size="xs" label="Clear selection" shortcut="Esc" icon={<Icon name="close" size={12} />} onClick={ops.clear} />
     </div>
   );
 }

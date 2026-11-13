@@ -680,6 +680,13 @@ const TaskRow = forwardRef<TaskRowHandle, {
         )}
 
         <PlaceTag identity={identity} />
+        {/* A domain Nuvo filed on its own is named beside its Undo — an undo
+            must say what it takes back. */}
+        {auto && !identity.filed && (
+          <span className="task-row-place" title={rowHint}>
+            {auto.targetLabel}
+          </span>
+        )}
 
         {(showState || showTime || task.recurrence_id) && (
           <span className="task-row-meta">

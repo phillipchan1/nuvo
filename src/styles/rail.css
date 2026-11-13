@@ -731,9 +731,14 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
   color: var(--accent-ink);
 }
 .bulk-grow { flex: 1 1 auto; }
+/* A phone: the same buttons at 36px, each with an invisible 44px hit area
+   (the bar's 8px gaps keep neighbours' areas from overlapping). */
 @media (max-width: 767px) {
-  .bulk-bar { padding: 8px 12px; gap: 6px; }
+  .bulk-bar { padding: 8px 12px; gap: 8px; }
   .bulk-grow { display: none; }
+  .bulk-bar .k-btn { position: relative; height: 36px; padding: 0 12px; font-size: 13px; }
+  .bulk-bar .k-btn[data-icon] { width: 44px; padding: 0; }
+  .bulk-bar .k-btn::before { content: ""; position: absolute; inset: -4px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .bulk-bar { animation: none; }
