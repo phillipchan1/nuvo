@@ -6847,6 +6847,46 @@ been applied. typecheck, vitest, `check:worker`, `deno check` and `cf:preview:dr
 **Not run:** a live sandbox purchase end to end, or a real Apple-signed leaf (only the real G3
 root and WWDR G6 were parsed).*
 
+**D-186 · 2026-11-13 · The site stops selling calm and sells ambition. Nuvo is task
+management for ambitious people — unashamed about Initiatives, Projects and Tasks — and the
+page is rebuilt around that, with scroll-driven motion.** *(Supersedes the hero and order of
+D-094; amends [`brandscript.md`](./brandscript.md) §1, §8 and §10. Decided by the operator.)*
+
+**Why.** The previous page sold *certainty* to someone overwhelmed ("Your life won't get
+simpler. Your week can."). It was honest and aimed at the wrong emotion. The person who pays
+for this is not looking for calm; they're running big things and want them finished, and they
+are tired of tools that are embarrassed by the word *project*. So the page leads with the
+hierarchy instead of apologising for it: **Ambition, down to the hour.**
+
+**What the page now argues, in order:** the hero (an initiative's outcome carried to a block on
+the Schedule) → who it's for ("more ambition than hours") → the system (one initiative →
+projects → tasks → a time, pinned and scrubbed) → *unashamedly* all three altitudes → capture →
+**Plan the week** (pull · place · walk · commit, as shipped in D-183) → **the day** (morning
+brief, the next block, Ask Nuvo re-fitting an afternoon with an undo, the evening close) → the
+arithmetic ("Ambition without arithmetic is a wish list") and the Friday read → the stance →
+price → "Go build the thing."
+
+**What did NOT change.** The honesty: Commitment over 100% is still shown, and it still lets
+you carry the week. The agreement plan (you stay in charge, no streaks, single-player). The
+banned words: ambitious is not *hustle* — nothing says crush, 10x, grind, supercharge or
+AI-powered. "Planning partner" is a descriptor in copy, not a product name (the assistant is
+still "Ask Nuvo"), so the glossary does not change.
+
+**Rejected on the way:** keeping "steward" as the aspirational identity on the site. It stays
+true of how the product behaves (it reports, never nags), but as a *promise* it spoke to the
+burdened reader, not the ambitious one.
+
+**Consequence:** every scene is a faithful recreation of a shipped surface with example data in
+the domain kinds (P16); the mid-week repair dial (trial, D-180/181) is deliberately *not*
+claimed. Motion is GSAP + ScrollTrigger + Lenis, lazy-loaded after first paint; the prerendered
+HTML holds every scene's final state, so no-JS readers (Google's OAuth review) and
+reduced-motion users get the whole page.
+
+*Status: built in `marketing/` (`Home.tsx`, `home/`, `home.css`). Typecheck + build +
+prerender green; driven in the marketing dev server at 1440px and 375px, no horizontal
+overflow, no console errors. **Not run:** a real iPhone (pinned scenes under iOS Safari's
+toolbar resize).*
+
 **D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
 ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
 Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.

@@ -6,9 +6,9 @@
  *  any crawler that doesn't run JS — would see a privacy policy that isn't
  *  there. Every legal route must ship as real HTML. */
 
-export const HOME_TITLE = 'Nuvo — One system for everything you run'
+export const HOME_TITLE = 'Nuvo — Ambition, down to the hour'
 export const HOME_DESC =
-  'You’re running three or four lives at once out of apps that have never been introduced. Nuvo is one line from everything you’re responsible for down to what you’re doing at 2pm today — so you always know where you stand.'
+  'Task management for ambitious people. Initiatives, projects, and every task beneath them — each with a time on your calendar — plus a planning partner that commits the week with you and keeps every day on course.'
 export const HOME_CANONICAL = 'https://nuvo.day/'
 
 export type RouteHead = { title: string; desc: string; canonical: string }

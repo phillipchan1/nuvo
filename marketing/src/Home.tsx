@@ -1,215 +1,50 @@
-import AltitudeVisual from './components/AltitudeVisual'
-import CalendarsVisual from './components/CalendarsVisual'
-import ChatVisual from './components/ChatVisual'
-import ConvergeVisual from './components/ConvergeVisual'
-import DomainFloorVisual from './components/DomainFloorVisual'
-import LedgerVisual from './components/LedgerVisual'
-import OnDeckVisual from './components/OnDeckVisual'
-import PlanWeekVisual from './components/PlanWeekVisual'
-import ProjectRoomVisual from './components/ProjectRoomVisual'
-import ScatterVisual from './components/ScatterVisual'
-import { type ReactNode } from 'react'
-import { useReveal } from './useReveal'
+import { useEffect, useRef, type CSSProperties } from 'react'
+import { WORK } from './components/hues'
+import './home.css'
 import { ACCESS_MAILTO, APP_URL } from './config'
 import { appUrlWithCode } from './referral'
 import { CtaGroup, NavOpenAppCtas } from './components/CtaButtons'
+import { AMBITIONS, CASCADE_STEPS, WEEK_STEPS } from './home/data'
+import {
+  CaptureScene,
+  CascadeCanvas,
+  DayMoments,
+  FridayScene,
+  HeroSchedule,
+  WeekScene,
+} from './home/Scenes'
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   THE PAGE IS ONE SENTENCE, IN ORDER.
+   THE PAGE SAYS ONE THING: AMBITION, DOWN TO THE HOUR.  (D-186)
 
-   The operator's own words, and every section below is one clause of it:
+   The previous page sold *certainty* to someone overwhelmed — "your life won't
+   get simpler, your week can." It was honest and it was aimed at the wrong
+   emotion. The person this is for isn't looking for calm. They're running big
+   things and want them finished, and they're tired of tools that are embarrassed
+   by the word "project."
 
-     "My crazy scattered life goes into this one funnel, and I know exactly what
-      I'm doing every single day and every single week — without losing track of
-      the larger projects and initiatives in my life. And I have full visibility
-      on everywhere I spend my time."
+   So the page is unashamed about the hierarchy — Initiatives, Projects, Tasks —
+   and spends its motion on the one move nobody else makes: carrying an
+   outcome all the way down to a block on Tuesday. Then the two newest things
+   the product does for that person: it commits the week WITH them, and it
+   walks every day beside them.
 
-   That sentence contains three certainties, and they are the product:
+   What did NOT change: the honesty. "Ambition without arithmetic is a wish list"
+   is the old "it tells you when the week doesn't fit," pointed at the new
+   reader. And the brandscript's banned words stay banned — ambitious is not
+   hustle; nothing here says crush, 10x, grind or AI-powered.
 
-     1. I know what today is.
-     2. I know the big things are still alive.
-     3. I know where the hours went.
-
-   The claim is not any one of them — every competitor sells one. It's holding
-   all three AT ONCE, which is the thing a stack of four apps structurally
-   cannot do, because the answer isn't a feature of any of them; it's a
-   relationship between them. That's §7 (the moat), and it's why this page
-   argues from the reader's *desk* rather than from a competitor table.
-
-   WHAT CHANGED FROM THE PREVIOUS VERSION (D-094) AND WHY:
-
-   - The old hero promised "Everything you're accountable for gets done." That
-     is the category's most-defeated claim, and — worse — it is the opposite of
-     this product's actual stance. The best sentence in the app is "when it says
-     you can't carry the week, it still lets you." Leading with omnipotence and
-     selling honesty means the reader who believes the headline is the wrong
-     customer and the one who doesn't believe it leaves. The new hero refuses
-     the false promise in its first clause.
-
-   - The page was ordered as the *pipeline* (in, down, out, measured, ask). That
-     is how the software works, not how the wanting works. It's now ordered as
-     the sentence above: recognition → one place → today → the big thing →
-     the hours. The mechanism is identical; only the reason each screen is on
-     screen changed.
-
-   - The competitor table (LANDSCAPE) is retired. Naming five tools invites the
-     reader to score us on integrations, mobile depth and onboarding, which
-     landscape.md §4 says are the three places we're honestly behind. §7 makes
-     the stronger version of the same argument without naming anyone: the parts
-     are good, and the answer still isn't in them. Recover the table from git if
-     a real comparison page is ever wanted.
-
-   - §2 is new, and it is the section the page has never had: the reader's own
-     desk, failing. Everything before this was capability; nothing made the
-     reader distrust what they already own.
-
-   Nothing here is a UI we wish we had — every visual is a faithful recreation
-   of a shipped surface, driven in the running app.
+   Every scene renders its final state as markup (prerendered, readable without
+   JS, and what reduced-motion users get). home/motion.ts animates toward it.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-// Everything you get, grouped so it reads as a system rather than a wall.
-// Written as outcomes, not features — a capability list is app-impressive by
-// default, and only earns its place if every line is what *you* can do.
-//
-// AUDITED against master (2026-07-25). Deliberately absent because they don't
-// ship on master yet: forward-email-to-inbox and the inbound capture API (no
-// edge function, no migration — they live on other branches). Don't list them
-// until they deploy; a depth signal that doesn't survive contact is worse than
-// a shorter list.
-const INVENTORY = [
-  {
-    group: 'Capture',
-    items: [
-      '⌥Space from anywhere on Mac',
-      '⌘K inside the app',
-      'Type it like a text message',
-      'Voice dictation',
-      'An inbox that holds everything',
-    ],
-  },
-  {
-    group: 'Your calendars',
-    items: [
-      'Google, iCloud, ICS',
-      'Two-way sync with Google',
-      'Meetings and your work, one grid',
-      'Hide what you don’t plan around',
-      'Recurring events, guests, locations',
-    ],
-  },
-  {
-    group: 'Plan the week',
-    items: [
-      'Four questions, one planned week',
-      'Your real open hours, first',
-      'Work placed onto the hour for you',
-      'Projects split across sittings',
-      'Standing time for recurring work',
-      'A remedy when it doesn’t fit',
-      'Drag, resize, overrule anything',
-    ],
-  },
-  {
-    group: 'The bigger picture',
-    items: [
-      'Every level in one system',
-      'See three weeks out',
-      'Know when a project is behind',
-      'Shape work before it’s scheduled',
-      'See what’s ready to work',
-    ],
-  },
-  {
-    group: 'Your day',
-    items: [
-      'One honest call on today',
-      'A morning brief',
-      'An evening close',
-      'Unfinished work rolls forward',
-      'Weather and daylight',
-    ],
-  },
-  {
-    group: 'Looking back',
-    items: [
-      'A Friday review, with evidence',
-      'What moved, in each of your lives',
-      'Where your hours actually went',
-      'Meetings count as time spent',
-      'GitHub work counts itself',
-    ],
-  },
-  {
-    group: 'Ask Nuvo',
-    items: [
-      'Ask in plain language',
-      'It drafts, you decide',
-      'Scaffold a project or a week',
-      'One-tap undo on every write',
-    ],
-  },
-  {
-    group: 'Where it runs',
-    items: [
-      'Native Mac app, auto-updating',
-      'Any browser',
-      'Installable on iPhone',
-      'Five looks, light and dark',
-      'Keyboard-first throughout',
-      'Live sync across devices',
-    ],
-  },
-] as const
-
-// Our own ceilings, named in the same breath as the moat — without this, §7 is
-// a sales pitch; with it, it's an assessment. It also disqualifies the buyers
-// we'd disappoint anyway (personas.md §4). Straight from landscape.md §4.
-const LIMITS = [
-  ['No team boards.', 'Single-player on purpose. Nobody else is ever in your funnel.'],
-  ['Fewer integrations than Akiflow.', 'Capture is fast. It doesn’t reach into every app yet.'],
-  ['The phone is capture and your agenda.', 'Planning, projects and the review are desktop today.'],
-] as const
-
-// The four reasons a switcher bounces, answered before they're asked. Straight
-// from the JTBD anxieties in personas.md §6 — "migrating years of tasks",
-// "another system I'll abandon in three weeks", "it'll nag me" — plus O4, the
-// single-player promise the site went a year without saying out loud.
-const TRUST = [
-  [
-    'It won’t run your day for you.',
-    'It composes a week and waits. Every block drags. You promote the work, never the software.',
-  ],
-  ['It won’t nag you.', 'No streaks. No red badges. No debt ledger. It reports; you decide.'],
-  [
-    'It won’t show anyone else.',
-    'No shared board. No manager’s dashboard. Nobody watching your calendar.',
-  ],
-  [
-    'It won’t make you migrate.',
-    'Useful on day one with an empty backlog. Nothing to import.',
-  ],
-] as const
-
-// The agreement plan (brandscript §4) — what we promise, at the moment of
-// paying. "Your account is yours alone" is a real differentiator (ledger O4).
-const PROMISES = [
-  'Fourteen days free, no card',
-  'Cancel anytime, in two clicks',
-  'Every feature, no tiers, nothing held back',
-  'Your account is yours alone — nobody else is ever in it',
-  'We’ll tell you the truth, including “you can’t carry this week”',
-] as const
-
-// Keep in step with the app's src/components/billing/plans.ts and the Stripe
-// Prices behind STRIPE_PRICE_* — the saving is the number that actually sells
-// the annual plan, and "$228 billed yearly" alone hides it.
 const PLANS = [
   {
     name: 'Annual',
     perMonth: '19',
     billed: '$228 billed yearly',
     badge: 'Save $120',
-    note: 'Two months free. For the way you already think about a year.',
+    note: 'Two months free. For people who plan in years.',
     featured: true,
   },
   {
@@ -222,580 +57,372 @@ const PLANS = [
   },
 ] as const
 
-/** `quiet` is for the long inventory — 41 accent ticks would shout; the promises
- *  next to the price are few enough to earn the accent. */
-function CheckMark({ quiet = false }: { quiet?: boolean }) {
-  const px = quiet ? 12 : 15
+const TERMS = [
+  'Fourteen days free, no card',
+  'Every feature, no tiers',
+  'Mac, iPhone, and any browser',
+  'Cancel in two clicks',
+] as const
+
+const STANCE = [
+  ['You stay in charge.', 'It proposes. You commit. Every block drags, and nothing lands on your calendar without you.'],
+  ['It tells you the truth.', 'Including “this week doesn’t fit.” Then it lets you carry it anyway.'],
+  ['No streaks. No shame.', 'It reports what moved. It never nags you about what didn’t.'],
+  ['Yours alone.', 'No team board, no manager’s dashboard. Nobody else is ever in your account.'],
+] as const
+
+/** Words that light up as they're read. Split at render so the prerendered
+ *  HTML already holds the spans — no client-side text surgery. */
+function Words({ text, className = '' }: { text: string; className?: string }) {
   return (
-    <svg
-      width={px}
-      height={px}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden
-      className={
-        quiet
-          ? 'mt-[0.32rem] shrink-0 text-[var(--line-strong)]'
-          : 'mt-[0.3rem] shrink-0 text-[var(--accent)]'
-      }
-    >
-      <path
-        d="M3.5 8.5l3 3 6-7"
-        stroke="currentColor"
-        strokeWidth={quiet ? 2 : 1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <>
+      {text.split(' ').map((w, i) => (
+        <span key={i} className={`w ${className}`}>
+          {w}{' '}
+        </span>
+      ))}
+    </>
   )
 }
-
-/** A section that rises as it arrives. See useReveal — the un-observed default
- *  is visible, so the prerendered HTML is never blank. */
-function Section({
-  children,
-  className = '',
-  id,
-}: {
-  children: ReactNode
-  className?: string
-  id?: string
-}) {
-  const ref = useReveal<HTMLElement>()
-  return (
-    <section ref={ref} id={id} className={className}>
-      {children}
-    </section>
-  )
-}
-
-const SECTION = 'mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24'
 
 export default function Home() {
+  const root = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined
+    let cancelled = false
+    // Motion is loaded after first paint: the page is fully readable before a
+    // single byte of GSAP arrives.
+    import('./home/motion').then(({ initMotion }) => {
+      if (cancelled || !root.current) return
+      cleanup = initMotion(root.current)
+    })
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+  }, [])
+
   return (
-    <div className="atmosphere min-h-dvh">
-      <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 pt-5 pb-2 sm:px-8 sm:pt-7">
-        <a href="/" className="wordmark shrink-0 text-[1.125rem] text-[var(--text)] tap inline-flex items-center">
+    <div ref={root} className="hm" style={{ '--work': WORK } as CSSProperties}>
+      <div className="hm-grain" aria-hidden />
+      <div className="hm-progress" data-progress aria-hidden />
+
+      <header className="hm-nav">
+        <a href="/" className="wordmark hm-mark tap">
           Nuvo
         </a>
-        <nav className="flex items-center gap-2 sm:gap-3">
-          <a href="#week" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
-            The week
-          </a>
-          <a href="#bigger" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
-            The bigger picture
-          </a>
-          <a href="#pricing" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
-            Pricing
-          </a>
-          <a href="/support" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
-            Support
-          </a>
-          <NavOpenAppCtas />
+        <nav className="hm-links">
+          <a href="#system">The system</a>
+          <a href="#week">The week</a>
+          <a href="#day">The day</a>
+          <a href="#pricing">Pricing</a>
         </nav>
+        <NavOpenAppCtas />
       </header>
 
       <main>
-        {/* ── HERO ────────────────────────────────────────────────────────────
-            The promise is *certainty*, and the first clause buys the right to
-            claim it by refusing the thing every other planner promises. "Your
-            life won't get simpler" is not a hedge — it's the product's actual
-            position (it never reduces your obligations; it tells you the truth
-            about them), and a reader who has been sold "effortless" four times
-            recognizes the refusal as the first honest sentence on a landing
-            page in years.
+        {/* ── HERO ──────────────────────────────────────────────────────────
+            H1 starts with "Nuvo" so Google's OAuth branding review can match
+            the app name in the prerendered HTML. The kicker carries it; the
+            three lines carry the claim. */}
+        <section className="hero" data-hero>
+          <h1 className="hero-h1">
+            <span className="hero-kick">Nuvo · Task management for the ambitious</span>
+            <span className="hero-line">
+              <span>Ambition,</span>
+            </span>
+            <span className="hero-line">
+              <span>down to</span>
+            </span>
+            <span className="hero-line">
+              <span>
+                <em>the hour.</em>
+              </span>
+            </span>
+          </h1>
 
-            Reader-facing, per D-057: the site speaks to the person's situation.
-            The first-person voice is real and it's used — but in §7, where it's
-            an account of *using* a product and can't be argued with, not here,
-            where it would make the promise about the builder.
-
-            The visual is unchanged and stays unchanged. AltitudeVisual already
-            performs the elevator — one act, three clock speeds, a human cursor
-            doing every drag — which is the second clause ("the big thing never
-            goes quiet") shown before it's said. */}
-        <section className="mx-auto max-w-6xl px-5 pb-16 pt-8 sm:px-8 sm:pb-24 sm:pt-8">
-          <div className="max-w-3xl">
-            <h1 className="masthead reveal text-display text-[var(--text)]">
-              Nuvo — Your life won’t get simpler. Your week can.
-            </h1>
-            {/* H1 starts with Nuvo so Google's OAuth branding review can match
-                the app name in prerendered HTML (no JS). Title/SEO stay on
-                HOME_TITLE. The support is purpose + the old "Four lives" line
-                folded in — not a second H1. */}
-            <p className="reveal reveal-delay-1 mt-4 max-w-2xl text-pretty hero-support text-[var(--muted)]">
-              Nuvo is a personal daily planner for one person — calendars, tasks, and projects
-              in one place. Four lives. Four apps that have never met. One line from what
-              you’re responsible for down to 2pm today. Fourteen days free, no card. Nobody
-              else is ever in your account.
+          <div className="hero-foot">
+            <p className="hero-sub">
+              Initiatives, projects, and every task beneath them — each with a time on your
+              calendar. Plus a planning partner that commits the week with you and keeps every
+              day on course.
             </p>
-            <CtaGroup className="reveal reveal-delay-2 mt-6" />
+            <div>
+              <CtaGroup />
+              <p className="hero-note">Fourteen days free. No card.</p>
+            </div>
           </div>
 
-          <div className="reveal reveal-delay-3 mt-8 sm:mt-8">
-            <AltitudeVisual />
+          <div className="hero-stage" data-hero-stage>
+            <div className="hero-float f1" data-float="0.6" aria-hidden>
+              <span className="k-label">Initiative</span>
+              <b>Launch v2</b>
+            </div>
+            <div className="hero-float f2" data-float="1.1" aria-hidden>
+              <span className="k-label">Project</span>
+              <b>Pricing page</b>
+              <span className="mono">5 of 7 · on pace</span>
+            </div>
+            <div className="hero-float f3" data-float="0.85" aria-hidden>
+              <span className="k-label">Task</span>
+              <b>Draft tier copy</b>
+              <span className="mono">Tue 9–9:45am</span>
+            </div>
+            <div className="hero-device" data-hero-device>
+              <HeroSchedule />
+            </div>
           </div>
         </section>
 
-        {/* ── 1 · THE DESK ────────────────────────────────────────────────────
-            The section this page has never had. Everything the old version did
-            was capability — nothing gave the reader a reason to distrust the
-            stack they already own, and you cannot sell a system to someone who
-            believes they have one.
-
-            It argues from *their desk*, not from a competitor table: four tools,
-            each genuinely good, each answering honestly, and the question still
-            unanswered at the end. Naming the tools would turn this into a
-            feature comparison, which landscape.md §4 says we lose on
-            integrations, mobile depth and onboarding. Shapes, not logos.
-
-            It ends UNRESOLVED on purpose. The tension it opens is what the next
-            five sections spend. */}
-        <Section id="desk" className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">The desk you’re working from</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Four apps. None of them have ever been introduced.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Each one is good at its job. Now ask the only question that matters.
-            </p>
-          </div>
-          <div className="mt-10">
-            <ScatterVisual />
-          </div>
-        </Section>
-
-        {/* ── 2 · IN ──────────────────────────────────────────────────────────
-            "My crazy scattered life goes into this one funnel." Same image the
-            app opens with (orientation/Visuals.tsx → WelcomeHero), so the site
-            and the first screen agree about what the product is.
-
-            Labels are six things a person recognizes *carrying*, not six input
-            methods — a list of capture surfaces is a feature grid, and the
-            argument here is the breadth of what gets caught, not of how. */}
-        <Section id="capture" className={SECTION}>
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--accent)]">One place</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                All of it goes in before you can forget it.
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                ⌥Space anywhere on the Mac. ⌘K inside it. Your voice. Type it like a text —{' '}
-                <span className="mono text-[var(--text)]">
-                  call David tomorrow 9am 30m #church !high
-                </span>{' '}
-                — and it lands as structure, in one inbox.
-              </p>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                That’s the last time you have to hold it.
-              </p>
-            </div>
-            <ConvergeVisual />
-          </div>
-        </Section>
-
-        {/* ── 3 · CERTAINTY #1 — I KNOW WHAT TODAY IS ─────────────────────────
-            The clause: "I know exactly what I'm doing every single day and
-            every single week."
-
-            The differentiating sentence is the first one, and it's aimed
-            squarely at the board: a scheduled task IS the block. That is the
-            one structural fact that separates this from every list app and
-            every project tool, and the page has never once stated it plainly.
-
-            Calendars are folded in here rather than standing alone, because a
-            calendar integration isn't a feature — it's the reason the open-hours
-            number is true. A standalone "Calendars" section sold plumbing. */}
-        <Section id="week" className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--accent)]">You know what today is</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              And it comes back out onto a Tuesday.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              A board is where work goes to be admired. Here a scheduled task <em>is</em> the
-              block. One row, one grid, beside the meetings you can’t move.
-            </p>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Work on Google. Family on Apple. The youth-group ICS feed.
-              Nuvo reads all of them and plans into what’s actually open.
-            </p>
-          </div>
-
-          <div className="mt-8" id="calendars">
-            <CalendarsVisual />
-          </div>
-
-          <div className="mt-10">
-            <PlanWeekVisual />
-          </div>
-        </Section>
-
-        {/* ── 4 · THE PROOF THAT THE CERTAINTY IS WORTH ANYTHING ──────────────
-            The arithmetic used to be a candidate for the hero. It's better here.
-            As an opening claim, "it'll tell you the week doesn't fit" is a
-            negative and a stranger has no reason to believe the math. Arriving
-            *after* the reader has seen the week get planned, it does a different
-            and more valuable job: it's the reason to trust the certainty the
-            last section just claimed. A planner that can only ever say yes isn't
-            measuring anything.
-
-            The second sentence is the whole brand in six words, and it's the one
-            place the page is allowed to sound like a manifesto. */}
-        <Section className={SECTION}>
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">“But is the week real?”</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                It tells you when the week doesn’t fit — then lets you carry it anyway.
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                Everything you’ve committed to, against the hours you have left, at the pace
-                you’ve <em>proven</em>. Not the pace you hoped for.
-              </p>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                It never refuses you. It just refuses to pretend.
-              </p>
-            </div>
-            <ProjectRoomVisual />
-          </div>
-        </Section>
-
-        {/* ── 5 · CERTAINTY #2 — THE BIG THING IS STILL ALIVE ─────────────────
-            The clause: "without losing track of the larger projects and
-            initiatives in my life." This is the half of the promise no list app
-            can touch, and in the old page it sat at §3 with no connection to any
-            promise at all.
-
-            Drift lives here now, as one sentence, doing the job it's actually
-            good at: explaining why *pace* is the thing being measured. As a
-            headline it was an accusation aimed at a reader who hadn't agreed to
-            anything yet; as the second line of a section about collisions, it's
-            the reason the section exists. (Amends the D-094 cut, which removed
-            it entirely.) */}
-        <Section id="bigger" className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--accent)]">You don’t lose the bigger picture</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              The thing you committed to in January doesn’t go quiet while you’re busy.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Nothing goes wrong on any given day. That’s how a quarter disappears.
-            </p>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              So every project carries a pace, and collisions surface three weeks out — while
-              moving one is still cheap. You run today <em>and</em> you can see the quarter.
-            </p>
-          </div>
-          <div className="mt-10">
-            <OnDeckVisual />
-          </div>
-        </Section>
-
-        {/* ── 6 · CERTAINTY #3 — WHERE THE HOURS WENT ─────────────────────────
-            The clause: "full visibility on everywhere I spend my time."
-
-            One question at two focal lengths, and the section says the zoom out
-            loud so the pair never reads as two of the same thing. The near view
-            carries the differentiated claim (nothing else can attribute an
-            attended meeting to a part of your life). The long view carries the
-            cost, in the app's own sentence. */}
-        <Section className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--accent)]">You can see where it all went</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Not a feeling about the week. Evidence.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Every meeting you attended and every block you finished, assigned to the life it
-              belonged to. Nobody types a timesheet.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-10 lg:grid-cols-2 lg:gap-12">
-            <div>
-              <p className="section-label text-[var(--accent)]">Seven days</p>
-              <div className="mt-4">
-                <LedgerVisual />
-              </div>
-            </div>
-            <div>
-              <p className="section-label text-[var(--accent)]">Thirteen weeks</p>
-              <div className="mt-4">
-                <DomainFloorVisual />
-              </div>
-            </div>
-          </div>
-
-          <p className="mt-10 max-w-2xl serif text-[1.25rem] italic leading-snug text-[var(--text)]">
-            Some weeks that number is the most useful thing you’ll read all week.
-          </p>
-        </Section>
-
-        {/* ── 7 · ASK ─────────────────────────────────────────────────────────
-            Not a step in the pipeline — a second way to drive every step of it,
-            which is why it sits after the mechanism rather than inside it.
-
-            The claim is deliberately not "it has an AI"; every planner has one.
-            The claim is *restraint made visible*: it does the thing, it shows
-            you the row it changed, and the row carries an undo. Principles 3
-            and 4 drawn rather than asserted. */}
-        <Section className={SECTION}>
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">“Just do it for me.”</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Or ask, and watch it show its work.
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                Say it the way you’d say it to a person. Capture, schedule, reschedule, start a
-                project, decline the meeting. It hands back the row it changed, with an undo on it.
-              </p>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                Nothing reaches your calendar because the assistant felt strongly about it.
-              </p>
-            </div>
-            <ChatVisual />
-          </div>
-        </Section>
-
-        {/* ── 8 · THE MOAT, AND WHY IT'S NOT A COMPARISON ─────────────────────
-            This replaces the competitor table, and it's a stronger argument for
-            a structural reason: a table invites scoring, and the reader scores
-            on integrations, mobile depth and onboarding — the three places
-            landscape.md §4 says we lose today. This can't be scored. It
-            describes the reader's own desk and ends somewhere no competitor can
-            follow, because none of them can answer it without admitting they're
-            a part rather than a whole.
-
-            The founder account follows rather than leads, and it's the only
-            first-person voice on the page. It's a claim about *using* a product,
-            which is the one kind a competitor can't rebut — and per brandscript
-            §3, the register is "one of its operators," never "built for me."
-
-            Our own ceilings sit in the same section deliberately. Without them
-            the moat paragraph is a sales pitch; with them it's an assessment. */}
-        <Section className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Why you can’t just build this yourself</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              You already own the parts. The answer isn’t in any of them.
-            </h2>
-            <p className="mt-6 text-body text-[var(--muted)]">
-              A good list. A board where the projects live. A calendar that tells the truth.
-              What you actually want to know isn’t in any of them. It’s the relationship
-              between them.
-            </p>
-            <p className="mt-6 serif text-[1.25rem] italic leading-snug text-[var(--text)]">
-              No amount of syncing turns a stack into a system.
-            </p>
-            <p className="mt-6 text-body text-[var(--muted)]">
-              That’s the whole reason this exists. Not a better list — the one line the question
-              can travel down.
-            </p>
-          </div>
-
-          {/* The first-person account. One claim nobody can copy, placed where
-              it converts: after the mechanism, next to the limits. */}
-          <div className="mt-14 max-w-2xl border-t border-[var(--line)] pt-8">
-            <p className="section-label text-[var(--muted)]">Why it exists</p>
-            <h3 className="masthead mt-3 text-[1.5rem] leading-snug text-[var(--text)]">
-              I used Motion. It decided too much for me.
-            </h3>
-            <p className="mt-5 serif text-[1.125rem] italic leading-relaxed text-[var(--text)]">
-              It built my day for me. When it was wrong about the thing that mattered most, there
-              was nothing to argue with.
-            </p>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              So Nuvo does the labor and leaves the judgment. Every block drags. When it says you
-              can’t carry the week, it still lets you.
-            </p>
-            <p className="mt-6 text-[0.9375rem] text-[var(--muted)]">
-              — Phil, who’s running four lives and built this for the Sunday night it kept ruining.
-            </p>
-          </div>
-
-          <ul className="mt-14 grid gap-x-10 gap-y-8 sm:grid-cols-3">
-            {LIMITS.map(([title, body]) => (
-              <li key={title} className="border-t border-[var(--line)] pt-4">
-                <p className="text-[0.9375rem] font-medium leading-snug text-[var(--text)]">
-                  {title}
-                </p>
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{body}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
-        {/* ── 9 · THE REFUSALS ────────────────────────────────────────────────
-            The reasons a switcher bounces, answered before they're asked
-            (personas.md §6). Headed, because the refusals *are* the product
-            (overview.md §2: "these are not 'not yet', they are refusals, and
-            they are load-bearing"). */}
-        <Section className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Before you ask</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">What Nuvo won’t do.</h2>
-          </div>
-          <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
-            {TRUST.map(([title, body]) => (
-              <li key={title} className="border-t border-[var(--line)] pt-4">
-                <p className="masthead text-[1.25rem] leading-snug text-[var(--text)]">{title}</p>
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{body}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
-        {/* ── 10 · EVERYTHING INCLUDED ────────────────────────────────────────
-            The depth signal, grouped so it reads as a system, and placed right
-            before pricing where abundance justifies a decision instead of
-            interrupting the argument. "Where it runs" is now a group inside it
-            rather than its own section — a whole screen given to "we have a Mac
-            app" was a section the argument didn't need, and the iPhone line no
-            longer advertises a gap: the PWA installs today. */}
-        <Section className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Everything included</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">One price. All of it.</h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              No tiers. No add-ons. Nothing held back for a “pro” plan. Mac, browser, and your
-              phone.
-            </p>
-          </div>
-
-          <div className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-            {INVENTORY.map((g) => (
-              <div key={g.group} className="border-t border-[var(--line)] pt-4">
-                <p className="section-label text-[var(--accent)]">{g.group}</p>
-                <ul className="mt-3 space-y-2">
-                  {g.items.map((item) => (
-                    <li
-                      key={item}
-                      className="flex items-start gap-2 text-[0.875rem] leading-snug text-[var(--muted)]"
-                    >
-                      <CheckMark quiet />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* ── 11 · PRICING ────────────────────────────────────────────────────
-            Lands after the value is made, before the closing CTA. The framing is
-            the stack the reader is currently paying for — which is the argument
-            §1 and §8 have been building toward, so the price arrives as a
-            consolidation rather than as a new expense. */}
-        <Section id="pricing" className={SECTION}>
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Pricing</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Less than the four tools it replaces.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              You’re already paying for four tools that don’t talk to each other. This is one.
-            </p>
-          </div>
-
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:max-w-3xl">
-            {PLANS.map((p) => (
-              <div
-                key={p.name}
-                className={`glass-card relative rounded-2xl border p-6 sm:p-8 ${
-                  p.featured
-                    ? 'border-[var(--accent)] shadow-[var(--shadow-2)] sm:-mt-3 sm:pb-11'
-                    : 'border-[var(--line)]'
-                }`}
-              >
-                {p.badge && (
-                  <span
-                    className="section-label absolute -top-2.5 left-6 rounded-full px-2.5 py-1 text-[var(--bg)]"
-                    style={{ background: 'var(--accent)' }}
-                  >
-                    {p.badge}
+        {/* ── MARQUEE ─────────────────────────────────────────────────────── */}
+        <section className="mq" aria-label="What people build with Nuvo">
+          <div className="mq-row" data-marquee="1">
+            {[0, 1].map((k) => (
+              <div className="mq-track" key={k} aria-hidden={k === 1}>
+                {AMBITIONS.map((a) => (
+                  <span key={a}>
+                    {a}
+                    <i>✦</i>
                   </span>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="mq-row mq-row-2" data-marquee="-1" aria-hidden>
+            {[0, 1].map((k) => (
+              <div className="mq-track" key={k}>
+                {['Initiatives', 'Projects', 'Tasks', 'Time blocks', 'Initiatives', 'Projects', 'Tasks', 'Time blocks'].map(
+                  (a, i) => (
+                    <span key={i}>{a}</span>
+                  ),
                 )}
-                <p className="section-label text-[var(--muted)]">{p.name}</p>
-                {/* Prices are numerics — tabular sans, never the Fraunces masthead. */}
-                <p className="mt-4 flex items-baseline gap-1.5">
-                  <span className="mono text-[3.25rem] font-semibold leading-none tracking-tight text-[var(--text)]">
-                    ${p.perMonth}
-                  </span>
-                  <span className="text-[0.9375rem] text-[var(--muted)]">/month</span>
-                </p>
-                <p className="mt-3 text-[0.9375rem] text-[var(--muted)]">{p.billed}</p>
-                <p className="mt-5 border-t border-[var(--line)] pt-4 text-[0.875rem] leading-relaxed text-[var(--muted)]">
-                  {p.note}
-                </p>
               </div>
             ))}
           </div>
+        </section>
 
-          <div className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <a href={appUrlWithCode(APP_URL)} className="btn-primary tap" rel="noopener noreferrer">
-              Start free — plan your week in ten minutes
-            </a>
+        {/* ── MANIFESTO ───────────────────────────────────────────────────── */}
+        <section className="mf" data-manifesto>
+          <div className="mf-inner">
+            <p className="k-label mf-label">Who this is for</p>
+            <p className="mf-text">
+              <Words text="Most planners promise you calm." />
+              <Words text="You don’t want calm. You want the thing finished" className="strong" />
+              <Words text="— the launch, the book, the second company — and the forty-minute block on Tuesday that actually moves it." />
+            </p>
+            <p className="mf-coda">
+              Nuvo is for people with more ambition than hours.
+            </p>
           </div>
+        </section>
 
-          {/* The agreement plan. Risk reversal is what actually closes this
-              buyer; the objection isn't the money, it's abandoning another app. */}
-          <ul className="mt-12 grid max-w-3xl gap-x-10 gap-y-3.5 sm:grid-cols-2">
-            {PROMISES.map((line) => (
-              <li key={line} className="flex items-start gap-2.5 text-[0.9375rem] text-[var(--muted)]">
-                <CheckMark />
-                <span className="leading-relaxed">{line}</span>
+        {/* ── THE SYSTEM — one initiative, all the way down ─────────────────── */}
+        <section id="system" className="sys" data-cascade>
+          <div className="sys-pin">
+            <div className="sys-copy">
+              <p className="k-label accent">The system</p>
+              <h2 className="sys-h2">
+                Every task has a reason. <em>Every reason has a time.</em>
+              </h2>
+              <ol className="sys-steps">
+                {CASCADE_STEPS.map((s, i) => (
+                  <li key={s.n} data-step={i}>
+                    <span className="sys-n mono">{s.n}</span>
+                    <div>
+                      <p className="sys-label">{s.label}</p>
+                      <p className="sys-title">{s.title}</p>
+                      <p className="sys-body">{s.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div className="sys-stage">
+              <CascadeCanvas />
+            </div>
+          </div>
+        </section>
+
+        {/* ── UNASHAMED ───────────────────────────────────────────────────── */}
+        <section className="un" data-unashamed>
+          <p className="un-line" data-dir="-1">
+            Initiatives<span>.</span>
+          </p>
+          <p className="un-line outline" data-dir="1">
+            Projects<span>.</span>
+          </p>
+          <p className="un-line" data-dir="-1">
+            Tasks<span>.</span>
+          </p>
+          <div className="un-copy">
+            <p className="k-label accent">Unashamedly</p>
+            <p className="un-text">
+              Most apps pick one altitude and pretend the others don’t exist. A list that can’t see
+              the quarter. A board that never reaches Tuesday. Ambition lives at all three — and
+              dies in the gaps between them.
+            </p>
+          </div>
+        </section>
+
+        {/* ── CAPTURE ─────────────────────────────────────────────────────── */}
+        <section className="cp" data-capture>
+          <div className="cp-copy">
+            <p className="k-label accent">Capture</p>
+            <h2 className="h2">At the speed of the idea.</h2>
+            <p className="body">
+              ⌥Space from anywhere on your Mac. ⌘K in the app. Your voice on the phone. Type it the
+              way you’d text it, and it lands as structure — day, time, length, where it belongs.
+            </p>
+          </div>
+          <CaptureScene />
+        </section>
+
+        {/* ── THE WEEK ────────────────────────────────────────────────────── */}
+        <section id="week" className="wkp" data-week>
+          <div className="wkp-pin">
+            <div className="wkp-head">
+              <p className="k-label accent">Plan the week</p>
+              <h2 className="h2">
+                Sunday night, <em>commit the week.</em>
+              </h2>
+            </div>
+            <div className="wkp-grid">
+              <ol className="wkp-steps">
+                {WEEK_STEPS.map((s, i) => (
+                  <li key={s.n} data-wstep={i}>
+                    <span className="mono">{s.n}</span>
+                    <div>
+                      <b>{s.label}</b>
+                      <p>{s.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <WeekScene />
+            </div>
+          </div>
+        </section>
+
+        {/* ── THE DAY (the dark chapter) ──────────────────────────────────── */}
+        <section id="day" className="dy" data-day>
+          <div className="dy-inner">
+            <div className="dy-side">
+              <div className="dy-sticky">
+                <p className="k-label">Your planning partner</p>
+                <h2 className="h2">
+                  Then it walks <em>every day</em> with you.
+                </h2>
+                <p className="dy-clock mono" data-clock aria-hidden>
+                  7:30<span>am</span>
+                </p>
+                <div className="dy-track" aria-hidden>
+                  <span data-day-fill />
+                </div>
+              </div>
+            </div>
+            <DayMoments />
+          </div>
+        </section>
+
+        {/* ── ARITHMETIC + FRIDAY ─────────────────────────────────────────── */}
+        <section className="ar" data-arith>
+          <div className="ar-copy">
+            <p className="k-label accent">The honest part</p>
+            <h2 className="ar-h2">
+              Ambition without arithmetic is a <em>wish list.</em>
+            </h2>
+            <div className="ar-meter">
+              <span className="mono ar-num">
+                <span data-count="112">112</span>%
+              </span>
+              <div>
+                <p className="ar-meter-l">Commitment, this week</p>
+                <p className="body">
+                  Everything you’ve committed to, against the hours you really have, at the pace
+                  you’ve <em>proven</em>. Over a hundred? It’ll let you carry it. It just won’t
+                  pretend.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="k-label">Friday</p>
+            <p className="ar-fri">See what moved. With evidence, not memory.</p>
+            <FridayScene />
+          </div>
+        </section>
+
+        {/* ── STANCE ──────────────────────────────────────────────────────── */}
+        <section className="st">
+          <p className="k-label">Ambitious, not reckless</p>
+          <ul className="st-list">
+            {STANCE.map(([t, b]) => (
+              <li key={t} data-rise>
+                <p className="st-t">{t}</p>
+                <p className="st-b">{b}</p>
               </li>
             ))}
           </ul>
-        </Section>
+        </section>
 
-        {/* ── CLOSE ───────────────────────────────────────────────────────────
-            The three certainties, stated plainly for the first and only time.
-            The page opened by refusing to simplify your life and spent nine
-            sections earning the right to say what it *does* give you instead —
-            so this is the one place the claim can be made flat, with no
-            mechanism attached and nothing to decode. */}
-        <Section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-20 sm:px-8 sm:py-28">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="section-label text-[var(--muted)]">
-              Built for the person everything runs through
-            </p>
-            <h2 className="masthead mt-4 text-lead text-[var(--text)]">
-              You know what today is. You know the big things are moving. You know where the hours
-              went.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Three answers. At the same time. From one place.
-            </p>
-            <CtaGroup className="mt-10 justify-center" />
+        {/* ── PRICING ─────────────────────────────────────────────────────── */}
+        <section id="pricing" className="pr">
+          <div className="pr-head">
+            <p className="k-label accent">Pricing</p>
+            <h2 className="h2">One price. All of it.</h2>
+            <p className="body">No tiers. No add-ons. Nothing held back for a “pro” plan.</p>
           </div>
-        </Section>
+          <div className="pr-cards">
+            {PLANS.map((p) => (
+              <div key={p.name} className={`pr-card ${p.featured ? 'is-featured' : ''}`} data-rise>
+                {p.badge && <span className="pr-badge">{p.badge}</span>}
+                <p className="k-label">{p.name}</p>
+                <p className="pr-price">
+                  <span className="mono">${p.perMonth}</span>
+                  <span>/month</span>
+                </p>
+                <p className="pr-billed">{p.billed}</p>
+                <p className="pr-note">{p.note}</p>
+              </div>
+            ))}
+          </div>
+          <ul className="pr-terms">
+            {TERMS.map((t) => (
+              <li key={t}>
+                <span aria-hidden>✓</span>
+                {t}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* ── CLOSE ───────────────────────────────────────────────────────── */}
+        <section className="cl" data-close>
+          <p className="cl-big">
+            <span>Go build</span>
+            <span>
+              <em>the thing.</em>
+            </span>
+          </p>
+          <p className="cl-sub">We’ll find it a time.</p>
+          <CtaGroup className="cl-cta" />
+          <p className="hero-note">
+            Or <a href={appUrlWithCode(APP_URL)} rel="noopener noreferrer">open it in your browser</a> and plan
+            this week tonight.
+          </p>
+        </section>
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-col gap-4 border-t border-[var(--line)] px-5 py-8 text-[13px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <span className="wordmark text-[var(--text)]">Nuvo</span>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <a href="/share" className="hover:text-[var(--text)]">
-            Share
-          </a>
-          <a href="/support" className="hover:text-[var(--text)]">
-            Support
-          </a>
-          <a href="/privacy" className="hover:text-[var(--text)]">
-            Privacy
-          </a>
-          <a href="/terms" className="hover:text-[var(--text)]">
-            Terms
-          </a>
-          <a href={ACCESS_MAILTO} className="hover:text-[var(--text)]">
-            Contact
-          </a>
-          <p>© {new Date().getFullYear()} · Built for people who run a lot at once</p>
+      <footer className="hm-foot">
+        <span className="wordmark">Nuvo</span>
+        <div>
+          <a href="/share">Share</a>
+          <a href="/support">Support</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href={ACCESS_MAILTO}>Contact</a>
+          <span>© {new Date().getFullYear()} · For people with more ambition than hours</span>
         </div>
       </footer>
     </div>

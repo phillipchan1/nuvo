@@ -1,6 +1,13 @@
 # Brandscript — Nuvo through the StoryBrand (SB7) frame
 
 **Status:** canonical (v1, 2026-07-25) · owner: Phil · revisit when positioning shifts
+
+> **2026-11-13 — positioning shifted ([D-186](./decisions.md)).** The hero is now the
+> **ambitious operator**: someone with more ambition than hours, unashamed about Initiatives,
+> Projects and Tasks. Public line: ***Ambition, down to the hour.*** Drift is still the villain
+> and honesty is still the guide's voice — but the site promises *finished*, not *calm*, and
+> "steward" is no longer the aspirational identity in copy (§8). The §10 banned list stands:
+> ambitious ≠ hustle. Sections below are otherwise unchanged until a full v2 rewrite.
 **Frame:** Donald Miller's *Building a StoryBrand* — SB7. A brand is not a hero. **The
 customer is the hero; the brand is the guide.**
 
