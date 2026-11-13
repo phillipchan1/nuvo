@@ -1,4 +1,4 @@
-// `npm run eval:history` — what the battery has said over time.
+// `npm run eval:agent:history` — what the battery has said over time.
 //
 // Every recorded run, newest last, plus the latest result for each cell of the
 // model x prompt matrix. Reads the file the runner appends to; runs nothing and
@@ -13,7 +13,7 @@ import { cellKey, diffRuns, formatMatrix, lastRunForCell, parseHistory } from ".
 const HISTORY = join(dirname(fileURLToPath(import.meta.url)), "history", "runs.jsonl");
 
 if (!existsSync(HISTORY)) {
-  console.log("No battery runs recorded yet. Run: npm run eval -- --repeat 5");
+  console.log("No battery runs recorded yet. Run: npm run eval:agent -- --repeat 5");
   process.exit(0);
 }
 

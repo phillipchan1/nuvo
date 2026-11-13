@@ -1,4 +1,4 @@
-// Which scenarios a change actually touches — the scope of `npm run eval -- --changed`.
+// Which scenarios a change actually touches — the scope of `npm run eval:agent -- --changed`.
 //
 // The old gate was "every scenario ×5" for any prompt or tool change: ~65×5×2
 // requests of ~26k tokens, a few dollars a go, for a change that usually moved

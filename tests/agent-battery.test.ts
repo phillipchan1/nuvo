@@ -1,6 +1,6 @@
 // The battery's harness, exercised without a model.
 //
-// `npm run eval` needs an API key, so on a normal push nothing would prove that
+// `npm run eval:agent` needs an API key, so on a normal push nothing would prove that
 // the harness still works — and a battery that silently stopped running is
 // worse than no battery, because the green check keeps arriving. These tests
 // drive the same path (`runScenario` → the real prompt, the real tool list, the
@@ -9,7 +9,7 @@
 //
 // They assert the harness reports correctly — that a right answer passes and a
 // wrong one fails with a sentence someone can act on. Whether the real model
-// gives the right answer is what `npm run eval` is for.
+// gives the right answer is what `npm run eval:agent` is for.
 //
 // Run: npm test
 
@@ -220,7 +220,7 @@ const recorded = existsSync(CASSETTES)
   ? readdirSync(CASSETTES).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""))
   : [];
 
-describe.skipIf(recorded.length === 0)("recorded runs (npm run eval:replay)", () => {
+describe.skipIf(recorded.length === 0)("recorded runs (npm run eval:agent:replay)", () => {
   for (const id of recorded) {
     const s = SCENARIOS.find((x) => x.id === id);
     it.skipIf(!s)(`${id} — ${s?.it ?? "no longer in the battery"}`, async () => {

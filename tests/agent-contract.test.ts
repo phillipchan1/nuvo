@@ -1,6 +1,6 @@
 // The half of the chat that can be pinned without a model.
 //
-// An LLM's judgment needs a live battery (tests/agent/, `npm run eval`), but
+// An LLM's judgment needs a live battery (tests/agent/, `npm run eval:agent`), but
 // most of the ways the chat has actually broken were not judgment at all:
 //   · a tool the prompt describes that no longer exists
 //   · a tool defined with no handler behind it — the model calls it, it throws

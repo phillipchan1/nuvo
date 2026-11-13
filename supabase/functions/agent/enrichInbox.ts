@@ -23,7 +23,7 @@ import {
   type RouteDomain,
   type RouteHome,
 } from "../_shared/domainRouting.ts";
-import { decisionsAvailable, mapLimit, routeDomain, routeHome } from "./decisions.ts";
+import { decisionsAvailable, mapLimit, routeDomain, routeDomainAnswer, routeHome } from "./decisions.ts";
 
 type Energy = "deep" | "decide" | "delegate" | "quick";
 type Level = "project" | "initiative" | "domain" | "none";
@@ -185,7 +185,10 @@ export async function enrichInboxBatch(
     const routeDomains = await routeDomainsFor(userId, domains);
     const verdicts = await mapLimit(unlocked, 6, async (task) => {
       const text = captureText(task.title, task.notes);
-      const v = await routeDomain(routeDomains, text);
+      const answer = await routeDomainAnswer(routeDomains, text);
+      // An abstention is a verdict ("no clear home"), not an outage: it must not
+      // fall through to the chat-model path, which would file it anyway.
+      const v = answer === "abstained" ? { id: "", probability: 0, tier: "none" as const } : answer;
       if (!v || v.tier === "none") return { task, v, home: null };
       // Descend only from a strong domain, and only into a home that lives in it.
       let home: { home: RouteHome; probability: number } | null = null;
@@ -203,7 +206,7 @@ export async function enrichInboxBatch(
     const effort = await estimateEffort(placed.map((x) => x.task));
     const missed: TaskRow[] = [];
     for (const { task, v, home } of verdicts) {
-      if (!v) { missed.push(task); continue; } // classifier unavailable for this one → old path
+      if (!v) { missed.push(task); continue; } // classifier couldn't answer (not: abstained) → old path
       const e = effort.get(task.id) ?? { durationMinutes: null, energy: null, rationale: "", confidence: v.probability };
       const sig = suggestionSig(task.title, task.notes ?? "");
       const dom = resolveDomain(v.id);

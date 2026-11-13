@@ -1,12 +1,12 @@
 // The battery's runner.
 //
-//   npm run eval:gate                 THE gate: groups touched since master ×5, the rest ×1
-//   npm run eval:gate -- --no-rest    only the touched groups — cents, but blind elsewhere
-//   npm run eval                      every scenario once, live model (a smoke test)
-//   npm run eval -- --only slot-      just the slot scenarios
-//   npm run eval -- --repeat 5        five runs each — the full reliability read (~$4)
-//   npm run eval -- --group week
-//   npm run eval:replay               recorded runs — deterministic, free
+//   npm run eval:agent:gate                 THE gate: groups touched since master ×5, the rest ×1
+//   npm run eval:agent:gate -- --no-rest    only the touched groups — cents, but blind elsewhere
+//   npm run eval:agent                      every scenario once, live model (a smoke test)
+//   npm run eval:agent -- --only slot-      just the slot scenarios
+//   npm run eval:agent -- --repeat 5        five runs each — the full reliability read (~$4)
+//   npm run eval:agent -- --group week
+//   npm run eval:agent:replay               recorded runs — deterministic, free
 //
 // A live run costs money, so it says how much — before (an estimate from the
 // spend ledger, refused above --max-cost unless --yes) and after (the provider's
@@ -378,12 +378,12 @@ if (blocked.length) {
   }
   if (REPEAT === 1) {
     console.log(
-      "One run can't tell fail from flaky — re-run just the red: npm run eval -- --only <id> --repeat 5",
+      "One run can't tell fail from flaky — re-run just the red: npm run eval:agent -- --only <id> --repeat 5",
     );
   }
   process.exit(exitCode(judged));
 }
 
 if (REPEAT === 1 && MODE === "live" && !touched) {
-  console.log("Smoke pass. Gate a prompt or tool change on `npm run eval:gate`, not on this.");
+  console.log("Smoke pass. Gate a prompt or tool change on `npm run eval:agent:gate`, not on this.");
 }

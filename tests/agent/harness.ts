@@ -15,8 +15,8 @@
 // does with those arguments is NOT covered here — it needs a database, and
 // that gap is named in docs/agent-conformance.md §5 rather than papered over.
 //
-// Run: npm run eval           (live model — needs OPENAI_API_KEY / OPENROUTER_API_KEY)
-//      npm run eval:replay    (recorded — deterministic, free, runs in CI)
+// Run: npm run eval:agent           (live model — needs OPENAI_API_KEY / OPENROUTER_API_KEY)
+//      npm run eval:agent:replay    (recorded — deterministic, free, runs in CI)
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -89,11 +89,11 @@ function cassettePath(id: string): string {
  *  class of "the plumbing broke" regressions — a renamed tool, a context field
  *  that stopped being serialized, a loop that stopped feeding results back —
  *  without spending a token or waiting on a model's mood. It cannot catch a
- *  judgment regression; only a live run can, which is why `npm run eval` is
+ *  judgment regression; only a live run can, which is why `npm run eval:agent` is
  *  the one that gates a prompt change. */
 function replayClient(id: string): ChatClient {
   const path = cassettePath(id);
-  if (!existsSync(path)) throw new Error(`No cassette for "${id}" — run: npm run eval -- --only ${id}`);
+  if (!existsSync(path)) throw new Error(`No cassette for "${id}" — run: npm run eval:agent -- --only ${id}`);
   const tape = JSON.parse(readFileSync(path, "utf8")) as Recorded;
   let i = 0;
   const next = () => {

@@ -30,7 +30,7 @@ export default defineConfig({
     // `@vitest-environment jsdom` docblock.
     setupFiles: ["./tests/agent/setup.ts", "./tests/setupDom.ts"],
     // The prompt-level eval (`*.eval.ts`) is deliberately absent — it needs a
-    // live model. `npm run eval`, vitest.eval.config.ts.
+    // live model. `npm run eval:agent`, vitest.eval.config.ts.
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },
 });

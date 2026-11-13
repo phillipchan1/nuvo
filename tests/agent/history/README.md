@@ -1,6 +1,6 @@
 # Battery run history
 
-`runs.jsonl` — one line per full `npm run eval`, appended by `tests/agent/run.ts`.
+`runs.jsonl` — one line per full `npm run eval:agent`, appended by `tests/agent/run.ts`.
 
 Committed on purpose. The point is a record that outlives a terminal session, so
 "is this better than before?" has an answer that isn't someone's memory of a
@@ -12,8 +12,8 @@ Runs are grouped by **cell** — model · prompt variant · reasoning effort. A 
 is only ever compared to the last run of its own cell, so a model change can't
 be credited to a prompt edit.
 
-    npm run eval:gate              # runs, then prints the diff vs this cell's last run
-    npm run eval:history           # every recorded run + the matrix, runs nothing
+    npm run eval:agent:gate              # runs, then prints the diff vs this cell's last run
+    npm run eval:agent:history           # every recorded run + the matrix, runs nothing
 
 Filtered runs (`--only`, `--group`, `--no-rest`) are not recorded — a slice of
 the suite is not comparable to the whole of it. `--no-record` opts out explicitly.

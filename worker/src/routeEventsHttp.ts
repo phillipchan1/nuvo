@@ -1,20 +1,35 @@
+// The worker twin of supabase/functions/route-events — same contract, same
+// judgment. Attribution asks the routing kernel's Decisions classifier through
+// the shared half (`_shared/eventRouting.ts`), over the same charter-led domain
+// descriptions + confirmed exemplars the Inbox uses, and attributes only at the
+// AUTO tier (null is cached below it). The free-form prompt is the FALLBACK, for
+// titles the classifier couldn't be reached for (beta not enabled, timeout).
+
 import type { Context } from "hono";
 import { OPEN_CORS, json } from "./cors.ts";
 import { requireStore, type AppEnv } from "./session.ts";
+import type { Store } from "./store.ts";
+import {
+  EVENT_BATCH,
+  attributeEvents,
+  eventTitleKey,
+  fanOut,
+  postDecision,
+  toRouteDomains,
+  type AttributableEvent,
+  type EventVerdict,
+} from "../../supabase/functions/_shared/eventRouting.ts";
+import type { ExemplarTask } from "../../supabase/functions/_shared/domainRouting.ts";
 
 const clean = (s: unknown): string => (typeof s === "string" ? s : "").replace(/[\x00-\x1F\x7F]/g, " ").trim();
 
-interface InEvent {
-  key: string;
-  title: string;
-  calendarName?: string;
-  attendees?: string;
-}
+type InEvent = AttributableEvent;
 
 type DomainRow = {
   id: string;
   name: string;
   intention: string | null;
+  charter: string | null;
   context: { scope?: string; entities?: string[]; boundary?: string } | null;
 };
 
@@ -45,11 +60,11 @@ export async function handleRouteEvents(c: Context<AppEnv>): Promise<Response> {
   if ("error" in got) return got.error;
   const store = got.store;
   const body = (await c.req.json().catch(() => ({}))) as { events?: InEvent[] };
-  const events: InEvent[] = Array.isArray(body.events) ? body.events.slice(0, 40) : [];
+  const events: InEvent[] = Array.isArray(body.events) ? body.events.slice(0, EVENT_BATCH) : [];
   if (!events.length) return json({ routed: [] }, 200, OPEN_CORS);
 
   const domains = (await store.sql`
-    SELECT id, name, intention, context
+    SELECT id, name, intention, charter, context
     FROM domains
     WHERE user_id = ${store.userId}
     ORDER BY sort_order
@@ -59,6 +74,70 @@ export async function handleRouteEvents(c: Context<AppEnv>): Promise<Response> {
   const key = c.env.OPENAI_API_KEY?.trim() ?? "";
   if (!key) return json({ error: "llm unavailable" }, 503, OPEN_CORS);
 
+  // The classifier first; whatever it couldn't be reached for, the old prompt.
+  const routeDomains = toRouteDomains(domains, await recentExemplars(store));
+  const judged = await attributeEvents(routeDomains, events, (req) => postDecision(key, req));
+  const verdicts = judged.verdicts;
+  if (judged.missed.length) {
+    try {
+      for (const [k, v] of await legacyRoute(key, domains, judged.missed)) verdicts.set(k, v);
+    } catch (e) {
+      // Nothing judged at all → fail as before. Partly judged → keep what the
+      // classifier gave; the rest stays uncached and is retried next load.
+      if (!verdicts.size) throw e;
+      console.warn("[route-events] fallback failed:", e instanceof Error ? e.message : "error");
+    }
+  }
+
+  const out = fanOut(events, verdicts);
+  const now = new Date().toISOString();
+  for (const v of out) {
+    await store.sql`
+      INSERT INTO event_domain_routing (user_id, event_key, domain_id, confidence, routed_at)
+      VALUES (${store.userId}, ${v.key}, ${v.domainId}, ${v.confidence}, ${now})
+      ON CONFLICT (user_id, event_key) DO UPDATE
+      SET domain_id = EXCLUDED.domain_id,
+          confidence = EXCLUDED.confidence,
+          routed_at = EXCLUDED.routed_at
+    `;
+  }
+  return json({ routed: out }, 200, OPEN_CORS);
+}
+
+/** Recent tasks, as evidence for which domain they count toward — the rows
+ *  `pickExemplars` (the kernel) chooses examples from. A parented task counts
+ *  toward its PROJECT's domain; its own `domain_id` is a stale-prone copy
+ *  (D-088). Neon has no `suggestion` column — the worker never auto-files a
+ *  capture — so no row here can be the router's own unreviewed guess. */
+async function recentExemplars(store: Store): Promise<ExemplarTask[]> {
+  try {
+    const rows = (await store.sql`
+      SELECT t.title, t.created_at, COALESCE(p.domain_id, t.domain_id) AS domain_id
+      FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id AND p.user_id = t.user_id
+      WHERE t.user_id = ${store.userId}
+        AND t.parent_task_id IS NULL
+        AND t.status <> 'trashed'
+        AND t.trashed_at IS NULL
+      ORDER BY t.created_at DESC
+      LIMIT 400
+    `) as Array<{ title: string; created_at: string | Date; domain_id: string | null }>;
+    return rows.map((r) => ({
+      title: r.title,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+      domainId: r.domain_id,
+    }));
+  } catch (e) {
+    // Examples sharpen the classifier; their absence never blocks it.
+    console.warn("[route-events] exemplars unavailable:", e instanceof Error ? e.message : "error");
+    return [];
+  }
+}
+
+/** The old router — one free-form JSON completion over the batch. Now only the
+ *  FALLBACK for titles the classifier couldn't be reached for. `uniques` are
+ *  already de-duplicated by title; an omitted title falls to null, as before. */
+async function legacyRoute(apiKey: string, domains: DomainRow[], uniques: InEvent[]): Promise<Map<string, EventVerdict>> {
   const catchAll =
     domains.find((d) => !(d.context?.entities?.length) && /personal|life|misc|other/i.test(d.name)) ??
     domains.find((d) => !(d.context?.entities?.length));
@@ -75,17 +154,6 @@ export async function handleRouteEvents(c: Context<AppEnv>): Promise<Response> {
       return `[${d.id}] ${clean(d.name)}${tag}${bits.length ? ` — ${bits.join(" · ")}` : ""}`;
     })
     .join("\n");
-
-  const titleKey = (e: InEvent) => `${clean(e.title).toLowerCase()}|${clean(e.calendarName ?? "")}`;
-  const uniques: InEvent[] = [];
-  const uniqueIdx = new Map<string, number>();
-  for (const e of events) {
-    const tk = titleKey(e);
-    if (!uniqueIdx.has(tk)) {
-      uniqueIdx.set(tk, uniques.length);
-      uniques.push(e);
-    }
-  }
 
   const evLine = uniques
     .map((e, i) => {
@@ -114,30 +182,18 @@ Never invent a domain id; use only the bracketed ids above. Return exactly one e
 Respond with JSON only:
 {"routed":[{"i":<event index>,"domainId":<domain id string or null>,"confidence":<0..1>}]}`;
 
-  const raw = await completeJSON<{ routed?: Array<{ i: unknown; domainId: unknown; confidence: unknown }> }>(key, prompt);
+  const raw = await completeJSON<{ routed?: Array<{ i: unknown; domainId: unknown; confidence: unknown }> }>(apiKey, prompt);
   const valid = new Set(domains.map((d) => d.id));
-  const verdict = new Map<number, { domainId: string | null; confidence: number }>();
+  const out = new Map<string, EventVerdict>();
   for (const r of raw.routed ?? []) {
     const idx = Number(r.i);
-    if (!Number.isInteger(idx) || idx < 0 || idx >= uniques.length || verdict.has(idx)) continue;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= uniques.length) continue;
+    const k = eventTitleKey(uniques[idx]);
+    if (out.has(k)) continue;
     const domainId = typeof r.domainId === "string" && valid.has(r.domainId) ? r.domainId : null;
     const confidence = Math.max(0, Math.min(1, Number(r.confidence) || 0));
-    verdict.set(idx, { domainId, confidence });
+    out.set(k, { domainId, confidence });
   }
-
-  const out: Array<{ key: string; domainId: string | null; confidence: number }> = [];
-  const now = new Date().toISOString();
-  for (const ev of events) {
-    const v = verdict.get(uniqueIdx.get(titleKey(ev))!) ?? { domainId: null, confidence: 0 };
-    out.push({ key: ev.key, domainId: v.domainId, confidence: v.confidence });
-    await store.sql`
-      INSERT INTO event_domain_routing (user_id, event_key, domain_id, confidence, routed_at)
-      VALUES (${store.userId}, ${ev.key}, ${v.domainId}, ${v.confidence}, ${now})
-      ON CONFLICT (user_id, event_key) DO UPDATE
-      SET domain_id = EXCLUDED.domain_id,
-          confidence = EXCLUDED.confidence,
-          routed_at = EXCLUDED.routed_at
-    `;
-  }
-  return json({ routed: out }, 200, OPEN_CORS);
+  for (const e of uniques) if (!out.has(eventTitleKey(e))) out.set(eventTitleKey(e), { domainId: null, confidence: 0 });
+  return out;
 }

@@ -351,31 +351,26 @@ disagreed about which week Saturday plans. So:
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
   typecheck + tests + an edge-function parse on every push.
 
-## The chat is held to a battery — [`docs/agent-conformance.md`](docs/agent-conformance.md)
+## The model is held to an eval — cheap, fast, every change
 
-The chat is the one surface that fails **quietly**: it answers fluently whether it was
-right or not, so nothing but a person noticing catches it. So it has a conformance battery,
-and the same rule as the kernel — **the battery drives the deployed code, never a copy.**
+There is no in-app chat (D-201). What the model still decides in the app is **which domain
+something belongs to** — a capture in the Inbox, a calendar event's "counts toward" — through
+OpenAI's decision model (`gpt-6-luna` on `/v1/decisions`, `_shared/domainRouting.ts` +
+`_shared/eventRouting.ts`): a choice with a probability, filed only at ≥ 0.8, offered at ≥ 0.5,
+silent below. A refusal is an answer ("no clear home"), never an outage to fall back from.
 
-- **The pure half of the agent is importable outside Deno** — `agent/prompt.ts` (the
-  identity + every rule), `agent/toolDefs.ts` (the vocabulary), `agent/contextShape.ts`
-  (the snapshot + its serializer), `agent/turn.ts` (message assembly), `agent/loop.ts`
-  (rounds, tool results, empty-reply rules). `tools.ts` / `context.ts` / `index.ts` keep
-  the service role and the HTTP. **Never put a rule where the battery can't reach it.**
-- **`npm test`** runs the deterministic half: every tool has a handler, every tool the
-  prompt names exists, every context field the prompt reads is actually sent, the loop's
-  failure paths, and the harness itself. Milliseconds, no model, every push.
-- **`npm run eval`** runs the behavioral battery against a live model — scenarios in
-  `tests/agent/scenarios.ts`. **The bar is 100%: every scenario, every run.** The runner
-  calls a partial pass **flaky**, which is a bug (the chat drifts, or the assertion is
-  loose), not a tolerance. **Gate a prompt change or a new tool on
-  `npm run eval:gate`** — the groups the diff touches ×5, the rest once (~$1);
-  a model swap on the full `npm run eval -- --repeat 5` (~$4). Every live run
-  prints its tokens, cache rate and cost, and refuses above `--max-cost` ($2)
-  unless `--yes` — never loop a full ×5 to "make it green". A known-red scenario can be
-  parked only with a dated `quarantined:` line, capped at 10% of the suite.
-- **A new chat capability ships with its scenario and its row in the map**, in the same
-  commit. `npm test` fails when the map and the suite disagree.
+- **`npm run eval`** runs the routing eval live (`tests/eval/routing.ts`): a stranger's account
+  (a nurse, six domains, P16) and 40 labelled captures and events, including ones with no clear
+  home. ~1–2s, a fraction of a cent. **The bar:** auto-tier precision ≥ 90% and **no
+  no-clear-home item auto-filed**. Run it on any change to the routing kernel, the domain
+  descriptions or the model. Results append to `tests/eval/history.jsonl`.
+- **`npm run eval:agent`** is the old chat battery (`tests/agent/`), kept for the `agent`
+  endpoint that Shortcuts, the watch and the drafts still call. Same rules as before — 100%,
+  partial = flaky, refuses above `--max-cost` ($2) unless `--yes` — but it is no longer the
+  default, and a full ×5 costs dollars on the larger models. The pure half (`agent/prompt.ts`,
+  `toolDefs.ts`, `contextShape.ts`, `turn.ts`, `loop.ts`) is still checked by `npm test`.
+- **Models that reason by default** (gpt-5 and later) must be sent `reasoning_effort: "none"`
+  with tools on `/v1/chat/completions` — `reasonsUnlessTold` in `agent/loop.ts`.
 
 ## Reuse the logic layer — don't duplicate
 

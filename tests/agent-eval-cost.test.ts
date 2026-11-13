@@ -1,4 +1,4 @@
-// The battery's bill and its scope — the parts of `npm run eval` that decide how
+// The battery's bill and its scope — the parts of `npm run eval:agent` that decide how
 // much a live run spends. Pure, so they're held here rather than discovered on
 // an invoice. See tests/agent/cost.ts and tests/agent/scope.ts.
 

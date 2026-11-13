@@ -55,6 +55,19 @@ export async function decide(req: DecisionRequest): Promise<unknown | null> {
   }
 }
 
+/** The classifier's answer, telling its two kinds of silence apart: a verdict;
+ *  `"abstained"` (it answered, and refused or named nothing it may file — the
+ *  right answer for a capture with no clear home); or null, when it couldn't
+ *  answer at all (no key, an error, a timeout). Only null may fall back to
+ *  another model — falling back on an abstention lets a weaker model file what
+ *  the classifier deliberately didn't. */
+export async function routeDomainAnswer(domains: RouteDomain[], text: string): Promise<RouteVerdict | "abstained" | null> {
+  if (!domains.length || !text.trim()) return "abstained";
+  const res = await decide(domainRequest(domains, text));
+  if (res == null) return null;
+  return readDomainVerdict(res, domains) ?? "abstained";
+}
+
 /** Which of the person's domains does `text` belong to? Null = no verdict. */
 export async function routeDomain(domains: RouteDomain[], text: string): Promise<RouteVerdict | null> {
   if (!domains.length || !text.trim()) return null;

@@ -68,7 +68,7 @@ or an error that tells the model a count instead of the choices, fails here
 rather than in a conversation. Every case in it is drawn from the 2026-08-01
 Dayspring transcript.
 
-### Tier 2 — behavioral (`npm run eval`, live model, costs tokens)
+### Tier 2 — behavioral (`npm run eval:agent`, live model, costs tokens)
 
 `tests/agent/`. One scenario = a fixture world + what the user says + what a
 correct agent does about it. It runs the **real** system prompt, the **real**
@@ -131,7 +131,7 @@ finds the 1-in-5.
 
 Because one green run is weak evidence against a 100% bar, a prompt, tool or
 model change is gated on **repeats** — but only of what it touched. **`npm run
-eval:gate`** (`--changed`) diffs the agent code and `scenarios.ts` against
+eval:agent:gate`** (`--changed`) diffs the agent code and `scenarios.ts` against
 `master` (working tree included), runs every group the diff reaches **×5**, and
 runs the rest of the suite **once**. A group is "reached" when one of its
 scenarios changed, or when a changed line in `supabase/functions/agent/**` names
@@ -143,13 +143,13 @@ names any changed agent file that reached nothing by that rule — if that edit 
 aimed at a capability, add `--group <name> --repeat 5` for it.
 
 ```bash
-npm run eval:gate                    # THE gate: touched groups ×5, the rest ×1   (~$1)
-npm run eval:gate -- --no-rest       # touched groups only — blind elsewhere      (~$0.40 a group)
-npm run eval                         # smoke: every scenario, once each           (~$0.80)
-npm run eval -- --group slots        # one capability
-npm run eval -- --only slot-one      # one scenario                               (~$0.05)
-npm run eval -- --repeat 5           # everything ×5 — a model swap, not a prompt edit (~$4)
-npm run eval:replay                  # recorded runs: deterministic, free
+npm run eval:agent:gate                    # THE gate: touched groups ×5, the rest ×1   (~$1)
+npm run eval:agent:gate -- --no-rest       # touched groups only — blind elsewhere      (~$0.40 a group)
+npm run eval:agent                         # smoke: every scenario, once each           (~$0.80)
+npm run eval:agent -- --group slots        # one capability
+npm run eval:agent -- --only slot-one      # one scenario                               (~$0.05)
+npm run eval:agent -- --repeat 5           # everything ×5 — a model swap, not a prompt edit (~$4)
+npm run eval:agent:replay                  # recorded runs: deterministic, free
 ```
 
 `--base <branch>` diffs against something other than `master`; `--repeat N`
@@ -198,8 +198,8 @@ parks at 10% of the suite, so the escape hatch stays embarrassing instead of
 becoming the 80% bar under a new name.
 
 A live run writes a **cassette** per scenario (`tests/agent/cassettes/`).
-`eval:replay` replays them with no model at all. Replay can't catch a judgment
-regression — only a live run can, which is why `npm run eval` is what gates a
+`eval:agent:replay` replays them with no model at all. Replay can't catch a judgment
+regression — only a live run can, which is why `npm run eval:agent` is what gates a
 prompt change — but it catches the whole plumbing class (a renamed tool, a
 context field that stopped being sent, a loop that stopped feeding results
 back) for free, on every push.
@@ -227,7 +227,7 @@ construction rather than by discipline.
 for m in gpt-5.6-terra gpt-5.6-sol; do
   for p in full thin; do
     echo "== $m / $p"
-    AGENT_MODEL=$m AGENT_PROMPT=$p npm run eval -- --repeat 5 --yes
+    AGENT_MODEL=$m AGENT_PROMPT=$p npm run eval:agent -- --repeat 5 --yes
   done
 done
 ```
@@ -266,7 +266,7 @@ Two cautions when reading a matrix:
 ### Tracking results over time
 
 A run used to print a score and exit, so every number the battery ever produced
-was gone when the terminal scrolled. `npm run eval` now appends a record to
+was gone when the terminal scrolled. `npm run eval:agent` now appends a record to
 `tests/agent/history/runs.jsonl` (committed) and prints what moved.
 
 The record keeps **every scenario's verdict**, not just the score — two runs at
@@ -276,8 +276,8 @@ reasoning) and only ever compared within one, so a model change cannot be
 credited to a prompt edit.
 
 ```bash
-npm run eval:gate            # runs, records, and diffs against this cell's last run
-npm run eval:history         # every recorded run + the matrix; runs nothing, costs nothing
+npm run eval:agent:gate            # runs, records, and diffs against this cell's last run
+npm run eval:agent:history         # every recorded run + the matrix; runs nothing, costs nothing
 ```
 
 A record carries the run's `usage` and `usd` too, and a `--changed` run carries
@@ -489,7 +489,7 @@ refusal to act** — "the model should be smart" is not a scenario.
 2. There is no weighting to choose — every scenario is held to 100%. If you
    think it can't hold, that's a signal the expectation is too loose or the
    chat needs the rule stated more sharply; write it tightly instead.
-3. Record a cassette: `npm run eval -- --only <id>` (~$0.05).
+3. Record a cassette: `npm run eval:agent -- --only <id>` (~$0.05).
 4. Update the map above in the same commit — `npm test` fails when the map and
    the suite disagree about which groups exist.
 
@@ -513,7 +513,7 @@ scenario and the map row together.
   same fixtures to `executeTool` is the next step.
 - **Replay can't catch judgment.** Cassettes freeze one model's answers. They
   protect the plumbing; they say nothing about whether a prompt edit made the
-  chat dumber. Only `npm run eval` does, and it costs tokens.
+  chat dumber. Only `npm run eval:agent` does, and it costs tokens.
 - **One model.** The battery runs whatever `AGENT_MODEL` points at. A model
   swap needs a full live run at `--repeat 5` before it ships (~$4 on terra).
 - **100% is a bar, not yet a measurement.** No live run has been recorded, so
