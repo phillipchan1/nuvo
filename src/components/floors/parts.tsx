@@ -29,7 +29,7 @@ import Sheet from "../mobile/Sheet";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useMenuFocus } from "../../hooks/useMenuFocus";
 import { Target } from "lucide-react";
-import { Button, Dot } from "../kit";
+import { Button, Dot, IconButton, Segmented } from "../kit";
 
 /** Menu portaled to <body> so it isn't clipped or covered by later table rows /
  *  overflow parents / the Record modal's `.moment` transform (which traps
@@ -1304,27 +1304,21 @@ export function Timeline({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ userSelect: drag || tray ? "none" : "auto" }}>
-      {/* toolbar — zoom · navigation · counts. Floats on the paper, no frame. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2.5">
-        <div className="inline-flex rounded-lg border border-line p-1">
-          {ZOOMS.map((z) => (
-            <button
-              key={z.id}
-              onClick={() => choose(z.id)}
-              className="fast rounded-md px-3 py-1.5 text-label font-medium"
-              style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "var(--on-accent)" : "var(--muted)" }}
-            >
-              {z.label}
-            </button>
-          ))}
-        </div>
+      {/* toolbar — zoom · travel · counts, in the kit's controls. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Timeline zoom"
+          value={zoom}
+          onChange={choose}
+          options={ZOOMS.map((z) => ({ value: z.id, label: z.label }))}
+        />
         <div className="inline-flex items-center gap-1">
-          <button onClick={() => nudge(-1)} title="Earlier" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">‹</button>
-          <button onClick={centerToday} title="Jump to today" className="fast rounded-lg border border-line px-3.5 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink">Today</button>
-          <button onClick={() => nudge(1)} title="Later" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">›</button>
+          <IconButton label="Earlier" icon={<Icon name="chevron-left" size={14} />} onClick={() => nudge(-1)} />
+          <Button size="sm" onClick={centerToday} title="Jump to today">Today</Button>
+          <IconButton label="Later" icon={<Icon name="chevron-right" size={14} />} onClick={() => nudge(1)} />
         </div>
         <div className="flex-1" />
-        <span className="mono text-label text-muted">
+        <span className="fl-meta-fact">
           {dated.length} scheduled{undated.length ? ` · ${undated.length} unscheduled` : ""}
         </span>
       </div>
@@ -1333,7 +1327,7 @@ export function Timeline({
       <div className="flex min-h-0 flex-1">
         <div className="relative flex shrink-0 flex-col border-r border-line" style={{ width: labelW }}>
           <div className="shrink-0 border-b border-line" style={{ height: AXIS_H }}>
-            <div className="section-label flex h-full items-end px-3 pb-2">Name</div>
+            <div className="flex h-full items-end px-3 pb-2 text-caption font-medium" style={{ color: "var(--faint)" }}>Name</div>
           </div>
           <div className="relative flex-1">
             {flatRows.map((it, row) => {
@@ -1358,10 +1352,11 @@ export function Timeline({
                       <button
                         data-no-select
                         onClick={(e) => { e.stopPropagation(); toggle(it.id); }}
-                        className="fast flex h-4 w-4 shrink-0 items-center justify-center text-micro text-muted hover:text-ink"
+                        className="fast flex h-4 w-4 shrink-0 items-center justify-center text-muted hover:text-ink"
                         title={isExp ? "Collapse" : "Expand projects"}
+                        aria-expanded={isExp}
                       >
-                        {isExp ? "▾" : "▸"}
+                        <Icon name="chevron-down" size={12} style={{ transform: isExp ? undefined : "rotate(-90deg)" }} />
                       </button>
                     ) : (
                       <span className="h-4 w-4 shrink-0" />
@@ -1377,12 +1372,12 @@ export function Timeline({
                     </span>
                   )}
                   <span
-                    className="shrink-0 rounded-full"
-                    style={{ width: isChild ? 7 : 10, height: isChild ? 7 : 10, background: it.color, opacity: it.dim ? 0.5 : isChild ? 0.7 : 1 }}
+                    className="shrink-0"
+                    style={{ width: isChild ? 6 : 8, height: isChild ? 6 : 8, borderRadius: 2.5, background: it.color, opacity: it.dim ? 0.5 : isChild ? 0.7 : 1 }}
                   />
                   <button
                     onClick={it.onClick}
-                    className={`fast truncate text-left hover:text-accent ${isChild ? "text-caption text-muted" : "text-body text-ink"}`}
+                    className={`fast truncate text-left ${isChild ? "text-caption text-muted" : "text-body font-medium text-ink"}`}
                     title={it.label}
                   >
                     {it.label || "Untitled"}
@@ -1405,7 +1400,7 @@ export function Timeline({
             <div className="relative shrink-0 border-b border-line" style={{ height: AXIS_H }}>
               {majors.map((g) => (
                 <div key={g.key} className="absolute top-0 flex items-center overflow-hidden border-r border-line px-1.5" style={{ left: g.left, width: g.width, height: 19 }}>
-                  <span className="mono whitespace-nowrap text-micro font-semibold uppercase tracking-wide text-muted">{g.label}</span>
+                  <span className="whitespace-nowrap text-label font-semibold text-ink-2" style={{ color: "var(--ink-2)" }}>{g.label}</span>
                 </div>
               ))}
               {minors.map((t) => (
@@ -1414,11 +1409,11 @@ export function Timeline({
                   className="absolute flex items-end pb-1"
                   style={{ left: t.left, top: 19, bottom: 0, width: t.width ?? 26, paddingLeft: t.width ? 0 : 3, justifyContent: t.width ? "center" : "flex-start" }}
                 >
-                  <span className={`mono whitespace-nowrap text-micro ${t.weekend ? "text-muted/55" : "text-muted"}`}>{t.label}</span>
+                  <span className="whitespace-nowrap text-label tabular-nums" style={{ color: t.weekend ? "var(--faint)" : "var(--muted)" }}>{t.label}</span>
                 </div>
               ))}
               <div className="absolute -top-px flex flex-col items-center" style={{ left: todayX, transform: "translateX(-50%)" }}>
-                <span className="mono rounded-sm px-1 text-micro font-semibold uppercase tracking-wide text-white" style={{ background: "var(--signal)" }}>Today</span>
+                <span className="px-1 text-label font-semibold" style={{ background: "var(--signal)", color: "var(--on-signal)", borderRadius: "var(--r-chip)" }}>Today</span>
               </div>
             </div>
 
@@ -1427,12 +1422,12 @@ export function Timeline({
               {/* background: weekend bands · gridlines · today */}
               <div className="pointer-events-none absolute inset-0">
                 {weekends.map((w) => (
-                  <div key={w.key} className="absolute top-0 bottom-0" style={{ left: w.left, width: w.width, background: "color-mix(in srgb, var(--muted) 7%, transparent)" }} />
+                  <div key={w.key} className="absolute top-0 bottom-0" style={{ left: w.left, width: w.width, background: "var(--sunk)" }} />
                 ))}
                 {minors.map((t) => (
-                  <div key={t.key} className="absolute top-0 bottom-0 w-px" style={{ left: t.left, background: t.strong ? "var(--line-strong)" : "color-mix(in srgb, var(--line) 55%, transparent)" }} />
+                  <div key={t.key} className="absolute top-0 bottom-0 w-px" style={{ left: t.left, background: t.strong ? "var(--line-2)" : "var(--line-1)" }} />
                 ))}
-                <div className="absolute top-0 bottom-0 w-px" style={{ left: todayX, background: "var(--signal)", opacity: 0.7, boxShadow: "0 0 10px var(--signal)" }} />
+                <div className="absolute top-0 bottom-0 w-px" style={{ left: todayX, background: "var(--signal)" }} />
               </div>
 
               {/* bars */}
@@ -1468,11 +1463,11 @@ export function Timeline({
                       <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: softTint(it.color, 28) }} />
                       {wide ? (
                         <>
-                          <span className="relative truncate text-meta text-ink">{it.label}</span>
-                          <span className="relative mono ml-auto pl-2 text-micro text-muted">{it.progress}%</span>
+                          <span className="relative truncate text-caption font-medium text-ink">{it.label}</span>
+                          <span className="relative ml-auto pl-2 text-label tabular-nums text-muted">{it.progress}%</span>
                         </>
                       ) : (
-                        <span className="relative mono text-micro text-muted">{it.progress > 0 ? `${it.progress}%` : ""}</span>
+                        <span className="relative text-label tabular-nums text-muted">{it.progress > 0 ? `${it.progress}%` : ""}</span>
                       )}
                     </div>
                     {editable && (
@@ -1510,7 +1505,7 @@ export function Timeline({
                   <>
                     <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: gl, background: "var(--accent)" }} />
                     <div className="pointer-events-none absolute rounded border-2 border-dashed" style={{ left: gl, top: bodyRows * ROW + 6, width: gw, height: ROW - 12, borderColor: c, background: softTint(c, 16) }} />
-                    <div className="pointer-events-none absolute mono text-micro font-semibold text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
+                    <div className="pointer-events-none absolute text-label font-semibold tabular-nums text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
                   </>
                 );
               })()}
@@ -1518,7 +1513,7 @@ export function Timeline({
               {/* empty hint — the grid still renders so the surface never reads blank */}
               {dated.length === 0 && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
-                  <span className="mono max-w-[420px] text-label text-muted">
+                  <span className="max-w-[420px] text-caption text-muted">
                     {undated.length
                       ? "Nothing scheduled yet — drag a card up from the tray below onto the grid to give it dates."
                       : "No dated work yet. Set a start/target date to place it on the timeline."}
@@ -1539,11 +1534,12 @@ export function Timeline({
         if (!it) return null;
         return (
           <div
-            className="glass-grab pointer-events-none fixed z-[300] flex items-center gap-2 rounded-lg px-3 py-2 text-label"
-            style={{ left: tray.x + 12, top: tray.y + 12 }}
+            className="glass-grab pointer-events-none fixed z-[300] flex items-center gap-2 px-3 py-2 text-caption"
+            // the drag ghost is a picked-up card: the card's 8px corner
+            style={{ left: tray.x + 12, top: tray.y + 12, borderRadius: "var(--r-card)" }}
           >
-            <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
-            <span className="max-w-[160px] truncate text-ink">{it.label || "Untitled"}</span>
+            <span className="h-2 w-2" style={{ background: it.color, borderRadius: 2.5 }} />
+            <span className="max-w-[160px] truncate font-medium text-ink">{it.label || "Untitled"}</span>
           </div>
         );
       })()}
@@ -1563,10 +1559,10 @@ function UnassignedTray({
   const [open, setOpen] = useState(true);
   return (
     <div className="mt-3 shrink-0 border-t border-line pt-3">
-      <button onClick={() => setOpen((o) => !o)} className="fast mb-2 flex items-center gap-2 text-muted hover:text-ink">
-        <span className="text-micro">{open ? "▾" : "▸"}</span>
-        <span className="section-label">Unscheduled · {items.length}</span>
-        <span className="text-meta text-muted/70">drag a card up onto the grid to give it dates</span>
+      <button onClick={() => setOpen((o) => !o)} className="fast mb-2 flex items-center gap-2 text-caption font-semibold text-muted hover:text-ink" aria-expanded={open}>
+        <Icon name="chevron-down" size={12} style={{ transform: open ? undefined : "rotate(-90deg)" }} />
+        <span>Unscheduled</span>
+        <span className="font-medium tabular-nums" style={{ color: "var(--faint)" }}>{items.length}</span>
       </button>
       {open && (
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -1583,13 +1579,13 @@ function UnassignedTray({
                 {...(!editable && it.onClick
                   ? pressable(() => it.onClick!(), { label: it.label || "Untitled" })
                   : {})}
-                className={`rise fast group flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:border-line-strong" : ""} ${draggingId === it.id ? "opacity-40" : ""}`}
+                className={`k-card rise fast group flex shrink-0 items-center gap-2 px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing" : ""} ${draggingId === it.id ? "opacity-40" : ""}`}
                 style={{ animationDelay: `${i * 40}ms` }}
                 title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
               >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: it.color }} />
-                <span className="max-w-[220px] truncate text-caption text-ink">{it.label || "Untitled"}</span>
-                {editable && <span className="text-meta text-muted/40 group-hover:text-muted">⠿</span>}
+                <span className="h-2 w-2 shrink-0" style={{ background: it.color, borderRadius: 2.5 }} />
+                <span className="max-w-[220px] truncate text-caption font-medium text-ink">{it.label || "Untitled"}</span>
+                {editable && <span className="text-caption" style={{ color: "var(--faint)" }}>⠿</span>}
               </div>
             );
           })}

@@ -5,11 +5,12 @@
 // when it lives in two places. What differs by caller is the sentence, so that's
 // the seam: shared shell, caller-supplied problem.
 //
-// One change from the Sunday original: the acts are ALWAYS visible and ≥44px.
-// They were hover-revealed there, which is a dead end on a phone (P13) — and
-// this panel now renders inside the mobile Week's Plan sheet.
+// The acts are ALWAYS visible and ≥44px under a finger (P13) — kit buttons
+// with the `.tap` floor — because this panel renders inside the phone's
+// Week's Plan sheet and slot sheet as well as on the desktop.
 
 import type { ReactNode } from "react";
+import { Button } from "../kit";
 
 export interface RemedyAct {
   label: string;
@@ -33,32 +34,29 @@ export function RemedyPanel({
   acts: RemedyAct[];
   /** `problem` is the app naming something wrong with the row. `asked` is the
    *  same acts opened by YOU ("can't get to this") — nothing is wrong, so it
-   *  doesn't wear the signal. */
+   *  wears no tint. */
   tone?: "problem" | "asked";
 }) {
   const asked = tone === "asked";
   return (
-    <div
-      className={`mb-2 rounded-md px-2.5 py-2 ${asked ? "border border-line" : ""}`}
-      style={asked ? undefined : { background: "var(--signal-soft)" }}
-    >
-      <div className="text-caption" style={{ color: asked ? "var(--ink)" : "var(--signal)" }}>
+    <div className="fl-panel mb-2" style={asked ? undefined : { background: "var(--sunk)", boxShadow: "inset 0 0 0 1px var(--line-1)" }}>
+      <div className="text-body" style={{ color: "var(--ink)", fontWeight: asked ? 450 : 500 }}>
         {problem}
       </div>
-      {why && <div className="mt-0.5 text-meta text-muted">{why}</div>}
+      {why && <p className="fl-note">{why}</p>}
       {acts.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <div className="fl-work-row">
           {acts.map((a) => (
-            <button
+            <Button
               key={a.label}
+              kind={a.quiet ? "ghost" : "secondary"}
+              size="sm"
+              className="tap"
               onClick={a.onPress}
               title={a.title}
-              className={`tap fast inline-flex min-h-[44px] items-center rounded-md border border-line px-2.5 py-1 text-caption hover:border-line-strong hover:bg-surface-2 ${
-                a.quiet ? "text-muted" : "text-ink"
-              }`}
             >
               {a.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}

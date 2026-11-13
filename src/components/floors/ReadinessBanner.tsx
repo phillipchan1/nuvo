@@ -1,14 +1,14 @@
-// The "now what" header — a glass card that answers, the moment you arrive at a
-// view: how ready is this, and what's the one next turn? It's the floor-level
-// echo of the spine gauge, reused across surfaces (mobile Now / Plan today, the
-// desktop floors next). Held-not-missing meter + the single cue + a tap into the
-// action. See docs/readiness-model.md §4–§6.
+// The "now what" read — a kit panel that answers, the moment you arrive at a
+// view: how ready is this, and what's the one next turn? The floor-level echo
+// of the sidebar's readiness, used by the phone's Now / Plan today. Held-not-
+// missing meter (3px) + the single cue + a tap into the action. See
+// docs/readiness-model.md §4–§6.
 
 import type { FloorCue } from "../../lib/readiness";
 import { PROJECT_STATUS_COLORS } from "./statusColors";
 
-// The meter's "ready/ripe" fill — the same green the RipenessPip ramps toward,
-// so "ready" reads consistently across the spine, the floors, and here.
+// The meter's "ready/ripe" fill — the same green the readiness pie fills
+// with, so "ready" reads consistently across the sidebar, the floors, and here.
 export const READY = PROJECT_STATUS_COLORS.complete;
 
 // A cue's tone → a semantic token (never a raw hue): an invitation is the app's
@@ -39,44 +39,35 @@ export function ReadinessBanner({
   const calm = !cue;
   return (
     <button
+      type="button"
       onClick={onAction}
       disabled={!onAction}
-      className="glass-card fast block w-full rounded-xl border border-line p-3.5 text-left active:scale-[.99] disabled:cursor-default disabled:active:scale-100"
-      style={{ boxShadow: "var(--shadow-2)" }}
+      className="fl-panel tap-h w-full border-0"
     >
-      <div className="flex items-baseline justify-between">
-        <span className="section-label !p-0">{eyebrow}</span>
-        <span className="mono text-meta" style={{ color: calm ? READY : "var(--muted)" }}>
-          {calm ? "ready" : `${pct}%`}
+      <span className="fl-panel-head">
+        <span>{eyebrow}</span>
+        <span className="k-grow" />
+        <span className="tabular-nums" style={{ color: calm ? READY : "var(--muted)", fontWeight: 500 }}>
+          {calm ? "Ready" : `${pct}%`}
         </span>
-      </div>
+      </span>
 
-      {/* held, not missing — the secured share on a --line track */}
-      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <div
-          className="fast absolute inset-y-0 left-0 rounded-full"
-          style={{ width: `${pct}%`, background: READY }}
-        />
-      </div>
+      {/* held, not missing — the secured share on the track */}
+      <span className="fl-meter block" aria-hidden>
+        <i style={{ width: `${pct}%` }} />
+      </span>
 
-      <div className="mt-2.5 flex items-center gap-2">
-        {cue ? (
-          <>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: toneColor(cue.tone) }} />
-            <span className="min-w-0 flex-1 truncate text-body text-ink">{cue.label}</span>
-            {actionLabel && onAction && (
-              <span className="mono shrink-0 text-caption" style={{ color: "var(--accent)" }}>
-                {actionLabel} ›
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: READY }} />
-            <span className="flex-1 text-body text-muted">All at rest — nothing slipping.</span>
-          </>
+      <span className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cue ? toneColor(cue.tone) : READY }} />
+        <span className={`min-w-0 flex-1 truncate text-body ${cue ? "text-ink" : "text-muted"}`}>
+          {cue ? cue.label : "All at rest"}
+        </span>
+        {cue && actionLabel && onAction && (
+          <span className="shrink-0 text-caption font-medium" style={{ color: "var(--accent-ink)" }}>
+            {actionLabel} ›
+          </span>
         )}
-      </div>
+      </span>
     </button>
   );
 }

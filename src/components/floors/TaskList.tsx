@@ -24,6 +24,8 @@ import TaskRefine from "./TaskRefine";
 import { byManualOrder } from "../../lib/taskOrder";
 import TaskListView from "../tasks/TaskListView";
 import type { TaskComposerHandle } from "../tasks/TaskComposer";
+import { Icon } from "../Icon";
+import { Button } from "../kit";
 
 export type { TaskParent };
 
@@ -128,13 +130,15 @@ export default function TaskList({
       </div>
     ) : controlled ? null : (
       <div className="mt-2">
-        <button
+        <Button
+          kind="ghost"
+          size="xs"
+          icon={<Icon name="sparkles" size={13} />}
           onClick={() => setRefining(true)}
-          className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta text-muted hover:border-line-strong hover:text-ink"
           title="Let Nuvo tighten wording, add missing steps, and suggest an order"
         >
-          <span style={{ color: accent }}>✦</span> Groom with Nuvo
-        </button>
+          Groom with Nuvo
+        </Button>
       </div>
     )
   ) : null;
