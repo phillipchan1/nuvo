@@ -1880,136 +1880,224 @@ select.field { appearance: none; -webkit-appearance: none; }
   animation: floor-enter 140ms var(--ease-out);
 }
 
-/* ── FullCalendar restyle to Twilight ────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   THE SCHEDULE'S GRID — FullCalendar, drawn as the frame (D-190).
+   Grammar: docs/design-language.md § The frame.
+
+   The grid IS the panel: no box around it, a hairline at full --line-1 for
+   every hour and every day, a 44px day header (the weekday quiet, the date
+   loud, today's date on the ember), a 48px gutter whose labels sit on their
+   rules, and the now-line as the only --signal on the grid (2px + an 8px dot).
+
+   Every block is an `.evt-shell` (CalendarPane's eventContent) that paints
+   itself from `data-kind` + `--evt-hue`. The `.fc-event` around it is a
+   transparent, borderless box that carries STATE only — selected, done,
+   dragged, hidden — so one class toggle (`evt-done`, `evt-focused`) is the
+   whole visual, painted the frame it happens.
+
+   instrument.css still carries the D-189 reskin's calendar rules at
+   `html:root .fc …`. The three this grammar disagrees with (hour rules, day
+   rules, the harness backing) are answered at `html:root .nuvo-cal-host .fc
+   …`, which outranks them without !important.
+   ════════════════════════════════════════════════════════════════════════ */
 .fc {
-  --fc-border-color: var(--line);
-  /* One continuous paper — the grid lives on the same surface as the rail and
-     the spine, so the day reads as a single canvas, not a boxed widget. */
+  --fc-border-color: var(--line-1);
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: transparent;
-  /* No FC-wide today wash — Day view is a single column and a band would
-     tint the whole canvas. Month + Week mark today themselves (see below). */
   --fc-today-bg-color: transparent;
   --fc-now-indicator-color: var(--signal);
+  --fc-event-bg-color: transparent;
   --fc-event-border-color: transparent;
-  --fc-event-text-color: var(--text);
+  --fc-event-text-color: var(--ink);
+  --fc-highlight-color: var(--accent-wash);
+  --fc-small-font-size: 11px;
   font-size: 12px;
   height: 100%;
 }
 
-/* No frame around the grid — it isn't a widget sitting on the page, it IS the
-   page. Only the faint inner guides remain. */
+/* No frame around the grid — it IS the panel. The outer sections' right rule
+   is FullCalendar's scrollbar gutter, and the scrollbar is hidden. */
 .fc .fc-scrollgrid,
 .fc .fc-scrollgrid > * > * {
   border: none;
+}
+.fc .fc-scrollgrid-section > th,
+.fc .fc-scrollgrid-section > td {
+  border-right-width: 0;
 }
 /* FullCalendar forces overflow-y:scroll — hide the scrollbar, keep scrollability */
 .fc .fc-scroller { scrollbar-width: none; }
 .fc .fc-scroller::-webkit-scrollbar { display: none; }
 
-/* Specificity has to beat FullCalendar's own `.fc .fc-timegrid-slot { height:
-   1.5em }` — FC injects its stylesheet at runtime (on first mount), which
-   lands after this file in the cascade, so an equal-specificity rule here
-   silently loses and the "Hours on screen" setting has no effect (every row
-   — lane cell AND its label cell — pinned to 1.5em regardless of --nuvo-hour).
-   Repeating the class is valid CSS and bumps specificity to outrank it
-   without `!important`, while still matching every slot cell FC's own rule
-   does (label cells included — a table row is only as short as its tallest
-   cell, so missing one keeps the whole row pinned). */
+/* ── Hours ─────────────────────────────────────────────────────────────────
+   52px by default; "Hours on screen" writes --nuvo-hour. Specificity has to
+   beat FullCalendar's own `.fc .fc-timegrid-slot { height: 1.5em }`, which it
+   injects at runtime AFTER this file — repeating the class outranks it
+   without !important, and still matches the label cells (a table row is only
+   as short as its tallest cell). */
 .fc .fc-timegrid-slot.fc-timegrid-slot {
   height: calc(var(--nuvo-hour, 52px) / 4);
-  border-top-color: color-mix(in srgb, var(--line) 34%, transparent);
+  line-height: 1;
 }
-/* Hide 15-min minor dividers — only hour guides remain */
-.fc .fc-timegrid-slot-minor {
+/* One rule per hour at full hairline weight; the quarters draw nothing, and
+   the gutter carries labels, not lines. */
+html:root .nuvo-cal-host .fc .fc-timegrid-slot-lane {
+  border-top-color: var(--line-1);
+}
+html:root .nuvo-cal-host .fc .fc-timegrid-slot-minor,
+html:root .nuvo-cal-host .fc .fc-timegrid-slot-label,
+html:root .nuvo-cal-host .fc .fc-timegrid-slots tr:first-child > td {
   border-top-color: transparent;
 }
-.fc .fc-timegrid-slot-label,
-.fc .fc-timegrid-axis-cushion,
-.fc .fc-col-header-cell .day-num {
-  font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums lining-nums;
-  font-size: 10px;
-  letter-spacing: -0.01em;
-  color: var(--muted);
-}
-.fc .fc-col-header-cell-cushion {
-  padding: 4px 4px 6px;
-  color: var(--text);
-  font-weight: 500;
-  text-decoration: none !important;
-}
-/* Weekend columns: a whisper of shading, never a filled band — Sat/Sun read
-   as "lighter" days without breaking the warm-paper continuity. Declared
-   before the today rules below so today still wins when it falls on a weekend. */
-.fc .fc-col-header-cell.fc-day-sat,
-.fc .fc-col-header-cell.fc-day-sun {
-  background: color-mix(in srgb, var(--text) 3%, transparent);
-}
-.fc .fc-daygrid-day.fc-day-sat .fc-daygrid-day-frame,
-.fc .fc-daygrid-day.fc-day-sun .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--text) 3%, transparent);
-}
-.fc .fc-timegrid-col.fc-day-sat,
-.fc .fc-timegrid-col.fc-day-sun {
-  background: color-mix(in srgb, var(--text) 3%, transparent);
+/* …and one per day, the same weight. */
+html:root .nuvo-cal-host .fc .fc-timegrid-col {
+  border-color: var(--line-1);
 }
 
-/* ── Today — findable at a glance, without shouting ─────────────────────
-   Today used to spend `--signal` four times in one cell (a 12% header wash, a
-   2px underline, a signal weekday and the filled disc) plus a 9% column — so
-   the one signal mark that matters on this screen, the now-line, was one of a
-   dozen. The disc is today's mark now; the column keeps a faint warm wash so
-   the day is still findable from the bottom of the grid. Day view gets no
-   wash and no underline at all (one column IS the canvas). */
-.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 7%, transparent);
+/* ── The gutter — 48px, 11px faint labels sitting ON their hour rule ─────── */
+.fc .fc-timegrid-slot-label {
+  vertical-align: top;
+}
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion {
+  padding: 0 8px 0 0;
+  font: 450 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+.fc .fc-timegrid-slot-label-cushion {
+  min-width: 40px;
+  text-align: right;
+  transform: translateY(-50%);
+}
+/* The first hour's rule is the top of the grid, under the anytime row: its
+   label would be half-cut by the scroller. */
+.fc .fc-timegrid-slots tr:first-child .fc-timegrid-slot-label-cushion {
+  visibility: hidden;
+}
+/* The anytime row's gutter label: right-aligned, lower case, quiet. */
+.fc .fc-timegrid-axis-frame {
+  justify-content: flex-end;
+}
+.fc .fc-timegrid-axis-cushion {
+  max-width: none;
+  text-transform: lowercase;
+}
+
+/* ── The day header — 44px, `Mon 9`, today's date on the ember ─────────────
+   Its cells carry no rules; one hairline closes the header. The header rides
+   the panel so the grid scrolls cleanly under it. */
+.fc .fc-col-header {
+  background: var(--panel);
+}
+.fc .fc-col-header th {
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: var(--line-1);
+  text-align: left;
+  vertical-align: middle;
+}
+.fc .fc-col-header-cell-cushion {
+  display: block;
+  padding: 0;
+  color: var(--ink);
+  text-decoration: none !important;
+}
+.cal-dayhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  min-width: 0;
+  padding: 0 6px 0 10px;
+  overflow: hidden;
+  font: 500 12px/1 var(--font-sans);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cal-dayhead[data-month] {
+  height: var(--h-md);
+  padding: 0 8px;
+}
+.cal-dayhead .cal-daynum {
+  height: 22px;
+  font: 650 16px/1 var(--font-sans);
+  letter-spacing: -0.02em;
+}
+.cal-daynum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.cal-dayhead[data-today] .cal-daynum {
+  min-width: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-ctl);
+  background: var(--signal);
+  color: var(--on-signal);
+}
+.cal-dayhead-wx {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--h-xs);
+  margin-left: auto;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--muted);
+  font: 500 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--d-base) var(--ease-out);
 }
 @media (hover: hover) {
-.fc .fc-daygrid-body .fc-daygrid-day.fc-day-today:hover .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  .cal-dayhead-wx:hover { background: var(--hover); color: var(--ink); transition-duration: 0ms; }
 }
-}
+
+/* ── Today ─────────────────────────────────────────────────────────────────
+   A 2.5% ember wash down the Week's column (and Month's cell) — findable from
+   the bottom of the grid without spending the ember. Day view is one column,
+   so it gets none: the column IS the canvas. */
 .fc-timeGridWeek-view .fc-timegrid-col.fc-day-today,
-.fc-timeGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--signal) 5%, transparent);
+.fc-dayGridMonth-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--signal) 2.5%, transparent);
 }
-.fc-timeGridDay-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+
+/* The anytime row closes on one full-width hairline. */
+.fc .fc-scrollgrid-section > td.fc-timegrid-divider {
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line-1);
   background: transparent;
 }
-/* Month's headers are weekday names spanning every row, so FullCalendar never
-   marks one "today" — the day cell carries the landmark there. Nothing to
-   override; the rules above are Week/Day only by construction. */
-/* Column dividers: barely there — the grid recedes, the blocks carry the eye. */
-.fc .fc-timegrid-col {
-  border-left-color: color-mix(in srgb, var(--line) 22%, transparent);
-}
-/* The sticky day header rides on opaque paper so the grid slides cleanly under
-   it — no frosting (the blur was bleeding onto the full-height time axis and
-   washing the whole calendar lighter than the rail) and no second surface. The
-   axis + grid stay fully transparent, so the calendar IS the same warm paper. */
-.fc .fc-col-header {
-  background: var(--bg);
-}
-/* Day-header cells and the all-day ("anytime") divider share the paper — drop
-   their borders so only the today underline + faint hour guides remain. */
-.fc .fc-col-header-cell {
-  border-bottom: none;
-}
-.fc .fc-timegrid-divider {
-  border: none;
-  background: transparent;
-}
+
+/* ── Now — the only ember on the grid: a 2px line and an 8px dot on the
+   day's rule, with the minute in the gutter beside it. Static: it moves only
+   with the clock (P9). */
 .fc .fc-timegrid-now-indicator-line {
   border-width: 2px 0 0;
-  /* The now-line glows like a horizon — the one warm pulse on the canvas. */
-  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--signal) 55%, transparent);
+  border-color: var(--signal);
 }
-/* Momentum (D-187): the line has a WAKE — a soft band of the signal over the
-   minutes that just went by — so the eye reads which way time is moving.
-   Static: the line moves with the clock and never to get your attention (P9).
-   One pseudo-element on one line; no layer, no blur. Materials restate it in
-   their own idiom (src/skins/*.css, MOMENTUM). */
+.fc .fc-timegrid-now-indicator-line::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+/* The dot overhangs the day's left rule; FullCalendar clips the container. */
+.fc .fc-timegrid-col .fc-timegrid-now-indicator-container {
+  overflow: visible;
+}
+/* Momentum (D-187): the line's WAKE over the minutes just gone. Instrument
+   draws none (`--now-wake-h: 0`); a theme that wants one sets the height. */
 .fc .fc-timegrid-now-indicator-line::before {
   content: "";
   position: absolute;
@@ -2020,70 +2108,371 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: linear-gradient(to top, var(--signal-soft), transparent);
   pointer-events: none;
 }
-.fc .fc-timegrid-now-indicator-arrow {
+/* The gutter half: no arrowhead — the minute, centred on the line, on the
+   panel so it masks the hour label it lands on. */
+.fc .fc-timegrid-axis .fc-timegrid-now-indicator-arrow {
+  left: 0;
+  right: 0;
+  margin-top: 0;
+  padding-right: 8px;
+  border-width: 0;
+  background: var(--panel);
+  text-align: right;
+  transform: translateY(-50%);
   white-space: nowrap;
 }
+.cal-now-time {
+  font: 600 11px/14px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--signal);
+}
 
-/* ── Calendar items: one chrome for every kind ──────────────────────────
-   The soft fill + 1px border are set inline from the item's own color; the
-   3px accent bar and ALL text padding live in the React render (eventContent),
-   so tasks, events and slots share identical spacing, radius and type. */
+/* ── Blocks: a transparent state box around one shell ───────────────────── */
 .fc .fc-event {
-  border-radius: 7px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
   box-shadow: none;
-  /* Tinted colour-glass, WITHOUT a backdrop-filter. The glass comes from the
-     translucent fill (blockColors, set inline) — the blur only softened the
-     gridlines showing through, and a lived-in week put 87 of these on screen:
-     87 separate compositing layers, ~778k px², every one recomputed whenever
-     anything beneath them moves. That is every frame of a drag, which is the
-     one gesture on this surface that must not stutter. Screenshotted with and
-     without at 1440x900 — the difference was not visible, and WKWebView (what
-     Nuvo.app runs) pays far more for backdrop-filter than Chromium does. If you
-     want the softening back, gate it behind something that is not the calendar
-     grid. */
-  /* ONLY filter. This is the documented law (design-language.md, "On the
-     Schedule, the lift is instant") and the CSS had drifted from it: it was also
-     transitioning box-shadow and transform, so every click animated
-     --shadow-lift (a 60px-blur shadow) up from nothing over 130ms — a
-     large-area repaint every frame of the transition, on the one surface where
-     a click must feel immediate. Shadow + transform now apply with no delay,
-     as written. */
+  /* ONLY filter. The documented law (design-language.md, "On the Schedule,
+     the lift is instant"): selection, the drag ghost and a drop's lift apply
+     with no delay — a transitioned shadow was a large-area repaint on every
+     frame of the one gesture here that must feel immediate. No
+     backdrop-filter either: one layer per block, ~87 on a lived-in week
+     (tests/perf-budget.test.ts). */
   transition: filter var(--d-fast) var(--ease-out);
 }
-/* Mouse focus on an event is silent — clicking one already lifts it inline
-   (`evt-focused`), and FullCalendar's own outline was a hard edge on a tinted
-   pane. Keyboard focus still has to say where it is, so the ring survives
-   `:focus-visible`. Offset by 1px only: events butt against their neighbours in
-   a packed column, and the standard 2px gap let the ring overlap the next block. */
-.fc .fc-event:focus { outline: none; box-shadow: none; }
+/* Mouse focus is silent (a click already selects, below); keyboard focus says
+   where it is. Offset 1px only: blocks butt against their neighbours. */
+.fc .fc-event:focus { outline: none; }
 .fc .fc-event:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--accent-ring);
   outline-offset: 1px;
 }
 .fc .fc-event .fc-event-main {
-  padding: 0;
   height: 100%;
-  color: var(--text);
-  overflow: hidden;
+  padding: 0;
+  overflow: visible;
+  border-radius: inherit;
+  color: var(--ink);
 }
-/* FullCalendar's resizer is a fully invisible 8px hit-band by default — it
-   only becomes `display:block` once you're already hovering the event, and
-   even then paints nothing, so there's no way to see where to grab before
-   you find the exact pixel row. A small centered grip mark, drawn via
-   ::after so the resizer's own full-width hit area is untouched, gives the
-   edge a visible handle the moment you hover the block — the way every
-   other calendar app marks a draggable edge. */
+/* The backing the D-189 reskin put under every block (instrument.css): the
+   shells are opaque where they should be, and a slot's hatch is meant to show
+   the hours through it. */
+html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
+  background: transparent;
+}
+
+/* The shell. `--evt-hue` arrives inline (CalendarPane's `hueVar`); a block
+   with none (a ghost, a draft) falls back to the accent. */
+.evt-shell {
+  --evt-hue: var(--accent);
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  height: 100%;
+  min-width: 0;
+  padding: 4px 6px 4px 8px;
+  overflow: hidden;
+  border-radius: inherit;
+  font-size: calc(12px * var(--ui-scale, 1));
+  line-height: 1.25;
+  text-align: left;
+}
+/* The 2px identity edge — an element, not a shadow, so a drop that gathers
+   can widen it (`block-combine-*`, below). */
+.evt-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--evt-hue);
+  transform-origin: left center;
+  pointer-events: none;
+}
+/* event — the hue at 14% on the panel, the edge, ink mixed from the hue */
+.evt-shell[data-kind="event"] {
+  background: color-mix(in srgb, var(--evt-hue) 14%, var(--panel));
+  color: color-mix(in srgb, var(--evt-hue) 60%, var(--mix));
+}
+/* …one you haven't said yes to is hollow: FILL means commitment. */
+.evt-shell[data-kind="event"][data-hollow] {
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--evt-hue) 45%, transparent);
+}
+/* task — your work: a raised white card, a hairline ring, its check ring in
+   the domain's hue. The edge waits for a gathering drop. */
+.evt-shell[data-kind="task"] {
+  padding-left: 7px;
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--sh-1);
+}
+.evt-shell[data-kind="task"] > .evt-edge {
+  opacity: 0;
+}
+/* slot — open time held for several things: hatched, ringed. Plain slots wear
+   --slot; a project's sitting wears its domain hue AND the edge, because that
+   time is claimed (D-109). */
+.evt-shell[data-kind="slot"] {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--evt-hue) 9%, transparent) 6px 7px),
+    color-mix(in srgb, var(--evt-hue) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--evt-hue) 40%, transparent);
+  color: color-mix(in srgb, var(--evt-hue) 62%, var(--mix));
+}
+.evt-shell[data-kind="slot"]:not([data-project]) > .evt-edge {
+  opacity: 0;
+}
+/* feed — a read-only M365 feed: a neutral hatch, display-only. */
+.evt-shell[data-kind="feed"] {
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--muted) 12%, transparent) 5px 10px),
+    var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--muted);
+}
+.evt-shell[data-kind="feed"] > .evt-edge {
+  opacity: 0.5;
+}
+/* plan — Plan the week's proposal: tinted like the event it will be, dashed
+   because it isn't yours yet; held = solid. */
+.evt-shell[data-kind="plan"] {
+  background: color-mix(in srgb, var(--evt-hue) 12%, var(--panel));
+  color: color-mix(in srgb, var(--evt-hue) 60%, var(--mix));
+  outline: 1px dashed color-mix(in srgb, var(--evt-hue) 60%, transparent);
+  outline-offset: -1px;
+}
+.evt-shell[data-kind="plan"][data-held] {
+  outline-style: solid;
+}
+/* ghost — another fit for the selected proposal (accent); a gap is open time
+   it could claim (--slot), quiet until you point at it. */
+.evt-shell[data-kind="ghost"] {
+  background: color-mix(in srgb, var(--evt-hue) 8%, transparent);
+  color: color-mix(in srgb, var(--evt-hue) 70%, var(--mix));
+  outline: 1.5px dashed var(--evt-hue);
+  outline-offset: -1.5px;
+}
+.evt-plan-gap .evt-shell[data-kind="ghost"] {
+  --evt-hue: var(--slot);
+  outline: 1px dashed color-mix(in srgb, var(--slot) 55%, transparent);
+  outline-offset: -1px;
+}
+@media (hover: hover) {
+  .fc-event.evt-plan-gap:hover .evt-shell {
+    background: color-mix(in srgb, var(--slot) 16%, transparent);
+    outline-color: var(--slot);
+  }
+}
+/* draft — the block you're about to make (a drag on empty grid, the composer). */
+.evt-shell[data-kind="draft"] {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+}
+
+/* Sizes — from the block's real height (CalendarPane). */
+.evt-shell[data-size="compact"],
+.evt-shell[data-size="tiny"] {
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.evt-shell[data-size="chip"] {
+  align-items: center;
+  gap: 5px;
+  height: auto;
+  min-height: 20px;
+  padding: 0 6px 0 8px;
+}
+.evt-shell[data-size="chip"][data-kind="task"] {
+  padding-left: 5px;
+}
+
+/* What a shell holds. One title voice (12/550), one meta voice (11/450). */
+.evt-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  min-height: 0;
+}
+.evt-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.evt-title {
+  min-width: 0;
+  font-weight: 550;
+  letter-spacing: -0.006em;
+}
+.evt-clamp {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evt-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--evt-lines, 2);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.evt-meta {
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 450;
+  line-height: 1.25;
+  opacity: 0.8;
+}
+.evt-shell[data-kind="task"] .evt-meta {
+  color: var(--muted);
+  opacity: 1;
+}
+.evt-timeline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.evt-when {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.evt-recur {
+  flex: none;
+  opacity: 0.55;
+}
+.evt-untitled {
+  font-weight: 450;
+  opacity: 0.7;
+}
+.evt-eyebrow {
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 600;
+  color: color-mix(in srgb, var(--evt-hue) 80%, var(--mix));
+}
+.evt-count {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--evt-hue) 12%, var(--panel));
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 500;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.evt-title .evt-count {
+  margin-left: 4px;
+  background: none;
+  padding: 0;
+  opacity: 0.7;
+}
+.evt-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  margin: 3px 0 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+}
+.evt-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 450;
+  line-height: 1.3;
+  color: var(--ink-2);
+}
+.evt-item-dot {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--evt-hue);
+}
+.evt-item[data-done] {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+.evt-item[data-done] .evt-item-dot { background: var(--faint); }
+.evt-more { padding-left: 10px; color: var(--muted); }
+.evt-held {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--evt-hue);
+}
+
+/* The task's check ring — the hue at rest, the landing colour when done.
+   12px drawn, 22px to hit. Driven by `.evt-done` on the block so a click can
+   paint it this frame (CalendarPane.paintCalendarTaskDone) without waiting
+   for React; the global button transition would ease the fill in — snap. */
+.evt-check {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  margin: 1.5px 0 0;
+  padding: 0;
+  border: 1.5px solid var(--evt-hue);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--on-accent);
+  transition: none;
+}
+.evt-check::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+.evt-shell[data-size] .evt-check { margin-top: 0; }
+.evt-shell[data-size="tiny"] .evt-check { width: 10px; height: 10px; }
+.evt-check .evt-tick { opacity: 0; }
+.fc-event.evt-done .evt-check {
+  background: var(--landed, var(--accent));
+  border-color: var(--landed, var(--accent));
+}
+.fc-event.evt-done .evt-check .evt-tick { opacity: 1; }
+.fc-event.evt-done [data-evt-title] { color: var(--faint); }
+@media (hover: hover) {
+  .fc-event:not(.evt-done) button.evt-check:hover {
+    border-color: var(--accent);
+    background: var(--accent-wash);
+  }
+}
+
+/* FullCalendar's resizer is an invisible hit-band that only exists once
+   you're already hovering. A grip mark, drawn via ::after so the band's own
+   hit area is untouched, shows where to grab the moment you hover. */
 .fc .fc-event .fc-event-resizer::after {
   content: "";
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 28px;
+  width: 24px;
   height: 4px;
-  border-radius: 999px;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line-strong);
+  border-radius: 2px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2), var(--sh-1);
   pointer-events: none;
   opacity: 0;
 }
@@ -2092,32 +2481,19 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-event:hover .fc-event-resizer::after { opacity: 1; }
 }
 /* FullCalendar keeps the band `display:none` until the block is hovered, so the
-   cursor never says "resize" when the pointer ENTERS on the edge: the band only
-   exists after the hover starts, the browser doesn't re-pick the cursor until the
-   next mouse move, and a press right there already grabs the handle while the
-   pointer still reads as the body's. Keep the band laid out always (it is
-   transparent and absolutely positioned — no layout cost); only the grip mark
-   above waits for hover. */
+   cursor never says "resize" when the pointer ENTERS on the edge. Keep the band
+   laid out always (transparent, absolutely positioned — no layout cost). */
 .fc .fc-event .fc-event-resizer { display: block; }
-/* The time-grid hit-band is FullCalendar's 8px, centred on the block's edge:
-   4px outside the block (usually the gap, or the next block's own handle) and
-   only 4px inside it — a target you have to find to the pixel, on a block whose
-   edge is also where the cursor flips from "move" to "resize". Make it 14px and
-   pull it mostly inside the block (3px out, 11px in), so the whole bottom lip of
-   a block is the handle and the cursor change is felt a few pixels before the
-   edge, not at it. Capped at a third of the block so a short block keeps a body
-   to grab and move; the grip mark stays centred in the band, which now sits
-   inside the block rather than straddling its edge. */
+/* 14px, mostly inside the block (3px out, 11px in), capped at a third of it so
+   a short block keeps a body to grab and move. */
 .fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer {
   height: min(14px, 34%);
   min-height: 7px;
 }
 .fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer-start { top: -3px; }
 .fc .fc-v-event:not(.fc-event-selected) .fc-event-resizer-end { bottom: -3px; }
-/* Anytime / month chips resize on the left and right (Google, Fantastical,
-   Apple Calendar), not the top and bottom. The time-grid grip above is a
-   horizontal bar; these are vertical pills on a wider hit-band so a
-   one-day chip still has something to grab. */
+/* Anytime / month chips resize left and right (Google, Fantastical, Apple
+   Calendar): a vertical grip on a wider band. */
 .fc .fc-daygrid-event .fc-event-resizer {
   width: 10px;
   height: auto;
@@ -2137,204 +2513,78 @@ select.field { appearance: none; -webkit-appearance: none; }
   width: 3px;
   height: 12px;
 }
-/* The schedule host runs an inverse zoom so FullCalendar's pointer math stays
-   correct under ⌘=/⌘− (useUiScale.ts) — which as a side effect freezes
-   EVERYTHING inside it, including event text, at 100% no matter the app-wide
-   zoom. The box staying put is the point (that's what keeps drag/click
-   accurate); the text staying tiny at 150% zoom while the rest of the app
-   reads big is not. Scale the text back up by the same factor the host just
-   canceled — box padding/height still come from real minutes × pxPerHour,
-   untouched, so hit-testing math never sees this. */
-.nuvo-cal-host .fc-event .text-label {
-  font-size: calc(var(--text-label) * var(--ui-scale, 1));
-}
-.nuvo-cal-host .fc-event .text-micro {
-  font-size: calc(var(--text-micro) * var(--ui-scale, 1));
-}
-.nuvo-cal-host .fc-event .text-meta {
-  font-size: calc(var(--text-meta) * var(--ui-scale, 1));
-}
-.fc .fc-timegrid-event { box-shadow: none; }
 
-/* Short and narrow blocks are mostly handles unless they shed some.
-   · A ~15-minute block is ~14px tall, and FullCalendar's two 8px resizers
-     straddle both edges above the content — about 6px left to click or move,
-     and the checkbox half covered. A block that short resizes from its end
-     only (`.fc-timegrid-event-short` is FullCalendar's own class for it).
-   · Two overlapping blocks in a 1024px week are ~28px wide: a 3px bar, 6px of
-     padding and a checkbox whose press can't start a drag, so pressing the
-     block mostly completed it. Below 44px of inline room the check steps
-     aside (the block's menu and popover still complete it). */
+/* Short and narrow blocks are mostly handles unless they shed some: a ~15min
+   block resizes from its end only (FullCalendar's own `-short` class), and
+   below 44px of inline room the check steps aside (the block's menu and
+   popover still complete it). */
 .fc .fc-timegrid-event-short .fc-event-resizer-start { display: none; }
 .fc .fc-timegrid-event .fc-event-main { container-type: inline-size; }
 @container (max-width: 44px) {
   .fc .fc-timegrid-event [data-done-toggle] { display: none; }
 }
+
+/* Hover answers the pointer — a filter on the one block under it, the only
+   property the block transitions. */
 @media (hover: hover) {
-.fc .fc-timegrid-event-harness .fc-event:hover {
-  box-shadow: var(--shadow-2);
-  transform: translateY(-1px);
-  filter: brightness(1.015);
+  .fc .fc-timegrid-event-harness .fc-event:hover,
+  .fc .fc-daygrid-event:hover {
+    filter: brightness(0.975);
+  }
+  [data-theme="dark"] .fc .fc-timegrid-event-harness .fc-event:hover,
+  [data-theme="dark"] .fc .fc-daygrid-event:hover {
+    filter: brightness(1.18);
+  }
 }
-}
-@media (hover: hover) {
-.fc .fc-timegrid-event-harness .fc-event.evt-focused:hover {
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-3px);
-}
-}
-/* Overlapping blocks get sliced into thin columns you can't read. CLICKING one
-   marks it `.evt-focused`, which lifts its harness to the FULL column width, on
-   top of its neighbours, so its title and time are legible — it stays there
-   until you click another block or empty grid. FC sets `inset: top right% bottom
-   left%` per slice; we override the horizontal slice to 0 and raise z-index. */
+
+/* Overlapping blocks are sliced into columns you can't read. The selected one
+   (`.evt-focused`) takes the FULL column, on top of its neighbours, until you
+   select something else. FC sets the slice inline; we override it. */
 .fc-timegrid-event-harness:has(.evt-focused) {
   left: 0 !important;
   right: 0 !important;
   z-index: 50 !important;
 }
-/* Selecting a block lifts it toward you — pure depth, no ring, no scale (so it never
-   grows past its harness and flashes a white edge). A heavier frost when focused turns
-   whatever it overlaps into a soft blur, so it reads clean on top without a solid
-   backing or bleed-through. */
-.fc-event.evt-focused {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lift);
-  /* No backdrop-filter. It used to be blur(14px) so whatever the lifted block
-     overlapped blurred out instead of bleeding through — but it promoted a
-     compositing layer on the click itself, which is the moment that has to feel
-     instant. Separation comes from the lift shadow alone. */
+/* Selected = an accent ring + the popover lift, in place (no rise, no scale:
+   it must never grow past its harness). The rest of a ⇧/⌘ selection (D-158)
+   wears the ring without the lift. */
+.fc .fc-event.evt-focused {
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop);
 }
-/* The rest of a ⇧/⌘-click selection (D-158): lifted where it sits — not to the
-   front at full width, which is the cursor's (`evt-focused`), or several selected
-   blocks in one column would stack over each other. Focus lifts, it doesn't outline. */
-.fc-event.evt-selected {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lift);
-}
-@media (hover: hover) {
-.fc .fc-timegrid-event-harness .fc-event.evt-selected:hover {
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-3px);
-}
-}
-.fc-event.evt-done { opacity: 0.5; }
-/* Checkbox + strike are driven by the harness class so a click can paint
-   them this frame (CalendarPane.paintCalendarTaskDone) without waiting for
-   React to rebuild event content. The global `button` transition would ease
-   the fill in — that's the chunky check; snap instead. */
-.fc-event [data-done-toggle] {
-  background: var(--surface);
-  border-color: var(--evt-check-border, var(--accent));
-  transition: none;
-}
-.fc-event.evt-done [data-done-toggle] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-.fc-event [data-done-toggle] .evt-check { opacity: 0; }
-.fc-event.evt-done [data-done-toggle] .evt-check { opacity: 1; }
-.fc-event.evt-done [data-evt-title] {
-  text-decoration: line-through;
-  opacity: 0.55;
+.fc .fc-event.evt-selected {
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash);
 }
 
-/* M365: striped, dashed, display-only (fill + border come from CSS here, not
-   inline, so the diagonal hatch reads through). */
-.fc-event.evt-m365 {
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 5px,
-    color-mix(in srgb, var(--muted) 12%, transparent) 5px,
-    color-mix(in srgb, var(--muted) 12%, transparent) 10px
-  );
-  /* Solid: the hatch already says "read-only feed"; a dash said "slot". */
-  border: 1px solid color-mix(in srgb, var(--muted) 45%, var(--line));
-  cursor: default;
-}
-/* ICS subscription: read-only like M365, but rendered as a solid tinted block
-   (fill + border come inline via blockColors) — no hatch, just a non-edit
-   cursor so it reads as a normal event rather than a busy placeholder. */
-.fc-event.evt-ics { cursor: default; }
-/* Slots: a dashed teal container holding tasks — a distinct class from the
-   solid violet task/event blocks, so "this is a slot" reads at a glance.
-   Stronger than a plain event border (55% → 68%) so a container reads as a
-   container even beside a saturated project-colored task block. */
-.fc-event.evt-slot {
-  border-style: dashed !important;
-  border-width: 1.5px !important;
-  border-color: color-mix(in srgb, var(--slot) 68%, transparent) !important;
-}
-
-/* RSVP status — FILL means commitment; a hollow block is one you haven't said
-   yes to. These used to be opacity (pending 0.5 = done 0.5; declined 0.3 ≈
-   hidden 0.32) and dashes (tentative = slot = hidden = draft = M365), so a
-   pending invite and a finished task read identically. Dashed is reserved for
-   containers now (slots, the draft ghost).
-   needsAction = hollow, full ink — it wants an answer, so it doesn't fade
-   tentative   = hollow + a "?" before the title (renderEvent)
-   declined    = hollow, struck, half ink (still busy on the board) */
-.fc-event.evt-pending,
-.fc-event.evt-tentative,
-.fc-event.evt-declined {
-  background-color: transparent !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent);
-}
+/* RSVP — a declined event is still busy on the board: struck, half ink. */
 .fc-event.evt-declined { opacity: 0.5; }
-.fc-event.evt-declined [data-evt-title],
-.fc-event.evt-declined .fc-event-main span { text-decoration: line-through; }
-
-/* Hidden events, only visible while "show hidden" is on — heavily faded so
-   they read as tucked-away, not as real commitments on the board. */
+.fc-event.evt-declined [data-evt-title] { text-decoration: line-through; }
+/* M365 and ICS are display-only. */
+.fc-event.evt-m365,
+.fc-event.evt-ics { cursor: default; }
+/* Hidden events, only while "show hidden" is on — tucked away, not real. */
 .fc-event.evt-hidden { opacity: 0.32; }
 .fc-event.evt-hidden.evt-focused,
 .fc-event.evt-hidden.evt-selected { opacity: 0.6; }
 
-/* Plan the week's draft, drawn on the Schedule (docs/plan-the-week-v2.md §4).
-   Dashed = proposed, not yet yours; the selected block lifts (focus lifts, it
-   doesn't outline) — instantly, as everything on the Schedule does. No blur:
-   these repeat per block (tests/perf-budget.test.ts). */
-.fc-event.evt-plan {
-  border-style: dashed !important;
-  border-width: 1px !important;
-}
-.fc-event.evt-plan.evt-plan-held { border-style: solid !important; }
-.fc-event.evt-plan.evt-plan-selected {
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-2px);
+/* Plan the week's draft on the Schedule (docs/plan-the-week-v2.md §4): the
+   selected proposal wears the selection. No blur: these repeat per block. */
+.fc .fc-event.evt-plan.evt-plan-selected {
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop);
   z-index: 5;
 }
+.fc-event.evt-plan-ghost { cursor: default; }
 /* time kept clear while planning — hatched, behind everything */
 .fc .fc-bg-event.evt-plan-clear {
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--line-strong) 75%, transparent) 0 1px, transparent 1px 7px) !important;
+  background: repeating-linear-gradient(135deg, var(--line-2) 0 1px, transparent 1px 7px) !important;
   opacity: 1;
 }
 .fc .fc-bg-event.evt-plan-clear .fc-event-title {
-  font-size: var(--text-micro);
-  color: var(--muted);
-  font-style: normal;
-  margin: 2px 4px;
+  margin: 4px 6px;
+  font: 500 11px/1.2 var(--font-sans);
+  color: var(--faint);
 }
-.fc-event.evt-plan-ghost {
-  border: 1.5px dashed var(--accent) !important;
-  cursor: default;
-}
-/* open time the selected block could go into — the claimable colour (--slot),
-   quiet until you point at it */
-.fc-event.evt-plan-ghost.evt-plan-gap {
-  border: 1px dashed color-mix(in srgb, var(--slot) 55%, transparent) !important;
-}
-@media (hover: hover) {
-  .fc-event.evt-plan-ghost.evt-plan-gap:hover {
-    background: color-mix(in srgb, var(--slot) 18%, transparent) !important;
-    border-color: var(--slot) !important;
-  }
-}
-/* While planning, what's already fixed recedes so the net-new reads at a glance
-   (the old walk's "set aside" view, on the real Schedule). Opacity only — no
-   filter or blur, these repeat per event (tests/perf-budget.test.ts). */
+/* While planning, what's already fixed recedes so the net-new reads at a
+   glance. Opacity only — these repeat per event (tests/perf-budget.test.ts). */
 [data-plan-dim] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear) {
   opacity: 0.28;
 }
@@ -2344,59 +2594,50 @@ select.field { appearance: none; -webkit-appearance: none; }
 /* the walk: the group under review is full strength, the rest wait quieter */
 .fc-event.evt-plan.evt-plan-quiet { opacity: 0.55; }
 
-/* Draft preview ghost block — shown while the DraftComposer popover is open */
+/* The composer's preview of the block you're making — see-through to the
+   pointer, except a timed draft's, which is the draft's to move (D-158, #33). */
 .fc-event.evt-draft-preview {
-  opacity: 0.65;
-  border-style: dashed !important;
   pointer-events: none;
 }
-/* …except a timed draft's ghost, which is the draft's to move and pull (D-158,
-   #33). FullCalendar marks it draggable only while the composer is open; the
-   all-day drag ghost stays see-through, so the drag drawing it can't land on it. */
 .fc-event.evt-draft-preview.fc-event-draggable {
   pointer-events: auto;
 }
 
-/* External-drag mirror (ElementMirror — position:fixed, class fc-event-dragging).
-   Document CSS zoom makes fixed left/top disagree with getBoundingClientRect —
-   counteract zoom so the ghost stays under the cursor. Do NOT apply this to
-   `.fc-event-mirror`: that class is the in-grid select/drag preview (absolute
-   inside the timegrid), and counter-zooming it breaks click-drag create. */
+/* ── In hand ───────────────────────────────────────────────────────────────
+   The drag ghost is picked up: an accent ring and the popover lift. The
+   external one (ElementMirror — a clone of the rail row, position:fixed,
+   `.fc-event-dragging`) counters the document zoom so it stays under the
+   cursor; never apply that to `.fc-event-mirror`, the in-grid preview. */
 .fc-event-dragging {
   zoom: calc(1 / var(--ui-scale, 1));
+  background: var(--raised);
+  border-radius: var(--r-ctl);
 }
 .fc-event-dragging,
-.fc-event-mirror {
+.fc .fc-event.fc-event-mirror {
   opacity: 1;
-  box-shadow: var(--shadow-lift);
-  transform: scale(1.03);
-  /* The ghost moves with the pointer while carrying --shadow-lift (a 60px blur
-     over a large area). Un-promoted, WebKit repaints that shadow every frame of
-     the drag. Promoting it once means the shadow is rasterised a single time
-     and the layer is only translated afterwards. */
+  box-shadow: 0 0 0 1.5px var(--accent), var(--sh-pop);
+  transform: scale(1.02);
+  /* Promoted once, so the shadow is rasterised a single time and the layer
+     only translates afterwards. */
   will-change: transform;
-  /* The ghost trails the cursor; let :hover fall through to the cell beneath so
-     the drop-target highlight (below) tracks the day under the pointer. */
+  /* The ghost trails the cursor; :hover falls through to the cell beneath so
+     the drop-target highlight tracks the day under the pointer. */
   pointer-events: none;
 }
 
-/* ── Drop-target feedback while dragging a task ──────────────────────────
-   Only the cell under the pointer lights up (`.anytime-drop-target` from the
-   drag hit-test). An "armed" wash on every anytime cell at drag *start* is the
-   wrong contract — nowhere else in the Schedule previews drop zones until you
-   hover them. */
+/* ── Where it lands ────────────────────────────────────────────────────────
+   Only the cell under the pointer lights up (`.anytime-drop-target`, from the
+   drag hit-test) — never a wash on every cell at drag start. */
 .cal-dragging .fc-daygrid-body .fc-daygrid-day-frame {
   transition: background-color var(--d-fast) var(--ease-out),
     box-shadow var(--d-fast) var(--ease-out);
 }
-/* About to drop: the cell under the pointer — same weight as a slot receptacle. */
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  box-shadow:
-    inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-/* Hide FC's blank all-day scrap — the titled pill preview is the affordance. */
+/* Hide FC's blank all-day scrap — the titled chip preview is the affordance. */
 .over-anytime .fc-event-mirror,
 .over-anytime .fc-event-dragging {
   opacity: 0 !important;
@@ -2411,13 +2652,13 @@ select.field { appearance: none; -webkit-appearance: none; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 22px;
+  min-height: 20px;
   max-width: min(280px, 70vw);
-  padding: 3px 10px;
-  border-radius: 5px;
-  border: 1.5px dashed color-mix(in srgb, var(--accent) 58%, transparent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
-  box-shadow: var(--shadow-lift);
+  padding: 0 8px;
+  border-radius: var(--r-chip);
+  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+  box-shadow: var(--sh-pop);
   overflow: hidden;
   opacity: 0;
   transform: scale(0.98);
@@ -2429,10 +2670,10 @@ select.field { appearance: none; -webkit-appearance: none; }
 }
 .anytime-drop-preview-dot {
   flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--accent);
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
 }
 .anytime-drop-preview-title {
   min-width: 0;
@@ -2440,70 +2681,57 @@ select.field { appearance: none; -webkit-appearance: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 550;
   line-height: 1.2;
   color: var(--ink);
 }
-/* And a quieter column glow when aiming at a specific time in the grid. */
+/* A quieter column wash when aiming at a time in the grid. */
 @media (hover: hover) {
 .cal-dragging .fc-timegrid-col:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 }
-/* Dragging into a block → the slot (or the task, once armed) lifts and the drag
-   ghost fades to almost nothing, so the item reads as "going into" it. The
+/* Into a block: the slot (or the task, once armed) lifts as a receptacle and
+   the ghost fades to almost nothing — the item reads as "going into" it. The
    block under the cursor is hit-tested in JS (`.slot-drop-target`,
-   `.block-combine-armed`), and `body.over-slot` drives the ghost fade — both
-   set together by the drag tracker. */
-.fc-event.evt-slot {
-  transition: background-color var(--d-fast) var(--ease-out),
-    box-shadow var(--d-fast) var(--ease-out),
-    border-color var(--d-fast) var(--ease-out),
-    transform var(--d-fast) var(--ease-out);
-}
-/* Hovered slot lifts as a receptacle — the design law's lift (shadow + a small
-   rise), not a ring: focus lifts, it doesn't outline. The fill warms toward
-   --slot and the dashed container edge goes solid, so "drop here" reads at a
-   glance. */
-.fc-event.evt-slot.slot-drop-target {
-  background: color-mix(in srgb, var(--slot) 26%, var(--surface)) !important;
-  border-style: solid !important;
-  border-color: var(--slot) !important;
-  box-shadow: var(--shadow-lift) !important;
-  transform: translateY(-3px);
+   `.block-combine-armed`); `body.over-slot` drives the ghost fade. */
+.fc .fc-event.evt-slot.slot-drop-target {
+  box-shadow: var(--sh-pop);
+  transform: translateY(-2px);
   z-index: 6;
 }
-/* A task's middle, waiting out the pause before letting go there makes a slot
-   (COMBINE_DWELL_MS in lib/slots — keep the two in step). Its bar widens across
-   the wait: one compositor-only transform on one element, which is how the
-   pause teaches itself. */
-.fc-event.evt-task [data-evt-bar] {
-  transform-origin: left center;
+.fc-event.evt-slot.slot-drop-target .evt-shell {
+  background-color: color-mix(in srgb, var(--evt-hue) 14%, var(--panel));
+  box-shadow: inset 0 0 0 1.5px var(--evt-hue);
 }
+/* A task's middle, waiting out the pause before letting go there makes a slot
+   (COMBINE_DWELL_MS in lib/slots — keep the two in step). Its edge appears and
+   widens across the wait: one compositor-only transform on one element. */
 .fc-event.evt-task.block-combine-pending [data-evt-bar] {
-  transform: scaleX(2.2);
+  opacity: 1;
+  transform: scaleX(2.5);
   transition: transform 300ms linear;
 }
 /* …armed: it lifts, and the preview below draws the slot it becomes. */
-.fc-event.evt-task.block-combine-armed {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lift);
+.fc .fc-event.evt-task.block-combine-armed {
+  box-shadow: 0 0 0 1.5px var(--slot), var(--sh-pop);
+  transform: translateY(-2px);
   z-index: 6;
 }
 .fc-event.evt-task.block-combine-armed [data-evt-bar] {
-  transform: scaleX(2.2);
+  opacity: 1;
+  transform: scaleX(2.5);
 }
-/* An edge: letting go places beside. A caret on the side you're on — where the
-   block will stand — rather than a frame around the one you're beside. */
-.fc-event.block-beside-left {
+/* An edge: letting go places beside. A caret on the side you're on. */
+.fc .fc-event.block-beside-left {
   box-shadow: -3px 0 0 0 var(--accent);
 }
-.fc-event.block-beside-right {
+.fc .fc-event.block-beside-right {
   box-shadow: 3px 0 0 0 var(--accent);
 }
 /* The block a gathering drop makes, moves or grows — drawn over the target at
-   the size it will be, from the target's start. Opaque, because it IS what the
-   target becomes; dashed, because it is a container (D-157). */
+   the size it will be. Opaque, because it IS what the target becomes; dashed,
+   because it is a container (D-157). */
 .block-gather-preview {
   position: fixed;
   left: 0;
@@ -2512,12 +2740,14 @@ select.field { appearance: none; -webkit-appearance: none; }
   pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1.5px dashed color-mix(in srgb, var(--slot) 72%, transparent);
-  background: color-mix(in srgb, var(--slot) 20%, var(--surface));
-  box-shadow: var(--shadow-lift);
+  gap: 2px;
+  padding: 5px 8px;
+  border-radius: var(--r-chip);
+  border: 1px dashed var(--slot);
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--slot) 9%, transparent) 6px 7px),
+    color-mix(in srgb, var(--slot) 8%, var(--raised));
+  box-shadow: var(--sh-pop);
   overflow: hidden;
   opacity: 0;
   transform: scale(0.98);
@@ -2529,38 +2759,32 @@ select.field { appearance: none; -webkit-appearance: none; }
   transform: scale(1);
 }
 .block-gather-preview-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--slot) 45%, var(--ink));
+  font: 600 11px/1.2 var(--font-sans);
+  color: color-mix(in srgb, var(--slot) 80%, var(--mix));
 }
 .block-gather-preview-title {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font: 600 12px/1.3 var(--font-sans);
+  color: var(--ink);
 }
 .block-gather-preview-title[hidden] {
   display: none;
 }
 .block-gather-preview-items {
-  font-size: 11.5px;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--ink) 78%, transparent);
-  white-space: pre-line;
   overflow: hidden;
+  white-space: pre-line;
+  font: 450 11px/1.35 var(--font-sans);
+  color: var(--ink-2);
 }
 .over-slot .fc-event-mirror,
 .over-slot .fc-event-dragging {
   opacity: 0.1 !important;
 }
-/* Cursor-following label naming the slot you're dropping into — appears only while
-   the pointer is over a slot (the faded ghost no longer carries that meaning). */
+/* The label that follows the cursor, naming where a release goes. --slot when
+   it names a container; --accent when it names an ACT (wider: the destination
+   is the whole message); ink on the quiet line when Esc made it nothing. */
 .slot-drop-chip {
   position: fixed;
   left: 0;
@@ -2568,20 +2792,16 @@ select.field { appearance: none; -webkit-appearance: none; }
   z-index: 9999;
   pointer-events: none;
   max-width: 260px;
+  height: var(--h-xs);
+  padding: 0 8px;
   overflow: hidden;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent), var(--sh-pop);
+  color: color-mix(in srgb, var(--slot) 70%, var(--mix));
+  font: 550 12px/24px var(--font-sans);
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 5px 11px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.005em;
-  color: color-mix(in srgb, var(--slot) 30%, var(--ink));
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  border: 1px solid color-mix(in srgb, var(--slot) 50%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--slot) 14%, transparent), var(--shadow-lift);
-  backdrop-filter: blur(8px) saturate(1.3);
-  -webkit-backdrop-filter: blur(8px) saturate(1.3);
   opacity: 0;
   transform: translateY(3px) scale(0.96);
   transition: opacity var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
@@ -2590,21 +2810,14 @@ select.field { appearance: none; -webkit-appearance: none; }
   opacity: 1;
   transform: translateY(0) scale(1);
 }
-/* The same chip when it names an ACT rather than a container: `--accent` is
-   intent, `--slot` is open/unclaimed. Wider, because the destination is the
-   whole message — a chip that ellipsises "…Stampede v3 backl…" has failed at
-   the one job it has. */
 .slot-drop-chip.drop-chip-act {
   max-width: 340px;
-  color: color-mix(in srgb, var(--accent) 32%, var(--ink));
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow-lift);
+  box-shadow: 0 0 0 1px var(--accent-ring), var(--sh-pop);
+  color: var(--accent-ink);
 }
-/* Esc mid-drag (D-158): the chip says what letting go does now — nothing. Ink
-   on the quiet line, no colour: it isn't a destination, it's the absence of one. */
 .slot-drop-chip.drop-chip-cancel {
+  box-shadow: 0 0 0 1px var(--line-2), var(--sh-pop);
   color: var(--muted);
-  border-color: var(--line-strong);
 }
 /* …and what's in hand fades, so the grid reads as already put back. */
 body.drag-cancelled .fc-event-mirror,
@@ -2680,144 +2893,370 @@ body.drag-cancelled .fc-event-resizing {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
-/* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.
+/* ── The anytime row — tasks planned for the day, not yet time-blocked ──────
    Drop a task here to schedule it for the day without committing to a time;
    drag it down into the grid to block a slot. Kept tall enough to stay an easy
-   drop target even when empty. Cells are clickable to create an anytime task. */
+   drop target when empty; a cell answers the pointer with the kit's hover. */
 .fc .fc-daygrid-body .fc-daygrid-day-frame {
   cursor: default;
 }
 @media (hover: hover) {
 .fc .fc-daygrid-body .fc-daygrid-day:hover .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  background: var(--hover);
 }
 }
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-active .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 /* Drag-hover beats the idle hover wash — see `.anytime-drop-target` above. */
 @media (hover: hover) {
 .fc .fc-daygrid-body .fc-daygrid-day.anytime-drop-target:hover .fc-daygrid-day-frame {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: var(--accent-wash);
 }
-}
-.fc .fc-timegrid-axis-cushion {
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
-}
-.fc .fc-timegrid-axis-frame {
-  justify-content: flex-end;
-  padding-right: 4px;
 }
 .fc .fc-daygrid-body .fc-daygrid-day-events {
-  min-height: 22px;
+  min-height: 24px;
+}
+/* FullCalendar keeps 1em under the row's chips for a "+N" it may never need,
+   and an empty day-number row over them — the anytime row has no numerals. */
+.fc .fc-timegrid .fc-daygrid-body-natural .fc-daygrid-day-events {
+  margin-bottom: 2px;
+}
+.fc .fc-timegrid .fc-daygrid-day-top {
+  display: none;
 }
 .fc .fc-daygrid-event.evt-allday {
-  margin: 1px 3px !important;
-  border-radius: 5px !important;
-  border: 1px solid transparent;
+  margin: 2px 3px !important;
+  border-radius: var(--r-chip) !important;
 }
 .fc .fc-daygrid-event.evt-allday .fc-event-main {
-  padding: 2px 0 !important;
-}
-@media (hover: hover) {
-.fc .fc-daygrid-event.evt-allday:hover {
-  box-shadow: var(--shadow-1);
-  filter: brightness(1.015);
-}
+  padding: 0 !important;
 }
 
-/* ── Month view: day numerals + compact pills ─────────────────────────── */
-/* FC defaults: day-number z=4, event z=6 — so multi-day bars paint over the
-   date (and our today chip). Lift the numeral layer above the pills. The
-   top row stays pointer-transparent so events under the empty corner still
-   receive clicks; only the number itself is hit-testable. */
+/* ── Month — the same cells, the numeral where you read it first ───────────
+   FC defaults: day-number z=4, event z=6 — so multi-day bars paint over the
+   date (and today's mark). The numeral layer rides above the chips; the top
+   row stays pointer-transparent so a chip under the empty corner still takes
+   the click — only the number itself is hit-testable. */
 .fc .fc-daygrid-day-top {
   position: relative;
   z-index: 8;
+  flex-direction: row;
   pointer-events: none;
 }
-/* FC wraps dayCellContent in an <a>; kill its link chrome so our signal
-   chip (and muted other-month ink) read cleanly across themes. */
+.fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-top {
+  opacity: 1;
+}
+/* FC wraps dayCellContent in an <a>; kill its link chrome. */
 .fc .fc-daygrid-day-number {
-  text-decoration: none !important;
-  color: inherit;
-  padding: 4px 6px 2px;
   position: relative;
   z-index: 8;
+  padding: 6px 8px 2px;
+  color: inherit;
+  text-decoration: none !important;
   pointer-events: auto;
 }
-.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
-  color: inherit;
+.fc-dayGridMonth-view .cal-daynum {
+  height: 20px;
+  min-width: 20px;
+  margin-left: -5px;
+  padding: 0 5px;
+  border-radius: var(--r-ctl);
+  font: 550 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
-/* Month pills are dense — skip the glass frost so bars don't bleed across
-   cell seams or haze the day number underneath. Week/Day keep the frost. */
-.fc-dayGridMonth-view .fc-event {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+.fc-dayGridMonth-view .cal-daynum[data-other] {
+  color: var(--faint);
 }
-/* Make month events shorter so more fit before the "+N more" threshold */
+.fc-dayGridMonth-view .cal-daynum[data-today] {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+/* Month chips: one line, a little shorter, so more fit before "+N". */
 .fc .fc-daygrid-event {
   margin-top: 1px !important;
-  border-radius: 4px !important;
+  border-radius: var(--r-chip) !important;
+}
+.fc .fc-daygrid-event.fc-daygrid-dot-event {
+  padding: 0;
 }
 .fc .fc-daygrid-event .fc-event-main {
   padding: 0 !important;
 }
-/* "+N more" chip */
+.fc-dayGridMonth-view .evt-shell[data-size="chip"] {
+  min-height: 18px;
+  font-size: calc(11px * var(--ui-scale, 1));
+}
+.fc-dayGridMonth-view .evt-shell[data-size="chip"] .evt-check {
+  width: 10px;
+  height: 10px;
+}
+/* "+N more" */
 .fc .fc-daygrid-more-link {
-  font-size: 10px;
-  font-weight: 600;
+  margin: 1px 0 0 3px;
+  padding: 3px 6px;
+  border-radius: var(--r-chip);
   color: var(--muted);
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-top: 1px;
-  display: inline-block;
-  transition: background-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+  font: 500 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
 }
 @media (hover: hover) {
 .fc .fc-daygrid-more-link:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--hover);
+  color: var(--ink);
+  transition-duration: 0ms;
 }
 }
-/* Popover card */
+/* …and the day it opens: the kit's popover (an 8px corner, a 4px inset, the
+   popover shadow, the 110ms grow). */
 .fc .fc-more-popover {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-3);
-  min-width: 160px;
+  min-width: 200px;
   overflow: hidden;
-  animation: rise 160ms var(--ease-out) both;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  transform-origin: top left;
+  animation: k-pop-in var(--d-fast) var(--ease-out) both;
 }
 .fc .fc-more-popover .fc-popover-header {
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  padding: 6px 6px 6px 10px;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--ink);
+  font: 600 12px/1.2 var(--font-sans);
 }
 .fc .fc-more-popover .fc-popover-close {
+  display: inline-grid;
+  place-items: center;
+  width: var(--h-xs);
+  height: var(--h-xs);
+  border-radius: var(--r-ctl);
   color: var(--muted);
   font-size: 14px;
-  opacity: 0.6;
+  opacity: 1;
 }
 @media (hover: hover) {
 .fc .fc-more-popover .fc-popover-close:hover {
-  opacity: 1;
+  background: var(--hover);
+  color: var(--ink);
 }
 }
 .fc .fc-more-popover .fc-popover-body {
-  padding: 4px 4px 6px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  min-width: 200px;
+  padding: 4px;
 }
+
+/* ── The pane's own floating parts (CalendarPane) ──────────────────────────
+   Menus are kit popovers (`.k-pop` + `.k-mi`); these are the few shapes the
+   kit has no part for: a confirm step inside a menu, the gather offer, the
+   failed-write line and the recurrence dialog's choices. */
+.sched-confirm {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 8px;
+  font: 450 13px/1.35 var(--font-sans);
+  color: var(--ink);
+}
+.sched-confirm p { margin: 0; }
+.sched-confirm b { font-weight: 600; }
+.sched-confirm-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sched-confirm-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sched-confirm-acts[data-stack] {
+  flex-direction: column;
+  align-items: stretch;
+}
+.sched-offer {
+  padding: 10px 12px 12px;
+}
+.sched-offer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-ink);
+  font: 600 12px/1.3 var(--font-sans);
+}
+.sched-offer-say {
+  margin: 4px 0 8px;
+  color: var(--ink);
+  font: 450 13px/1.35 var(--font-sans);
+}
+.sched-offer-list {
+  border-top: 1px solid var(--line-1);
+}
+.sched-offer-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-1);
+}
+.sched-offer-when {
+  flex: none;
+  color: var(--muted);
+  font: 500 11px/1.2 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.sched-offer-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  font: 450 12px/1.3 var(--font-sans);
+}
+.sched-offer-more {
+  padding-top: 5px;
+  color: var(--muted);
+  font: 450 11px/1 var(--font-sans);
+}
+.sched-error {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--h-row);
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line-1);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font: 500 13px/1.35 var(--font-sans);
+}
+.sched-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--h-md);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ink);
+  font: 450 13px/1 var(--font-sans);
+  text-align: left;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.sched-choice[aria-checked="true"] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .sched-choice[aria-checked="false"]:hover { background: var(--hover); transition-duration: 0ms; }
+}
+html:root .sched-choice:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.sched-radio {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+}
+.sched-choice[aria-checked="true"] .sched-radio {
+  border-color: var(--accent);
+}
+.sched-choice[aria-checked="true"] .sched-radio::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   THE YEAR — twelve month grids of numerals (calendar/YearParts.tsx), the
+   desk's Year and the phone's. The grid's voice at map size: the month name
+   13/650, initials 11px faint, numerals tabular ink-2, and today the same
+   ember mark the day header and Month wear. D-127 · D-128 · D-129.
+   ════════════════════════════════════════════════════════════════════════ */
+.yr-month-name {
+  display: inline-block;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ink);
+  font: 650 13px/1.2 var(--font-sans);
+  letter-spacing: -0.01em;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+span.yr-month-name {
+  margin-left: 0;
+  padding: 0;
+}
+@media (hover: hover) {
+  button.yr-month-name:hover { background: var(--hover); transition-duration: 0ms; }
+}
+html:root button.yr-month-name:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.yr-dow {
+  padding-bottom: 3px;
+  color: var(--faint);
+  font: 500 11px/1 var(--font-sans);
+  text-align: center;
+}
+.yr-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  color: var(--ink-2);
+  font: 450 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.yr-num[data-fill] {
+  min-width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+@container (min-width: 13rem) {
+  .yr-num[data-fill] { font-size: 13px; }
+}
+.yr-num[data-today] {
+  background: var(--signal);
+  color: var(--on-signal);
+  font-weight: 650;
+}
+.yr-day {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .yr-day:hover { background: var(--hover); transition-duration: 0ms; }
+  .yr-day:hover .yr-num:not([data-today]) { color: var(--ink); }
+}
+html:root .yr-day:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-ring); }
 
 /* ── Agent sidebar chat bubbles ──────────────────────────────────────── */
 .agent-bubble {

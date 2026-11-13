@@ -5,11 +5,14 @@
 // answered a question the chat's `read_calendar_load` already owns. Verify
 // both shells at once at ?year.
 //
-// Hierarchy (read top → bottom, loud → quiet):
-//   1. month name  — Fraunces, ink; current month wears --signal
-//   2. day numerals — ink, tabular; the map itself (not muted texture)
-//   3. today        — filled --signal disc, white numeral (same mark Month uses)
-//   4. weekday row  — a whisper above the grid, never competing with dates
+// Hierarchy (read top → bottom, loud → quiet), in the frame's voice (D-190):
+//   1. month name  — 13/650 ink; it opens the month
+//   2. day numerals — ink-2, tabular; the map itself (not muted texture)
+//   3. today        — the ember mark the grid's header and Month wear: the
+//                     numeral on --signal. The one ember on the map — the
+//                     month you're in needs no second colour to be found.
+//   4. weekday row  — 11px faint initials, never competing with dates
+// The marks are drawn by index.css (`.yr-*`, beside the Schedule's grid).
 //
 // The year numeral itself is chrome, not a map mark — Schedule toolbar on the
 // desk, top-bar hero on the phone (D-129). Writing it on the map too said the
@@ -90,40 +93,25 @@ export const YearMonth = memo(function YearMonth({
     [weekStartsOn],
   );
   const label = month.toLocaleDateString([], { month: "long" });
-  const inMonth = isSameDay(startOfMonth(now), startOfMonth(month));
 
   return (
     // `@container` sizes type off the month, not the window — opening Nuvo
     // chat narrows the pane without a viewport change.
-    <section className={`@container min-w-0 ${fill ? "flex h-full min-h-0 flex-col" : ""}`}>
+    <section className={`yr-month @container min-w-0 ${fill ? "flex h-full min-h-0 flex-col" : ""}`}>
       <div className={`flex items-baseline justify-between gap-2 ${fill ? "mb-1 shrink-0" : "mb-1"}`}>
         {onPickMonth ? (
-          <button
-            onClick={() => onPickMonth(startOfMonth(month))}
-            className="fast masthead truncate text-body leading-none hover:text-accent @[11rem]:text-head"
-            style={{ color: inMonth ? "var(--signal)" : "var(--ink)" }}
-            title={`Open ${label}`}
-          >
+          <button type="button" onClick={() => onPickMonth(startOfMonth(month))} className="yr-month-name" title={`Open ${label}`}>
             {label}
           </button>
         ) : (
-          <span
-            className="masthead truncate text-body leading-none @[11rem]:text-head"
-            style={{ color: inMonth ? "var(--signal)" : "var(--ink)" }}
-          >
-            {label}
-          </span>
+          <span className="yr-month-name">{label}</span>
         )}
       </div>
 
       {showWeekdays && (
         <div aria-hidden className={`grid grid-cols-7 ${fill ? "shrink-0" : ""}`}>
           {dow.map((d, i) => (
-            <div
-              key={i}
-              className="pb-0.5 text-center text-micro leading-none"
-              style={{ color: "color-mix(in srgb, var(--muted) 50%, transparent)" }}
-            >
+            <div key={i} className="yr-dow">
               {d}
             </div>
           ))}
@@ -164,10 +152,6 @@ export const YearMonth = memo(function YearMonth({
   );
 });
 
-/** Today disc — fixed, centred in the cell. Same chip Month paints. */
-const TODAY_PX = 18;
-const TODAY_PX_COMPACT = 16;
-
 const DayCell = memo(function DayCell({
   date,
   isToday,
@@ -182,31 +166,12 @@ const DayCell = memo(function DayCell({
   onPick?: (d: Date) => void;
 }) {
   const name = date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
-  const disc = fill ? TODAY_PX : TODAY_PX_COMPACT;
 
+  // A dense field of dates, not beads in tall cells: the numeral is the cell's
+  // only content, and today alone wears the ember (`.yr-num[data-today]`).
   const body = (
     <span className="flex h-full w-full items-center justify-center">
-      <span
-        // Ink + tight tracking: a dense field of dates, not muted beads in
-        // tall cells. Today alone gets the signal disc; ordinary days are
-        // just the numeral so spacing follows the type.
-        className={
-          fill
-            ? "mono inline-flex items-center justify-center overflow-hidden text-caption font-medium leading-none tracking-tight tabular-nums @[13rem]:text-body"
-            : "mono inline-flex aspect-square w-full items-center justify-center overflow-hidden text-micro font-medium leading-none tracking-tight tabular-nums"
-        }
-        style={
-          isToday
-            ? {
-                color: "#fff",
-                background: "var(--signal)",
-                borderRadius: 999,
-                width: disc,
-                height: disc,
-              }
-            : { color: "var(--ink)" }
-        }
-      >
+      <span className="yr-num" data-today={isToday || undefined} data-fill={fill || undefined}>
         {showNumber ? date.getDate() : ""}
       </span>
     </span>
@@ -221,10 +186,11 @@ const DayCell = memo(function DayCell({
   }
   return (
     <button
+      type="button"
       onClick={() => onPick(date)}
       title={name}
       aria-label={name}
-      className={`fast w-full hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${fill ? "h-full rounded-sm" : "aspect-square rounded-sm"}`}
+      className={`yr-day w-full ${fill ? "h-full" : "aspect-square"}`}
     >
       {body}
     </button>

@@ -2,7 +2,7 @@ import { duplicateEventInput } from "../lib/eventActs";
 import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { Button, IconButton, Menu, MenuItem, PageBar, Segmented } from "./kit";
+import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Segmented } from "./kit";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -114,14 +114,12 @@ function draftPreviewFirst(a: unknown, b: unknown): number {
   return 0;
 }
 
-/** SUN…SAT, indexed by day-of-week, in the viewer's locale. Built off a known
+/** Sun…Sat, indexed by day-of-week, in the viewer's locale. Built off a known
  *  Sunday read in UTC so the label can never slide a day on either side of the
  *  date line — Month's headers are weekday names, and this is the only place
- *  that spells them. */
+ *  that spells them. Sentence case: the grid's header voice (D-190). */
 const DOW_LABELS = Array.from({ length: 7 }, (_, i) =>
-  new Date(Date.UTC(2024, 0, 7 + i))
-    .toLocaleDateString([], { weekday: "short", timeZone: "UTC" })
-    .toUpperCase(),
+  new Date(Date.UTC(2024, 0, 7 + i)).toLocaleDateString([], { weekday: "short", timeZone: "UTC" }),
 );
 
 type ExtendedProps = {
@@ -147,23 +145,14 @@ type ExtendedProps = {
   selfRsvp?: string | null;
 };
 
-/** One consistent fill + border, tinted from an item's own color. `fillPct`
- *  lets a class read stronger (tasks/slots) or quieter (events) than the base.
- *  Every colour is first pulled ~20% toward the active theme's neutral (--muted),
- *  so a cool-blue Google event warms up on warm paper — and stays cool on Fog —
- *  keeping the calendar cohesive whatever's on it, without losing each hue's
- *  identity (the solid bar still carries the true colour). */
-function blockColors(c: string, fillPct = 14) {
-  const base = `color-mix(in srgb, ${c} 80%, var(--muted))`;
-  return {
-    // Translucent (over transparent, not surface) so the block is a pane of
-    // tinted glass — the gridlines/atmosphere read through it, frosted by the
-    // .fc-event backdrop blur. The solid 3px left bar still carries the true hue.
-    backgroundColor: `color-mix(in srgb, ${base} ${fillPct + 10}%, transparent)`,
-    // No outline — the soft fill + the 3px left bar carry the block. Outlines
-    // were the main thing making the calendar feel busy.
-    borderColor: "transparent",
-  };
+/** A block's identity hue, handed to its shell as `--evt-hue` (index.css,
+ *  `.evt-shell`, draws every kind from it: an event's tint and 2px edge, a
+ *  task's check ring, a slot's hatch). Pulled ~15% toward the theme's neutral
+ *  so a saturated provider colour sits with the domain hues around it, and
+ *  never set as FullCalendar's own `backgroundColor` — the shell paints, the
+ *  `.fc-event` only carries state (selected, done, dragged). */
+function hueVar(c: string | undefined): React.CSSProperties | undefined {
+  return c ? ({ ["--evt-hue" as string]: `color-mix(in srgb, ${c} 85%, var(--muted))` } as React.CSSProperties) : undefined;
 }
 
 // Google's web client accepts a base64 "{event_id} {calendar_id}" eid — no
@@ -186,10 +175,10 @@ function RecurrenceDialog({
 }) {
   const [scope, setScope] = useState<RecurrenceScope>("THIS");
 
-  const options: { value: RecurrenceScope; label: string; sub: string }[] = [
-    { value: "THIS", label: "Just this event", sub: "Only this occurrence changes" },
-    { value: "FOLLOWING", label: "This and following events", sub: "Earlier occurrences stay as they were" },
-    { value: "ALL", label: "All events in series", sub: "Every occurrence shifts by the same amount" },
+  const options: { value: RecurrenceScope; label: string }[] = [
+    { value: "THIS", label: "Just this event" },
+    { value: "FOLLOWING", label: "This and following events" },
+    { value: "ALL", label: "All events in series" },
   ];
 
   // A keyboard nudge of a series (⌥↓ on its block, D-158) lands here, so the
@@ -214,65 +203,49 @@ function RecurrenceDialog({
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  // The kit's dialog (k-scrim / k-dialog), drawn here rather than through
+  // <Dialog> because this one owns its keys: ↑↓ ↵ Esc are answered in the
+  // capture listener above, before anything beneath can hear them.
   return (
-    <>
-      <div
-        data-nested-surface=""
-        className="fixed inset-0 z-50 bg-black/25"
-        onClick={onCancel}
-      />
-      <div data-nested-surface="" className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-        <div className="pop-in pointer-events-auto bg-surface border border-line rounded-[var(--radius-lg)] w-[300px] p-5 elev-3">
-          <p className="text-label font-semibold uppercase tracking-widest text-muted mb-1">
-            Recurring event
-          </p>
-          <h2 className="text-head font-semibold mb-4 text-text leading-snug">
-            Edit this event or the whole series?
-          </h2>
-
-          <div className="flex flex-col gap-1.5 mb-5">
+    <div
+      data-nested-surface=""
+      // `fixed inset-0` restates k-scrim's box: it's a click-outside dismiss
+      // whose keyboard twin is Escape (tests/keyboard-operability.test.ts).
+      className="k-scrim fixed inset-0"
+      data-align="center"
+      onClick={(e) => e.target === e.currentTarget && onCancel()}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="recurrence-scope-title" className="k-dialog" style={{ maxWidth: 340 }}>
+        <div className="k-dialog-head">
+          <h2 id="recurrence-scope-title">Edit this event or the whole series?</h2>
+        </div>
+        <div className="k-dialog-body" role="radiogroup" aria-labelledby="recurrence-scope-title">
+          <div className="grid gap-px">
             {options.map((opt) => (
               <button
                 key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={scope === opt.value}
                 onClick={() => setScope(opt.value)}
-                className={`fast flex items-start gap-3 w-full px-3 py-2.5 rounded-[var(--radius)] text-left border transition-colors ${
-                  scope === opt.value
-                    ? "bg-accent-soft border-accent"
-                    : "border-line hover:border-line-strong hover:bg-surface-2"
-                }`}
+                className="sched-choice"
               >
-                <span
-                  className={`mt-[3px] h-3.5 w-3.5 shrink-0 rounded-full border-2 transition-colors ${
-                    scope === opt.value ? "border-accent bg-accent" : "border-muted"
-                  }`}
-                />
-                <span>
-                  <span className={`block text-caption font-medium leading-tight ${scope === opt.value ? "text-text" : "text-text"}`}>
-                    {opt.label}
-                  </span>
-                  <span className="block text-meta text-muted mt-0.5 leading-snug">{opt.sub}</span>
-                </span>
+                <span className="sched-radio" aria-hidden />
+                {opt.label}
               </button>
             ))}
           </div>
-
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={onCancel}
-              className="fast px-3 py-1.5 text-caption text-muted rounded-[var(--radius-sm)] hover:bg-bg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => onConfirm(scope)}
-              className="fast px-3 py-1.5 text-caption font-medium bg-accent text-on-accent rounded-[var(--radius-sm)] hover:opacity-90"
-            >
-              Done
-            </button>
-          </div>
+        </div>
+        <div className="k-dialog-foot">
+          <Button kind="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button kind="primary" shortcut="↵" onClick={() => onConfirm(scope)}>
+            Done
+          </Button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1001,10 +974,9 @@ function CalendarPane({
                 ? sizeSlotToContents(pieces.map((t) => t.duration_minutes))
                 : defaultDurationMins,
             ),
+            // Same paint as the sitting it becomes (domain hue, not --slot) —
+            // the shell reads `barColor`.
             classNames: ["evt-slot"],
-            // Same paint as the sitting it becomes (domain hue, not --slot).
-            backgroundColor: `color-mix(in srgb, ${hue} 24%, var(--surface))`,
-            borderColor: `color-mix(in srgb, ${hue} 62%, var(--line))`,
             extendedProps: {
               kind: "slot" as const,
               refId: "",
@@ -1047,10 +1019,10 @@ function CalendarPane({
           ),
           create: true,
           allDay: false,
-          // Same paint as a real task block. Without this the drop ghost is
-          // FullCalendar's default blue and looks like a second calendar event
-          // if reconcile misses it for a frame.
-          ...(!group ? { classNames: ["evt-task"], ...blockColors("var(--accent)", 22) } : {}),
+          // Same paint as a real task block (the shell draws it from `kind`).
+          // Without it the drop ghost reads as a second calendar event if the
+          // reconcile misses it for a frame.
+          ...(!group ? { classNames: ["evt-task"] } : {}),
           ...(!group && taskId
             ? {
                 extendedProps: {
@@ -1776,13 +1748,12 @@ function CalendarPane({
       .filter((t) => t.start_time)
       .map((t) => {
         const overdue = overdueIds.has(t.id);
-        // Tasks share one identity — the violet accent — so "this is my work"
-        // reads at a glance against the calendar's own (arbitrarily coloured)
-        // events. The domain thread lives on in the thin bar; overdue turns the
-        // BAR ember, not the whole block — a signal slab was the loudest thing
-        // on the grid, louder than the now-line it shares a colour with.
-        const fill = "var(--accent)";
-        const bar = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
+        // A task is a white card on the grid ("this is my work", against the
+        // calendar's tinted events); its domain lives in the check ring. Late
+        // work keeps `evt-overdue` as a hook but no ember of its own: the
+        // now-line is the only `--signal` on the grid (D-190), and a block
+        // above it with an empty ring already says it wasn't done.
+        const bar = taskAccent(t) ?? "var(--accent)";
         const start = toFcInstant(t.start_time!);
         return {
           id: `task:${t.id}`,
@@ -1805,7 +1776,6 @@ function CalendarPane({
             overdue ? "evt-overdue" : "",
             t.status === "done" ? "evt-done" : "",
           ].filter(Boolean),
-          ...blockColors(fill, 22),
           extendedProps: {
             kind: "task" as const,
             refId: t.id,
@@ -1840,7 +1810,6 @@ function CalendarPane({
           editable: true,
           durationEditable: false,
           classNames: ["evt-task", "evt-allday"],
-          ...blockColors("var(--accent)", 20),
           extendedProps: {
             kind: "task" as const,
             refId: t.id,
@@ -1901,8 +1870,8 @@ function CalendarPane({
             ...(eventHidden ? ["evt-hidden"] : []),
           ],
           // Google / iCloud / ICS render as quiet tinted blocks (the "given"
-          // calendar, so bolder tasks read on top); only M365 keeps the hatch.
-          ...(isGoogle || isIcs || isIcloud ? blockColors(calColor, 13) : {}),
+          // calendar, so your white task cards read on top); only M365 keeps
+          // the hatch. The shell paints both from `kind` + `calColor`.
           extendedProps: {
             kind: isGoogle ? ("google" as const) : isIcloud ? ("icloud" as const) : isIcs ? ("ics" as const) : ("m365" as const),
             refId: e.id,
@@ -1938,20 +1907,10 @@ function CalendarPane({
         end: end.toISOString(),
         editable: true,
         durationEditable: true,
+        // A plain slot is hatched `--slot` — open time held for several things.
+        // A project's sitting is CLAIMED time, so its hatch, ring and edge wear
+        // the project's domain hue instead (D-109). The shell reads `barColor`.
         classNames: ["evt-slot"],
-        // A plain slot is a clearly teal container — `--slot` means open /
-        // unclaimed time. A project's sitting is CLAIMED time, so it wears its
-        // project's domain hue instead (the bar already did, D-109); the dashed
-        // border still says "container".
-        ...(project?.color
-          ? {
-              backgroundColor: `color-mix(in srgb, ${project.color} 24%, var(--surface))`,
-              borderColor: `color-mix(in srgb, ${project.color} 62%, var(--line))`,
-            }
-          : {
-              backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
-              borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
-            }),
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
@@ -2000,7 +1959,6 @@ function CalendarPane({
         editable: Boolean(draft) && !previewRange.allDay,
         durationEditable: Boolean(draft) && !previewRange.allDay,
         classNames: ["evt-task", "evt-draft-preview"],
-        ...blockColors("var(--accent)"),
         extendedProps: { kind: "task" as const, refId: "", barColor: "var(--accent)", recurring: false },
       }
     : null;
@@ -2023,9 +1981,6 @@ function CalendarPane({
         editable: true,
         durationEditable: Boolean(plan.onResize),
         classNames: ["evt-plan", b.held ? "evt-plan-held" : "", b.selected ? "evt-plan-selected" : "", b.quiet ? "evt-plan-quiet" : ""].filter(Boolean),
-        backgroundColor: `color-mix(in srgb, ${hue} 16%, var(--surface))`,
-        borderColor: `color-mix(in srgb, ${hue} 60%, var(--line))`,
-        textColor: "var(--text)",
         extendedProps: { kind: "plan" as const, refId: b.key, barColor: hue, calColor: hue, held: b.held, count: b.count ?? 0, items: b.items ?? [] },
       };
     });
@@ -2036,10 +1991,9 @@ function CalendarPane({
       end: g.end,
       allDay: false,
       editable: false,
+      // A ghost is accent (a fit for the selected block); a gap is `--slot`
+      // (open time it could claim). index.css draws both off these classes.
       classNames: g.kind === "gap" ? ["evt-plan-ghost", "evt-plan-gap"] : ["evt-plan-ghost"],
-      backgroundColor: g.kind === "gap" ? "color-mix(in srgb, var(--slot) 9%, transparent)" : "var(--accent-soft)",
-      borderColor: g.kind === "gap" ? "var(--slot)" : "var(--accent)",
-      textColor: g.kind === "gap" ? "var(--slot)" : "var(--accent)",
       extendedProps: { kind: "planghost" as const, refId: g.id },
     }));
     const clears = (plan.clears ?? []).map((c) => ({
@@ -3744,90 +3698,131 @@ function CalendarPane({
   });
   useEffect(() => () => { if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current); }, []);
 
+  // ── Every block is one SHELL (D-190, docs/design-language.md § The frame) ──
+  // `.evt-shell` paints the block from `data-kind` + `--evt-hue` (index.css):
+  //   event — the hue at ~14% on the panel, a 2px identity edge, hue-mixed ink
+  //   task  — a raised white card, a hairline ring, its check ring in the hue
+  //   slot  — open time: hatched, ringed in `--slot` (a project's sitting wears
+  //           its domain hue, and the edge, because the time is claimed)
+  //   feed  — a read-only feed (M365): a neutral hatch
+  //   plan / ghost / draft — Plan the week's proposals and the block you're
+  //           about to make: dashed, because none of them is yours yet
+  // The `.fc-event` around it stays transparent and carries state only.
+  // `[data-evt-bar]` is the edge on every kind (a task's is hidden until a
+  // drop on its middle starts to gather — `block-combine-*` widens it).
   const renderEvent = useCallback((arg: EventContentArg) => {
-    const { kind, calColor, recurring, done: doneProp } = arg.event.extendedProps as ExtendedProps;
+    const ext = arg.event.extendedProps as ExtendedProps;
+    const { kind, calColor, recurring, done: doneProp } = ext;
     const inMonth = arg.view.type === "dayGridMonth";
+    const hue = ext.barColor ?? calColor;
+    // A select mirror (click-drag on empty grid) arrives with no props at all;
+    // it and the composer's preview are the same thing — the block you'll get.
+    const isDraft = !kind || arg.event.id === DRAFT_PREVIEW_ID;
+    const shellKind = isDraft
+      ? "draft"
+      : kind === "task"
+        ? "task"
+        : kind === "slot"
+          ? "slot"
+          : kind === "m365"
+            ? "feed"
+            : kind === "plan"
+              ? "plan"
+              : kind === "planghost"
+                ? "ghost"
+                : "event";
+    const rsvp = ext.selfRsvp;
+    const hollow = shellKind === "event" && (rsvp === "needsAction" || rsvp === "tentative" || rsvp === "declined");
+    const isProject = (kind === "task" || kind === "slot") && ext.projectBacked === true;
+    const Edge = <span data-evt-bar="" className="evt-edge" />;
+    const Recur = recurring ? <RecurMark className="evt-recur" /> : null;
+    const title = arg.event.title;
 
     // ── Plan the week's draft: title, span, a held mark — and its ghosts ──
     if (kind === "plan" || kind === "planghost") {
-      const ext = arg.event.extendedProps as ExtendedProps & { held?: boolean; count?: number; items?: string[] };
+      const plan = ext as ExtendedProps & { held?: boolean; count?: number; items?: string[] };
       return (
-        <div className="relative flex h-full min-w-0 flex-col overflow-hidden px-1.5 py-[2px]">
-          <span className="truncate text-label font-semibold leading-tight">
-            {arg.event.title}
-            {kind === "plan" && ext.count ? <span className="ml-1 font-normal text-muted">{ext.count}</span> : null}
-          </span>
-          {kind === "plan" && arg.event.start && arg.event.end && (
-            <span className="truncate text-micro leading-tight text-muted">{span(arg.event.start, arg.event.end)}</span>
-          )}
-          {/* what the group holds — "Admin batch" alone said nothing about Tuesday */}
-          {kind === "plan" && ext.items && ext.items.length > 1 && (
-            <ul className="mt-0.5 min-w-0">
-              {ext.items.map((t, i) => (
-                <li key={i} className="truncate text-micro leading-tight">
-                  · {t}
-                </li>
-              ))}
-            </ul>
-          )}
-          {kind === "plan" && ext.held && (
-            <span aria-label="held" className="absolute right-1 top-1 h-[6px] w-[6px] rounded-full" style={{ background: ext.barColor }} />
-          )}
+        <div className="evt-shell" data-kind={shellKind} data-held={plan.held || undefined} style={kind === "plan" ? hueVar(hue) : undefined}>
+          {kind === "plan" ? Edge : null}
+          <div className="evt-body">
+            <span className="evt-title evt-clamp">
+              {title}
+              {kind === "plan" && plan.count ? <span className="evt-count">{plan.count}</span> : null}
+            </span>
+            {kind === "plan" && arg.event.start && arg.event.end && (
+              <span className="evt-meta">{span(arg.event.start, arg.event.end)}</span>
+            )}
+            {/* what the group holds — "Admin batch" alone said nothing about Tuesday */}
+            {kind === "plan" && plan.items && plan.items.length > 1 && (
+              <ul className="evt-items">
+                {plan.items.map((t, i) => (
+                  <li key={i} className="evt-item">
+                    <span className="evt-item-dot" />
+                    <span className="evt-clamp">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {kind === "plan" && plan.held && <span aria-label="held" className="evt-held" />}
         </div>
       );
     }
 
-    // ── Month view: compact dot + title pill ──────────────────────────────
-    if (inMonth) {
-      const dotColor = kind === "task" ? "var(--accent)" : (calColor ?? "var(--muted)");
+    // ── Month · and an all-day event in the anytime row: one chip ─────────
+    // A month chip is the grid's block at a smaller size: the same shell, the
+    // same paint, one line. A task's ring is a mark here (the check-off lives
+    // on the Day and the Week, where the block is big enough to aim at).
+    if (inMonth || (arg.event.allDay && kind !== "task")) {
       return (
-        <div className="flex min-w-0 items-center gap-1 px-1.5 py-[2px]">
-          <span
-            data-evt-bar=""
-            className="h-[6px] w-[6px] shrink-0 rounded-full"
-            style={{ backgroundColor: dotColor, opacity: kind === "m365" ? 0.55 : 1 }}
-          />
-          <span data-evt-title="" className="truncate text-label font-medium leading-none">
-            {arg.event.title}
+        <div className="evt-shell" data-kind={shellKind} data-size="chip" data-hollow={hollow || undefined} style={hueVar(hue)}>
+          {Edge}
+          {shellKind === "task" && (
+            <span className="evt-check" data-mark="" aria-hidden>
+              <Icon name="check" size={8} className="evt-tick" />
+            </span>
+          )}
+          <span data-evt-title="" className="evt-title evt-clamp">
+            {rsvp === "tentative" ? "? " : ""}
+            {title || <span className="evt-untitled">(No title)</span>}
           </span>
+          {!inMonth ? Recur : null}
         </div>
       );
     }
 
-    // ── All-day task chip: "planned for the day, time TBD" — a compact pill ─
+    // ── All-day task chip: "planned for the day, time TBD" ──────────────
     // Same check-off as a timed block: a decorative dot made the row look like
     // work you couldn't finish from here. `onClick` already routes
     // `[data-done-toggle]` for every task kind; done anytime tasks drop off the
     // row on the next rebuild (they're filtered out of plannedTaskEvents).
     if (arg.event.allDay && kind === "task") {
-      const checkColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
       return (
-        <div className="flex h-full min-w-0 items-center gap-1.5 overflow-hidden px-1.5">
+        <div className="evt-shell" data-kind="task" data-size="chip" style={hueVar(hue)}>
+          {Edge}
           <button
             aria-label="toggle done"
             aria-pressed={doneProp ?? false}
             data-done-toggle
-            className="relative flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border before:absolute before:-inset-[5px] before:content-['']"
-            style={{ ["--evt-check-border" as string]: checkColor }}
+            className="evt-check"
             onMouseDown={(e) => {
               // Don't let a press on the checkbox begin an event drag.
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
             }}
           >
-            <Icon name="check" size={8} className="evt-check" />
+            <Icon name="check" size={8} className="evt-tick" />
           </button>
-          <span data-evt-title="" className="truncate text-label font-medium leading-none">
-            {arg.event.title}
+          <span data-evt-title="" className="evt-title evt-clamp">
+            {title}
           </span>
-          {recurring ? <RecurMark className="shrink-0 opacity-45" /> : null}
+          {Recur}
         </div>
       );
     }
 
     // ── Time-grid view: one shell for every kind ──────────────────────────
-    const { barColor, slotDone = 0, slotTotal = 0, slotChildren = [] } =
-      arg.event.extendedProps as ExtendedProps;
+    const { slotDone = 0, slotTotal = 0, slotChildren = [] } = ext;
     const startMs = arg.event.start?.getTime() ?? 0;
     const endMs = arg.event.end?.getTime() ?? startMs + 3_600_000;
     const durationMins = (endMs - startMs) / 60_000;
@@ -3836,158 +3831,119 @@ function CalendarPane({
     const heightPx = (durationMins / 60) * densityRef.current;
     const compact = heightPx < 34; // one line, no time
     const tiny = heightPx < 19; // ultra-short — kill the vertical padding
-    const bar = barColor ?? calColor ?? "var(--accent)";
-    const padY = tiny ? "py-0" : "py-[3px]";
-    // A project-backed task — or a standing slot tied to one — reads as
-    // significant work: a thicker, doubled edge, not just the domain/slot
-    // tint. Without this a project slot and an empty one looked identical
-    // apart from the bar color, which for most slots IS the teal already.
-    const isProject =
-      (kind === "task" || kind === "slot") && (arg.event.extendedProps as ExtendedProps).projectBacked === true;
-
-    const Bar = (
-      <span
-        // data-evt-bar: the skin hook. This colour is inline (a domain/provider
-        // hex), which no stylesheet can override without a handle — see
-        // terminal.css, where a mono material repaints it from the syntax ramp.
-        data-evt-bar=""
-        className="shrink-0 self-stretch rounded-l-[5px]"
-        style={{
-          width: isProject ? 4 : 3,
-          background: bar,
-          opacity: kind === "m365" ? 0.5 : 1,
-          boxShadow: isProject ? `inset 2px 0 0 color-mix(in srgb, ${bar} 45%, transparent)` : undefined,
-        }}
-      />
-    );
+    const size = tiny ? "tiny" : compact ? "compact" : undefined;
     // One spelling for a time (D-122): `9–9:30am`, the same `span` the phone and
     // the gutter use — FullCalendar's own `9:00am - 9:30am` was a second format
     // on the same screen. A project's piece also says whose it is.
-    const projectName = kind === "task" ? (arg.event.extendedProps as ExtendedProps).projectName : null;
+    const projectName = kind === "task" ? ext.projectName : null;
     // An all-day span has dates, not a clock — `12–12am` is a midnight artefact.
     const when = arg.event.allDay
       ? null
       : arg.event.start && arg.event.end
         ? span(arg.event.start, arg.event.end)
         : arg.timeText;
-    const Recur = recurring ? <RecurMark className="shrink-0 opacity-45" /> : null;
     // How many lines this block can really show. A 90-minute block used to
     // print one truncated title over ~50px of empty tint. The title takes the
     // lines; the time line — which the block's position already says — is the
     // first thing shed, and appears only once the title still gets two lines.
     // The repeat mark rides on that line, so it never costs the title room
     // (in a narrow week column it was eating what was left of it).
-    const lines = Math.max(1, Math.floor((heightPx - 6) / 13.2)); // text-label · leading 1.2
+    const lines = Math.max(1, Math.floor((heightPx - 6) / 15)); // 12px title · 15px line
     // A block that's MOVING is the exception: its position is exactly what's in
     // question, so a drag or resize ghost always says the time it would land on.
     const moving = arg.isMirror;
     const showTime = !compact && (moving || lines >= 3);
     // A short ghost has one row: the time goes in front of the title.
-    const InlineWhen =
-      moving && compact && when ? <span className="mono shrink-0 text-micro text-muted">{when}</span> : null;
+    const InlineWhen = moving && compact && when ? <span className="evt-meta evt-when">{when}</span> : null;
     const titleLines = compact || moving ? 1 : showTime ? lines - 1 : lines;
-    const titleCls =
-      titleLines > 1
-        ? "text-label font-semibold leading-[1.2] [overflow-wrap:anywhere]"
-        : "truncate text-label font-semibold leading-[1.2]";
     const titleStyle: React.CSSProperties | undefined =
-      titleLines > 1
-        ? { display: "-webkit-box", WebkitLineClamp: titleLines, WebkitBoxOrient: "vertical", overflow: "hidden" }
-        : undefined;
+      titleLines > 1 ? ({ ["--evt-lines" as string]: titleLines } as React.CSSProperties) : undefined;
+    const titleCls = titleLines > 1 ? "evt-title evt-lines" : "evt-title evt-clamp";
     const TimeLine = showTime && (when || projectName || recurring) ? (
-      <div className="mt-px flex min-w-0 items-center gap-1 text-micro leading-none text-muted">
-        <span className="min-w-0 truncate">
-          {when ? <span className="mono">{when}</span> : null}
+      <div className="evt-meta evt-timeline">
+        <span className="evt-clamp">
+          {when ? <span className="evt-when">{when}</span> : null}
           {projectName ? <span>{when ? " · " : ""}{projectName}</span> : null}
         </span>
         {Recur}
       </div>
     ) : null;
 
-    // ── Slot: container with a progress badge + child task peek ────────────
+    // ── The block you're about to make (a drag on empty grid, the composer) ──
+    if (shellKind === "draft") {
+      return (
+        <div className="evt-shell" data-kind="draft" data-size={size}>
+          <div className="evt-body">
+            {title ? <span className={titleCls} style={titleStyle}>{title}</span> : null}
+            {when && !tiny ? <span className="evt-meta evt-when">{when}</span> : null}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Slot: container with a progress count + child task peek ───────────
     if (kind === "slot") {
       const showChildren = heightPx > 64;
       // What this block IS, in words — the same designation Plan the week prints
       // over every sitting it places (`blockDesignation`), so protected project
       // time reads identically in the ritual that proposes it and on the grid
-      // that holds it. The count stays in the progress badge; the eyebrow says
-      // the kind, and the project's name only when the title doesn't. A block
-      // sheds the least recoverable thing last, so below the height that fits an
-      // eyebrow the designation moves inline ahead of the title rather than
-      // reverting to a `▸` you'd have to learn.
+      // that holds it. The count stays in its badge; the eyebrow says the kind,
+      // and the project's name only when the title doesn't. A block sheds the
+      // least recoverable thing last, so below the height that fits an eyebrow
+      // the designation moves inline ahead of the title.
       const designation = isProject
-        ? blockDesignation({
-            kind: "project",
-            name: (arg.event.extendedProps as ExtendedProps).projectName ?? null,
-          })
+        ? blockDesignation({ kind: "project", name: ext.projectName ?? null })
         : null;
       const showEyebrow = Boolean(designation) && !compact;
       return (
-        <div className="flex h-full min-w-0 overflow-hidden">
-          {Bar}
-          <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
-            {showEyebrow && (
-              <div
-                className="truncate text-micro font-semibold uppercase leading-none"
-                style={{ color: bar, letterSpacing: "0.06em" }}
-              >
-                {designation}
-              </div>
-            )}
-            <div className={`flex min-w-0 items-center gap-1 ${showEyebrow ? "mt-[3px]" : ""}`}>
-              <span className="truncate text-label font-semibold leading-[1.2]">
+        <div className="evt-shell" data-kind="slot" data-project={isProject || undefined} data-size={size} style={hueVar(hue)}>
+          {Edge}
+          <div className="evt-body">
+            {showEyebrow && <div className="evt-eyebrow evt-clamp">{designation}</div>}
+            <div className="evt-line">
+              <span className="evt-title evt-clamp">
                 {designation && !showEyebrow && (
-                  <span className="uppercase" style={{ color: bar, letterSpacing: "0.06em" }}>
-                    {/* No room for the project's name on a block this short —
-                        the kind is the part that can't be recovered from the
-                        title, so it's the part that survives. */}
-                    {blockDesignation({ kind: "project" })} ·{" "}
-                  </span>
+                  // No room for the project's name on a block this short — the
+                  // kind is the part that can't be recovered from the title.
+                  <span className="evt-eyebrow">{blockDesignation({ kind: "project" })} · </span>
                 )}
-                {arg.event.title}
+                {title}
               </span>
               {Recur}
               {slotTotal > 0 && (
-                <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-micro leading-snug text-muted">
+                <span className="evt-count">
                   {slotDone}/{slotTotal}
                 </span>
               )}
             </div>
-            {moving && when && !compact ? <div className="mono mt-px truncate text-micro leading-none text-muted">{when}</div> : null}
+            {moving && when && !compact ? <div className="evt-meta evt-when evt-clamp">{when}</div> : null}
             {showChildren && slotChildren.length > 0 && (
-              <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
+              <ul className="evt-items">
                 {slotChildren.slice(0, 4).map((c, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-meta leading-tight">
-                    <span
-                      className="h-[3px] w-[3px] shrink-0 rounded-full"
-                      style={{ background: c.done ? "var(--muted)" : bar }}
-                    />
-                    <span className={`truncate ${c.done ? "line-through opacity-50" : "opacity-80"}`}>
-                      {c.title}
-                    </span>
-                  </div>
+                  <li key={i} className="evt-item" data-done={c.done || undefined}>
+                    <span className="evt-item-dot" />
+                    <span className="evt-clamp">{c.title}</span>
+                  </li>
                 ))}
-                {slotChildren.length > 4 && (
-                  <span className="pl-[9px] text-micro text-muted">+{slotChildren.length - 4} more</span>
-                )}
-              </div>
+                {slotChildren.length > 4 && <li className="evt-item evt-more">+{slotChildren.length - 4} more</li>}
+              </ul>
             )}
           </div>
         </div>
       );
     }
 
-    // ── Google / M365 event ────────────────────────────────────────────────
+    // ── Google / iCloud / ICS / M365 event ─────────────────────────────────
     if (kind !== "task") {
       return (
-        <div className="flex h-full min-w-0 overflow-hidden">
-          {Bar}
-          <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
-            <div className="flex min-w-0 items-center gap-1">
+        <div className="evt-shell" data-kind={shellKind} data-hollow={hollow || undefined} data-size={size} style={hueVar(hue)}>
+          {Edge}
+          <div className="evt-body">
+            <div className="evt-line">
               {InlineWhen}
-              <span className={`${titleCls} ${kind === "m365" ? "text-muted" : ""}`} style={titleStyle}>
-                {(arg.event.extendedProps as ExtendedProps).selfRsvp === "tentative" ? "? " : ""}
-                {arg.event.title || <span className="font-normal italic text-muted">(No title)</span>}
+              <span data-evt-title="" className={titleCls} style={titleStyle}>
+                {rsvp === "tentative" ? "? " : ""}
+                {title || <span className="evt-untitled">(No title)</span>}
               </span>
             </div>
             {TimeLine}
@@ -3996,39 +3952,36 @@ function CalendarPane({
       );
     }
 
-    // ── Task: checkbox tinted to its own color ─────────────────────────────
+    // ── Task: a card with its check ring ───────────────────────────────────
     // Done styling lives on `.fc-event.evt-done` (index.css), not on these
     // nodes — a click paints the harness class this frame, and this markup
     // must already be able to show the check without a React rerender.
     return (
-      <div className="flex h-full min-w-0 overflow-hidden">
-        {Bar}
-        <div className={`flex min-w-0 flex-1 gap-1.5 overflow-hidden px-1.5 ${padY} ${compact ? "items-center" : "items-start"}`}>
-          <button
-            aria-label="toggle done"
-            aria-pressed={doneProp ?? false}
-            data-done-toggle
-            // 14px drawn, 24px to hit: a 13×13 target on the act you do most was the
-            // smallest thing on the screen (the rail's check is 15 / 24).
-            className="relative mt-[1px] flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border before:absolute before:-inset-[5px] before:content-['']"
-            style={{ ["--evt-check-border" as string]: bar }}
-            onMouseDown={(e) => {
-              // Don't let a press on the checkbox begin an event drag.
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-            }}
-          >
-            <Icon name="check" size={8} className="evt-check" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-1">
-              {InlineWhen}
-              <span data-evt-title="" className={titleCls} style={titleStyle}>
-                {arg.event.title}
-              </span>
-            </div>
-            {TimeLine}
+      <div className="evt-shell" data-kind="task" data-project={isProject || undefined} data-size={size} style={hueVar(hue)}>
+        {Edge}
+        <button
+          aria-label="toggle done"
+          aria-pressed={doneProp ?? false}
+          data-done-toggle
+          // 12px drawn, 22px to hit: the act you do most can't be the smallest
+          // target on the screen (the hit area is the ::before in index.css).
+          className="evt-check"
+          onMouseDown={(e) => {
+            // Don't let a press on the checkbox begin an event drag.
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+        >
+          <Icon name="check" size={8} className="evt-tick" />
+        </button>
+        <div className="evt-body">
+          <div className="evt-line">
+            {InlineWhen}
+            <span data-evt-title="" className={titleCls} style={titleStyle}>
+              {title}
+            </span>
           </div>
+          {TimeLine}
         </div>
       </div>
     );
@@ -4077,65 +4030,31 @@ function CalendarPane({
   // Stable identity, live value: FullCalendar's own NowTimer re-renders the
   // indicator every minute, so it still reads a fresh clock without this
   // callback — and therefore the whole calendar element — being re-created.
+  // The gutter's half of the now-line: the minute, in the line's ember.
   const nowIndicatorContent = useCallback(
-    (arg: { isAxis: boolean }) =>
-      arg.isAxis ? (
-        <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
-          {at(fcNowRef.current)}
-        </span>
-      ) : null,
+    (arg: { isAxis: boolean }) => (arg.isAxis ? <span className="cal-now-time">{at(fcNowRef.current)}</span> : null),
     [],
   );
 
+  // The day header (D-190): 44px, the weekday quiet and the date loud on one
+  // line; today's date sits on the ember. Month's headers are weekday names
+  // only — its dates are in the cells.
   const dayHeaderContent = useCallback(
     (arg: { view: { type: string }; dow: number; isToday: boolean; date: Date }) => {
-      const headerIsMonth = arg.view.type === "dayGridMonth";
-      if (headerIsMonth) {
-        return (
-          <div className="flex items-center justify-center py-1.5">
-            <span className="text-caption font-semibold tracking-widest text-muted">
-              {DOW_LABELS[arg.dow]}
-            </span>
-          </div>
-        );
+      if (arg.view.type === "dayGridMonth") {
+        return <div className="cal-dayhead" data-month="">{DOW_LABELS[arg.dow]}</div>;
       }
-      const isToday = arg.isToday;
-      const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-      const dateNum = arg.date.getDate();
       const dateStr = arg.date.toLocaleDateString("en-CA");
       const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
-      const todayChip = isToday;
       return (
-        <div className="flex flex-col items-center gap-0.5 py-1">
-          <span className="text-micro font-semibold tracking-widest text-muted">
-            {weekday}
-          </span>
-          <span
-            className="masthead tabular-nums leading-none"
-            style={
-              todayChip
-                ? {
-                    fontSize: "18px",
-                    color: "var(--on-signal)",
-                    background: "var(--signal)",
-                    borderRadius: "999px",
-                    width: 28,
-                    height: 28,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }
-                : {
-                    fontSize: "20px",
-                    color: isToday ? "var(--signal)" : "var(--text)",
-                  }
-            }
-          >
-            {dateNum}
-          </span>
+        <div className="cal-dayhead" data-today={arg.isToday || undefined}>
+          <span className="cal-dayhead-dow">{DOW_LABELS[arg.dow]}</span>
+          <span className="cal-daynum">{arg.date.getDate()}</span>
           {wx && (
             <button
-              className="fast flex items-center gap-0.5 mt-0.5 rounded px-1 hover:bg-surface-2"
+              type="button"
+              className="cal-dayhead-wx"
+              aria-label={`Weather, high ${wx.tempHigh}°`}
               onClick={(e) => {
                 e.stopPropagation();
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -4143,12 +4062,7 @@ function CalendarPane({
               }}
             >
               <WeatherIcon wmo={wx.wmo} size={14} />
-              <span
-                className="mono tabular-nums leading-none"
-                style={{ fontSize: "10px", color: "var(--muted)" }}
-              >
-                {wx.tempHigh}°
-              </span>
+              <span>{wx.tempHigh}°</span>
             </button>
           )}
         </div>
@@ -4157,30 +4071,11 @@ function CalendarPane({
     [showWeather, weatherIndex],
   );
 
+  // Month's day numeral: the header's mark at cell size.
   const dayCellContent = useCallback((arg: DayCellContentArg) => {
     if (arg.view.type !== "dayGridMonth") return true;
     return (
-      <span
-        className="masthead tabular-nums leading-none"
-        style={
-          arg.isToday
-            ? {
-                fontSize: "13px",
-                color: "var(--on-signal)",
-                background: "var(--signal)",
-                borderRadius: "999px",
-                width: 22,
-                height: 22,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }
-            : {
-                fontSize: "16px",
-                color: arg.isOther ? "var(--muted)" : "var(--text)",
-              }
-        }
-      >
+      <span className="cal-daynum" data-today={arg.isToday || undefined} data-other={arg.isOther || undefined}>
         {arg.dayNumberText}
       </span>
     );
@@ -4360,17 +4255,12 @@ function CalendarPane({
     // rail drops its cursor (LeftRail) so ⌫ in a block's menu can't also trash
     // the row the rail was pointing at.
     <div data-calendar-pane="" data-plan-dim={plan?.dimCalendar ? "" : undefined} className="relative flex h-full min-w-0 flex-1 flex-col">
+      {/* A write that failed is wrong, not now: --danger, never the ember. */}
       {createError && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
-          <span className="mt-px shrink-0">⚠</span>
+        <div role="alert" className="sched-error">
+          <Icon name="info" size={14} />
           <span className="min-w-0 flex-1 break-words">{createError}</span>
-          <button
-            onClick={() => setCreateError(null)}
-            className="fast shrink-0 rounded p-0.5 hover:opacity-70"
-            aria-label="Dismiss"
-          >
-            <Icon name="close" size={12} />
-          </button>
+          <IconButton label="Dismiss" size="xs" icon={<Icon name="close" size={12} />} onClick={() => setCreateError(null)} />
         </div>
       )}
 
@@ -4407,15 +4297,10 @@ function CalendarPane({
               data-nested-surface=""
               role="menu"
               aria-label={`Delete ${ev.title || "event"}`}
-              className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-              style={{ top, left, boxShadow: "var(--shadow-3)" }}
+              className="k-pop"
+              style={{ top, left, minWidth: 220, ["--pop-origin" as string]: "top left" }}
             >
-              <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
-                {ev.title || "Event"}
-              </div>
-              <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-                Delete
-              </div>
+              <div className="k-mlabel truncate">Delete {ev.title || "event"}</div>
               <EventMenuItem lit={eventDeleteLit === 0} onClick={() => requestDelete("THIS")}>
                 This event
               </EventMenuItem>
@@ -4432,12 +4317,12 @@ function CalendarPane({
           <div
             ref={eventMenuRef}
             data-nested-surface=""
-            className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-            style={{ top, left }}
+            role="menu"
+            aria-label={ev.title || "Event"}
+            className="k-pop"
+            style={{ top, left, width: 240, ["--pop-origin" as string]: "top left" }}
           >
-            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
-              {ev.title || "Event"}
-            </div>
+            <div className="k-mlabel truncate">{ev.title || "Event"}</div>
             {/* Open leads, as it does on a task's and a slot's menu. */}
             <EventMenuItem onClick={() => {
               const el = eventMenu.el;
@@ -4446,7 +4331,7 @@ function CalendarPane({
             }}>
               Open
             </EventMenuItem>
-            <div className="my-1 border-t border-line" />
+            <MenuSeparator />
             {hiddenNow ? (
               <EventMenuItem onClick={() => showEvent(ev)}>Show event</EventMenuItem>
             ) : series ? (
@@ -4460,15 +4345,18 @@ function CalendarPane({
             {/* Move to another calendar / account */}
             {writable && moveCount > 1 && (
               <>
-                <div className="my-1 border-t border-line" />
+                <MenuSeparator />
                 {eventMoveConfirm ? (
-                  <div className="px-3 py-2">
-                    <p className="text-caption text-ink">
-                      Move a copy to <span className="font-medium">{eventMoveConfirm.name}</span>?
+                  <div className="sched-confirm">
+                    <p>
+                      Move a copy to <b>{eventMoveConfirm.name}</b>?
                     </p>
-                    <p className="mt-0.5 text-meta text-muted">Repeats and guests won't carry over.</p>
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <button
+                    <p className="sched-confirm-sub">Repeats and guests won't carry over.</p>
+                    <div className="sched-confirm-acts">
+                      <Button
+                        kind="primary"
+                        size="xs"
+                        full
                         onClick={() => {
                           eventMutations.moveEventToCalendar({
                             id: ev.id,
@@ -4477,23 +4365,19 @@ function CalendarPane({
                           });
                           setEventMenu(null);
                         }}
-                        className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-center text-caption font-medium text-on-accent hover:opacity-90"
                       >
                         Move
-                      </button>
-                      <button
-                        onClick={() => setEventMoveConfirm(null)}
-                        className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
-                      >
+                      </Button>
+                      <Button size="xs" full onClick={() => setEventMoveConfirm(null)}>
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : eventMoveMode ? (
-                  <div className="max-h-[220px] overflow-y-auto py-0.5">
+                  <div className="max-h-[220px] overflow-y-auto">
                     {moveGroups.map((g) => (
                       <div key={g.accountId}>
-                        <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+                        <div className="k-mlabel truncate">
                           {g.accountLabel} · {providerLabel(g.provider)}
                         </div>
                         {g.calendars.map((c) => {
@@ -4501,6 +4385,8 @@ function CalendarPane({
                           return (
                             <EventMenuItem
                               key={c.id}
+                              checked={isCurrent}
+                              icon={<Dot color={c.color ?? "var(--muted)"} shape="round" />}
                               onClick={() => {
                                 if (isCurrent) { setEventMenu(null); return; }
                                 const lossy = g.accountId !== ev.account_id && (series || Boolean(ev.self_rsvp));
@@ -4516,11 +4402,7 @@ function CalendarPane({
                                 setEventMenu(null);
                               }}
                             >
-                              <span className="flex items-center gap-2">
-                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.color ?? "var(--muted)" }} />
-                                <span className="min-w-0 flex-1 truncate">{c.summary}</span>
-                                {isCurrent && <span className="shrink-0 text-accent">✓</span>}
-                              </span>
+                              {c.summary}
                             </EventMenuItem>
                           );
                         })}
@@ -4528,7 +4410,7 @@ function CalendarPane({
                     ))}
                   </div>
                 ) : (
-                  <EventMenuItem onClick={() => setEventMoveMode(true)}>Move to…</EventMenuItem>
+                  <EventMenuItem submenu onClick={() => setEventMoveMode(true)}>Move to…</EventMenuItem>
                 )}
               </>
             )}
@@ -4557,7 +4439,7 @@ function CalendarPane({
             )}
             {onConvertEventToTask && !ev.all_day && (
               <>
-                <div className="my-1 border-t border-line" />
+                <MenuSeparator />
                 <EventMenuItem onClick={() => { setEventMenu(null); onConvertEventToTask(ev); }}>
                   → Task
                 </EventMenuItem>
@@ -4565,10 +4447,10 @@ function CalendarPane({
             )}
             {writable && (
               <>
-                <div className="my-1 border-t border-line" />
+                <MenuSeparator />
                 {eventDeleteConfirm ? (
-                  <div className="px-3 py-2">
-                    <p className="text-caption text-ink">
+                  <div className="sched-confirm">
+                    <p>
                       {eventMenuCancelNotifies
                         ? series
                           ? `Cancel — ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest is" : "guests are"} told…`
@@ -4586,49 +4468,34 @@ function CalendarPane({
                         otherwise would be a lie that costs the user a decision.
                         A whole series still can't be put back from one row, and
                         a guest who has already been mailed stays mailed. */}
-                    <p className="mt-0.5 text-meta text-muted">
+                    <p className="sched-confirm-sub">
                       {eventDeleteConfirm !== "THIS"
                         ? "This can't be undone."
                         : eventMenuCancelNotifies
                           ? "Undoable — but the cancellation notice can't be recalled."
                           : "You can undo this."}
                     </p>
-                    <div className={`mt-2.5 flex gap-1.5 ${eventMenuCancelNotifies && !series ? "flex-col" : "items-center"}`}>
+                    <div className="sched-confirm-acts" data-stack={eventMenuCancelNotifies && !series ? "" : undefined}>
                       {eventMenuCancelNotifies && !series ? (
                         <>
-                          <button
-                            onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
-                            className="fast rounded-[var(--radius-sm)] bg-danger px-2 py-1.5 text-center text-caption font-medium text-on-danger"
-                          >
+                          <Button kind="danger-solid" size="xs" full onClick={() => deleteEventNow(ev, eventDeleteConfirm)}>
                             Cancel & notify
-                          </button>
-                          <button
-                            onClick={() => deleteEventNow(ev, eventDeleteConfirm, false)}
-                            className="fast rounded-[var(--radius-sm)] border border-line px-2 py-1.5 text-center text-caption text-muted hover:text-ink"
-                          >
+                          </Button>
+                          <Button size="xs" full onClick={() => deleteEventNow(ev, eventDeleteConfirm, false)}>
                             Cancel quietly
-                          </button>
-                          <button
-                            onClick={() => setEventDeleteConfirm(null)}
-                            className="fast rounded-[var(--radius-sm)] border border-line px-2 py-1.5 text-center text-caption text-muted hover:text-ink"
-                          >
+                          </Button>
+                          <Button kind="ghost" size="xs" full onClick={() => setEventDeleteConfirm(null)}>
                             Back
-                          </button>
+                          </Button>
                         </>
                       ) : (
                         <>
-                          <button
-                            onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
-                            className="fast flex-1 rounded-[var(--radius-sm)] bg-danger px-2 py-1 text-center text-caption font-medium text-on-danger"
-                          >
+                          <Button kind="danger-solid" size="xs" full onClick={() => deleteEventNow(ev, eventDeleteConfirm)}>
                             {eventMenuCancelNotifies ? "Cancel & notify" : "Delete"}
-                          </button>
-                          <button
-                            onClick={() => setEventDeleteConfirm(null)}
-                            className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
-                          >
+                          </Button>
+                          <Button size="xs" full onClick={() => setEventDeleteConfirm(null)}>
                             Cancel
-                          </button>
+                          </Button>
                         </>
                       )}
                     </div>
@@ -4702,15 +4569,15 @@ function CalendarPane({
         <div
           ref={taskEventPickRef}
           data-nested-surface=""
-          className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+          className="k-pop"
           style={{
             top: fixedCssPx(Math.min(taskEventPick.y, window.innerHeight - 300)),
             left: fixedCssPx(Math.min(taskEventPick.x, window.innerWidth - 210)),
+            width: 240,
+            ["--pop-origin" as string]: "top left",
           }}
         >
-          <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-            Event on
-          </div>
+          <div className="k-mlabel">Event on</div>
           <CalendarTargetList
             variant="menu"
             label="Convert to an event on"
@@ -4745,12 +4612,12 @@ function CalendarPane({
           <div
             ref={slotMenuRef}
             data-nested-surface=""
-            className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-            style={{ top, left }}
+            role="menu"
+            aria-label={slotTitle(slot)}
+            className="k-pop"
+            style={{ top, left, width: 240, ["--pop-origin" as string]: "top left" }}
           >
-            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
-              {slotTitle(slot)}
-            </div>
+            <div className="k-mlabel truncate">{slotTitle(slot)}</div>
             <EventMenuItem onClick={() => {
               const el = slotMenu.el;
               const rect = el.getBoundingClientRect();
@@ -4762,11 +4629,11 @@ function CalendarPane({
             {(() => {
               const lit = litForMenu(`slot:${slot.id}`);
               return lit ? (
-                <EventMenuItem onClick={() => {
+                <EventMenuItem shortcut={["⌘", "G"]} onClick={() => {
                   setSlotMenu(null);
                   makeSlotFrom(lit);
                 }}>
-                  Make one slot <span className="float-right pl-3 mono text-micro text-muted">⌘G</span>
+                  Make one slot
                 </EventMenuItem>
               ) : null;
             })()}
@@ -4787,7 +4654,7 @@ function CalendarPane({
                 Can’t get to this…
               </EventMenuItem>
             )}
-            <div className="my-1 border-t border-line" />
+            <MenuSeparator />
             <EventMenuItem danger onClick={() => {
               const el = slotMenu.el;
               const rect = el.getBoundingClientRect();
@@ -4833,47 +4700,40 @@ function CalendarPane({
             // Opaque, like every other menu on this pane: it sits ON the block it
             // just made, and a translucent card over a tinted sitting is two
             // things you have to read through each other.
-            className="pop-in fixed z-[60] w-[264px] rounded-[var(--radius)] border border-line bg-surface p-3"
-            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+            className="k-pop sched-offer"
+            style={{ top, left, width: 280, ["--pop-origin" as string]: "top left" }}
           >
-            <div className="section-label !px-0 !pb-0 truncate" style={{ color: "var(--accent)" }}>
-              {name}
-            </div>
-            <p className="mt-1.5 text-caption text-ink">
+            <div className="sched-offer-name">{name}</div>
+            <p className="sched-offer-say">
               {waiting.length} piece{waiting.length === 1 ? "" : "s"} already{" "}
               {waiting.length === 1 ? "has" : "have"} a time this week.
             </p>
-            <div className="mt-1.5 border-t border-line">
+            <div className="sched-offer-list">
               {waiting.slice(0, 3).map((t) => (
-                <div key={t.id} className="flex items-baseline gap-2 border-b border-line py-1">
-                  <span className="mono shrink-0 text-micro text-muted">{when(t)}</span>
-                  <span className="min-w-0 flex-1 truncate text-meta text-muted" title={t.title}>
+                <div key={t.id} className="sched-offer-row">
+                  <span className="sched-offer-when">{when(t)}</span>
+                  <span className="sched-offer-title" title={t.title}>
                     {t.title}
                   </span>
                 </div>
               ))}
-              {waiting.length > 3 && (
-                <div className="pt-1 text-micro text-muted">+{waiting.length - 3} more</div>
-              )}
+              {waiting.length > 3 && <div className="sched-offer-more">+{waiting.length - 3} more</div>}
             </div>
-            <div className="mt-2.5 flex items-center gap-2">
-              <button
+            <div className="sched-confirm-acts">
+              <Button
+                kind="primary"
+                size="xs"
                 onClick={() => {
                   slotMutations.gatherIntoSlot(slot, waiting, slotTasks[slot.id] ?? []);
                   setGatherOffer(null);
                 }}
                 title="Move them out of their own blocks and into this sitting"
-                className="tap fast flex-1 rounded-md px-2.5 py-1.5 text-caption text-accent hover:brightness-105"
-                style={{ background: "var(--accent-soft)" }}
               >
                 Move them in
-              </button>
-              <button
-                onClick={() => setGatherOffer(null)}
-                className="fast shrink-0 px-1.5 py-1.5 text-caption text-muted hover:text-ink"
-              >
+              </Button>
+              <Button kind="ghost" size="xs" onClick={() => setGatherOffer(null)}>
                 Leave them
-              </button>
+              </Button>
             </div>
           </div>
         );
@@ -5033,7 +4893,7 @@ function CalendarPane({
         {/* FullCalendar — the other half of the stack. See the box above. */}
         <div
           ref={wrapRef}
-          className={`nuvo-cal-host absolute inset-0 p-2 ${isFcView(view) ? "" : "invisible pointer-events-none"}`}
+          className={`nuvo-cal-host absolute inset-0 ${isFcView(view) ? "" : "invisible pointer-events-none"}`}
           aria-hidden={!isFcView(view)}
         style={
           {
@@ -5090,30 +4950,45 @@ function minutesToDuration(mins: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** One row in a calendar menu — the same row TaskActionsMenu draws: one
- *  height, one hover (`bg-bg`), and destructive items in ink at rest that turn
- *  `--danger` under the pointer (D-101), not `--signal` (which means "now").
- *  `lit` = the keyboard's choice. */
+/** One row in a calendar menu — the kit's menu item (`.k-mi`, D-190), drawn
+ *  here rather than as `<MenuItem>` because these menus keep their own keys
+ *  (the delete step's ↑↓ ↵ walk) and their own on-screen clamp. `lit` = the
+ *  keyboard's choice; `danger` is the kit's red, `--danger`, never `--signal`. */
 function EventMenuItem({
   children,
   onClick,
   danger = false,
   lit = false,
+  checked,
+  icon,
+  shortcut,
+  submenu,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
   lit?: boolean;
+  /** a choice that is the current one: the kit's trailing check */
+  checked?: boolean;
+  icon?: React.ReactNode;
+  shortcut?: readonly string[];
+  /** opens a step in place — the kit's › */
+  submenu?: boolean;
 }) {
   return (
     <button
+      type="button"
       role="menuitem"
       onClick={onClick}
-      className={`fast block min-h-7 w-full truncate px-3 py-1.5 text-left text-caption hover:bg-bg ${
-        lit ? "bg-bg" : ""
-      } ${danger ? (lit ? "text-danger" : "text-ink hover:text-danger") : "text-ink"}`}
+      data-danger={danger || undefined}
+      className="k-mi"
+      style={lit ? { background: "var(--hover)" } : undefined}
     >
-      {children}
+      {icon}
+      <span className="k-mi-label">{children}</span>
+      {shortcut ? <Kbd keys={shortcut} /> : null}
+      {checked ? <Icon name="check" size={14} className="k-mi-check" /> : null}
+      {submenu ? <Icon name="chevron-right" size={12} style={{ color: "var(--faint)" }} /> : null}
     </button>
   );
 }
@@ -5159,15 +5034,19 @@ function BlockRenameField({
   };
   const width = Math.max(rect.width, 200);
   const left = Math.min(rect.left, window.innerWidth - width - 8);
+  // The kit's field (`.k-field`, focused), floating on the block it renames.
   return (
     <div
       data-nested-surface=""
-      className="fixed z-[70] rounded-[var(--radius-sm)] border border-line bg-surface p-0.5"
+      className="k-field"
+      data-size="sm"
       style={{
+        position: "fixed",
+        zIndex: 70,
         top: fixedCssPx(Math.max(8, rect.top - 2)),
         left: fixedCssPx(Math.max(8, left)),
         width: fixedCssPx(width),
-        boxShadow: "var(--shadow-lift)",
+        boxShadow: "0 0 0 3px var(--accent-wash), var(--sh-pop)",
       }}
     >
       <input
@@ -5188,7 +5067,7 @@ function BlockRenameField({
           }
         }}
         onBlur={() => finish(value)}
-        className="w-full rounded-[var(--radius-sm)] bg-transparent px-1.5 py-1 text-label font-semibold text-ink outline-none"
+        style={{ fontWeight: 550 }}
       />
     </div>
   );
