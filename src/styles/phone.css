@@ -585,3 +585,291 @@ html:root .ph-field:focus-visible { outline: none; }
 .k-field.ph-search > svg { color: var(--muted); }
 .k-field.ph-search input { font-size: 16px; }
 .k-field.ph-search input::-webkit-search-cancel-button { display: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   THE CALENDAR — one chrome, five bodies (D-122), at touch size.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* The chrome: the horizon ladder and travel, then the seven columns. Solid
+   --panel with one hairline under it — it is structure, so it never floats. */
+.ph-cal-chrome {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-1);
+}
+.ph-cal-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+}
+.ph-cal-row .k-seg.ph-seg button > svg { flex: none; }
+/* Travel: ‹ Today › as one object, the three on the kit Button. */
+.ph-travel { display: flex; align-items: center; gap: 2px; flex: none; }
+
+/* A day in the seven columns — the same drawing in the month grid and the
+   week row, which is what carries the zoom. The numeral sits in a 28px disc:
+   today's is --signal (now), the selected day's is ink on the accent wash. */
+.ph-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 3px 0 4px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--ink);
+}
+.ph-day[data-square] { aspect-ratio: 1 / 1; min-height: 0; }
+.ph-day[aria-pressed="true"] { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.ph-day-dow {
+  color: var(--faint);
+  font: 600 10.5px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+}
+.ph-day[aria-current="date"] .ph-day-dow { color: var(--signal); }
+.ph-day-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font: 500 15px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.ph-day[data-dim] .ph-day-num { color: var(--faint); }
+.ph-day[aria-pressed="true"] .ph-day-num { font-weight: 650; }
+.ph-day[aria-current="date"] .ph-day-num { background: var(--signal); color: var(--on-signal); font-weight: 650; }
+.ph-day-dots { display: flex; align-items: center; gap: 2px; height: 5px; }
+.ph-day-dots > span { width: 4px; height: 4px; border-radius: 50%; background: var(--line-2); }
+.ph-day-dots > span[data-block] { background: var(--accent); }
+.ph-dow-letter {
+  padding: 6px 0 4px;
+  color: var(--faint);
+  font: 600 10.5px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+.ph-axis-label {
+  color: var(--muted);
+  font: 600 10.5px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+/* A day's header in a list — the agenda, the month's preview. */
+.ph-dayhead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  padding: 18px 16px 8px;
+  border-bottom: 1px solid var(--line-1);
+}
+button.ph-dayhead { width: 100%; border-top: 0; border-left: 0; border-right: 0; background: transparent; text-align: left; }
+.ph-dayhead-label { color: var(--ink); font: 650 15px/1.2 var(--font-sans); letter-spacing: -0.012em; }
+.ph-dayhead-label[data-today] { color: var(--signal); }
+.ph-dayhead-label[data-past] { color: var(--muted); }
+.ph-dayhead-date { color: var(--muted); font: 450 12.5px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.ph-dayhead-read {
+  margin-left: auto;
+  color: var(--muted);
+  font: 450 12.5px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ph-dayhead-read[data-accent] { color: var(--accent-ink); font-weight: 550; }
+.ph-dayempty {
+  padding: 14px 16px 14px calc(16px + 48px + 12px);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--faint);
+  font: 450 13px/1.3 var(--font-sans);
+}
+
+/* A row's quiet second fact — the place — on the title's own line. */
+.ph-row-aside { color: var(--muted); font-weight: 450; }
+
+/* The day's open windows, in the open-time colour. */
+.ph-open-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line-1);
+}
+.ph-open-row > .ph-row-time { color: var(--slot); }
+.ph-open-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding-left: 32px; }
+.ph-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--slot) 11%, transparent);
+  color: var(--slot);
+  font: 550 12.5px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ph-open-len { color: color-mix(in srgb, var(--slot) 70%, var(--muted)); font-weight: 450; }
+
+/* The month's legend — what the dots mean, said once, quietly. */
+.ph-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 16px 2px;
+  color: var(--faint);
+  font: 500 11px/1 var(--font-sans);
+}
+.ph-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.ph-legend-dot { width: 5px; height: 5px; border-radius: 50%; }
+/* In a row's 20px lead column the identity bar is a fixed 24px stroke. */
+.ph-row-lead > .ph-idbar { height: 24px; margin: 0; align-self: center; }
+
+/* ── The canvases (Day, Week) ───────────────────────────────────────────────
+   The paper is the panel; hairline hour rules carry the structure, the gutter
+   says the hour in tabular figures. A commitment is a solid block at its true
+   height with an identity edge: someone else's event neutral, your own work
+   the accent, a slot (time that holds several things) the open-time colour. */
+.ph-hour {
+  position: absolute;
+  left: 0;
+  top: -0.6em;
+  padding-right: 6px;
+  color: var(--faint);
+  font: 500 10.5px/1.2 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ph-hour-rule { position: absolute; right: 0; border-top: 1px solid var(--line-1); }
+.ph-gap-bar {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--slot) 50%, transparent);
+}
+.ph-gap-len {
+  color: var(--slot);
+  font: 550 10.5px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.ph-blk {
+  --edge: var(--event-default);
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--edge) 13%, var(--panel));
+  box-shadow: inset 3px 0 0 var(--edge), inset 0 0 0 1px color-mix(in srgb, var(--edge) 22%, transparent);
+  color: var(--ink);
+  text-align: left;
+}
+/* A thumb's worth of target above and below a short block, without growing it. */
+.ph-blk::after { content: ""; position: absolute; inset: -6px 0; }
+.ph-blk[data-kind="block"] { --edge: var(--accent); background: var(--accent-wash); }
+.ph-blk[data-kind="slot"] { --edge: var(--slot); background: color-mix(in srgb, var(--slot) 11%, var(--panel)); }
+.ph-blk[data-done] { --edge: var(--line-2); background: var(--sunk); }
+.ph-blk[data-done] .ph-blk-title { color: var(--faint); text-decoration: line-through; }
+.ph-blk-body { height: 100%; min-width: 0; padding: 4px 6px 4px 9px; overflow: hidden; }
+.ph-blk[data-compact] .ph-blk-body { display: flex; align-items: center; gap: 6px; padding-top: 0; padding-bottom: 0; }
+.ph-blk-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 12.5px/1.25 var(--font-sans);
+  letter-spacing: -0.005em;
+}
+.ph-blk[data-compact] .ph-blk-title { font-size: 11.5px; }
+.ph-blk-where,
+.ph-blk-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 450 11px/1.3 var(--font-sans);
+}
+.ph-blk-kind { color: var(--slot); font-weight: 600; }
+.ph-blk-count {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font: 550 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.ph-blk-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  font: 450 11px/1.3 var(--font-sans);
+}
+.ph-blk-child::before { content: "· "; color: var(--slot); }
+.ph-blk-child[data-done] { color: var(--faint); text-decoration: line-through; }
+@media (pointer: coarse) {
+  .ph-blk:active { opacity: 0.8; }
+}
+/* A claimed gap — the press preview, then the seed while capture is open. */
+.ph-draft {
+  border-radius: var(--r-ctl);
+  background: var(--accent-wash);
+  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--accent-ring);
+}
+.ph-draft-span {
+  display: block;
+  overflow: hidden;
+  padding: 4px 6px 0 9px;
+  color: var(--accent-ink);
+  font: 600 11px/1.2 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* A week column is 1/7th of a phone: the block keeps only its title, a 2px edge.
+ */
+.ph-blk-week { border-radius: 4px; box-shadow: inset 2px 0 0 var(--edge, var(--accent)), inset 0 0 0 1px color-mix(in srgb, var(--edge, var(--accent)) 22%, transparent); }
+.ph-blk-week > .ph-blk-title { display: block; padding: 2px 2px 0 4px; font-size: 10.5px; font-weight: 550; line-height: 1.15; white-space: normal; overflow: hidden; }
+
+/* ── The week's crown (MobileWeekCrown) ─────────────────────────────────────
+   Shut, it is ONE line drawn rather than written: its name, a pip per project,
+   the one --warn light when something has no time, a chevron. It rides sticky
+   under the Calendar's chrome at every horizon (D-122), on the panel. */
+.ph-crown {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-1);
+}
+.ph-crown-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+.ph-crown-name {
+  flex: none;
+  color: var(--ink);
+  font: 650 13px/1 var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+/* A 320px phone: the ladder and travel share one row, so both tighten a step.
+   Every face and arrow keeps its 44px hit area (the bloom), only the drawing
+   narrows. */
+@media (max-width: 359px) {
+  .ph-cal-row .k-seg.ph-seg button { min-width: 30px; padding: 0 8px; }
+  .ph-travel .k-btn[data-icon] { width: 28px; }
+  .ph-travel .k-btn:not([data-icon]) { padding: 0 9px; }
+}

@@ -110,11 +110,13 @@ const scales = () =>
     .map((a) => (a.keyframes as { transform: string }[]).map((k) => parseFloat(k.transform.replace(/scale\(|\)/g, ""))));
 
 describe("the horizon ladder drives the zoom", () => {
+  // The ladder is the kit's Segmented (a radio group), so a rung is found by
+  // its role and name — the word its letter stands for.
   it("animates when you stand back from the day to the month", () => {
-    const { getByLabelText } = surface("day");
+    const { getByRole } = surface("day");
     expect(animated).toHaveLength(0);
 
-    act(() => getByLabelText("Month").click());
+    act(() => getByRole("radio", { name: "Month" }).click());
 
     // Two layers, each on transform and opacity: the cross-dissolve ran.
     expect(animated).toHaveLength(4);
@@ -125,8 +127,8 @@ describe("the horizon ladder drives the zoom", () => {
   });
 
   it("animates the other way when you lean in from the month", () => {
-    const { getByLabelText } = surface("month");
-    act(() => getByLabelText("Week").click());
+    const { getByRole } = surface("month");
+    act(() => getByRole("radio", { name: "Week" }).click());
 
     expect(scales()).toEqual([
       [1, 1.14], // the month rushes past you
@@ -136,22 +138,22 @@ describe("the horizon ladder drives the zoom", () => {
 
   it("animates on every rung of a chain, not just the first", () => {
     // Month → Week → Day, the walk that used to stop animating after one step.
-    const { getByLabelText } = surface("month");
-    act(() => getByLabelText("Week").click());
+    const { getByRole } = surface("month");
+    act(() => getByRole("radio", { name: "Week" }).click());
     expect(scales()).toHaveLength(2);
 
     animated = [];
-    act(() => getByLabelText("Day").click());
+    act(() => getByRole("radio", { name: "Day" }).click());
     expect(scales()).toHaveLength(2);
 
     animated = [];
-    act(() => getByLabelText("Year").click());
+    act(() => getByRole("radio", { name: "Year" }).click());
     expect(scales()).toHaveLength(2);
   });
 
   it("cross-fades between the week and the agenda without a scale", () => {
-    const { getByLabelText } = surface("week");
-    act(() => getByLabelText("Agenda — the next two weeks").click());
+    const { getByRole } = surface("week");
+    act(() => getByRole("radio", { name: "Agenda — the next two weeks" }).click());
 
     // Equal rungs: the fade runs, the scale stays at 1 both ways — a scale
     // would claim an altitude change that didn't happen.
@@ -162,21 +164,21 @@ describe("the horizon ladder drives the zoom", () => {
   });
 
   it("does nothing when you tap the rung you are already on", () => {
-    const { getByLabelText } = surface("week");
-    act(() => getByLabelText("Week").click());
+    const { getByRole } = surface("week");
+    act(() => getByRole("radio", { name: "Week" }).click());
     expect(animated).toHaveLength(0);
   });
 
   it("keeps the chrome mounted across a horizon change", () => {
     // The hero, the ladder and the seven columns are the fixed point the zoom
     // is measured against; if they remount, nothing was persistent.
-    const { getByLabelText, container } = surface("day");
-    const ladderBefore = getByLabelText("Month");
+    const { getByRole, container } = surface("day");
+    const ladderBefore = getByRole("radio", { name: "Month" });
     const chromeBefore = container.querySelector(".sticky");
 
-    act(() => getByLabelText("Month").click());
+    act(() => getByRole("radio", { name: "Month" }).click());
 
-    expect(getByLabelText("Month")).toBe(ladderBefore);
+    expect(getByRole("radio", { name: "Month" })).toBe(ladderBefore);
     expect(container.querySelector(".sticky")).toBe(chromeBefore);
   });
 });

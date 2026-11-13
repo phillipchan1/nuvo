@@ -30,6 +30,7 @@ import type { CalendarTap } from "./MobileEventSheet";
 import { buildDayPlan, dayKey, layoutDay, scrollParent, span, tapFor, type DayCtx } from "./dayPlan";
 import { CAL_EDGE, CAL_GUTTER, hourLabel } from "./CalendarChrome";
 import TimePager from "./TimePager";
+import { PlanRow, allDayTap, type ToggleTask } from "./planRows";
 // One spelling for what a block IS — shared with the Schedule and the ritual.
 import { blockDesignation } from "../../lib/slots";
 import { DAY_HOUR_PX, dateAtMinutes, minutesFromCanvasY, TAP_SNAP_MINS } from "./canvasTap";
@@ -47,6 +48,7 @@ export default function MobileDayView({
   onNext,
   onTapEvent,
   onTapTask,
+  onToggleTask,
   onTapEmpty,
   draft = null,
   defaultDurationMins = DEFAULT_DURATION_MINUTES,
@@ -61,6 +63,8 @@ export default function MobileDayView({
   onNext: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  /** Complete an anytime task from its row (D-111). */
+  onToggleTask?: ToggleTask;
   /** Empty-space tap — claim this time. Opens the one capture door, seeded. */
   onTapEmpty?: (start: Date) => void;
   /** The slot capture is currently claiming, drawn as a ghost on this day. */
@@ -158,49 +162,35 @@ export default function MobileDayView({
                 event (neutral) and your own anytime work (accent) in ONE row.
                 They were two stacked bands for a distinction the chip's colour
                 already carries. */}
-            {(plan.allDay.length > 0 || plan.anytime.length > 0) && (
-              <div className="flex flex-wrap gap-1.5 px-3 pb-1 pt-2">
-                {plan.allDay.map((e) => (
-                  <button
-                    key={e.id}
-                    onClick={() =>
-                      onTapEvent?.({
-                        kind: "event",
-                        id: e.id,
-                        providerEventId: e.provider_event_id,
-                        title: e.title || "Busy",
-                        start: new Date(e.start_at),
-                        end: new Date(e.end_at),
-                        allDay: true,
-                        location: e.location,
-                        self_rsvp: e.self_rsvp ?? null,
-                        accountId: e.account_id,
-                        calendarId: e.calendar_id,
-                      })
-                    }
-                    className="tap-h fast mono rounded-md border border-line bg-surface-2 px-2 py-1 text-label text-muted active:bg-surface"
-                  >
-                    {e.title || "Busy"}
-                  </button>
-                ))}
-                {plan.anytime.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => onTapTask?.(t.id)}
-                    className="tap-h fast rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-label font-medium text-accent active:bg-accent/15"
-                  >
-                    {t.title}
-                  </button>
-                ))}
-              </div>
-            )}
+            {plan.allDay.map((e) => (
+              <PlanRow
+                key={e.id}
+                time="all day"
+                mark={{ kind: "bar", color: "var(--event-default)" }}
+                title={e.title || "Busy"}
+                onOpen={() => onTapEvent?.(allDayTap(e))}
+              />
+            ))}
+            {plan.anytime.map((t) => (
+              <PlanRow
+                key={t.id}
+                time="anytime"
+                mark={{
+                  kind: "check",
+                  checked: false,
+                  label: `Complete ${t.title}`,
+                  onToggle: onToggleTask ? (next) => onToggleTask(t.id, next) : undefined,
+                }}
+                title={t.title}
+                onOpen={() => onTapTask?.(t.id)}
+              />
+            ))}
 
             {plan.isBygone &&
               plan.timed.length === 0 &&
               plan.allDay.length === 0 &&
               plan.anytime.length === 0 && (
-                <div className="px-3 pt-3 text-body text-muted">Nothing scheduled.</div>
+                <div className="ph-dayempty">Nothing scheduled</div>
               )}
 
             {/* The canvas — transparent on the paper; hairline hour rules carry
@@ -208,7 +198,7 @@ export default function MobileDayView({
             <div
               ref={canvasRef}
               data-day-canvas
-              className={`relative mb-8 mt-2 ${plan.isBygone ? "opacity-70" : ""}`}
+              className={`relative mb-8 mt-3 ${plan.isBygone ? "opacity-70" : ""}`}
               // The surface's one edge — see `CAL_EDGE`. The column this canvas
               // draws has to begin where the week row's lit cell does.
               style={{ height: y(winEnd) + 14, marginLeft: CAL_EDGE, marginRight: CAL_EDGE }}
@@ -216,13 +206,10 @@ export default function MobileDayView({
             >
               {hours.map((h) => (
                 <div key={h} className="absolute inset-x-0" style={{ top: y(h * 60) }}>
-                  <span
-                    className="mono absolute -top-[0.55em] left-0 pr-1.5 text-right text-micro text-muted"
-                    style={{ width: CAL_GUTTER - 4 }}
-                  >
+                  <span className="ph-hour" style={{ width: CAL_GUTTER - 6 }}>
                     {hourLabel(h)}
                   </span>
-                  <div className="absolute right-0 border-t border-line" style={{ left: CAL_GUTTER }} />
+                  <div className="ph-hour-rule" style={{ left: CAL_GUTTER }} />
                 </div>
               ))}
 
@@ -239,15 +226,8 @@ export default function MobileDayView({
                       className="pointer-events-none absolute flex items-center gap-1.5"
                       style={{ top: y(gs), height: h, left: CAL_GUTTER + 2 }}
                     >
-                      <span
-                        className="h-full w-[3px] rounded-full"
-                        style={{ background: "color-mix(in srgb, var(--slot) 55%, transparent)" }}
-                      />
-                      {h >= 22 && (
-                        <span className="mono text-micro font-medium" style={{ color: "var(--slot)" }}>
-                          {fmtMins(g.mins)}
-                        </span>
-                      )}
+                      <span className="ph-gap-bar" />
+                      {h >= 22 && <span className="ph-gap-len">{fmtMins(g.mins)}</span>}
                     </div>
                   );
                 })}
@@ -258,7 +238,6 @@ export default function MobileDayView({
                 const b = l.item;
                 const height = Math.max(y(l.endMin) - y(l.startMin), MIN_ITEM_PX);
                 const compact = height < 34;
-                const isBlock = b.kind === "block";
                 const isSlot = b.kind === "slot";
                 // Room to peek at what's inside, past the title/time/badge rows.
                 const showChildren = isSlot && height > 58 && (b.children?.length ?? 0) > 0;
@@ -268,121 +247,49 @@ export default function MobileDayView({
                   <button
                     key={i}
                     data-cal-item
+                    data-kind={b.kind}
+                    data-done={b.done || undefined}
+                    data-compact={compact || undefined}
                     onClick={() => onTapEvent?.(tap)}
-                    className="fast absolute rounded-md border text-left after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[''] active:opacity-80"
+                    className="ph-blk"
                     style={{
                       top: y(l.startMin),
                       height,
                       left: `calc(${CAL_GUTTER + 2}px + (${itemArea} - 2px) * ${l.col / l.cols})`,
                       width: `calc((${itemArea} - 2px) * ${1 / l.cols} - ${l.cols > 1 ? 2 : 0}px)`,
-                      background: isSlot
-                        ? "color-mix(in srgb, var(--slot) 28%, var(--surface))"
-                        : isBlock
-                          ? b.done
-                            ? "color-mix(in srgb, var(--accent) 5%, transparent)"
-                            : "var(--accent-soft)"
-                          : "color-mix(in srgb, var(--ink) 7%, transparent)",
-                      borderColor: isSlot
-                        ? "color-mix(in srgb, var(--slot) 65%, var(--line))"
-                        : isBlock
-                          ? "color-mix(in srgb, var(--accent) 30%, transparent)"
-                          : "var(--line)",
-                      borderStyle: isSlot ? "dashed" : "solid",
-                      borderWidth: isSlot ? 1.5 : 1,
                     }}
                   >
-                    {isBlock && !b.done && (
-                      <span className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full bg-accent" />
-                    )}
-                    {isSlot && (
-                      // A slot is a container, not a single item — the bar reads
-                      // wider than a plain task/event's, and doubles for a
-                      // project-backed one (same "significant work" cue the
-                      // desktop CalendarPane gives isProject blocks).
-                      <span
-                        className="absolute bottom-[3px] left-[3px] top-[3px] rounded-full"
-                        style={{
-                          width: isProjectSlot ? 4 : 3,
-                          background: "var(--slot)",
-                          boxShadow: isProjectSlot
-                            ? "inset 2px 0 0 color-mix(in srgb, var(--slot) 45%, transparent)"
-                            : undefined,
-                        }}
-                      />
-                    )}
-                    <div
-                      className={`h-full min-w-0 overflow-hidden rounded-[5px] ${
-                        isBlock || isSlot ? "pl-2.5" : "pl-2"
-                      } pr-1.5 ${compact ? "flex items-center gap-1.5" : "py-1"}`}
-                    >
+                    <div className="ph-blk-body">
                       {/* The block says what it IS, in words — the same
                           designation the desktop grid and Plan the week print
-                          over a sitting (`blockDesignation`). The phone had the
-                          desk's `▸`, which is a glyph you have to be taught; a
-                          tall enough sitting gets the eyebrow, a short one keeps
-                          the mark. */}
+                          over a sitting (`blockDesignation`). A tall enough
+                          sitting gets it as a quiet first line. */}
                       {isProjectSlot && !compact && (
-                        <div
-                          className="truncate text-micro font-semibold uppercase leading-none"
-                          style={{ color: "var(--slot)", letterSpacing: "0.06em" }}
-                        >
-                          {blockDesignation({ kind: "project" })}
-                        </div>
+                        <div className="ph-blk-kind">{blockDesignation({ kind: "project" })}</div>
                       )}
-                      <div
-                        className={`flex min-w-0 items-center gap-1 ${
-                          isProjectSlot && !compact ? "mt-[3px]" : ""
-                        }`}
-                      >
-                        <div
-                          className={`min-w-0 truncate ${compact ? "text-meta" : "text-label"} font-medium ${
-                            b.done ? "text-muted line-through" : "text-ink"
-                          }`}
-                        >
-                          {b.projectBacked && !(isProjectSlot && !compact)
-                            ? `▸ ${b.title || "Untitled"}`
-                            : b.title || "Untitled"}
-                        </div>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <div className="ph-blk-title">{b.title || "Untitled"}</div>
                         {isSlot && (b.childCount ?? 0) > 0 && (
-                          <span
-                            className="mono ml-auto shrink-0 rounded-full px-1 text-micro leading-snug text-muted"
-                            style={{ background: "var(--bg)" }}
-                          >
+                          <span className="ph-blk-count">
                             {b.doneCount}/{b.childCount}
                           </span>
                         )}
                       </div>
-                      {/* Where — and ONLY where. This line used to lead with
-                          `9:00 AM–9:30 AM`, on a canvas whose entire premise is
-                          that a commitment's top edge is its start and its
-                          height is its length, one hour rule away from a gutter
-                          already labelled `9am`. So it restated the two facts
-                          the geometry states best, in a second spelling, on
-                          every block. The place a meeting happens is the one
-                          thing the canvas cannot draw; exact minutes are a tap
-                          away in the sheet. */}
-                      {!compact && b.location && (
-                        <div className="truncate text-micro text-muted">{b.location}</div>
-                      )}
+                      {/* Where — and ONLY where. The block's top edge is its
+                          start and its height is its length, one hour rule
+                          away from a gutter already labelled `9am`; the place a
+                          meeting happens is the one thing the canvas cannot
+                          draw. Exact minutes are a tap away in the sheet. */}
+                      {!compact && b.location && <div className="ph-blk-where">{b.location}</div>}
                       {showChildren && (
                         <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
                           {b.children!.slice(0, 3).map((c, ci) => (
-                            <div key={ci} className="flex items-center gap-1.5 text-micro leading-tight">
-                              <span
-                                className="h-[3px] w-[3px] shrink-0 rounded-full"
-                                style={{ background: c.done ? "var(--muted)" : "var(--slot)" }}
-                              />
-                              <span
-                                className={`truncate ${c.done ? "text-muted line-through opacity-60" : "text-muted"}`}
-                              >
-                                {c.title}
-                              </span>
+                            <div key={ci} className="ph-blk-child" data-done={c.done || undefined}>
+                              {c.title}
                             </div>
                           ))}
                           {b.children!.length > 3 && (
-                            <span className="pl-[9px] text-micro text-muted">
-                              +{b.children!.length - 3} more
-                            </span>
+                            <span className="ph-blk-where">{b.children!.length - 3} more</span>
                           )}
                         </div>
                       )}
@@ -399,19 +306,16 @@ export default function MobileDayView({
                 <div
                   data-day-draft
                   aria-hidden
-                  className="pointer-events-none absolute rounded-md border border-dashed"
+                  className="ph-draft pointer-events-none absolute"
                   style={{
                     top: y(ghostMin),
                     height: Math.max((ghostDur * HOUR_PX) / 60, MIN_ITEM_PX),
                     left: CAL_GUTTER + 2,
                     right: 0,
-                    background: "color-mix(in srgb, var(--accent) 12%, transparent)",
-                    borderColor: "color-mix(in srgb, var(--accent) 45%, var(--line))",
                   }}
                 >
-                  <span className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full bg-accent" />
                   {ghostDur * HOUR_PX >= 34 * 60 && (
-                    <span className="mono block truncate pl-2.5 pr-1.5 pt-1 text-micro font-medium text-accent">
+                    <span className="ph-draft-span">
                       {span(dateAtMinutes(selected, ghostMin), dateAtMinutes(selected, ghostMin + ghostDur))}
                     </span>
                   )}

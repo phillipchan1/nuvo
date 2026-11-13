@@ -48,13 +48,13 @@ export default function MobileYearView({
             `min-[560px]:grid-cols-3` answered for the browser while the phone
             frame was still two thumbs wide. */}
         <div className="@container">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 pt-2 @[560px]:grid-cols-3">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-3 px-2.5 pb-6 pt-3 @[560px]:grid-cols-3">
             {months.map((m, i) => (
               <button
                 key={i}
                 onClick={() => onPickMonth(startOfMonth(m))}
                 aria-label={format(m, "MMMM yyyy")}
-                className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
+                className="row-hover min-w-0 rounded-[var(--r-card)] p-1.5 text-left"
               >
                 <YearMonth
                   month={m}

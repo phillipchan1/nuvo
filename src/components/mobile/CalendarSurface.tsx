@@ -55,6 +55,7 @@ import MobileDayView from "./MobileDayView";
 import MobileWeekView from "./MobileWeekView";
 import MobileYearView from "./MobileYearView";
 import MobileWeekCrown from "./MobileWeekCrown";
+import type { ToggleTask } from "./planRows";
 
 const MODE_KEY = "nuvo-mobile-cal-mode";
 /** Days of history the agenda's "Earlier days" control reveals per tap. */
@@ -135,6 +136,7 @@ export default function CalendarSurface({
   onWindowChange,
   onTapEvent,
   onTapTask,
+  onToggleTask,
   onTapEmpty,
   draft,
   defaultDurationMins,
@@ -154,6 +156,8 @@ export default function CalendarSurface({
   onWindowChange?: (w: CalWindow) => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  /** Complete / reopen a task from a list row — an act lives everywhere (D-111). */
+  onToggleTask?: ToggleTask;
   /** Empty-space tap on the Day canvas — claim that time (D-130). */
   onTapEmpty?: (start: Date) => void;
   draft?: { start: Date; durationMinutes: number } | null;
@@ -486,6 +490,7 @@ export default function CalendarSurface({
           onFlickUp={() => openDay(selected)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
+          onToggleTask={onToggleTask}
         />
       );
     }
@@ -517,6 +522,7 @@ export default function CalendarSurface({
           onNext={() => travel(1)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
+          onToggleTask={onToggleTask}
           onTapEmpty={onTapEmpty}
           draft={draft}
           defaultDurationMins={defaultDurationMins}
@@ -534,6 +540,7 @@ export default function CalendarSurface({
         onLoadEarlier={() => move({ pastDays: pastDays + PAST_STEP })}
         onTapEvent={onTapEvent}
         onTapTask={onTapTask}
+        onToggleTask={onToggleTask}
       />
     );
   };
@@ -543,7 +550,7 @@ export default function CalendarSurface({
       {/* ── the chrome: mounted once, never unmounted by a horizon change ──── */}
       <div
         ref={chromeRef}
-        className="sticky top-0 z-30 border-b border-line bg-surface/90 backdrop-blur"
+        className="ph-cal-chrome sticky top-0 z-30"
       >
         <CalendarHeader
           horizon={mode}

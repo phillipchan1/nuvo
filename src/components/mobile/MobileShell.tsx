@@ -611,6 +611,13 @@ export default function MobileShell() {
             now={now}
             onTapEvent={openTap}
             onTapTask={(id) => setTaskId(id)}
+            // Ticking a task from a list row is the same act as anywhere else.
+            onToggleTask={(id, done) => {
+              const t = taskById.get(id);
+              if (!t) return;
+              if (done) mutations.complete(t);
+              else mutations.uncomplete(t);
+            }}
             onTapEmpty={(start) =>
               setCapture({
                 kind: "task",

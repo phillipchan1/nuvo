@@ -38,6 +38,7 @@
 
 import { useState } from "react";
 import { Icon } from "../Icon";
+import { Button, Chip } from "../kit";
 import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
@@ -143,9 +144,7 @@ export default function MobileWeekCrown({
           : setOpen(true);
     return (
       <section
-        className={`border-b border-line ${
-          anchored ? "sticky z-20 bg-surface/90 backdrop-blur" : ""
-        }`}
+        className={`ph-crown ${anchored ? "sticky z-20" : ""}`}
         // Parks under the chrome rather than at the viewport top: the two are
         // one stack, and the strip is the lower half of it.
         style={anchored ? { top: "var(--cal-chrome, 0px)" } : undefined}
@@ -160,11 +159,11 @@ export default function MobileWeekCrown({
                   looseCount > 0 ? `, ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time yet` : ""
                 }. ${expandable ? "Show this week's projects" : "Open the week"}`
           }
-          className="tap-h fast flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2"
+          className="ph-crown-strip row-hover"
         >
-          <span className="section-label !p-0 shrink-0">This week</span>
+          <span className="ph-crown-name">This week</span>
           {total === 0 ? (
-            <span className="truncate text-body text-muted">nothing on it yet</span>
+            <span className="truncate text-body text-muted">Nothing on it yet</span>
           ) : (
             <SlatePips rows={rows} />
           )}
@@ -180,15 +179,15 @@ export default function MobileWeekCrown({
           )}
           {/* Pointing right: the one gesture this row offers is "open me" —
               into the rows, or into the ritual when the week is empty. */}
-          <Icon name="chevron-down" size={13} className="-rotate-90 shrink-0 text-muted" />
+          <Icon name="chevron-right" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
       </section>
     );
   }
 
   return (
-    <section className="border-b border-line px-3 pb-2 pt-3">
-      <div className="flex items-start gap-2">
+    <section className="ph-crown px-4 pb-2 pt-2">
+      <div className="flex items-center gap-2">
         {/* Open: the span it covers, and the door. No scoreboard sentence — the
             rows ARE the scoreboard once you can see them, and a header that
             restates them in words is the page talking over itself. */}
@@ -196,25 +195,20 @@ export default function MobileWeekCrown({
           onClick={() => setOpen(false)}
           aria-expanded
           aria-label={`This week, ${landed} of ${total} landed. Hide this week's projects`}
-          className="tap-h fast -ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left active:bg-surface-2"
+          className="tap-h -ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-[var(--r-ctl)] px-1 text-left"
         >
-          <span className="section-label !p-0 truncate" style={{ color: "var(--accent)" }}>
-            This week · {weekLabel}
-          </span>
-          <Icon name="chevron-down" size={14} className="fast shrink-0 text-muted" />
+          <span className="ph-crown-name truncate">This week</span>
+          <span className="truncate text-caption tabular-nums text-muted">{weekLabel}</span>
+          <Icon name="chevron-down" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
 
-        <button
-          onClick={openDoor}
-          className="tap-h fast mt-0.5 flex shrink-0 items-center rounded-full px-3 py-1.5 text-caption font-medium"
-          style={{ color: "var(--accent)", background: "var(--accent-soft)" }}
-        >
+        <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
           {action}
-        </button>
+        </Button>
       </div>
 
       {open && total > 0 && (
-        <ul className="mt-1.5 flex flex-col">
+        <ul className="mt-1 flex flex-col">
           {rows.map((row) => (
             <CrownRow
               key={row.rock.id}
@@ -272,15 +266,15 @@ function CrownRow({
   const done = shipped || row.state === "landed";
 
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li className="border-t border-[var(--line-1)]">
       <div className="flex items-center gap-1">
         <button
           onClick={onOpen}
-          className="tap-h fast flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left active:opacity-60"
+          className="flex min-h-12 min-w-0 flex-1 items-center gap-2.5 text-left"
         >
           {/* The domain's hue — identity, filled once the week has a verdict. */}
           <span
-            className="h-2.5 w-2.5 shrink-0 rounded-full border"
+            className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px]"
             style={{ borderColor: color, background: done ? color : "transparent" }}
             aria-hidden
           />
@@ -289,33 +283,28 @@ function CrownRow({
               than its own children, an inversion introduced the moment the crown
               started rendering real rows. Same size, more weight: the name
               outranks its work by weight and position, never by size. */}
-          <span className={`min-w-0 flex-1 truncate text-head font-semibold ${done ? "text-muted line-through" : "text-ink"}`}>
+          <span className={`min-w-0 flex-1 truncate text-head font-semibold ${done ? "text-[var(--faint)] line-through" : "text-ink"}`}>
             {row.title}
           </span>
 
           {shipped ? (
-            <span
-              className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
-              style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
-            >
-              shipped
-            </span>
+            <Chip tone="ok">Shipped</Chip>
           ) : done ? (
             // "landed" is already drawn — filled pip, struck title. The only
             // thing the drawing can't say is that the PROJECT rolls on past the
             // week's verdict, so that is the only word left.
-            continues ? <span className="mono shrink-0 text-micro text-muted">continues</span> : null
+            continues ? <span className="shrink-0 text-caption text-muted">Continues</span> : null
           ) : row.state === "ready-to-ship" ? (
             // A statement, not a button: shipping is the record sheet's act, and
             // a second ship path is how the two shells drift.
-            <span className="mono shrink-0 text-micro font-medium text-accent">ready to ship</span>
+            <Chip tone="accent">Ready to ship</Chip>
           ) : (
             <span className="flex shrink-0 items-center gap-1.5">
               {/* Carried — the same words the rail crown uses (D-108), because
                   the phone inherited the carry the moment the slate became a
                   read model. */}
               {rolls > 0 && (
-                <span className="mono text-micro text-muted" aria-label={carryMark(rolls).title}>
+                <span className="text-caption tabular-nums text-muted" aria-label={carryMark(rolls).title}>
                   {carryMark(rolls).text}
                 </span>
               )}
@@ -349,7 +338,7 @@ function CrownRow({
             // 44px in BOTH axes. `tap-h` only guarantees the height; dropping
             // the word "all" from the mark shrank the target to 33px wide, which
             // is how a tidy-up quietly becomes a tap-target regression.
-            className="tap-h fast flex min-w-[44px] shrink-0 items-center justify-center px-1"
+            className="flex min-h-12 min-w-[44px] shrink-0 items-center justify-center px-1"
           >
             {/* A fully-placed project now says NOTHING but the chevron — the
                 same silence the rail keeps (P9, D-111). It used to say "all",
@@ -360,10 +349,10 @@ function CrownRow({
                 D-060 forbids letting the loose half be the whole answer, and
                 it is the visible WORD that goes, not the fact. */}
             <span
-              className="mono flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro"
+              className="flex items-center gap-1 rounded-[var(--r-chip)] px-1.5 py-0.5 text-caption font-medium tabular-nums"
               style={
                 loose.length === 0
-                  ? { color: "var(--muted)" }
+                  ? { color: "var(--faint)" }
                   : { color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)" }
               }
             >
@@ -373,14 +362,14 @@ function CrownRow({
                   {loose.length}
                 </>
               )}
-              <Icon name={expanded ? "chevron-down" : "chevron-right"} size={13} />
+              <Icon name={expanded ? "chevron-down" : "chevron-right"} size={16} />
             </span>
           </button>
         )}
       </div>
 
       {expanded && canExpand && (
-        <div className="mb-1.5 ml-4 border-l border-line pl-1">
+        <div className="mb-2 ml-1 border-l border-[var(--line-2)] pl-2">
           {/* The same `TaskRow` the rail's crown and the phone's own task list
               use — so a project's piece can be ticked here, which it could not
               be on either shell before D-111. Placed first (the clock orders
@@ -401,13 +390,11 @@ function CrownRow({
                         ? `${fmtDayTime(p.startISO)}, inside ${p.slotTitle} — open that day`
                         : `${fmtDayTime(p.startISO)} — open that day`
                     }
-                    className="tap-h mono fast flex shrink-0 items-center gap-0.5 text-micro"
-                    style={{ color }}
+                    className="tap-h flex shrink-0 items-center gap-0.5 text-caption font-medium tabular-nums"
+                    style={{ color: "var(--ink-2)" }}
                   >
                     {fmtDayTime(p.startISO)}
-                    <span className="opacity-55" aria-hidden>
-                      ›
-                    </span>
+                    <Icon name="chevron-right" size={13} style={{ color: "var(--faint)" }} />
                   </button>
                 ),
               })}

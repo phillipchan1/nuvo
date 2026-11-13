@@ -40,6 +40,7 @@ import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 import type { CalendarTap } from "./MobileEventSheet";
 import { DAY_MS, type DayCtx } from "./dayPlan";
 import type { CalHero, CalHorizon } from "./CalendarChrome";
+import type { ToggleTask } from "./planRows";
 import CalendarSurface, {
   initialCalendarWindow,
   stepCalendarWindow,
@@ -102,6 +103,7 @@ export default function MobileCalendar({
   now,
   onTapEvent,
   onTapTask,
+  onToggleTask,
   onTapEmpty,
   draft,
   defaultDurationMins,
@@ -115,6 +117,8 @@ export default function MobileCalendar({
   onTapEvent?: (tap: CalendarTap) => void;
   /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
   onTapTask?: (taskId: string) => void;
+  /** Complete / reopen a task from a list row (agenda, month preview). */
+  onToggleTask?: ToggleTask;
   onTapEmpty?: (start: Date) => void;
   draft?: { start: Date; durationMinutes: number } | null;
   defaultDurationMins?: number;
@@ -237,6 +241,7 @@ export default function MobileCalendar({
       onWindowChange={setWin}
       onTapEvent={onTapEvent}
       onTapTask={onTapTask}
+      onToggleTask={onToggleTask}
       onTapEmpty={onTapEmpty}
       draft={draft}
       defaultDurationMins={defaultDurationMins}

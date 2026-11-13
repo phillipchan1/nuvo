@@ -226,6 +226,7 @@ function Frame({ label, mode, solo = false }: { label: string; mode: CalHorizon;
           weatherIndex={null}
           initialMode={mode}
           onHero={setHero}
+          onToggleTask={() => {}}
           onTapEmpty={mode === "day" || mode === "week" ? setClaimed : undefined}
           draft={claimed ? { start: claimed, durationMinutes: 30 } : null}
         />
