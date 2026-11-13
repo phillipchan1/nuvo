@@ -6810,6 +6810,61 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-207 · 2026-11-13 · One crown, one line: the door to Get ready is a sentence, on every
+planner page.** *(Asked by the operator: "a system that proactively tells me when something is
+not aligned… a task scheduled earlier for today that I didn't finish… I think we built it
+recently, but I don't know if I see it… intelligence in a fixed place so that we know where to
+look… schedule, projects, and domains have their own versions… some haptic animation to show how
+life has improved… help without being annoying"; then "plan the week is not repair", "this will
+work for initiatives too?", and, choosing between this and D-206's button, "line replaces Get
+ready". Spec: [`rail-line.md`](../rail-line.md).)*
+
+→ **Finding first.** D-206 built the remedy, but its door is a button that says nothing ("Get
+ready ›"), and the fact that should make you press it lives elsewhere. The repair line shows only
+when something broke; the decks keep their own gap line; the Spine's cues say a third thing. The
+code also keeps two clocks for one fact: Repair calls a block missed at its end, Overdue an hour
+after (`OVERDUE_GRACE_MS`). And `lib/haptics` is a silent no-op on iOS.
+
+→ **The line replaces the Get ready button.** Every planner page opens its rail with one kit
+part, `RailCrown`: eyebrow · one number · one track (D-206's) · **the line**. The line is the
+stack's first card in words, with where it goes: "◌ 2 blocks today didn't happen · Get ready ›".
+`readyCards` ranks both the line and the stack, so they can't disagree. Press it, and the rail
+becomes the stack. Nothing to say → no line, and nothing to press. `RepairLine` and the decks' gap
+line fold into it.
+
+→ **Repair is not Plan.** The stack orders the kinds, worst first, and each card opens its own full
+mode, but they never merge into one walk:
+- **Repair** looks back (`--warn`).
+- **Plan the week** looks forward and starts by your choice.
+- **Groom** looks further, on the decks.
+- **Row offer** is a D-205 chip.
+- **Read** reports and moves nothing (Domains).
+
+→ **Every planner page, initiatives included.** The project deck's stack is no outcome · thin path
+· a crowded week. The initiative deck's is at risk (`--warn`) · no OKRs · needs shaping. Domains
+gets a Read line only; whether it gets a rail is open (a new place, P10).
+
+→ **The landing is D-202's Reach on every card on every page.** On the phone add a success haptic,
+**which needs a native iOS path first.** No tally (N-04).
+
+→ **Also:**
+- **The frame:** the decks' `PageBar` starts at the grid, like the Schedule's, so the rail owns its
+  corner.
+- **One missed rule in the kernel** (`isMissed`): shown 15 minutes after the end, or at the next
+  block, whichever comes first (feel-tested).
+- **"Leave it where it is"** moves from `localStorage` to the account.
+
+→ **Anchor.** **A2 · D4 · W2 · W3 · Q3 · Q4**, with **W5 · Q7** for the Read. Story step: land.
+Strains **P9** (a line always present), held by: only while true, a fact and a destination, never
+counts up, nothing opens but your press. Strains **P8** until the Spine's cue words go (open). Four
+no's: no pool, no new noun (*Get ready*, *Repair*, *Groom*, *Nuvo's read* exist), nothing on an
+empty account, nothing one account's. The objection, led with: a Domains rail is a new place, left
+open.
+
+*Status: decided by Phil 2026-11-13, after the prototype. Nothing built. **Amends D-206**: its
+door, not its stack. **Amends D-204**: the repair line folds into the line. Open: a Domains rail,
+the grace, the Spine's cues, and which deck cards ship first.*
+
 **D-206 · 2026-11-13 · The week is one track, and Get ready turns the rail into a stack of cards
 that take this screen to ready.** *(Asked by the operator on the preview: "intelligence should
 proactively help me get everything on this screen to health", "the metrics are hard to read… 3–5
@@ -6843,6 +6898,8 @@ shows only its destination ("→ Frontier Church"); the Schedule's **Rhythm** bu
 → **Anchor.** W2 · W3 · A1 · A2 · Q4, one walk. Strains **P4** (a screen of fixes can read as a
 debt list: no total, no red, a cap of 5 with refill) and **P9** (held by Momentum's laws). The
 rest state keeps D-205's budget.
+
+*Its door is amended by D-207: the crown's line, not a button, opens the stack.*
 
 *Status: built 2026-11-13 on `worktree-intelligence-readings`. The week track (`lib/weekTrack.ts`,
 `WeekTrack`; the kernel's `ladderedProjectIds` / `doneTaskSignificance`; with no initiatives done is

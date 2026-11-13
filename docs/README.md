@@ -56,6 +56,7 @@ Statuses are owned by each doc's own header.
 - [`intelligence-home.md`](./intelligence-home.md) — the Reach: a kept placement advances the project it serves (D-202); where offers live is open (Q-16).
 - [`outcome-readings.md`](./outcome-readings.md) — the four readings (Ready → Placed → Done → Significant) at every altitude, and the one motion each act gets (proposed; D-203).
 - [`rail-modes.md`](./rail-modes.md) — the rail's three modes (Rest · Plan · Repair) and acts named by where the thing goes (proposed; D-204).
+- [`rail-line.md`](./rail-line.md) — one crown on every planner page, whose last line is the door to Get ready; the kinds of offer (Repair · Plan · Groom · row offer · Read) and the landing that shows what improved (decided; D-207).
 - [`native-feel/`](./native-feel/00-summary.md): **native feel.** The web-isms reset, the interaction primitives (menus, drag cancel, gestures, haptics, tooltips) and what is left for a decision.
 - [`marquee.md`](./marquee.md) — Nuvo shows an answer as well as telling it.
 - [`orientation.md`](./orientation.md) — first run forks: be shown, or be walked through.

@@ -1,6 +1,7 @@
 # One home for Nuvo's suggestions — and the landing that reaches the outcome
 
 **Status: §5 (the Reach) built as D-202 on `worktree-intelligence-readings`; see D-202 for where it fires.
+D-207 ([`rail-line.md`](./rail-line.md)) extends it to every Get ready card on every planner page.
 §1–§3 (where offers live) were settled by D-205: on the left, on the rows; the right panel
 retires. That supersedes D-198 (offers in the right-hand panel, shipped the same day) and D-201's
 "the panel stays". §2's "asked" column and §4 are history. The readings the Reach moves are specced in

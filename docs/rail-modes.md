@@ -1,6 +1,7 @@
 # The rail — three modes, and acts that say where things go
 
-**Status: built (2026-11-13, D-204) on `worktree-intelligence-readings`, except §3's inline chips, which wait on Q-16. Deviations are listed in D-204.** Prototype (private, example data):
+**Status: built (2026-11-13, D-204) on `worktree-intelligence-readings`, except §3's inline chips, which wait on Q-16. Deviations are listed in D-204. Amended by D-207 ([`rail-line.md`](./rail-line.md)): the
+repair line folds into the crown's one line, which opens Get ready.** Prototype (private, example data):
 [Nuvo Rail Modes](https://claude.ai/artifact/WVnQT5WqK6JzfxzxSxG71B): Rest, Plan and Repair on
 the desktop Schedule, with a switch to compare today's labels.
 
