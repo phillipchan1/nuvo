@@ -9,8 +9,10 @@
 //
 // Everything degrades: an action with no ref (a Google write, a pure query)
 // falls back to the summary line it always was.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+//
+// Drawn with the kit (D-190): a record is a kit Card, its facts are kit Chips,
+// its undo a ghost Button.
+import { useState } from "react";
 import { useAgentUndo, useEventRecord, useSlotRecord, useTaskRecord } from "../hooks/useAgentRecords";
 import { useCalendarAccounts, useExternalEventMutations } from "../hooks/useCalendar";
 import { useSettings } from "../hooks/useSettings";
@@ -20,6 +22,10 @@ import { isWritableAccount, providerLabel, writableCalendarTargets } from "../li
 import { fmtDayLabel, fmtDuration, fmtTime } from "../lib/dates";
 import type { AgentAction, AgentVerb } from "../lib/agentTypes";
 import type { ExternalEvent, Task } from "../lib/types";
+import { useIsMobile } from "../hooks/useIsMobile";
+import Sheet from "./mobile/Sheet";
+import { Icon } from "./Icon";
+import { Button, Chip, Dot as KitDot, Menu, MenuItem, MenuLabel } from "./kit";
 
 const VERB_LABEL: Record<AgentVerb, string> = {
   created: "Added",
@@ -61,7 +67,7 @@ export default function AgentActions({ actions }: { actions: AgentAction[] }) {
   }
 
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="agent-cards">
       {[...groups.entries()].map(([verb, group]) =>
         group.length >= STACK_AT ? (
           <ActionStack key={verb} verb={verb as AgentVerb} actions={group} />
@@ -71,10 +77,11 @@ export default function AgentActions({ actions }: { actions: AgentAction[] }) {
       )}
 
       {plain.length > 0 && (
-        <ul className={cards.length ? "space-y-1 border-t border-line/50 pt-2" : "space-y-1"}>
+        <ul className="agent-plain" data-after={cards.length ? "" : undefined}>
           {plain.map((a) => (
-            <li key={a.summary} className="mono text-meta text-muted">
-              ✓ {a.summary}
+            <li key={a.summary}>
+              <Icon name="check" size={12} />
+              {a.summary}
             </li>
           ))}
         </ul>
@@ -193,51 +200,15 @@ function EventRecord({ action, variant }: { action: AgentAction; variant: Varian
 
 /** Which calendar the event landed on — and one tap to put it somewhere else.
  *  Only the calendars still on the user's board are offered: the same rule the
- *  agent now follows, so the fix can't land the event back out of sight. */
+ *  agent now follows, so the fix can't land the event back out of sight. A
+ *  kit Menu at a desk; a bottom Sheet on a phone (golden rule 3). */
 function CalendarChip({ event, label }: { event: ExternalEvent; label?: string }) {
   const [open, setOpen] = useState(false);
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
-  const btn = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
+  const isMobile = useIsMobile();
   const { data: accounts } = useCalendarAccounts();
   const { settings } = useSettings();
   const { moveEventToCalendar } = useExternalEventMutations();
-
-  // The card is glass, and backdrop-filter makes it a stacking context — a menu
-  // nested inside it can't rise above the chat's later siblings no matter its
-  // z-index. So it renders to the body, like every other popover in the app.
-  const place = useCallback(() => {
-    const r = btn.current?.getBoundingClientRect();
-    if (!r) return;
-    setAt({
-      top: Math.min(r.bottom + 4, window.innerHeight - 240),
-      left: Math.min(r.left, window.innerWidth - 200),
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (open) place();
-  }, [open, place]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (!btn.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", place);
-    // The chat scrolls under a fixed menu — follow it rather than drift off it.
-    window.addEventListener("scroll", place, true);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [open, place]);
 
   const hidden = new Set(settings?.hidden_calendar_ids ?? []);
   const groups = writableCalendarTargets(accounts ?? [], event.calendar_id)
@@ -251,68 +222,89 @@ function CalendarChip({ event, label }: { event: ExternalEvent; label?: string }
 
   // Nowhere else to put it — the calendar is just a fact again.
   if (!label || !writable || count < 2) {
-    return label ? <span className={CHIP}>{label}</span> : null;
+    return label ? <Chip>{label}</Chip> : null;
   }
+
+  const pick = (accountId: string, calendarId: string, current: boolean) => {
+    setOpen(false);
+    if (current) return;
+    moveEventToCalendar({ id: event.id, targetAccountId: accountId, targetCalendarId: calendarId });
+  };
 
   return (
     <>
+      {/* the kit chip's own markup — ChipButton takes no ref, and the menu
+          needs its anchor */}
       <button
-        ref={btn}
+        ref={setBtn}
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className={`fast tap ${CHIP} hover:border-accent hover:text-accent ${open ? "border-accent text-accent" : ""}`}
+        aria-haspopup="menu"
+        className="k-chip tap-h"
+        data-open={open || undefined}
       >
-        {label}
-        <span aria-hidden className="ml-1 opacity-60">▾</span>
+        <span>{label}</span>
+        <Icon name="chevron-down" size={11} />
       </button>
 
-      {open && at && createPortal(
-        <div
-          ref={menu}
-          className="pop-in fixed z-[60] max-h-[230px] min-w-[190px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
-          style={{ top: at.top, left: at.left, boxShadow: "var(--shadow-3)" }}
-        >
+      {isMobile ? (
+        open && (
+          <Sheet onClose={() => setOpen(false)} title="Move to calendar">
+            <div className="agent-sheet-list pb-safe">
+              {groups.map((g) => (
+                <div key={g.accountId}>
+                  <div className="k-mlabel">
+                    {g.accountLabel} · {providerLabel(g.provider)}
+                  </div>
+                  {g.calendars.map((c) => {
+                    const current = g.accountId === event.account_id && c.id === event.calendar_id;
+                    return (
+                      <button
+                        key={`${g.accountId}:${c.id}`}
+                        type="button"
+                        className="agent-sheet-row"
+                        aria-pressed={current}
+                        onClick={() => pick(g.accountId, c.id, current)}
+                      >
+                        <KitDot color={c.color ?? "var(--muted)"} shape="round" />
+                        <span>{c.summary}</span>
+                        {current && <Icon name="check" size={16} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </Sheet>
+        )
+      ) : (
+        <Menu anchor={btn} open={open} onClose={() => setOpen(false)} label="Move to calendar">
           {groups.map((g) => (
             <div key={g.accountId}>
-              <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+              <MenuLabel>
                 {g.accountLabel} · {providerLabel(g.provider)}
-              </div>
+              </MenuLabel>
               {g.calendars.map((c) => {
                 const current = g.accountId === event.account_id && c.id === event.calendar_id;
                 return (
-                  <button
+                  <MenuItem
                     key={`${g.accountId}:${c.id}`}
-                    onClick={() => {
-                      setOpen(false);
-                      if (current) return;
-                      moveEventToCalendar({
-                        id: event.id,
-                        targetAccountId: g.accountId,
-                        targetCalendarId: c.id,
-                      });
-                    }}
-                    className="fast tap flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-accent-soft"
+                    icon={<KitDot color={c.color ?? "var(--muted)"} shape="round" />}
+                    checked={current}
+                    onSelect={() => pick(g.accountId, c.id, current)}
                   >
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: c.color ?? "var(--muted)" }}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{c.summary}</span>
-                    {current && <span className="shrink-0 text-accent">✓</span>}
-                  </button>
+                    {c.summary}
+                  </MenuItem>
                 );
               })}
             </div>
           ))}
-        </div>,
-        document.body,
+        </Menu>
       )}
     </>
   );
 }
-
-const CHIP =
-  "inline-flex items-center truncate rounded-full border border-line/70 px-2 py-0.5 text-micro text-muted";
 
 /** The calendar date an instant falls on, in the viewer's zone — the same zone
  *  `fmtTime` renders in, so the day chip and the time chip can't disagree. */
@@ -367,23 +359,23 @@ function Tombstone({
 
   if (variant === "row") {
     return (
-      <div className="flex items-center gap-2 py-1">
-        <span className="text-micro text-muted">✕</span>
-        <span className="min-w-0 flex-1 truncate text-caption text-muted line-through">{title}</span>
+      <div className="agent-card-row" data-gone="">
+        <Icon name="trash" size={12} />
+        <span>{title}</span>
       </div>
     );
   }
 
   return (
-    <div className="glass-card flex items-center gap-2.5 rounded-lg border border-line/60 px-3 py-2">
-      <span className="text-meta text-muted">✕</span>
-      <div className="min-w-0 flex-1">
-        <div className="text-caption text-muted line-through">{title}</div>
-        <div className="text-micro text-muted">Trashed · recoverable</div>
+    <div className="k-card agent-card" data-gone="">
+      <div className="agent-card-top">
+        <Icon name="trash" size={14} />
+        <div className="agent-card-main">
+          <div className="agent-card-title">{title}</div>
+          <div className="agent-card-sub">Trashed · recoverable</div>
+        </div>
+        {canRestore(action) && <UndoButton onClick={() => undo(action)} disabled={undoing} label="Restore" />}
       </div>
-      {canRestore(action) && (
-        <UndoButton onClick={() => undo(action)} disabled={undoing} label="Restore" />
-      )}
     </div>
   );
 }
@@ -404,7 +396,12 @@ function canRestore(action: AgentAction): boolean {
 }
 
 function SummaryFallback({ action }: { action: AgentAction }) {
-  return <div className="mono text-meta text-muted">✓ {action.summary}</div>;
+  return (
+    <div className="agent-plain-one">
+      <Icon name="check" size={12} />
+      {action.summary}
+    </div>
+  );
 }
 
 /** A batch, folded: the count carries the scale, a few rows prove it's real,
@@ -420,35 +417,29 @@ function ActionStack({ verb, actions }: { verb: AgentVerb; actions: AgentAction[
   const shown = open ? actions : actions.slice(0, FOLDED_ROWS);
 
   return (
-    <div className="glass-card rounded-lg border border-line/60 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <span className="text-caption">
-          {actions.length} {actions.length === 1 ? "record" : "records"}{" "}
-          {(VERB_LABEL[verb] ?? "changed").toLowerCase()}
+    <div className="k-card agent-card">
+      <div className="agent-card-top">
+        <span className="agent-card-title">
+          {actions.length} {actions.length === 1 ? "record" : "records"} {(VERB_LABEL[verb] ?? "changed").toLowerCase()}
         </span>
         {actions.length > FOLDED_ROWS && (
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="fast tap ml-auto rounded-full border border-line px-2.5 py-1 text-label text-muted hover:border-accent hover:text-accent"
-          >
+          <Button kind="ghost" size="xs" className="tap ml-auto" onClick={() => setOpen((o) => !o)}>
             {open ? "Fold" : "Expand"}
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="mt-1 border-t border-line/50 pt-1">
+      <div className="agent-card-rows">
         {shown.map((a) => (
           <Record key={a.ref!.id + a.tool} action={a} variant="row" />
         ))}
-        {!open && actions.length > shown.length && (
-          <div className="pt-1 text-micro text-muted">+ {actions.length - shown.length} more</div>
-        )}
+        {!open && actions.length > shown.length && <div className="agent-card-sub">{actions.length - shown.length} more</div>}
       </div>
 
       {reversible.length > 0 && (
-        <div className="mt-1 flex items-center border-t border-line/50 pt-1.5">
+        <div className="agent-card-foot">
           {reversed ? (
-            <span className="ml-auto text-micro text-muted">Undone</span>
+            <span className="agent-card-sub ml-auto">Undone</span>
           ) : (
             <UndoButton
               onClick={() => {
@@ -467,8 +458,8 @@ function ActionStack({ verb, actions }: { verb: AgentVerb; actions: AgentAction[
 }
 
 // ── the shared skin ──────────────────────────────────────────────────────────
-// Glass, because a card is a thing that floats; hairlines and a domain-hue dot,
-// because that's how a record reads everywhere else in the app.
+// A kit Card, because a record is a thing that floats; the domain's Dot and kit
+// Chips, because that's how a record reads everywhere else in the app.
 
 function Shell({
   action,
@@ -493,59 +484,43 @@ function Shell({
     // A row is one line of proof inside a stack — text only, no controls.
     const first = live.find((c) => typeof c === "string") as string | undefined;
     return (
-      <div className="flex items-center gap-2 py-1">
-        <Dot color={tint} done={done} row />
-        <span className={`min-w-0 flex-1 truncate text-caption ${done ? "text-muted line-through" : ""}`}>
-          {title}
-        </span>
-        {first && <span className="shrink-0 text-micro text-muted">{first}</span>}
+      <div className="agent-card-row" data-done={done || undefined}>
+        <Dot color={tint} done={done} />
+        <span>{title}</span>
+        {first && <small>{first}</small>}
       </div>
     );
   }
 
   return (
-    <div
-      className={`${tint ? "glass-tint" : "glass-card"} rounded-lg border border-line/60 px-3 py-2.5`}
-      style={tint ? ({ "--tint": tint } as React.CSSProperties) : undefined}
-    >
-      <div className="flex items-start gap-2.5">
+    <div className="k-card agent-card">
+      <div className="agent-card-top">
         <Dot color={tint} done={done} />
-        <div className="min-w-0 flex-1">
-          <div className={`text-body ${done ? "text-muted line-through" : ""}`}>{title}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-1">
-            {live.map((c) =>
-              typeof c === "string" ? (
-                <span key={c} className={CHIP}>
-                  {c}
-                </span>
-              ) : (
-                <span key={c.key}>{c.node}</span>
-              ),
-            )}
+        <div className="agent-card-main">
+          <div className="agent-card-title" data-done={done || undefined}>
+            {title}
+          </div>
+          <div className="agent-card-chips">
+            {live.map((c) => (typeof c === "string" ? <Chip key={c}>{c}</Chip> : <span key={c.key}>{c.node}</span>))}
           </div>
         </div>
-        {verb && <span className="section-label shrink-0 text-micro text-muted">{VERB_LABEL[verb]}</span>}
+        {verb && <span className="agent-card-verb">{VERB_LABEL[verb]}</span>}
       </div>
       <Footer action={action} />
     </div>
   );
 }
 
-function Dot({ color, done, row }: { color: string | null; done?: boolean; row?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`shrink-0 rounded-full ${row ? "size-1.5" : "mt-1.5 size-2"}`}
-      style={{ background: done ? "var(--line-strong)" : (color ?? "var(--line-strong)") }}
-    />
-  );
+/** The record's identity — its domain's hue as the kit Dot; spent once done. */
+function Dot({ color, done }: { color: string | null; done?: boolean }) {
+  return <KitDot color={done ? "var(--line-2)" : (color ?? "var(--line-2)")} />;
 }
 
 function Footer({ action }: { action: AgentAction }) {
   const { undo, undoing } = useAgentUndo();
   if (!action.undo) return null;
   return (
-    <div className="mt-2 flex border-t border-line/50 pt-1.5">
+    <div className="agent-card-foot">
       <UndoButton onClick={() => undo(action)} disabled={undoing} label="Undo" className="ml-auto" />
     </div>
   );
@@ -563,13 +538,9 @@ function UndoButton({
   className?: string;
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`fast tap rounded-full border border-line px-2.5 py-1 text-label text-muted hover:border-accent hover:text-accent disabled:opacity-50 ${className}`}
-    >
+    <Button kind="ghost" size="xs" onClick={onClick} disabled={disabled} className={`tap ${className}`}>
       {label}
-    </button>
+    </Button>
   );
 }
 
