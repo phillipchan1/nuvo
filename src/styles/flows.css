@@ -26,11 +26,13 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--panel);
   color: var(--ink);
-  animation: f-flow-in var(--d-base) var(--ease-out) both;
+  animation: f-rise var(--d-slow) var(--ease-out) both;
 }
-@keyframes f-flow-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+/* A flow arrives the way a hero does (D-187, "Arrive"): a short rise, no fade —
+   it must be readable on frame one. */
+@keyframes f-rise {
+  from { transform: translateY(6px); }
+  to { transform: none; }
 }
 
 .f-top {
@@ -224,6 +226,17 @@ html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
 @media (pointer: coarse) {
   .f-pip::before { inset: -15px; }
 }
+/* A week's receipt (WeekEvidence) — answers the pointer like any kit card. */
+@media (hover: hover) {
+  a.f-receipt:hover, button.f-receipt:hover, div.f-receipt[data-receipt-drag]:hover { background-image: linear-gradient(var(--hover) 0 0); }
+}
+html:root .f-receipt:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) !important; }
+
+/* A first-run kind: the whole row is the checkbox's hit area. */
+@media (hover: hover) {
+  .f-kind:hover { background: var(--hover); }
+}
+
 /* A chip you've picked — the accent wash, in place. */
 .k-chip.f-chip-on { background: var(--accent-wash); border-color: var(--accent-ring); color: var(--accent-ink); }
 
@@ -258,7 +271,7 @@ html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
   border-radius: var(--r-dialog);
   background: var(--raised);
   box-shadow: var(--sh-modal);
-  animation: k-dialog-in var(--d-moment) var(--ease-spring) both;
+  animation: f-rise var(--d-slow) var(--ease-out) both;
 }
 .f-card[data-width="wide"] { max-width: 560px; }
 .f-card-foot {
@@ -299,13 +312,6 @@ html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
 }
 .f-stack { display: grid; gap: 8px; }
 
-/* Apple's button: black on white / white on black, exactly — it is their mark,
-   and App Store 4.8 asks it to be at least as prominent as any other door. */
-.k-btn.f-apple { background: #000000; color: #ffffff; border-color: #000000; box-shadow: none; }
-[data-theme="dark"] .k-btn.f-apple { background: #ffffff; color: #000000; border-color: #ffffff; }
-@media (hover: hover) {
-  .k-btn.f-apple:not(:disabled):hover { background-image: linear-gradient(rgba(127, 127, 127, 0.16) 0 0); }
-}
 
 /* ── A floating coach / repair card (docked, not a flow) ────────────────── */
 .f-dock {
@@ -326,10 +332,14 @@ html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
 /* ── Phone ──────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
   .f-top {
+    grid-template-columns: auto minmax(0, 1fr) auto;
     height: calc(56px + env(safe-area-inset-top, 0px));
     padding: env(safe-area-inset-top, 0px) 8px 0;
     gap: 6px;
   }
+  .f-top-c { overflow: hidden; }
+  /* the bar's quiet meta yields to the stepper on a phone */
+  .f-top-meta { display: none; }
   .f-foot {
     height: calc(64px + env(safe-area-inset-bottom, 0px));
     padding: 0 12px env(safe-area-inset-bottom, 0px) 16px;
@@ -349,6 +359,8 @@ html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
   .f-dock .k-btn { min-height: 44px; }
   .f-card .k-field { min-height: 44px; }
   .f-step { min-height: 44px; }
+  /* a keycap means nothing under a finger */
+  .f-foot .k-kbds, .f-card .k-kbds, .f-dock .k-kbds { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

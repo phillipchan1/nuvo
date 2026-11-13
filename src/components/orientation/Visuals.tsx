@@ -12,11 +12,12 @@
 // Domain (step 5) is the deliberate exception — ongoing, never slotted. Lightweight —
 // inline divs/SVG, no deps.
 import type { CSSProperties } from "react";
+import { Kbd } from "../kit";
 
-// A soft glass plate the illustration sits on — echoes the app's resting material.
+// The plate an illustration sits on — a raised kit surface, like a card (D-190).
 function Plate({ children }: { children: React.ReactNode }) {
   return (
-    <div className="glass-card relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl border border-line p-5">
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[var(--r-card)] p-5" style={{ background: "var(--raised)", boxShadow: "0 0 0 1px var(--line-1), var(--sh-1)" }}>
       {children}
     </div>
   );
@@ -25,7 +26,7 @@ function Plate({ children }: { children: React.ReactNode }) {
 const AREAS = [
   { label: "Family", color: "var(--accent)" },
   { label: "Work", color: "var(--slot)" },
-  { label: "Health", color: "var(--signal)" },
+  { label: "Health", color: "var(--ok)" },
   { label: "Finances", color: "var(--muted)" },
 ];
 
@@ -38,11 +39,7 @@ const at = (i: number) => ({ "--i": i } as CSSProperties);
 
 // The ⌘N chip that tells the user exactly where a concept lives in the Spine.
 function KeyBadge({ k }: { k: string }) {
-  return (
-    <span className="mono shrink-0 rounded border border-line px-1.5 py-0.5 text-micro leading-none text-muted">
-      {k}
-    </span>
-  );
+  return <Kbd keys={[...k]} className="shrink-0" />;
 }
 
 // A small "still loose" precursor card — dashed, muted — shown to the LEFT of where
@@ -50,7 +47,7 @@ function KeyBadge({ k }: { k: string }) {
 function LooseCard({ label, note, i = 0 }: { label: string; note: string; i?: number }) {
   return (
     <div
-      className="orient-stagger flex w-14 shrink-0 flex-col justify-center gap-0.5 rounded-md border border-dashed border-line px-1.5 py-1.5"
+      className="orient-stagger flex w-14 shrink-0 flex-col justify-center gap-0.5 rounded-[var(--r-ctl)] border border-dashed border-[color:var(--line-2)] px-1.5 py-1.5"
       style={at(i)}
     >
       <span className="section-label">{label}</span>
@@ -64,7 +61,7 @@ function LooseCard({ label, note, i = 0 }: { label: string; note: string; i?: nu
 function FlowArrow({ i = 1 }: { i?: number }) {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="orient-stagger shrink-0 self-center" style={at(i)}>
-      <path d="M0 5h6m-2.5-2.5l2.5 2.5-2.5 2.5" stroke="var(--line-strong)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M0 5h6m-2.5-2.5l2.5 2.5-2.5 2.5" stroke="var(--line-2)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -78,7 +75,7 @@ export function WelcomeVisual() {
         {AREAS.map((a, i) => (
           <div
             key={a.label}
-            className="orient-stagger flex items-center gap-2.5 rounded-lg border border-line px-3 py-2"
+            className="orient-stagger flex items-center gap-2.5 rounded-[var(--r-card)] border border-[color:var(--line-1)] px-3 py-2"
             style={{ ...at(i + 1), background: tint(a.color, 10), borderLeft: `2px solid ${a.color}` }}
           >
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: a.color }} />
@@ -108,18 +105,18 @@ export function TimeblockVisual() {
           </div>
           <div className="relative flex-1">
             {rows.map((_, i) => (
-              <div key={i} className="h-7 border-t border-line" />
+              <div key={i} className="h-7 border-t border-[color:var(--line-1)]" />
             ))}
             {/* an existing calendar commitment */}
             <div
-              className="absolute left-1 right-1 top-[2px] flex items-center rounded px-2"
+              className="absolute left-1 right-1 top-[2px] flex items-center rounded-[var(--r-chip)] px-2"
               style={{ height: 24, background: tint("var(--muted)", 22), borderLeft: "2px solid var(--muted)" }}
             >
               <span className="text-micro text-muted">Standup</span>
             </div>
             {/* the task, dropping in and landing lifted like a grabbed block */}
             <div
-              className="orient-drop glass-lift absolute left-3 right-0 flex items-center rounded px-2"
+              className="orient-drop glass-lift absolute left-3 right-0 flex items-center rounded-[var(--r-chip)] px-2"
               style={{ top: 58, height: 34, background: tint("var(--accent)", 30), borderLeft: "2px solid var(--accent)" }}
             >
               <span className="text-meta text-ink">Book trail passes</span>
@@ -148,16 +145,16 @@ export function OnDeckVisual() {
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="orient-stagger flex items-center gap-1" style={at(2)}>
             <span className="section-label flex-1">This week</span>
-            <span className="rounded-full border border-signal px-1 py-0.5 text-micro leading-none" style={{ color: "var(--signal)", background: tint("var(--signal)", 12) }}>full</span>
+            <span className="rounded-[var(--r-chip)] px-1 py-0.5 text-micro leading-none" style={{ color: "var(--warn)", background: tint("var(--warn)", 12) }}>full</span>
           </div>
           <div className="grid grid-cols-3 gap-1">
             {weeks.map((w, i) => (
-              <div key={w} className="orient-stagger flex min-w-0 flex-col gap-1 rounded-md border border-line bg-surface-2/30 p-1" style={{ ...at(i + 3), minHeight: 70 }}>
+              <div key={w} className="orient-stagger flex min-w-0 flex-col gap-1 rounded-[var(--r-ctl)] border border-[color:var(--line-1)] bg-[var(--sunk)] p-1" style={{ ...at(i + 3), minHeight: 70 }}>
                 <span className="mono text-micro text-muted">{w}</span>
                 {blocks[i].map((b) => (
-                  <span key={b.t} className="glass-card truncate rounded px-1 py-1 text-micro text-ink" style={{ borderLeft: `2px solid ${b.color}`, background: tint(b.color, 16) }}>{b.t}</span>
+                  <span key={b.t} className="truncate rounded-[var(--r-chip)] px-1 py-1 text-micro text-ink" style={{ borderLeft: `2px solid ${b.color}`, background: tint(b.color, 16) }}>{b.t}</span>
                 ))}
-                {blocks[i].length === 0 && <span className="mt-auto rounded border border-dashed border-line px-1 py-1 text-center text-micro text-muted">open</span>}
+                {blocks[i].length === 0 && <span className="mt-auto rounded-[var(--r-chip)] border border-dashed border-[color:var(--line-2)] px-1 py-1 text-center text-micro text-muted">open</span>}
               </div>
             ))}
           </div>
@@ -180,7 +177,7 @@ export function InitiativeVisual() {
           {projects.map((p, i) => (
             <span
               key={p}
-              className="orient-stagger glass-card truncate rounded px-1 py-1 text-micro text-ink"
+              className="orient-stagger truncate rounded-[var(--r-chip)] px-1 py-1 text-micro text-ink"
               style={{ ...at(i), borderLeft: `2px solid ${c}`, background: tint(c, 16) }}
             >
               {p}
@@ -190,7 +187,7 @@ export function InitiativeVisual() {
         <FlowArrow i={3} />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div
-            className="orient-stagger flex items-center gap-1 rounded-md border border-line px-1.5 py-1.5"
+            className="orient-stagger flex items-center gap-1 rounded-[var(--r-ctl)] border border-[color:var(--line-1)] px-1.5 py-1.5"
             style={{ ...at(4), background: tint(c, 12) }}
           >
             <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: c }} />
@@ -201,7 +198,7 @@ export function InitiativeVisual() {
             {months.map((m, i) => (
               <div
                 key={m}
-                className="orient-stagger flex items-center justify-center rounded-md border border-line bg-surface-2/30 text-micro text-muted"
+                className="orient-stagger flex items-center justify-center rounded-[var(--r-ctl)] border border-[color:var(--line-1)] bg-[var(--sunk)] text-micro text-muted"
                 style={{ ...at(i + 5), minHeight: 30 }}
               >
                 {m}
@@ -225,7 +222,7 @@ export function DomainVisual() {
     <Plate>
       <div className="flex w-full max-w-[260px] items-stretch gap-1.5">
         <div
-          className="orient-stagger flex w-16 shrink-0 flex-col justify-center gap-1 rounded-md border border-line px-1.5 py-1.5"
+          className="orient-stagger flex w-16 shrink-0 flex-col justify-center gap-1 rounded-[var(--r-ctl)] border border-[color:var(--line-1)] px-1.5 py-1.5"
           style={{ ...at(0), background: tint(c, 12) }}
         >
           <span className="h-4 w-1 rounded-full" style={{ background: c }} />
@@ -260,15 +257,15 @@ export function NuvoVisual() {
           <span className="section-label flex-1">Nuvo</span>
           <KeyBadge k="⌘J" />
         </div>
-        <div className="orient-stagger glass-card rounded-lg rounded-tl-sm border border-line px-3 py-2.5" style={at(1)}>
+        <div className="orient-stagger rounded-[var(--r-card)] rounded-tl-sm border border-[color:var(--line-1)] px-3 py-2.5" style={at(1)}>
           <p className="text-meta leading-relaxed text-ink">
             You have <span className="text-ink">3 open hours</span> Thursday. Want me to place
             <span style={{ color: "var(--accent)" }}> Saturday adventure</span> there?
           </p>
         </div>
         <div className="orient-stagger flex gap-2" style={at(2)}>
-          <span className="orient-pulse rounded-md border border-accent px-2.5 py-1 text-micro" style={{ background: tint("var(--accent)", 14), color: "var(--accent)" }}>Place it</span>
-          <span className="rounded-md border border-line px-2.5 py-1 text-micro text-muted">Not now</span>
+          <span className="orient-pulse rounded-[var(--r-ctl)] border border-accent px-2.5 py-1 text-micro" style={{ background: tint("var(--accent)", 14), color: "var(--accent)" }}>Place it</span>
+          <span className="rounded-[var(--r-ctl)] border border-[color:var(--line-1)] px-2.5 py-1 text-micro text-muted">Not now</span>
         </div>
       </div>
     </Plate>
@@ -282,22 +279,22 @@ export function CaptureVisual() {
   const chips = [
     { t: "Call David", meta: "tue 9am", color: "var(--accent)" },
     { t: "Book flights", meta: "#family", color: "var(--slot)" },
-    { t: "Draft Q3 plan", meta: "!high", color: "var(--signal)" },
+    { t: "Draft Q3 plan", meta: "!high", color: "var(--warn)" },
   ];
   return (
     <Plate>
       <div className="flex w-full max-w-[260px] items-stretch gap-1.5">
-        <div className="orient-stagger flex w-20 shrink-0 flex-col justify-center gap-1 rounded-lg border border-line bg-surface-2 px-1.5 py-1.5" style={at(0)}>
+        <div className="orient-stagger flex w-20 shrink-0 flex-col justify-center gap-1 rounded-[var(--r-card)] border border-[color:var(--line-1)] bg-[var(--sunk)] px-1.5 py-1.5" style={at(0)}>
           <KeyBadge k="⌘K" />
           <span className="line-clamp-2 text-micro text-muted">Brain-dump anything…</span>
         </div>
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 self-center">
-          <path className="orient-flow" d="M0 5h4" stroke="var(--line-strong)" strokeWidth="1.3" strokeLinecap="round" />
-          <path d="M7 5h3m-2.5-2.5l2.5 2.5-2.5 2.5" stroke="var(--line-strong)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          <path className="orient-flow" d="M0 5h4" stroke="var(--line-2)" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M7 5h3m-2.5-2.5l2.5 2.5-2.5 2.5" stroke="var(--line-2)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {chips.map((c, i) => (
-            <div key={c.t} className="orient-stagger glass-card flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5" style={{ ...at(i + 1), borderLeft: `2px solid ${c.color}` }}>
+            <div key={c.t} className="orient-stagger flex items-center gap-2 rounded-[var(--r-ctl)] border border-[color:var(--line-1)] px-2.5 py-1.5" style={{ ...at(i + 1), borderLeft: `2px solid ${c.color}` }}>
               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c.color }} />
               <span className="text-meta text-ink">{c.t}</span>
               <span className="mono ml-auto text-micro text-muted">{c.meta}</span>
@@ -354,20 +351,10 @@ const HELD = [206, 226, 246, 266, 286, 306, 326];
 export function WelcomeHero() {
   return (
     <svg viewBox="0 0 360 180" fill="none" className="h-full w-full" aria-hidden>
-      <defs>
-        <radialGradient id="wh-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      {/* An ellipse, not a rect — a gradient-filled rect fades to nothing but its
-          own edge still reads as a faint box against the paper. */}
-      <ellipse cx="268" cy="90" rx="120" ry="76" fill="url(#wh-glow)" />
-
       {/* the gathering sweep — one line the loose things find */}
       <path
         d="M8 92 C 90 92, 120 90, 196 90"
-        stroke="var(--line-strong)"
+        stroke="var(--line-2)"
         strokeWidth="1"
         strokeDasharray="2 5"
         opacity="0.55"
@@ -433,7 +420,7 @@ export function RulesVisual() {
               <span className="text-caption text-muted">earns</span>
               <span
                 className="rounded px-1.5 py-0.5 text-micro font-semibold"
-                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                style={{ background: "var(--accent-wash)", color: "var(--accent)" }}
               >
                 {r.earns}
               </span>
@@ -463,7 +450,7 @@ export function FlowVisual() {
         {tiers.map((t, i) => (
           <div key={t.type} className="orient-stagger flex flex-col" style={at(i)}>
             <div
-              className="flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5"
+              className="flex items-center gap-2 rounded-[var(--r-ctl)] border border-[color:var(--line-1)] px-2.5 py-1.5"
               style={{ marginLeft: t.indent * 14, background: tint(c, 8) }}
             >
               <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: c, opacity: 1 - t.indent * 0.16 }} />

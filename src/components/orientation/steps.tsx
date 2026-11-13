@@ -119,7 +119,7 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     teach: "Nuvo can't tell you what fits until it knows what's already there.",
     target: "calendars",
     milestone: "calendar",
-    cta: { label: "Connect your calendars →", action: "connect-calendars" },
+    cta: { label: "Connect your calendars", action: "connect-calendars" },
   },
   {
     // The rules come after the doing. Stated up front they're terms of service —

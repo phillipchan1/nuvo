@@ -94,7 +94,7 @@ export default function WeekSetMoment({
       )}
 
       <p className="f-fact mt-3">{facts}</p>
-      {goal?.trim() && <p className="f-line mt-2 font-medium text-[var(--ink)]">“{goal.trim()}”</p>}
+      {goal?.trim() && <p className="f-line mt-2" style={{ color: "var(--ink)", fontWeight: 500 }}>“{goal.trim()}”</p>}
       {action && <div className={`mt-6 w-full ${centred ? "max-w-[340px]" : ""}`}>{action}</div>}
     </div>
   );

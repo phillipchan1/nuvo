@@ -20,9 +20,12 @@ import { useVertical } from "../../hooks/useVertical";
 import { useTaskMutations } from "../../hooks/useTasks";
 import { useEventRoutingMutations } from "../../hooks/useEventRouting";
 import { firstDayOfWeek, useSettings } from "../../hooks/useSettings";
-import { Modal } from "../ui";
+import { Button, Dialog, Dot, EmptyState, Row, Segmented } from "../kit";
+import { Icon } from "../Icon";
 import DomainSymbol from "../domain/DomainSymbol";
 
+/** Re-attribute one receipt — the kit Dialog (a bottom Sheet on the phone), one
+ *  row per domain, the current one checked. */
 function CorrectModal({
   receipt,
   domains,
@@ -35,27 +38,34 @@ function CorrectModal({
   onPick: (domainId: string) => void;
 }) {
   return (
-    <Modal onClose={onClose} width="max-w-sm">
-      <div className="p-5">
-        <div className="section-label mb-2">Re-attribute</div>
-        <p className="mb-4 text-body text-ink">Where should “{receipt.label}” count?</p>
-        <div className="flex flex-col gap-1">
-          {domains.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => onPick(d.id)}
-              className="tap fast flex items-center gap-2 rounded-md px-3 py-2.5 text-left hover:bg-accent-soft"
-            >
-              <span style={{ color: d.color }}><DomainSymbol value={d.icon} size={16} /></span>
-              <span className="text-body text-ink">{d.name}</span>
-            </button>
-          ))}
-        </div>
-        <button onClick={onClose} className="tap fast mt-4 w-full rounded-md border border-line py-2.5 text-label text-muted">
+    <Dialog
+      title={`Where should “${receipt.label}” count?`}
+      onClose={onClose}
+      width={400}
+      footer={
+        <Button kind="ghost" onClick={onClose}>
           Cancel
-        </button>
+        </Button>
+      }
+    >
+      <div className="grid gap-0.5">
+        {domains.map((d) => (
+          <Row
+            key={d.id}
+            density="comfy"
+            selected={d.id === receipt.domainId}
+            onActivate={() => onPick(d.id)}
+            leading={
+              <span className="inline-flex" style={{ color: d.color }}>
+                <DomainSymbol value={d.icon} size={16} />
+              </span>
+            }
+            title={d.name}
+            trailing={d.id === receipt.domainId ? <Icon name="check" size={14} style={{ color: "var(--accent-ink)" }} /> : undefined}
+          />
+        ))}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -125,51 +135,43 @@ function ReceiptChip({
         : null;
   const inner = (
     <>
-      <div className="flex items-start gap-1">
-        {done && (
-          <span className="mt-px shrink-0 text-micro leading-[15px] text-accent" aria-hidden>
-            ✓
-          </span>
-        )}
+      <div className="flex items-start gap-1.5">
+        {done && <Icon name="check" size={11} className="mt-[2px] shrink-0" style={{ color: "var(--landed, var(--accent))" }} />}
         <div
-          className={`line-clamp-2 min-w-0 flex-1 text-caption leading-[15px] ${
-            done ? "h-[30px] text-muted line-through decoration-line" : "h-[30px] text-ink"
-          }`}
+          className="line-clamp-2 min-w-0 flex-1 text-caption leading-[15px]"
+          style={done ? { color: "var(--muted)" } : { color: "var(--ink)" }}
         >
           {receipt.label}
         </div>
       </div>
-      {meta && <div className="mono mt-0.5 truncate text-micro leading-[13px] text-muted">{meta}</div>}
+      {meta && <div className="f-num mt-1 truncate text-label leading-none text-[var(--faint)]">{meta}</div>}
     </>
   );
+  // A receipt is a small floating card in its world's hue — the kit card's
+  // surface and hairline, the domain as a 2px identity edge.
   const style = {
-    boxShadow: `inset 3px 0 0 0 ${receipt.domainColor}`,
-    opacity: done ? 0.85 : 1,
+    backgroundColor: "var(--raised)",
+    boxShadow: `inset 2px 0 0 0 ${receipt.domainColor}, 0 0 0 1px var(--line-1)`,
   } as const;
-  const cls = `w-full rounded-lg border border-line bg-surface px-1.5 py-1.5 text-left ${draggable ? "cursor-grab active:cursor-grabbing touch-none select-none" : ""}`;
+  const cls = `f-receipt w-full rounded-[var(--r-ctl)] px-2 py-1.5 text-left ${draggable ? "cursor-grab active:cursor-grabbing touch-none select-none" : ""}`;
 
   if (receipt.url && !correctable) {
     return (
-      <a href={receipt.url} target="_blank" rel="noreferrer" className={`${cls} tap fast block hover:border-line-strong`} style={style} title={receipt.label}>
+      <a href={receipt.url} target="_blank" rel="noreferrer" className={`${cls} block`} style={style} title={receipt.label}>
         {inner}
       </a>
     );
   }
   if (draggable && receipt.kind === "task") {
     return (
-      <div
-        data-receipt-drag={receipt.id}
-        className={`${cls} tap fast hover:border-line-strong`}
-        style={style}
-        title={`${receipt.label} — drag to another domain`}
-      >
+      <div data-receipt-drag={receipt.id} className={cls} style={style} title={`${receipt.label} — drag to another domain, or tap to pick`}>
         {inner}
       </div>
     );
   }
   if (correctable && onCorrect) {
     return (
-      <button type="button" onClick={() => onCorrect(receipt)} className={`${cls} tap fast hover:border-line-strong`} style={style} title={`${receipt.label} — tap to re-attribute`}>
+      <button type="button" onClick={() => onCorrect(receipt)} className={cls} style={style} title={`${receipt.label} — tap to re-attribute`}>
         {inner}
       </button>
     );
@@ -207,20 +209,22 @@ function DaySpread({
               <div
                 key={day.dayISO}
                 className="flex min-h-0 flex-col px-1.5 pb-1.5 pt-2"
-                style={{ borderRight: i < 6 ? "1px solid var(--line)" : undefined }}
+                style={{ boxShadow: i < 6 ? "inset -1px 0 0 var(--line-1)" : undefined }}
               >
                 <div className="flex items-baseline justify-between gap-1">
-                  <span className="text-body font-semibold text-ink">{format(parseDateISO(day.dayISO), "EEE d")}</span>
-                  <span className="mono shrink-0 text-micro text-muted">
-                    {day.mins > 0 ? `${fmtHours(day.mins)}h` : "—"}
+                  <span className="text-caption font-medium text-muted">
+                    {format(parseDateISO(day.dayISO), "EEE")}{" "}
+                    <span className="f-num text-body font-semibold text-[var(--ink)]">{format(parseDateISO(day.dayISO), "d")}</span>
                   </span>
+                  <span className="f-num shrink-0 text-label text-[var(--faint)]">{day.mins > 0 ? `${fmtHours(day.mins)}h` : "—"}</span>
                 </div>
-                <div className="mb-2 mt-1.5 h-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                <div className="mb-2 mt-1.5 h-[3px] overflow-hidden rounded-[2px]" style={{ background: "var(--sunk)" }}>
                   <span
-                    className="block h-full"
+                    className="block h-full w-full"
                     style={{
-                      width: `${(day.mins / maxMins) * 100}%`,
-                      background: day.mins > 0 ? "var(--muted)" : "transparent",
+                      transformOrigin: "left center",
+                      transform: `scaleX(${day.mins / maxMins})`,
+                      background: day.mins > 0 ? "var(--ink-2)" : "transparent",
                     }}
                   />
                 </div>
@@ -228,9 +232,7 @@ function DaySpread({
                   {day.receipts.map((r) => (
                     <ReceiptChip key={`${r.kind}:${r.id}`} receipt={r} onCorrect={setCorrecting} />
                   ))}
-                  {quiet && (
-                    <div className="flex h-12 items-center justify-center text-caption text-muted/50">—</div>
-                  )}
+                  {quiet && <div className="flex h-12 items-center justify-center text-caption text-[var(--faint)]">—</div>}
                 </div>
               </div>
             );
@@ -327,7 +329,6 @@ function DomainTaskSpread({
 
   return (
     <>
-      <p className="text-meta text-muted">Drag a task onto another domain to fix a misfile — or tap to pick.</p>
       <div ref={boardRef} className="-mx-1 overflow-x-auto pb-1">
         <div
           className="grid min-w-[480px] md:min-w-0"
@@ -342,33 +343,31 @@ function DomainTaskSpread({
                 data-domain-lane={col.id}
                 className="flex min-h-0 flex-col px-1.5 pb-1.5 pt-2"
                 style={{
-                  borderRight: i < n - 1 ? "1px solid var(--line)" : undefined,
-                  background: hovered ? "var(--accent-soft)" : undefined,
+                  boxShadow: i < n - 1 ? "inset -1px 0 0 var(--line-1)" : undefined,
+                  background: hovered ? "var(--accent-wash)" : undefined,
                 }}
               >
                 <div className="flex items-baseline justify-between gap-1">
-                  <span className="flex min-w-0 items-center gap-1.5 truncate text-body font-semibold text-ink">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col.color }} />
+                  <span className="flex min-w-0 items-center gap-1.5 truncate text-body font-semibold text-[var(--ink)]">
+                    <Dot color={col.color} />
                     <span className="truncate">{col.name}</span>
                   </span>
-                  <span className="mono shrink-0 text-micro text-muted">
-                    {col.receipts.length > 0 ? col.receipts.length : "—"}
-                  </span>
+                  <span className="f-num shrink-0 text-label text-[var(--faint)]">{col.receipts.length > 0 ? col.receipts.length : "—"}</span>
                 </div>
-                <div className="mb-2 mt-1.5 h-px" style={{ background: "var(--line)" }} />
+                <div className="mb-2 mt-1.5 h-px" style={{ background: "var(--line-1)" }} />
                 <div className="flex min-h-[48px] flex-col gap-1.5">
                   {col.receipts.map((r) => (
                     <ReceiptChip key={`${r.kind}:${r.id}`} receipt={r} draggable />
                   ))}
                   {quiet && (
                     <div
-                      className="flex h-12 items-center justify-center rounded-lg border border-dashed text-caption"
+                      className="flex h-12 items-center justify-center rounded-[var(--r-ctl)] text-caption"
                       style={{
-                        borderColor: hovered ? "var(--accent)" : "var(--line)",
-                        color: hovered ? "var(--accent)" : "var(--muted)",
+                        boxShadow: `inset 0 0 0 1px ${hovered ? "var(--accent)" : "var(--line-2)"}`,
+                        color: hovered ? "var(--accent-ink)" : "var(--faint)",
                       }}
                     >
-                      {hovered ? "drop here" : "—"}
+                      {hovered ? "Drop here" : "—"}
                     </div>
                   )}
                 </div>
@@ -380,8 +379,8 @@ function DomainTaskSpread({
       {drag &&
         createPortal(
           <div
-            className="glass-grab pointer-events-none fixed z-[100] max-w-[200px] truncate rounded-md px-2 py-1.5 text-caption text-ink"
-            style={{ left: drag.x + 12, top: drag.y + 10 }}
+            className="glass-grab pointer-events-none fixed z-[100] max-w-[200px] truncate rounded-[var(--r-ctl)] px-2 py-1.5 text-caption text-[var(--ink)]"
+            style={{ left: drag.x + 12, top: drag.y + 10, boxShadow: `inset 2px 0 0 ${drag.receipt.domainColor}, var(--sh-pop)` }}
           >
             {drag.receipt.label}
           </div>,
@@ -438,32 +437,21 @@ export function WeekHoursBreakdown({
   }, [report.evidence.domains]);
 
   if (taskReceipts.length === 0) {
-    return <p className="text-body text-muted">Nothing finished this week yet.</p>;
+    return <EmptyState>Nothing finished yet</EmptyState>;
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex max-w-xl gap-1 rounded-lg border border-line p-1">
-        {(
-          [
-            { id: "day" as const, label: "By day" },
-            { id: "domain" as const, label: "By domain" },
-          ] as const
-        ).map((t) => {
-          const on = lens === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setLens(t.id)}
-              className={`tap fast flex flex-1 items-center justify-center rounded-md py-2.5 text-body font-medium ${
-                on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+    <div className="flex flex-col gap-3">
+      <div>
+        <Segmented
+          label="Group the week's finished work"
+          value={lens}
+          onChange={setLens}
+          options={[
+            { value: "day", label: "By day" },
+            { value: "domain", label: "By domain", title: "Drag a task onto another domain to fix a misfile — or tap to pick" },
+          ]}
+        />
       </div>
 
       {lens === "domain" && <DomainTaskSpread columns={domainCols} onCorrected={onCorrected} />}

@@ -8,6 +8,9 @@ import { isMobileTauri } from "../lib/platform";
 import { isReviewPasswordLogin } from "../lib/reviewLogin";
 import { isOAuthCanceled, useTapAction } from "../lib/tapAction";
 import { authReturnError, clearAuthReturnError } from "../lib/authReturn";
+import { Button, Input } from "./kit";
+import { Icon } from "./Icon";
+import { FlowMark } from "./rituals/FlowShell";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -152,218 +155,196 @@ export default function Login({
   });
 
   return (
-    <div
-      className={
-        nativePhone
-          ? "login-screen atmosphere flex min-h-dvh flex-col justify-center px-5 pt-safe pb-safe"
-          : "login-screen atmosphere flex h-full items-center justify-center px-4"
-      }
-    >
-      <div
-        className={
-          nativePhone
-            ? "w-full max-w-md mx-auto"
-            : "moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7"
-        }
-      >
-        <div className="mb-5 flex items-center gap-2.5">
-          <AppMark />
-          <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>
-        </div>
-        <div className="mb-6 text-caption leading-relaxed text-muted">Your day, on one surface.</div>
-        {!supabaseConfigured && (
-          <div className="mb-4 rounded-md border border-signal bg-signal-soft p-2 text-caption text-signal">
-            Supabase is not configured. Copy <span className="mono">.env.example</span> to{" "}
-            <span className="mono">.env</span> and restart.
+    // The window ground, one 12px raised card (D-190): the mark, one hero, the
+    // doors as kit Buttons. Apple first and the same size and weight as Google
+    // (App Store 4.8); email is the quiet third door.
+    <div className={`login-screen h-full min-h-dvh overflow-y-auto ${nativePhone ? "pt-safe pb-safe" : ""}`} style={{ background: "var(--ground)" }}>
+      <div className="f-ground">
+        <div className="f-card">
+          <div className="grid gap-5">
+            <div className="f-brand">
+              <FlowMark />
+              <span>Nuvo</span>
+            </div>
+            <h1 className="text-display masthead text-[var(--ink)]">
+              {emailGate === "code" ? "Check your email." : emailGate ? "Sign in with email." : "Sign in to Nuvo."}
+            </h1>
           </div>
-        )}
 
-        {!emailGate ? (
-          <>
-            {previous && (
-              <div className="mb-3 rounded-md border border-line bg-surface-2 px-3 py-2 text-caption leading-relaxed text-muted">
-                Last time on this device you used{" "}
-                <span className="text-ink">{providerLabel(previous)}</span>. Use the same one to
-                land back in the same account.
+          <div className="mt-6 grid gap-2">
+            {!supabaseConfigured && (
+              <div className="f-note" data-tone="danger">
+                Supabase is not configured. Copy <span className="mono">.env.example</span> to <span className="mono">.env</span> and restart.
               </div>
             )}
-            {appleAvailable && (
-              <button
-                type="button"
-                disabled={oauthBusy || !supabaseConfigured}
-                aria-busy={busy === "apple"}
-                {...appleTap}
-                className="apple-signin login-action tap fast mb-3 flex w-full items-center justify-center gap-2.5 rounded-md px-3 py-3 text-body font-medium active:translate-y-px disabled:opacity-50"
-              >
-                <AppleMark />
-                {busy === "apple" ? "Opening…" : "Sign in with Apple"}
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={oauthBusy || !supabaseConfigured}
-              aria-busy={busy === "google"}
-              {...googleTap}
-              className="login-action login-action-surface tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink active:translate-y-px disabled:opacity-50"
-            >
-              <GoogleMark />
-              {busy === "google" ? "Opening…" : "Continue with Google"}
-            </button>
-            {passwordLogin ? (
-              <button
-                type="button"
-                disabled={!supabaseConfigured || busy === "password"}
-                {...passwordDoorTap}
-                className="login-action login-action-muted tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2"
-              >
-                Sign in with email
-              </button>
-            ) : otpOffered ? (
-              <button
-                type="button"
-                disabled={!supabaseConfigured}
-                {...otpDoorTap}
-                className="login-action login-action-muted tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2"
-              >
-                Sign in with an email code instead
-              </button>
-            ) : null}
-          </>
-        ) : emailGate === "password" ? (
-          <>
-            <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
-              Email
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              inputMode="email"
-              autoComplete="username"
-              autoCapitalize="none"
-              enterKeyHint="next"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              disabled={busy === "password"}
-              className="field w-full"
-            />
-            <label className="mb-1.5 mt-3 block text-caption text-muted" htmlFor="login-password">
-              Password
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              enterKeyHint="done"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void withPassword()}
-              placeholder="Password"
-              disabled={busy === "password"}
-              className="field w-full"
-            />
-            <button
-              type="button"
-              disabled={busy === "password" || !email.trim() || !password}
-              {...passwordSubmitTap}
-              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
-            >
-              {busy === "password" ? "Signing in…" : "Sign in"}
-            </button>
-            {otpOffered && (
-              <button
-                type="button"
-                {...otpInsteadTap}
-                className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
-              >
-                Email me a code instead
-              </button>
-            )}
-            <button
-              type="button"
-              {...backTap}
-              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
-            >
-              ‹ Back
-            </button>
-          </>
-        ) : emailGate === "otp" ? (
-          <>
-            <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
-              Your email
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoCapitalize="none"
-              enterKeyHint="send"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void sendCode()}
-              placeholder="you@example.com"
-              className="field w-full"
-            />
-            <button
-              type="button"
-              disabled={busy === "otp" || !email.trim()}
-              {...sendCodeTap}
-              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
-            >
-              {busy === "otp" ? "Sending…" : "Email me a code"}
-            </button>
-            <button
-              type="button"
-              {...backTap}
-              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
-            >
-              ‹ Back
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="mb-2 text-caption leading-relaxed text-muted">
-              We sent a 6-digit code to <span className="text-ink">{email.trim()}</span>. It signs
-              you in right here — no need to leave the app.
-            </div>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              enterKeyHint="done"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
-              placeholder="123456"
-              aria-label="Sign-in code"
-              className="field mono w-full text-center tracking-[0.3em]"
-            />
-            <button
-              type="button"
-              disabled={busy === "otp" || code.trim().length < 6}
-              {...verifyCodeTap}
-              className="login-action tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
-            >
-              {busy === "otp" ? "Checking…" : "Sign in"}
-            </button>
-            <button
-              type="button"
-              {...differentEmailTap}
-              className="login-action login-action-muted tap fast mt-2 w-full text-center text-caption text-muted"
-            >
-              ‹ Different email
-            </button>
-          </>
-        )}
 
-        {oauthBusy && (
-          <div className="mt-3 text-caption text-muted" role="status" aria-live="polite">
-            Opening {busy === "apple" ? "Apple" : "Google"}…
+            {!emailGate ? (
+              <>
+                {previous && (
+                  <div className="f-note">
+                    Last time on this device you used <b>{providerLabel(previous)}</b>. Use the same one to land back in the same account.
+                  </div>
+                )}
+                {appleAvailable && (
+                  <Button
+                    size="md"
+                    full
+                    className="apple-signin login-action"
+                    disabled={oauthBusy || !supabaseConfigured}
+                    aria-busy={busy === "apple"}
+                    {...appleTap}
+                    icon={<AppleMark />}
+                  >
+                    {busy === "apple" ? "Opening…" : "Sign in with Apple"}
+                  </Button>
+                )}
+                <Button
+                  size="md"
+                  full
+                  className="login-action"
+                  disabled={oauthBusy || !supabaseConfigured}
+                  aria-busy={busy === "google"}
+                  {...googleTap}
+                  icon={<GoogleMark />}
+                >
+                  {busy === "google" ? "Opening…" : "Continue with Google"}
+                </Button>
+                {passwordLogin ? (
+                  <Button kind="ghost" size="md" full disabled={!supabaseConfigured || busy === "password"} {...passwordDoorTap} className="login-action">
+                    Sign in with email
+                  </Button>
+                ) : otpOffered ? (
+                  <Button kind="ghost" size="md" full disabled={!supabaseConfigured} {...otpDoorTap} className="login-action">
+                    Sign in with an email code instead
+                  </Button>
+                ) : null}
+              </>
+            ) : emailGate === "password" ? (
+              <>
+                <label className="k-field-label" htmlFor="login-email">
+                  Email
+                  <Input
+                    id="login-email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    enterKeyHint="next"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    disabled={busy === "password"}
+                  />
+                </label>
+                <label className="k-field-label mt-1" htmlFor="login-password">
+                  Password
+                  <Input
+                    id="login-password"
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="done"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void withPassword()}
+                    placeholder="Password"
+                    disabled={busy === "password"}
+                  />
+                </label>
+                <Button
+                  kind="primary"
+                  size="md"
+                  full
+                  disabled={busy === "password" || !email.trim() || !password}
+                  {...passwordSubmitTap}
+                  shortcut="↵"
+                  className="login-action mt-2"
+                >
+                  {busy === "password" ? "Signing in…" : "Sign in"}
+                </Button>
+                {otpOffered && (
+                  <Button kind="ghost" size="md" full {...otpInsteadTap} className="login-action">
+                    Email me a code instead
+                  </Button>
+                )}
+                <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                  Back
+                </Button>
+              </>
+            ) : emailGate === "otp" ? (
+              <>
+                <label className="k-field-label" htmlFor="login-email">
+                  Your email
+                  <Input
+                    id="login-email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    enterKeyHint="send"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void sendCode()}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <Button
+                  kind="primary"
+                  size="md"
+                  full
+                  disabled={busy === "otp" || !email.trim()}
+                  {...sendCodeTap}
+                  shortcut="↵"
+                  className="login-action mt-2"
+                >
+                  {busy === "otp" ? "Sending…" : "Email me a code"}
+                </Button>
+                <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                  Back
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="f-fact">
+                  A 6-digit code went to <b>{email.trim()}</b>. It signs you in right here.
+                </p>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  enterKeyHint="done"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
+                  placeholder="123456"
+                  aria-label="Sign-in code"
+                  frameClassName="f-code"
+                />
+                <Button
+                  kind="primary"
+                  size="md"
+                  full
+                  disabled={busy === "otp" || code.trim().length < 6}
+                  {...verifyCodeTap}
+                  shortcut="↵"
+                  className="login-action mt-2"
+                >
+                  {busy === "otp" ? "Checking…" : "Sign in"}
+                </Button>
+                <Button kind="ghost" size="md" full {...differentEmailTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                  Different email
+                </Button>
+              </>
+            )}
+
+            {oauthBusy && (
+              <div className="f-fact mt-1" role="status" aria-live="polite">
+                Opening {busy === "apple" ? "Apple" : "Google"}…
+              </div>
+            )}
+
+            {error && <div className="f-error mt-1">{error}</div>}
           </div>
-        )}
-
-        {error && <div className="mt-3 text-caption text-signal">{error}</div>}
+        </div>
       </div>
     </div>
   );
@@ -371,11 +352,11 @@ export default function Login({
 
 /** Apple's logotype. Like GoogleMark below, this is a third party's mark, so
  *  it is the one place raw colour beats a token: it inherits `currentColor`
- *  from `.apple-signin`, which flips black-on-white / white-on-black with the
+ *  from `.apple-signin` (index.css), which flips black-on-white / white-on-black with the
  *  theme (Apple permits exactly those fills, and requires one of them). */
 function AppleMark() {
   return (
-    <svg width="18" height="18" viewBox="0 0 814 1000" fill="currentColor" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 814 1000" fill="currentColor" aria-hidden>
       <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 98.9zM554.1 159.4c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z" />
     </svg>
   );
@@ -383,7 +364,7 @@ function AppleMark() {
 
 function GoogleMark() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden>
       <path
         fill="#4285F4"
         d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z"
@@ -404,21 +385,3 @@ function GoogleMark() {
   );
 }
 
-/** The mark: the app icon's Fraunces N on the twilight field. Same path as
- *  `src-tauri/app-icon.svg` — a derivation, not a sun. */
-function AppMark() {
-  return (
-    <span
-      className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg"
-      style={{ background: "linear-gradient(140deg, var(--accent), var(--accent-2) 70%, var(--signal))" }}
-      aria-hidden
-    >
-      <svg viewBox="0 0 1024 1024" width="32" height="32">
-        <path
-          fill="var(--on-accent)"
-          d="M418.40 758.48Q418.40 770.57 410.40 777.59Q402.41 784.61 385.25 785L263.96 785Q246.80 784.61 238.61 777.59Q230.42 770.57 230.42 758.48Q230.42 738.20 253.04 728.45L261.62 724.55Q279.17 716.36 286.38 705.83Q293.60 695.30 293.60 672.68L293.60 381.74Q293.60 366.92 290.87 358.93Q288.14 350.93 278 337.67L247.97 297.50Q239.39 285.41 236.07 278.58Q232.76 271.76 232.76 264.35Q232.76 252.26 240.95 245.63Q249.14 239 262.40 239L393.83 239Q409.43 239 419.38 244.26Q429.32 249.53 439.46 263.96L691.79 618.47L668.39 687.50L668.39 351.32Q668.39 329.48 662.15 318.95Q655.91 308.42 636.41 299.45L628.22 295.55Q605.60 284.63 605.60 265.52Q605.60 253.04 613.79 246.02Q621.98 239 638.75 239L760.04 239Q777.20 239 785.39 246.02Q793.58 253.04 793.58 265.52Q793.58 285.41 770.96 295.55L762.38 299.45Q744.83 307.25 737.62 317.78Q730.40 328.31 730.40 351.32L730.40 641.48Q730.40 657.08 732.93 669.17Q735.47 681.26 742.49 691.01L766.67 724.16Q776.81 737.42 778.76 744.25Q780.71 751.07 780.71 758.48Q780.71 770.57 772.52 777.78Q764.33 785 750.68 785L598.58 785Q572.84 785 572.84 764.33Q572.84 757.31 569.91 750.49Q566.99 743.66 553.73 725.33L300.23 370.04L355.61 335.33L355.61 673.07Q355.61 694.13 362.04 704.66Q368.48 715.19 387.59 724.55L395.78 728.45Q418.40 738.59 418.40 758.48"
-        />
-      </svg>
-    </span>
-  );
-}

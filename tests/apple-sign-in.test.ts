@@ -259,8 +259,12 @@ describe("the surfaces", () => {
     expect(login).toContain("signInWithApple");
     expect(login).toContain("Sign in with Apple");
     // Apple requires its button to be at least as prominent: same width, same
-    // padding, same tap floor as Continue with Google.
-    expect(login).toMatch(/apple-signin[^"]*\btap\b[^"]*w-full[^"]*px-3 py-3/);
+    // height, same tap floor as Continue with Google — both are the kit Button
+    // at md, full width (D-190), and Apple comes first.
+    const apple = login.search(/<Button\s+size="md"\s+full\s+className="apple-signin/);
+    const google = login.search(/<Button\s+size="md"\s+full\s+className="login-action"[\s\S]{0,300}Continue with Google/);
+    expect(apple).toBeGreaterThan(-1);
+    expect(google).toBeGreaterThan(apple);
     // …and rendered only where it works.
     expect(login).toContain("appleSignInAvailable");
   });

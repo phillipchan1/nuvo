@@ -6,7 +6,7 @@ import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useAllTasks } from "../../hooks/useTasks";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { Btn } from "../ui";
+import { Button } from "../kit";
 import { ORIENTATION_TEACH_STEPS, type OrientationAction, type TeachMilestone } from "./steps";
 import { TEACH_TARGETS, type TeachArm } from "./teachTargets";
 
@@ -313,7 +313,7 @@ export default function TeachPanel({
 
       <div
         ref={panelRef}
-        className={`glass elev-3 fixed z-[80] flex flex-col rounded-2xl border border-line ${
+        className={`f-dock fixed z-[80] ${
           mobile
             // Clears the bottom bar AND the two floating actions above it (＋ and
             // ✦) — the panel must never cover the thing its own orb points at.
@@ -323,84 +323,64 @@ export default function TeachPanel({
         role="dialog"
         aria-label="Walkthrough"
       >
-        <div className="p-4">
+        <div className="f-dock-body">
           <div className="flex items-center gap-2">
-            <span className="section-label flex-1">{s.eyebrow}</span>
-            <span className="mono text-micro text-muted">
+            <span className="f-kicker min-w-0 flex-1 truncate">{s.eyebrow}</span>
+            <span className="f-num shrink-0 text-caption text-[var(--faint)]">
               {step + 1}/{ORIENTATION_TEACH_STEPS.length}
             </span>
-            <button
-              onClick={onDone}
-              className="tap fast text-caption text-muted hover:text-ink"
-              aria-label="Skip the walkthrough"
-            >
+            <Button kind="ghost" size="xs" onClick={onDone} aria-label="Skip the walkthrough" title="Skip the walkthrough (Esc)">
               Skip
-            </button>
+            </Button>
           </div>
 
           {showVisual && Visual && (
-            <div className="mt-3 flex justify-center">
+            <div className="flex justify-center">
               <Visual />
             </div>
           )}
 
-          <h2 className="masthead mt-2.5 text-lead leading-snug text-ink">{s.title}</h2>
-          <p className="mt-1.5 text-caption leading-relaxed text-muted">{s.teach}</p>
+          <h2 className="f-hero-sm">{s.title}</h2>
+          <p className="f-line text-muted">{s.teach}</p>
 
           {s.milestone && (
-            <div className="mt-3 flex items-center gap-2">
-              <Tick done={done} />
-              <span className={`text-caption ${done ? "text-ink" : "text-muted"}`}>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="f-tick" data-done={done || undefined} aria-hidden>
+                {done && <Icon name="check" size={10} strokeWidth={2.6} />}
+              </span>
+              <span className="text-caption" style={{ color: done ? "var(--ink)" : "var(--muted)" }}>
                 {done ? "Done — nice." : "Waiting for you…"}
               </span>
             </div>
           )}
 
           {s.cta && (
-            <button
-              onClick={() => { onAction?.(s.cta!.action); }}
-              className="tap fast mt-3 inline-flex w-fit items-center gap-1.5 rounded-md border border-accent px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent-soft active:translate-y-px"
-            >
-              {s.cta.label}
-            </button>
+            <div className="pt-1">
+              <Button size="sm" trailing={<Icon name="arrow-right" size={12} />} onClick={() => { onAction?.(s.cta!.action); }}>
+                {s.cta.label}
+              </Button>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-line px-4 py-3">
-          <div className="flex flex-1 items-center gap-1">
+        <div className="f-dock-foot">
+          <div className="f-pips" aria-hidden>
             {ORIENTATION_TEACH_STEPS.map((st, i) => (
-              <span
-                key={st.id}
-                className="block rounded-full transition-all"
-                style={{
-                  width: i === step ? 14 : 5,
-                  height: 5,
-                  background: i === step ? "var(--accent)" : "var(--line-strong)",
-                }}
-              />
+              <i key={st.id} data-on={i === step || undefined} data-done={i < step || undefined} />
             ))}
           </div>
-          {step > 0 && <Btn kind="ghost" onClick={back} className="!px-3 !py-1.5 !text-caption">Back</Btn>}
-          <Btn
-            kind="primary"
-            onClick={atEnd ? onDone : next}
-            className="!px-3 !py-1.5 !text-caption"
-          >
+          {step > 0 && (
+            <Button kind="ghost" size="sm" onClick={back}>
+              Back
+            </Button>
+          )}
+          <Button kind="primary" size="sm" onClick={atEnd ? onDone : next}>
             {atEnd ? "Get started" : "Next"}
-          </Btn>
+          </Button>
         </div>
       </div>
     </>,
     document.body,
-  );
-}
-
-function Tick({ done }: { done: boolean }) {
-  if (!done) return <span className="h-4 w-4 shrink-0 rounded-full border border-line-strong" />;
-  return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--accent)" }}>
-      <Icon name="check" size={10} />
-    </span>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Btn } from "../ui";
+import { Button } from "../kit";
+import { FlowHead, FlowMark } from "../rituals/FlowShell";
 import { useOrientation } from "../../hooks/useOrientation";
 import type { OrientationAction } from "./steps";
 import { WelcomeHero } from "./Visuals";
@@ -17,8 +18,8 @@ import TeachPanel from "./TeachPanel";
 // leaves from anywhere.
 //
 // So this screen's only job is emotional. It says what the app is *for* before any
-// vocabulary arrives, and hands off. Deliberately not a dialog-shaped card: full
-// warm paper, one Fraunces line, generous air.
+// vocabulary arrives, and hands off. The doors-in grammar (D-190): the window
+// ground, one 12px raised card, the mark, one hero, the act bottom-right.
 export default function Orientation({
   onAction,
   mobile = false,
@@ -54,64 +55,50 @@ export default function Orientation({
 
   return createPortal(
     <div
-      className="scrim atmosphere fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto p-6 pt-safe pb-safe"
+      className="scrim fixed inset-0 z-[60] overflow-y-auto"
+      style={{ background: "var(--ground)" }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="orient-title"
     >
-      {/* Quiet, always available — leaving costs one click and no explanation. */}
-      <button
-        onClick={dismiss}
-        className="tap fast absolute right-4 top-4 z-10 rounded-md px-3 py-2 text-caption text-muted hover:text-ink"
-      >
-        Skip
-      </button>
+      <div className="f-ground min-h-full">
+        <div ref={cardRef} tabIndex={-1} className="f-card outline-none" data-width="wide">
+          <div className="h-[132px] w-full overflow-hidden rounded-[var(--r-card)] sm:h-[160px]" style={{ background: "var(--sunk)", boxShadow: "inset 0 0 0 1px var(--line-1)" }}>
+            <WelcomeHero />
+          </div>
 
-      <div
-        ref={cardRef}
-        tabIndex={-1}
-        className="moment flex w-full max-w-xl flex-col items-center text-center outline-none"
-      >
-        <div className="rise h-[132px] w-full max-w-[360px] sm:h-[168px]">
-          <WelcomeHero />
+          <div className="mt-6 grid gap-5">
+            <FlowMark />
+            {/* "Organized" was the first draft and it's the wrong verb: it's what
+                the tools this replaces already do. Tidiness is the failure mode,
+                not the promise. The promise is that it *moves*. */}
+            <FlowHead
+              hero={
+                <span id="orient-title">
+                  Your whole life,
+                  <br />
+                  actually moving.
+                </span>
+              }
+              /* Says what the diagram says: loose things in, one line out — Nuvo
+                 takes the complexity, and the deciding stays yours in the same
+                 breath (N-01: never Motion-style autopilot). Do NOT enumerate
+                 domains here (Principle 16). */
+              fact="The complexity is ours. The decisions stay yours."
+            />
+          </div>
+
+          <div className="f-card-foot">
+            <span className="f-sum">Three minutes · stop anywhere</span>
+            {/* Quiet, always available — leaving costs one click and no explanation. */}
+            <Button kind="ghost" size="md" shortcut="Esc" onClick={dismiss}>
+              Skip
+            </Button>
+            <Button kind="primary" size="md" shortcut="↵" onClick={() => chooseMode("teach")}>
+              Walk me through it
+            </Button>
+          </div>
         </div>
-
-        {/* "Organized" was the first draft and it's the wrong verb: it's what the
-            tools this replaces already do. personas.md on the boards P1 left —
-            "work goes in and never comes out onto a Tuesday; the board is a
-            graveyard with good UI." Tidiness is the failure mode, not the
-            promise. The promise is that it *moves*. */}
-        <h1
-          id="orient-title"
-          className="rise masthead mt-7 text-[32px] leading-[1.12] text-ink sm:text-[44px]"
-        >
-          Your whole life,
-          <br />
-          actually moving.
-        </h1>
-
-        {/* Says what the diagram says: loose things in, one line out — Nuvo takes
-            the complexity. The second half is not decoration. "Nuvo handles it"
-            alone promises Motion-style autopilot, which is N-01 ("removes the
-            judgment the product exists to build"), so the sentence has to hand
-            the deciding back in the same breath. It's also the cleanest thing we
-            can say against both neighbours: a board organizes but never moves it;
-            an auto-scheduler moves it but takes the call.
-
-            Do NOT enumerate domains here. An earlier draft read "work, family,
-            faith, health" — persona zero's own list, which personas.md §1 names
-            as the Principle 16 violation behind the retired four-domain seed. */}
-        <p className="rise text-lead mt-5 max-w-md leading-relaxed text-muted">
-          The complexity is ours. The decisions stay yours.
-        </p>
-
-        <div className="rise mt-8 flex w-full justify-center">
-          <Btn kind="primary" onClick={() => chooseMode("teach")} className="!px-7 !py-3 !text-lead">
-            Walk me through it →
-          </Btn>
-        </div>
-
-        <p className="rise mt-4 text-caption text-muted">Three minutes. Stop anywhere.</p>
       </div>
     </div>,
     document.body

@@ -373,7 +373,7 @@ export default function FlowShell({
             }}
           >
             {stages.map((s, i) => (
-              <div key={s.id} className="f-scroll h-full w-full shrink-0" aria-hidden={i === step ? undefined : true}>
+              <div key={s.id} className="h-full w-full shrink-0 overflow-y-auto" aria-hidden={i === step ? undefined : true}>
                 <div className="f-page">
                   <div className="f-kicker mb-1.5">
                     {title}

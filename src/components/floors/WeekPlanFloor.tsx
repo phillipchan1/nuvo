@@ -18,6 +18,8 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { Icon } from "../Icon";
+import { Button, EmptyState, IconButton, SectionHeader } from "../kit";
+import { FlowFrame, FlowHead } from "../rituals/FlowShell";
 import { useQueryClient } from "@tanstack/react-query";
 import { weekSpan } from "../../lib/week";
 import { useVertical } from "../../hooks/useVertical";
@@ -61,7 +63,7 @@ function ConscienceRead({ report, tense }: { report: WeekReport; tense: "ahead" 
   // anything was neglected. Naming five of them on someone's first Tuesday is
   // the app inventing a failure (P7/P16).
   if (withHours.length === 0) {
-    return <p className="text-body text-muted">Nothing has landed against a domain{yet} this week.</p>;
+    return <p className="f-line text-muted">Nothing has landed against a domain{yet} this week.</p>;
   }
   if (quiet.length === 0) return null;
 
@@ -74,13 +76,13 @@ function ConscienceRead({ report, tense }: { report: WeekReport; tense: "ahead" 
       ? `Most of your domains are quiet so far — ${withHours[0].name} has the hours${room}`
       : `${quiet.map((d) => d.name).join(" and ")} ${quiet.length === 1 ? "hasn't" : "haven't"} had time${yet} this week${room}`;
 
-  return <p className="text-body text-ink">{line}</p>;
+  return <p className="f-line">{line}</p>;
 }
 
-function Col({ label, children }: { label: string; children: ReactNode }) {
+function Col({ label, count, children }: { label: string; count?: ReactNode; children: ReactNode }) {
   return (
-    <section>
-      <div className="section-label mb-3">{label}</div>
+    <section className="f-section">
+      <SectionHeader title={label} count={count} className="!px-0" />
       {children}
     </section>
   );
@@ -94,6 +96,7 @@ export function WeekPlanBody({
   tense = "current",
   viewedWeekISO,
   header,
+  kicker,
   onCompose,
   composeLabel,
   onOpenProject,
@@ -104,6 +107,9 @@ export function WeekPlanBody({
   tense?: "ahead" | "current" | "past";
   viewedWeekISO: string;
   header?: ReactNode;
+  /** the line over the hero — the desktop floor names the week here; the phone's
+   *  own header already does, so it omits it */
+  kicker?: ReactNode;
   /** Launch the compose + time-block ritual. Omitted on surfaces where the
    *  ritual isn't mounted (e.g. mobile) — the CTA then hides itself. */
   onCompose?: () => void;
@@ -182,128 +188,105 @@ export function WeekPlanBody({
     if (p.projectId) verdicts.setLanded(p.projectId, false);
   };
 
+  // The one hero says the week's verdict as a fact; the brief narrates it.
+  const hero =
+    total > 0
+      ? ahead
+        ? `${total} project${total === 1 ? "" : "s"} on the week.`
+        : `${report.landedCount} of ${total} landed.`
+      : ahead
+        ? "The week ahead is open."
+        : forming
+          ? "Nothing on the week yet."
+          : "Nothing was on this week.";
+
   return (
     <>
       {header}
 
-      {/* HERO — emblem + the warm brief, side by side (uses the width) */}
-      <div className="mb-12 grid items-center gap-8 md:grid-cols-[240px_1fr]">
+      {/* HERO — the emblem beside the verdict, the brief, and (when there's no
+          week yet to fix) the door into the ritual */}
+      <div className="mb-10 grid items-center gap-x-10 gap-y-6 md:grid-cols-[200px_1fr]">
         <div className="flex justify-center">
-          <WeekEmblem spec={report.emblem} state={state} size={220} />
+          <WeekEmblem spec={report.emblem} state={state} size={200} />
         </div>
-        <div>
-          {total > 0 && (
-            <div className="mb-3">
-              {ahead ? (
-                <>
-                  <span className="mono text-head text-ink">{total}</span>
-                  <span className="ml-2 text-meta text-muted">project{total === 1 ? "" : "s"} on the week</span>
-                </>
-              ) : (
-                <>
-                  <span className="mono text-head text-ink">{report.landedCount} of {total}</span>
-                  <span className="ml-2 text-meta text-muted">landed</span>
-                </>
-              )}
-            </div>
-          )}
-          {/* The deterministic brief narrates the week that *was* — skip it for a
-              week you're planning (nothing has happened yet). */}
-          {report.brief && !ahead && <p className="serif text-lead leading-relaxed text-ink">{report.brief}</p>}
-          {ahead && (
-            <p className="serif text-lead leading-relaxed text-ink">
-              {total > 0
-                ? `Here's the week ahead. ${total} project${total === 1 ? "" : "s"} on it so far.`
-                : "Here's the week ahead. Bring the projects in, then compose them into time."}
-            </p>
-          )}
+        <div className="grid min-w-0 gap-4">
+          <FlowHead kicker={kicker} hero={hero}>
+            {/* The deterministic brief narrates the week that *was* — skip it
+                for a week you're planning (nothing has happened yet). */}
+            {report.brief && !ahead && <p className="f-line mt-1">{report.brief}</p>}
+          </FlowHead>
 
           {/* The ritual is the act only when there's no week yet to fix — an
               empty slate, or a week you're planning. Mid-week you reach for one
-              project's remedy, not a re-run, so the door demotes to a quiet link
-              at the foot of the projects column. */}
+              project's remedy, not a re-run, so the door demotes to a quiet
+              link at the foot of the projects column. */}
           {forming && onCompose && (ahead || total === 0) && (
-            <div className="mt-5">
-              <button
-                onClick={onCompose}
-                className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-on-accent shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
-              >
+            <div>
+              <Button kind="primary" size="md" onClick={onCompose} trailing={<Icon name="arrow-right" size={14} />}>
                 {composeLabel ?? "Plan the week"}
-                <span aria-hidden>→</span>
-              </button>
-              <p className="mt-2 text-meta text-muted">Projects, leftovers and the inbox — placed against your real calendar.</p>
+              </Button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Forming: the conscience is one sentence, so it rides ABOVE as a band —
-          given a column of its own it left half the screen dead, and it made the
-          projects (this surface's actual hero) share the stage with a sentence.
+      {/* Forming: the conscience is one sentence, so it rides ABOVE as a band.
           The full Day / Domain breakdown sits at the foot for any lived week. */}
       {forming && !ahead && (
-        <div className="mb-10 min-w-0" data-marquee="hours">
+        <div className="mb-8 min-w-0" data-marquee="hours">
           <Col label={hoursLabel}>
             <ConscienceRead report={report} tense={tense} />
           </Col>
         </div>
       )}
 
-      {/* MAIN — the week's projects at depth. Hours live in The breakdown at
-          the foot (Day / Domain toggle) so the story reads projects → Find →
-          built → where the time went. */}
-      {/* `min-w-0` on the grid items is load-bearing: a grid child defaults to
-          min-width:auto, so without it the row's long outcome line sets the
-          track width and `truncate` never engages — the text just runs off the
-          side of a phone. */}
+      {/* MAIN — the week's projects at depth. `min-w-0` on the grid items is
+          load-bearing: without it a long outcome line sets the track width and
+          `truncate` never engages on a phone. */}
       <div className="grid gap-y-10">
         <div className="min-w-0" data-marquee="priorities">
-        <Col label={forming ? "The week's projects" : "How they landed"}>
-          {report.priorities.length > 0 ? (
-            // A readable measure, not the full bleed: at 1440px an unconstrained
-            // row strands the progress chip a screen away from the name it
-            // belongs to, and the remedy panel becomes a banner.
-            <div className="flex max-w-3xl flex-col">
-              {report.priorities.map((p) => (
-                <WeekProjectRow
-                  key={p.rock.id}
-                  p={p}
-                  editable={forming}
-                  onShip={() => ship(p)}
-                  onReopen={() => reopen(p)}
-                  onSpan={() => span(p)}
-                  onPushOut={() => pushOut(p)}
-                  onTakeOff={() => takeOff(p)}
-                  project={proj(p)}
-                  weekStartISO={viewedWeekISO}
-                  onOpenProject={onOpenProject && p.projectId ? () => onOpenProject(p.projectId!) : undefined}
-                />
-              ))}
-            </div>
-          ) : forming ? (
-            // Adding is the ritual's job, not a fifth editor's — say what's true
-            // and point at the one door that does it.
-            <p className="text-body text-muted">
-              {report.brief.startsWith("No projects yet")
-                ? "No projects yet. The week is genuinely empty — that's a fine place to start."
-                : "Nothing's on this week yet — bring a project in and the week has a shape."}
-            </p>
-          ) : (
-            <p className="text-body text-muted">Nothing was on this week.</p>
-          )}
+          <Col label={forming ? "The week's projects" : "How they landed"} count={total || undefined}>
+            {report.priorities.length > 0 ? (
+              // A readable measure, not the full bleed: at 1440px an
+              // unconstrained row strands the progress a screen from its name.
+              <div className="flex max-w-3xl flex-col" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
+                {report.priorities.map((p) => (
+                  <WeekProjectRow
+                    key={p.rock.id}
+                    p={p}
+                    editable={forming}
+                    onShip={() => ship(p)}
+                    onReopen={() => reopen(p)}
+                    onSpan={() => span(p)}
+                    onPushOut={() => pushOut(p)}
+                    onTakeOff={() => takeOff(p)}
+                    project={proj(p)}
+                    weekStartISO={viewedWeekISO}
+                    onOpenProject={onOpenProject && p.projectId ? () => onOpenProject(p.projectId!) : undefined}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState>
+                {forming ? (report.brief.startsWith("No projects yet") ? "No projects yet" : "Nothing on this week") : "Nothing was on this week"}
+              </EmptyState>
+            )}
 
-          {/* The ritual, demoted: mid-week you fix one project, you don't re-run
-              the week. It stays the loud pill in the hero when the slate is empty. */}
-          {forming && onCompose && !ahead && total > 0 && (
-            <button onClick={onCompose} className="fast tap mt-3 text-label text-muted hover:text-accent">
-              {composeLabel ?? "Plan the week"} →
-            </button>
-          )}
-        </Col>
+            {/* The ritual, demoted: mid-week you fix one project, you don't
+                re-run the week. */}
+            {forming && onCompose && !ahead && total > 0 && (
+              <div className="mt-2">
+                <Button size="xs" kind="ghost" onClick={onCompose} trailing={<Icon name="arrow-right" size={12} />}>
+                  {composeLabel ?? "Plan the week"}
+                </Button>
+              </div>
+            )}
+          </Col>
         </div>
 
-        {/* Day / Domain breakdown at the end — completed tasks, grouped by day or
-            domain. Full width so the day spread can read as seven lanes. */}
+        {/* Day / Domain breakdown at the end — completed tasks, grouped by day
+            or domain. Full width so the day spread can read as seven lanes. */}
         {!ahead && (
           <div className="min-w-0" data-marquee="hours">
             <Col label="The breakdown">
@@ -379,59 +362,65 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
   }
 
   const eyebrow = tense === "ahead" ? "The week ahead" : tense === "current" ? "This week" : "The Review";
-  const header = (
-    <div className="mb-8 flex items-start gap-4">
-      <div className="flex items-center gap-1.5 pt-1">
-        {onPrevWeek && (
-          <button onClick={onPrevWeek} className="fast flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Previous week">
-            <Icon name="chevron-left" size={14} />
-          </button>
-        )}
-        {onNextWeek && (
-          <button onClick={canGoNext ? onNextWeek : undefined} disabled={!canGoNext} className="fast flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30" aria-label="Next week">
-            <Icon name="chevron-right" size={14} />
-          </button>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="section-label mb-1"><span style={{ color: "var(--accent)" }}>{weekSpan(viewedWeekISO)}</span> · {eyebrow}</div>
-        <h1 className="masthead text-display leading-tight text-ink">{weekLabel}</h1>
-      </div>
-      {onJumpToWeek && (
-        <button
-          onClick={() => setGalleryOpen(true)}
-          className="tap fast flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-label text-muted hover:bg-surface-2 hover:text-ink"
-          aria-label="Browse your Reviews"
-          title="Browse your Reviews"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-            <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-            <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-            <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-          </svg>
-          <span className="hidden sm:inline">Your Reviews</span>
-        </button>
-      )}
-      <button onClick={onClose} className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
-        <Icon name="close" size={16} />
-      </button>
-    </div>
-  );
 
+  // The Flow frame: ✕ at the left, the week walked ‹ › in the centre, the
+  // archive at the right. The week is named once — in the bar — and the hero
+  // below says what it came to.
   return (
-    <div
-      className="atmosphere fixed inset-0 z-50 overflow-y-auto"
-      style={{
-        // Match mobile WeekPlanCard / MobilePlanWeek (96%) — 88% left the
-        // Schedule calendar readable through the surface and washed the copy out.
-        background: "color-mix(in srgb, var(--bg) 96%, transparent)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-      }}
+    <FlowFrame
+      label={`${eyebrow} — ${weekLabel}`}
+      onClose={onClose}
+      center={
+        <div className="flex min-w-0 items-center gap-1">
+          {onPrevWeek && <IconButton label="Previous week" icon={<Icon name="chevron-left" size={14} />} onClick={onPrevWeek} />}
+          <span className="f-top-title f-num px-1.5" aria-live="polite">
+            {weekLabel}
+          </span>
+          {onNextWeek && (
+            <IconButton label="Next week" icon={<Icon name="chevron-right" size={14} />} onClick={canGoNext ? onNextWeek : undefined} disabled={!canGoNext} />
+          )}
+        </div>
+      }
+      right={
+        onJumpToWeek && (
+          <Button
+            kind="ghost"
+            onClick={() => setGalleryOpen(true)}
+            aria-label="Browse your Reviews"
+            title="Browse your Reviews"
+            icon={
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+                <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+                <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+                <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            }
+          >
+            <span className="hidden sm:inline">Your Reviews</span>
+          </Button>
+        )
+      }
     >
-      <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
-        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} onOpenProject={(id) => openRecord("project", id)} />
+      <div className="f-scroll">
+        <div className="f-page">
+          <WeekPlanBody
+            report={report}
+            state={state}
+            tense={tense}
+            viewedWeekISO={viewedWeekISO}
+            kicker={
+              <>
+                {eyebrow}
+                <span aria-hidden>·</span>
+                <span className="text-[var(--ink-2)]">{weekSpan(viewedWeekISO)}</span>
+              </>
+            }
+            onCompose={onCompose}
+            composeLabel={composeLabel}
+            onOpenProject={(id) => openRecord("project", id)}
+          />
+        </div>
       </div>
 
       {galleryOpen && onJumpToWeek && (
@@ -443,6 +432,6 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
           }}
         />
       )}
-    </div>
+    </FlowFrame>
   );
 }

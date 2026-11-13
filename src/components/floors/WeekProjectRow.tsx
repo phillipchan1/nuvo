@@ -7,14 +7,13 @@
 // calendar, and how much is loose. A project with 4h remaining and nothing on
 // the grid is not "in progress", it's a promise the week hasn't made room for.
 //
-// So every row that has a problem carries its remedy inline. D-039 put those
-// acts on the Sunday step, while you're still choosing; nothing offered them on
-// a Wednesday, which is exactly when the week stops being true. One panel at a
+// So every row that has a problem carries its remedy inline. One panel at a
 // time, gaps before placement — a project that isn't defined can't meaningfully
 // be given "another week."
 //
 // A sealed week renders this read-only: the verdict is history, and history has
-// no acts.
+// no acts. Instrument (D-189/D-190): a kit row — identity Dot, the name, the
+// arithmetic in tabular figures, the round TaskCheck that ships, a PaceTrack.
 
 import { useState } from "react";
 import { carryMark, pushState, type PushState } from "../../lib/priorities";
@@ -26,6 +25,8 @@ import { useProjectTimeCost } from "../../hooks/useProjectTime";
 import { costPhrase } from "../../lib/projectTime";
 import type { Project } from "../../lib/vertical";
 import type { WeekPriority } from "../../lib/composeWeek";
+import { Button, Chip, ChipButton, Dot, PaceTrack, TaskCheck } from "../kit";
+import { Icon } from "../Icon";
 
 /** "2h has a time · 4h loose" — the row's whole reason for existing. Silent when
  *  nothing is left open (there's no honest arithmetic to state). */
@@ -37,43 +38,31 @@ function placementLine(p: WeekPriority): string | null {
 }
 
 function StateChip({ p, state, onShip }: { p: WeekPriority; state: PushState; onShip: () => void }) {
-  const color = p.domainColor;
-  const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
-
   if (state === "shipped") {
     return (
-      <span
-        className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
-        style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
-      >
-        shipped
-      </span>
+      <Chip tone="ok" icon={<Icon name="check" size={11} />}>
+        Shipped
+      </Chip>
     );
   }
   if (state === "landed") {
     // Landing a week ≠ finishing the project — say so, so "landed" never reads
     // as "closed it" (Push verdict ≠ done).
     const continues = p.total > p.done;
-    return <span className="mono shrink-0 text-micro text-muted">{continues ? "landed · continues" : "landed"}</span>;
+    return <span className="shrink-0 text-caption text-[var(--faint)]">{continues ? "Landed · continues" : "Landed"}</span>;
   }
   if (state === "ready-to-ship") {
     return (
-      <button
-        onClick={onShip}
-        title="Every task is done — ship it"
-        className="tap fast mono shrink-0 rounded-full border border-accent/50 px-2 py-0.5 text-micro font-medium text-accent hover:bg-accent-soft"
-      >
-        ship ✓
-      </button>
+      <ChipButton icon={<Icon name="check" size={11} />} onClick={onShip} title="Every task is done — ship it" className="f-chip-on">
+        Ship
+      </ChipButton>
     );
   }
   if (p.total === 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5">
-      <span className="block h-1 w-10 overflow-hidden rounded-full bg-line">
-        <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </span>
-      <span className="mono text-micro text-muted">
+    <span className="flex shrink-0 items-center gap-2">
+      <PaceTrack done={p.done} total={p.total} color={p.domainColor} width={48} />
+      <span className="f-num text-caption text-[var(--faint)]">
         {p.done}/{p.total}
       </span>
     </span>
@@ -126,32 +115,42 @@ export function WeekProjectRow({
   const [deferring, setDeferring] = useState(false);
   // What leaving the week would take off the calendar — said before the press.
   const cleared = costPhrase(useProjectTimeCost(p.projectId, "next_week", weekStartISO));
+  const quiet = state === "landed" || state === "shipped";
 
   return (
-    <div className="border-b border-line py-2">
-      <div className="flex items-start gap-2.5">
-        <span
-          className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-          style={p.ready ? { background: p.domainColor } : { border: "1.5px solid var(--line-strong)" }}
-          aria-hidden
-        />
+    <div className="py-2.5" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+      <div className="flex items-start gap-2.5 px-1">
+        <span className="flex h-5 shrink-0 items-center">
+          {p.ready ? (
+            <Dot color={p.domainColor} />
+          ) : (
+            <span aria-hidden className="h-2 w-2 rounded-[2.5px]" style={{ boxShadow: "inset 0 0 0 1.5px var(--line-2)" }} />
+          )}
+        </span>
 
         <div className="min-w-0 flex-1">
           {onOpenProject ? (
-            <button onClick={onOpenProject} title={`Open ${p.name}`} className="fast block w-full text-left">
-              <span className={`text-body ${state === "landed" || state === "shipped" ? "text-muted" : "text-ink"}`}>{p.name}</span>
+            <button type="button" onClick={onOpenProject} title={`Open ${p.name}`} className="block w-full text-left">
+              <span className="text-body font-medium" style={{ color: quiet ? "var(--muted)" : "var(--ink)" }}>
+                {p.name}
+              </span>
             </button>
           ) : (
-            <span className={`block text-body ${state === "landed" || state === "shipped" ? "text-muted" : "text-ink"}`}>{p.name}</span>
+            <span className="block text-body font-medium" style={{ color: quiet ? "var(--muted)" : "var(--ink)" }}>
+              {p.name}
+            </span>
           )}
           {/* What done looks like — the record's lead line, restated where the
-              week's judgment is being made (Q3). */}
-          {/* Old sealed snapshots predate this field — `outcome` isn't
-              guaranteed to exist on a stored `week_reviews.report` row. */}
-          {p.outcome?.trim() && <div className="mt-0.5 truncate text-meta text-muted">{p.outcome}</div>}
+              week's judgment is being made (Q3). Old sealed snapshots predate
+              this field — `outcome` isn't guaranteed on a stored row. */}
+          {p.outcome?.trim() && <div className="mt-0.5 truncate text-caption text-muted">{p.outcome}</div>}
           {(line || p.total > 0 || rolls > 0) && (
-            <div className="mono mt-1 text-micro text-muted">
-              {p.total > 0 && <span>{p.done} of {p.total} done</span>}
+            <div className="f-num mt-1 text-caption text-[var(--faint)]">
+              {p.total > 0 && (
+                <span>
+                  {p.done} of {p.total} done
+                </span>
+              )}
               {p.total > 0 && line && <span> · </span>}
               {line}
               {rolls > 0 && <span title={carryMark(rolls).title}> · {carryMark(rolls).text}</span>}
@@ -159,29 +158,20 @@ export function WeekProjectRow({
           )}
         </div>
 
-        {editable && state !== "shipped" && (
-          <button
-            onClick={state === "landed" ? onReopen : onShip}
-            title={state === "landed" ? "Landed — tap to reopen" : "Ship it — you'll see what's still open first"}
-            aria-label={state === "landed" ? "Reopen" : "Ship project"}
-            className="tap-desk-bloom fast mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
-            style={{
-              borderColor: p.domainColor,
-              background: state === "landed" ? p.domainColor : "transparent",
-              color: state === "landed" ? "#fff" : p.domainColor,
-            }}
-          >
-            <span style={{ lineHeight: 1 }}>{state === "landed" ? "✓" : ""}</span>
-          </button>
-        )}
-
-        <span className="mt-0.5">
+        <span className="flex h-5 shrink-0 items-center gap-2.5">
           <StateChip p={p} state={state} onShip={onShip} />
+          {editable && state !== "shipped" && (
+            <TaskCheck
+              checked={state === "landed"}
+              onChange={() => (state === "landed" ? onReopen() : onShip())}
+              label={state === "landed" ? "Reopen" : "Ship project"}
+            />
+          )}
         </span>
       </div>
 
       {showGap && (
-        <div className="mt-2">
+        <div className="mt-2 pl-[22px]">
           <RemedyPanel
             problem={`It's missing ${p.gapLabel}.`}
             acts={
@@ -194,7 +184,7 @@ export function WeekProjectRow({
       )}
 
       {showLoose && finding && p.projectId && (
-        <div className="mt-2">
+        <div className="mt-2 pl-[22px]">
           <FindTimeProposal
             projectId={p.projectId}
             weekStartISO={weekStartISO}
@@ -205,16 +195,14 @@ export function WeekProjectRow({
       )}
 
       {showLoose && !finding && (
-        <div className="mt-2">
+        <div className="mt-2 pl-[22px]">
           <RemedyPanel
             problem={`${fmtHours(p.looseMins)}h of what's left has no time this week.`}
             why={cleared ? `Moving it or taking it off the week clears ${cleared} off the calendar.` : undefined}
             acts={[
-              // Placement first. The three acts below are all ways to give up on
-              // the work; until now they were the only answers offered to "it has
-              // no time" — which meant a project that simply needed an hour found
-              // on Thursday could only be deferred. (D-039/D-060 built the
-              // remedies for "it doesn't fit"; this is the one for "it fits".)
+              // Placement first. The acts after it are all ways to give up on the
+              // work; a project that simply needs an hour found on Thursday
+              // shouldn't only be deferrable.
               ...(p.projectId
                 ? [
                     {
@@ -250,13 +238,9 @@ export function WeekProjectRow({
           {deferring ? (
             <DeferPanel project={project} weekStartISO={weekStartISO} onDone={() => setDeferring(false)} />
           ) : (
-            <button
-              onClick={() => setDeferring(true)}
-              className="tap fast text-meta text-muted hover:text-ink"
-              title="Move it to next week, or take it off the week"
-            >
+            <Button size="xs" kind="ghost" onClick={() => setDeferring(true)} title="Move it to next week, or take it off the week">
               Can’t get to it…
-            </button>
+            </Button>
           )}
         </div>
       )}

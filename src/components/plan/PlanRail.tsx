@@ -888,7 +888,6 @@ function PlanRailWeek({
             {/* the crown — one hero, the claim in figures, the load by world */}
             <div className="grid gap-3">
               <FlowHead
-                kicker="Plan the week"
                 hero="Shape the week."
                 fact={
                   <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">

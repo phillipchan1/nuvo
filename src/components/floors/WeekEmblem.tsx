@@ -2,8 +2,8 @@
 // SVG of the week, celestial metaphor. See src/lib/weekEmblem.ts for the spec
 // and the doctrine. No hooks, no data, no randomness beyond the seeded scatter.
 //
-// Warm-Paper tokens only: domain colors come from the spec (already semantic);
-// neutral structure uses --line / --muted / --ink. Nothing hardcoded that won't
+// Instrument tokens only (D-189): domain colors come from the spec (already semantic);
+// neutral structure uses --line-2 / --muted / --ink. Nothing hardcoded that won't
 // flip with the theme.
 
 import { useId } from "react";
@@ -163,7 +163,7 @@ export default function WeekEmblem({ spec, state = "sealed", size = 200, classNa
             <g key={`r${i}`}>
               {/* the full-circle line at the domain's altitude (structure) */}
               {show("ringStructure") && (
-                <circle cx={C} cy={C} r={r} fill="none" stroke="var(--line)" strokeWidth={1} opacity={0.5} />
+                <circle cx={C} cy={C} r={r} fill="none" stroke="var(--line-2)" strokeWidth={1} opacity={0.5} />
               )}
               {show("ringArcs") && (
                 <g>
