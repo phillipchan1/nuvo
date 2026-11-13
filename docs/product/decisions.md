@@ -6807,6 +6807,42 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-199 · 2026-11-13 · Plan the week has a way out, and Friday afternoon plans next week.**
+*(Asked by the operator after opening the plan on a Friday morning.)*
+
+**Why.** Three things went wrong. Esc never closed the plan: it only cleared the block under
+review, and the walk selects block 1 when it opens, so pressing Esc did nothing visible. The
+only way out was a small ✕ next to "Old walk". Opening the plan with the sidebar shut brought
+the macOS traffic lights back, because any open flow counted as covering the window (#146).
+The plan, though, is a rail inside the panel. And the default week depended on how full your
+week was (it switched once less than 60 minutes of open time was left), not on how much of
+the week was left.
+
+**What.**
+- **Esc leaves.** It cancels placing a block by hand (the one real mode), and otherwise
+  closes. The block under review is the walk's cursor, not a mode, so Esc doesn't stop on it.
+  With nothing touched, Esc and ✕ close at once. Nothing is written until Commit, so nothing is
+  lost. With accepted blocks or your own edits, the footer asks "Discard N changes?" with
+  *Keep planning* and *Discard* (Esc). A second Esc discards. The "Old walk" button is gone;
+  the `sunday-walk` flow still renders but nothing links to it.
+- **The lights stay hidden** while the plan is open with the sidebar shut. Only flows that
+  cover the window (`sunday-walk`, Summit, Capacity) bring them back.
+- **`planSessionWeekStart`** (kernel) chooses which week the plan opens on: this week, until
+  less than `WEEK_HANDOVER_MINS` (2h) of your last working day is left, or that day has passed.
+  Then it opens on next week. A Friday morning can still be filled. `planningWeekStart` keeps
+  its date-only answer to "what is this week" for the crown, the sprint and the agent. The
+  60-minute open-time handover remains for a booked-solid week. The default is decided once,
+  when your hours load, so crossing the cutoff mid-plan never swaps the draft out.
+
+**Anchor.** Closes no ledger row on its own; it keeps W1/W2's plan reachable and leaveable.
+The cutoff is measured against **your** working day's end and working days, not "Friday 3pm",
+which fits only the operator's 4:30 finish (P16). It adds no pool or name (P10/P11).
+No agent tool drafts a week yet, so the rule has no agent caller; one that does must use it.
+
+*Status: built 2026-11-13 on `claude/plan-exit-friday`. Covered by `tests/plan-walk.test.tsx`
+(the way out) and `tests/planning-kernel.test.ts`. Not driven in the dev app: this
+machine has no Supabase env. Not checked in the Tauri window (the lights).*
+
 **D-197 · 2026-11-13 · Memory gets better by grading its own guesses: four sources, three tiers,
 a written portrait, and five outcomes.** *(Asked by the operator: "in domains we have things about
 the domain to inform intelligence… should that be consolidated into memory", "how to really build a

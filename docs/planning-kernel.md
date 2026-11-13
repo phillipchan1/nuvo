@@ -72,6 +72,7 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Act | Kernel | UI | Agent |
 |---|---|---|---|
 | Which week am I planning | `planningWeekStart` | `planningWeekStartISO` (`lib/dates.ts`) | `context.ts`, `tools.ts` |
+| Which week does the plan open on (D-199) | `planSessionWeekStart` (+ `WEEK_HANDOVER_MINS`) | `planSessionWeekStartISO` (`lib/dates.ts`) → `PlanRail` | *none yet — no agent tool drafts a week* |
 | What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → rail crown, phone slate, week card, **`composeWeek` / the Week's Plan floor** (D-060 — the last surface still reading `big_rocks` as a list) | `context.weekSlate` |
 | What can I work on this week | `isOnDeckThisWeek` | `projectsOnDeck` → `suggestPull` | `context.weekSlate[].openTasks` |
 | Is this unfinished work following me | `isCarrying` / `carriedWeeks` (`worksThisWeek` = the union both membership rules stand on) | `WeekPush.carried` → the `wk N` mark (`carryMark`) on the rail crown, the Week's Plan row, Sunday and the phone's slate | `context.weekSlate[].carriedWeeks` |

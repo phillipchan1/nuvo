@@ -27,6 +27,7 @@ import {
   isOnSlate,
   needsASprint,
   planningWeekStart,
+  planSessionWeekStart,
   spanAnotherWeekPatch,
   spansWeek,
   takeOffWeekPatch,
@@ -274,6 +275,35 @@ describe("planningWeekStart — one rule for both runtimes", () => {
         timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit",
       }).format(at)));
     }
+  });
+});
+
+describe("planSessionWeekStart — the plan opens on next week once this one is spent", () => {
+  const END = 16 * 60 + 30; // a 4:30pm finish
+  const at = (h: number, m = 0) => h * 60 + m;
+  it("a Friday morning still plans this week — the day can be filled", () => {
+    expect(planSessionWeekStart("2026-07-24", at(9, 49), END)).toBe("2026-07-20");
+  });
+  it("with two hours of Friday left, still this week", () => {
+    expect(planSessionWeekStart("2026-07-24", at(14, 30), END)).toBe("2026-07-20");
+  });
+  it("with less than two hours of Friday left, next week", () => {
+    expect(planSessionWeekStart("2026-07-24", at(14, 31), END)).toBe("2026-07-27");
+    expect(planSessionWeekStart("2026-07-24", at(21), END)).toBe("2026-07-27");
+  });
+  it("is measured against YOUR day's end, not a fixed hour (P16)", () => {
+    expect(planSessionWeekStart("2026-07-24", at(15), 19 * 60)).toBe("2026-07-20");
+  });
+  it("a Thursday evening still has Friday ahead", () => {
+    expect(planSessionWeekStart("2026-07-23", at(23), END)).toBe("2026-07-20");
+  });
+  it("follows your working days — a Mon–Thu week is spent by Friday", () => {
+    expect(planSessionWeekStart("2026-07-24", at(8), END, [1, 2, 3, 4])).toBe("2026-07-27");
+    expect(planSessionWeekStart("2026-07-23", at(15), END, [1, 2, 3, 4])).toBe("2026-07-27");
+  });
+  it("the weekend is unchanged — it already plans ahead", () => {
+    expect(planSessionWeekStart("2026-07-25", at(9), END)).toBe(planningWeekStart("2026-07-25"));
+    expect(planSessionWeekStart("2026-07-26", at(9), END)).toBe("2026-07-27");
   });
 });
 

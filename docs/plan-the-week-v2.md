@@ -8,7 +8,7 @@ Clear afternoon · Day off), runs by kind of action, This/Next week, memory (pro
 phone (a card on the Calendar). Trial deviations from this spec: memory and the dial live in this
 device's localStorage, not `plan_signals`; Keep clear is a planning rule, not a calendar event;
 kept rules sit in the rail's "Nuvo keeps" list, not Settings; the phone has no draft mode (only
-repairs). Handle is built on trial — Q-14 is still open.* *2026-11-09: the draft is now walked **one block at a time** over a faded calendar. Each group lists its tasks; ↵ accepts (holds) it and moves on; dragging it or picking a numbered alternative re-places it (D-183).* Prototype:
+repairs). Handle is built on trial — Q-14 is still open.* *2026-11-09: the draft is now walked **one block at a time** over a faded calendar. Each group lists its tasks; ↵ accepts (holds) it and moves on; dragging it or picking a numbered alternative re-places it (D-183).* *2026-11-13 (D-199): Esc leaves (asking first only if you accepted or changed something); "Old walk" is gone; the plan opens on next week once less than 2h of your last working day is left.* Prototype:
 [Plan the week v2](https://claude.ai/artifact/Xtnmyo9RFic7r2xeZB8TwN) (private; Sunday ·
 Wednesday · Phone scenes, example data, a toy scorer, not `compose.ts`). Three
 calls are still open and marked **[open]** below; the biggest is Q-14 (how far the dial

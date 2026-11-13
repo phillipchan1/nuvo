@@ -12,14 +12,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWeekDraft, placementKey } from "../../hooks/useWeekDraft";
 import type { Placement } from "../../lib/compose";
-import { parseDateISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
+import { parseDateISO, planSessionWeekStartISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
+import { useSettings } from "../../hooks/useSettings";
+import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { domainById, projectById, sprintMinsByDomain } from "../../lib/vertical";
 import { resolveDomainId } from "../../lib/batch";
 import { at, span } from "../mobile/dayPlan";
 import { revealOnCalendar } from "../../lib/calendarReveal";
 import { fmtMins } from "../../lib/now";
 import type { PlanOverlay } from "./planOverlay";
-import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   describeRules,
   forget,
@@ -110,16 +111,31 @@ type RailProps = {
 };
 
 /**
- * Which week. The kernel's answer is the default (planningWeekStartISO —
- * Saturday plans next week); you can name the other one. And a week whose open
- * time is already spent (a Friday evening) hands over to the next by itself once,
- * because "the rest of this week" is then nothing to plan.
+ * Which week. The kernel's answer is the default (planSessionWeekStart — the
+ * weekend plans next week, and so does your last working day once less than
+ * two hours of it are left); you can name the other one. And a week whose open
+ * time is already spent (a booked-solid Friday) hands over to the next by itself
+ * once, because "the rest of this week" is then nothing to plan.
  */
 export default function PlanRail(props: RailProps) {
   const thisWeek = planningWeekStartISO();
   const nextWeek = toDateISO(new Date(parseDateISO(thisWeek).getTime() + 7 * 86_400_000));
-  const [week, setWeek] = useState(thisWeek);
+  const { settings } = useSettings();
+  const [workingDays] = useWorkingDays();
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const opensOn = planSessionWeekStartISO(workEnd, workingDays);
+  const [week, setWeek] = useState(opensOn);
   const chose = useRef(false);
+  // Your hours arrive after the first paint: settle on their answer ONCE. Never
+  // after — the clock crossing the cutoff mid-plan must not swap the week (and
+  // the draft) out from under you.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (!settings || settled.current) return;
+    settled.current = true;
+    if (!chose.current) setWeek(opensOn);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
   // what the planner remembers — read once, written on every correction
   const [memory, setMemoryState] = useState<PlanMemory>(loadMemory);
   const setMemory = useCallback((f: (m: PlanMemory) => PlanMemory) => {
@@ -175,7 +191,6 @@ function PlanRailWeek({
   const [paint, setPaint] = useState<{ dayISO: string; startMin: number; endMin: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<string | null>(null);
   const [showKept, setShowKept] = useState(false);
-  const { navigate } = useAppNavigation();
   const { data, placements, slotById } = d;
 
   const [sel, setSel] = useState<string | null>(null);
@@ -191,6 +206,8 @@ function PlanRailWeek({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState(0);
   const [done, setDone] = useState<{ things: number; blocks: number; secs: number; changes: number } | null>(null);
+  /** Asked to leave with work in the draft — the footer asks before throwing it away. */
+  const [leaving, setLeaving] = useState(false);
   const t0 = useRef(Date.now());
 
   // land on the week being planned
@@ -780,8 +797,20 @@ function PlanRailWeek({
   };
 
   // ── keys ───────────────────────────────────────────────────────────────
-  const keyState = useRef({ sel, focus, stack, order, altIx });
-  keyState.current = { sel, focus, stack, order, altIx };
+  // What leaving would throw away: your own edits, plus every block you said
+  // "looks good" to. Nothing is written until Commit, so with none of either
+  // the plan simply closes.
+  const invested = changes + reviewed;
+  /** The one way out — Esc and the ✕ both come through here. */
+  const requestClose = useCallback(() => {
+    if (done || invested === 0 || leaving) onClose();
+    else setLeaving(true);
+  }, [done, invested, leaving, onClose]);
+  // any new work while the question is up answers it: you're still planning
+  useEffect(() => setLeaving(false), [invested]);
+
+  const keyState = useRef({ sel, focus, stack, order, altIx, placing });
+  keyState.current = { sel, focus, stack, order, altIx, placing };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target instanceof HTMLElement ? e.target : null;
@@ -810,14 +839,13 @@ function PlanRailWeek({
         return;
       }
       if (mod || e.altKey) return;
+      // Esc peels the one real mode (placing a block by hand), then leaves.
+      // The block under review is the walk's cursor, not a mode — clearing it
+      // first made the plan look stuck: Esc did nothing visible, twice.
       if (k === "Escape") {
-        setPlacing(null);
-        if (s.sel || s.focus) {
-          eat();
-          setSel(null);
-          setFocus(null);
-          setExpand(null);
-        }
+        eat();
+        if (s.placing) setPlacing(null);
+        else requestClose();
         return;
       }
       if (k === "j" || k === "k") {
@@ -856,7 +884,7 @@ function PlanRailWeek({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [d, commit, decide, pickAlt, shiftDay, byKey, act, accept]);
+  }, [d, commit, decide, pickAlt, shiftDay, byKey, act, accept, requestClose]);
 
   const selP = sel ? byKey.get(sel) : null;
 
@@ -893,16 +921,7 @@ function PlanRailWeek({
           ]}
         />
         <span className="min-w-0 flex-1" />
-        {/* trial escape hatch: the v1 walk, while v2 is being tried */}
-        <Button
-          size="xs"
-          kind="ghost"
-          onClick={() => navigate({ flow: "sunday-walk", flowStep: 0 }, "replace")}
-          title="Open the previous full-screen walk"
-        >
-          Old walk
-        </Button>
-        <IconButton label="Close the plan" icon={<Icon name="close" size={14} />} onClick={onClose} />
+        <IconButton label="Close the plan" shortcut="Esc" icon={<Icon name="close" size={14} />} onClick={requestClose} />
       </div>
 
       {done ? (
@@ -1272,14 +1291,28 @@ function PlanRailWeek({
             </section>
           </div>
 
-          <div className="f-foot">
-            <div className="f-sum">
-              <b>{things}</b> things · <b>{placements.length}</b> blocks
+          {leaving ? (
+            <div className="f-foot">
+              <div className="f-sum">
+                Discard <b>{invested}</b> change{invested === 1 ? "" : "s"}?
+              </div>
+              <Button kind="ghost" size="md" onClick={() => setLeaving(false)}>
+                Keep planning
+              </Button>
+              <Button kind="danger" size="md" shortcut="Esc" onClick={onClose}>
+                Discard
+              </Button>
             </div>
-            <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying || placements.length === 0}>
-              {d.applying ? "Committing…" : `Commit ${things} things`}
-            </Button>
-          </div>
+          ) : (
+            <div className="f-foot">
+              <div className="f-sum">
+                <b>{things}</b> things · <b>{placements.length}</b> blocks
+              </div>
+              <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying || placements.length === 0}>
+                {d.applying ? "Committing…" : `Commit ${things} things`}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

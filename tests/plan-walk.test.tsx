@@ -17,6 +17,7 @@ import type { PlanOverlay } from "../src/components/plan/planOverlay";
 vi.mock("../src/lib/calendarReveal", () => ({ revealOnCalendar: vi.fn() }));
 vi.mock("../src/hooks/useAppNavigation", () => ({ useAppNavigation: () => ({ navigate: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
+vi.mock("../src/hooks/useSettings", () => ({ useSettings: () => ({ settings: { work_end_minutes: 990 }, isLoading: false, update: vi.fn() }) }));
 
 const DAY = "2026-11-10";
 const t = (id: string, title: string, mins = 30) => ({ id, title, duration_minutes: mins });
@@ -139,5 +140,39 @@ describe("Plan the week — open time and length", () => {
     render(<Host />);
     await act(() => new Promise((r) => setTimeout(r, 200)));
     expect(n).toBeLessThan(10);
+  });
+});
+
+describe("Plan the week — the way out", () => {
+  const esc = () => act(() => void fireEvent.keyDown(window, { key: "Escape" }));
+
+  it("Esc closes at once when nothing has been touched — even with a block under review", () => {
+    const onClose = vi.fn();
+    render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
+    expect(screen.getByText("Block 1 of 2")).toBeTruthy();
+    esc();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("with work in the draft, Esc asks first; Esc again discards", () => {
+    const onClose = vi.fn();
+    render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
+    act(() => void fireEvent.keyDown(window, { key: "Enter" })); // accept block 1
+    esc();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText(/Discard/, { selector: ".f-sum" })).toBeTruthy();
+    esc();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Keep planning takes the question back, and the ✕ asks the same question", () => {
+    const onClose = vi.fn();
+    render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
+    act(() => void fireEvent.keyDown(window, { key: "Enter" }));
+    fireEvent.click(screen.getByRole("button", { name: /Close the plan/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep planning" }));
+    expect(screen.queryByRole("button", { name: "Keep planning" })).toBeNull();
+    expect(screen.getByText(/Commit/)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
