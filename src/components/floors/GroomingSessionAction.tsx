@@ -34,6 +34,7 @@ export default function GroomingSessionAction({ kind }: { kind: "project" | "ini
         className="tap"
         icon={<Icon name="clock" size={14} />}
         aria-expanded={expanded}
+        active={expanded}
         title="Block time to groom"
         onClick={() => setExpanded((v) => !v)}
       >
