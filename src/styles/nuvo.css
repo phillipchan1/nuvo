@@ -37,3 +37,23 @@
 @media (pointer: coarse) {
   .nuvo-offers[data-phone] .k-btn { min-height: 44px; height: auto; }
 }
+
+/* The panel without a chat (D-200): offers, a quiet line, and the way to talk
+   to Nuvo from your own assistant. */
+.nuvo-panel-body { gap: 8px; padding-top: 12px; }
+.nuvo-quiet { margin: 0; padding: 4px 2px; font: 400 13px/1.5 var(--font-sans); color: var(--muted); }
+.nuvo-connect {
+  display: grid; gap: 4px; justify-items: start;
+  padding: 12px 2px 4px;
+  border-top: 1px solid var(--line);
+}
+.nuvo-connect-say { margin: 0; font: 600 12.5px/1.4 var(--font-sans); color: var(--ink-2); }
+.nuvo-connect-sub { margin: 0 0 6px; font: 400 12px/1.45 var(--font-sans); color: var(--muted); }
+.nuvo-connect[data-phone] { padding: 16px 0 4px; }
+.nuvo-connect[data-phone] .nuvo-connect-say { font-size: 14px; }
+.nuvo-connect[data-phone] .nuvo-connect-sub { font-size: 13px; }
+@media (pointer: coarse) {
+  .nuvo-connect[data-phone] .k-btn { min-height: 44px; height: auto; }
+}
+.nuvo-sheet { display: grid; gap: 12px; padding: 4px 16px calc(20px + env(safe-area-inset-bottom, 0px)); }
+.nuvo-sheet .nuvo-quiet { font-size: 14px; padding: 8px 0; }

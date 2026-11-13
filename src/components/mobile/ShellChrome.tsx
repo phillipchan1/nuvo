@@ -163,7 +163,7 @@ export function PhoneNav<T extends string>({
       {onAskNuvo && (
         // Nuvo — the floating chat launcher, beside capture: a --raised 44px
         // square. Screen-aware: its starters match wherever you are.
-        <button type="button" onClick={onAskNuvo} aria-label="Ask Nuvo" data-teach="nuvo" className="ph-launch">
+        <button type="button" onClick={onAskNuvo} aria-label="Nuvo" data-teach="nuvo" className="ph-launch">
           <span className={nuvoDot ? "sb-icon-dot" : undefined}>
             <Icon name="sparkles" size={20} />
           </span>

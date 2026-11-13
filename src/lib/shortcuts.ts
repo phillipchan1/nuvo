@@ -10,8 +10,10 @@
 // one applier (`MobileShell`'s `applyShortcut`). A widget that opens capture and
 // a long-press that opens capture must not be able to drift apart.
 
-/** The acts a launch URL is allowed to name. Capture and the chat are the phone's
- *  two permanent floating actions; `today` is where the manifest shortcut lands. */
+/** The acts a launch URL is allowed to name. Capture and Nuvo are the phone's
+ *  two permanent floating actions; `today` is where the manifest shortcut lands.
+ *  `chat` keeps its name because installed widgets and icons carry it — since
+ *  D-200 it opens Nuvo's offers, not a chat. */
 export type Shortcut = "capture" | "chat" | "today";
 
 const SHORTCUTS: readonly Shortcut[] = ["capture", "chat", "today"] as const;

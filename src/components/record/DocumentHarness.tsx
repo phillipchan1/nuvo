@@ -14,8 +14,6 @@ import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertic
 import { TaskCaptureSinkContext, type TaskCaptureSink } from "../../hooks/useTaskCapture";
 import { AppNavigationProvider } from "../../hooks/useAppNavigation";
 import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib/vertical";
-import type { AgentHandle } from "../../hooks/useAgent";
-import type { AgentMessage } from "../../lib/agentTypes";
 import type { SettingsSection } from "../../lib/appNav";
 import type { UserSettings } from "../../lib/types";
 import RecordModal from "./RecordModal";
@@ -204,66 +202,12 @@ function harnessSink(store: VerticalStore): TaskCaptureSink {
   };
 }
 
-const TRANSCRIPT: AgentMessage[] = [
-  { id: "u1", role: "user", content: "What's left on onboarding this week?", at: Date.now() - 6 * 60_000 },
-  {
-    id: "a1",
-    role: "assistant",
-    content:
-      "Two pieces are open on **Onboarding flow v2**:\n\n- Instrument the funnel (1h)\n- Review with Priya (30m)\n\nBoth fit before Friday. Want me to block them?",
-    suggestions: [
-      { label: "Block them tomorrow morning", message: "Block both tomorrow morning" },
-      { label: "Just the review", message: "Block only the review" },
-    ],
-  },
-  { id: "u2", role: "user", content: "Block both tomorrow morning", display: "Block them tomorrow morning", at: Date.now() - 2 * 60_000 },
-  {
-    id: "a2",
-    role: "assistant",
-    content: "Done — both are on tomorrow, 9–10:30am.",
-    actions: [
-      { tool: "schedule_task", summary: "Scheduled “Instrument the funnel” · tomorrow 9am" },
-      { tool: "schedule_task", summary: "Scheduled “Review with Priya” · tomorrow 10am" },
-    ] as unknown as AgentMessage["actions"],
-  },
-];
 
-function useFakeAgent(empty: boolean): AgentHandle {
-  const [messages, setMessages] = useState<AgentMessage[]>(empty ? [] : TRANSCRIPT);
-  const [loading, setLoading] = useState(false);
-  return {
-    messages,
-    loading,
-    error: null,
-    sendMessage: async (text: string, _files: unknown, opts?: { display?: string }) => {
-      setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text, display: opts?.display, at: Date.now() }]);
-      setLoading(true);
-      window.setTimeout(() => {
-        setMessages((m) => [...m, { id: `a${Date.now()}`, role: "assistant", content: "Got it — that's a harness, so nothing was written." }]);
-        setLoading(false);
-      }, 1200);
-    },
-    clear: () => setMessages([]),
-    retry: () => undefined,
-  } as unknown as AgentHandle;
-}
 
-type Mode = "project" | "initiative" | "new-project" | "new-initiative" | "settings" | "shortcuts" | "ship" | "upkeep" | "chat" | "chat-empty";
+type Mode = "project" | "initiative" | "new-project" | "new-initiative" | "settings" | "shortcuts" | "ship" | "upkeep" | "nuvo";
 
 const SECTIONS: SettingsSection[] = ["appearance", "schedule", "reminders", "connections", "inbound", "apps", "labels", "account", "billing", "about"] as SettingsSection[];
 
-function ChatFrame({ empty }: { empty: boolean }) {
-  const agent = useFakeAgent(empty);
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="flex h-[calc(100vh-64px)] app-ground">
-      <div className="app-panel !m-2 flex-1" />
-      <div className="app-chat-slot" style={{ width: open ? 380 : 64 }}>
-        <AgentSidebar agent={agent} open={open} onToggle={() => setOpen((o) => !o)} />
-      </div>
-    </div>
-  );
-}
 
 export default function DocumentHarness() {
   const store = useHarnessStore();
@@ -277,7 +221,7 @@ export default function DocumentHarness() {
     hidden_events: [{ key: "acc:series:abc", title: "Weekly 1:1" }],
   } as unknown as UserSettings);
 
-  const close = () => setMode("chat");
+  const close = () => setMode("project");
   const toggleTheme = () => {
     const next = !dark;
     setDark(next);
@@ -306,8 +250,7 @@ export default function DocumentHarness() {
                     { value: "shortcuts", label: "Shortcuts" },
                     { value: "ship", label: "Ship" },
                     { value: "upkeep", label: "Upkeep" },
-                    { value: "chat", label: "Chat" },
-                    { value: "chat-empty", label: "Chat (empty)" },
+                    { value: "nuvo", label: "Nuvo panel" },
                   ]}
                 />
                 </div>
@@ -323,7 +266,14 @@ export default function DocumentHarness() {
                 </Button>
               </div>
 
-              {(mode === "chat" || mode === "chat-empty") && <ChatFrame key={mode} empty={mode === "chat-empty"} />}
+              {mode === "nuvo" && (
+                <div className="flex h-[calc(100vh-64px)] app-ground">
+                  <div className="app-panel !m-2 flex-1" data-land="page" />
+                  <div className="app-chat-slot" style={{ width: 380 }}>
+                    <AgentSidebar open onToggle={() => setMode("project")} />
+                  </div>
+                </div>
+              )}
               {mode === "project" && <RecordModal kind="project" id="p1" onClose={close} onOpenProject={() => setMode("project")} onOpenInitiative={() => setMode("initiative")} />}
               {mode === "initiative" && <RecordModal kind="initiative" id="i1" onClose={close} onOpenProject={() => setMode("project")} onOpenInitiative={() => setMode("initiative")} />}
               {mode === "new-project" && <CreateRecord kind="project" initialDomainId="d1" onClose={close} onCreated={close} />}

@@ -255,7 +255,7 @@ function WeekCards() {
   const { data } = useVertical();
   return (
     <div className="flex flex-col gap-3 px-4 pt-4">
-      <MobileReadiness data={data} onAskNuvo={() => {}} onReview={() => {}} />
+      <MobileReadiness data={data} onPlanWeek={() => {}} onReview={() => {}} />
       <PlanWeekCard onOpen={() => {}} />
       <WeekPlanCard variant="link" />
       <WeekPlanCard />

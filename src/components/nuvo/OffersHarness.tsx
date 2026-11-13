@@ -9,6 +9,8 @@
 import { useState } from "react";
 import { Toaster } from "sonner";
 import { NuvoOffersView, type OfferActs } from "./NuvoOffers";
+import NuvoSheet from "../mobile/NuvoSheet";
+import type { NuvoOffersState } from "./useNuvoOffers";
 import { MemoryIcon } from "../memory/MemoryIcon";
 import { composeOffers, type Offer } from "../../lib/nuvoOffers";
 import { collectInto, landingTarget } from "../../lib/motion";
@@ -66,6 +68,17 @@ export default function OffersHarness() {
     setSteps(["Confirm the date with the museum", "Book the coach"]);
     setMemDot(false);
   };
+
+  if (new URLSearchParams(location.search).has("sheet")) {
+    // The phone's ✦ sheet — the real NuvoSheet over the fixture offers.
+    const state = { offers, unseen: false, markSeen: () => {}, memoryItem: () => null } as unknown as NuvoOffersState;
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+        <NuvoSheet offers={state} memory={null} onClose={reset} onMemory={() => {}} onOpenProject={() => {}} onConnect={() => {}} />
+        <Toaster />
+      </div>
+    );
+  }
 
   if (phone) {
     return (

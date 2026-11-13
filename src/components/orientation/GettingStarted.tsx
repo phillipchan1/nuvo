@@ -3,7 +3,6 @@ import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useAllTasks } from "../../hooks/useTasks";
-import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { Button, IconButton, Popover, Row } from "../kit";
 import { FlowMeter } from "../rituals/FlowShell";
@@ -44,22 +43,22 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
   const { data, ready } = useVertical();
   const { data: accounts = [], isLoading: accountsLoading } = useCalendarAccounts();
   const { data: allTasks = [], isLoading: tasksLoading } = useAllTasks();
-  const { agent } = useAgentContext();
-  const { goRung, openOverlay, setSettingsSection, toggleAgent } = useAppNavigation();
+  const { nav, goRung, openOverlay, setSettingsSection, toggleAgent } = useAppNavigation();
 
   const [askedNuvo, setAskedNuvo] = useState(() => lsGet(LS.askedNuvo));
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const wasIncomplete = useRef(false);
 
-  // Latch "asked Nuvo" the first time a user message appears in the agent thread.
+  // Latch "met Nuvo" the first time its panel is opened (D-200: there's no chat
+  // to ask any more — the panel offers, and opening it is the step).
   useEffect(() => {
     if (askedNuvo) return;
-    if (agent.messages?.some((m) => m.role === "user")) {
+    if (nav.agentOpen) {
       lsSet(LS.askedNuvo);
       setAskedNuvo(true);
     }
-  }, [agent.messages, askedNuvo]);
+  }, [nav.agentOpen, askedNuvo]);
 
   const loaded = ready && !accountsLoading && !tasksLoading;
 
@@ -78,7 +77,7 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
       done: allTasks.some((t) => t.start_time != null && t.do_date != null),
       go: () => goRung("day"),
     },
-    { id: "nuvo", label: "Ask Nuvo something", done: askedNuvo, go: () => toggleAgent() },
+    { id: "nuvo", label: "Open Nuvo", done: askedNuvo, go: () => toggleAgent() },
   ];
 
   const foundationalDone = steps.slice(0, 4).every((s) => s.done);

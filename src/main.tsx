@@ -83,7 +83,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat / ?capture / ?sheets / ?rail / ?login / ?memory / ?offers, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?horizon / ?year / ?sitting / ?gather / ?domains / ?build / ?weekcrown / ?meet / ?capture / ?sheets / ?rail / ?login / ?memory / ?offers, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -92,12 +92,10 @@ const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
 const showCalendarHarness = import.meta.env.DEV && (params.has("horizon") || params.has("daycal"));
 const showYearHarness = import.meta.env.DEV && params.has("year");
 const showMeetHarness = import.meta.env.DEV && params.has("meet");
-const showInviteHarness = import.meta.env.DEV && params.has("invite");
 const showDomainHarness = import.meta.env.DEV && params.has("domains");
 const showBuildHarness = import.meta.env.DEV && params.has("build");
 const showDraftsHarness = import.meta.env.DEV && params.has("drafts");
 const showWeekCrownHarness = import.meta.env.DEV && params.has("weekcrown");
-const showPickHarness = import.meta.env.DEV && params.has("chat");
 const showSittingHarness = import.meta.env.DEV && params.has("sitting");
 const showGatherHarness = import.meta.env.DEV && params.has("gather");
 const showCaptureHarness = import.meta.env.DEV && params.has("capture");
@@ -116,22 +114,6 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <DocumentHarness />
-      </React.StrictMode>,
-    );
-  });
-} else if (showPickHarness) {
-  void import("./components/AgentPickHarness").then(({ default: AgentPickHarness }) => {
-    ReactDOM.createRoot(document.getElementById("root")!).render(
-      <React.StrictMode>
-        <AgentPickHarness />
-      </React.StrictMode>,
-    );
-  });
-} else if (showInviteHarness) {
-  void import("./components/InviteHarness").then(({ default: InviteHarness }) => {
-    ReactDOM.createRoot(document.getElementById("root")!).render(
-      <React.StrictMode>
-        <InviteHarness />
       </React.StrictMode>,
     );
   });

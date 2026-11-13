@@ -32,7 +32,7 @@ export type TeachTargetKey =
 export type TeachArm =
   | "rail-inbox"   // swing the rail to its Inbox tab
   | "rail-today"   // …and back, so the timing step shows the day
-  | "open-agent"   // open the Nuvo chat rail
+  | "open-agent"   // open the Nuvo panel
   | "open-calendars" // Settings, on the Calendars section
   | "open-plan";   // the weekly ritual, already on its Projects step
 

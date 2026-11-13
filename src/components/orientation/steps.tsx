@@ -105,10 +105,10 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
   },
   {
     id: "nuvo",
-    eyebrow: "Your co-pilot · ⌘J",
-    title: "This is Nuvo. Ask it something.",
+    eyebrow: "Nuvo · ⌘J",
+    title: "This is Nuvo. It offers what would help.",
     teach:
-      "Plain words — it grooms your inbox, slots your projects, and plans the week. You always make the call.",
+      "On each page it suggests the next step — draft a project's missing steps, keep a pattern of your week. Nothing happens until you keep it.",
     target: "nuvo",
     milestone: "nuvo",
   },

@@ -33,7 +33,6 @@ import { mergeTaskLists } from "../../lib/taskMerge";
 import { isTauri } from "../../lib/platform";
 import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
-import type { AgentHintContext } from "../../lib/agentHints";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
 import type { AltitudeKind } from "../icons";
@@ -63,13 +62,12 @@ import PullIndicator from "./PullIndicator";
 import MobileDetailSheet from "./detail/MobileDetailSheet";
 import type { DetailTarget, Frame } from "./detail/verticalDetail";
 import MobileCapture, { type CaptureKind } from "./MobileCapture";
-import ChatPane from "./ChatPane";
+import NuvoSheet from "./NuvoSheet";
 import MobileTaskSheet from "./MobileTaskSheet";
 import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 import { useNuvoOffers } from "../nuvo/useNuvoOffers";
-import NuvoOffers from "../nuvo/NuvoOffers";
 
 const MemoryPage = lazy(() => import("../memory/MemoryPage"));
 const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
@@ -210,7 +208,7 @@ export default function MobileShell() {
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
   const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
-  const [chatOpen, setChatOpen] = useState(false);
+  const [nuvoOpen, setNuvoOpen] = useState(false);
   // Memory (docs/memory.md §4.1): on the phone its dot rides the ✦, and it opens
   // from the chat's header.
   const memory = useMemory();
@@ -218,12 +216,13 @@ export default function MobileShell() {
   const offers = useNuvoOffers({ memory });
   const { markSeen: markOffersSeen } = offers;
   useEffect(() => {
-    if (chatOpen) markOffersSeen();
-  }, [chatOpen, markOffersSeen]);
+    if (nuvoOpen) markOffersSeen();
+  }, [nuvoOpen, markOffersSeen]);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"appearance" | "apps">("appearance");
   const [upkeepOpen, setUpkeepOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // A strategic-vertical detail to open in the shared Sheet — from a tab row or a
@@ -236,7 +235,7 @@ export default function MobileShell() {
   // standalone back-swipe close the top overlay instead of exiting the app.
   // (detailTarget is handled inside MobileDetailSheet, which also gives each
   // breadcrumb frame its own entry via useMobileSheetStackHistory.)
-  useMobileOverlayHistory(chatOpen, () => setChatOpen(false), "chat");
+  useMobileOverlayHistory(nuvoOpen, () => setNuvoOpen(false), "nuvo");
   useMobileOverlayHistory(memoryOpen, () => setMemoryOpen(false), "memory");
   useMobileOverlayHistory(planOpen, () => setPlanOpen(false), "plan");
   useMobileOverlayHistory(Boolean(capture), () => setCapture(null), "capture");
@@ -270,11 +269,13 @@ export default function MobileShell() {
   // long-pressed icon can't drift into meaning different things.
   const applyShortcut = useCallback((act: Shortcut) => {
     if (act === "capture") {
-      setChatOpen(false);
+      setNuvoOpen(false);
       setCapture({ kind: "task" });
     } else if (act === "chat") {
+      // The widget and icon shortcut still say "chat" (installed phones keep
+      // their links); since D-200 that door opens Nuvo's offers.
       setCapture(null);
-      setChatOpen(true);
+      setNuvoOpen(true);
     } else {
       setTabState("tasks");
       setSubState("today");
@@ -374,7 +375,7 @@ export default function MobileShell() {
   const recurrenceMutations = useRecurrenceMutations();
   // Commit to / off this week, from the task sheet — the desktop menu's act.
   const weekCommit = useWeekCommitAct(mutations);
-  const { agent, setRange, setNavFocus } = useAgentContext();
+  const { setRange, setNavFocus } = useAgentContext();
   useEffect(() => {
     setRange(range);
   }, [range, setRange]);
@@ -526,16 +527,8 @@ export default function MobileShell() {
     "[data-deck-col], .mobile-scroll",
   );
 
-  // Open the Nuvo chat overlay, optionally seeding a first message — e.g. "Ask
-  // Nuvo" from the Now view. The shared agent means the conversation is already
-  // there; this just surfaces it over the current screen.
-  // `say` is what the transcript records when the seed is a constructed sentence
-  // the user never wrote — the button did the talking, so the button's words are
-  // what's shown and the seed travels to Nuvo unseen (D-087).
-  const openChat = (seed?: string, say?: string) => {
-    setChatOpen(true);
-    if (seed) void agent.sendMessage(seed, [], { display: say });
-  };
+  // The ✦: Nuvo's offers for where you are (D-198), in a bottom sheet (D-200).
+  const openNuvo = () => setNuvoOpen(true);
 
   // Open a strategic-vertical item in the shared detail Sheet (nonce so the same
   // id re-fires). Used by the Projects/Initiatives tabs and global search alike.
@@ -577,10 +570,6 @@ export default function MobileShell() {
     }
   };
 
-  const liveHint = useMemo(
-    () => liveHintFor(tab, sub, detailFrame, vertical),
-    [tab, sub, detailFrame, vertical],
-  );
 
   return (
     // Pin to the layout viewport with `fixed inset-0` rather than a percentage/
@@ -718,7 +707,7 @@ export default function MobileShell() {
                 execution screen. */}
             {sub === "week" && verticalReady && (
               <div className="flex flex-col gap-3 px-4 pt-4">
-                <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
+                <MobileReadiness data={vertical} onPlanWeek={() => setPlanOpen(true)} onReview={reviewFloor} />
                 {/* One primary card per state (plan vs review), the other a
                     quiet link — see WeekCompanions. */}
                 <WeekCompanions onOpenPlan={() => setPlanOpen(true)} />
@@ -802,29 +791,30 @@ export default function MobileShell() {
         current={tab}
         onPick={(id) => (tab === id ? scrollToTop() : setTab(id))}
         badge={(id) => (id === "tasks" ? inbox.length : 0)}
-        onCapture={!chatOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
-        onAskNuvo={!chatOpen && pickedIds.size === 0 ? () => openChat() : undefined}
+        onCapture={!nuvoOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
+        onAskNuvo={!nuvoOpen && pickedIds.size === 0 ? openNuvo : undefined}
         nuvoDot={memory.hasNew || offers.unseen}
       />
 
-      {/* The Nuvo chat — a full-screen overlay over the shell (its own scroll +
-          pinned composer sit better here than in a swipe-to-dismiss sheet). */}
-      {chatOpen && (
-        <div className="ph-overlay">
-          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} onMemory={() => setMemoryOpen(true)}
-            offers={
-              <NuvoOffers
-                state={offers}
-                memory={memory}
-                phone
-                onOpenProject={(id) => {
-                  setChatOpen(false);
-                  openDetail("project", id);
-                }}
-              />
-            }
-          />
-        </div>
+      {nuvoOpen && (
+        <NuvoSheet
+          offers={offers}
+          memory={memory}
+          onClose={() => setNuvoOpen(false)}
+          onMemory={() => {
+            setNuvoOpen(false);
+            setMemoryOpen(true);
+          }}
+          onOpenProject={(id) => {
+            setNuvoOpen(false);
+            openDetail("project", id);
+          }}
+          onConnect={() => {
+            setNuvoOpen(false);
+            setSettingsSection("apps");
+            setSettingsOpen(true);
+          }}
+        />
       )}
       {memoryOpen && (
         <Suspense fallback={null}>
@@ -875,7 +865,6 @@ export default function MobileShell() {
           slotMutations={slotMutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
-          onAskNuvo={openChat}
           onToggleWeek={weekCommit}
         />
       )}
@@ -886,7 +875,6 @@ export default function MobileShell() {
           labels={labels}
           mutations={mutations}
           onClose={() => setCalendarTap(null)}
-          onAskNuvo={openChat}
           onEditTask={(id) => { setCalendarTap(null); setTaskId(id); }}
         />
       )}
@@ -905,8 +893,11 @@ export default function MobileShell() {
           settings={settings}
           updateSettings={updateSettings}
           accounts={accounts}
-          section="appearance"
-          onClose={() => setSettingsOpen(false)}
+          section={settingsSection}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsSection("appearance");
+          }}
           // Settings → Schedule is where recurring upkeep lives on the phone
           // now (D-123). Close Settings on the way so two full-screen overlays
           // are never stacked — back then returns to the tab, not to a modal.
@@ -927,7 +918,8 @@ export default function MobileShell() {
 }
 
 // The agent's "where am I" context. A vertical detail overrides the tab, carrying
-// the item plus its parents so Nuvo can act on exactly what's on screen.
+// the item plus its parents. Nothing in the app sends a message with it since the
+// chat went (D-200); kept because the walkthrough still reads the agent context.
 function navFocusFor(
   tab: Tab,
   frame: Frame | null,
@@ -953,39 +945,6 @@ function navFocusFor(
       return { rung: "domain" };
     default:
       return { rung: "day" };
-  }
-}
-
-// The chat's empty-state starters. Reuses the day-lens mobile hints for the
-// execution surfaces and the richer rung starters for the strategic ones (and a
-// named item when a detail is open).
-function liveHintFor(
-  tab: Tab,
-  sub: MobileTab,
-  frame: Frame | null,
-  d: ReturnType<typeof useVertical>["data"],
-): AgentHintContext {
-  if (frame && frame.level !== "list") {
-    if (frame.level === "project")
-      return { rung: "project", projectName: d.projects.find((x) => x.id === frame.id)?.name };
-    if (frame.level === "initiative")
-      return { rung: "initiative", initiativeName: d.initiatives.find((x) => x.id === frame.id)?.name };
-    return { rung: "domain", domainName: d.domains.find((x) => x.id === frame.id)?.name };
-  }
-  switch (tab) {
-    case "calendar":
-      return { rung: "day", mobileTab: "today" };
-    case "projects":
-      return { rung: "project" };
-    case "initiatives":
-      return { rung: "initiative" };
-    case "domains":
-      return { rung: "domain" };
-    default:
-      // Trash has no agent hints of its own — nothing there is work to plan, so
-      // the chat's starters stay the Today ones rather than inventing a voice
-      // for a face that only holds deleted rows.
-      return { rung: "day", mobileTab: sub === "trash" ? "today" : sub };
   }
 }
 

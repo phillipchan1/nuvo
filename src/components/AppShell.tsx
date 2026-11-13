@@ -577,7 +577,7 @@ const AppShellInner = memo(function AppShellInner() {
         style={{ width: effectiveAgentOpen ? 380 : 64 }}
         aria-hidden={false}
       >
-        <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
+        <AgentSidebar open={effectiveAgentOpen} onToggle={toggleAgent} />
       </div>
 
       {/* the plan's step rides nav history, so browser/mouse back-forward walks

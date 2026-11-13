@@ -16,11 +16,12 @@ import { TouchButton } from "./touch";
 
 export default function MobileReadiness({
   data,
-  onAskNuvo,
+  onPlanWeek,
   onReview,
 }: {
   data: VerticalData;
-  onAskNuvo: (seed?: string, say?: string) => void;
+  /** Opens Plan the week — the week's own planning is the ritual, not a chat (D-200). */
+  onPlanWeek: () => void;
   onReview: (floor: Floor) => void;
 }) {
   const spine = readSpine(data);
@@ -31,14 +32,14 @@ export default function MobileReadiness({
     return <ReadinessCard name="This week" readiness={spine.floors.day.readiness} />;
   }
 
-  // The action depends on where the turn lives. The week's own planning is a Nuvo
-  // job on the phone; vertical turns route to their On Deck tab (domains, which
+  // The action depends on where the turn lives. The week's own planning is
+  // Plan the week; vertical turns route to their On Deck tab (domains, which
   // have no tab, ride along to Initiatives where their bets live).
   const reviewLabel =
     turn.floor === "project" ? "Open Projects" : turn.floor === "day" ? "Review week" : "Open Initiatives";
   const action =
     turn.floor === "day" && turn.cue?.tone === "invite"
-      ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week", "Plan my week") }
+      ? { label: "Plan the week", run: onPlanWeek }
       : { label: reviewLabel, run: () => onReview(turn.floor) };
 
   return (

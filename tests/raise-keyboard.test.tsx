@@ -40,9 +40,9 @@ function DialogHost({
 }
 
 describe("one hook, not three timers", () => {
-  it("capture, chat, and search all call useRaiseKeyboard", () => {
+  it("capture and search both call useRaiseKeyboard", () => {
     const src = join(__dirname, "..", "src", "components", "mobile");
-    for (const file of ["MobileCapture.tsx", "ChatPane.tsx", "MobileSearch.tsx"]) {
+    for (const file of ["MobileCapture.tsx", "MobileSearch.tsx"]) {
       const text = readFileSync(join(src, file), "utf8");
       expect(text, file).toContain("useRaiseKeyboard");
       expect(text, file).not.toMatch(/setTimeout\(\(\) => \w+\.current\?\.focus/);

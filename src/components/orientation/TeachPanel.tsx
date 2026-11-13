@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useAllTasks } from "../../hooks/useTasks";
-import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { Button } from "../kit";
 import { ORIENTATION_TEACH_STEPS, type OrientationAction, type TeachMilestone } from "./steps";
@@ -38,7 +37,6 @@ export default function TeachPanel({
   const { data } = useVertical();
   const { data: accounts = [] } = useCalendarAccounts();
   const { data: allTasks = [] } = useAllTasks();
-  const { agent } = useAgentContext();
   const { nav, goRung, navigate, setTab, openOverlay, closeOverlay, setSettingsSection, openFlow } = useAppNavigation();
 
   const [step, setStep] = useState(0);
@@ -97,7 +95,8 @@ export default function TeachPanel({
   // ── the milestones, derived from real data (never from a click) ─────────────
   // Same five reads the Getting Started tracker uses, so the two can never
   // disagree about what "done" means.
-  const askedNuvo = agent.messages?.some((m) => m.role === "user") ?? false;
+  // Since the chat went (D-200), meeting Nuvo is opening its panel.
+  const askedNuvo = nav.agentOpen;
   const met: Record<TeachMilestone, boolean> = {
     inbox: allTasks.some((t) => t.status === "inbox"),
     timeblock: allTasks.some((t) => t.start_time != null && t.do_date != null),
