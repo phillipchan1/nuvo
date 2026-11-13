@@ -32,23 +32,6 @@
   --atmosphere-base: var(--panel);
 }
 .spine[data-collapsed] + .app-panel { margin-left: 8px; }
-/* macOS: the traffic lights live over the sidebar, at fixed window points.
-   With the sidebar railed or hidden there is no room for them there, so they
-   move into the panel's top-left corner (Spine.tsx tells AppKit where): 16px
-   in, centred on the panel's 48px top row. --lights-room is what that row
-   leaves them — the cluster's 60pt plus 16pt of air, converted for the app's
-   zoom. Whatever holds the corner starts after it: the page bar, or on the
-   Schedule the open rail (its crown, or the plan's bar — rail.css), in which
-   case the calendar's bar beside the rail is nowhere near them. */
-html.tauri-macos .spine:is([data-rail], [data-collapsed]) + .app-panel {
-  --lights-room: calc(76px / var(--ui-scale, 1));
-}
-html.tauri-macos .app-panel [data-corner-rail]:not([data-shut]) ~ * {
-  --lights-room: 0px;
-}
-html.tauri-macos .app-panel .k-bar[data-tauri-drag-region] {
-  padding-left: calc(16px + var(--lights-room, 0px));
-}
 /* The chat sits on the ground beside the panel: the panel keeps its right
    gutter only when the chat rail is shut (a 64px strip of its own). */
 
