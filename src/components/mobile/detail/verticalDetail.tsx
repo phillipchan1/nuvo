@@ -47,6 +47,8 @@ import type { Task } from "../../../lib/types";
 import TaskListView from "../../tasks/TaskListView";
 import { useMobileOpenTask } from "../openTask";
 import DomainSymbol from "../../domain/DomainSymbol";
+import { Icon } from "../../Icon";
+import { Dot, IconButton } from "../../kit";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -121,7 +123,7 @@ export function VerticalList({
     const projects = [...d.projects].sort(
       (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
     );
-    if (projects.length === 0) return <Empty>No projects yet.</Empty>;
+    if (projects.length === 0) return <Empty>No projects yet</Empty>;
     return (
       <div>
         {projects.map((p) => (
@@ -134,7 +136,7 @@ export function VerticalList({
             title={p.name}
             subtitle={projectContext(d, p)}
             meta={
-              <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+              <span className="ph-row-meta flex items-center gap-1.5">
                 {(() => { const rp = ripenessOfProject(d, p); return <RipenessPip stage={rp.stage} unsound={rp.stage === "active" && verdictOf(d, "project", p.id)?.sound !== true} />; })()}
                 {projectProgress(d, p)}%
               </span>
@@ -149,7 +151,7 @@ export function VerticalList({
     const inits = [...d.initiatives].sort(
       (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
     );
-    if (inits.length === 0) return <Empty>No initiatives yet.</Empty>;
+    if (inits.length === 0) return <Empty>No initiatives yet</Empty>;
     return (
       <div>
         {inits.map((i) => {
@@ -164,7 +166,7 @@ export function VerticalList({
               title={i.name}
               subtitle={domainById(d, i.domainId)?.name ?? undefined}
               meta={
-                <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+                <span className="ph-row-meta flex items-center gap-1.5">
                   {(() => { const ri = ripenessOfInitiative(d, i); return <RipenessPip stage={ri.stage} unsound={ri.stage === "active" && verdictOf(d, "initiative", i.id)?.sound !== true} />; })()}
                   <span>{mom?.glyph}</span>
                   <span>{initiativeProgress(d, i)}%</span>
@@ -177,7 +179,7 @@ export function VerticalList({
     );
   }
 
-  if (d.domains.length === 0) return <Empty>No domains yet.</Empty>;
+  if (d.domains.length === 0) return <Empty>No domains yet</Empty>;
   return (
     <div>
       {d.domains.map((dom) => {
@@ -190,8 +192,8 @@ export function VerticalList({
             chevron
             leading={
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-head"
-                style={{ background: `color-mix(in srgb, ${dom.color} 16%, var(--surface))`, color: dom.color }}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--r-card)]"
+                style={{ background: `color-mix(in srgb, ${dom.color} 14%, transparent)`, color: dom.color }}
               >
                 <DomainSymbol value={dom.icon} size={18} />
               </span>
@@ -230,7 +232,7 @@ export function InitiativeScreen({
     },
   });
   const i = d.initiatives.find((x) => x.id === id);
-  if (!i) return <Empty>This initiative is gone.</Empty>;
+  if (!i) return <Empty>Gone</Empty>;
   const dom = d.domains.find((x) => x.id === i.domainId);
   const accent = dom?.color ?? "var(--accent)";
   const projects = projectsOf(d, i.id);
@@ -238,14 +240,14 @@ export function InitiativeScreen({
   const attainment = i.keyResults.length ? initiativeAttainment(d, i) : null;
 
   return (
-    <div className="px-4 pt-1">
+    <div className="ph-body pt-1">
       <RecordHead
         accent={accent}
         name={i.name}
         onName={(v) => store.updateInitiative(i.id, { name: v })}
         outcome={i.outcome}
         onOutcome={(v) => store.updateInitiative(i.id, { outcome: v })}
-        outcomePlaceholder="What does done look like, in one line?"
+        outcomePlaceholder="Outcome"
         shipped={isProjectComplete(i.status)}
         sealSize={26}
       />
@@ -278,12 +280,13 @@ export function InitiativeScreen({
             ))}
           </CardList>
         )}
-        <button
-          onClick={() => store.addKeyResult(i.id)}
-          className="tap fast mt-2 flex w-full items-center gap-3 rounded-xl border border-dashed border-line px-3 text-left"
-        >
-          <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
-          <span className="flex-1 py-2.5 text-body text-muted">Add a key result…</span>
+        <button type="button" onClick={() => store.addKeyResult(i.id)} className="ph-row row-hover !px-0 !border-b-0">
+          <span className="ph-row-lead" style={{ color: accent }}>
+            <Icon name="plus" size={18} />
+          </span>
+          <span className="ph-row-label" data-grow="" style={{ color: "var(--muted)" }}>
+            Add a key result
+          </span>
         </button>
       </Section>
 
@@ -294,7 +297,7 @@ export function InitiativeScreen({
         accent={accent}
       >
         {projects.length === 0 ? (
-          <Hint>No projects under this initiative.</Hint>
+          <Hint>No projects yet</Hint>
         ) : (
           <div ref={projectListRef} className="relative">
             {projectReorder.lineTop != null && (
@@ -336,7 +339,7 @@ export function InitiativeScreen({
         <DetailTaskList
           tasks={looseTasks}
           parent={{ initiativeId: i.id, domainId: i.domainId }}
-          placeholder="A task that belongs to the initiative itself…"
+          placeholder="Add a task"
           reorderable
         />
       </Section>
@@ -351,7 +354,7 @@ export function InitiativeScreen({
         <div className="flex flex-wrap gap-1.5">
           {MOMENTUM.map((m) => (
             <Chip key={m.value} on={i.momentum === m.value} onClick={() => store.updateInitiative(i.id, { momentum: m.value })}>
-              <span className="mono mr-1">{m.glyph}</span>
+              <span aria-hidden>{m.glyph}</span>
               {m.label}
             </Chip>
           ))}
@@ -369,21 +372,21 @@ export function InitiativeScreen({
 export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: string }) {
   const [shipping, setShipping] = useState(false);
   const p = d.projects.find((x) => x.id === id);
-  if (!p) return <Empty>This project is gone.</Empty>;
+  if (!p) return <Empty>Gone</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
   const accent = dom?.color ?? "var(--accent)";
   const tasks = tasksOf(d, p.id);
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
   return (
-    <div className="px-4 pt-1">
+    <div className="ph-body pt-1">
       <RecordHead
         accent={accent}
         name={p.name}
         onName={(v) => store.updateProject(p.id, { name: v })}
         outcome={p.outcome}
         onOutcome={(v) => store.updateProject(p.id, { outcome: v })}
-        outcomePlaceholder="What does done look like, in one line?"
+        outcomePlaceholder="Outcome"
         shipped={isProjectComplete(p.status)}
       />
 
@@ -404,7 +407,7 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
         <DetailTaskList
           tasks={tasks}
           parent={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
-          placeholder={tasks.length ? "Add a task…" : "First step…"}
+          placeholder={tasks.length ? "Add a task" : "First step"}
           reorderable
         />
       </Section>
@@ -446,7 +449,7 @@ export function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiativ
       title={i.name}
       subtitle={i.outcome || undefined}
       meta={
-        <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+        <span className="ph-row-meta flex items-center gap-1.5">
           <span>{mom?.glyph}</span>
           <span>{initiativeProgress(d, i)}%</span>
         </span>
@@ -474,7 +477,7 @@ export function ProjectRow({
       leading={<StatusDot status={p.status} />}
       title={p.name}
       subtitle={p.outcome || undefined}
-      meta={<span className="mono shrink-0 text-caption text-muted">{projectProgress(d, p)}%</span>}
+      meta={<span className="ph-row-meta">{projectProgress(d, p)}%</span>}
       reorder={reorder}
     />
   );
@@ -569,24 +572,24 @@ export function KeyResultRow({
   const span = kr.target - kr.baseline;
   const pct = span === 0 ? 0 : Math.round(((kr.current - kr.baseline) / span) * 100);
   return (
-    <div className="px-3 py-2.5">
+    <div className="py-2.5">
       <div className="flex items-center gap-2">
         <TextField
-          className="min-w-0 flex-1 text-body font-medium"
+          className="min-w-0 flex-1 text-head font-medium"
           value={kr.name}
           onCommit={(v) => onPatch({ name: v })}
         />
-        <button
+        <IconButton
+          label={`Delete ${kr.name || "key result"}`}
+          size="sm"
+          icon={<Icon name="close" size={16} />}
           onClick={onDelete}
-          aria-label={`Delete ${kr.name || "key result"}`}
-          className="tap-icon fast flex shrink-0 items-center justify-center text-caption text-muted active:text-signal"
-        >
-          ✕
-        </button>
+          className="tap-icon -mr-1.5 shrink-0"
+        />
       </div>
-      <div className="mono mt-1.5 flex items-center gap-1.5 text-caption text-muted">
+      <div className="mt-1 flex items-center gap-1.5 text-caption tabular-nums text-muted">
         <KrNumber value={kr.current} accent={accent} onCommit={(v) => onPatch({ current: v })} />
-        <span className="opacity-50">/</span>
+        <span className="text-[var(--faint)]">/</span>
         <KrNumber value={kr.target} onCommit={(v) => onPatch({ target: v })} />
         <input
           defaultValue={kr.unit}
@@ -597,7 +600,7 @@ export function KeyResultRow({
             if (v !== kr.unit) onPatch({ unit: v });
           }}
           // takes the slack rather than a fixed width — "sessions" was clipped
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted/50"
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[var(--faint)]"
         />
         <span className="ml-auto shrink-0 tabular-nums" style={{ color: accent }}>{pct}%</span>
       </div>
@@ -654,19 +657,20 @@ export function Row({
 }) {
   return (
     <button
+      type="button"
       data-project-id={reorder ? id : undefined}
       onClick={onClick}
       {...hold}
-      className="tap fast flex w-full items-center gap-3 border-b border-line px-4 py-3 text-left last:border-b-0 active:bg-surface-2"
+      className="ph-row row-hover py-1.5"
       style={reorder?.dragging ? { opacity: 0.6 } : undefined}
     >
       {leading}
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-head font-medium">{title}</div>
-        {subtitle && <div className="truncate text-caption text-muted">{subtitle}</div>}
-      </div>
+      <span className="min-w-0 flex-1">
+        <span className="ph-row-title block">{title}</span>
+        {subtitle && <span className="block truncate text-caption text-muted">{subtitle}</span>}
+      </span>
       {meta}
-      {chevron && <span className="shrink-0 text-muted">›</span>}
+      {chevron && <Icon name="chevron-right" size={16} className="ph-row-chev" />}
       {/* Always visible (no hover to reveal it behind) — the hold, not the
           tap, starts the drag, so a plain tap still opens the record. */}
       {reorder && (
@@ -674,7 +678,7 @@ export function Row({
           onPointerDown={(e) => { e.stopPropagation(); reorder.press(e); }}
           onClick={(e) => e.stopPropagation()}
           aria-label="Press and hold to reorder"
-          className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
+          className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-[var(--faint)]"
           style={reorder.arming ? { color: "var(--ink)" } : undefined}
         >
           ⠿
@@ -686,21 +690,18 @@ export function Row({
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 export function StatusDot({ status }: { status: ProjectStatus }) {
-  return <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[status] }} />;
+  return <Dot color={STATUS_COLOR[status]} shape="round" />;
 }
 
+/** Showing up this week: lit in the domain's hue, or a faint ring of absence. */
 export function Lamp({ lit, color }: { lit: boolean; color: string }) {
-  return (
-    <span
-      className="h-2.5 w-2.5 shrink-0 rounded-full"
-      style={lit ? { background: color, boxShadow: `0 0 6px ${color}` } : { background: "var(--line-strong)", opacity: 0.5 }}
-    />
-  );
+  return <Dot color={lit ? color : "var(--line-2)"} shape="round" />;
 }
 
+/** A key result's track — the domain's hue on a hairline rail, `--track-h` thick. */
 export function ProgressBar({ pct, color }: { pct: number; color: string }) {
   return (
-    <div className="relative mt-2 h-1.5 rounded-full" style={{ background: "var(--line)" }}>
+    <div className="relative mt-2 overflow-hidden rounded-full" style={{ height: "var(--track-h, 3px)", background: "var(--line-1)" }}>
       <div
         className="fast absolute inset-y-0 left-0 rounded-full"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
@@ -714,13 +715,13 @@ export function ProgressBar({ pct, color }: { pct: number; color: string }) {
  *  row, opens iOS's own wheel, and reads its current value at a glance. */
 export function StatusSelect({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
   return (
-    <div className="tap flex items-center gap-2.5 rounded-xl border border-line bg-surface-2 px-3">
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[value] }} />
+    <div className="ph-field flex items-center gap-2.5 !py-0">
+      <Dot color={STATUS_COLOR[value]} shape="round" />
       <select
         value={value}
         onChange={(e) => onPick(e.target.value as ProjectStatus)}
         aria-label="Status"
-        className="min-w-0 flex-1 appearance-none bg-transparent py-2.5 text-body text-ink outline-none"
+        className="h-11 min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none"
       >
         {STATUS.map((s) => (
           <option key={s} value={s}>
@@ -728,7 +729,7 @@ export function StatusSelect({ value, onPick }: { value: ProjectStatus; onPick: 
           </option>
         ))}
       </select>
-      <span className="shrink-0 text-caption text-muted">▾</span>
+      <Icon name="chevron-down" size={16} className="shrink-0 text-[var(--faint)]" />
     </div>
   );
 }
@@ -789,15 +790,15 @@ export function DateRow({
 
 export function DateField({ label, value, onCommit }: { label: string; value: string | null; onCommit: (v: string | null) => void }) {
   return (
-    <label className="flex flex-1 flex-col gap-1">
-      <span className="section-label !p-0">{label}</span>
+    <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <span className="text-caption font-semibold text-muted">{label}</span>
       <input
         type="date"
         defaultValue={value ?? ""}
         onChange={(e) => onCommit(e.target.value || null)}
-        className="mono tap rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+        className="ph-field"
       />
-      {value && <span className="mono text-meta text-muted">{format(parseISO(value), "EEE, MMM d")}</span>}
+      {value && <span className="text-caption tabular-nums text-muted">{format(parseISO(value), "EEE, MMM d")}</span>}
     </label>
   );
 }
@@ -878,7 +879,7 @@ export function AreaField({
         const next = e.target.value.trim();
         if (next !== value) onCommit(next);
       }}
-      className={`w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/60 ${expanded ? "" : "truncate"} ${className}`}
+      className={`w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-[var(--faint)] ${expanded ? "" : "truncate"} ${className}`}
       style={style}
     />
   );
@@ -901,8 +902,8 @@ export function NumberField({ value, onCommit, accent }: { value: number; onComm
         const next = Number(e.target.value);
         if (!Number.isNaN(next) && next !== value) onCommit(next);
       }}
-      className="mono tap w-14 rounded-lg border border-line bg-transparent px-2 py-1.5 text-head tabular-nums outline-none focus:border-accent"
-      style={accent ? { color: accent } : undefined}
+      className="ph-field tabular-nums"
+      style={{ width: 64, paddingLeft: 8, paddingRight: 8, ...(accent ? { color: accent } : {}) }}
     />
   );
 }
@@ -964,22 +965,18 @@ export function RecordHead({
           </span>
         )}
         <TextField
-          className={`min-w-0 flex-1 text-display masthead leading-tight ${center ? "text-center" : ""}`}
+          className={`ph-mast-title min-w-0 flex-1 ${center ? "text-center" : ""}`}
           value={name}
           onCommit={onName}
           style={{ caretColor: accent }}
         />
       </div>
-      {stateTag && (
-        <div className="mt-1 text-meta uppercase" style={{ letterSpacing: "0.1em", color: "var(--muted)" }}>
-          {stateTag}
-        </div>
-      )}
+      {stateTag && <div className="mt-1 text-caption font-medium text-muted">{stateTag}</div>}
       {flourish && <div className="my-2 flex justify-center">{flourish}</div>}
       <AreaField
-        className={`mt-1 leading-snug ${captionOutcome ? "serif text-caption italic text-muted" : center ? "serif text-head italic" : "text-head"}`}
+        className={`mt-1 leading-snug ${captionOutcome ? "text-caption text-muted" : "text-head"}`}
         style={{
-          color: captionOutcome ? undefined : "color-mix(in srgb, var(--ink) 72%, var(--muted))",
+          color: captionOutcome ? undefined : "var(--ink-2)",
           caretColor: accent,
           ...(center ? { textAlign: "center" as const } : {}),
         }}
@@ -1036,7 +1033,7 @@ export function RecordCrumbs({
         />
         {(init || domainInitiatives.length > 0) && (
           <>
-            <span className="text-caption font-normal text-muted/60">›</span>
+            <Icon name="chevron-right" size={12} className="shrink-0 text-[var(--faint)]" />
             <InitiativePicker
               initiatives={domainInitiatives}
               value={p.initiativeId}
@@ -1072,8 +1069,8 @@ export function RecordCrumbs({
     if (!dom) return null;
     return (
       <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head"
-        style={{ background: `color-mix(in srgb, ${dom.color} 16%, var(--surface))`, color: dom.color }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--r-card)]"
+        style={{ background: `color-mix(in srgb, ${dom.color} 14%, transparent)`, color: dom.color }}
       >
         <DomainSymbol value={dom.icon} size={16} />
       </span>
@@ -1089,16 +1086,18 @@ export function ParentCrumb({ children, onClick }: { children: ReactNode; onClic
     <>
       {/* font-normal: this can render inside the sheet's title row, which is
           semibold — a crumb is not a heading. */}
-      <span className="text-caption font-normal text-muted/60">›</span>
-      <button onClick={onClick} className="tap fast min-w-0 truncate text-caption font-normal text-muted active:text-accent">
+      <Icon name="chevron-right" size={12} className="shrink-0 text-[var(--faint)]" />
+      <button type="button" onClick={onClick} className="tap min-w-0 truncate text-caption font-normal text-muted">
         {children}
       </button>
     </>
   );
 }
 
+/** A record's own rows (its key results, its projects) — hairlines edge to
+ *  edge of the sheet, never a card holding a list. */
 export function CardList({ children }: { children: ReactNode }) {
-  return <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface-2">{children}</div>;
+  return <div className="ph-rows">{children}</div>;
 }
 
 /** The desktop `Sec`, at phone width: a label, an optional right-hand meter,
@@ -1119,12 +1118,12 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-5">
-      <div className="flex items-baseline gap-3">
-        <span className="section-label flex-1 !p-0">{label}</span>
-        {meter && <span className="mono text-meta text-muted">{meter}</span>}
+    <div className="ph-sec">
+      <div className="ph-sec-head !mb-0">
+        <span className="flex-1">{label}</span>
+        {meter && <span className="ph-sec-aside">{meter}</span>}
       </div>
-      <div className="relative mb-2 mt-1.5 h-0.5 rounded-full" style={{ background: "var(--line)" }}>
+      <div className="relative mb-2 mt-1.5 h-0.5 overflow-hidden rounded-full" style={{ background: "var(--line-1)" }}>
         {fill != null && (
           <div
             className="fast absolute inset-y-0 left-0 rounded-full"
@@ -1139,23 +1138,18 @@ export function Section({
 
 export function Chip({ children, on, onClick }: { children: ReactNode; on?: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
-        on ? "border-accent bg-accent text-on-accent" : "border-line text-muted active:border-accent active:text-accent"
-      }`}
-    >
+    <button type="button" onClick={onClick} aria-pressed={Boolean(on)} className="ph-chip">
       {children}
     </button>
   );
 }
 
 export function Hint({ children }: { children: ReactNode }) {
-  return <div className="rounded-xl border border-dashed border-line px-3 py-4 text-center text-caption text-muted">{children}</div>;
+  return <div className="py-2 text-body text-[var(--faint)]">{children}</div>;
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-4 py-16 text-center text-body text-muted">{children}</div>;
+  return <div className="ph-empty">{children}</div>;
 }
 
 /** The row a VTask describes, for a list whose task isn't in the cache. */

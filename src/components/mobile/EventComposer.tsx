@@ -15,8 +15,11 @@
 // not just the account it lives under), and the invite-consent step — none of which a
 // task has, and all of which are the reason "event" is a separate answer at all.
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type InputHTMLAttributes } from "react";
 import { Icon } from "../Icon";
+import { Button, Chip, Dot, Input, Switch } from "../kit";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { TouchButton } from "./touch";
 import { toast } from "sonner";
 import { useCalendarAccounts, useExternalEventMutations } from "../../hooks/useCalendar";
 import { useSettings } from "../../hooks/useSettings";
@@ -79,6 +82,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
   const { settings } = useSettings();
   const { createEvent } = useExternalEventMutations();
   const calendar = useEventCalendar();
+  const isMobile = useIsMobile();
 
   const [startAt, setStartAt] = useState(seed.start_at);
   const [endAt, setEndAt] = useState(seed.end_at);
@@ -219,56 +223,57 @@ const EventComposer = forwardRef<EventComposerHandle, {
     submit: () => (confirmingGuests ? void finish(true) : submit()),
   }));
 
+  // The composer runs in two frames — the phone's capture Sheet and the
+  // desktop's ⌘K / ⌥Space panel — so its parts are sized by the shell: the
+  // kit at touch size on a phone, the kit as-is on a desk.
+  const Btn = isMobile ? TouchButton : DeskButton;
+  const timeField = (props: Omit<InputHTMLAttributes<HTMLInputElement>, "size">) =>
+    isMobile ? (
+      <input {...props} className="ph-field min-w-0 flex-1" />
+    ) : (
+      <Input {...props} frameClassName="min-w-0 flex-1" />
+    );
+
   return (
     <>
       {/* When. Two rows that cannot wrap, rather than one that does: a native
           date input plus two native time inputs is well over 375px, so the old
           single `flex-wrap` row broke after the dash and left `–` dangling at
           the end of a line with the end time orphaned below it. The date owns a
-          row with the All-day switch; the two times sit as a pair with the dash
-          between them, which is also how they read. */}
-      <div className="mt-3 flex items-center gap-1.5">
-        <input
-          type="date"
-          value={toDateInput(startAt)}
-          onChange={(e) => setDate(e.target.value)}
-          aria-label="Date"
-          className="mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
-        />
-        <button
-          type="button"
-          onClick={() => toggleAllDay(!allDay)}
-          aria-pressed={allDay}
-          className={`tap fast shrink-0 rounded-full border px-3.5 py-2 text-label font-medium ${
-            allDay ? "border-accent bg-accent text-on-accent" : "border-line text-muted"
-          }`}
-        >
+          row with All day; the two times sit as a pair with the dash between
+          them, which is also how they read. */}
+      <div className="mt-3 flex items-center gap-2">
+        {timeField({
+          type: "date",
+          value: toDateInput(startAt),
+          onChange: (e) => setDate(e.target.value),
+          "aria-label": "Date",
+        })}
+        <Btn aria-pressed={allDay} active={allDay} onClick={() => toggleAllDay(!allDay)} className="shrink-0">
           All day
-        </button>
+        </Btn>
       </div>
 
       {!allDay && (
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <input
-            type="time"
-            step={900}
-            value={toTimeInput(startAt)}
-            onChange={(e) => setStartTime(e.target.value)}
-            aria-label="Start time"
-            className="mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
-          />
-          <span className="shrink-0 text-muted">–</span>
-          <input
-            type="time"
-            step={900}
-            value={toTimeInput(endAt)}
-            onChange={(e) => {
+        <div className="mt-2 flex items-center gap-2">
+          {timeField({
+            type: "time",
+            step: 900,
+            value: toTimeInput(startAt),
+            onChange: (e) => setStartTime(e.target.value),
+            "aria-label": "Start time",
+          })}
+          <Icon name="arrow-right" size={14} className="shrink-0 text-[var(--faint)]" />
+          {timeField({
+            type: "time",
+            step: 900,
+            value: toTimeInput(endAt),
+            onChange: (e) => {
               touched.current = true;
               setEndAt(applyTime(endAt, e.target.value));
-            }}
-            aria-label="End time"
-            className="mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body outline-none focus:border-accent"
-          />
+            },
+            "aria-label": "End time",
+          })}
         </div>
       )}
 
@@ -280,17 +285,11 @@ const EventComposer = forwardRef<EventComposerHandle, {
         type="button"
         onClick={() => setMore((v) => !v)}
         aria-expanded={more}
-        className="tap-h fast mt-2.5 flex w-full items-center gap-1.5 rounded-lg py-1 text-left text-caption font-medium text-muted active:bg-surface-2"
+        className="tap-h fast mt-2 flex w-full items-center gap-1.5 py-1 text-left text-caption font-medium text-muted"
       >
-        <Icon
-          name="chevron-down"
-          size={13}
-          className={`fast ${more ? "" : "-rotate-90"}`}
-        />
+        <Icon name="chevron-down" size={14} className={`fast ${more ? "" : "-rotate-90"}`} />
         {more ? "Fewer options" : "Repeat, guests, calendar…"}
-        {!more && (repeat || guests.length > 0) && (
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
-        )}
+        {!more && (repeat || guests.length > 0) && <Dot color="var(--accent)" shape="round" size="sm" />}
       </button>
 
       {more && (
@@ -305,11 +304,8 @@ const EventComposer = forwardRef<EventComposerHandle, {
           </div>
 
           {calendar.choosable && (
-            <div className="mt-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
-                <Icon name="calendar" size={11} />
-                Calendar
-              </div>
+            <div className="mt-4">
+              <div className="mb-1.5 text-caption font-semibold text-muted">Calendar</div>
               <EventCalendarPicker
                 groups={calendar.groups}
                 value={target}
@@ -320,53 +316,32 @@ const EventComposer = forwardRef<EventComposerHandle, {
           )}
 
           {isGoogle && (
-            <div className="mt-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
-                <Icon name="user-plus" size={11} />
-                Guests
-              </div>
+            <div className="mt-4">
+              <div className="mb-1.5 text-caption font-semibold text-muted">Guests</div>
               <GuestsInput value={attendees} onChange={setAttendees} />
             </div>
           )}
 
           {isGoogle && !allDay && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={addMeet}
-              onClick={() => setMeetChoice(!addMeet)}
-              className={`fast tap mt-3 flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left ${
-                addMeet ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2"
-              }`}
-            >
-              <Icon
-                name="video"
-                size={13}
-                className={`shrink-0 ${addMeet ? "text-accent" : "text-muted/70"}`}
-              />
-              <span className={`flex-1 text-body font-medium ${addMeet ? "text-accent" : "text-muted"}`}>
-                Google Meet
-              </span>
-              <span
-                className={`relative h-5 w-9 shrink-0 rounded-full ${addMeet ? "bg-accent" : "bg-line-strong"}`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-[left] ${
-                    addMeet ? "left-[18px]" : "left-0.5"
-                  }`}
-                />
-              </span>
-            </button>
+            // The row is the label, so a tap anywhere on it flips the switch —
+            // the switch itself is the one control (and its accessible name).
+            <label className="tap-h mt-3 flex items-center gap-3 border-y border-[var(--line-1)] py-2">
+              <Icon name="video" size={16} className="shrink-0 text-muted" />
+              <span className="flex-1 text-body font-medium text-ink">Google Meet</span>
+              <Switch checked={Boolean(addMeet)} onChange={(v) => setMeetChoice(v)} label="Google Meet" />
+            </label>
           )}
         </>
       )}
 
       {error && (
-        <div className="mt-3 rounded-md bg-signal-soft px-3 py-2 text-caption text-signal">{error}</div>
+        <div className="mt-3 rounded-[var(--r-ctl)] bg-[var(--danger-soft)] px-3 py-2 text-caption text-[var(--danger)]">
+          {error}
+        </div>
       )}
 
       {confirmingGuests ? (
-        <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3.5">
+        <div className="mt-4 flex flex-col gap-3 border-t border-[var(--line-1)] pt-3.5">
           <div>
             <div className="text-body font-medium text-ink">
               {inviteConsentPrompt({
@@ -375,53 +350,36 @@ const EventComposer = forwardRef<EventComposerHandle, {
                 addMeet: Boolean(addMeet),
               })}
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-1">
+            <div className="mt-2 flex flex-wrap gap-1">
               {guests.map((email) => (
-                <span
-                  key={email}
-                  className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-meta text-muted"
-                >
-                  {email}
-                </span>
+                <Chip key={email}>{email}</Chip>
               ))}
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <button
-              onClick={() => void finish(true)}
-              disabled={saving}
-              className="tap fast w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent disabled:opacity-60"
-            >
+            <Btn kind="primary" full onClick={() => void finish(true)} disabled={saving}>
               {saving ? "Sending…" : "Send invites"}
-            </button>
-            <button
-              onClick={() => void finish(false)}
-              disabled={saving}
-              title={QUIET_HINT}
-              className="tap fast w-full rounded-xl border border-line py-3 text-head font-medium text-ink disabled:opacity-60"
-            >
+            </Btn>
+            <Btn full onClick={() => void finish(false)} disabled={saving} title={QUIET_HINT}>
               Add without emailing
-            </button>
-            <button
-              onClick={() => setConfirmingGuests(false)}
-              disabled={saving}
-              className="tap fast w-full py-2 text-body font-medium text-muted"
-            >
+            </Btn>
+            <Btn kind="ghost" full onClick={() => setConfirmingGuests(false)} disabled={saving}>
               Back
-            </button>
+            </Btn>
           </div>
         </div>
       ) : (
-        <button
-          onClick={submit}
-          disabled={!canCreate || saving}
-          className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent shadow-sm active:translate-y-px disabled:border disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-        >
+        <Btn kind="primary" full className="mt-4" onClick={submit} disabled={!canCreate || saving}>
           {saving ? "Saving…" : sendsInvites ? "Add & invite…" : "Add event"}
-        </button>
+        </Btn>
       )}
     </>
   );
 });
+
+/** The kit Button at the desk's comfortable size — the ⌘K panel's. */
+function DeskButton(props: Omit<ComponentProps<typeof Button>, "size">) {
+  return <Button {...props} size="md" />;
+}
 
 export default EventComposer;

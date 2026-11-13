@@ -12,6 +12,8 @@ import { useEventSearch } from "../../hooks/useEventSearch";
 import { eventHitSubtitle, type EventHit } from "../../lib/eventSearch";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
+import { Dot, IconButton, SearchField } from "../kit";
+import { PhEmpty, PhSection } from "./touch";
 import DomainSymbol from "../domain/DomainSymbol";
 
 export type JumpKind = "domain" | "initiative" | "project";
@@ -99,38 +101,36 @@ export default function MobileSearch({
 
   return (
     <Sheet onClose={onClose} tall contentClassName="flex flex-col">
-      <div className="shrink-0 px-3 pb-2 pt-1">
-        <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3">
-          <SearchGlyph />
-          <input
-            ref={inputRef}
-            type="search"
-            enterKeyHint="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search work and your calendar…"
-            aria-label="Search"
-            className="tap-h min-w-0 flex-1 appearance-none bg-transparent py-2 outline-none [&::-webkit-search-cancel-button]:hidden"
-            autoCapitalize="none"
-            autoCorrect="off"
-          />
-          {q && (
-            <button
-              onClick={() => setQ("")}
-              aria-label="Clear search"
-              className="tap-icon fast flex shrink-0 items-center justify-center text-lead text-muted active:text-ink"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+      <div className="shrink-0 px-4 pb-2">
+        <SearchField
+          ref={inputRef}
+          enterKeyHint="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search work and your calendar"
+          aria-label="Search"
+          autoCapitalize="none"
+          autoCorrect="off"
+          frameClassName="ph-search"
+          trailing={
+            q ? (
+              <IconButton
+                label="Clear search"
+                size="sm"
+                icon={<Icon name="close" size={16} />}
+                onClick={() => setQ("")}
+                className="tap-icon -mr-1.5 shrink-0"
+              />
+            ) : undefined
+          }
+        />
       </div>
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-4">
         {!results ? (
-          <Note>Type to jump to anything — a project, an initiative, a domain, a task, or a meeting.</Note>
+          <PhEmpty icon="search">Find anything</PhEmpty>
         ) : results.total === 0 && events.length === 0 && !eventsLoading ? (
-          <Note>No matches for “{q.trim()}”.</Note>
+          <PhEmpty>No matches</PhEmpty>
         ) : (
           <>
             <Group label="Projects" items={results.projects}>
@@ -182,14 +182,12 @@ export default function MobileSearch({
             {/* Calendar last: it lands a beat after the local groups, so nothing
                 already under the thumb moves when it does. */}
             {onOpenEvent && (eventsOffline || eventsLoading || events.length > 0) && (
-              <div className="mt-3">
-                <div className="section-label px-4 pb-1">Calendar</div>
+              <div>
+                <PhSection title="Calendar" count={events.length || undefined} />
                 {eventsOffline ? (
-                  <div className="px-4 py-2 text-caption text-muted">
-                    Your calendar needs a connection to search.
-                  </div>
+                  <div className="px-4 py-2 text-caption text-muted">Offline</div>
                 ) : events.length === 0 ? (
-                  <div className="px-4 py-2 text-caption text-muted">Looking…</div>
+                  <div className="px-4 py-2 text-caption text-[var(--faint)]">Looking…</div>
                 ) : (
                   events.map((e) => (
                     <ResultRow
@@ -222,8 +220,8 @@ function projectContext(v: VerticalData, domainId: string, initiativeId: string 
 function Group<T>({ label, items, children }: { label: string; items: T[]; children: (item: T) => ReactNode }) {
   if (items.length === 0) return null;
   return (
-    <div className="mt-3 first:mt-1">
-      <div className="section-label px-4 pb-1">{label}</div>
+    <div>
+      <PhSection title={label} count={items.length} />
       {items.map(children)}
     </div>
   );
@@ -250,34 +248,14 @@ function ResultRow({
   onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="tap fast flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-surface-2"
-    >
-      {glyph ? (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-body"
-          style={{ background: `color-mix(in srgb, ${accent ?? "var(--muted)"} 16%, var(--surface))`, color: accent ?? "var(--muted)" }}
-        >
-          {glyph}
-        </span>
-      ) : (
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent ?? "var(--line-strong)" }} />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className={`truncate text-head font-medium ${dim ? "text-muted line-through" : past ? "text-muted" : ""}`}>{title}</div>
-        {subtitle && <div className="truncate text-caption text-muted">{subtitle}</div>}
-      </div>
+    <button type="button" onClick={onClick} className="ph-row row-hover py-1.5">
+      <span className="ph-row-lead" style={glyph ? { color: accent ?? "var(--muted)" } : undefined}>
+        {glyph ?? <Dot color={accent ?? "var(--faint)"} shape="round" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`ph-row-title block ${dim ? "!text-[var(--faint)] line-through" : past ? "!text-muted" : ""}`}>{title}</span>
+        {subtitle && <span className="block truncate text-caption text-muted">{subtitle}</span>}
+      </span>
     </button>
-  );
-}
-
-function Note({ children }: { children: ReactNode }) {
-  return <div className="px-6 py-12 text-center text-body text-muted">{children}</div>;
-}
-
-function SearchGlyph() {
-  return (
-    <Icon name="search" size={16} className="shrink-0 text-muted" />
   );
 }

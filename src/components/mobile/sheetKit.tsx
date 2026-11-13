@@ -120,7 +120,7 @@ export function SheetMast({
 
 export function MetaDot() {
   return (
-    <span className="text-faint" aria-hidden>
+    <span className="text-[var(--faint)]" aria-hidden>
       ·
     </span>
   );
@@ -167,7 +167,7 @@ export function AutoText({
     },
     [inputRef],
   );
-  useLayoutEffect(() => {
+  const fit = useCallback(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
@@ -175,7 +175,33 @@ export function AutoText({
     // field (the notes) was 2px short of its own text — and 2px off the read face
     // that stands in for it. Borderless titles add nothing.
     el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
-  }, [value]);
+  }, []);
+  useLayoutEffect(fit, [value, fit]);
+  // A 22px name wraps differently once Inter arrives (it is wider than the
+  // fallback it was first measured in) and whenever the sheet changes width —
+  // either way the box must follow, or the second line hides under the meta.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let width = el.clientWidth;
+    let cancelled = false;
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) fit();
+    });
+    const ro =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            if (el.clientWidth === width) return;
+            width = el.clientWidth;
+            fit();
+          });
+    ro?.observe(el);
+    return () => {
+      cancelled = true;
+      ro?.disconnect();
+    };
+  }, [fit]);
   return (
     <textarea
       ref={setRef}
@@ -202,7 +228,7 @@ export function AutoText({
       spellCheck
       // A one-line title is bare text — 25px of target. Padding buys the 44px
       // thumb area and the matching negative margin hands the layout back.
-      className={`block w-full resize-none overflow-hidden outline-none placeholder:text-faint ${
+      className={`block w-full resize-none overflow-hidden outline-none placeholder:text-[var(--faint)] ${
         single ? "-my-2.5 py-2.5" : ""
       } ${className}`}
       style={style}
@@ -244,11 +270,55 @@ export function SheetStrip({ children }: { children: ReactNode }) {
   return <div className="ph-strip">{children}</div>;
 }
 
+/** The kit Button's look on a link — Join, which must stay an
+ *  `<a target="_blank">` so the native shells open it through the opener
+ *  plugin (tests/external-links). The kit has no link button; this is the
+ *  phone's one, at TouchButton size. */
+export function TouchLink({
+  href,
+  kind = "secondary",
+  icon,
+  onClick,
+  children,
+}: {
+  href: string;
+  kind?: "primary" | "secondary";
+  icon?: ReactNode;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={onClick}
+      className="k-btn ph-btn"
+      data-kind={kind === "primary" ? "primary" : undefined}
+    >
+      {icon}
+      <span className="min-w-0 truncate">{children}</span>
+    </a>
+  );
+}
+
 /** Quick picks tile on a grid, never on a wrapping flow — a flow left "Pick
  *  time…" alone on a second line and put "2h 3h 4h" on a ragged third. */
-export function ChipGrid({ cols, children }: { cols: 2 | 3 | 4; children: ReactNode }) {
+export function ChipGrid({
+  cols,
+  narrowCols,
+  children,
+}: {
+  cols: 2 | 3 | 4;
+  /** Columns on a 320px phone, when a label won't fit a quarter of it. */
+  narrowCols?: 2 | 3 | 4;
+  children: ReactNode;
+}) {
   return (
-    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div
+      className="ph-chipgrid"
+      style={{ ["--cols" as string]: cols, ["--cols-narrow" as string]: narrowCols ?? cols } as CSSProperties}
+    >
       {children}
     </div>
   );

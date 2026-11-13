@@ -523,3 +523,65 @@ input.ph-mast-title {
   color: var(--muted);
   box-shadow: var(--sh-pop);
 }
+
+/* ── A sheet's field — notes, location, a date or a clock ───────────────────
+   The kit field's look (a --line-2 hairline on the sheet, the accent wash on
+   focus) at thumb size. Sixteen pixels on purpose: iOS zooms into any field
+   that computes smaller, and never zooms back out. */
+.ph-field {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--raised);
+  color: var(--ink);
+  font: 400 16px/1.3 var(--font-sans);
+  outline: none;
+  transition: border-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.ph-field::placeholder { color: var(--faint); }
+.ph-field:focus,
+.ph-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+input.ph-field { height: 44px; padding-top: 0; padding-bottom: 0; }
+input.ph-field[type="date"],
+input.ph-field[type="time"] { font-variant-numeric: tabular-nums; -webkit-appearance: none; appearance: none; }
+html:root .ph-field:focus-visible { outline: none; }
+
+/* ── Quick picks — a grid, never a ragged wrap ──────────────────────────────
+   A grid that would crush its labels on a 320px phone folds to fewer columns
+   (`ChipGrid narrowCols`); a chip never truncates a word. */
+.ph-chipgrid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+}
+@media (max-width: 359px) {
+  .ph-chipgrid { grid-template-columns: repeat(var(--cols-narrow, var(--cols, 3)), minmax(0, 1fr)); }
+}
+.ph-chipgrid > .ph-chip { padding: 0 8px; min-width: 0; }
+
+/* ── A figure in a record — 20/700, tabular (the domain's Gain) ─────────── */
+.ph-stat {
+  color: var(--ink);
+  font: 700 20px/1.15 var(--font-sans);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Search — the kit SearchField as a 44px well ─────────────────────────── */
+.k-field.ph-search {
+  height: 44px;
+  padding: 0 12px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+  border-color: var(--line-1);
+}
+.k-field.ph-search > svg { color: var(--muted); }
+.k-field.ph-search input { font-size: 16px; }
+.k-field.ph-search input::-webkit-search-cancel-button { display: none; }

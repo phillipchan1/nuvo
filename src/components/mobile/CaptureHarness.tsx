@@ -6,6 +6,7 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import MobileCapture from "./MobileCapture";
+import { Button } from "../kit";
 import type { NewTaskInput } from "../../hooks/useTasks";
 import { TaskCaptureSinkContext } from "../../hooks/useTaskCapture";
 import { HARNESS_CALENDAR_ACCOUNTS, HARNESS_SETTINGS } from "../calendar/calendarFixtures";
@@ -28,7 +29,7 @@ export default function CaptureHarness() {
 
   return (
     <div className="atmosphere min-h-screen p-4">
-      <h1 className="masthead mb-1 text-head">Capture — Task When (fixtures)</h1>
+      <h1 className="mb-1 text-head font-semibold">Capture — Task When (fixtures)</h1>
       <p className="mb-3 max-w-[70ch] text-caption text-muted">
         Plain open should offer Pick date… and Add time. Seeded open should land with editable
         start–end and duration chips. A timed create says Add block.
@@ -40,34 +41,30 @@ export default function CaptureHarness() {
             ["seeded", "canvas seed 2:30pm"],
           ] as const
         ).map(([id, label]) => (
-          <button
+          <Button
             key={id}
-            type="button"
+            size="xs"
+            active={mode === id}
             onClick={() => {
               setMode(id);
               setOpen(true);
             }}
-            className={`rounded-full border px-3 py-1.5 text-label ${
-              mode === id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted"
-            }`}
           >
             {label}
-          </button>
+          </Button>
         ))}
         {!open && (
-          <button
-            type="button"
-            className="rounded-full border border-line px-3 py-1.5 text-label"
-            onClick={() => setOpen(true)}
-          >
+          <Button size="xs" onClick={() => setOpen(true)}>
             Open capture
-          </button>
+          </Button>
         )}
       </div>
       <div className="text-label text-muted" data-capture-log>
         Last create: {log}
       </div>
-      <div style={{ width: 375 }} className="relative mt-2 min-h-[480px] border border-line">
+      {/* At most a phone wide, and never wider than the viewport — a fixed
+          375px frame inside the page's padding overflowed a 375px phone. */}
+      <div style={{ maxWidth: 375 }} className="relative mt-2 min-h-[480px] border border-[var(--line-1)]">
         <QueryClientProvider client={client}>
           {open && (
             <TaskCaptureSinkContext.Provider
