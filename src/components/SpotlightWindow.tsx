@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { VerticalProvider } from "../hooks/useVertical";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import CaptureDoor, { type CaptureAdded } from "./capture/CaptureDoor";
+import { Icon } from "./Icon";
+import { Button } from "./kit";
 
 // Tauri-only wiring (NSPanel hide, window events) is skipped in the browser, so
 // the DEV `?spotlight` preview harness can render the panel against live data.
@@ -73,21 +75,19 @@ export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loadin
           <span className="wordmark shimmer text-head">nuvo</span>
         </div>
       ) : (
-        <div className="px-5 py-6">
-          <div className="masthead text-display leading-tight text-ink">Not signed in</div>
-          <div className="mt-1.5 text-caption leading-relaxed text-muted">
-            Quick capture needs your account. Open {ASSISTANT_NAME} and sign in — the next ⌥Space
-            lands straight in the inbox.
-          </div>
-          <button
-            type="button"
+        <div className="grid gap-3 px-5 pb-5 pt-6">
+          <div className="masthead text-display text-ink">Not signed in</div>
+          <p className="m-0 text-body text-[color:var(--ink-2)]">Sign in to {ASSISTANT_NAME} and ⌥Space captures from anywhere.</p>
+          <Button
+            kind="primary"
+            size="md"
+            full
             onClick={() => {
               if (IS_TAURI) void invoke("surface_main");
             }}
-            className="tap fast mt-4 w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body font-medium text-ink hover:bg-surface active:translate-y-px"
           >
             Open {ASSISTANT_NAME}
-          </button>
+          </Button>
         </div>
       )}
     </SpotlightFrame>
@@ -95,10 +95,10 @@ export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loadin
 }
 
 /** The floating card the panel sits in — shared by the live panel and the
- *  signed-out card so both dismiss on backdrop click and wear the same glass.
- *  The native window is fitted to the card (`fit_spotlight`): transparent
- *  height beyond it would swallow clicks meant for the app underneath, and
- *  height short of it clips the card. */
+ *  signed-out card so both dismiss on backdrop click and wear the same
+ *  command frame as ⌘K. The native window is fitted to the card
+ *  (`fit_spotlight`): transparent height beyond it would swallow clicks meant
+ *  for the app underneath, and height short of it clips the card. */
 function SpotlightFrame({ children }: { children: ReactNode }) {
   const cardRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -112,25 +112,21 @@ function SpotlightFrame({ children }: { children: ReactNode }) {
   }, []);
   return (
     <div
-      // h-screen + overflow-hidden, not min-h-screen: a card taller than the
-      // window clips instead of spawning a stray document scrollbar while the
-      // native window catches up to the card's height.
-      className="flex h-screen items-start justify-center overflow-hidden bg-transparent p-3"
+      // Full height + overflow hidden: a card taller than the window clips
+      // instead of spawning a stray document scrollbar while the native
+      // window catches up to the card's height.
+      className="k-spotlight"
       onMouseDown={(e) => {
         // Click the transparent backdrop (not the card) to dismiss.
         if (e.target === e.currentTarget) hidePanel();
       }}
     >
-      <div
-        ref={cardRef}
-        className="moment w-full max-w-xl overflow-hidden rounded-2xl border border-line/50 glass-card [box-shadow:var(--shadow-lift)]"
-      >
+      <div ref={cardRef} className="k-command">
         {children}
       </div>
     </div>
   );
 }
-
 // How long the "added" beat holds before the panel goes: long enough to read
 // that it landed and where, short enough that the next ⌥Space isn't waiting.
 const ADDED_BEAT_MS = 900;
@@ -212,20 +208,16 @@ export default function SpotlightWindow() {
   return (
     <SpotlightFrame>
       {added ? (
-        <div className="moment flex flex-col items-center gap-1 px-6 py-8 text-center" role="status">
-          <span className="text-lead leading-none text-accent" aria-hidden>
-            ✓
+        <div className="k-spotlight-done" role="status">
+          <span className="k-spotlight-ok" aria-hidden>
+            <Icon name="check" size={16} strokeWidth={2.25} />
           </span>
-          <h2 className="masthead text-lead text-ink">
-            {added.kind === "task" ? "Task" : added.kind === "event" ? "Event" : "Slot"} added
-          </h2>
-          {added.title && <p className="line-clamp-2 max-w-sm text-body text-ink/80">{added.title}</p>}
-          <p className="mono text-meta text-muted">{added.where}</p>
+          <h2>{added.kind === "task" ? "Task" : added.kind === "event" ? "Event" : "Slot"} added</h2>
+          {added.title && <p className="line-clamp-2">{added.title}</p>}
+          <p className="k-spotlight-where">{added.where}</p>
         </div>
       ) : (
-        <div className="px-4 pb-3 pt-4">
-          <CaptureDoor key={showKey} variant="panel" autoFocus onClose={hidePanel} onAdded={(a) => onAdded(showKey, a)} />
-        </div>
+        <CaptureDoor key={showKey} variant="panel" autoFocus onClose={hidePanel} onAdded={(a) => onAdded(showKey, a)} />
       )}
     </SpotlightFrame>
   );

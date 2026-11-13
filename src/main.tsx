@@ -18,6 +18,7 @@ import "./styles/rail.css";
 import "./styles/documents.css";
 // The Flow layout — rituals, Plan the week, onboarding, login (D-190).
 import "./styles/flows.css";
+import "./styles/popovers.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

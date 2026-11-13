@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { Button, Dot, IconButton, Input } from "./kit";
 import Sheet from "./mobile/Sheet";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { anchoredTop } from "../lib/anchoredTop";
@@ -52,6 +53,7 @@ function toggle<T extends string>(list: T[] | undefined, value: T): T[] | undefi
 
 // ── the chips ──────────────────────────────────────────────────────────────
 
+/** A facet value: a kit chip that stays pressed while it filters. */
 function Chip({
   on,
   onClick,
@@ -64,25 +66,18 @@ function Chip({
   color?: string | null;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      className={`fast tap-bloom inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-2.5 text-label font-medium ${
-        on ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:text-ink"
-      }`}
-    >
-      {color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
-      {children}
+    <button type="button" onClick={onClick} aria-pressed={on} className="k-chip tap-bloom">
+      {color && <Dot color={color} shape="round" size="sm" />}
+      <span>{children}</span>
     </button>
   );
 }
 
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="section-label mb-1.5 !p-0">{label}</div>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+    <div className="k-filter-group" role="group" aria-label={label}>
+      <div className="k-filter-label">{label}</div>
+      <div className="k-filter-chips">{children}</div>
     </div>
   );
 }
@@ -128,7 +123,7 @@ export function FilterBody({
   };
 
   return (
-    <div className="space-y-3.5">
+    <div className="k-filter">
       {savedViews.length > 0 && (
         <Group label="Saved">
           {savedViews.map((v) => (
@@ -136,15 +131,14 @@ export function FilterBody({
               <Chip on={false} onClick={() => onApplyView(v)}>
                 {v.name}
               </Chip>
-              <button
-                type="button"
+              {/* Always there under a finger; on a desk it shows on hover or focus. */}
+              <IconButton
+                size="xs"
+                label={`Delete the “${v.name}” view`}
+                icon={<Icon name="close" size={12} />}
                 onClick={() => onDeleteView(v.id)}
-                aria-label={`Delete the “${v.name}” view`}
-                title={`Delete the “${v.name}” view`}
-                className="fast -ml-1 flex h-8 w-6 items-center justify-center rounded text-muted opacity-0 hover:text-signal focus:opacity-100 group-hover:opacity-100"
-              >
-                <Icon name="close" size={11} />
-              </button>
+                className="tap md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+              />
             </span>
           ))}
         </Group>
@@ -178,7 +172,7 @@ export function FilterBody({
       <Group label="Priority">
         {PRIORITIES.map((p) => (
           <Chip key={p} on={(query.priorities ?? []).includes(p)} onClick={() => patch({ priorities: toggle(query.priorities, p) })}>
-            {p === "none" ? "No priority" : p}
+            {p === "none" ? "No priority" : p[0].toUpperCase() + p.slice(1)}
           </Chip>
         ))}
       </Group>
@@ -225,19 +219,15 @@ export function FilterBody({
         </Chip>
       </Group>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        <button
-          type="button"
-          onClick={() => onChange({})}
-          disabled={empty}
-          className="fast tap-bloom rounded-full border border-line px-2.5 py-1 text-label font-medium text-muted disabled:opacity-40 enabled:hover:border-line-strong enabled:hover:text-ink"
-        >
+      <div className="k-filter-foot">
+        <Button size="xs" kind="ghost" className="tap-h" onClick={() => onChange({})} disabled={empty}>
           Clear
-        </button>
+        </Button>
         {naming ? (
           <span className="flex items-center gap-1.5">
-            <input
+            <Input
               ref={nameRef}
+              size="sm"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
@@ -248,28 +238,25 @@ export function FilterBody({
                 }
               }}
               placeholder="Name this view"
-              className="min-h-[32px] w-40 rounded-full border border-line bg-surface px-2.5 text-label text-ink outline-none focus:border-accent"
+              aria-label="Name this view"
+              frameClassName="w-40"
             />
-            <button
-              type="button"
-              onClick={save}
-              className="fast tap-bloom rounded-full bg-accent px-2.5 py-1 text-label font-medium text-on-accent"
-            >
+            <Button size="xs" kind="primary" className="tap-h" onClick={save}>
               Save
-            </button>
+            </Button>
           </span>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="xs"
+            className="tap-h"
             onClick={() => setNaming(true)}
             disabled={empty || savedViews.length >= MAX_SAVED_VIEWS}
             title={savedViews.length >= MAX_SAVED_VIEWS ? `${MAX_SAVED_VIEWS} saved views is the cap` : undefined}
-            className="fast tap-bloom rounded-full border border-line px-2.5 py-1 text-label font-medium text-muted disabled:opacity-40 enabled:hover:border-line-strong enabled:hover:text-ink"
           >
-            Save this view
-          </button>
+            Save view
+          </Button>
         )}
-        <span className="mono ml-auto truncate text-meta text-muted">{describeQuery(query, {
+        <span className="k-filter-read">{describeQuery(query, {
           label: (id) => labels.find((l) => l.id === id)?.name,
           domain: (id) => domains.find((d) => d.id === id)?.name,
         })}</span>
@@ -344,20 +331,21 @@ export default function TaskFilter(props: {
   }, [open, isMobile]);
 
   const pill = (
-    <button
+    <Button
       ref={btnRef}
-      type="button"
+      kind="ghost"
+      size="xs"
+      active={count > 0}
       onClick={() => setOpen(!open)}
       aria-expanded={open}
       aria-label={count ? `Filters — ${count} active` : "Filter tasks"}
-      title="Filter tasks  ( / )"
-      className={`fast tap-bloom inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-full border px-2 text-label font-medium ${
-        count ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-line-strong hover:text-ink"
-      } ${className}`}
+      title="Filter tasks (/)"
+      icon={<Icon name="filter" size={13} />}
+      data-icon={count > 0 ? undefined : ""}
+      className={`tap-bloom shrink-0 ${className}`}
     >
-      <Icon name="filter" size={12} />
-      {count > 0 && <span className="mono leading-none">{count}</span>}
-    </button>
+      {count > 0 && <span className="tabular-nums">{count}</span>}
+    </Button>
   );
 
   const body = <FilterBody {...props} />;
@@ -368,14 +356,16 @@ export default function TaskFilter(props: {
       {open &&
         (isMobile ? (
           <Sheet onClose={() => setOpen(false)} title="Filter">
-            {body}
+            <div className="px-4 pb-4">{body}</div>
           </Sheet>
         ) : (
           pos && (
             <div
               ref={popRef}
-              className="glass-card fixed z-[60] w-[330px] max-h-[70vh] overflow-y-auto rounded-xl p-3"
-              style={{ left: pos.left, top: pos.top, boxShadow: "var(--shadow-lift)" }}
+              role="dialog"
+              aria-label="Filter"
+              className="k-pop"
+              style={{ left: pos.left, top: pos.top, width: 330, maxHeight: "70vh", padding: 12, zIndex: 60 }}
             >
               {body}
             </div>

@@ -9,6 +9,9 @@ import {
 } from "../lib/marquee";
 import { targetDef, type MarqueeNav } from "../lib/marqueeRegistry";
 import type { AgentMessage } from "../lib/agentTypes";
+import { Icon } from "./Icon";
+import { Button, IconButton } from "./kit";
+import { PopGlyph } from "./PopoverParts";
 
 // Where the agent left from, in words — shown in the return pill so "← Back"
 // reads as a place, not just a direction.
@@ -238,16 +241,18 @@ export default function Marquee({ messages }: { messages: AgentMessage[] }) {
       )}
 
       {session.returnRung && (
-        <div className={`marquee-pill${closing ? " is-closing" : ""}`}>
-          <span className="marquee-pill-spark" aria-hidden>✦</span>
+        <div className={`marquee-pill${closing ? " is-closing" : ""}`} role="status">
+          <span className="marquee-pill-spark" aria-hidden>
+            <Icon name="sparkles" size={14} />
+          </span>
           <span className="marquee-pill-text">
             Nuvo brought you to <strong>{session.label}</strong>
-            {session.caption && <em className="marquee-pill-caption"> · {session.caption}</em>}
+            {session.caption && <span className="marquee-pill-caption"> · {session.caption}</span>}
           </span>
-          <button className="marquee-pill-back" onClick={goBack}>
-            ← Back to {RUNG_LABEL[session.returnRung]}
-          </button>
-          <button className="marquee-pill-x" onClick={end} aria-label="Dismiss">✕</button>
+          <Button size="xs" icon={<PopGlyph name="back" size={13} />} onClick={goBack}>
+            {RUNG_LABEL[session.returnRung]}
+          </Button>
+          <IconButton size="xs" label="Dismiss" shortcut="Esc" icon={<Icon name="close" size={12} />} onClick={end} />
         </div>
       )}
     </>,

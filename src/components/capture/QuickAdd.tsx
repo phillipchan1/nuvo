@@ -8,8 +8,9 @@
 // its own keys (⌘1–4, the spine), and Nuvo keeps ⌘J.
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { Modal } from "../ui";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import CaptureDoor, { type CaptureAdded } from "./CaptureDoor";
 
 const NOUN = { task: "Task", event: "Event", slot: "Slot" } as const;
@@ -49,19 +50,32 @@ export default function QuickAdd({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  return (
-    <Modal onClose={close} width="max-w-xl" closeOnEscape={false}>
-      <div className="px-4 pb-3 pt-4">
+  return <CommandFrame onClose={close} />;
+}
+
+/**
+ * The ⌘K frame: the kit's scrim and a 600px dialog with no head — the line is
+ * the head (D-190, "Command · capture"). Dialog semantics come from the kit's
+ * own hook: focus in, Tab trapped, focus restored. Escape belongs to the door
+ * (it clears the line first, D-051); a press on the scrim leaves.
+ */
+function CommandFrame({ onClose }: { onClose: () => void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useDialogFocus(panel);
+  return createPortal(
+    <div className="k-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={panel} role="dialog" aria-modal="true" aria-label="Capture" tabIndex={-1} className="k-command">
         <CaptureDoor
           variant="panel"
           autoFocus
-          onClose={close}
+          onClose={onClose}
           onAdded={(a) => {
             announceAdded(a);
-            close();
+            onClose();
           }}
         />
       </div>
-    </Modal>
+    </div>,
+    document.body,
   );
 }

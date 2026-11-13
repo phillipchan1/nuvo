@@ -1,8 +1,10 @@
-// Duration chip — invisible <select> over a mono label. Same grammar as the
-// task record; presets live in lib/types so every surface stamps the same set.
+// Duration — a value over an invisible native <select> (the iOS wheel on a
+// phone, the system menu on a Mac). Same grammar as the inspector's values;
+// presets live in lib/types so every surface stamps the same set.
 
 import { fmtDuration } from "../lib/dates";
 import { DURATION_PRESETS } from "../lib/types";
+import { Icon } from "./Icon";
 
 function optionsFor(value: number): number[] {
   if ((DURATION_PRESETS as readonly number[]).includes(value)) return [...DURATION_PRESETS];
@@ -24,11 +26,12 @@ export default function DurationSelect({
   return (
     <label
       title={title}
-      className={`relative inline-flex items-center ${className}`}
+      className={`insp-v ${className}`}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <span className="mono text-micro text-muted">{fmtDuration(value)}</span>
+      <Icon name="duration" size={12} />
+      <span>{fmtDuration(value)}</span>
       <select
         value={value}
         aria-label={title}

@@ -43,16 +43,15 @@ export default function EventDomainControl({
   };
 
   if (!mobile) {
+    // The inspector row that holds it already says "Counts toward" (its glyph
+    // and name), so the desktop face is the value alone.
     return (
-      <div className="mb-1 flex flex-wrap items-center gap-1.5 text-meta">
-        <span className="mono text-muted">Counts toward</span>
-        <DomainPicker
-          domains={domains}
-          value={attribution.domainId ?? ""}
-          onChange={choose}
-          size="sm"
-        />
-      </div>
+      <DomainPicker
+        domains={domains}
+        value={attribution.domainId ?? ""}
+        onChange={choose}
+        size="sm"
+      />
     );
   }
 
@@ -76,7 +75,6 @@ export default function EventDomainControl({
       {open && (
         <PickSheet
           title="Counts toward"
-          note="Where this event’s time appears in your domains."
           rows={domains.map((domain) => ({
             id: domain.id,
             name: domain.name,

@@ -1,52 +1,76 @@
-import React from "react";
-import { Icon } from "./Icon";
+import React, { useMemo, useState, type CSSProperties } from "react";
+import { ArrowLeft, ArrowUpRight, CalendarX2, Flag, Folder, Inbox, NotebookPen, SignalHigh, Star, type LucideIcon } from "lucide-react";
+import { Icon, type IconName } from "./Icon";
+import { Button, Dot, IconButton, MiniMonth, Picker, Popover, type PickerOption } from "./kit";
+import { useSettings, firstDayOfWeek } from "../hooks/useSettings";
+import { parseCapture } from "../lib/nlp";
+import { fmtDayLabel, parseDateISO, toDateISO } from "../lib/dates";
+import { shortcutLabel } from "../lib/shortcutLabel";
 
 /**
- * ── One grammar for every detail popover ──────────────────────────────────
+ * ── The inspector — one grammar for every detail popover (D-190) ──────────
  *
- * The task, event and slot popovers answer the same three questions in the
- * same order, so they wear the same parts rather than three hand-rolled
- * stacks of `border-t` sections (which is how the event popover ended up with
- * a full-width All-day switch louder than "Join the meeting"):
+ * The task, event and slot cards (SlideOver) and the create card
+ * (DraftComposer) answer the same questions in the same order, so they wear
+ * the same parts — drawn by `.insp*` in styles/popovers.css:
  *
- *   masthead   what is this, and when — title + ONE muted meta line
- *   strip      the act you opened it for (Join · RSVP · Done) — at most two
- *   columns    left = the record's facts (when, where, filing)
- *              right = its words and people (guests, notes, pre-work)
- *   footer     quiet navigation left, the destructive act right — and the
- *              destructive one only turns `--signal` once it asks to confirm
+ *   head     the identity dot, the name (15/650), ONE muted line of when
+ *   strip    the act you opened it for (Join · Going? · Done) — at most two
+ *   rows     hairline property rows, 36px, a leading glyph and the value you
+ *            change in place (a date, a clock, a picker)
+ *   sections words and people — notes, guests, steps — under a quiet label
+ *   footer   ghost buttons: navigation left, the destructive act right, which
+ *            only reddens once it asks
  *
- * Two columns are for surfaces that carry prose or people; a bare event with
- * neither collapses to one (`POP_W_NARROW`). Consistency lives in these parts,
- * not in forcing every popover to the same width — see D-101 in decisions.md.
- *
- * Everything here is token-only (`--ink`, `--muted`, `--ok`, `--warn`,
- * `--signal`, domain colours), so all skins × palettes × light/dark follow
- * without a per-theme branch.
+ * One width, 352px, flush. Everything is a token, so Light and Dark follow.
  */
 
-/** Two-column detail card (guests / notes / a task list to the right). */
-export const POP_W_WIDE = 560;
-/** One-column card — a plain block with nothing to say on the right. */
-export const POP_W_NARROW = 380;
+export const INSPECTOR_W = 352;
 
-/** Uppercase field caps. Quiet enough to skip when you know the layout. */
-export function PopLabel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`text-micro font-semibold uppercase tracking-[0.075em] text-muted/85 ${className}`}>
-      {children}
-    </div>
-  );
+/** Glyphs the inspector needs that the shared registry (Icon.tsx) doesn't
+ *  name yet. Same Lucide family, same thinned stroke. */
+const GLYPHS = {
+  back: ArrowLeft,
+  deadline: CalendarX2,
+  external: ArrowUpRight,
+  flag: Flag,
+  folder: Folder,
+  inbox: Inbox,
+  notes: NotebookPen,
+  priority: SignalHigh,
+  week: Star,
+} satisfies Record<string, LucideIcon>;
+export type PopGlyphName = keyof typeof GLYPHS;
+
+export function PopGlyph({ name, size = 14, className, style }: { name: PopGlyphName; size?: number; className?: string; style?: CSSProperties }) {
+  const G = GLYPHS[name];
+  return <G size={size} strokeWidth={1.75} className={className} style={style} aria-hidden />;
+}
+
+/** An Icon or a PopGlyph, by name. */
+export function PopIcon({ name, size = 14 }: { name: IconName | PopGlyphName; size?: number }) {
+  return name in GLYPHS ? <PopGlyph name={name as PopGlyphName} size={size} /> : <Icon name={name as IconName} size={size} />;
+}
+
+/** An Icon or a PopGlyph by name, or a node as given. */
+export type GlyphRef = IconName | PopGlyphName | React.ReactNode;
+function glyph(g: GlyphRef, size = 14): React.ReactNode {
+  if (typeof g !== "string") return g;
+  if (g in GLYPHS) return <PopGlyph name={g as PopGlyphName} size={size} />;
+  return <Icon name={g as IconName} size={size} />;
 }
 
 /**
- * Masthead — the identity block. `meta` is ONE line and carries what the read
- * needs before any control does: when it is, and whether it repeats.
+ * The head — `eyebrow` (where it lives) above the name, `meta` the one line
+ * under it. `onClose` draws a close button; only a card that floats with no
+ * anchor (the centred variant) needs one — Escape and a press outside close
+ * the rest.
  */
 export function PopMast({
   dot,
   eyebrow,
   meta,
+  under,
   onClose,
   children,
 }: {
@@ -54,132 +78,90 @@ export function PopMast({
   dot?: string | null;
   eyebrow?: React.ReactNode;
   meta?: React.ReactNode;
+  /** One line under the meta that isn't the when (a waiting name). */
+  under?: React.ReactNode;
   onClose?: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex shrink-0 items-start gap-2.5 px-4 pt-3.5 pb-3">
-      {dot && (
-        <span
-          className="mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: dot }}
-          aria-hidden
-        />
-      )}
-      <div className="min-w-0 flex-1">
-        {eyebrow}
-        {children}
-        {meta && (
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-meta text-muted">
-            {meta}
-          </div>
-        )}
+    <div className="insp-head" data-nodot={dot ? undefined : ""}>
+      {eyebrow && <div className="insp-eyebrow">{eyebrow}</div>}
+      <div className="insp-title">
+        {dot && <Dot color={dot} />}
+        <div className="insp-title-main">{children}</div>
+        {onClose && <IconButton size="xs" label="Close" shortcut="Esc" icon={<Icon name="close" size={14} />} onClick={onClose} />}
       </div>
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
-          aria-label="Close"
-        >
-          <Icon name="close" size={14} />
-        </button>
-      )}
+      {meta && <div className="insp-meta">{meta}</div>}
+      {under && <div className="insp-under">{under}</div>}
     </div>
   );
 }
 
-/** A dot separator for the masthead's meta line. */
+/** A dot separator for the meta line. */
 export function PopMetaDot() {
-  return <span className="opacity-40" aria-hidden>·</span>;
+  return (
+    <span className="insp-meta-sep" aria-hidden>
+      ·
+    </span>
+  );
 }
 
-/**
- * Action strip — the reason the popover was opened, on its own ground so it
- * never competes with the fields. At most two things live here.
- */
+/** The strip — the reason the card was opened. At most two acts. */
 export function PopStrip({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-y border-line bg-surface-2 px-4 py-2.5">
-      {children}
-    </div>
-  );
+  return <div className="insp-strip">{children}</div>;
 }
 
-/** The columns region. Each column scrolls on its own so a 20-guest meeting
- *  never pushes the notes out of reach. */
+/** The scrolling middle: rows and sections. */
 export function PopBody({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-0 flex-1 items-stretch">{children}</div>;
-}
-
-export function PopCol({
-  side = "left",
-  width,
-  children,
-}: {
-  side?: "left" | "right" | "only";
-  /** CSS width — omit for the default 56/44 split. */
-  width?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`flex min-h-0 min-w-0 flex-col overflow-y-auto ${
-        side === "left" ? "border-r border-line" : ""
-      }`}
-      style={{ width: width ?? (side === "only" ? "100%" : side === "left" ? "56%" : "44%") }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** A labelled field in the left column. */
-export function PopField({
-  label,
-  children,
-  className = "",
-}: {
-  label?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={`flex flex-col gap-1 ${className}`}>
-      {label && <PopLabel>{label}</PopLabel>}
-      {children}
-    </div>
-  );
-}
-
-/** Vertical rhythm inside a column — one padded stack, no inner hairlines. */
-export function PopStack({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`flex flex-col gap-3 px-4 py-3 ${className}`}>{children}</div>;
+  return <div className="insp-body">{children}</div>;
 }
 
 /**
- * A block in the right column (Guests, Notes, ✦ Nuvo). `aside` rides the
- * label's right edge — a count or a summary — so it never needs its own row.
+ * A property row: a leading glyph (its name is the tooltip and the group's
+ * label), then the value — a value you press, an inline field, a control.
  */
+export function PopRow({
+  icon,
+  label,
+  top,
+  children,
+}: {
+  icon: GlyphRef;
+  label: string;
+  /** Multi-line content — the glyph sits on the first line. */
+  top?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="insp-row" data-top={top || undefined} role="group" aria-label={label}>
+      <span className="insp-ico" title={label}>
+        {glyph(icon)}
+      </span>
+      <div className="insp-val">{children}</div>
+    </div>
+  );
+}
+
+/** A section — words, people, steps — under a quiet label. `aside` rides the
+ *  label's right edge (a count, a summary). */
 export function PopSection({
   label,
+  icon,
   aside,
-  divider = false,
-  className = "",
   children,
 }: {
   label?: React.ReactNode;
+  icon?: GlyphRef;
   aside?: React.ReactNode;
-  /** Hairline above — used between stacked sections in the same column. */
-  divider?: boolean;
-  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={`flex flex-col gap-1.5 px-4 py-3 ${divider ? "border-t border-line" : ""} ${className}`}>
+    <div className="insp-sec">
       {(label || aside) && (
-        <div className="flex items-baseline gap-2">
-          {label && <PopLabel>{label}</PopLabel>}
-          {aside && <div className="mono ml-auto text-micro text-muted/75">{aside}</div>}
+        <div className="insp-sec-head">
+          {icon && glyph(icon, 13)}
+          {label && <span>{label}</span>}
+          {aside && <span className="insp-aside">{aside}</span>}
         </div>
       )}
       {children}
@@ -187,115 +169,127 @@ export function PopSection({
   );
 }
 
-/** Footer — quiet acts left, the destructive one right. */
+/** The footer — navigation left, the destructive act right. */
 export function PopFooter({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2 border-t border-line px-3.5 py-2.5">
-      {children}
-    </div>
-  );
+  return <div className="insp-foot">{children}</div>;
+}
+
+/** The footer's flexible gap. */
+export function PopGrow() {
+  return <span className="k-grow" />;
 }
 
 /**
- * A quiet footer act. Text, not a button-looking Btn — the footer holds
- * navigation and rare transforms, and none of them is the primary.
+ * A footer act: a ghost button, text or a glyph. With `icon` and no children
+ * it is an icon button whose `title` is its name. `href` opens a link in a new
+ * window (the native shells open links only through `_blank`).
  */
 export function PopFootAct({
   onClick,
   href,
   title,
+  icon,
   danger,
+  expanded,
   children,
 }: {
   onClick?: () => void;
   href?: string;
   title?: string;
-  /** Destructive — stays muted until hover, and only shouts once confirming. */
+  icon?: GlyphRef;
+  /** Destructive — quiet at rest, red under the pointer and while it asks. */
   danger?: boolean;
-  children: React.ReactNode;
+  /** It opened a question beneath it (a scope menu). */
+  expanded?: boolean;
+  children?: React.ReactNode;
 }) {
-  const cls = `fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label text-muted ${
-    danger ? "hover:text-signal" : "hover:text-ink"
-  }`;
+  const g = icon ? glyph(icon) : undefined;
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" title={title} className={cls}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={title}
+        aria-label={children ? undefined : title}
+        className="k-btn"
+        data-kind="ghost"
+        data-size="xs"
+        data-icon={children ? undefined : ""}
+      >
+        {g}
         {children}
       </a>
     );
   }
+  if (g && !children) {
+    return (
+      <IconButton
+        size="xs"
+        label={title ?? ""}
+        icon={g}
+        onClick={onClick}
+        aria-expanded={expanded}
+        data-quiet-danger={danger ? "" : undefined}
+      />
+    );
+  }
   return (
-    <button type="button" onClick={onClick} title={title} className={cls}>
+    <Button
+      kind="ghost"
+      size="xs"
+      icon={g}
+      onClick={onClick}
+      title={title}
+      aria-expanded={expanded}
+      data-quiet-danger={danger ? "" : undefined}
+    >
       {children}
-    </button>
+    </Button>
   );
 }
 
 /**
- * The response segmented control (RSVP). Compact by design: three 44px boxes
- * gave a one-tap decision a third of the card.
- *
- * The chosen answer carries its verdict token — `--ok` / `--warn` /
- * `--signal`, never a raw green — as the TINT, BORDER and GLYPH, while the
- * label itself stays `--ink`. `--ok` and `--warn` are ~3.3:1 on the light
- * paper grounds: fine for a mark (WCAG 1.4.11 wants 3:1), under AA for 11px
- * text. Putting the label in ink is what makes this read in every palette and
- * skin without a per-theme exception — see tests/token-contrast.test.ts.
+ * A toggle group in the kit's trough — the RSVP, priority. Unlike the kit's
+ * Segmented (a radio group that always holds a value) "nothing chosen yet" is
+ * a state it can show, so each button is a toggle (`aria-pressed`).
  */
-export type PopSegment<T extends string> = { value: T; label: string; glyph?: string; tone?: "ok" | "warn" | "signal" };
+export type PopSegment<T extends string> = { value: T; label: string; dot?: string; disabled?: boolean; title?: string };
 
 export function PopSegmented<T extends string>({
   segments,
   value,
   onPick,
   ariaLabel,
+  disabled,
 }: {
-  segments: PopSegment<T>[];
+  segments: readonly PopSegment<T>[];
   value: T | null;
   onPick: (v: T) => void;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="flex overflow-hidden rounded-[var(--radius-sm)] border border-line-strong bg-surface"
-    >
-      {segments.map((s, i) => {
-        const on = value === s.value;
-        const tone = s.tone ?? "ok";
-        return (
-          <button
-            key={s.value}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onPick(s.value)}
-            className={`fast px-2.5 py-1.5 text-label ${i > 0 ? "border-l border-line" : ""} ${
-              on ? "font-semibold text-ink" : "font-medium text-muted hover:bg-bg hover:text-ink"
-            }`}
-            style={
-              on
-                ? {
-                    background: `color-mix(in srgb, var(--${tone}) 14%, transparent)`,
-                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(--${tone}) 45%, transparent)`,
-                  }
-                : undefined
-            }
-          >
-            {s.glyph && (
-              <span className="mr-1" style={on ? { color: `var(--${tone})` } : undefined} aria-hidden>
-                {s.glyph}
-              </span>
-            )}
-            {s.label}
-          </button>
-        );
-      })}
+    <div role="group" aria-label={ariaLabel} className="k-seg">
+      {segments.map((s) => (
+        <button
+          key={s.value}
+          type="button"
+          aria-pressed={value === s.value}
+          disabled={disabled || s.disabled}
+          title={s.title}
+          onClick={() => onPick(s.value)}
+        >
+          {s.dot && <Dot color={s.dot} shape="round" size="sm" />}
+          {s.label}
+        </button>
+      ))}
     </div>
   );
 }
 
-/** The one filled act in a strip (Join the meeting, Done). */
+/** The one filled act in a strip (Join, Done). An `href` is a link styled as
+ *  the button. */
 export function PopPrimary({
   onClick,
   href,
@@ -309,45 +303,218 @@ export function PopPrimary({
   children: React.ReactNode;
   disabled?: boolean;
 }) {
-  const cls =
-    "fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-label font-semibold text-on-accent shadow-[var(--shadow-1)] hover:opacity-90 disabled:opacity-50";
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="k-btn" data-kind="primary">
         {icon}
         {children}
       </a>
     );
   }
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={cls}>
-      {icon}
+    <Button kind="primary" icon={icon} onClick={onClick} disabled={disabled}>
       {children}
-    </button>
+    </Button>
   );
 }
 
 /**
  * Placeholder lines for a section whose content is still in flight. They hold
- * the shape rather than announcing it: an empty column that fills a beat later
- * reads as a broken card, and a spinner reads as a wait. `--line` only — a
+ * the shape rather than announcing it. A hairline's contrast only — a
  * skeleton is furniture, never content.
  */
 export function PopSkeleton({ lines = 3, className = "" }: { lines?: number; className?: string }) {
   const widths = ["78%", "62%", "70%", "54%", "66%", "58%"];
   return (
-    <div className={`flex flex-col gap-2 py-0.5 ${className}`} aria-hidden>
+    <div className={`flex flex-col gap-2 py-1 ${className}`} aria-hidden>
       {Array.from({ length: lines }, (_, i) => (
-        <span
-          key={i}
-          className="pop-skeleton block h-[9px] rounded-full"
-          style={{ width: widths[i % widths.length] }}
-        />
+        <span key={i} className="pop-skeleton block h-[9px]" style={{ width: widths[i % widths.length] }} />
       ))}
     </div>
   );
 }
 
-/** An inline, borderless editable value — the popover's default input voice. */
-export const POP_INPUT_CLS =
-  "fast -mx-1 min-w-0 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-body text-ink outline-none placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg";
+/** The inline, borderless editable value — the inspector's input voice. */
+export const POP_INPUT_CLS = "insp-input";
+
+/**
+ * A value that opens a kit Picker — the project, a length, a domain. Looks
+ * like the other values in its row; the menu searches past seven options.
+ */
+export function PopPick<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+  children,
+  empty,
+  lead,
+}: {
+  value: T | null;
+  options: readonly PickerOption<T>[];
+  onChange: (v: T) => void;
+  /** The picker's name — its search placeholder, aria-label and tooltip. */
+  label: string;
+  /** What the value reads as. */
+  children: React.ReactNode;
+  /** Nothing chosen: the value reads quiet. */
+  empty?: boolean;
+  lead?: React.ReactNode;
+}) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        ref={setBtn}
+        type="button"
+        className="insp-v"
+        data-empty={empty || undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {lead}
+        <span>{children}</span>
+        <Icon name="chevron-down" size={12} />
+      </button>
+      <Picker
+        anchor={btn}
+        open={open}
+        onClose={() => setOpen(false)}
+        options={options}
+        value={value}
+        label={label}
+        onChange={(v) => {
+          onChange(v);
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * The Date popover (D-190's third kind): a typed line ("fri", "next week",
+ * "dec 3" — the capture grammar, `parseCapture`) over the kit's MiniMonth.
+ * ↵ takes what the line says; a press on a day takes that day. `onClear`
+ * offers the way back to no date.
+ */
+export function PopDate({
+  value,
+  onChange,
+  onClear,
+  clearLabel = "No date",
+  label,
+  min,
+  children,
+  empty,
+}: {
+  /** The day showing, `YYYY-MM-DD`. */
+  value: string | null;
+  onChange: (iso: string) => void;
+  onClear?: () => void;
+  clearLabel?: string;
+  /** The popover's name — its aria-label and the value's tooltip. */
+  label: string;
+  /** Days before this aren't offered by the typed line. */
+  min?: string;
+  children: React.ReactNode;
+  empty?: boolean;
+}) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const { settings } = useSettings();
+  const typed = useMemo(() => {
+    const t = q.trim();
+    if (!t) return null;
+    const d = parseCapture(t).doDate;
+    return d && (!min || d >= min) ? d : null;
+  }, [q, min]);
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
+  const take = (iso: string) => {
+    onChange(iso);
+    close();
+  };
+  return (
+    <>
+      <button
+        ref={setBtn}
+        type="button"
+        className="insp-v"
+        data-empty={empty || undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <span>{children}</span>
+      </button>
+      <Popover anchor={btn} open={open} onClose={close} label={label} className="k-datepop">
+        <div className="k-msearch">
+          <Icon name="calendar" size={14} />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Type a day — fri, next week"
+            aria-label={`${label} — type a day`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && typed) {
+                e.preventDefault();
+                take(typed);
+              }
+            }}
+          />
+          {typed && <span className="k-datepop-read">{fmtDayLabel(typed)}</span>}
+        </div>
+        <MiniMonth
+          key={value ?? "none"}
+          value={value ? parseDateISO(value) : null}
+          weekStartsOn={firstDayOfWeek(settings)}
+          onChange={(d) => take(toDateISO(d))}
+        />
+        {onClear && value && (
+          <>
+            <div className="k-msep" role="separator" />
+            <button
+              type="button"
+              className="k-mi"
+              onClick={() => {
+                onClear();
+                close();
+              }}
+            >
+              <Icon name="close" size={14} />
+              <span className="k-mi-label">{clearLabel}</span>
+            </button>
+          </>
+        )}
+      </Popover>
+    </>
+  );
+}
+
+/** A shortcut as keycaps, in the platform's spelling: "⌘E" → ⌘ · E on a
+ *  Mac, Ctrl · E elsewhere (lib/shortcutLabel). */
+export function keycaps(mac: string): string[] {
+  const label = shortcutLabel(mac);
+  if (label.includes("+") && label.length > 1) return label.split("+");
+  const m = label.match(/^([⌃⌘⌥⇧]*)(.*)$/);
+  if (!m || !m[1]) return [label];
+  return [...m[1], m[2]].filter(Boolean);
+}
+
+/** A press that landed in a floating layer of its own (a picker, a menu) is
+ *  not a press outside the card that opened it. */
+export function inNestedSurface(e: Event): boolean {
+  const t = e.target;
+  return t instanceof Element && Boolean(t.closest("[data-nested-surface]"));
+}

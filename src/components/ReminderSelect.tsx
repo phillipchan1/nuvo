@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { Icon } from "./Icon";
+import { Button, IconButton, Input } from "./kit";
 import {
   describeLead,
   describeLeadsShort,
@@ -78,32 +79,34 @@ function CustomLead({
     onSet(minutes);
   };
   return (
-    <div className="flex flex-wrap items-center gap-1.5 py-1">
-      <input
+    <div className="rem-custom">
+      <Input
         type="number"
+        size="sm"
         min={0}
         inputMode="numeric"
         aria-label="Custom lead amount"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        className="mono tap field w-16 px-2 py-1 text-caption"
+        frameClassName="rem-amount"
       />
       <select
         aria-label="Custom lead unit"
         value={unit}
         onChange={(e) => setUnit(e.target.value as typeof unit)}
-        className="tap field w-auto px-2 py-1 text-caption"
+        className="k-field rem-unit"
+        data-size="sm"
       >
         <option value="minutes">minutes</option>
         <option value="hours">hours</option>
         <option value="days">days</option>
       </select>
-      <button type="button" className="tap px-2 text-caption font-medium text-accent" onClick={commit}>
+      <Button size="xs" kind="primary" className="tap-h" onClick={commit}>
         Set
-      </button>
-      <button type="button" className="tap px-1 text-caption text-muted" onClick={onCancel}>
+      </Button>
+      <Button size="xs" kind="ghost" className="tap-h" onClick={onCancel}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }
@@ -189,26 +192,21 @@ export function ReminderList({
 
   return (
     <div
-      className={`flex flex-col ${block ? "w-full" : ""}`}
+      className={`rem-list ${block ? "w-full" : ""}`}
+      data-off={enabled ? undefined : ""}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {!block && (
-        <span className={`mono text-micro text-muted ${enabled ? "" : "opacity-60"}`}>{text}</span>
-      )}
+      {!block && <span className="rem-read">{text}</span>}
       {(silenced || defaultOff) ? (
-        <label className={`relative inline-flex items-center ${block ? "min-h-[44px] w-full" : ""}`}>
-          {block && (
-            <span className={`text-body text-ink ${enabled ? "" : "opacity-60"}`}>
-              {prefsMode ? "Never" : silenced ? "No reminder" : "Default (off)"}
-            </span>
-          )}
-          {block && chevron && <Icon name="chevron-down" size={14} className="pointer-events-none ml-auto shrink-0 text-muted/70" />}
+        <label className="rem-row" data-block={block || undefined} data-empty="">
+          {block && <span className="rem-text">{prefsMode ? "Never" : silenced ? "No reminder" : "Default (off)"}</span>}
+          {block && chevron && <Icon name="chevron-down" size={14} className="rem-chev" />}
           <select
             value={silenced || prefsMode ? OFF_VALUE : DEFAULT_VALUE}
             aria-label="Reminder"
             onChange={(e) => replaceAt(0, e.target.value)}
-            className="tap absolute inset-0 w-full opacity-0"
+            className="absolute inset-0 w-full opacity-0"
           >
             {!prefsMode && (
               <option value={DEFAULT_VALUE}>
@@ -226,17 +224,18 @@ export function ReminderList({
         </label>
       ) : (
         showRows.map((lead, i) => (
-          <div key={`${lead}-${i}`} className="flex items-center gap-1">
-            <label className={`relative inline-flex min-h-[44px] flex-1 items-center ${block ? "" : ""}`}>
-              <span className={`${block ? "text-body text-ink" : "mono text-micro text-muted"} ${enabled ? "" : "opacity-60"}`}>
-                {i === 0 && source === "default" ? `${describeLead(lead)} · default` : describeLead(lead)}
+          <div key={`${lead}-${i}`} className="rem-line">
+            <label className="rem-row" data-block={block || undefined}>
+              <span className={block ? "rem-text" : "rem-read"}>
+                {describeLead(lead)}
+                {i === 0 && source === "default" && <span className="rem-default"> · default</span>}
               </span>
-              {block && chevron && <Icon name="chevron-down" size={14} className="pointer-events-none ml-auto shrink-0 text-muted/70" />}
+              {block && chevron && <Icon name="chevron-down" size={14} className="rem-chev" />}
               <select
                 value={String(lead)}
                 aria-label={i === 0 ? "Reminder" : `Reminder ${i + 1}`}
                 onChange={(e) => replaceAt(i, e.target.value)}
-                className="tap absolute inset-0 w-full opacity-0"
+                className="absolute inset-0 w-full opacity-0"
               >
                 {i === 0 && !prefsMode && (
                   <option value={DEFAULT_VALUE}>
@@ -253,14 +252,13 @@ export function ReminderList({
               </select>
             </label>
             {source === "override" && (
-              <button
-                type="button"
-                aria-label="Remove reminder"
+              <IconButton
+                size="xs"
+                label="Remove reminder"
+                icon={<Icon name="close" size={12} />}
                 onClick={() => removeAt(i)}
-                className="tap flex h-11 w-11 shrink-0 items-center justify-center text-muted hover:text-ink"
-              >
-                <Icon name="close" size={14} />
-              </button>
+                className="rem-remove tap"
+              />
             )}
           </div>
         ))
@@ -276,8 +274,11 @@ export function ReminderList({
         />
       )}
       {showRows.length > 0 && showRows.length < MAX_REMINDER_LEADS && customAt == null && (
-        <button
-          type="button"
+        <Button
+          size="xs"
+          kind="ghost"
+          icon={<Icon name="plus" size={12} />}
+          className="rem-add tap-h"
           onClick={() => {
             const next = nextUnusedPreset(showRows);
             if (next == null) {
@@ -292,11 +293,9 @@ export function ReminderList({
             }
             onChange([...base, next]);
           }}
-          className="tap mt-0.5 inline-flex h-11 items-center gap-1 self-start text-caption font-medium text-muted hover:text-ink"
         >
-          <Icon name="plus" size={12} />
           Add reminder
-        </button>
+        </Button>
       )}
     </div>
   );

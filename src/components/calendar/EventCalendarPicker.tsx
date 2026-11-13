@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "../Icon";
+import { Dot } from "../kit";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useSettings } from "../../hooks/useSettings";
 import {
@@ -83,7 +84,8 @@ export function useEventCalendar(): {
 }
 
 /** The grouped list itself. `field` sits inside a form (the composers, the task
- *  card); `menu` sits inside a right-click menu and wears its row metrics. */
+ *  card); `menu` sits inside a right-click menu. Both wear the kit's menu rows;
+ *  on a phone the rows grow to a thumb. */
 export function CalendarTargetList({
   groups,
   value,
@@ -112,18 +114,14 @@ export function CalendarTargetList({
     <div
       role="radiogroup"
       aria-label={label}
-      className={`flex flex-col py-0.5 ${
+      className={`flex flex-col ${
         menu ? "max-h-[220px] overflow-y-auto" : "md:max-h-[240px] md:overflow-y-auto md:overscroll-contain"
       }`}
     >
       {groups.map((g) => (
         <div key={g.accountId} className="flex flex-col">
           {manyAccounts && (
-            <div
-              className={`truncate pb-0.5 pt-1.5 text-micro uppercase tracking-wide text-muted/70 ${
-                menu ? "px-3" : "px-2.5"
-              }`}
-            >
+            <div className="k-pick-group">
               {g.accountLabel} · {providerLabel(g.provider)}
             </div>
           )}
@@ -138,23 +136,12 @@ export function CalendarTargetList({
                 role="radio"
                 aria-checked={on}
                 onClick={() => onPick(target)}
-                className={
-                  menu
-                    ? "fast flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left text-caption text-ink hover:bg-surface-2"
-                    : `tap-h tap-desk-h fast flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left text-body hover:bg-accent-soft ${
-                        on ? "text-accent" : "text-ink"
-                      }`
-                }
+                className="k-mi k-pick-row"
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: c.color ?? "var(--muted)" }}
-                />
-                <span className="min-w-0 flex-1 truncate">{c.summary}</span>
-                {isDefault && (
-                  <span className="mono shrink-0 text-micro text-muted">default</span>
-                )}
-                {on && <Icon name="check" size={12} className="shrink-0" />}
+                <Dot color={c.color ?? "var(--faint)"} />
+                <span className="k-mi-label">{c.summary}</span>
+                {isDefault && <span className="k-pick-default">default</span>}
+                {on && <Icon name="check" size={14} className="k-mi-check" />}
               </button>
             );
           })}
@@ -165,46 +152,45 @@ export function CalendarTargetList({
 }
 
 /** A composer's Calendar field: the current calendar, opening in place into
- *  the list. */
+ *  the list. `field` is a kit field (a form); `value` reads like the other
+ *  values in an inspector row. */
 export function EventCalendarPicker({
   groups,
   value,
   defaultTarget,
   onChange,
+  variant = "field",
 }: {
   groups: MoveTargetGroup[];
   value: CreateTarget | null;
   defaultTarget?: CreateTarget | null;
   onChange: (target: CreateTarget) => void;
+  variant?: "field" | "value";
 }) {
   const [open, setOpen] = useState(false);
   const manyAccounts = groups.length > 1;
   const group = value ? groups.find((g) => g.accountId === value.accountId) : undefined;
   const current = group?.calendars.find((c) => c.id === value?.calendarId);
+  const asValue = variant === "value";
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="tap-h tap-desk-h fast flex w-full min-w-0 items-center gap-2 rounded-[var(--radius)] border border-line px-2.5 py-1.5 text-left hover:border-line-strong"
+        className={asValue ? "insp-v self-start" : "k-field k-select tap-h w-full"}
       >
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: current?.color ?? "var(--muted)" }}
-        />
-        <span className="min-w-0 truncate text-body text-ink">{current?.summary ?? "Calendar"}</span>
-        {manyAccounts && group && (
-          <span className="min-w-0 flex-1 truncate text-meta text-muted">
-            {group.accountLabel} · {providerLabel(group.provider)}
-          </span>
-        )}
-        <Icon
-          name="chevron-down"
-          size={11}
-          className={`fast ml-auto shrink-0 text-muted ${open ? "rotate-180" : ""}`}
-        />
+        <span className={asValue ? "flex min-w-0 items-center gap-1.5" : "k-select-val"}>
+          <Dot color={current?.color ?? "var(--faint)"} />
+          <span className="truncate">{current?.summary ?? "Calendar"}</span>
+          {manyAccounts && group && (
+            <span className="k-pick-default truncate">
+              {group.accountLabel} · {providerLabel(group.provider)}
+            </span>
+          )}
+        </span>
+        <Icon name="chevron-down" size={12} className={`fast shrink-0 ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (

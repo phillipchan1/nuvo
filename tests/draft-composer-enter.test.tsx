@@ -61,13 +61,13 @@ describe("Enter on a repeating slot", () => {
   it("Enter in Custom applies the rule and does not create yet", () => {
     const onCreate = renderSlot();
     fireEvent.click(screen.getByRole("button", { name: "Repeat" }));
-    const pop = document.querySelector(".moment.fixed");
+    const pop = document.querySelector("[data-repeat-picker]");
     if (!pop) throw new Error("repeat popover did not open");
     fireEvent.click(within(pop as HTMLElement).getByText("Custom…"));
     fireEvent.keyDown(within(pop as HTMLElement).getByRole("spinbutton"), { key: "Enter" });
     expect(onCreate).not.toHaveBeenCalled();
     expect(screen.getAllByText(/Weekly on Wed/).length).toBeGreaterThan(0);
-    expect(document.querySelector(".moment.fixed")).toBeNull();
+    expect(document.querySelector("[data-repeat-picker]")).toBeNull();
 
     fireEvent.keyDown(document.body, { key: "Enter" });
     expect(onCreate).toHaveBeenCalledTimes(1);

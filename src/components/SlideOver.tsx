@@ -29,30 +29,33 @@ import { useVertical } from "../hooks/useVertical";
 import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, sameClockOn, toDateISO, todayISO } from "../lib/dates";
-import { at } from "./mobile/dayPlan";
+import { at, span } from "./mobile/dayPlan";
 import { useWeekCommitAct } from "./tasks/TaskActionsMenu";
 import { deriveSlotTitle } from "../lib/slots";
 import { DomainPicker } from "./floors/parts";
 import { rulesEqual, describeRule, eventRRule, readEventRRule, type RecurrenceRule } from "../lib/recurrence";
 import {
+  INSPECTOR_W,
+  PopDate,
   POP_INPUT_CLS,
-  POP_W_NARROW,
-  POP_W_WIDE,
   PopBody,
-  PopCol,
-  PopField,
   PopFootAct,
   PopFooter,
-  PopLabel,
+  PopGlyph,
+  PopGrow,
   PopMast,
   PopMetaDot,
+  PopPick,
   PopPrimary,
+  PopRow,
   PopSection,
   PopSegmented,
   PopSkeleton,
-  PopStack,
   PopStrip,
+  inNestedSurface,
 } from "./PopoverParts";
+import { Button, Checkbox, Chip, ChipButton, Dot, Kbd, Picker, Switch } from "./kit";
+import { AltitudeIcon } from "./icons";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
@@ -60,23 +63,10 @@ import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { anchoredTop } from "../lib/anchoredTop";
 import { SlotDeferPanel } from "./floors/DeferPanel";
 import { RecurrenceDeleteButton, RecurrenceScopeDialog, RepeatControl, SlotDeleteButton, useRecurringScope, type SlotDeleteScope } from "./RecurrencePicker";
-import { Btn } from "./ui";
 import type { TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskListView from "./tasks/TaskListView";
 import DomainSymbol from "./domain/DomainSymbol";
 import EventDomainControl from "./domain/EventDomainControl";
-
-/**
- * Priority as tokens, not raw Tailwind — `bg-amber-400` for "medium" was one
- * of two colours on the Schedule no skin could answer for. High is the same
- * `--signal` the now-line uses; medium is the "waiting on something" warn.
- */
-const PRIORITY_TOKEN: Record<"high" | "medium" | "low" | "none", string> = {
-  high: "var(--signal)",
-  medium: "var(--warn)",
-  low: "var(--accent)",
-  none: "var(--muted)",
-};
 
 /** Minutes after local midnight for an ISO instant (for series templates). */
 function localMinutes(iso: string): number {
@@ -316,16 +306,12 @@ export function TaskPopover({
   const { settings } = useSettings();
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const popRef = useRef<HTMLDivElement>(null);
-  // Two columns wherever the card floats on its own. Inside the slot popover
-  // the card IS the second column already, so it stays single there.
-  const twoCol = !slideout;
-  const TASK_POP_W = twoCol ? POP_W_WIDE : POP_W_NARROW;
 
   const pos = useAnchoredPosition({
     anchorEl,
     anchorRect: anchor,
     popRef,
-    width: TASK_POP_W,
+    width: INSPECTOR_W,
     gap: 10,
     disabled: centered || slideout,
     onDismiss: onClose,
@@ -398,6 +384,8 @@ export function TaskPopover({
       // GuestsInput.tsx), which would make e.target read as already-detached
       // and falsely look like an outside click by the time this listener runs.
       if (!popRef.current || e.composedPath().includes(popRef.current)) return;
+      // A picker or menu the card opened floats in a layer of its own.
+      if (inNestedSurface(e)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -420,6 +408,20 @@ export function TaskPopover({
   const startHHMM = task.start_time
     ? format(new Date(task.start_time), "HH:mm")
     : "";
+
+  // A new day for a timed task keeps its clock (D-154) — moving the 2pm block
+  // to Friday used to turn it into an untimed chip in Friday's anytime row.
+  // No day sends it back to where it rests (its home's week, or the Inbox).
+  const setDoDate = (value: string) => {
+    const moved = value ? sameClockOn(task, value) : null;
+    return moved
+      ? mutations.block(task, moved, task.duration_minutes ?? undefined)
+      : value
+      ? mutations.planFor(task, value)
+      : task.project_id || task.initiative_id || task.domain_id
+        ? mutations.backToWeek(task)
+        : mutations.backToInbox(task);
+  };
 
   const setStart = (hhmm: string) => {
     if (!hhmm) {
@@ -456,9 +458,9 @@ export function TaskPopover({
     if (!task.do_date) return null;
     const t = format(new Date(), "yyyy-MM-dd");
     const tm = format(new Date(Date.now() + 86400000), "yyyy-MM-dd");
-    if (task.do_date === t) return "today";
-    if (task.do_date === tm) return "tomorrow";
-    return format(new Date(task.do_date + "T12:00:00"), "MMM d");
+    if (task.do_date === t) return "Today";
+    if (task.do_date === tm) return "Tomorrow";
+    return format(new Date(task.do_date + "T12:00:00"), "EEE MMM d");
   })();
 
   // Keyword-match domain suggestion when task has no parent
@@ -486,21 +488,21 @@ export function TaskPopover({
   const createTargets = useCreateTargets();
   const [convertOpen, setConvertOpen] = useState(false);
 
-  // The masthead's one line — the same read the chips below let you change.
+  // The masthead's one line — the same read the values below let you change.
+  // One clock spelling (`at`, D-122).
   const whenSummary = task.do_date
-    ? `${doDateLabel}${task.start_time ? ` · ${format(new Date(task.start_time), "h:mm a")}` : ""} · ${fmtDuration(task.duration_minutes ?? defaultDurationMins)}`
+    ? `${doDateLabel}${task.start_time ? ` · ${at(new Date(task.start_time))}` : ""} · ${fmtDuration(task.duration_minutes ?? defaultDurationMins)}`
     : task.status === "inbox"
-      ? "in the inbox — no date yet"
-      : "no date";
+      ? "In the inbox"
+      : "No date";
   const repeatLabel = recurrence
     ? describeRule(ruleOf(recurrence), task.do_date ?? todayISO())
     : null;
 
-  // The notes read the same in both layouts too. The words are plain text; a phone
+  // The notes read the same in every layout. The words are plain text; a phone
   // number, email or link in them is tappable until you start typing (TaskNotes).
   // The read face wears the textarea's box so the swap doesn't jump.
-  const notesBox =
-    "w-full min-h-[9rem] max-h-[min(40vh,22rem)] overflow-y-auto rounded-md border border-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink transition-colors hover:border-line hover:bg-bg";
+  const notesBox = "insp-text min-h-[4.5rem] max-h-[min(40vh,22rem)] overflow-y-auto";
   const notesField = (
     <TaskNotes
       value={notes}
@@ -513,168 +515,135 @@ export function TaskPopover({
           onChange={(e) => setNotes(e.target.value)}
           onFocus={onFocus}
           onBlur={onBlur}
-          rows={Math.max(6, Math.min(14, (notes || "").split("\n").length + 1))}
+          rows={Math.max(3, Math.min(14, (notes || "").split("\n").length + 1))}
           aria-label="Notes"
-          className={`${notesBox} resize-y bg-transparent outline-none placeholder:text-muted/55 focus:border-line-strong focus:bg-bg`}
-          placeholder="Notes…"
+          className={`${notesBox} resize-y`}
+          placeholder="Add notes"
         />
       )}
     />
   );
 
-  // Delegation and the record's stamps read the same in both layouts — they
-  // move column, they never disappear (the slide-out lost them once).
+  // Delegation reads the same in every layout — it moves, it never disappears.
   const prework = (
     <>
       {task.prework && task.prework_at ? (
-        <div className="rounded-lg bg-bg px-3 py-2.5">
-          <div className="max-h-[200px] overflow-y-auto text-caption leading-relaxed text-text [&_h1]:mb-1 [&_h1]:text-body [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-caption [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-label [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
+        <div className="grid gap-2">
+          <div className="max-h-[200px] overflow-y-auto text-caption leading-relaxed text-ink [&_h1]:mb-1 [&_h1]:text-body [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-caption [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-caption [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
             <ReactMarkdown>{task.prework ?? ""}</ReactMarkdown>
           </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Btn onClick={() => void prepare()} disabled={preparing}>
-              {preparing ? "✦ thinking…" : "✦ redo"}
-            </Btn>
-            <Btn onClick={() => mutations.patchTask(task.id, { prework: "", prework_at: null })}>
-              clear
-            </Btn>
+          <div className="flex items-center gap-1">
+            <Button size="xs" icon={<Icon name="refresh" size={12} />} onClick={() => void prepare()} disabled={preparing}>
+              {preparing ? "Thinking…" : "Redo"}
+            </Button>
+            <Button size="xs" kind="ghost" onClick={() => mutations.patchTask(task.id, { prework: "", prework_at: null })}>
+              Clear
+            </Button>
           </div>
         </div>
       ) : (
-        <button
+        <Button
+          size="xs"
+          kind="ghost"
+          className="-ml-2 self-start"
+          icon={<Icon name="sparkles" size={13} />}
           onClick={() => void prepare()}
           disabled={preparing}
-          className="fast w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-caption text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
         >
-          {preparing
-            ? "✦ preparing — approach, drafts, pitfalls…"
-            : `✦ delegate pre-work to ${ASSISTANT_NAME}`}
-        </button>
+          {preparing ? "Preparing…" : `Hand the pre-work to ${ASSISTANT_NAME}`}
+        </Button>
       )}
-      {prepError && <div className="text-label text-signal">{prepError}</div>}
+      {prepError && <div className="text-caption text-danger">{prepError}</div>}
     </>
   );
-  const stamps = (
-    <>
-      created {format(new Date(task.created_at), "MMM d yyyy")}
-      {task.completed_at && (
-        <span className="ml-2.5">completed {format(new Date(task.completed_at), "MMM d yyyy")}</span>
-      )}
-    </>
-  );
+
+  const durationNow = task.duration_minutes ?? defaultDurationMins;
+  const projectOptions = [
+    { value: "", label: "No project" },
+    ...vertical.projects
+      .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
+      .map((p) => {
+        const d = domainById(vertical, p.domainId);
+        return { value: p.id, label: p.name, icon: <Dot color={d?.color ?? "var(--faint)"} />, hint: d?.name };
+      }),
+  ];
+  const projectDomain = project ? domainById(vertical, project.domainId) : null;
 
   const card = (
       <div
         ref={slideout ? undefined : popRef}
         data-block-popover=""
-        className={`${centered ? "moment" : slideout ? "" : "pop-in"} ${slideout ? "h-full" : centered ? "relative" : "fixed"} ${slideout ? "" : raised ? "z-[90]" : onBack ? "z-[55]" : "z-50"} flex flex-col ${slideout ? "" : "rounded-[var(--radius-lg)] border border-line bg-surface"}`}
+        className={`${slideout ? "insp-pane h-full" : `insp ${centered ? "relative" : "fixed"}`} ${slideout ? "" : raised ? "z-[90]" : onBack ? "z-[55]" : "z-50"}`}
         style={{
-          ...(centered || slideout ? {} : { top: pos.top, left: pos.left }),
-          ...(slideout ? {} : { width: TASK_POP_W, maxHeight: "min(620px, calc(100vh - 24px))", boxShadow: "var(--shadow-3)" }),
+          ...(centered || slideout
+            ? {}
+            : { top: pos.top, left: pos.left, ["--pop-origin" as string]: pos.side === "right" ? "top left" : "top right" }),
+          ...(slideout ? {} : { width: INSPECTOR_W, maxHeight: "min(620px, calc(100vh - 24px))" }),
         }}
       >
-        {/* Arrow connector — anchored variant only (the modal has no anchor). */}
-        {!centered && !slideout && (
-        <div
-          className="absolute h-2.5 w-2.5 rotate-45 border border-line bg-surface"
-          style={
-            pos.side === "right"
-              ? {
-                  left: -6,
-                  top: Math.max(16, Math.min(
-                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
-                    (popRef.current?.offsetHeight ?? 200) - 16,
-                  )),
-                  borderRight: "none",
-                  borderTop: "none",
-                }
-              : {
-                  right: -6,
-                  top: Math.max(16, Math.min(
-                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
-                    (popRef.current?.offsetHeight ?? 200) - 16,
-                  )),
-                  borderLeft: "none",
-                  borderBottom: "none",
-                }
-          }
-        />
-        )}
-
-        {/* Masthead — the thread up the vertical, the name, then ONE line of
-            when. The chips below edit it; this line is the read. */}
+        {/* Head — where it lives, its name, then ONE line of when. The rows
+            below change it; this line is the read. */}
         <PopMast
           dot={domain?.color ?? undefined}
-          onClose={onClose}
+          onClose={centered ? onClose : undefined}
           eyebrow={
             <>
               {onBack && backLabel && (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="fast mono mb-1 flex max-w-full items-center gap-1 truncate text-meta text-muted hover:text-ink"
-                >
-                  <span aria-hidden>←</span>
-                  <span className="truncate">{backLabel}</span>
+                <button type="button" onClick={onBack} className="insp-v" title={`Back to ${backLabel}`}>
+                  <PopGlyph name="back" size={13} />
+                  <span>{backLabel}</span>
                 </button>
               )}
-              <div className="mb-1 flex flex-wrap items-center gap-1.5 text-meta">
-                {project || initiative ? (
-                  // Parented — the domain is inherited from the project, so it's
-                  // the same quiet read as before, not a control (setting it here
-                  // would silently do nothing; see resolveDomainId).
-                  <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
-                    <span className="flex items-center gap-1" style={{ color: domain?.color }}>
+              {project || initiative ? (
+                // Parented — the domain is inherited from the project, so it's
+                // a read, not a control (setting it here would silently do
+                // nothing; see resolveDomainId).
+                <span className="mono flex min-w-0 items-center gap-1 truncate text-muted">
+                  <span className="flex shrink-0 items-center gap-1">
+                    <span className="inline-flex" style={{ color: domain?.color }}>
                       <DomainSymbol value={domain?.icon} size={13} />
-                      {domain?.name ?? "Domain"}
                     </span>
-                    {initiative && <><span>›</span><span className="truncate">{initiative.name}</span></>}
-                    {project && <><span>›</span><span className="truncate">{project.name}</span></>}
+                    {domain?.name ?? "Domain"}
                   </span>
-                ) : (
-                  // Loose — the same live DomainPicker Project/Initiative use,
-                  // in the same top-left corner of the record.
-                  <DomainPicker domains={vertical.domains} value={domain?.id ?? ""} onChange={setDomain} size="sm" allowClear />
-                )}
-                {suggestedDomain && (
-                  <button
-                    type="button"
-                    onClick={() => setDomain(suggestedDomain.id)}
-                    className="fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
-                    style={{
-                      borderColor: `${suggestedDomain.color}50`,
-                      color: suggestedDomain.color,
-                      background: `${suggestedDomain.color}15`,
-                    }}
-                    title="Nuvo's guess — click to file it here"
-                  >
-                    <span aria-hidden>✦</span>
-                    <DomainSymbol value={suggestedDomain.icon} size={12} />
-                    {suggestedDomain.name}
-                  </button>
-                )}
-              </div>
+                  {initiative && <><span className="insp-sep">›</span><span className="truncate">{initiative.name}</span></>}
+                  {project && <><span className="insp-sep">›</span><span className="truncate">{project.name}</span></>}
+                </span>
+              ) : (
+                // Loose — the same live DomainPicker Project/Initiative use,
+                // in the same top-left corner of the record.
+                <DomainPicker domains={vertical.domains} value={domain?.id ?? ""} onChange={setDomain} size="sm" allowClear />
+              )}
+              {suggestedDomain && (
+                <ChipButton
+                  data-tone="accent"
+                  icon={<Icon name="sparkles" size={12} />}
+                  onClick={() => setDomain(suggestedDomain.id)}
+                  title={`${ASSISTANT_NAME}'s guess — file it under ${suggestedDomain.name}`}
+                >
+                  {suggestedDomain.name}
+                </ChipButton>
+              )}
             </>
           }
           meta={
             <>
-              <span className="mono">{whenSummary}</span>
+              <span>{whenSummary}</span>
               {repeatLabel && (
                 <>
                   <PopMetaDot />
-                  <span title="Repeats">↻ {repeatLabel}</span>
+                  <span title="Repeats">{repeatLabel}</span>
                 </>
               )}
               {task.deadline && (
                 <>
                   <PopMetaDot />
-                  <span className="text-signal">⚑ due {format(new Date(task.deadline + "T12:00:00"), "MMM d")}</span>
+                  <span>Due {format(new Date(task.deadline + "T12:00:00"), "MMM d")}</span>
                 </>
               )}
               {task.roll_count > 0 && (
                 <>
                   <PopMetaDot />
-                  <span>carried {task.roll_count}d</span>
+                  <span>Carried {task.roll_count}d</span>
                 </>
               )}
             </>
@@ -685,308 +654,179 @@ export function TaskPopover({
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
             onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-            className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted"
-            placeholder="Task title…"
+            className="insp-title-input"
+            placeholder="Task title"
             aria-label="Task title"
           />
         </PopMast>
 
-        {/* Action strip — the acts you opened it for: finish it, or claim it
-            for this week. Everything else is a field. */}
+        {/* Strip — the acts you opened it for: finish it, or claim it for this
+            week. Everything else is a row. */}
         <PopStrip>
           {task.status === "done" ? (
-            <button
-              type="button"
-              onClick={() => mutations.uncomplete(task)}
-              className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-            >
-              Reopen
-            </button>
+            <Button onClick={() => mutations.uncomplete(task)}>Reopen</Button>
           ) : (
-            <PopPrimary onClick={() => { mutations.complete(task); dismiss(); }} icon={<Icon name="check" size={11} />}>
+            <PopPrimary onClick={() => { mutations.complete(task); dismiss(); }} icon={<Icon name="check" size={14} />}>
               Done
             </PopPrimary>
           )}
           {task.start_time && (
-            <button
-              type="button"
-              onClick={() => mutations.unblock(task)}
-              title="Take it off the clock — it stays planned for the day"
-              className="fast tap inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-            >
-              {/* One name for one act (P11): the task's menu says "Anytime that
-                  day", and the row it lands in is the anytime row. */}
+            // One name for one act (P11): the task's menu says "Anytime that
+            // day", and the row it lands in is the anytime row.
+            <Button onClick={() => mutations.unblock(task)} title="Take it off the clock — it stays planned for the day">
               Anytime
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <span className="k-grow" />
+          <Button
+            kind="ghost"
             onClick={() => commitToWeek(task)}
             aria-pressed={inWeek}
-            title={inWeek ? "In this week — click to release" : "Commit to this week"}
-            className={`fast tap ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-label font-medium ${
-              inWeek
-                ? "border-accent/35 bg-accent-soft text-accent"
-                : "border-line text-muted hover:border-line-strong hover:text-ink"
-            }`}
+            title={inWeek ? "In this week — press to release" : "Commit to this week"}
+            icon={<PopGlyph name="week" size={14} style={{ fill: inWeek ? "currentColor" : "none" }} />}
           >
-            <span aria-hidden>{inWeek ? "★" : "☆"}</span>
             This week
-          </button>
+          </Button>
         </PopStrip>
 
-        {/* Left = the task's facts · right = its words and Nuvo's pre-work. */}
         <PopBody>
-          <PopCol side={twoCol ? "left" : "only"}>
-            <PopStack>
-              <PopField label="When">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {/* Date chip */}
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
-                    <span className={task.do_date ? "text-ink" : "text-muted"}>{doDateLabel ?? "no date"}</span>
-                    <input
-                      type="date"
-                      aria-label="Do date"
-                      value={task.do_date ?? ""}
-                      onChange={(e) => {
-                        // A new day for a timed task keeps its clock (D-154) —
-                        // moving the 2pm block to Friday used to turn it into
-                        // an untimed chip in Friday's anytime row.
-                        const moved = e.target.value ? sameClockOn(task, e.target.value) : null;
-                        return moved
-                          ? mutations.block(task, moved, task.duration_minutes ?? undefined)
-                          : e.target.value
-                          ? mutations.planFor(task, e.target.value)
-                          : task.project_id || task.initiative_id || task.domain_id
-                            ? mutations.backToWeek(task)
-                            : mutations.backToInbox(task);
-                      }}
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
+          <PopRow icon="calendar" label="When">
+            <PopDate
+              label="Do date"
+              value={task.do_date}
+              onChange={setDoDate}
+              onClear={() => setDoDate("")}
+              empty={!task.do_date}
+            >
+              {doDateLabel ?? "No date"}
+            </PopDate>
+            <TimePicker value={startHHMM} onSelect={setStart} ariaLabel="Start time" placeholder="No time" />
+            <PopPick
+              label="Duration"
+              value={String(durationNow)}
+              options={durationOptions(durationNow)}
+              onChange={(v) => mutations.patchTask(task.id, { duration_minutes: Number(v) })}
+            >
+              {fmtDuration(durationNow)}
+            </PopPick>
+          </PopRow>
 
-                  {/* Time chip */}
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
-                    <span className={task.start_time ? "text-ink" : "text-muted"}>
-                      {task.start_time ? at(new Date(task.start_time)) : "no time"}
-                    </span>
-                    <input
-                      type="time"
-                      step={900}
-                      aria-label="Start time"
-                      value={startHHMM}
-                      onChange={(e) => setStart(e.target.value)}
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
+          <PopRow icon="repeat" label="Repeat">
+            <RepeatControl
+              variant="value"
+              anchorISO={task.do_date ?? todayISO()}
+              value={recurrence ? ruleOf(recurrence) : null}
+              onChange={applyRepeat}
+              disabled={!task.do_date}
+            />
+          </PopRow>
 
-                  {/* Duration chip */}
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
-                    <span className="text-ink">{fmtDuration(task.duration_minutes ?? defaultDurationMins)}</span>
-                    <Icon name="chevron-down" size={7} className="text-muted/50" />
-                    <select
-                      aria-label="Duration"
-                      value={task.duration_minutes ?? defaultDurationMins}
-                      onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
-                      className="absolute inset-0 w-full opacity-0"
-                    >
-                      {DURATION_PRESETS.map((m) => (
-                        <option key={m} value={m}>{fmtDuration(m)}</option>
-                      ))}
-                    </select>
-                  </label>
+          <PopRow icon="deadline" label="Deadline">
+            <PopDate
+              label="Deadline"
+              value={task.deadline}
+              onChange={(iso) => mutations.patchTask(task.id, { deadline: iso })}
+              onClear={() => mutations.patchTask(task.id, { deadline: null })}
+              clearLabel="No deadline"
+              empty={!task.deadline}
+            >
+              {task.deadline ? format(new Date(task.deadline + "T12:00:00"), "EEE MMM d") : "No deadline"}
+            </PopDate>
+          </PopRow>
 
-                  {/* Deadline chip */}
-                  <label className={`relative inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
-                    <span aria-hidden>⚑</span>
-                    <span>{task.deadline ? task.deadline.slice(5).replace("-", "/") : "deadline"}</span>
-                    <input
-                      type="date"
-                      aria-label="Deadline"
-                      value={task.deadline ?? ""}
-                      onChange={(e) => mutations.patchTask(task.id, { deadline: e.target.value || null })}
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
+          <PopRow icon="folder" label="Project">
+            <PopPick
+              label="Project"
+              value={task.project_id ?? ""}
+              options={projectOptions}
+              onChange={setProject}
+              empty={!project}
+              lead={project ? <Dot color={projectDomain?.color ?? "var(--faint)"} /> : undefined}
+            >
+              {project?.name ?? "No project"}
+            </PopPick>
+            {task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id) && (
+              <Button size="xs" kind="ghost" className="ml-auto" onClick={() => mutations.fileToProject(task)}>
+                File it
+              </Button>
+            )}
+          </PopRow>
 
-                  <RepeatControl
-                    anchorISO={task.do_date ?? todayISO()}
-                    value={recurrence ? ruleOf(recurrence) : null}
-                    onChange={applyRepeat}
-                    disabled={!task.do_date}
+          {/* Remind — offered once the task has a day or a clock to hang
+              on. Untimed `do_date` is opt-in (no default); a block and a
+              deadline stay independently silenceable. */}
+          {(task.start_time || task.do_date || task.deadline) && (
+            <PopRow icon="bell" label="Remind" top>
+              <div className="flex min-w-0 flex-1 flex-col">
+                {(task.start_time || task.do_date) && (
+                  <ReminderSelect
+                    block
+                    target={{
+                      targetKind: "task",
+                      targetId: task.id,
+                      anchor: "start",
+                      allDay: !task.start_time,
+                    }}
                   />
-                </div>
-              </PopField>
-
-              <PopField label="Project">
-                <div className="flex flex-wrap items-center gap-1">
-                  {/* Project chip */}
-                  <label className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
-                    <span>{project?.name ?? "+ project"}</span>
-                    <select
-                      aria-label="Project"
-                      value={task.project_id ?? ""}
-                      onChange={(e) => setProject(e.target.value)}
-                      className="absolute inset-0 w-full opacity-0"
-                    >
-                      <option value="">— none —</option>
-                      {vertical.projects
-                        .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
-                        .map((p) => {
-                          const d = domainById(vertical, p.domainId);
-                          return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
-                        })}
-                    </select>
-                  </label>
-
-                  {task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id) && (
-                    <button
-                      onClick={() => mutations.fileToProject(task)}
-                      className="fast rounded-full border border-accent/30 px-2 py-0.5 text-label text-accent hover:bg-accent-soft"
-                    >
-                      File to project
-                    </button>
-                  )}
-                </div>
-              </PopField>
-
-              {/* Remind — offered once the task has a day or a clock to hang
-                  on. Untimed `do_date` is opt-in (no default); a block and a
-                  deadline stay independently silenceable. */}
-              {(task.start_time || task.do_date || task.deadline) && (
-                <PopField label="Remind">
-                  <div className="flex flex-col gap-1">
-                    {(task.start_time || task.do_date) && (
-                      <ReminderSelect
-                        block
-                        target={{
-                          targetKind: "task",
-                          targetId: task.id,
-                          anchor: "start",
-                          allDay: !task.start_time,
-                        }}
-                      />
-                    )}
-                    {task.deadline && (
-                      <div className="flex items-baseline gap-2">
-                        <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
-                        <span className="shrink-0 text-micro text-muted/70">deadline</span>
-                      </div>
-                    )}
+                )}
+                {task.deadline && (
+                  <div className="flex items-center gap-2">
+                    <ReminderSelect block className="min-w-0 flex-1" target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
+                    <span className="insp-hint shrink-0">deadline</span>
                   </div>
-                </PopField>
-              )}
-
-              <PopField label="Priority">
-                <div className="flex items-center gap-1.5">
-                  {(["high", "medium", "low", "none"] as const).map((p) => {
-                    const on = task.priority === p;
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => mutations.patchTask(task.id, { priority: p })}
-                        aria-pressed={on}
-                        className={`fast inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-label capitalize ${
-                          on ? "border-transparent font-medium text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
-                        }`}
-                        style={
-                          on
-                            ? {
-                                borderColor: `color-mix(in srgb, ${PRIORITY_TOKEN[p]} 45%, transparent)`,
-                                background: `color-mix(in srgb, ${PRIORITY_TOKEN[p]} 12%, transparent)`,
-                              }
-                            : undefined
-                        }
-                      >
-                        {/* The token is the mark, never the label — `--warn` on
-                            light paper is a legible dot and illegible 11px text. */}
-                        <span
-                          className="h-[6px] w-[6px] rounded-full"
-                          style={{ backgroundColor: on ? PRIORITY_TOKEN[p] : "var(--line-strong)" }}
-                          aria-hidden
-                        />
-                        {p}
-                      </button>
-                    );
-                  })}
-                </div>
-              </PopField>
-
-              {labels.length > 0 && (
-                <PopField label="Labels">
-                  <div className="flex flex-wrap gap-1">
-                    {labels.map((l) => {
-                      const on = labelIds.has(l.id);
-                      return (
-                        <button
-                          key={l.id}
-                          onClick={() => {
-                            const next = new Set(labelIds);
-                            on ? next.delete(l.id) : next.add(l.id);
-                            void mutations.setLabels(task.id, [...next]);
-                          }}
-                          aria-pressed={on}
-                          className="fast rounded-full border px-2 py-0.5 text-label"
-                          style={{
-                            borderColor: on ? l.color : "var(--line)",
-                            color: on ? l.color : "var(--muted)",
-                            background: on ? l.color + "15" : "transparent",
-                          }}
-                        >
-                          {l.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PopField>
-              )}
-
-              {/* One column (inside the slot's slide-out) — the words and the
-                  pre-work still have to be reachable, just stacked. */}
-              {!twoCol && (
-                <>
-                  <PopField label="Steps">
-                    <TaskSteps task={task} mutations={mutations} keyboardEntry />
-                  </PopField>
-
-                  <PopField label="Notes">{notesField}</PopField>
-                  <PopField label={`✦ ${ASSISTANT_NAME}`}>{prework}</PopField>
-                  <div className="mono text-micro text-muted/70">{stamps}</div>
-                </>
-              )}
-            </PopStack>
-          </PopCol>
-
-          {twoCol && (
-            <PopCol side="right">
-              {/* Steps above Notes: the checklist IS the work, notes are
-                  commentary on it. A step is not a task — see TaskSteps. */}
-              <PopSection label="Steps">
-                <TaskSteps task={task} mutations={mutations} keyboardEntry />
-              </PopSection>
-
-              <PopSection label="Notes" divider className="min-h-0 flex-1">
-                {notesField}
-              </PopSection>
-
-              <PopSection label={`✦ ${ASSISTANT_NAME}`} divider>
-                {prework}
-              </PopSection>
-
-              <div className="mono mt-auto px-4 pb-3 pt-1 text-micro text-muted/70">{stamps}</div>
-            </PopCol>
+                )}
+              </div>
+            </PopRow>
           )}
+
+          <PopRow icon="priority" label="Priority">
+            <PopSegmented
+              ariaLabel="Priority"
+              value={task.priority}
+              segments={PRIORITIES}
+              onPick={(p) => mutations.patchTask(task.id, { priority: p })}
+            />
+          </PopRow>
+
+          {labels.length > 0 && (
+            <PopRow icon="tag" label="Labels">
+              <LabelsValue
+                labels={labels}
+                selected={labelIds}
+                onToggle={(id) => {
+                  const next = new Set(labelIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  void mutations.setLabels(task.id, [...next]);
+                }}
+              />
+            </PopRow>
+          )}
+
+          {/* Steps above Notes: the checklist IS the work, notes are
+              commentary on it. A step is not a task — see TaskSteps. */}
+          <PopSection label="Steps">
+            <TaskSteps task={task} mutations={mutations} keyboardEntry />
+          </PopSection>
+
+          <PopSection label="Notes">{notesField}</PopSection>
+
+          <PopSection label={ASSISTANT_NAME} icon="sparkles">
+            {prework}
+          </PopSection>
+
+          <div className="insp-stamps">
+            Created {format(new Date(task.created_at), "MMM d yyyy")}
+            {task.completed_at && <> · Done {format(new Date(task.completed_at), "MMM d yyyy")}</>}
+          </div>
         </PopBody>
 
         {/* Task → Event, asking which calendar: the list opens above the
             footer that asked, the way Trash opens its occurrence choice in
             place rather than in a second popover. */}
         {convertOpen && onConvertToEvent && (
-          <div className="shrink-0 border-t border-line px-2 pb-1.5 pt-2.5">
-            <PopLabel className="px-2.5 pb-1">Convert to an event on</PopLabel>
+          <div className="insp-ask">
+            <p className="insp-ask-sub">Convert to an event on</p>
             <CalendarTargetList
               label="Convert to an event on"
               groups={createTargets.groups}
@@ -997,14 +837,15 @@ export function TaskPopover({
           </div>
         )}
 
-        {/* Footer — the rare transforms read as text; Trash is quiet until it
+        {/* Footer — the rare transforms as ghost acts; Trash is quiet until it
             asks which occurrences you meant. */}
         <PopFooter>
           {task.status !== "inbox" && task.status !== "done" && (
             // Project work rests in its project, never the Inbox (backToInbox
             // already does that) — the label has to say where it actually goes.
             <PopFootAct
-              title={task.project_id ? "Take it off the calendar, back to its project" : "Move back to inbox"}
+              icon={task.project_id ? "folder" : "inbox"}
+              title={task.project_id ? "Take it off the calendar, back to its project" : "Move back to the Inbox"}
               onClick={() => {
                 mutations.backToInbox(task, {
                   undo: "toast",
@@ -1013,22 +854,24 @@ export function TaskPopover({
                 dismiss();
               }}
             >
-              {task.project_id ? "→ Its project" : "→ Inbox"}
+              {task.project_id ? "To project" : "To Inbox"}
             </PopFootAct>
           )}
           {onConvertToEvent && task.start_time && (
             <PopFootAct
+              icon="calendar"
               title="Convert to a calendar event and remove the task"
+              expanded={convertOpen}
               onClick={() => {
                 if (createTargets.choosable) { setConvertOpen((o) => !o); return; }
                 onConvertToEvent();
                 dismiss();
               }}
             >
-              {convertOpen ? "Cancel" : createTargets.choosable ? "→ Event…" : "→ Event"}
+              {convertOpen ? "Cancel" : createTargets.choosable ? "To event…" : "To event"}
             </PopFootAct>
           )}
-          <div className="min-w-0 flex-1" />
+          <PopGrow />
           <RecurrenceDeleteButton
             quiet
             recurring={Boolean(task.recurrence_id && recurrence)}
@@ -1052,58 +895,118 @@ export function TaskPopover({
   if (slideout) return card;
 
   return createPortal(
-    <div className={centered ? "fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4" : "contents"}>
+    <div
+      className={centered ? "fixed inset-0 z-40 flex items-center justify-center p-4" : "contents"}
+      style={centered ? { background: "var(--scrim)" } : undefined}
+    >
       {card}
     </div>,
     document.body,
   );
 }
 
+/** Priority, said once: the word. */
+const PRIORITIES = [
+  { value: "high" as const, label: "High" },
+  { value: "medium" as const, label: "Medium" },
+  { value: "low" as const, label: "Low" },
+  { value: "none" as const, label: "None" },
+];
+
+/** The lengths a block is offered, keeping an odd stored value choosable. */
+function durationOptions(current: number, presets: readonly number[] = DURATION_PRESETS) {
+  const set = presets.includes(current) ? [...presets] : [...presets, current].sort((a, b) => a - b);
+  return set.map((m) => ({ value: String(m), label: fmtDuration(m) }));
+}
+
+/** A task's labels: the chosen ones as chips, and a picker that toggles any. */
+function LabelsValue({
+  labels,
+  selected,
+  onToggle,
+}: {
+  labels: Label[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const on = labels.filter((l) => selected.has(l.id));
+  return (
+    <>
+      <button
+        ref={setBtn}
+        type="button"
+        className="insp-v"
+        data-empty={on.length ? undefined : ""}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Labels"
+        title="Labels"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {on.length === 0 ? (
+          <span>No labels</span>
+        ) : (
+          <span className="flex flex-wrap gap-1">
+            {on.map((l) => (
+              <Chip key={l.id} dot={l.color}>
+                {l.name}
+              </Chip>
+            ))}
+          </span>
+        )}
+      </button>
+      <Picker
+        anchor={btn}
+        open={open}
+        onClose={() => setOpen(false)}
+        multiple
+        label="Labels"
+        options={labels.map((l) => ({ value: l.id, label: l.name, icon: <Dot color={l.color} shape="round" /> }))}
+        value={[...selected]}
+        onChange={onToggle}
+      />
+    </>
+  );
+}
+
 // ── Attendee status helpers ───────────────────────────────────────────────
-/** The verdict tokens, not raw Tailwind green/amber — an RSVP reads the same
- *  in e-ink and terminal as it does on paper. */
-function statusIcon(s: AttendeeStatus) {
-  if (s === "accepted") return { icon: "✓", token: "var(--ok)" };
-  if (s === "declined") return { icon: "✗", token: "var(--signal)" };
-  if (s === "tentative") return { icon: "?", token: "var(--warn)" };
-  return { icon: "·", token: "var(--line-strong)" };
+/** The verdict tokens — an answer is a mark, never a coloured word. */
+function statusToken(s: AttendeeStatus): string {
+  if (s === "accepted") return "var(--ok)";
+  if (s === "declined") return "var(--danger)";
+  if (s === "tentative") return "var(--warn)";
+  return "var(--line-2)";
 }
 
 /**
  * A guest reads name-first with its response as a leading dot — a column of
- * raw email addresses was the least scannable thing in the card, and the
- * ✓/✗/? glyphs repeated what the summary already counts.
+ * raw email addresses was the least scannable thing in the card.
  */
 function AttendeeRow({ a }: { a: GoogleAttendee }) {
-  const { token } = statusIcon(a.responseStatus);
   const name = a.displayName ?? a.email.split("@")[0];
   return (
-    <div className="flex items-center gap-2 py-[1px]" title={a.email}>
-      <span
-        className="h-[7px] w-[7px] shrink-0 rounded-full"
-        style={{ backgroundColor: token }}
-        aria-hidden
-      />
-      <span className="min-w-0 flex-1 truncate text-caption text-text">{name}</span>
-      {a.organizer && <span className="shrink-0 text-micro text-muted/80">organizer</span>}
-      {a.optional && <span className="shrink-0 text-micro text-muted/80">optional</span>}
+    <div className="insp-person" title={a.email}>
+      <Dot color={statusToken(a.responseStatus)} shape="round" size="sm" />
+      <span className="insp-person-name">{name}</span>
+      {a.organizer && <span className="insp-person-role">Organizer</span>}
+      {a.optional && <span className="insp-person-role">Optional</span>}
     </div>
   );
 }
 
 /** Guests past this fold behind a "+N more" — a 20-person invite shouldn't
- *  own the column before you've read the notes. */
+ *  own the card before you've read the notes. */
 const GUESTS_FOLD = 6;
 
 // ── TimePicker — searchable dropdown of quarter-hours, keyboard-steppable ──
 // A native <input type="time"> buries "type the hour, tab to the minute"
 // behind a browser-drawn control that renders inconsistently and gives no
-// list to scan. This is the pattern every mature calendar app converges on
-// instead: a button showing the current time opens a filterable list you can
-// click, type into (digits narrow it — "930a" lands on 9:30 AM), or step
+// list to scan. A button showing the current time opens a filterable list you
+// can click, type into (digits narrow it — "930a" lands on 9:30am), or step
 // through with the keyboard. Arrow keys move a quarter-hour at a time;
-// Shift+Arrow/PageUp/PageDown move a full hour, so the hour and the minute
-// can each be dialed in on their own without leaving the keyboard.
+// Shift+Arrow/PageUp/PageDown move a full hour.
 const TIME_PICKER_OPTIONS = Array.from({ length: 96 }, (_, i) => {
   const h = Math.floor(i / 4);
   const m = (i % 4) * 15;
@@ -1112,6 +1015,8 @@ const TIME_PICKER_OPTIONS = Array.from({ length: 96 }, (_, i) => {
   return {
     hhmm: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
     label: `${hh}:${String(m).padStart(2, "0")} ${period}`,
+    // The app's one clock spelling (`at`, D-122) — what the list shows.
+    show: `${hh}${m ? `:${String(m).padStart(2, "0")}` : ""}${period.toLowerCase()}`,
   };
 });
 
@@ -1123,11 +1028,14 @@ function TimePicker({
   value,
   onSelect,
   ariaLabel,
+  placeholder,
 }: {
-  /** 24h "HH:mm", matching `toTimeInput`/`applyTime` below. */
+  /** 24h "HH:mm", matching `toTimeInput`/`applyTime` below; "" for none. */
   value: string;
   onSelect: (hhmm: string) => void;
   ariaLabel: string;
+  /** What the value says when there is no clock yet. */
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1141,14 +1049,17 @@ function TimePicker({
   const filtered = useMemo(() => {
     const q = normalizeTimeQuery(query);
     if (!q) return TIME_PICKER_OPTIONS;
-    return TIME_PICKER_OPTIONS.filter((o) => normalizeTimeQuery(o.label).startsWith(q));
+    return TIME_PICKER_OPTIONS.filter(
+      (o) => normalizeTimeQuery(o.label).startsWith(q) || normalizeTimeQuery(o.show).startsWith(q),
+    );
   }, [query]);
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     const idx = TIME_PICKER_OPTIONS.findIndex((o) => o.hhmm === value);
-    setHighlight(idx >= 0 ? idx : 0);
+    // No clock yet: start the list at 9am, where a day's work begins.
+    setHighlight(idx >= 0 ? idx : 36);
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -1202,20 +1113,22 @@ function TimePicker({
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label={ariaLabel}
-        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+        aria-expanded={open}
+        className="insp-v"
+        data-empty={value ? undefined : ""}
+        // A shrink-to-fit wrapper: a percentage cap here clips the clock by a
+        // sub-pixel into an ellipsis.
+        style={{ maxWidth: "none" }}
       >
-        {current?.label ?? value}
+        <span>{current?.show ?? (value || placeholder)}</span>
       </button>
       {open && (
-        <div
-          className="pop-in absolute left-0 top-full z-10 mt-1 w-36 overflow-hidden rounded-[var(--radius)] border border-line bg-surface"
-          style={{ boxShadow: "var(--shadow-3)" }}
-        >
+        <div className="insp-drop w-32">
           <input
             ref={inputRef}
             value={query}
@@ -1223,24 +1136,20 @@ function TimePicker({
             onKeyDown={onKeyDown}
             placeholder="Type a time"
             aria-label={`${ariaLabel} search`}
-            className="mono w-full border-b border-line bg-transparent px-2 py-1.5 text-caption text-ink outline-none placeholder:text-muted/60"
           />
-          <div ref={listRef} className="max-h-[220px] overflow-y-auto py-1">
-            {filtered.length === 0 && (
-              <div className="px-3 py-2 text-caption text-muted">No match</div>
-            )}
+          <div ref={listRef}>
+            {filtered.length === 0 && <div className="k-mlabel">No match</div>}
             {filtered.map((o, i) => (
               <button
                 key={o.hhmm}
                 type="button"
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => commit(o.hhmm)}
-                className={`fast mono flex w-full items-center justify-between px-3 py-1 text-left text-caption text-ink ${
-                  i === highlight ? "bg-bg" : "hover:bg-bg"
-                }`}
+                className="k-mi tabular-nums"
+                data-lit={i === highlight || undefined}
               >
-                {o.label}
-                {o.hhmm === value && <Icon name="check" size={11} className="shrink-0 text-accent" />}
+                <span className="k-mi-label">{o.show}</span>
+                {o.hhmm === value && <Icon name="check" size={14} className="k-mi-check" />}
               </button>
             ))}
           </div>
@@ -1251,9 +1160,9 @@ function TimePicker({
 }
 
 // ── CalendarPicker — the calendar/account field + grouped move menu ──────
-// A real button (big hit target) that opens a menu grouped by account, each
-// with its writable calendars. Same-account picks move natively; cross-account
-// picks copy-then-delete, so when that's lossy (repeats / guests) we confirm.
+// A value that opens a menu grouped by account, each with its writable
+// calendars. Same-account picks move natively; cross-account picks
+// copy-then-delete, so when that's lossy (repeats / guests) we confirm.
 function CalendarPicker({
   groups,
   currentAccountId,
@@ -1303,54 +1212,45 @@ function CalendarPicker({
   };
 
   return (
-    <div ref={ref} className="relative min-w-0 flex-1">
+    <div ref={ref} className="relative flex min-w-0 flex-1 items-center gap-2">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Move to another calendar or account"
-        className="fast -ml-1 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-bg"
+        aria-expanded={open}
+        className="insp-v"
       >
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentColor ?? "var(--muted)" }} />
-        <span className="min-w-0 flex-1 truncate text-body text-ink">{currentLabel ?? "Calendar"}</span>
-        <Icon name="chevron-down" size={9} className="shrink-0 text-muted" />
+        <Dot color={currentColor ?? "var(--faint)"} />
+        <span>{currentLabel ?? "Calendar"}</span>
+        <Icon name="chevron-down" size={12} />
       </button>
-      {accountEmail && !open && (
-        <div className="truncate pl-[18px] text-meta text-muted/60">{accountEmail}</div>
-      )}
+      {accountEmail && <span className="insp-hint min-w-0 truncate">{accountEmail}</span>}
       {open && (
-        <div
-          className="pop-in absolute left-0 right-0 top-full z-10 mt-1 max-h-[280px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
-          style={{ boxShadow: "var(--shadow-3)" }}
-        >
+        <div className="insp-drop w-[260px]" role="menu" aria-label="Move to calendar">
           {pending ? (
-            <div className="px-3 py-2.5">
-              <p className="text-caption text-ink">
-                Move a copy to <span className="font-medium">{pending.name}</span>?
+            <div className="k-mconfirm">
+              <p>
+                Move a copy to <b className="font-semibold">{pending.name}</b>?
               </p>
-              <p className="mt-0.5 text-meta text-muted">Repeats and guests won't carry over.</p>
-              <div className="mt-2.5 flex gap-1.5">
-                <button
+              <p className="k-mconfirm-sub">Repeats and guests won't carry over.</p>
+              <div className="k-mconfirm-acts">
+                <Button onClick={() => setPending(null)}>Cancel</Button>
+                <Button
+                  kind="primary"
                   onClick={() => {
                     onPick(pending.accountId, pending.calendarId);
                     setPending(null);
                     setOpen(false);
                   }}
-                  className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-caption font-medium text-on-accent hover:opacity-90"
                 >
                   Move
-                </button>
-                <button
-                  onClick={() => setPending(null)}
-                  className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-caption text-muted hover:text-ink"
-                >
-                  Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
             groups.map((g) => (
-              <div key={g.accountId} className="py-0.5">
-                <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+              <div key={g.accountId}>
+                <div className="k-pick-group">
                   {g.accountLabel} · {providerLabel(g.provider)}
                 </div>
                 {g.calendars.map((c) => {
@@ -1359,14 +1259,14 @@ function CalendarPicker({
                     <button
                       key={c.id}
                       type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={active}
                       onClick={() => choose(g.accountId, c.id, c.summary)}
-                      className="fast flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-bg"
+                      className="k-mi"
                     >
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color ?? "var(--muted)" }} />
-                      <span className="min-w-0 flex-1 truncate text-caption text-ink">{c.summary}</span>
-                      {active && (
-                        <Icon name="check" size={12} className="shrink-0 text-accent" />
-                      )}
+                      <Dot color={c.color ?? "var(--faint)"} />
+                      <span className="k-mi-label">{c.summary}</span>
+                      {active && <Icon name="check" size={14} className="k-mi-check" />}
                     </button>
                   );
                 })}
@@ -1472,29 +1372,9 @@ export function EventPopover({
   useEffect(() => setPickedRule(undefined), [event.id]);
   const repeatRule = pickedRule !== undefined ? pickedRule : (inlineRule ?? seriesRule ?? null);
 
-  // Two columns are earned by having people or prose to put in the right one —
-  // but the card must decide that ONCE, before it is on screen, and then hold
-  // it. Guests and the description arrive a round-trip after the popover opens
-  // (`raw` is the table's biggest column and the grid query never selects it),
-  // so deriving the width from them meant a read-only feed's event opened as a
-  // 380px card and became a 560px one mid-look.
-  //
-  // So: an editable event is always wide (the guest list and the notes editor
-  // both live there, and that is known synchronously). Anything else reserves
-  // the wide card unless the details are ALREADY in hand at open — which, with
-  // the hover prefetch in CalendarPane, is the common case. A bare feed event
-  // opened cold therefore shows one empty column instead of moving; opened
-  // warm it is correctly narrow.
-  const wideRef = useRef<{ id: string; wide: boolean } | null>(null);
-  if (wideRef.current?.id !== event.id) {
-    const known = detailsLoading ? null : raw;
-    wideRef.current = {
-      id: event.id,
-      wide: editable || !known || (known.attendees?.length ?? 0) > 0 || Boolean(known.description),
-    };
-  }
-  const wide = wideRef.current.wide;
-  const popW = wide ? POP_W_WIDE : POP_W_NARROW;
+  // One width, always (D-190): the card never changes size when the guests
+  // and the description arrive a round trip after it opens.
+  const popW = INSPECTOR_W;
 
   useEffect(() => {
     setTitle(event.title);
@@ -1553,6 +1433,8 @@ export function EventPopover({
       // dismiss the inspector — that's the confirmation the dialog exists for.
       if (editScope) return;
       if (!popRef.current || e.composedPath().includes(popRef.current)) return;
+      // A picker or menu the card opened floats in a layer of its own.
+      if (inNestedSurface(e)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -1616,10 +1498,11 @@ export function EventPopover({
   const isGoogleEvent = ownerAccount?.provider === "google";
   const canAddMeet = editable && isGoogleEvent && !joinLink && !detailsLoading;
 
+  // "Going" answers the question the strip asks without a label of its own.
   const rsvpOptions = [
-    { value: "accepted" as AttendeeStatus, label: "Yes", glyph: "✓", tone: "ok" as const },
-    { value: "tentative" as AttendeeStatus, label: "Maybe", glyph: "?", tone: "warn" as const },
-    { value: "declined" as AttendeeStatus, label: "No", glyph: "✕", tone: "signal" as const },
+    { value: "accepted" as AttendeeStatus, label: "Going" },
+    { value: "tentative" as AttendeeStatus, label: "Maybe" },
+    { value: "declined" as AttendeeStatus, label: "No" },
   ];
 
   const hasAttendees = (raw?.attendees?.length ?? 0) > 0;
@@ -1638,7 +1521,7 @@ export function EventPopover({
           ? ` – ${format(allDayInclusiveEnd(endAt), "EEE MMM d")}`
           : ""
       } · All day`
-    : `${format(new Date(startAt), "EEE MMM d · h:mm a")} – ${format(new Date(endAt), "h:mm a")}`;
+    : `${format(new Date(startAt), "EEE MMM d")} · ${span(new Date(startAt), new Date(endAt))}`;
   // "Repeats weekly" is a fact about the event, so it reads in the masthead
   // whether or not you can edit it. Recurring with no rule in hand yet (the
   // series master is still being fetched) still says so, plainly.
@@ -1787,68 +1670,44 @@ export function EventPopover({
     }, undefined, "answer");
   };
 
+  const countsToward =
+    !event.all_day && event.busy && event.self_rsvp !== "declined" && event.self_rsvp !== "needsAction";
+  const deleteQuestion = recurring
+    ? cancelNotifies
+      ? `Cancel for ${otherGuests.length} ${otherGuests.length === 1 ? "guest" : "guests"} — which events?`
+      : "Delete which events?"
+    : // When you host the meeting, deleting it removes it from everyone's
+      // calendar — say that instead of "delete this event?", which reads like
+      // it is only yours.
+      cancelNotifies
+      ? `Cancel for ${otherGuests.length} ${otherGuests.length === 1 ? "guest" : "guests"}?`
+      : "Delete this event?";
+
   return createPortal(
     <>
-      {/* Popover card */}
       <div
         ref={popRef}
         data-block-popover=""
-        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className="insp fixed z-50"
         style={{
           top: pos.top,
           left: pos.left,
           width: popW,
           maxHeight: "min(560px, calc(100vh - 24px))",
-          boxShadow: "var(--shadow-3)",
+          ["--pop-origin" as string]: pos.side === "right" ? "top left" : "top right",
         }}
       >
-        {/* Arrow connector */}
-        <div
-          className="absolute h-2.5 w-2.5 rotate-45 border bg-surface border-line"
-          style={
-            pos.side === "right"
-              ? {
-                  left: -6,
-                  top: Math.max(16, Math.min(
-                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
-                    (popRef.current?.offsetHeight ?? 200) - 16
-                  )),
-                  borderRight: "none",
-                  borderTop: "none",
-                }
-              : {
-                  right: -6,
-                  top: Math.max(16, Math.min(
-                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
-                    (popRef.current?.offsetHeight ?? 200) - 16
-                  )),
-                  borderLeft: "none",
-                  borderBottom: "none",
-                }
-          }
-        />
-
-        {/* Masthead — title, then ONE muted line answering when + whether it
-            repeats. The repeat reads here even on a read-only feed: the card
-            has always known (Delete branches on it) and never said so. */}
+        {/* Head — the name, then ONE muted line: when, and whether it repeats.
+            The repeat reads here even on a read-only feed. */}
         <PopMast
-          dot={calendarColor ?? undefined}
-          onClose={onClose}
-          eyebrow={
-            !event.all_day &&
-            event.busy &&
-            event.self_rsvp !== "declined" &&
-            event.self_rsvp !== "needsAction"
-              ? <EventDomainControl event={event} />
-              : undefined
-          }
+          dot={calendarColor ?? "var(--event-default)"}
           meta={
             <>
-              <span className="mono">{whenSummary}</span>
+              <span>{whenSummary}</span>
               {repeatLabel && (
                 <>
                   <PopMetaDot />
-                  <span title="Repeats">↻ {repeatLabel}</span>
+                  <span title="Repeats">{repeatLabel}</span>
                 </>
               )}
               {hiddenNow && (
@@ -1873,40 +1732,33 @@ export function EventPopover({
                 );
               }}
               aria-label="Event title"
-              className="w-full border-0 border-b border-transparent bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted transition-colors hover:border-line focus:border-ink"
+              className="insp-title-input"
             />
           ) : (
-            <div className="text-head font-semibold leading-snug">{event.title}</div>
+            <div className="insp-title-text" data-selectable="">
+              {event.title}
+            </div>
           )}
         </PopMast>
 
-        {/* The one edit Nuvo can't hold for later, said before it's attempted.
-            Shown only where the event WOULD be editable — a read-only feed has
-            its own reason and shouldn't be handed two. */}
-        {offlineOnly && (
-          <div className="border-b border-line px-3 py-2 text-caption text-muted">
-            {CALENDAR_OFFLINE_NOTE}
-          </div>
-        )}
-
-        {/* Action strip — the two things you open a meeting for. It is drawn
-            while the details are still in flight too (as a placeholder), so a
-            meeting's Join button lands *in* the strip instead of pushing one
-            into existence under the masthead. */}
+        {/* Strip — the two things you open a meeting for. Drawn while the
+            details are still in flight too (as a placeholder), so Join lands
+            *in* the strip instead of pushing one into existence. */}
         {detailsLoading ? (
           <PopStrip>
-            <span className="pop-skeleton block h-[26px] w-[132px] rounded-[var(--radius-sm)]" aria-hidden />
+            <span className="pop-skeleton block h-[28px] w-[132px]" aria-hidden />
             <span className="sr-only">Loading event details…</span>
           </PopStrip>
         ) : (joinLink || canAddMeet || (editable && hasAttendees)) && (
           <PopStrip>
             {joinLink && (
-              <PopPrimary href={joinLink} icon={<Icon name="video" size={12} className="shrink-0" />}>
+              <PopPrimary href={joinLink} icon={<Icon name="video" size={14} />}>
                 Join {conferenceName(raw, event.location)}
               </PopPrimary>
             )}
             {canAddMeet && (
-              <button
+              <Button
+                icon={<Icon name="video" size={14} />}
                 onClick={() => {
                   setMeetError(null);
                   commitScoped(async (scope) => {
@@ -1922,474 +1774,327 @@ export function EventPopover({
                   }, undefined, "answer");
                 }}
                 disabled={addingMeet}
-                className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
               >
-                <Icon name="video" size={12} className="shrink-0" />
                 {addingMeet ? "Adding…" : "Add Google Meet"}
-              </button>
+              </Button>
             )}
             {editable && hasAttendees && (
-              <div className="ml-auto flex shrink-0 items-center gap-2">
-                <PopLabel>Going?</PopLabel>
-                <PopSegmented
-                  segments={rsvpOptions}
-                  value={myResponse === "needsAction" ? null : myResponse}
-                  onPick={handleRsvp}
-                  ariaLabel="Your response"
-                />
-              </div>
+              <PopSegmented
+                segments={rsvpOptions}
+                value={myResponse === "needsAction" ? null : myResponse}
+                onPick={handleRsvp}
+                ariaLabel="Going?"
+              />
             )}
             {editable && hasAttendees && otherGuests.length > 0 && (
-              <label className="ml-auto flex items-center gap-1.5 text-micro text-muted">
-                <input
-                  type="checkbox"
-                  checked={notify}
-                  onChange={(e) => setNotify(e.target.checked)}
-                  className="accent-[var(--accent)]"
-                />
-                Notify the organizer
+              <label className="insp-strip-note flex items-center gap-2">
+                <Checkbox checked={notify} onChange={setNotify} label="Tell the organizer" />
+                Tell the organizer
               </label>
             )}
             {canAddMeet && otherGuests.length > 0 && !addingMeet && (
-              <span className="w-full text-micro text-muted">Guests get an update with the link.</span>
+              <span className="insp-strip-note">Guests get the link by email.</span>
             )}
             {(meetError || rsvpError) && (
-              <span className="w-full text-meta text-signal">{meetError ?? rsvpError}</span>
+              <span className="insp-strip-note" data-tone="danger">
+                {meetError ?? rsvpError}
+              </span>
             )}
           </PopStrip>
         )}
 
-        {/* Left = the event's facts · right = its people and words. Each column
-            scrolls on its own, so a long guest list can never bury the notes. */}
+        {/* The one edit Nuvo can't hold for later, said before it's attempted.
+            Shown only where the event WOULD be editable. */}
+        {offlineOnly && <div className="insp-notice">{CALENDAR_OFFLINE_NOTE}</div>}
+
         <PopBody>
-          <PopCol side={wide ? "left" : "only"}>
-            <PopStack>
-              <PopField label="When">
-                {editable ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-body text-ink">
-                    <input
-                      type="date"
-                      value={toDateInput(startAt)}
-                      onChange={(e) => commitDate(e.target.value)}
-                      aria-label="Date"
-                      className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                    />
-                    {allDay ? (
-                      <>
-                        <span className="text-muted">–</span>
-                        <input
-                          type="date"
-                          value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
-                          onChange={(e) => commitAllDayEnd(e.target.value)}
-                          aria-label="End date"
-                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <TimePicker
-                          value={toTimeInput(startAt)}
-                          ariaLabel="Start time"
-                          onSelect={(hhmm) => {
-                            const next = applyTime(startAt, hhmm);
-                            if (next !== event.start_at || allDay !== event.all_day) {
-                              commitSchedule({ start_at: next, end_at: endAt, all_day: false });
-                            }
-                          }}
-                        />
-                        <span className="text-muted">–</span>
-                        <TimePicker
-                          value={toTimeInput(endAt)}
-                          ariaLabel="End time"
-                          onSelect={(hhmm) => {
-                            const next = applyTime(endAt, hhmm);
-                            if (next !== event.end_at || allDay !== event.all_day) {
-                              commitSchedule({ start_at: startAt, end_at: next, all_day: false });
-                            }
-                          }}
-                        />
-                      </>
-                    )}
-                    {/* All-day is a switch you touch twice a year — it rides the
-                        time row as a chip instead of owning a full-width block
-                        louder than the meeting's own join button. */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={allDay}
-                      onClick={() => toggleAllDay(!allDay)}
-                      className={`fast ml-0.5 rounded-full border px-2 py-[3px] text-label ${
-                        allDay
-                          ? "border-accent/40 bg-accent-soft font-medium text-accent"
-                          : "border-line text-muted hover:border-line-strong hover:text-ink"
-                      }`}
-                    >
-                      All day
-                    </button>
-                  </div>
-                ) : (
-                  <span className="mono text-body text-ink">{whenSummary}</span>
-                )}
-                {editable && (
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <RepeatControl
-                      anchorISO={toDateISO(new Date(startAt))}
-                      value={repeatRule}
-                      onChange={applyRepeat}
-                    />
-                    {recurring && (
-                      <span className="text-micro text-muted/80">changes the whole series</span>
-                    )}
-                  </div>
-                )}
-              </PopField>
-
-              {/* Calendar / account — one field. The picker moves the event to any
-                  writable calendar in any account (native within an account, a
-                  confirmed copy across). Static label for read-only / single-target. */}
-              {(calendarName || moveTargetCount > 0) && (
-                <PopField label="Calendar">
-                  {editable && moveTargetCount > 1 ? (
-                    <CalendarPicker
-                      groups={moveGroups}
-                      currentAccountId={event.account_id}
-                      currentCalendarId={calendarId}
-                      currentLabel={calendarName}
-                      currentColor={calendarColor}
-                      accountEmail={accountEmail}
-                      lossyWarn={recurring || hasAttendees}
-                      onPick={(accountId, cid) =>
-                        eventMutations.moveEventToCalendar({
-                          id: event.id,
-                          targetAccountId: accountId,
-                          targetCalendarId: cid,
-                        })
-                      }
-                    />
-                  ) : (
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
-                        />
-                        <span className="truncate text-body text-ink">{calendarName ?? "Calendar"}</span>
-                      </div>
-                      {accountEmail && (
-                        <div className="truncate pl-[18px] text-meta text-muted/70">{accountEmail}</div>
-                      )}
-                    </div>
-                  )}
-                </PopField>
-              )}
-
-              {/* Remind — the only thing on this card that makes the app speak
-                  first. It sits with the facts, not in the strip: it is a
-                  property of the meeting, not the act you opened the card for. */}
-              <PopField label="Remind">
-                <ReminderSelect
-                  block
-                  target={{ targetKind: "event", eventKey: eventKey(event), allDay: event.all_day }}
-                />
-              </PopField>
-
-              {(editable || event.location) && (
-                <PopField label="Where">
-                  {editable ? (
-                    <input
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      onBlur={() => {
-                        const next = location.trim();
-                        if (next !== (event.location ?? "")) {
-                          commitScoped(
-                            (scope) =>
-                              eventMutations.updateEvent({
-                                id: event.id,
-                                patch: { location: next || null },
-                                scope,
-                              }),
-                            () => setLocation(event.location ?? ""),
-                          );
-                        }
-                      }}
-                      placeholder="Add location"
-                      aria-label="Location"
-                      className={`${POP_INPUT_CLS} w-full`}
-                    />
-                  ) : (
-                    <span className="text-body leading-snug text-ink">{event.location}</span>
-                  )}
-                </PopField>
-              )}
-
-              {/* Organizer is a fact about the event, not a guest — it sits with
-                  the facts, and never repeats inside the guest list. */}
-              {raw?.organizer && !iOrganize && (
-                <PopField label="Organizer">
-                  <span className="truncate text-body text-ink">
-                    {raw.organizer.displayName ?? raw.organizer.email}
-                  </span>
-                </PopField>
-              )}
-
-              {/* A one-column card has no right side to put prose in. */}
-              {!wide && raw?.description && (
-                <PopField label="Description">
-                  <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
-                </PopField>
-              )}
-            </PopStack>
-          </PopCol>
-
-          {wide && (
-            <PopCol side="right">
-              {(hasAttendees || editable || detailsLoading) && (
-                <PopSection label="Guests" aside={guestSummary}>
-                  {detailsLoading && <PopSkeleton lines={4} />}
-                  {!detailsLoading && !hasAttendees && !editable && (
-                    <span className="text-caption text-muted/60">No guests</span>
-                  )}
-                  {shownGuests.map((a) => (
-                    <AttendeeRow key={a.email} a={a} />
-                  ))}
-                  {hiddenGuestCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setAllGuests(true)}
-                      className="fast mt-0.5 pl-[15px] text-left text-meta text-muted hover:text-ink"
-                    >
-                      +{hiddenGuestCount} more
-                    </button>
-                  )}
-                  {editable && (
-                    <div className="mt-1">
-                      {!addingGuests ? (
-                        <button
-                          type="button"
-                          onClick={() => setAddingGuests(true)}
-                          className="fast flex items-center gap-1.5 text-meta text-accent hover:opacity-80"
-                        >
-                          <Icon name="plus" size={11} />
-                          Add guest
-                        </button>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          <GuestsInput
-                            value={newGuests}
-                            onChange={setNewGuests}
-                            placeholder="Name or email…"
-                          />
-                          {/* Both outcomes are spelled out rather than hiding the
-                              quiet one behind a checkbox: adding a guest to an
-                              existing meeting is a mail-out either way, and which
-                              one you meant should take one tap. */}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              disabled={newGuests.length === 0 || inviting}
-                              onClick={() => sendInvite(true)}
-                              className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-label font-medium text-on-accent hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-                            >
-                              {inviting
-                                ? "Sending…"
-                                : newGuests.length > 1
-                                ? `Email ${newGuests.length} invites`
-                                : "Email invite"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={newGuests.length === 0 || inviting}
-                              onClick={() => sendInvite(false)}
-                              title="Add them to the event without sending an email"
-                              className="fast tap rounded-[var(--radius-sm)] border border-line px-3 py-1 text-label font-medium text-ink hover:bg-bg disabled:opacity-40"
-                            >
-                              Add quietly
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setAddingGuests(false); setNewGuests([]); }}
-                              className="fast tap text-label text-muted hover:text-ink"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </PopSection>
-              )}
-
-              <PopSection
-                label={editable ? "Notes" : "Description"}
-                divider={hasAttendees || editable || detailsLoading}
-                className="flex-1"
-              >
-                {editable && detailsLoading ? (
-                  <PopSkeleton lines={5} />
-                ) : editable && raw?.description && !editingNotes ? (
-                  <div>
-                    <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
-                    <button
-                      type="button"
-                      onClick={() => setEditingNotes(true)}
-                      className="fast mt-1.5 text-label text-muted hover:text-ink"
-                    >
-                      Edit notes
-                    </button>
-                  </div>
-                ) : editable ? (
-                  <textarea
-                    ref={notesRef}
-                    // Opened by "Edit notes" — the press that asked for it.
-                    autoFocus={editingNotes}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    onBlur={() => {
-                      setEditingNotes(false);
-                      const original = plainTextFromHtml(raw?.description ?? "");
-                      if (notes !== original) {
-                        commitScoped(
-                          (scope) =>
-                            eventMutations.updateEvent({
-                              id: event.id,
-                              patch: { description: notes },
-                              scope,
-                            }),
-                          () => setNotes(original),
-                        );
+          {editable && (
+            <PopRow icon="clock" label="When">
+              <PopDate label="Date" value={toDateInput(startAt)} onChange={commitDate}>
+                {format(new Date(startAt), "EEE MMM d")}
+              </PopDate>
+              {allDay ? (
+                <>
+                  <span className="insp-sep">–</span>
+                  <PopDate
+                    label="End date"
+                    value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
+                    min={toDateInput(startAt)}
+                    onChange={commitAllDayEnd}
+                  >
+                    {format(allDayInclusiveEnd(endAt), "EEE MMM d")}
+                  </PopDate>
+                </>
+              ) : (
+                <>
+                  <TimePicker
+                    value={toTimeInput(startAt)}
+                    ariaLabel="Start time"
+                    onSelect={(hhmm) => {
+                      const next = applyTime(startAt, hhmm);
+                      if (next !== event.start_at || allDay !== event.all_day) {
+                        commitSchedule({ start_at: next, end_at: endAt, all_day: false });
                       }
                     }}
-                    placeholder="Add notes"
-                    aria-label="Notes"
-                    // Grows with what it holds (to 16 lines) instead of an
-                    // 8-row box scrolling a page of text inside a scrolling card.
-                    rows={notes ? Math.min(16, notes.split("\n").length + 1) : 3}
-                    className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors [overflow-wrap:anywhere] placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
                   />
-                ) : raw?.description ? (
-                  <DescriptionHtml html={raw.description} className="text-caption" clampLines={8} />
-                ) : detailsLoading ? (
-                  <PopSkeleton lines={5} />
+                  <span className="insp-sep">–</span>
+                  <TimePicker
+                    value={toTimeInput(endAt)}
+                    ariaLabel="End time"
+                    onSelect={(hhmm) => {
+                      const next = applyTime(endAt, hhmm);
+                      if (next !== event.end_at || allDay !== event.all_day) {
+                        commitSchedule({ start_at: startAt, end_at: next, all_day: false });
+                      }
+                    }}
+                  />
+                </>
+              )}
+              <span className="k-grow" />
+              {/* All-day is a switch you touch twice a year — it rides the
+                  time row instead of owning a block of its own. */}
+              <label className="flex items-center gap-1.5 text-caption text-muted">
+                <Switch checked={allDay} onChange={toggleAllDay} label="All day" />
+                All day
+              </label>
+            </PopRow>
+          )}
+
+          {editable && (
+            <PopRow icon="repeat" label="Repeat">
+              <RepeatControl variant="value" anchorISO={toDateISO(new Date(startAt))} value={repeatRule} onChange={applyRepeat} />
+            </PopRow>
+          )}
+
+          {/* Calendar / account — one row. The picker moves the event to any
+              writable calendar in any account (native within an account, a
+              confirmed copy across). A read for read-only / single-target. */}
+          {(calendarName || moveTargetCount > 0) && (
+            <PopRow icon="calendar" label="Calendar">
+              {editable && moveTargetCount > 1 ? (
+                <CalendarPicker
+                  groups={moveGroups}
+                  currentAccountId={event.account_id}
+                  currentCalendarId={calendarId}
+                  currentLabel={calendarName}
+                  currentColor={calendarColor}
+                  accountEmail={accountEmail}
+                  lossyWarn={recurring || hasAttendees}
+                  onPick={(accountId, cid) =>
+                    eventMutations.moveEventToCalendar({
+                      id: event.id,
+                      targetAccountId: accountId,
+                      targetCalendarId: cid,
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  <span className="truncate">{calendarName ?? "Calendar"}</span>
+                  {accountEmail && <span className="insp-hint min-w-0 truncate">{accountEmail}</span>}
+                </>
+              )}
+            </PopRow>
+          )}
+
+          {/* Where this meeting's time counts — the same control on the phone. */}
+          {countsToward && (
+            <PopRow icon={<AltitudeIcon kind="domain" size={14} />} label="Counts toward">
+              <EventDomainControl event={event} />
+            </PopRow>
+          )}
+
+          {/* Remind — the only thing on this card that makes the app speak
+              first. A property of the meeting, not the act you opened it for. */}
+          <PopRow icon="bell" label="Remind" top>
+            <ReminderSelect
+              block
+              className="min-w-0 flex-1"
+              target={{ targetKind: "event", eventKey: eventKey(event), allDay: event.all_day }}
+            />
+          </PopRow>
+
+          {(editable || event.location) && (
+            <PopRow icon="pin" label="Where">
+              {editable ? (
+                <input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onBlur={() => {
+                    const next = location.trim();
+                    if (next !== (event.location ?? "")) {
+                      commitScoped(
+                        (scope) =>
+                          eventMutations.updateEvent({
+                            id: event.id,
+                            patch: { location: next || null },
+                            scope,
+                          }),
+                        () => setLocation(event.location ?? ""),
+                      );
+                    }
+                  }}
+                  placeholder="Add a place"
+                  aria-label="Location"
+                  className={POP_INPUT_CLS}
+                />
+              ) : (
+                <span className="min-w-0 [overflow-wrap:anywhere]" data-selectable="">
+                  {event.location}
+                </span>
+              )}
+            </PopRow>
+          )}
+
+          {/* Organizer is a fact about the event, not a guest — it never
+              repeats inside the guest list. */}
+          {raw?.organizer && !iOrganize && (
+            <PopRow icon="user" label="Organizer">
+              <span className="truncate">{raw.organizer.displayName ?? raw.organizer.email}</span>
+            </PopRow>
+          )}
+
+          {(hasAttendees || editable || detailsLoading) && (
+            <PopSection label="Guests" icon="users" aside={guestSummary}>
+              {detailsLoading && <PopSkeleton lines={3} />}
+              {shownGuests.map((a) => (
+                <AttendeeRow key={a.email} a={a} />
+              ))}
+              {hiddenGuestCount > 0 && (
+                <Button size="xs" kind="ghost" className="-ml-2 justify-self-start" onClick={() => setAllGuests(true)}>
+                  +{hiddenGuestCount} more
+                </Button>
+              )}
+              {editable &&
+                (!addingGuests ? (
+                  <Button
+                    size="xs"
+                    kind="ghost"
+                    className="-ml-2 justify-self-start"
+                    icon={<Icon name="user-plus" size={13} />}
+                    onClick={() => setAddingGuests(true)}
+                  >
+                    Add guest
+                  </Button>
                 ) : (
-                  <span className="text-caption text-muted/60">No description</span>
-                )}
-              </PopSection>
-            </PopCol>
+                  <div className="grid gap-2 pt-1">
+                    <GuestsInput value={newGuests} onChange={setNewGuests} placeholder="Name or email" />
+                    {/* Both outcomes are spelled out rather than hiding the quiet
+                        one behind a checkbox: adding a guest to an existing
+                        meeting is a mail-out either way, and which one you
+                        meant should take one press. */}
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <Button kind="ghost" onClick={() => { setAddingGuests(false); setNewGuests([]); }}>
+                        Cancel
+                      </Button>
+                      <Button
+                        disabled={newGuests.length === 0 || inviting}
+                        onClick={() => sendInvite(false)}
+                        title="Add them to the event without sending an email"
+                      >
+                        Add quietly
+                      </Button>
+                      <Button kind="primary" disabled={newGuests.length === 0 || inviting} onClick={() => sendInvite(true)}>
+                        {inviting ? "Sending…" : newGuests.length > 1 ? `Email ${newGuests.length} invites` : "Email invite"}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </PopSection>
+          )}
+
+          {(editable || raw?.description || detailsLoading) && (
+            <PopSection label={editable ? "Notes" : "Description"} icon="notes">
+              {editable && detailsLoading ? (
+                <PopSkeleton lines={4} />
+              ) : editable && raw?.description && !editingNotes ? (
+                <div className="grid gap-1">
+                  <DescriptionHtml html={raw.description} className="text-body" clampLines={8} />
+                  <Button
+                    size="xs"
+                    kind="ghost"
+                    className="-ml-2 justify-self-start"
+                    icon={<Icon name="pen" size={12} />}
+                    onClick={() => setEditingNotes(true)}
+                  >
+                    Edit notes
+                  </Button>
+                </div>
+              ) : editable ? (
+                <textarea
+                  ref={notesRef}
+                  // Opened by "Edit notes" — the press that asked for it.
+                  autoFocus={editingNotes}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  onBlur={() => {
+                    setEditingNotes(false);
+                    const original = plainTextFromHtml(raw?.description ?? "");
+                    if (notes !== original) {
+                      commitScoped(
+                        (scope) =>
+                          eventMutations.updateEvent({
+                            id: event.id,
+                            patch: { description: notes },
+                            scope,
+                          }),
+                        () => setNotes(original),
+                      );
+                    }
+                  }}
+                  placeholder="Add notes"
+                  aria-label="Notes"
+                  // Grows with what it holds (to 16 lines) instead of a box
+                  // scrolling a page of text inside a scrolling card.
+                  rows={notes ? Math.min(16, notes.split("\n").length + 1) : 3}
+                  className="insp-text"
+                />
+              ) : raw?.description ? (
+                <DescriptionHtml html={raw.description} className="text-body" clampLines={8} />
+              ) : (
+                <PopSkeleton lines={4} />
+              )}
+            </PopSection>
           )}
         </PopBody>
-        {/* Footer — quiet navigation left, the destructive act right. Delete is
-            plain text until it asks to confirm: a permanently-red button was
-            the loudest pixel in a card whose real primary is "Join". */}
-        {(
-          <PopFooter>
-            {hideMode && !hiddenNow ? (
-              <>
-                <span className="text-label text-muted">Hide…</span>
-                <div className="min-w-0 flex-1" />
-                <Btn onClick={() => setHideMode(false)}>Cancel</Btn>
-                <Btn onClick={() => { hide(event, "THIS"); onClose(); }}>This event</Btn>
-                <Btn onClick={() => { hide(event, "ALL"); onClose(); }}>All events</Btn>
-              </>
-            ) : (
-            <>
-            {raw?.htmlLink && (
-              <PopFootAct
-                href={raw.htmlLink}
-                title={ownerAccount?.provider === "m365" ? "Open in Outlook" : "Open in Google Calendar"}
-              >
-                <svg width="12" height="12" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
-                  <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4m0 0v4m0-4L5.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                <span className="ml-1 align-middle">
-                  {ownerAccount?.provider === "m365" ? "Outlook" : "Google Cal"}
-                </span>
-              </PopFootAct>
-            )}
-            {/* Hide / show — available for every event (keeps read-only calendars
-                out of your way too); hiding never touches the server. */}
-            {!confirmDelete && (
-              hiddenNow ? (
-                <PopFootAct onClick={() => { const k = hiddenKeyFor(event); if (k) unhide(k); onClose(); }} title="Bring this event back onto the board">
-                  Show
-                </PopFootAct>
-              ) : (
-                <PopFootAct
-                  onClick={() => { if (canHideSeries) setHideMode(true); else { hide(event, "THIS"); onClose(); } }}
-                  title="Hide from the board and time-blocking — it stays on the server"
-                >
-                  Hide
-                </PopFootAct>
-              )
-            )}
-            {onConvertToTask && !confirmDelete && (
-              <PopFootAct
-                onClick={() => { onConvertToTask(); onClose(); }}
-                title="Create a task from this event and hide the event"
-              >
-                → Task
-              </PopFootAct>
-            )}
-            {editable && (
-              !confirmDelete ? (
+
+        {/* Footer — the way out to the calendar's own app left, the quiet acts
+            right. Delete is a glyph until it asks; then the question takes the
+            footer's place. */}
+        {editable && confirmDelete ? (
+          <div className="insp-ask">
+            <p>{deleteQuestion}</p>
+            <div className="insp-ask-acts">
+              <Button size="xs" kind="ghost" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+              {recurring ? (
                 <>
-                  <div className="min-w-0 flex-1" />
-                  <PopFootAct
-                    danger
-                    title="Delete this event"
-                    onClick={() => {
-                      if (recurring || cancelNotifies) setConfirmDelete(true);
-                      else {
-                        eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
-                        onClose();
-                      }
-                    }}
-                  >
-                    Delete
-                  </PopFootAct>
-                </>
-              ) : recurring ? (
-                <>
-                  <span className="text-label text-muted">
-                    {cancelNotifies
-                      ? `Cancel — ${otherGuests.length} ${otherGuests.length === 1 ? "guest is" : "guests are"} told…`
-                      : "Delete…"}
-                  </span>
-                  <div className="min-w-0 flex-1" />
-                  <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
-                  <Btn
+                  <Button
+                    size="xs"
                     onClick={() => {
                       eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
                       onClose();
                     }}
                   >
                     This event
-                  </Btn>
-                  <Btn
-                    kind="signal"
+                  </Button>
+                  <Button
+                    size="xs"
+                    kind="danger-solid"
                     onClick={() => {
                       eventMutations.deleteEvent({ id: event.id, scope: "ALL" });
                       onClose();
                     }}
                   >
                     All events
-                  </Btn>
+                  </Button>
                 </>
               ) : (
                 <>
-                  {/* When you host the meeting, deleting it removes it from
-                      everyone's calendar — say that instead of "delete this
-                      event?", which reads like it is only yours. */}
-                  <span className="text-label text-muted">
-                    {cancelNotifies
-                      ? `Cancel for ${otherGuests.length} ${otherGuests.length === 1 ? "guest" : "guests"}?`
-                      : "Delete this event?"}
-                  </span>
-                  <div className="min-w-0 flex-1" />
-                  <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
                   {cancelNotifies && (
-                    <Btn
+                    <Button
+                      size="xs"
                       onClick={() => {
                         eventMutations.deleteEvent({ id: event.id, scope: "THIS", notifyGuests: false });
                         onClose();
@@ -2397,21 +2102,84 @@ export function EventPopover({
                       title="Remove the meeting without emailing the guests"
                     >
                       Cancel quietly
-                    </Btn>
+                    </Button>
                   )}
-                  <Btn
-                    kind="signal"
+                  <Button
+                    size="xs"
+                    kind="danger-solid"
                     onClick={() => {
                       eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
                       onClose();
                     }}
                   >
                     {cancelNotifies ? "Cancel & notify" : "Delete"}
-                  </Btn>
+                  </Button>
                 </>
-              )
+              )}
+            </div>
+          </div>
+        ) : hideMode && !hiddenNow ? (
+          <div className="insp-ask">
+            <p>Hide this event, or the whole series?</p>
+            <div className="insp-ask-acts">
+              <Button size="xs" kind="ghost" onClick={() => setHideMode(false)}>
+                Cancel
+              </Button>
+              <Button size="xs" onClick={() => { hide(event, "THIS"); onClose(); }}>
+                This event
+              </Button>
+              <Button size="xs" onClick={() => { hide(event, "ALL"); onClose(); }}>
+                All events
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <PopFooter>
+            {raw?.htmlLink && (
+              <PopFootAct
+                href={raw.htmlLink}
+                icon="external"
+                title={ownerAccount?.provider === "m365" ? "Open in Outlook" : "Open in Google Calendar"}
+              >
+                {ownerAccount?.provider === "m365" ? "Outlook" : "Google Calendar"}
+              </PopFootAct>
             )}
-            </>
+            <PopGrow />
+            {/* Hide / show — for every event (keeps read-only calendars out of
+                your way too); hiding never touches the server. */}
+            {hiddenNow ? (
+              <PopFootAct
+                icon="eye"
+                title="Show it on the board again"
+                onClick={() => { const k = hiddenKeyFor(event); if (k) unhide(k); onClose(); }}
+              />
+            ) : (
+              <PopFootAct
+                icon="eye-off"
+                title="Hide from the board — it stays on the calendar"
+                onClick={() => { if (canHideSeries) setHideMode(true); else { hide(event, "THIS"); onClose(); } }}
+              />
+            )}
+            {onConvertToTask && (
+              <PopFootAct
+                icon={<AltitudeIcon kind="task" size={15} />}
+                title="Make it a task — the event is hidden"
+                onClick={() => { onConvertToTask(); onClose(); }}
+              />
+            )}
+            {editable && (
+              <PopFootAct
+                icon="trash"
+                danger
+                title="Delete this event"
+                onClick={() => {
+                  if (recurring || cancelNotifies) setConfirmDelete(true);
+                  else {
+                    eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                    onClose();
+                  }
+                }}
+              />
             )}
           </PopFooter>
         )}
@@ -2429,10 +2197,10 @@ export function EventPopover({
 }
 
 // ── SlotPopover — a time slot and the tasks it holds ─────────────────────
-/** Same two-column card as the task and event popovers — left the block's
- *  facts, right the work inside it (which is why the block exists). */
-export const SLOT_POP_W = POP_W_WIDE;
-const TASK_SLIDE_W = 380;
+/** The same card as the task and event inspectors — the block's facts, then
+ *  the work inside it (which is why the block exists). */
+export const SLOT_POP_W = INSPECTOR_W;
+const TASK_SLIDE_W = INSPECTOR_W;
 /** Floor for the slide-out on a narrow window — below this it stops giving way
  *  and simply overhangs, rather than shrinking into an unreadable strip. */
 const TASK_SLIDE_MIN_W = 300;
@@ -2582,6 +2350,7 @@ export function SlotPopover({
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!shellRef.current || e.composedPath().includes(shellRef.current)) return;
+      if (inNestedSurface(e)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -2697,81 +2466,96 @@ export function SlotPopover({
     });
   };
 
-  // The masthead's one line — same read the chips below let you change.
-  const whenSummary = `${format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")} · ${format(
+  // The masthead's one line — same read the values below let you change.
+  const whenSummary = `${format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")} · ${span(
     startDate,
-    "h:mm a",
-  )} · ${fmtDuration(slot.duration_minutes)}`;
+    new Date(startDate.getTime() + slot.duration_minutes * 60_000),
+  )}`;
   const repeatLabel = recurrence ? describeRule(ruleOf(recurrence), slot.do_date) : null;
 
-  return createPortal(
-    <>
-      {/* Arrow — a portal sibling, not a shell child: the shell has to clip
-          (`overflow-hidden`) so the slide-out can unfold from zero width, and
-          that clipping ate the arrow's negative offset. The arrow sits on the
-          column edge facing the anchor, so the pane covers it exactly when it
-          unfolds toward the anchor — i.e. when `paneSide` is the opposite of
-          the side the popover took. */}
-      {!(openTask && paneSide !== pos.side) && (
-        <div
-          className="fixed z-[51] h-2.5 w-2.5 rotate-45 border border-line bg-surface"
-          style={{
-            top: pos.top + 24,
-            ...(pos.side === "right"
-              ? { left: colLeft - 6, borderRight: "none", borderTop: "none" }
-              : { left: colRight - 6, borderLeft: "none", borderBottom: "none" }),
-          }}
-        />
-      )}
-      <div
-        ref={shellRef}
-        data-block-popover=""
-        className={`pop-in fixed z-50 flex ${
-          paneSide === "left" ? "flex-row-reverse" : ""
-        } overflow-hidden rounded-[var(--radius-lg)] border border-line bg-surface`}
-        style={{
-          top: pos.top,
-          // Pin the edge the column sits on, so `width` grows away from it.
-          ...(paneSide === "right"
-            ? { left: colLeft }
-            : { right: Math.max(0, pos.viewportWidth - colRight) }),
-          width: SLOT_POP_W + paneW,
-          maxHeight: Math.min(560, pos.maxHeight),
-          boxShadow: "var(--shadow-3)",
-        }}
-      >
-        {/* Slot column — fixed width; position is owned by the shell, not this pane */}
-        <div
-          ref={slotColRef}
-          className="flex min-h-0 shrink-0 flex-col"
-          style={{ width: SLOT_POP_W }}
-        >
+  const projectOptions = [
+    { value: "", label: "No project" },
+    ...vertical.projects
+      .filter((p) => !isProjectComplete(p.status) || p.id === slot.project_id)
+      .map((p) => {
+        const d = domainById(vertical, p.domainId);
+        return { value: p.id, label: p.name, icon: <Dot color={d?.color ?? "var(--faint)"} />, hint: d?.name };
+      }),
+  ];
+  const domainOptions = [
+    { value: "", label: "No domain" },
+    ...vertical.domains.map((d) => ({ value: d.id, label: d.name, icon: <Dot color={d.color} /> })),
+  ];
 
-        {/* Masthead — the block's name, then ONE line of when + how full. */}
+  return createPortal(
+    <div
+      ref={shellRef}
+      data-block-popover=""
+      className="insp fixed z-50"
+      style={{
+        top: pos.top,
+        // Pin the edge the column sits on, so `width` grows away from it.
+        ...(paneSide === "right"
+          ? { left: colLeft }
+          : { right: Math.max(0, pos.viewportWidth - colRight) }),
+        width: SLOT_POP_W + paneW,
+        maxHeight: Math.min(560, pos.maxHeight),
+        flexDirection: paneSide === "left" ? "row-reverse" : "row",
+        ["--pop-origin" as string]: pos.side === "right" ? "top left" : "top right",
+      }}
+    >
+      {/* Slot column — fixed width; position is owned by the shell, not this pane */}
+      <div ref={slotColRef} className="flex min-h-0 shrink-0 flex-col" style={{ width: SLOT_POP_W }}>
+        {/* Head — the block's name, then ONE line of when and how full. */}
         <PopMast
-          dot={domain?.color ?? slot.color ?? undefined}
-          onClose={onClose}
-          eyebrow={
-            <div className="mono mb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              Time slot
-            </div>
-          }
+          dot={domain?.color ?? slot.color ?? "var(--slot)"}
+          eyebrow={<span>Slot</span>}
           meta={
             <>
-              <span className="mono">{whenSummary}</span>
+              <span>{whenSummary}</span>
               {repeatLabel && (
                 <>
                   <PopMetaDot />
-                  <span title="Repeats">↻ {repeatLabel}</span>
+                  <span title="Repeats">{repeatLabel}</span>
                 </>
               )}
               {ordered.length > 0 && (
                 <>
                   <PopMetaDot />
-                  <span className="mono">{doneCount}/{ordered.length} done</span>
+                  <span>
+                    {doneCount} of {ordered.length} done
+                  </span>
                 </>
               )}
             </>
+          }
+          under={
+            !slot.title.trim() && draft && !title.trim() ? (
+              <button
+                type="button"
+                onClick={takeDraft}
+                className="insp-v"
+                data-on=""
+                title="Use Nuvo's name for this block"
+                aria-label={`Use Nuvo's name: ${draft}`}
+              >
+                <Icon name="sparkles" size={12} />
+                <span>{draft}</span>
+                <Kbd keys="⇥" />
+              </button>
+            ) : !slot.title.trim() && childTasks.length > 0 ? (
+              <Button
+                size="xs"
+                kind="ghost"
+                className="-ml-2"
+                icon={<Icon name="sparkles" size={12} />}
+                onClick={() => void suggestName()}
+                disabled={naming}
+                title="Ask Nuvo for the through-line of what's inside"
+              >
+                {naming ? "Thinking…" : "Suggest a name"}
+              </Button>
+            ) : undefined
           }
         >
           <input
@@ -2786,230 +2570,146 @@ export function SlotPopover({
                 takeDraft();
               }
             }}
-            className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted/70"
+            className="insp-title-input"
             placeholder={derivedTitle}
             aria-label="Slot name"
           />
-          {!slot.title.trim() && draft && !title.trim() ? (
-            <button
-              onClick={takeDraft}
-              className="fast mt-0.5 flex max-w-full items-center gap-2 rounded text-left text-meta text-accent hover:text-ink"
-              title="Use Nuvo's name for this block"
-              aria-label={`Use Nuvo's name: ${draft}`}
-            >
-              <span className="truncate">✦ {draft}</span>
-              <kbd className="mono shrink-0 rounded border border-line px-1 text-micro text-muted">⇥</kbd>
-            </button>
-          ) : !slot.title.trim() && (
-            <div className="mono mt-0.5 flex items-center gap-2 text-meta text-muted/70">
-              <span>✦ auto-named — type to override</span>
-              {childTasks.length > 0 && (
-                <button
-                  onClick={() => void suggestName()}
-                  disabled={naming}
-                  className="fast rounded text-meta text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
-                  title="Ask Nuvo for the through-line of what's inside"
-                >
-                  {naming ? "thinking…" : "suggest a name"}
-                </button>
-              )}
-            </div>
-          )}
         </PopMast>
 
-        {/* Left = when the block is and what it belongs to · right = the work
-            inside it, which is the reason the block exists. */}
         <PopBody>
-          <PopCol side="left" width="42%">
-            <PopStack>
-              <PopField label="When">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
-                    <span className="text-ink">{format(new Date(slot.do_date + "T12:00:00"), "MMM d")}</span>
-                    <input
-                      type="date"
-                      aria-label="Date"
-                      value={slot.do_date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
-                    <span className="text-ink">{format(startDate, "h:mm a")}</span>
-                    <input
-                      type="time"
-                      step={900}
-                      aria-label="Start time"
-                      value={startHHMM}
-                      onChange={(e) => setTime(e.target.value)}
-                      className="absolute inset-0 w-full opacity-0"
-                    />
-                  </label>
-                  <label className="relative inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-                    <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
-                    <span className="text-ink">{fmtDuration(slot.duration_minutes)}</span>
-                    <Icon name="chevron-down" size={7} className="text-muted/50" />
-                    <select
-                      aria-label="Duration"
-                      value={slot.duration_minutes}
-                      onChange={(e) =>
-                        slotMutations.updateSlot({
-                          id: slot.id,
-                          patch: { duration_minutes: Number(e.target.value) },
-                        })
-                      }
-                      className="absolute inset-0 w-full opacity-0"
-                    >
-                      {[30, 45, 60, 90, 120, 180, 240, 360, 480].map((m) => (
-                        <option key={m} value={m}>{fmtDuration(m)}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <RepeatControl
-                    anchorISO={slot.do_date}
-                    value={recurrence ? ruleOf(recurrence) : null}
-                    onChange={applyRepeat}
-                  />
-                </div>
-              </PopField>
-
-              {/* Project drives the colour and the inheritance; a bare domain
-                  makes this a standing slot the weekly plan routes work into
-                  (docs/standing-slots.md). Only ever one affinity, never two. */}
-              <PopField label="For">
-                <div className="flex flex-wrap items-center gap-1">
-                  <label
-                    className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-                    style={{ color: domain?.color ?? "var(--muted)" }}
-                  >
-                    <span>{project?.name ?? "+ project"}</span>
-                    <select
-                      aria-label="Project"
-                      value={slot.project_id ?? ""}
-                      onChange={(e) => setProject(e.target.value)}
-                      className="absolute inset-0 w-full opacity-0"
-                    >
-                      <option value="">— none —</option>
-                      {vertical.projects
-                        .filter((p) => !isProjectComplete(p.status) || p.id === slot.project_id)
-                        .map((p) => {
-                          const d = domainById(vertical, p.domainId);
-                          return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
-                        })}
-                    </select>
-                  </label>
-
-                  {!slot.project_id && (
-                    <label
-                      className="relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-                      style={{ color: domain?.color ?? "var(--muted)" }}
-                    >
-                      <span>{slot.domain_id ? (domain?.name ?? "domain") : "+ domain"}</span>
-                      <select
-                        aria-label="Domain"
-                        value={slot.domain_id ?? ""}
-                        onChange={(e) => setDomain(e.target.value)}
-                        className="absolute inset-0 w-full opacity-0"
-                      >
-                        <option value="">— none —</option>
-                        {vertical.domains.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                </div>
-                {slot.domain_id && !slot.project_id && recurrence && (
-                  <div className="text-micro text-muted/80">
-                    A standing slot — the weekly plan routes this domain's work here.
-                  </div>
-                )}
-              </PopField>
-
-              <PopField label="Remind">
-                <ReminderSelect block target={{ targetKind: "slot", targetId: slot.id }} />
-              </PopField>
-            </PopStack>
-          </PopCol>
-
-          <PopCol side="right" width="58%">
-            <PopSection
-              label="Inside"
-              aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}
-              className="min-h-0 flex-1"
+          <PopRow icon="calendar" label="When">
+            <PopDate label="Date" value={slot.do_date} onChange={setDate}>
+              {format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")}
+            </PopDate>
+            <TimePicker value={startHHMM} onSelect={setTime} ariaLabel="Start time" />
+            <PopPick
+              label="Duration"
+              value={String(slot.duration_minutes)}
+              options={durationOptions(slot.duration_minutes, SLOT_DURATIONS)}
+              onChange={(v) =>
+                slotMutations.updateSlot({
+                  id: slot.id,
+                  patch: { duration_minutes: Number(v) },
+                })
+              }
             >
-              {/* The app's one task list: TaskRow, the shared keys, the shared
-                  add box. Rows drag to reorder, onto the calendar (FullCalendar's
-                  Draggable on this column reads data-task-drag), or onto the rail
-                  to go back to the inbox. */}
-              <div className="-mx-1.5 mt-1 min-h-0 flex-1 overflow-y-auto px-1.5">
-                <TaskListView
-                  tasks={ordered}
-                  context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
-                  contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
-                  keyboard={!openTask}
-                  onOpen={(t) => onOpenTask(t)}
-                  flush
-                  whenShown
-                  composerRef={addRef}
-                  composerPlaceholder="Add task to slot"
-                  emptyHint="No tasks yet."
-                  dragData={() => ({})}
-                  dropZones={{
-                    at: (x, y) => {
-                      const under = document.elementFromPoint(x, y) as HTMLElement | null;
-                      const onRail = Boolean(under?.closest("[data-rail-drop]"));
-                      document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.toggle("rail-drop-active", onRail);
-                      return onRail ? "inbox" : null;
-                    },
-                    drop: (_zone, t) => {
-                      document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.remove("rail-drop-active");
-                      taskMutations.backToInbox(t, { undo: "toast" });
-                    },
-                    label: () => "↩ Back to inbox",
-                  }}
-                  rowAction={(t) => (
-                    <button
-                      type="button"
-                      aria-label={`Take “${t.title}” out of the slot`}
-                      title="Out of this slot (keeps its day)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        taskMutations.removeFromSlot(t, { undo: "toast" });
-                      }}
-                      className="fast shrink-0 rounded p-0.5 text-muted opacity-0 hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
-                    >
-                      <Icon name="close" size={12} />
-                    </button>
-                  )}
-                />
-              </div>
-            </PopSection>
-          </PopCol>
+              {fmtDuration(slot.duration_minutes)}
+            </PopPick>
+          </PopRow>
+
+          <PopRow icon="repeat" label="Repeat">
+            <RepeatControl
+              variant="value"
+              anchorISO={slot.do_date}
+              value={recurrence ? ruleOf(recurrence) : null}
+              onChange={applyRepeat}
+            />
+          </PopRow>
+
+          {/* Project drives the colour and the inheritance; a bare domain
+              makes this a standing slot the weekly plan routes work into
+              (docs/standing-slots.md). Only ever one affinity, never two. */}
+          <PopRow icon="folder" label="For">
+            <PopPick
+              label="Project"
+              value={slot.project_id ?? ""}
+              options={projectOptions}
+              onChange={setProject}
+              empty={!project}
+              lead={project ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
+            >
+              {project?.name ?? "No project"}
+            </PopPick>
+            {!slot.project_id && (
+              <PopPick
+                label="Domain"
+                value={slot.domain_id ?? ""}
+                options={domainOptions}
+                onChange={setDomain}
+                empty={!slot.domain_id}
+                lead={slot.domain_id ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
+              >
+                {slot.domain_id ? (domain?.name ?? "Domain") : "No domain"}
+              </PopPick>
+            )}
+            {slot.domain_id && !slot.project_id && recurrence && (
+              <span className="insp-hint" title="A standing slot — the weekly plan routes this domain's work here.">
+                Standing
+              </span>
+            )}
+          </PopRow>
+
+          <PopRow icon="bell" label="Remind" top>
+            <ReminderSelect block className="min-w-0 flex-1" target={{ targetKind: "slot", targetId: slot.id }} />
+          </PopRow>
+
+          {/* The work inside it — the reason the block exists. */}
+          <PopSection label="Inside" aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}>
+            {/* The app's one task list: TaskRow, the shared keys, the shared
+                add box. Rows drag to reorder, onto the calendar (FullCalendar's
+                Draggable on this column reads data-task-drag), or onto the rail
+                to go back to the inbox. */}
+            <div className="-mx-1.5 min-h-0 px-1.5">
+              <TaskListView
+                tasks={ordered}
+                context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
+                contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
+                keyboard={!openTask}
+                onOpen={(t) => onOpenTask(t)}
+                flush
+                whenShown
+                composerRef={addRef}
+                composerPlaceholder="Add a task"
+                emptyHint="Nothing inside"
+                dragData={() => ({})}
+                dropZones={{
+                  at: (x, y) => {
+                    const under = document.elementFromPoint(x, y) as HTMLElement | null;
+                    const onRail = Boolean(under?.closest("[data-rail-drop]"));
+                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.toggle("rail-drop-active", onRail);
+                    return onRail ? "inbox" : null;
+                  },
+                  drop: (_zone, t) => {
+                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.remove("rail-drop-active");
+                    taskMutations.backToInbox(t, { undo: "toast" });
+                  },
+                  label: () => "↩ Back to inbox",
+                }}
+                rowAction={(t) => (
+                  <button
+                    type="button"
+                    aria-label={`Take “${t.title}” out of the slot`}
+                    title="Out of this slot — it keeps its day"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      taskMutations.removeFromSlot(t, { undo: "toast" });
+                    }}
+                    className="k-btn shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                    data-kind="ghost"
+                    data-size="xs"
+                    data-icon=""
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                )}
+              />
+            </div>
+          </PopSection>
         </PopBody>
 
         {deferring && (
-          <div className="border-t border-line px-3 pt-2">
+          <div className="insp-ask">
             <SlotDeferPanel slot={slot} onDone={onClose} />
           </div>
         )}
 
-        {/* Footer */}
         <PopFooter>
-          <span className="mono text-micro text-muted/70">j k · ↵ open · e done · a add · ? keys</span>
-          <div className="min-w-0 flex-1" />
+          <PopGrow />
           {/* Project time's own way out — Delete only removes the block. */}
           {slot.project_id && (
-            <button
-              type="button"
-              onClick={() => setDeferring((v) => !v)}
-              aria-expanded={deferring}
-              className={`fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${deferring ? "text-ink" : "text-muted hover:text-ink"}`}
-            >
+            <PopFootAct expanded={deferring} onClick={() => setDeferring((v) => !v)}>
               Can’t get to this…
-            </button>
+            </PopFootAct>
           )}
           <SlotDeleteButton
             quiet
@@ -3024,38 +2724,43 @@ export function SlotPopover({
             }}
           />
         </PopFooter>
-        </div>
-
-        {/* Task slide-out — same shell, slides open to the right */}
-        <div
-          // No transition: this is a click-to-open inspector, and on the
-          // Schedule those land instantly (same rule as the block lift and
-          // `pop-in`). An eased unfold made every drill-in wait ~200ms.
-          className={`flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface ${
-            openTask ? `${paneSide === "right" ? "border-l" : "border-r"} border-line` : ""
-          }`}
-          style={{ width: paneW }}
-        >
-          {openTask && (
-            <TaskPopover
-              variant="slideout"
-              task={openTask}
-              anchor={anchor}
-              labels={labels}
-              mutations={taskMutations}
-              recurrence={taskRecurrence}
-              recurrenceMutations={recurrenceMutations}
-              onClose={onCloseTask}
-              onBack={onCloseTask}
-              backLabel={slot.title.trim() || derivedTitle}
-              onConvertToEvent={
-                onConvertTaskToEvent ? (target) => onConvertTaskToEvent(openTask, target) : undefined
-              }
-            />
-          )}
-        </div>
       </div>
-    </>,
+
+      {/* Task slide-out — same shell, unfolds beside the slot column. No
+          transition: a click-to-open inspector lands instantly. */}
+      <div
+        className="flex min-h-0 shrink-0 flex-col overflow-hidden"
+        style={{
+          width: paneW,
+          ...(openTask
+            ? paneSide === "right"
+              ? { borderLeft: "1px solid var(--line-1)" }
+              : { borderRight: "1px solid var(--line-1)" }
+            : {}),
+        }}
+      >
+        {openTask && (
+          <TaskPopover
+            variant="slideout"
+            task={openTask}
+            anchor={anchor}
+            labels={labels}
+            mutations={taskMutations}
+            recurrence={taskRecurrence}
+            recurrenceMutations={recurrenceMutations}
+            onClose={onCloseTask}
+            onBack={onCloseTask}
+            backLabel={slot.title.trim() || derivedTitle}
+            onConvertToEvent={
+              onConvertTaskToEvent ? (target) => onConvertTaskToEvent(openTask, target) : undefined
+            }
+          />
+        )}
+      </div>
+    </div>,
     document.body,
   );
 }
+
+/** The lengths a slot is offered — a block that holds several things. */
+const SLOT_DURATIONS = [30, 45, 60, 90, 120, 180, 240, 360, 480] as const;
