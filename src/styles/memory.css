@@ -1,14 +1,11 @@
 /* Memory (docs/memory.md) — the panel inside the kit Dialog, and the sidebar's
    one quiet dot. Tokens only; nothing moves on its own (P9). */
 
-.memory { display: grid; gap: 10px; }
-.memory-lead { margin: 0; color: var(--muted); font-size: 13px; }
 .memory-note {
   margin: 0; display: grid; gap: 8px;
   font-size: 12.5px; color: var(--ink-2);
   background: var(--sunk); border-radius: var(--r-ctl); padding: 8px 10px;
 }
-.memory-intro { margin: 2px 0 0; font-size: 12px; color: var(--faint); }
 .memory-item { display: grid; gap: 7px; padding: 12px 0; border-bottom: 1px solid var(--line-1); }
 .memory-say { margin: 0; font-size: 14px; color: var(--ink); text-wrap: pretty; }
 .memory-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
@@ -48,7 +45,9 @@
 
 /* The Schedule's Rhythm view: background events, behind every block. Opacity
    and fills only; nothing here blurs or animates (tests/perf-budget.test.ts). */
-.rhythm-list { width: min(360px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; display: grid; gap: 2px; padding: 4px 4px 0; }
+.rhythm-list { width: min(340px, calc(100vw - 32px)); display: grid; gap: 0; padding: 2px 4px 0; }
+.rhythm-list .memory-item:last-of-type { border-bottom: 0; }
+.rhythm-list-foot { border-top: 1px solid var(--line-1); padding: 6px 0 2px; margin-left: -8px; }
 .fc .fc-bg-event.evt-rhythm-hours { background: color-mix(in srgb, var(--ink) 3.5%, transparent) !important; opacity: 1; }
 .fc .fc-bg-event.evt-rhythm-default {
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 6%, transparent) 0 4px, transparent 4px 9px) !important;
@@ -63,3 +62,47 @@
 .fc .fc-bg-event.evt-rhythm-hot { outline-style: solid; outline-color: var(--accent); }
 .memory-item[data-off] .memory-say { color: var(--faint); text-decoration: line-through; }
 .memory-item[data-off] .memory-conseq { opacity: .5; }
+
+
+/* ── The Memory page (a Flow surface). One hero; the portrait beside it. ── */
+.memory-page { display: grid; gap: 40px; max-width: 1040px; }
+.memory-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: 48px; align-items: start; padding-top: 8px; }
+.memory-hero-words { display: grid; gap: 18px; min-width: 0; }
+.memory-hero .f-fact b { color: var(--ink); font-weight: 600; }
+.memory-trust { margin: 0; max-width: 52ch; font-size: 14px; color: var(--ink-2); }
+.memory-tally { margin: 0; display: flex; gap: 32px; flex-wrap: wrap; }
+.memory-tally div { display: grid; gap: 2px; }
+.memory-tally dt { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.memory-tally dd { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+
+.memory-portrait { margin: 0; display: grid; gap: 10px; }
+.memory-portrait-grid { display: grid; grid-template-columns: 34px repeat(7, minmax(0, 1fr)); gap: 2px; }
+.memory-portrait-day { font-size: 11px; color: var(--muted); text-align: center; padding-bottom: 4px; }
+.memory-portrait-hour { font-size: 10px; color: var(--faint); text-align: right; padding-right: 6px; line-height: 1; transform: translateY(-3px); }
+.memory-portrait-cell { height: 13px; border-radius: 2px; background: var(--sunk); }
+.memory-portrait-cell[data-on] { background: color-mix(in srgb, var(--accent) calc(var(--v) * 100%), var(--sunk)); }
+.memory-portrait figcaption { font-size: 12px; color: var(--faint); }
+
+.memory-section { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.memory-section > .section-label { margin: 0; display: flex; gap: 8px; align-items: baseline; padding-bottom: 6px; border-bottom: 1px solid var(--line-1); }
+.memory-count { color: var(--faint); font-weight: 500; letter-spacing: 0; }
+.memory-section > .memory-src { margin: 4px 0 4px; }
+.memory-empty { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.memory-page .memory-say { font-size: 16px; line-height: 1.4; }
+.memory-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
+.memory-domains { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.memory-page .memory-foot { justify-content: flex-start; border-top: 1px solid var(--line-1); padding-top: 14px; }
+.memory-page .memory-foot .memory-confirm { max-width: 720px; }
+
+@media (max-width: 860px) {
+  .memory-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .memory-cols { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .memory-page { gap: 32px; }
+}
+@media (max-width: 767px) {
+  .memory-tally { gap: 24px; }
+  .memory-tally dd { font-size: 24px; }
+  .memory-portrait-cell { height: 11px; }
+}
+/* The switch's whole label is its tap target under a finger. */
+@media (pointer: coarse) { .memory-learn { min-height: 44px; } }

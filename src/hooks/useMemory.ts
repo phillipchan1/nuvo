@@ -93,13 +93,14 @@ export function useMemory() {
   const domainName = useCallback((id: string | null) => vertical.domains.find((d) => d.id === id)?.name ?? null, [vertical.domains]);
   const workDomainIds = useMemo(() => vertical.domains.filter((d) => d.kind === "work").map((d) => d.id), [vertical.domains]);
 
-  const observations = useMemo(() => {
-    if (!learning || !settings) return [];
+  // Your own calendar, as the detectors read it — also what the page draws.
+  const rhythmEvents = useMemo((): RhythmEvent[] => {
+    if (!settings) return [];
     const owned = ownedCalendar(accounts);
     const hiddenCalendarIds = new Set(settings.hidden_calendar_ids ?? []);
     const hiddenEventKeys = new Set((settings.hidden_events ?? []).map((h) => h.key));
     const now = new Date();
-    const rhythmEvents: RhythmEvent[] = events
+    return events
       .filter((e) => owned(e) && eventCountsAsActual(e, now, { hiddenCalendarIds, hiddenEventKeys }))
       .map((e) => {
         const s = new Date(e.start_at);
@@ -114,6 +115,10 @@ export function useMemory() {
           seriesId: e.recurring_event_id ?? null,
         };
       });
+  }, [settings, accounts, events, routing]);
+
+  const observations = useMemo(() => {
+    if (!learning || !settings) return [];
     const handTasks = tasks
       .filter((t) => !t.recurrence_id && t.created_at)
       .map((t) => ({ title: t.title, createdDay: localDay(new Date(t.created_at)) }));
@@ -132,7 +137,26 @@ export function useMemory() {
       const early = o.days.some((d) => main.endMin - d.endMin >= 30);
       return early || main.startMin !== currentHours.startMin || main.endMin !== currentHours.endMin;
     });
-  }, [learning, settings, accounts, events, routing, tasks, series, today, workDomainIds, currentHours]);
+  }, [learning, settings, rhythmEvents, tasks, series, today, workDomainIds, currentHours]);
+
+  /** The eight weeks drawn as one week: for each weekday and hour, in how many
+   *  of the weeks something of yours was there (0–8). The page's portrait. */
+  const heat = useMemo(() => {
+    const seen = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => new Set<number>()));
+    for (const e of rhythmEvents) {
+      const w = win.weekIndex(e.day);
+      if (w < 0) continue;
+      const wd = (new Date(`${e.day}T00:00:00Z`).getUTCDay() + 6) % 7;
+      for (let h = Math.floor(e.startMin / 60); h < Math.ceil(e.endMin / 60) && h < 24; h++) seen[wd][h].add(w);
+    }
+    return seen.map((row) => row.map((s) => s.size));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rhythmEvents, win.start]);
+  const reading = useMemo(
+    () => ({ weeks: 8, events: rhythmEvents.filter((e) => win.weekIndex(e.day) >= 0).length, written: tasks.filter((t) => !t.recurrence_id).length }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rhythmEvents, tasks, win.start],
+  );
 
   const items: MemoryItem[] = useMemo(() => {
     const fromObs: MemoryItem[] = observations.flatMap((o) => {
@@ -362,30 +386,48 @@ export function useMemory() {
     toast("Memory cleared. What you kept stays in your settings.");
   }, [state.learning, save]);
 
-  return {
-    available,
-    introduced,
-    markIntroduced,
-    keepMany,
-    learning,
-    items,
-    hasNew: learning && fresh.length > 0,
-    newCount: fresh.length,
-    keep,
-    refuse,
-    forget,
-    askAgain,
-    setLearning,
-    markSeen,
-    forgetAll,
-    /** For a domain without a kind, the one question Memory needs answered. */
-    needsWorkDomain: workDomainIds.length === 0 && vertical.domains.some((d) => d.kindStored),
-    domains: vertical.domains,
-    setWorkDomain: (id: string) => {
+  const needsWorkDomain = workDomainIds.length === 0 && vertical.domains.some((d) => d.kindStored);
+  const hasNew = learning && fresh.length > 0;
+  const newCount = fresh.length;
+  const { updateDomain } = store;
+  /** Mark a domain as paid work, or take that back. Several can be work. */
+  const setWorkDomain = useCallback(
+    (id: string, on = true) => {
       const d = vertical.domains.find((x) => x.id === id);
-      if (d?.kindStored) store.updateDomain(id, { kind: "work" });
+      if (d?.kindStored) updateDomain(id, { kind: on ? "work" : null });
     },
-  };
+    [vertical.domains, updateDomain],
+  );
+
+  // One stable object: the Schedule (a memo'd 5,000-line surface) and the rail
+  // take it as a prop, so a fresh object every render would re-render them both.
+  return useMemo(
+    () => ({
+      available,
+      introduced,
+      markIntroduced,
+      keepMany,
+      learning,
+      items,
+      hasNew,
+      newCount,
+      keep,
+      refuse,
+      forget,
+      askAgain,
+      setLearning,
+      markSeen,
+      forgetAll,
+      /** For a domain without a kind, the one question Memory needs answered. */
+      needsWorkDomain,
+      domains: vertical.domains,
+      workDomainIds,
+      heat,
+      reading,
+      setWorkDomain,
+    }),
+    [available, introduced, markIntroduced, keepMany, learning, items, hasNew, newCount, keep, refuse, forget, askAgain, setLearning, markSeen, forgetAll, needsWorkDomain, vertical.domains, workDomainIds, heat, reading, setWorkDomain],
+  );
 }
 
 /** The next date, from today on, that falls on one of these weekdays (Monday = 0). */

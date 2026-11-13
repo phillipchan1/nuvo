@@ -3,7 +3,7 @@ import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
 import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Popover, Segmented } from "./kit";
-import type { MemoryApi } from "./memory/MemoryPanel";
+import type { MemoryApi } from "./memory/MemoryPage";
 import { RhythmList } from "./memory/RhythmList";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
@@ -297,6 +297,7 @@ function useOnScreen(ref: React.RefObject<HTMLElement | null>, x: number, y: num
 // ── Main component ─────────────────────────────────────────────────────────
 function CalendarPane({
   learned,
+  onOpenMemory,
   view,
   tasks,
   events,
@@ -364,6 +365,8 @@ function CalendarPane({
   /** Memory, when the host has it — draws the Rhythm view (docs/memory.md §5.2).
    *  Omitted (harnesses, tests): no Rhythm button. */
   learned?: MemoryApi | null;
+  /** Opens the Memory page (the Rhythm popover's "See everything"). */
+  onOpenMemory?: () => void;
   now: Date;
   /** Domain color per task — blocks carry their thread up the vertical. */
   taskAccent: (t: Task) => string | null;
@@ -2031,22 +2034,29 @@ function CalendarPane({
     const endMin = settings?.work_end_minutes ?? 990;
     if (!memory) return [];
     const learnedHours = memory.items.some((i) => i.section === "kept" && i.key.startsWith("hours:"));
+    // A habit that is already a repeating event is already drawn by the calendar
+    // itself; a second band over it is noise (seen on a real account, 2026-11-13).
     const ghosts = memory.items.filter(
-      (i) => i.section === "new" && i.observation && (i.observation.kind === "habit" || i.observation.kind === "window"),
+      (i) =>
+        i.section === "new" &&
+        i.observation &&
+        ((i.observation.kind === "habit" && !i.observation.fromSeries) || i.observation.kind === "window"),
     );
     const at = (day: Date, min: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, min);
     for (let t = visibleSpan.start; t < visibleSpan.end; t += 86_400_000) {
       const day = new Date(t);
       const wd = (day.getDay() + 6) % 7;
       const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
-      if (wd < 5) {
+      // Only hours you kept are drawn — a default isn't yours, and hatching
+      // every workday buried the week under it.
+      if (wd < 5 && learnedHours) {
         out.push({
           id: `rhythm-hours:${key}`,
-          title: learnedHours ? "" : "Default hours",
+          title: "",
           start: at(day, startMin),
           end: at(day, endMin),
           display: "background",
-          classNames: ["evt-rhythm-hours", learnedHours ? "" : "evt-rhythm-default"].filter(Boolean),
+          classNames: ["evt-rhythm-hours"],
           extendedProps: { kind: "planghost" as const, refId: "" },
         });
       }
@@ -4995,7 +5005,18 @@ function CalendarPane({
         placement="bottom-end"
         label="Rhythm"
       >
-        <RhythmList memory={memory} onHot={setRhythmHot} />
+        <RhythmList
+          memory={memory}
+          onHot={setRhythmHot}
+          onOpenMemory={
+            onOpenMemory
+              ? () => {
+                  setRhythmOpen(false);
+                  onOpenMemory();
+                }
+              : undefined
+          }
+        />
       </Popover>}
       {wxPopover && (
         <WeatherPopover

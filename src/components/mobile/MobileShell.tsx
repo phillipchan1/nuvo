@@ -69,7 +69,7 @@ import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
-const MemoryPanel = lazy(() => import("../memory/MemoryPanel"));
+const MemoryPage = lazy(() => import("../memory/MemoryPage"));
 const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
 
 // Top-level destinations — the five surfaces you work from on the phone, the
@@ -229,6 +229,7 @@ export default function MobileShell() {
   // (detailTarget is handled inside MobileDetailSheet, which also gives each
   // breadcrumb frame its own entry via useMobileSheetStackHistory.)
   useMobileOverlayHistory(chatOpen, () => setChatOpen(false), "chat");
+  useMobileOverlayHistory(memoryOpen, () => setMemoryOpen(false), "memory");
   useMobileOverlayHistory(planOpen, () => setPlanOpen(false), "plan");
   useMobileOverlayHistory(Boolean(capture), () => setCapture(null), "capture");
   useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
@@ -807,7 +808,7 @@ export default function MobileShell() {
       )}
       {memoryOpen && (
         <Suspense fallback={null}>
-          <MemoryPanel onClose={() => setMemoryOpen(false)} />
+          <MemoryPage memory={memory} onClose={() => setMemoryOpen(false)} />
         </Suspense>
       )}
       {memory.available && !memory.introduced && (

@@ -57,11 +57,30 @@ const clock = (min: number) => {
 export const atMin = (m: number) => at(clock(m));
 export const spanMin = (a: number, b: number) => span(clock(a), clock(b));
 
-/** "Mon, Wed and Fri" */
+/** One list, joined once: "a", "a and b", "a, b and c". */
+export function listOf(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** "Mon, Wed and Fri" (short) or "Monday, Wednesday and Friday" (long). */
 export function dayList(days: number[], long = false): string {
-  const names = days.map((d) => (long ? WD_LONG : WD)[d]);
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return listOf(days.map((d) => (long ? WD_LONG : WD)[d]));
+}
+
+/**
+ * When something recurs, said the way a person would: "every day",
+ * "weekdays", "weekends", "Monday to Thursday", "Tuesdays and Thursdays".
+ */
+export function recurringDays(days: number[]): string {
+  const d = [...days].sort((a, b) => a - b);
+  const key = d.join("");
+  if (key === "0123456") return "every day";
+  if (key === "01234") return "weekdays";
+  if (key === "56") return "weekends";
+  const run = d.length >= 3 && d.every((x, i) => i === 0 || x === d[i - 1] + 1);
+  if (run) return `${WD_LONG[d[0]]} to ${WD_LONG[d[d.length - 1]]}`;
+  return listOf(d.map((x) => `${WD_LONG[x]}s`));
 }
 
 /** Group weekdays that share the same hours: "Monday to Thursday", "Friday". */
@@ -126,7 +145,7 @@ export function describe(
       const parts = hoursPhrase(o.days);
       return {
         title: "Working hours",
-        statement: `You usually work ${parts.join(", and ")}.`,
+        statement: `You usually work ${listOf(parts)}.`,
         evidence: `${pct(o)} weekdays`,
         confidence: o.confidence,
         source: o.fromWork ? "From your calendar's work events" : "From your weekday calendar",
@@ -141,17 +160,16 @@ export function describe(
     }
     case "habit": {
       const dom = ctx.domainName(o.domainId);
-      const when = `${dayList(o.weekdays)} ${spanMin(o.startMin, o.endMin)}`;
       return {
         title: o.title,
-        statement: `${o.title} is ${dayList(o.weekdays, true)}, ${spanMin(o.startMin, o.endMin)}.`,
+        statement: `${o.title}: ${recurringDays(o.weekdays)}, ${spanMin(o.startMin, o.endMin)}.`,
         evidence: `${pct(o)} sessions`,
         confidence: o.confidence,
         source: o.fromSeries ? "From a repeating event on your calendar" : "From your calendar",
         uses: o.fromSeries ? [] : ["Schedule"],
         keep: o.fromSeries
           ? "It's already a repeating event on your calendar, so nothing is added. Nuvo remembers it as part of your week."
-          : `A standing slot, ${o.title}, ${when}${dom ? `, counting toward ${dom}` : ""}. It holds the time on your Schedule.`,
+          : `A standing slot, ${o.title}, ${recurringDays(o.weekdays)} ${spanMin(o.startMin, o.endMin)}${dom ? `, counting toward ${dom}` : ""}. It holds the time on your Schedule.`,
         no: `Nuvo stops looking for ${o.title} at this time. It won't ask again for 8 weeks.`,
         forget: o.fromSeries ? "Nuvo forgets it. Your calendar is unchanged." : "The standing slot stops. Past ones stay where they were.",
         need,
@@ -160,12 +178,12 @@ export function describe(
     case "window":
       return {
         title: "Deep work",
-        statement: `${dayList(o.weekdays, true)} ${spanMin(o.startMin, o.endMin)} has stayed open.`,
+        statement: `${cap(recurringDays(o.weekdays))}, ${spanMin(o.startMin, o.endMin)} has stayed open.`,
         evidence: `open in ${pct(o)} weeks`,
         confidence: o.confidence,
         source: "From your calendar",
         uses: ["Schedule"],
-        keep: `A standing slot, Deep work, ${dayList(o.weekdays)} ${spanMin(o.startMin, o.endMin)}. It holds the time on your Schedule before meetings take it.`,
+        keep: `A standing slot, Deep work, ${recurringDays(o.weekdays)} ${spanMin(o.startMin, o.endMin)}. It holds the time on your Schedule before meetings take it.`,
         no: `Nuvo stops offering that time for 8 weeks.`,
         forget: "The Deep work slot stops. Past ones stay where they were.",
         need,
@@ -194,6 +212,8 @@ export function describe(
     }
   }
 }
+
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const ordinal = (n: number) => {
   const s = ["th", "st", "nd", "rd"];

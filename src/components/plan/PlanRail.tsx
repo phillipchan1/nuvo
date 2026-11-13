@@ -48,7 +48,7 @@ import {
   Segmented,
 } from "../kit";
 import { Icon } from "../Icon";
-import type { MemoryApi } from "../memory/MemoryPanel";
+import type { MemoryApi } from "../memory/MemoryPage";
 import { FlowHead, FlowMeter } from "../rituals/FlowShell";
 
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

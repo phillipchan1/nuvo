@@ -169,14 +169,14 @@ function mostCommon<T>(xs: T[]): T {
 
 // ── hours: when work starts and ends, per weekday ───────────────────────────────
 function hours(input: RhythmInput, inWindow: (RhythmEvent & { w: number; wd: number })[], habitKeys: Set<string>): Observation | null {
+  // Hours are read ONLY from work you've said is work. Read from the whole
+  // weekday calendar they came out as nonsense on a real account — a church
+  // lunch and a kid's soccer game are on a weekday too (2026-11-13).
+  void habitKeys;
   const work = new Set(input.workDomainIds);
   const fromWork = work.size > 0;
-  const ev = inWindow.filter((e) =>
-    e.wd < 5 &&
-    (fromWork
-      ? e.domainId != null && work.has(e.domainId)
-      : e.startMin >= 7 * 60 && e.endMin <= 20 * 60 && !habitKeys.has(`${normTitle(e.title)}|${round(e.startMin, 30)}`)),
-  );
+  if (!fromWork) return null;
+  const ev = inWindow.filter((e) => e.wd < 5 && e.domainId != null && work.has(e.domainId));
   const perDay = new Map<string, { w: number; wd: number; s: number; e: number; n: number }>();
   for (const e of ev) {
     const cur = perDay.get(e.day);
