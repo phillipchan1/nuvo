@@ -8,8 +8,9 @@
 // a repeating task. The answers themselves live in `user_settings.memory`.
 
 import { useCallback, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useSettings } from "./useSettings";
+import { SETTINGS_KEY, useSettings } from "./useSettings";
 import { useAllTasks } from "./useTasks";
 import { useCalendarAccounts, useExternalEvents } from "./useCalendar";
 import { useEventRouting } from "./useEventRouting";
@@ -18,28 +19,25 @@ import { useVertical } from "./useVertical";
 import { todayISO } from "../lib/dates";
 import { eventCountsAsActual, eventDomainId } from "../lib/eventActuals";
 import { loadMemory, saveMemory } from "../lib/planMemory";
+import { appendGraded, type GradeIn } from "../lib/memoryGrade";
 import {
   addDaysISO,
+  blocksOf,
+  chipOf,
+  clauseOf,
   describe,
+  labelOf,
   mainHours,
   sectionOf,
-  type Described,
   type MemoryAnswer,
   type MemoryState,
   type MemoryWrite,
-  type Section,
 } from "../lib/memory";
-import { readRhythm, windowOf, type Observation, type RhythmEvent } from "../../supabase/functions/_shared/memory/rhythm";
-import type { CalendarAccount, ExternalEvent } from "../lib/types";
+import { readRhythm, windowOf, type RhythmEvent } from "../../supabase/functions/_shared/memory/rhythm";
+import { readMemoryFace, type MemoryItem } from "../lib/memoryRead";
+import type { CalendarAccount, ExternalEvent, UserSettings } from "../lib/types";
 
-export interface MemoryItem {
-  key: string;
-  section: Section;
-  area: "Time";
-  described: Described;
-  observation: Observation | null;
-  answer: MemoryAnswer | null;
-}
+export type { MemoryItem, PortraitClause, PredictedBlock } from "../lib/memoryRead";
 
 const REFUSE_DAYS = 56;
 
@@ -64,6 +62,7 @@ function ownedCalendar(accounts: CalendarAccount[]) {
 }
 
 export function useMemory() {
+  const qc = useQueryClient();
   const { settings, update } = useSettings();
   const { data: accounts = [] } = useCalendarAccounts();
   const { data: tasks = [] } = useAllTasks();
@@ -117,12 +116,12 @@ export function useMemory() {
       });
   }, [settings, accounts, events, routing]);
 
-  const observations = useMemo(() => {
+  const rawObservations = useMemo(() => {
     if (!learning || !settings) return [];
     const handTasks = tasks
       .filter((t) => !t.recurrence_id && t.created_at)
       .map((t) => ({ title: t.title, createdDay: localDay(new Date(t.created_at)) }));
-    const obs = readRhythm({
+    return readRhythm({
       today,
       events: rhythmEvents,
       tasks: handTasks,
@@ -130,14 +129,18 @@ export function useMemory() {
       repeatingTitles: series.map((r) => r.title),
       fallbackHours: currentHours,
     });
-    // Hours you already have are not news.
-    return obs.filter((o) => {
-      if (o.kind !== "hours") return true;
-      const main = mainHours(o.days);
-      const early = o.days.some((d) => main.endMin - d.endMin >= 30);
-      return early || main.startMin !== currentHours.startMin || main.endMin !== currentHours.endMin;
-    });
   }, [learning, settings, rhythmEvents, tasks, series, today, workDomainIds, currentHours]);
+  // Hours you already have are not news.
+  const observations = useMemo(
+    () =>
+      rawObservations.filter((o) => {
+        if (o.kind !== "hours") return true;
+        const main = mainHours(o.days);
+        const early = o.days.some((d) => main.endMin - d.endMin >= 30);
+        return early || main.startMin !== currentHours.startMin || main.endMin !== currentHours.endMin;
+      }),
+    [rawObservations, currentHours],
+  );
 
   /** The eight weeks drawn as one week: for each weekday and hour, in how many
    *  of the weeks something of yours was there (0–8). The page's portrait. */
@@ -191,19 +194,35 @@ export function useMemory() {
   const seenKeys = useMemo(() => new Set(state.seenKeys ?? []), [state.seenKeys]);
   const fresh = items.filter((i) => i.section === "new" && !seenKeys.has(i.key));
 
+  // ── the page's read (§13): the portrait, the week, the proof, the asks ───
+  const workNames = useMemo(() => vertical.domains.filter((d) => d.kind === "work").map((d) => d.name), [vertical.domains]);
+  const workLabel = workNames[0] ?? "Work";
+  const face = useMemo(
+    () => readMemoryFace({ today, items, observations: rawObservations, answers, graded: state.graded, workNames, events: rhythmEvents, learning }),
+    [today, items, rawObservations, answers, state.graded, workNames, rhythmEvents, learning],
+  );
+  const { portrait, week, proof, questions, waiting, recent } = face;
+
   // Saves read the latest state, not this render's: several answers can be
   // given before the settings cache re-renders (Use these keeps them in a row).
   const latest = useRef(state);
   latest.current = state;
   const save = useCallback(
-    (next: MemoryState) => {
+    (next: MemoryState, opts?: { grade?: GradeIn[]; resetGraded?: boolean }) => {
       if (!available) return false;
-      latest.current = next;
-      update({ memory: next });
+      // The graded ring has another writer (the shell's grading sink), so it's
+      // always taken fresh from the cache, never from this render's state.
+      const cached = (qc.getQueryData<UserSettings>(SETTINGS_KEY)?.memory ?? {}).graded;
+      const graded = opts?.resetGraded ? [] : opts?.grade?.length ? appendGraded(cached, opts.grade) : cached;
+      const merged: MemoryState = { ...next, graded };
+      latest.current = merged;
+      update({ memory: merged });
       return true;
     },
-    [available, update],
+    [available, update, qc],
   );
+  const asQuestion = (item: MemoryItem, o: GradeIn["o"]): GradeIn[] =>
+    item.section === "new" ? [{ s: "question", o, t: item.described.title, m: [item.key] }] : [];
 
   const current = () => latest.current.answers ?? [];
   const withAnswers = (list: MemoryAnswer[]): MemoryState => ({ ...latest.current, answers: list });
@@ -296,14 +315,20 @@ export function useMemory() {
         uses: d.uses,
         forget: d.forget,
         wrote,
+        clause: clauseOf(o, "kept"),
+        chip: chipOf(o, workLabel),
+        blocks: blocksOf(o),
+        label: labelOf(o, workLabel),
+        kind: o.kind,
+        domainId: o.kind === "habit" ? o.domainId : null,
       };
-      save(withAnswers([...current().filter((a) => a.key !== o.key), answer]));
+      save(withAnswers([...current().filter((a) => a.key !== o.key), answer]), { grade: asQuestion(item, "kept") });
       if (!opts?.quiet) toast("Kept. Nuvo plans with it from now.", {
         action: { label: "Undo", onClick: () => void unwrite(wrote).then(() => save(withAnswers(current().filter((a) => a.key !== o.key)))) },
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [available, currentHours, workDomainIds, recurrence, today, settings, update, answers, save, unwrite],
+    [available, currentHours, workDomainIds, recurrence, today, settings, update, answers, save, unwrite, workLabel],
   );
 
   const refuse = useCallback(
@@ -321,7 +346,7 @@ export function useMemory() {
         source: `You said not true on ${shortDate(today)}`,
         uses: [],
       };
-      save(withAnswers([...current().filter((a) => a.key !== item.key), answer]));
+      save(withAnswers([...current().filter((a) => a.key !== item.key), answer]), { grade: asQuestion(item, "dropped") });
       if (!opts?.quiet) toast("Got it. Nuvo stopped looking for that.", {
         action: { label: "Undo", onClick: () => save(withAnswers(current().filter((a) => a.key !== item.key))) },
       });
@@ -382,7 +407,7 @@ export function useMemory() {
 
   /** Forget everything: every memory and refusal goes; what a Keep wrote stays as yours. */
   const forgetAll = useCallback(() => {
-    save({ learning: state.learning, answers: [], seenKeys: [] });
+    save({ learning: state.learning, answers: [], seenKeys: [] }, { resetGraded: true });
     toast("Memory cleared. What you kept stays in your settings.");
   }, [state.learning, save]);
 
@@ -425,8 +450,14 @@ export function useMemory() {
       heat,
       reading,
       setWorkDomain,
+      portrait,
+      week,
+      proof,
+      questions,
+      waiting,
+      recent,
     }),
-    [available, introduced, markIntroduced, keepMany, learning, items, hasNew, newCount, keep, refuse, forget, askAgain, setLearning, markSeen, forgetAll, needsWorkDomain, vertical.domains, workDomainIds, heat, reading, setWorkDomain],
+    [available, introduced, markIntroduced, keepMany, learning, items, hasNew, newCount, keep, refuse, forget, askAgain, setLearning, markSeen, forgetAll, needsWorkDomain, vertical.domains, workDomainIds, heat, reading, setWorkDomain, portrait, week, proof, questions, waiting, recent],
   );
 }
 

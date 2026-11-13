@@ -1,4 +1,5 @@
 import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { MemoryGradeProvider } from "./memory/GradeContext";
 import { createPortal } from "react-dom";
 import {
   initiativesOf,
@@ -85,7 +86,9 @@ const AppShell = memo(function AppShell() {
   return (
     <VerticalProvider>
       <OrientationProvider>
-        <ResponsiveShell />
+        <MemoryGradeProvider>
+          <ResponsiveShell />
+        </MemoryGradeProvider>
       </OrientationProvider>
     </VerticalProvider>
   );

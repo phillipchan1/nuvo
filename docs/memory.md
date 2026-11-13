@@ -6,7 +6,7 @@ committed), which covered time only; Rhythm is now §5, the first chapter of Mem
 [Nuvo Memory](https://claude.ai/artifact/F3yNgHaJe5DHTR3LGLAiuZ) (the indicator and the
 panel) · [Your Rhythm](https://claude.ai/artifact/X34HaYSanSSeV4eYuK8x2W) (time memories
 on the Schedule, in Plan the week and at first run; its observations are computed from
-the example data in the page). Its four open calls were settled by Phil on 2026-11-13 (§12). **Direction for what comes next — four sources, three tiers, the portrait, and the outcomes that prove it is getting better — is §13 (D-197), not built.** On acceptance: a decision
+the example data in the page). Its four open calls were settled by Phil on 2026-11-13 (§12). **What comes next is §13 (D-197): four sources, three tiers, the portrait, and the outcomes that prove it is getting better. Partly built 2026-11-13** (§13.6). On acceptance: a decision
 entry, glossary entries (§9), and the ledger notes in §2.
 
 Builds on: [`plan-the-week-v2.md`](./plan-the-week-v2.md) §6 (the planner's memory: the
@@ -304,7 +304,7 @@ uses* tab, filtered to the planner.
 
 ## 13 · Getting better — sources, tiers, the portrait, and how we know (direction, 2026-11-13)
 
-**Status: direction, not built (D-197).** Prototype (private, example data — a teacher's account at weeks 1, 4, 12 and 26): [Memory v2](https://claude.ai/artifact/PMjH44KT6yEiVPB1upToJy). Asked by Phil the same day: should the domain's
+**Status: partly built (D-197, 2026-11-13) — see §13.6 for what is and isn't.** Prototype (private, example data — a teacher's account at weeks 1, 4, 12 and 26): [Memory v2](https://claude.ai/artifact/PMjH44KT6yEiVPB1upToJy). Asked by Phil the same day: should the domain's
 context move into Memory, how much should be picked up quietly versus asked, what visual says
 "I know you" (the eight-week portrait doesn't), and — because we're outcome-based — what
 outcomes prove Nuvo is *showing* it knows you and *getting better at predicting what you need,
@@ -405,3 +405,40 @@ built, not discovered after.
 4. **Told**, from the chat (the chat may propose one; you keep it — §7 still holds).
 5. **The portrait and the predicted week** replace the heat map as the page's hero once there
    are kept memories to write it from.
+
+### 13.6 · What was built (2026-11-13), and how it differs from the above
+
+Built the same day, after the operator read the long prototype: *"this looks really long as one
+scrolling section… actions I need to take, confirmation that it's learning me, less reading."*
+So the page was reworked as it was built:
+
+- **Two faces in the frame's tabs: Now · Everything.** *Now* is the headline ("Nuvo knows N things
+  about your week"), the **portrait as pills** rather than a paragraph (kept solid and bold, asking
+  dashed, watching dotted and faint; each pill opens its full sentence and evidence — a Popover on
+  desktop, the bottom Sheet on a phone), **To answer** (this week's questions), **how it's doing**
+  (three counts) with **Learned lately** (the last three things kept), and the **predicted week**.
+  *Everything* holds every memory in full, what counts as work, **You told Nuvo** (each domain's
+  kind, charter and intention, read-only), the eight-week heat map as evidence, and the trust
+  controls. On a phone the questions come straight after the headline.
+- **The log is a ring in `user_settings.memory.graded`, not a table** (the last 200 outcomes:
+  surface, outcome, a short title, the memories that shaped it). It rides the offline outbox and the
+  Cloudflare copy with no migration — the reason D-194 used one column. It becomes a table when the
+  cross-account counts (*Answered*, *Sure means sure*) are decided, since those need queries.
+  Pure rules in `lib/memoryGrade.ts`; the page's read in `lib/memoryRead.ts` (shared by the hook and
+  the `?memory` harness).
+- **Graded today: Draft the path and Memory's own questions.** A drafted step kept untouched is
+  *kept*; renamed, resized or another version is *edited*; dropped or discarded is *dropped*; steps
+  replaced by a steer are *edited*; steps left waiting when the list closes are *ignored*. Keep / Not
+  true on a question grade *kept* / *dropped*. Plan the week's composition and capture's domain are
+  not graded yet.
+- **Shown, with honest gates:** *Kept as drafted* waits for 20 resolved drafted steps and says how
+  many so far. *Would have drawn it* counts last week's own timed events against blocks of memories
+  kept **before** last Monday, and waits for four weeks with events and one thing kept. *Never twice*
+  shows a dash: no correction chapter exists yet, and a number there would be invented.
+- **The question budget is enforced everywhere questions appear** — the page, Plan the week's rail
+  and the phone's Plan the week card: two answers a week spend it, the rest say "N more next week".
+- **Not built from §13:** the Said/Seen/Corrected/Told source chips, *Used quietly*, *Your words*
+  (`domains.context` still lives on the domain), *From the chat*, the "from Memory" marks on other
+  surfaces, and the two "ours" outcomes. `Learning` and `Questions` are exported components so a
+  Nuvo sidebar (being discussed) can carry the same proof and asks.
+

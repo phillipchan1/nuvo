@@ -6840,8 +6840,21 @@ evidence voice — they grade Nuvo, never you, so N-04 holds.
 which Memory's "never leaves your account" line forbids today. They leave as counts only, and
 the line changes to say so, or they don't ship.
 
-*Status: direction, not built. Glossary entries (Said, Seen, Corrected, Told, Used quietly, You
-told Nuvo, the outcome names) wait until a surface shows them.*
+*Status: partly built (2026-11-13) — [`memory.md`](../memory.md) §13.6. **Reworked as it was built**,
+on the operator's read of the long prototype ("actions I need to take, confirmation that it's
+learning me, less reading"): Memory's page is two tabs, **Now** (headline, the portrait as pills,
+To answer, three counts and Learned lately, the predicted week) and **Everything** (every memory,
+You told Nuvo, the evidence, the trust controls); on a phone the questions follow the headline.
+**Storage deviates from the spec, on purpose:** the log is a 200-entry ring in
+`user_settings.memory.graded`, not a widened `plan_signals` table — it rides the outbox and the
+Cloudflare copy with no migration; a table comes with the cross-account counts. Graded: Draft the
+path's steps (kept / edited / dropped / ignored) and Memory's questions. *Kept as drafted* and *Would
+have drawn it* are live behind honest gates; *Never twice* shows a dash until a correction chapter
+exists. The two-a-week budget holds on the page, Plan the week's rail and the phone card. Pure
+rules `lib/memoryGrade.ts`, the read `lib/memoryRead.ts`, tests `tests/memory-grade.test.ts`. Driven
+at `?memory` (lived-in and `&account=fresh`) on desktop and at 375px — not on a live account.
+**Not run:** `npm run perf` (no signed-in dev account in the worktree). **Not built:** source chips,
+Used quietly, Your words, From the chat, from-Memory marks, the "ours" outcomes.*
 
 **D-195 · 2026-11-13 · The site follows Instrument, keeps Fraunces for its headlines, and sells
 Memory.** *(Asked by the operator: "make those same updates to the marketing website… I do really

@@ -9,17 +9,37 @@
 import { useMemo, useState } from "react";
 import { MemoryPageView, type MemoryApi } from "./MemoryPage";
 import { MemoryIcon } from "./MemoryIcon";
-import { describe, sectionOf, addDaysISO, type MemoryAnswer } from "../../lib/memory";
-import type { MemoryItem } from "../../hooks/useMemory";
+import { describe, sectionOf, addDaysISO, blocksOf, chipOf, clauseOf, labelOf, type MemoryAnswer } from "../../lib/memory";
+import { readMemoryFace, type MemoryItem } from "../../lib/memoryRead";
+import { appendGraded, type Graded, type GradeIn } from "../../lib/memoryGrade";
+import type { Observation } from "../../../supabase/functions/_shared/memory/rhythm";
 import { readRhythm, windowOf, type RhythmEvent } from "../../../supabase/functions/_shared/memory/rhythm";
 import { todayISO } from "../../lib/dates";
 
 const DOMAINS = [
-  { id: "school", name: "School", kind: "work" as const, kindStored: true },
-  { id: "swim", name: "Swimming", kind: "discipline" as const, kindStored: true },
-  { id: "home", name: "Home", kind: "stewardship" as const, kindStored: true },
-  { id: "choir", name: "Choir", kind: "community" as const, kindStored: true },
+  { id: "school", name: "School", kind: "work" as const, kindStored: true, color: "#2f63c9", charter: "Teaching Year 9 and 10 science, and what the school asks of me.", intention: "Leave school at school." },
+  { id: "swim", name: "Swimming", kind: "discipline" as const, kindStored: true, color: "#0b7f86", charter: "Two swims a week, every week.", intention: "" },
+  { id: "home", name: "Home", kind: "stewardship" as const, kindStored: true, color: "#5b7a22", charter: "", intention: "" },
+  { id: "choir", name: "Choir", kind: "community" as const, kindStored: true, color: "#8a6a12", charter: "The Wednesday choir and its concerts.", intention: "" },
 ];
+
+/** Forty drafted steps graded: the first twenty 9 kept, the last twenty 14 (§13.4). */
+function gradedFixture(today: string): Graded[] {
+  const out: GradeIn[] = [];
+  const keptIn = (i: number) => (i < 20 ? i % 20 < 9 : (i - 20) % 20 < 14);
+  for (let i = 0; i < 40; i++)
+    out.push({ s: "path", o: keptIn(i) ? "kept" : i % 3 ? "edited" : "dropped", at: `${addDaysISO(today, -60 + i)}T12:00:00.000Z`, t: `Step ${i + 1}` });
+  return appendGraded([], out);
+}
+
+/** What a Keep stores, the way useMemory stores it: the clause and the shape travel with the answer. */
+function keptAnswer(o: Observation, at: string, workLabel: string, statement: string, evidence: string): MemoryAnswer {
+  return {
+    key: o.key, answer: "kept", at, area: "Time", statement, evidence, source: "From your calendar", uses: [],
+    clause: clauseOf(o, "kept"), chip: chipOf(o, workLabel), blocks: blocksOf(o), label: labelOf(o, workLabel), kind: o.kind,
+    domainId: o.kind === "habit" ? o.domainId : null,
+  };
+}
 
 function fixture(today: string): { events: RhythmEvent[]; tasks: { title: string; createdDay: string }[] } {
   const win = windowOf(today);
@@ -52,7 +72,9 @@ function fixture(today: string): { events: RhythmEvent[]; tasks: { title: string
 export default function MemoryHarness() {
   const today = todayISO();
   const [open, setOpen] = useState(true);
-  const [answers, setAnswers] = useState<MemoryAnswer[]>([]);
+  const lived = new URLSearchParams(location.search).get("account") !== "fresh";
+  const [answersState, setAnswers] = useState<MemoryAnswer[] | null>(null);
+  const [gradedState, setGraded] = useState<Graded[] | null>(null);
   const [learning, setLearning] = useState(true);
 
   const fx = useMemo(() => fixture(today), [today]);
@@ -73,6 +95,18 @@ export default function MemoryHarness() {
     return readRhythm({ today, events, tasks, workDomainIds: work, repeatingTitles: [], fallbackHours: { startMin: 480, endMin: 990 } });
   }, [today, fx, work]);
 
+  // A lived-in account kept its hours and its swim three weeks ago.
+  const seeded = useMemo(() => {
+    if (!lived) return [];
+    const at = `${addDaysISO(today, -21)}T09:00:00.000Z`;
+    return observations
+      .filter((o) => o.kind === "hours" || (o.kind === "habit" && o.title === "Swim"))
+      .map((o) => keptAnswer(o, at, "School", describe(o, { domainName: () => null, currentHours: { startMin: 480, endMin: 990 } }).statement, `${o.hits} of ${o.of}`));
+  }, [lived, observations, today]);
+  const answers = answersState ?? seeded;
+  const graded = gradedState ?? (lived ? gradedFixture(today) : []);
+  const grade = (g: GradeIn[]) => setGraded(appendGraded(graded, g));
+
   const ctx = { domainName: (id: string | null) => DOMAINS.find((d) => d.id === id)?.name ?? null, currentHours: { startMin: 480, endMin: 990 } };
   const items: MemoryItem[] = [
     ...(learning ? observations : []).flatMap((o) => {
@@ -89,7 +123,9 @@ export default function MemoryHarness() {
     })),
   ];
 
-  const answer = (item: MemoryItem, kind: "kept" | "refused"): MemoryAnswer => ({
+  const answer = (item: MemoryItem, kind: "kept" | "refused"): MemoryAnswer => kind === "kept" && item.observation
+    ? { ...keptAnswer(item.observation, new Date().toISOString(), "School", item.described.statement, item.described.evidence), source: `${item.described.source} · kept today`, uses: item.described.uses, forget: item.described.forget }
+    : ({
     key: item.key,
     answer: kind,
     at: new Date().toISOString(),
@@ -101,30 +137,44 @@ export default function MemoryHarness() {
     uses: kind === "kept" ? item.described.uses : [],
     forget: item.described.forget,
   });
+  const asked = (item: MemoryItem, o: GradeIn["o"]) => item.section === "new" && grade([{ s: "question", o, t: item.described.title }]);
+
+  const face = readMemoryFace({
+    today,
+    items,
+    observations,
+    answers,
+    graded,
+    workNames: DOMAINS.filter((d) => work.includes(d.id)).map((d) => d.name),
+    events: fx.events,
+    learning,
+  });
 
   const memory: MemoryApi = {
     available: true,
     learning,
     items,
-    keep: async (item) => setAnswers((a) => [...a.filter((x) => x.key !== item.key), answer(item, "kept")]),
-    refuse: (item) => setAnswers((a) => [...a.filter((x) => x.key !== item.key), answer(item, "refused")]),
-    forget: async (item) => setAnswers((a) => a.map((x) => (x.key === item.key ? { ...x, answer: "refused" as const, until: addDaysISO(today, 56), source: "Forgotten today" } : x))),
-    askAgain: (item) => setAnswers((a) => a.filter((x) => x.key !== item.key)),
+    keep: async (item) => { asked(item, "kept"); setAnswers([...answers.filter((x) => x.key !== item.key), answer(item, "kept")]); },
+    refuse: (item) => { asked(item, "dropped"); setAnswers([...answers.filter((x) => x.key !== item.key), answer(item, "refused")]); },
+    forget: async (item) => setAnswers(answers.map((x) => (x.key === item.key ? { ...x, answer: "refused" as const, until: addDaysISO(today, 56), source: "Forgotten today" } : x))),
+    askAgain: (item) => setAnswers(answers.filter((x) => x.key !== item.key)),
     setLearning,
     markSeen: () => {},
-    forgetAll: () => setAnswers([]),
+    forgetAll: () => { setAnswers([]); setGraded([]); },
     needsWorkDomain: work.length === 0,
     domains: DOMAINS as unknown as MemoryApi["domains"],
     workDomainIds: work,
     setWorkDomain: (id: string, on = true) => setWork((w) => (on ? [...new Set([...w, id])] : w.filter((x) => x !== id))),
     heat,
     reading: { weeks: 8, events: fx.events.length, written: fx.tasks.length },
+    ...face,
   };
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--ground)", padding: 16, display: "grid", alignContent: "start", gap: 12 }}>
       <p className="text-caption" style={{ color: "var(--muted)", margin: 0 }}>
-        ?memory — the real detectors and panel over a fixture account (a teacher). {observations.length} observations.
+        ?memory — the real detectors and page over a fixture account (a teacher), {lived ? "lived in: hours and swim kept three weeks ago, 40 drafts graded" : "fresh: nothing kept, nothing graded"}.{" "}
+        <a href={lived ? "?memory&account=fresh" : "?memory"}>{lived ? "Fresh account" : "Lived-in account"}</a>
       </p>
       <button className="sb-item" style={{ width: 200 }} onClick={() => setOpen(true)} aria-label="Memory">
         <span className="sb-icon sb-icon-dot"><MemoryIcon /></span>

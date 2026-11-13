@@ -110,6 +110,12 @@ been used to argue against things it doesn't forbid.
 | **Memory** | What Nuvo has learned about you and you answered: kept (Nuvo plans with it) or refused (it stops looking). Its own page, opened from the sidebar's foot (the ✦ in a ring) or the phone chat's header; sections **Noticed** · **What Nuvo uses** · **Still watching** · **You said no**. Answers in `user_settings.memory`; observations are recomputed, never stored. [`memory.md`](../memory.md), D-194 |
 | **Rhythm** | Memory's time chapter: your working hours, habits, open windows and chores you keep writing, read from 8 weeks of your own calendar and tasks. `_shared/memory/rhythm.ts`. (The Schedule's Rhythm *view* is spec, not built.) |
 | **Still watching** | An observation Nuvo isn't sure of yet. Shown only inside Memory, with what it still needs; nothing else in the app acts on it. |
+| **Portrait** | The top of Memory's page: what Nuvo knows about your week as pills — kept (solid), asking (dashed), watching (faint). Each opens its full sentence and evidence. [`memory.md`](../memory.md) §13, D-197 |
+| **To answer** | Memory's questions for this week: two a week at most, everywhere they appear (the page, Plan the week). The rest wait for next week. D-197 |
+| **Kept as drafted** | Of the last 20 drafted steps you answered, how many you kept exactly as Nuvo drafted them. Grades Nuvo, never you; a count, never a percentage (N-04). Waits for 20. D-197 |
+| **Would have drawn it** | Of last week's hours in your own events, how many fell inside what you'd kept before the week began. Waits for four weeks of calendar and one thing kept. D-197 |
+| **Never twice** | Corrections you no longer have to make because Nuvo kept them. Shows a dash until Nuvo learns from corrections (not built). D-197 |
+| **You told Nuvo** | Memory's read-only list of what you wrote on your domains (kind, charter, intention); you change it on the domain. D-197 |
 | **Calibration** | Proven weekly pace from the last 4 weeks of completed blocks, capping the composer (+15% room to grow). No history → it says so. `src/lib/calibration.ts` |
 | **The Find** | At most **one** evidence-backed discovery per Review. Hidden when nothing is notable — never manufactured. |
 | **Actuals** | What actually happened (completed blocks, attended events, activity sources) vs. tasks (what was planned). |

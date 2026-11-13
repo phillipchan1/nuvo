@@ -319,12 +319,13 @@ function PlanRailWeek({
   const RANK = { hours: 0, window: 1, habit: 2, repeat: 3 } as const;
   const memNoticed = useMemo(
     () =>
-      (mem?.items ?? [])
-        .filter((i) => i.section === "new" && i.observation && i.described.confidence === "sure")
+      // This week's questions only — Memory's budget of two a week (§13.2) holds here too.
+      (mem?.questions ?? [])
+        .filter((i) => i.observation && i.described.confidence === "sure")
         .sort((a, b) => RANK[a.observation!.kind] - RANK[b.observation!.kind])
         .slice(0, Math.max(0, 3 - noticed.length)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mem?.items, noticed.length],
+    [mem?.questions, noticed.length],
   );
   const stack = useMemo<StackItem[]>(() => {
     const out: StackItem[] = [];

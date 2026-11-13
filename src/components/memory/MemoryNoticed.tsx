@@ -12,8 +12,9 @@ const RANK = { hours: 0, window: 1, habit: 2, repeat: 3 } as const;
 
 export default function MemoryNoticed() {
   const memory = useMemory();
-  const items = memory.items
-    .filter((i) => i.section === "new" && i.observation && i.described.confidence === "sure")
+  // This week's questions only — two a week at most (§13.2).
+  const items = memory.questions
+    .filter((i) => i.observation && i.described.confidence === "sure")
     .sort((a, b) => RANK[a.observation!.kind] - RANK[b.observation!.kind])
     .slice(0, 3);
   if (!memory.available || !items.length) return null;
