@@ -1,56 +1,102 @@
-// On Deck — the GROOM face. The same deck you time-box, flipped 90°: instead of
-// project bars laid across weeks, every in-flight project stands up as its own
-// column with a live outline you pour steps into. No modal, no one-at-a-time
-// flow — the board *is* the groom surface, and the readiness meter fills as you
-// type. Thinnest-first, so the rawest projects present themselves on the left.
+// Projects → Groom — the Board (D-190). The same deck you time-box, sorted
+// instead by how shaped each project is: a column per readiness tier — Raw ·
+// Grooming · Ready, and Parked when anything rests — each with a 32px header
+// (the readiness pie · the tier · its count · ＋ on Raw). Every project is one
+// kit Card: its title, the three checks it has met (filled) and is missing
+// (faint), and a meta row of chips.
 //
-// Reuse-first: the lanes (axes / readyTier / pace) come straight from readOnDeck;
-// the steps are the app's one task list (TaskListView — the real row, the shared
-// keys, the one add box). This file only arranges them into a wall.
+// Pick a card and it opens in place into its workbench — the brief that closes
+// Defined, the steps (the app's one task list: TaskListView — the real row,
+// the shared keys, the one add box) that close Planned, Park and Ship. No
+// modal, no one-at-a-time flow: the board *is* the groom surface. A picked
+// card holds its column while you work in it (so typing a step never moves it
+// out from under the caret) and settles into its new one when you let go.
+//
+// Reuse-first: the lanes (axes / readyTier / pace) come straight from
+// readOnDeck. This file only arranges them.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "../Icon";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { format } from "date-fns";
+import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, tasksOf, type VerticalData } from "../../lib/vertical";
 import { type OnDeckLane, type ReadyTier } from "../../lib/onDeck";
 import { hasRoutingSignal, proofreadOutcome, suggestDomain, type DomainSuggestion, type ProofreadResult } from "../../lib/groomAI";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
 import { ProjectShipAssess } from "../record/ShipAssess";
 import type { Task } from "../../lib/types";
 import TaskListView from "../tasks/TaskListView";
 import { byManualOrder } from "../../lib/taskOrder";
 import { useAllTasks } from "../../hooks/useTasks";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { Button, Card, Chip, ChipButton, Dot, EmptyState, IconButton, Readiness, type ReadinessStep } from "../kit";
+import { isTypingIn } from "../../lib/a11y";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
+type Tier = Exclude<ReadyTier, "done">;
 
-const TIER_COLOR: Record<ReadyTier, string> = {
-  ready: READY,
-  grooming: CAUTION,
-  raw: "var(--line-strong)",
-  parked: "var(--muted)",
-  done: READY,
-};
+const COLUMNS: { tier: Tier; label: string; step: ReadinessStep | null }[] = [
+  { tier: "raw", label: "Raw", step: 0 },
+  { tier: "grooming", label: "Grooming", step: 2 },
+  { tier: "ready", label: "Ready", step: 3 },
+  { tier: "parked", label: "Parked", step: null },
+];
 
-function readyText(l: OnDeckLane): string {
-  if (l.readyTier === "parked") return "Parked";
-  if (l.readyTier === "ready") return "3/3";
-  if (l.readyTier === "raw") return "0/3";
-  return `${l.readyCount}/3`;
+/** One check on a card: met is a filled box, missing is a faint one. */
+export function CardCheck({ met, children, title }: { met: boolean; children: React.ReactNode; title?: string }) {
+  return (
+    <div className="fl-check" data-missing={met ? undefined : ""} title={title}>
+      <span className="fl-check-box" aria-hidden />
+      <span>{children}</span>
+      <span className="sr-only">{met ? " — done" : " — missing"}</span>
+    </div>
+  );
 }
 
-function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLane; onOpen: (id: string) => void }) {
+/** A board column's 32px head: the readiness pie · the name · the count · ＋. */
+export function ColumnHead({
+  step,
+  label,
+  count,
+  onAdd,
+  addLabel,
+}: {
+  step: ReadinessStep | null;
+  label: string;
+  count: number;
+  onAdd?: () => void;
+  addLabel?: string;
+}) {
+  return (
+    <div className="fl-colh">
+      {step == null ? <Dot color="var(--faint)" shape="round" /> : <Readiness step={step} />}
+      <span>{label}</span>
+      <span className="k-count">{count}</span>
+      <span className="k-grow" />
+      {onAdd && <IconButton size="xs" label={addLabel ?? "Add"} icon={<Icon name="plus" size={14} />} onClick={onAdd} />}
+    </div>
+  );
+}
+
+function GroomCard({
+  data,
+  lane,
+  selected,
+  onSelect,
+  onOpen,
+}: {
+  data: VerticalData;
+  lane: OnDeckLane;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: (id: string) => void;
+}) {
   const store = useVertical();
   const { onContextMenu, menu } = useRecordContextMenu();
   const p = lane.project;
-  const accent = domainById(data, p.domainId)?.color ?? "var(--accent)";
-  const color = TIER_COLOR[lane.readyTier];
+  const domain = domainById(data, p.domainId);
   // d.tasks is built pre-sorted by sort_order, so filtering preserves order.
   const existing = tasksOf(data, p.id).filter((t) => t.status !== "done");
-  const axes = [lane.axes.defined, lane.axes.planned, lane.axes.fits];
 
   // The steps are real tasks, drawn by the app's one list (TaskListView).
   const { data: allTasks } = useAllTasks();
@@ -95,7 +141,7 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     setDomSug(null);
   };
 
-  // ── AI · proofread the brief (on-demand — you press "tighten") ───────────────
+  // ── AI · proofread the brief (on-demand — you press "Tighten") ───────────────
   const [proof, setProof] = useState<ProofreadResult | null>(null);
   const [proofBusy, setProofBusy] = useState(false);
   const tighten = async () => {
@@ -121,212 +167,257 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     setProof(null);
   };
 
-  // pace is a separate axis — a red due-pill, never mixed into readiness color.
-  const slipping = lane.pace.read === "overdue" || lane.pace.read === "behind" || lane.pace.read === "stalled";
+  // The date is a fact on the card; only a passed one wears a tone (the pace
+  // read — behind, stalled — is never printed on a card).
   const due = p.targetDate ? format(new Date(p.targetDate + "T00:00:00"), "MMM d") : null;
+  const overdue = lane.pace.read === "overdue";
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.key !== "Enter") return;
+    e.preventDefault();
+    if (selected) onOpen(p.id);
+    else onSelect();
+  };
 
   return (
-    <div
+    <Card
+      interactive
+      selected={selected}
+      tabIndex={0}
+      aria-label={p.name}
+      aria-expanded={selected}
+      data-parked={parked ? "" : undefined}
+      data-leaving={completing ? "" : undefined}
+      className="fl-card"
+      onClick={(e) => {
+        // a click from a portal (the record menu, the ship sheet) isn't a pick
+        if (!selected && e.currentTarget.contains(e.target as Node)) onSelect();
+      }}
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest("button, input, textarea, [contenteditable=true], [role=textbox]")) return;
+        onOpen(p.id);
+      }}
+      onKeyDown={onKeyDown}
       onFocus={() => setActive(true)}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(false);
       }}
       onPointerDown={() => setActive(true)}
       onContextMenu={onContextMenu("project", p.id)}
-      className="fast flex w-[404px] shrink-0 flex-col gap-4 rounded-2xl border bg-surface px-6 pb-5 pt-5"
-      style={{
-        borderColor: "var(--line)",
-        boxShadow: "var(--shadow-lift)",
-        opacity: completing ? 0 : parked ? 0.6 : 1,
-        transform: completing ? "scale(.97)" : undefined,
-      }}
     >
       {menu}
-      {/* left domain rail — color demarcation of the area (identity); readiness
-          lives in the meter below (status). */}
-      <div className="relative">
-        <span className="absolute -left-5 top-0.5 h-[calc(100%-2px)] w-[3px] rounded-full" style={{ background: accent, opacity: 0.9 }} />
-        <div className="flex items-start gap-2">
-          {/* done check — "I've finished this, stop grooming it" (mirrors Schedule) */}
-          <button
-            onClick={markDone}
-            aria-label="Mark project complete"
-            title="Finished — mark complete"
-            className={`group/chk fast mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${completing ? "bloom" : ""}`}
-            style={completing ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
-          >
-            <Icon name="check" size={10} className={completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: completing ? "#fff" : READY }} />
-          </button>
-          <span className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
-          <button
-            onClick={() => onOpen(p.id)}
-            className="fast min-w-0 flex-1 text-left text-body font-semibold leading-snug text-ink hover:underline"
-            title="Open the record"
-          >
-            {p.name}
-          </button>
-          {slipping && due && (
-            <span
-              className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
-              style={{ background: "color-mix(in srgb, var(--signal) 14%, transparent)", color: "var(--signal)" }}
-            >
-              ⚠ {due}
-            </span>
-          )}
-        </div>
-        <div className="mt-0.5 pl-[26px] text-micro text-muted">
-          {domainById(data, p.domainId)?.name ?? "no area"}
-          {parked ? " · parked" : lane.readyTier === "raw" ? " · raw idea" : ""}
-        </div>
-      </div>
-
-      {/* AI · auto domain chip — surfaces only when the area is empty + there's
-          signal (title + brief/steps). Proposes; the tap assigns. */}
-      {domSug && !p.domainId && (
-        <div
-          className="flex items-center gap-2 rounded-lg border border-dashed px-2.5 py-1.5"
-          style={{ borderColor: "var(--accent)", background: "var(--accent-soft)" }}
-        >
-          <span style={{ color: "var(--accent)" }}>✦</span>
-          <button onClick={acceptDomain} className="fast min-w-0 flex-1 text-left text-caption text-ink" title={domSug.reason || "Assign this area"}>
-            Looks like <span className="font-semibold" style={{ color: "var(--accent)" }}>{domSug.domain.name}</span>
-            <span className="text-muted"> · tap to assign</span>
-          </button>
-          <button onClick={() => { setDomDismissed(true); setDomSug(null); }} className="fast shrink-0 px-1 text-micro text-muted hover:text-ink" title="Dismiss">✕</button>
-        </div>
-      )}
-
-      {/* the brief — one line that defines done; closes the Defined axis. Plain
-          text so iOS dictation works; saves on blur. "✦ tighten" proofreads it. */}
-      <div className="group/brief relative -mx-1">
-        <textarea
-          value={outcome}
-          onChange={(e) => setOutcome(e.target.value)}
-          onBlur={saveOutcome}
-          rows={3}
-          placeholder="Define what done looks like…"
-          className="fast w-full resize-none rounded-lg bg-transparent px-1.5 py-1.5 pr-14 text-body leading-relaxed text-ink outline-none transition-colors placeholder:italic placeholder:text-muted/45 hover:bg-surface-2/60 focus:bg-surface-2"
-        />
-        {outcome.trim() && !proof && (
-          <button
-            onClick={() => void tighten()}
-            disabled={proofBusy}
-            className="mono fast absolute right-1 top-1 rounded px-1.5 py-0.5 text-micro font-medium opacity-0 transition-opacity hover:underline group-hover/brief:opacity-100 group-focus-within/brief:opacity-100 disabled:opacity-50"
-            style={{ color: "var(--accent)" }}
-            title="Proofread — tighten this line"
-          >
-            {proofBusy ? "…" : "✦ tighten"}
-          </button>
-        )}
-        {proof && (
-          <div className="mt-1.5 rounded-lg border px-2.5 py-2" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)" }}>
-            {proof.changed ? (
-              <>
-                <div className="text-caption leading-snug text-ink">{proof.tightened}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <button onClick={acceptTighten} className="tap fast rounded-md px-2.5 py-1 text-micro font-medium text-white" style={{ background: "var(--accent)" }}>Use this</button>
-                  <button onClick={() => setProof(null)} className="tap fast rounded-md px-2 py-1 text-micro text-muted hover:text-ink">Keep mine</button>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-micro text-muted">✦ Already sharp — nothing to tighten.</span>
-                <button onClick={() => setProof(null)} className="fast text-micro text-muted hover:text-ink">ok</button>
-              </div>
-            )}
+      <div className="fl-card-top">
+        <div className="fl-card-title">{p.name}</div>
+        {selected && (
+          <div className="fl-card-acts">
+            <IconButton size="xs" label="Open the record" icon={<ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />} onClick={() => onOpen(p.id)} />
           </div>
         )}
       </div>
 
-      {/* the definition-of-ready meter — Defined · Planned · Fits */}
-      <div>
-        <div className="flex items-center gap-2.5">
-          {/* A met criterion is always READY (--ok), never the lane's own tier
-              colour. It used to inherit the tier, which meant a project in the
-              "grooming" tier drew its MET pips in --warn — so amber read as
-              "achieved" here and as "9d overdue", "no outcome", "at risk"
-              everywhere else in the app. It also made the "raw" tier illegible:
-              met pips were --line-strong against --line unmet, a distinction of
-              almost nothing. The tier still speaks, in the count beside the
-              meter — which is the right place for a status, and leaves the pips
-              to answer only "is this one done". */}
-          <span className="flex flex-1 items-center gap-1.5">
-            {axes.map((met, i) => (
-              <span key={i} className="h-[7px] flex-1 rounded-full transition-colors" style={{ background: met ? READY : "var(--line)" }} />
-            ))}
-          </span>
-          <span className="mono text-caption font-semibold" style={{ color: lane.readyTier === "raw" ? "var(--muted)" : color }}>
-            {readyText(lane)}
-          </span>
-        </div>
-        <div className="mt-1 flex justify-between text-micro uppercase tracking-wide text-muted">
-          <span>defined</span>
-          <span>planned</span>
-          <span>fits</span>
-        </div>
+      <div className="fl-checks">
+        <CardCheck met={lane.axes.defined}>Outcome</CardCheck>
+        <CardCheck met={lane.axes.planned}>{existing.length ? `Steps · ${existing.length}` : "Steps"}</CardCheck>
+        {lane.axes.fits !== null && <CardCheck met={lane.axes.fits}>Fits a week</CardCheck>}
       </div>
 
-      {/* The steps — the app's one task list: the real row, the shared keys
-          (while this card has focus), drag to reorder, and the one add box.
-          Each line lands as you press ↵, so the meter above moves as you type;
-          "30m" in the line sets its length. */}
-      <TaskListView
-        className="max-h-[46vh] overflow-y-auto"
-        tasks={stepRows}
-        context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
-        keyboard={active}
-        onOpen={(t) => openOverlay("task-record", t.id)}
-        flush
-        composerPlaceholder={existing.length ? "Add a step…" : "What's the first move?"}
-      />
-
-      {/* footer — the ready badge, or what's still missing */}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        {lane.readyTier === "ready" ? (
-          <span className="flex items-center gap-1.5 text-caption font-medium" style={{ color: READY }}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} /> Ready to pull in
-          </span>
-        ) : (
-          <span className="text-micro text-muted">{lane.gaps.map((g) => g.label).join(" · ") || " "}</span>
+      <div className="fl-meta">
+        {domain ? <Chip dot={domain.color}>{domain.name}</Chip> : <Chip>No domain</Chip>}
+        {due && (
+          <Chip tone={overdue ? "danger" : "neutral"} icon={<Icon name="calendar" size={12} />}>
+            {due}
+          </Chip>
         )}
-        <button
-          onClick={togglePark}
-          className="fast tap shrink-0 rounded-md px-2 py-1 text-micro font-medium text-muted hover:text-ink"
-          title={parked ? "Bring it back onto the deck" : "Park it — rest it without finishing"}
-        >
-          {parked ? "Unpark" : "Park"}
-        </button>
       </div>
+
+      {selected && (
+        <div className="fl-work" onClick={(e) => e.stopPropagation()}>
+          {/* AI · auto domain chip — surfaces only when the area is empty + there's
+              signal (title + brief/steps). Proposes; the tap assigns. */}
+          {domSug && !p.domainId && (
+            <div className="fl-propose" data-dashed="">
+              <div>
+                Looks like <span className="font-semibold">{domSug.domain.name}</span>
+              </div>
+              <div className="fl-work-row">
+                <Button kind="primary" size="xs" className="tap" onClick={acceptDomain} title={domSug.reason || "Assign this area"}>
+                  File it there
+                </Button>
+                <Button kind="ghost" size="xs" className="tap" onClick={() => { setDomDismissed(true); setDomSug(null); }}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* the brief — one line that defines done; closes the Defined axis. Plain
+              text so iOS dictation works; saves on blur. Tighten proofreads it. */}
+          <div className="grid gap-1.5">
+            <div className="k-field fl-tight" data-multiline="">
+              <textarea
+                value={outcome}
+                onChange={(e) => setOutcome(e.target.value)}
+                onBlur={saveOutcome}
+                rows={3}
+                placeholder="What does done look like?"
+                aria-label="Outcome"
+              />
+            </div>
+            {outcome.trim() && !proof && (
+              <div className="fl-work-row">
+                <Button
+                  kind="ghost"
+                  size="xs"
+                  icon={<Icon name="sparkles" size={13} />}
+                  onClick={() => void tighten()}
+                  disabled={proofBusy}
+                  title="Proofread — tighten this line"
+                >
+                  {proofBusy ? "Tightening…" : "Tighten"}
+                </Button>
+              </div>
+            )}
+            {proof && (
+              <div className="fl-propose">
+                {proof.changed ? (
+                  <>
+                    <div>{proof.tightened}</div>
+                    <div className="fl-work-row">
+                      <Button kind="primary" size="xs" className="tap" onClick={acceptTighten}>Use this</Button>
+                      <Button kind="ghost" size="xs" className="tap" onClick={() => setProof(null)}>Keep mine</Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="fl-work-row">
+                    <span className="text-caption">Already sharp.</span>
+                    <span className="k-grow" />
+                    <Button kind="ghost" size="xs" onClick={() => setProof(null)}>OK</Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* The steps — the app's one task list: the real row, the shared keys
+              (while this card has focus), drag to reorder, and the one add box.
+              Each line lands as you press ↵, so the checks above move as you type;
+              "30m" in the line sets its length. */}
+          <TaskListView
+            className="max-h-[46vh] overflow-y-auto"
+            tasks={stepRows}
+            context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
+            keyboard={active}
+            onOpen={(t) => openOverlay("task-record", t.id)}
+            flush
+            composerPlaceholder={existing.length ? "Add a step…" : "What's the first move?"}
+          />
+
+          <div className="fl-work-row">
+            <Button
+              kind="secondary"
+              size="xs"
+              className="tap"
+              icon={<Icon name="check" size={13} />}
+              onClick={markDone}
+              aria-label="Mark project complete"
+              title="Finished — ship it"
+            >
+              Ship
+            </Button>
+            <Button
+              kind="ghost"
+              size="xs"
+              className="tap"
+              onClick={togglePark}
+              title={parked ? "Bring it back onto the deck" : "Park it — rest it without finishing"}
+            >
+              {parked ? "Unpark" : "Park"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* An unfiled project with a suggestion says so on the card at rest too —
+          the one proposal worth seeing before you pick it. */}
+      {!selected && domSug && !p.domainId && (
+        <div className="fl-meta" onClick={(e) => e.stopPropagation()}>
+          <ChipButton data-tone="accent" icon={<Icon name="sparkles" size={12} />} onClick={acceptDomain} title={domSug.reason || "Assign this area"}>
+            File in {domSug.domain.name}
+          </ChipButton>
+        </div>
+      )}
 
       {shipping && (
         <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} onShipped={() => setCompleting(true)} />
       )}
-    </div>
+    </Card>
   );
 }
 
 export default function GroomWall({ lanes, onOpen }: { lanes: OnDeckLane[]; onOpen: (id: string) => void }) {
   const { data } = useVertical();
-  // Thinnest-first: the rawest projects sort left so the deck presents the ones
-  // begging to be shaped. Parked settle to the right (resting by choice). Done
-  // projects have nothing to groom — they drop off this face entirely.
-  const ordered = [...lanes].filter((l) => l.readyTier !== "done").sort((a, b) => {
-    const pk = (l: OnDeckLane) => (l.readyTier === "parked" ? 1 : 0);
-    return pk(a) - pk(b) || a.readyCount - b.readyCount || a.project.name.localeCompare(b.project.name);
-  });
+  const { openFloorModal } = useAppNavigation();
+  // The picked card, and the column it was in when picked — it stays there
+  // while you work in it, then settles where it now belongs.
+  const [picked, setPicked] = useState<{ id: string; tier: Tier } | null>(null);
 
-  if (ordered.length === 0) {
-    return (
-      <div className="mt-4 rounded-xl border border-line px-4 py-10 text-center text-caption text-muted">
-        Nothing to groom
-      </div>
-    );
-  }
+  const items = lanes.filter((l) => l.readyTier !== "done");
+  const tierOf = (l: OnDeckLane): Tier => (picked?.id === l.project.id ? picked.tier : (l.readyTier as Tier));
+  // Thinnest-first inside a column: the rawest present themselves at the top.
+  const thin = (a: OnDeckLane, b: OnDeckLane) => a.readyCount - b.readyCount || a.project.name.localeCompare(b.project.name);
+  const columns = COLUMNS.map((c) => ({ ...c, lanes: items.filter((l) => tierOf(l) === c.tier).sort(thin) })).filter(
+    (c) => c.tier !== "parked" || c.lanes.length > 0,
+  );
+
+  // A picked project that left the board (shipped) lets go of its column.
+  useEffect(() => {
+    if (picked && !items.some((l) => l.project.id === picked.id)) setPicked(null);
+  }, [items, picked]);
+
+  // Esc lets go of the card (never while typing in it).
+  useEffect(() => {
+    if (!picked) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || isTypingIn(e.target)) return;
+      setPicked(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked]);
+
+  if (items.length === 0) return <EmptyState>Nothing to groom</EmptyState>;
 
   return (
-    <div className="mt-5 flex gap-6 overflow-x-auto pb-3">
-      {ordered.map((l) => (
-        <GroomCard key={l.project.id} data={data} lane={l} onOpen={onOpen} />
+    <div
+      className="fl-board"
+      style={{ ["--fl-n" as string]: columns.length }}
+      onClick={(e) => {
+        // a click on the board itself (not a card, not a portal) lets go of the picked one
+        const t = e.target as HTMLElement;
+        if (e.currentTarget.contains(t) && !t.closest(".fl-card")) setPicked(null);
+      }}
+    >
+      {columns.map((c) => (
+        <section key={c.tier} className="fl-col" aria-label={c.label}>
+          <ColumnHead
+            step={c.step}
+            label={c.label}
+            count={c.lanes.length}
+            onAdd={c.tier === "raw" ? () => openFloorModal("new-project") : undefined}
+            addLabel="New project"
+          />
+          {c.lanes.length === 0 && <div className="fl-col-empty">None</div>}
+          {c.lanes.map((l) => (
+            <GroomCard
+              key={l.project.id}
+              data={data}
+              lane={l}
+              selected={picked?.id === l.project.id}
+              onSelect={() => setPicked({ id: l.project.id, tier: l.readyTier as Tier })}
+              onOpen={onOpen}
+            />
+          ))}
+        </section>
       ))}
     </div>
   );

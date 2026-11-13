@@ -1,68 +1,32 @@
-// The persistent initiative-readiness strip — the sibling of ProjectReadinessStrip,
-// pinned above every initiative view (On Deck · Groom · Table). "How ready are the
-// bets to be worked?" is the same answer regardless of which face you're on. Reads the
-// SAME lens axes the deck/Groom cards route by (lib/lenses.ts, "initiative"), so the
-// roll-up and the per-card grooming meters can never disagree. Grooming is the action,
-// so off the Groom view the strip offers a jump into it.
+// The head of Initiatives → Groom (D-190), the sibling of ProjectReadinessStrip:
+// one hero that states how many bets are left to shape — the Raw and Grooming
+// columns of the board below, read from the same lanes and the same tiering
+// (`useInitiativeGroomLanes` · `initiativeTier`) — and Block time to groom.
 
-import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
-import { isProjectInFlight } from "../../lib/vertical";
-import { lensGaps } from "../../lib/lenses";
-import { PROJECT_STATUS_COLORS } from "./parts";
-import { READY } from "./ReadinessBanner";
 import GroomingSessionAction from "./GroomingSessionAction";
-
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
+import { useInitiativeGroomLanes } from "./InitiativeGroomFloor";
+import { initiativeTier } from "../ondeck/InitiativeGroomWall";
+import { Button } from "../kit";
 
 export default function InitiativeReadinessStrip({ onGroom }: { onGroom?: () => void }) {
   const { data } = useVertical();
-  const now = useMemo(() => new Date(), []);
-
-  const inflight = data.initiatives.filter((i) => isProjectInFlight(i.status));
-  const needy = inflight.filter((i) => lensGaps(data, "initiative", i, now).length > 0);
-  const total = inflight.length;
-  const groomed = total - needy.length;
-
-  if (total === 0) return null;
-  const allSet = needy.length === 0;
+  const lanes = useInitiativeGroomLanes();
+  if (lanes.length === 0) return null;
+  const tiers = lanes.map((l) => initiativeTier(data, l));
+  const toShape = tiers.filter((t) => t === "raw" || t === "grooming").length;
 
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-line bg-surface-2 px-4 py-2.5">
-      <span className="section-label !p-0">Readiness</span>
-      <span className="flex items-center gap-1.5 text-caption">
-        <span className="h-2 w-2 rounded-full" style={{ background: READY }} />
-        <span className="text-ink">
-          <span className="mono font-medium">{groomed}/{total}</span> groomed
-        </span>
-      </span>
-      {!allSet && (
-        <span className="flex items-center gap-1.5 text-caption">
-          <span className="h-2 w-2 rounded-full" style={{ background: CAUTION }} />
-          <span className="text-ink">
-            <span className="mono font-medium">{needy.length}</span> need shaping
-          </span>
-        </span>
+    <div className="fl-head">
+      <div className="fl-head-main">
+        <h1 className="text-display masthead">{toShape === 0 ? "All groomed" : `${toShape} to shape`}</h1>
+      </div>
+      {onGroom && toShape > 0 && (
+        <Button kind="secondary" size="sm" onClick={onGroom}>
+          Groom {toShape}
+        </Button>
       )}
-      <div className="flex-1" />
-      {allSet ? (
-        <span className="text-caption text-muted">Every bet is measurable and ready.</span>
-      ) : (
-        <>
-          {onGroom ? (
-            <button
-              onClick={onGroom}
-              className="tap fast rounded-lg px-2.5 py-1 text-caption font-medium"
-              style={{ color: "var(--accent)" }}
-            >
-              Groom {needy.length} →
-            </button>
-          ) : (
-            <span className="text-caption text-muted">Thinnest first, below.</span>
-          )}
-          <GroomingSessionAction kind="initiative" />
-        </>
-      )}
+      <GroomingSessionAction kind="initiative" />
     </div>
   );
 }

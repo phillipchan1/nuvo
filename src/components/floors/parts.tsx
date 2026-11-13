@@ -444,7 +444,7 @@ export function InlineDate({ value, onChange, placeholder = "Set date" }: { valu
         <button
           type="button"
           onClick={() => onChange(null)}
-          className="k-btn"
+          className="k-btn fl-date-clear"
           data-kind="ghost"
           data-size="xs"
           data-icon=""
@@ -494,7 +494,7 @@ export function StatusPill<T extends string>({
         aria-expanded={open}
         title="Change status"
       >
-        <Dot color={color} shape="round" size="sm" />
+        <Dot color={color} shape="round" />
         <span>{label}</span>
       </button>
       <FloatingMenu open={open} anchorRef={btnRef} minWidth={150} onClose={() => setOpen(false)}>
@@ -507,7 +507,7 @@ export function StatusPill<T extends string>({
             className="k-mi"
             aria-checked={o === value}
           >
-            <Dot color={colors[o] ?? "var(--muted)"} shape="round" size="sm" />
+            <Dot color={colors[o] ?? "var(--muted)"} shape="round" />
             <span className="k-mi-label">{labels?.[o] ?? o}</span>
             {o === value && <Icon name="check" size={14} className="k-mi-check" />}
           </button>

@@ -1,67 +1,73 @@
-// Initiatives — the GROOM face. The initiative sibling of GroomWall (projects): the same
-// deck you time-box onto quarters, flipped 90° into a wall of columns you shape in
-// place. Where a project grooms on Defined · Planned · Fits (steps), an initiative grooms
-// on its PRIME property — the OKR: a crisp Objective (the Defined axis) and
-// measurable Key Results (the Measured axis). No modal, no one-at-a-time flow; the
-// board IS the groom surface, and the readiness meter fills as you define + measure.
+// Initiatives → Groom — the Board (D-190), the initiative sibling of GroomWall.
+// A column per tier — Raw · Grooming · Ready, and Parked — by how many of an
+// initiative's two axes are met: Defined (a crisp objective with a finish
+// line) and Measured (key results). Each initiative is one kit Card: its title,
+// the two checks met (filled) and missing (faint), a meta row of chips.
+//
+// Pick a card and it opens in place into its workbench — the objective, the
+// finish line, the key results (editable, each judged on demand), Nuvo's draft,
+// Park and Done. A picked card holds its column while you work in it.
 //
 // Reuse-first: lanes come from allOpenInitiativeLanes (the same OKR/tending/lens
 // rollup the quarter deck reads); the AI draft is the deployed draftOKRs (no new
-// edge); the domain link is the deterministic suggestDomainForInitiative. This file
-// only arranges them into a wall.
+// edge); the domain link is the deterministic suggestDomainForInitiative. This
+// file only arranges them.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowUpRight } from "lucide-react";
+import { format, startOfQuarter } from "date-fns";
 import { Icon } from "../Icon";
-import { startOfQuarter } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useRecordContextMenu } from "../RecordContextMenu";
-import {
-  domainById,
-  initiativeAttainment,
-  krPct,
-  type VerticalData,
-} from "../../lib/vertical";
-import {
-  quarterEndISO,
-  suggestDomainForInitiative,
-  type InitiativeLane,
-  type InitiativeLaneState,
-} from "../../lib/initiativeDeck";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { domainById, initiativeAttainment, krPct, type VerticalData } from "../../lib/vertical";
+import { quarterEndISO, suggestDomainForInitiative, type InitiativeLane } from "../../lib/initiativeDeck";
 import { initiativeReadinessAxes } from "../../lib/lenses";
 import { draftOKRs, type DraftKR } from "../../lib/draftOKRs";
 import { judgeKeyResults, type KRRating, type KRVerdict } from "../../lib/judgeOKRs";
-import { PROJECT_STATUS_COLORS, Bar, InlineNumber, InlineText } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
+import { Bar, InlineNumber, InlineText } from "../floors/parts";
+import { isTypingIn } from "../../lib/a11y";
 import DomainSymbol from "../domain/DomainSymbol";
+import { Button, Card, Chip, EmptyState, IconButton, type ReadinessStep } from "../kit";
+import { CardCheck, ColumnHead } from "./GroomWall";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
+export type InitiativeTier = "raw" | "grooming" | "ready" | "parked";
 
-// Tier color mirrors the quarter deck's card language: teal on-track, amber
-// needs-work, faint idea, muted parked.
-const STATE_COLOR: Record<InitiativeLaneState, string> = {
-  on_track: READY,
-  at_risk: "var(--signal)",
-  needs_okrs: CAUTION,
-  needs_shaping: CAUTION,
-  idea: "var(--line-strong)",
-  parked: "var(--muted)",
-  done: READY,
-};
+/** How groomed an initiative is: parked, else by how many of its two axes
+ *  (Defined · Measured) are met — 0 raw, 1 grooming, 2 ready. The Groom head's
+ *  hero counts with this too, so the hero and the columns agree. */
+export function initiativeTier(data: VerticalData, lane: InitiativeLane): InitiativeTier {
+  if (lane.state === "parked") return "parked";
+  const a = initiativeReadinessAxes(data, lane.initiative);
+  const met = (a.defined ? 1 : 0) + (a.planned ? 1 : 0);
+  return met === 2 ? "ready" : met === 1 ? "grooming" : "raw";
+}
+
+const COLUMNS: { tier: InitiativeTier; label: string; step: ReadinessStep | null }[] = [
+  { tier: "raw", label: "Raw", step: 0 },
+  { tier: "grooming", label: "Grooming", step: 2 },
+  { tier: "ready", label: "Ready", step: 3 },
+  { tier: "parked", label: "Parked", step: null },
+];
 
 function InitiativeGroomCard({
   data,
   lane,
+  selected,
+  onSelect,
   onOpen,
 }: {
   data: VerticalData;
   lane: InitiativeLane;
+  selected: boolean;
+  onSelect: () => void;
   onOpen: (id: string) => void;
 }) {
   const store = useVertical();
   const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
-  const accent = domainById(data, i.domainId)?.color ?? "var(--accent)";
-  const color = STATE_COLOR[lane.state];
+  const domain = domainById(data, i.domainId);
+  const accent = domain?.color ?? "var(--accent)";
   const axes = initiativeReadinessAxes(data, i); // { defined, planned(measured), fits:null }
   const attainment = initiativeAttainment(data, i);
 
@@ -113,11 +119,11 @@ function InitiativeGroomCard({
       });
       if (res.objective && norm(res.objective) !== norm(objective)) setProposedObj(res.objective);
       if (!res.keyResults.length && (!res.objective || norm(res.objective) === norm(objective))) {
-        setAiNote("Nothing to add — these measures look complete.");
+        setAiNote("Nothing to add.");
       }
     } catch (e) {
       console.warn("[groom] OKR draft failed", e);
-      setAiNote("Couldn't reach Nuvo — set the measures by hand.");
+      setAiNote("Couldn't reach Nuvo.");
     } finally {
       setDrafting(false);
     }
@@ -170,297 +176,326 @@ function InitiativeGroomCard({
     }
   };
 
-  const slipping = lane.overdue || lane.atRisk.atRisk;
-  const meter = [axes.defined, axes.planned]; // Defined · Measured
-  const readyN = meter.filter(Boolean).length;
+  const due = i.targetDate ? format(new Date(i.targetDate + "T00:00:00"), "MMM d") : null;
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.key !== "Enter") return;
+    e.preventDefault();
+    if (selected) onOpen(i.id);
+    else onSelect();
+  };
 
   return (
-    <div
-      onContextMenu={onContextMenu("initiative", i.id)}
-      className="fast flex w-[404px] shrink-0 flex-col gap-4 rounded-2xl border bg-surface px-6 pb-5 pt-5"
-      style={{
-        borderColor: "var(--line)",
-        boxShadow: "var(--shadow-lift)",
-        opacity: completing ? 0 : parked ? 0.6 : 1,
-        transform: completing ? "scale(.97)" : undefined,
+    <Card
+      interactive
+      selected={selected}
+      tabIndex={0}
+      aria-label={i.name}
+      aria-expanded={selected}
+      data-parked={parked ? "" : undefined}
+      data-leaving={completing ? "" : undefined}
+      className="fl-card"
+      onClick={(e) => {
+        // a click from a portal (the record menu) isn't a pick
+        if (!selected && e.currentTarget.contains(e.target as Node)) onSelect();
       }}
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest("button, input, textarea, [contenteditable=true], [role=textbox]")) return;
+        onOpen(i.id);
+      }}
+      onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu("initiative", i.id)}
     >
       {menu}
-      {/* header — domain rail, done check, name, slip pill */}
-      <div className="relative">
-        <span className="absolute -left-5 top-0.5 h-[calc(100%-2px)] w-[3px] rounded-full" style={{ background: accent, opacity: 0.9 }} />
-        <div className="flex items-start gap-2">
-          <button
-            onClick={markDone}
-            aria-label="Mark initiative complete"
-            title="Finished — mark complete"
-            className={`group/chk fast mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${completing ? "bloom" : ""}`}
-            style={completing ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
-          >
-            <Icon name="check" size={10} className={completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: completing ? "#fff" : READY }} />
-          </button>
-          <span className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
-          <button
-            onClick={() => onOpen(i.id)}
-            className="fast min-w-0 flex-1 text-left text-body font-semibold leading-snug text-ink hover:underline"
-            title="Open the record"
-          >
-            {i.name}
-          </button>
-          {slipping && (
-            <span
-              className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
-              style={{ background: "color-mix(in srgb, var(--signal) 14%, transparent)", color: "var(--signal)" }}
-            >
-              ⚠ {lane.overdue ? "overdue" : "at risk"}
-            </span>
-          )}
-        </div>
-        <div className="mt-0.5 pl-[26px] text-micro text-muted">
-          {domainById(data, i.domainId)?.name ?? "no area"}
-          {parked ? " · parked" : lane.state === "idea" ? " · no finish line" : lane.state === "needs_okrs" ? " · needs OKRs" : ""}
-        </div>
-      </div>
-
-      {/* domain link — deterministic keyword match, one tap */}
-      {suggestion && (
-        <button
-          onClick={() => setDomain(suggestion.domain.id)}
-          className="flex items-center gap-2 rounded-lg border border-dashed px-2.5 py-1.5 text-left"
-          style={{ borderColor: suggestion.domain.color, background: `${suggestion.domain.color}12` }}
-          title="Link this initiative to its area"
-        >
-          <DomainSymbol value={suggestion.domain.icon} size={14} />
-          <span className="min-w-0 flex-1 text-caption text-ink">
-            Looks like <span className="font-semibold" style={{ color: suggestion.domain.color }}>{suggestion.domain.name}</span>
-            <span className="text-muted"> · tap to link</span>
-          </span>
-        </button>
-      )}
-
-      {/* the Objective — one line that defines the win; closes the Defined axis */}
-      <div className="-mx-1">
-        <textarea
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-          onBlur={saveObjective}
-          rows={2}
-          placeholder="The outcome, in one crisp line — what winning looks like…"
-          className="fast w-full resize-none rounded-lg bg-transparent px-1.5 py-1.5 text-body leading-relaxed text-ink outline-none transition-colors placeholder:italic placeholder:text-muted/45 hover:bg-surface-2/60 focus:bg-surface-2"
-        />
-        {proposedObj && (
-          <div className="mt-1 flex items-center gap-2 rounded-md border border-dashed px-2.5 py-1" style={{ borderColor: `color-mix(in srgb, ${accent} 45%, var(--line))` }}>
-            <span className="min-w-0 flex-1 py-0.5 text-caption leading-relaxed text-ink/80">{proposedObj}</span>
-            <button onClick={acceptObj} className="tap fast shrink-0 rounded-md px-2 py-0.5 text-caption font-medium text-white active:scale-95" style={{ background: accent }}>✓</button>
-            <button onClick={() => setProposedObj(null)} className="tap fast shrink-0 px-1 text-caption text-muted/70 hover:text-ink">✕</button>
+      <div className="fl-card-top">
+        <div className="fl-card-title">{i.name}</div>
+        {selected && (
+          <div className="fl-card-acts">
+            <IconButton size="xs" label="Open the record" icon={<ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />} onClick={() => onOpen(i.id)} />
           </div>
         )}
       </div>
 
-      {/* the readiness meter — Defined · Measured (an initiative's two axes) + attainment */}
-      <div>
-        <div className="flex items-center gap-2.5">
-          {/* A met criterion is always READY (--ok), never the lane's own tier
-              colour. It used to inherit the tier, which meant a project in the
-              "grooming" tier drew its MET pips in --warn — so amber read as
-              "achieved" here and as "9d overdue", "no outcome", "at risk"
-              everywhere else in the app. It also made the "raw" tier illegible:
-              met pips were --line-strong against --line unmet, a distinction of
-              almost nothing. The tier still speaks, in the count beside the
-              meter — which is the right place for a status, and leaves the pips
-              to answer only "is this one done". */}
-          <span className="flex flex-1 items-center gap-1.5">
-            {meter.map((met, k) => (
-              <span key={k} className="h-[7px] flex-1 rounded-full transition-colors" style={{ background: met ? READY : "var(--line)" }} />
-            ))}
-          </span>
-          <span className="mono text-caption font-semibold" style={{ color: readyN === 2 ? color : "var(--muted)" }}>
-            {readyN}/2
-          </span>
-        </div>
-        <div className="mt-1 flex justify-between text-micro uppercase tracking-wide text-muted">
-          <span>defined</span>
-          <span>measured</span>
-        </div>
+      <div className="fl-checks">
+        <CardCheck met={axes.defined}>Objective</CardCheck>
+        <CardCheck met={axes.planned}>{i.keyResults.length ? `Key results · ${i.keyResults.length}` : "Key results"}</CardCheck>
       </div>
 
-      {/* finish line — quick-set when an initiative has none (Defined needs one) */}
-      {!i.targetDate && (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            value=""
-            onChange={(e) => setDue(e.target.value || null)}
-            className="tap fast rounded-md border border-line bg-bg/40 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
-          />
-          <button
-            onClick={() => setDue(quarterEndISO(startOfQuarter(new Date())))}
-            className="tap fast rounded-md border border-dashed px-2.5 py-1.5 text-caption text-muted hover:text-ink"
-            style={{ borderColor: `color-mix(in srgb, ${accent} 45%, var(--line))` }}
-          >
-            ✦ this quarter's end
-          </button>
-        </div>
-      )}
+      <div className="fl-meta">
+        {domain ? <Chip dot={domain.color}>{domain.name}</Chip> : <Chip>No domain</Chip>}
+        {due && (
+          <Chip tone={lane.overdue ? "danger" : "neutral"} icon={<Icon name="calendar" size={12} />}>
+            {due}
+          </Chip>
+        )}
+        {attainment != null && <span className="fl-meta-fact">{attainment}% attained</span>}
+        {lane.atRisk.atRisk && !lane.overdue && <Chip title={lane.atRisk.reasons[0]}>At risk</Chip>}
+      </div>
 
-      {/* the key results — the prime property, editable in place, each judged */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between">
-          <span className="section-label !p-0">Key results</span>
-          {i.keyResults.length > 0 && (
-            <span className="flex items-center gap-2.5">
-              {attainment != null && <span className="mono text-micro" style={{ color: accent }}>{attainment}% attained</span>}
-              <button
-                onClick={() => void judge()}
-                disabled={judging}
-                className="mono fast text-micro font-medium disabled:opacity-50"
-                style={{ color: "var(--accent)" }}
-                title="Nuvo grades each measure on how measurable, specific, and feasible it is"
-              >
-                {judging ? "✦ judging…" : "✦ judge"}
-              </button>
-            </span>
-          )}
-        </div>
-
-        {i.keyResults.map((kr) => {
-          const v = verdicts[kr.id];
-          return (
-            <div key={kr.id} className="group/kr rounded-lg border border-line bg-surface-2/50 px-2.5 py-2">
+      {selected && (
+        <div className="fl-work" onClick={(e) => e.stopPropagation()}>
+          {/* domain link — deterministic keyword match, one tap */}
+          {suggestion && (
+            <div className="fl-propose" data-dashed="">
               <div className="flex items-center gap-2">
-                <InlineText value={kr.name} onChange={(x) => store.updateKeyResult(i.id, kr.id, { name: x })} className="min-w-0 flex-1 text-caption font-medium" />
-                <button
-                  onClick={() => store.deleteKeyResult(i.id, kr.id)}
-                  tabIndex={-1}
-                  className="fast shrink-0 px-1 text-micro text-muted/50 opacity-0 transition-opacity hover:text-signal group-hover/kr:opacity-100"
-                  title="Delete result"
-                >
-                  ✕
-                </button>
+                <span className="inline-flex" style={{ color: suggestion.domain.color }}>
+                  <DomainSymbol value={suggestion.domain.icon} size={14} />
+                </span>
+                <span>
+                  Looks like <span className="font-semibold">{suggestion.domain.name}</span>
+                </span>
               </div>
-              <div className="mono mt-1 flex items-center gap-1 text-micro text-muted">
-                <InlineNumber value={kr.baseline} onChange={(x) => store.updateKeyResult(i.id, kr.id, { baseline: x })} />
-                <span>→</span>
-                <span style={{ color: accent }}><InlineNumber value={kr.current} onChange={(x) => store.updateKeyResult(i.id, kr.id, { current: x })} /></span>
-                <span>→</span>
-                <InlineNumber value={kr.target} onChange={(x) => store.updateKeyResult(i.id, kr.id, { target: x })} />
-                <InlineText value={kr.unit} onChange={(x) => store.updateKeyResult(i.id, kr.id, { unit: x })} placeholder="unit" className="ml-1 w-10" />
+              <div className="fl-work-row">
+                <Button kind="primary" size="xs" className="tap" onClick={() => setDomain(suggestion.domain.id)} title="Link this initiative to its area">
+                  Link it
+                </Button>
               </div>
-              <Bar pct={krPct(kr)} color={accent} />
-              {v && <VerdictLine verdict={v} />}
             </div>
-          );
-        })}
-
-        {/* AI-proposed key results — dashed accent rows, accept or dismiss */}
-        {proposedKRs.map((kr, k) => (
-          <div key={`p${k}:${kr.name}`} className="rounded-lg border border-dashed px-2.5 py-2" style={{ borderColor: `color-mix(in srgb, ${accent} 45%, var(--line))` }}>
-            <div className="flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-caption font-medium text-ink/85">{kr.name}</div>
-                <div className="mono mt-0.5 text-micro text-muted">{kr.baseline} → {kr.target}{kr.unit}</div>
-              </div>
-              <button onClick={() => acceptKR(k)} className="tap fast shrink-0 rounded-md px-2 py-0.5 text-caption font-medium text-white active:scale-95" style={{ background: accent }}>✓</button>
-              <button onClick={() => setProposedKRs((p) => p.filter((_, x) => x !== k))} className="tap fast shrink-0 px-1 text-caption text-muted/70 hover:text-ink">✕</button>
-            </div>
-          </div>
-        ))}
-
-        {i.keyResults.length === 0 && proposedKRs.length === 0 && (
-          <div className="rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-micro text-muted">
-            No key results yet
-          </div>
-        )}
-
-        {/* inline composer — type a measure, ⏎ commits it (fast, like project steps) */}
-        <div className="flex items-center gap-1.5 rounded-lg border border-dashed border-line px-2.5 py-1.5 focus-within:border-accent">
-          <span className="shrink-0 text-micro" style={{ color: accent }}>◇</span>
-          <input
-            value={newKR}
-            onChange={(e) => setNewKR(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addResult(); } }}
-            placeholder="Add a measure…  ⏎ to add"
-            className="fast min-w-0 flex-1 bg-transparent text-caption text-ink outline-none placeholder:text-muted/50"
-          />
-          {newKR.trim() && (
-            <button onClick={addResult} className="mono fast shrink-0 text-micro font-medium" style={{ color: accent }}>add ⏎</button>
           )}
-        </div>
-        {proposedKRs.length > 1 && (
-          <button onClick={acceptAllKRs} className="tap fast mono self-start text-micro font-medium" style={{ color: accent }}>accept all suggestions</button>
-        )}
-      </div>
 
-      {/* footer — draft with Nuvo / ready badge + Park */}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        {axes.defined && axes.planned ? (
-          <span className="flex items-center gap-1.5 text-caption font-medium" style={{ color: READY }}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} /> Measured & defined
-          </span>
-        ) : (
-          <button
-            onClick={() => void draft()}
-            disabled={drafting}
-            className="tap fast rounded-lg px-3 py-1.5 text-caption font-medium text-white active:scale-[.98] disabled:opacity-50"
-            style={{ background: "var(--accent)" }}
-            title="Nuvo drafts the objective + measurable key results — you adjudicate each"
-          >
-            {drafting ? "✦ drafting…" : "✦ Draft OKRs"}
-          </button>
-        )}
-        <button
-          onClick={togglePark}
-          className="fast tap shrink-0 rounded-md px-2 py-1 text-micro font-medium text-muted hover:text-ink"
-          title={parked ? "Bring it back onto the deck" : "Park it — rest it without finishing"}
-        >
-          {parked ? "Unpark" : "Park"}
-        </button>
-      </div>
-      {aiNote && <div className="-mt-2 text-micro text-muted">{aiNote}</div>}
-    </div>
+          {/* the Objective — one line that defines the win; closes the Defined axis */}
+          <div className="grid gap-1.5">
+            <div className="k-field fl-tight" data-multiline="">
+              <textarea
+                value={objective}
+                onChange={(e) => setObjective(e.target.value)}
+                onBlur={saveObjective}
+                rows={2}
+                placeholder="What winning looks like"
+                aria-label="Objective"
+              />
+            </div>
+            {proposedObj && (
+              <div className="fl-propose" data-dashed="">
+                <div>{proposedObj}</div>
+                <div className="fl-work-row">
+                  <Button kind="primary" size="xs" className="tap" onClick={acceptObj}>Use this</Button>
+                  <Button kind="ghost" size="xs" className="tap" onClick={() => setProposedObj(null)}>Keep mine</Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* finish line — quick-set when an initiative has none (Defined needs one) */}
+          {!i.targetDate && (
+            <div className="fl-work-row">
+              <div className="k-field" data-size="sm" style={{ width: "auto" }}>
+                <input type="date" value="" onChange={(e) => setDue(e.target.value || null)} aria-label="Finish line" />
+              </div>
+              <Button kind="ghost" size="sm" className="tap" onClick={() => setDue(quarterEndISO(startOfQuarter(new Date())))}>
+                This quarter's end
+              </Button>
+            </div>
+          )}
+
+          {/* the key results — the prime property, editable in place, each judged */}
+          <div className="grid gap-2">
+            <div className="fl-work-row">
+              <span className="fl-label">Key results</span>
+              <span className="k-grow" />
+              {i.keyResults.length > 0 && (
+                <Button
+                  kind="ghost"
+                  size="xs"
+                  icon={<Icon name="sparkles" size={13} />}
+                  onClick={() => void judge()}
+                  disabled={judging}
+                  title="Nuvo grades each measure on how measurable, specific, and feasible it is"
+                >
+                  {judging ? "Judging…" : "Judge"}
+                </Button>
+              )}
+            </div>
+
+            {i.keyResults.map((kr) => {
+              const v = verdicts[kr.id];
+              return (
+                <div key={kr.id} className="fl-kr">
+                  <div className="flex items-center gap-2">
+                    <InlineText value={kr.name} onChange={(x) => store.updateKeyResult(i.id, kr.id, { name: x })} className="min-w-0 flex-1 text-caption font-medium" />
+                    <IconButton
+                      className="fl-kr-del"
+                      size="xs"
+                      label="Delete result"
+                      icon={<Icon name="close" size={12} />}
+                      tabIndex={-1}
+                      onClick={() => store.deleteKeyResult(i.id, kr.id)}
+                    />
+                  </div>
+                  <div className="fl-kr-nums">
+                    <InlineNumber value={kr.baseline} onChange={(x) => store.updateKeyResult(i.id, kr.id, { baseline: x })} />
+                    <span>→</span>
+                    <span style={{ color: "var(--ink)" }}>
+                      <InlineNumber value={kr.current} onChange={(x) => store.updateKeyResult(i.id, kr.id, { current: x })} />
+                    </span>
+                    <span>→</span>
+                    <InlineNumber value={kr.target} onChange={(x) => store.updateKeyResult(i.id, kr.id, { target: x })} />
+                    <InlineText value={kr.unit} onChange={(x) => store.updateKeyResult(i.id, kr.id, { unit: x })} placeholder="unit" className="ml-1 min-w-[2.5rem] whitespace-nowrap" />
+                  </div>
+                  <Bar pct={krPct(kr)} color={accent} h={1} />
+                  {v && <VerdictLine verdict={v} />}
+                </div>
+              );
+            })}
+
+            {/* Nuvo-proposed key results — dashed, accept or dismiss */}
+            {proposedKRs.map((kr, k) => (
+              <div key={`p${k}:${kr.name}`} className="fl-propose" data-dashed="">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{kr.name}</div>
+                    <div className="fl-kr-nums mt-1">
+                      {kr.baseline} → {kr.target}
+                      {kr.unit}
+                    </div>
+                  </div>
+                  <Button kind="primary" size="xs" className="tap" onClick={() => acceptKR(k)}>Add</Button>
+                  <IconButton size="xs" label="Dismiss" icon={<Icon name="close" size={12} />} onClick={() => setProposedKRs((p) => p.filter((_, x) => x !== k))} />
+                </div>
+              </div>
+            ))}
+
+            {/* inline composer — type a measure, ⏎ commits it (fast, like project steps) */}
+            <div className="k-field" data-size="sm">
+              <Icon name="plus" size={14} />
+              <input
+                value={newKR}
+                onChange={(e) => setNewKR(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addResult(); } }}
+                placeholder={i.keyResults.length ? "Add a measure" : "The first measure"}
+                aria-label="Add a key result"
+              />
+            </div>
+            {proposedKRs.length > 1 && (
+              <div className="fl-work-row">
+                <Button kind="secondary" size="xs" className="tap" onClick={acceptAllKRs}>Add all {proposedKRs.length}</Button>
+              </div>
+            )}
+          </div>
+
+          <div className="fl-work-row">
+            {!(axes.defined && axes.planned) && (
+              <Button
+                kind="primary"
+                size="xs"
+                className="tap"
+                icon={<Icon name="sparkles" size={13} />}
+                onClick={() => void draft()}
+                disabled={drafting}
+                title="Nuvo drafts the objective + measurable key results — you adjudicate each"
+              >
+                {drafting ? "Drafting…" : "Draft OKRs"}
+              </Button>
+            )}
+            <Button
+              kind="secondary"
+              size="xs"
+              className="tap"
+              icon={<Icon name="check" size={13} />}
+              onClick={markDone}
+              aria-label="Mark initiative complete"
+              title="Finished — mark complete"
+            >
+              Done
+            </Button>
+            <Button
+              kind="ghost"
+              size="xs"
+              className="tap"
+              onClick={togglePark}
+              title={parked ? "Bring it back onto the deck" : "Park it — rest it without finishing"}
+            >
+              {parked ? "Unpark" : "Park"}
+            </Button>
+          </div>
+          {aiNote && <p className="fl-note">{aiNote}</p>}
+        </div>
+      )}
+    </Card>
   );
 }
 
-// One measure's verdict — a colored line under its bar: teal strong, amber fair,
-// red weak, with the one-line critique.
+// One measure's verdict — a line under its bar: the rating as a mark, then the
+// one-line critique.
 function VerdictLine({ verdict }: { verdict: KRVerdict }) {
   const tone: Record<KRRating, { color: string; label: string }> = {
-    strong: { color: READY, label: "strong" },
-    fair: { color: CAUTION, label: "fair" },
-    weak: { color: "var(--signal)", label: "weak" },
+    strong: { color: "var(--ok)", label: "Strong" },
+    fair: { color: "var(--warn)", label: "Fair" },
+    weak: { color: "var(--danger)", label: "Weak" },
   };
   const t = tone[verdict.rating];
   return (
-    <div className="mono mt-1.5 flex items-start gap-1.5 text-micro">
-      <span className="shrink-0 font-medium" style={{ color: t.color }}>✦ {t.label}</span>
-      {verdict.note && <span className="min-w-0 text-muted">— {verdict.note}</span>}
+    <div className="fl-verdict">
+      <b style={{ color: t.color }}>{t.label}</b>
+      {verdict.note && <span className="min-w-0">{verdict.note}</span>}
     </div>
   );
 }
 
 export default function InitiativeGroomWall({ lanes, onOpen }: { lanes: InitiativeLane[]; onOpen: (id: string) => void }) {
   const { data } = useVertical();
-  // Thinnest-first: the rawest initiatives sort left (fewest axes met), parked settle
-  // right (resting by choice).
-  const met = (l: InitiativeLane) => initiativeReadinessAxes(data, l.initiative);
-  const score = (l: InitiativeLane) => [met(l).defined, met(l).planned].filter(Boolean).length;
-  const ordered = [...lanes].sort((a, b) => {
-    const pk = (l: InitiativeLane) => (l.state === "parked" ? 1 : 0);
-    return pk(a) - pk(b) || score(a) - score(b) || a.initiative.name.localeCompare(b.initiative.name);
-  });
+  const { openFloorModal } = useAppNavigation();
+  const [picked, setPicked] = useState<{ id: string; tier: InitiativeTier } | null>(null);
 
-  if (ordered.length === 0) {
-    return (
-      <div className="mt-4 rounded-xl border border-line px-4 py-10 text-center text-caption text-muted">
-        Nothing to groom
-      </div>
-    );
-  }
+  const rows = lanes.map((l) => {
+    const a = initiativeReadinessAxes(data, l.initiative);
+    return { lane: l, met: (a.defined ? 1 : 0) + (a.planned ? 1 : 0), tier: initiativeTier(data, l) };
+  });
+  const tierOf = (r: (typeof rows)[number]) => (picked?.id === r.lane.initiative.id ? picked.tier : r.tier);
+  // Thinnest-first inside a column.
+  const columns = COLUMNS.map((c) => ({
+    ...c,
+    rows: rows
+      .filter((r) => tierOf(r) === c.tier)
+      .sort((a, b) => a.met - b.met || a.lane.initiative.name.localeCompare(b.lane.initiative.name)),
+  })).filter((c) => c.tier !== "parked" || c.rows.length > 0);
+
+  useEffect(() => {
+    if (picked && !lanes.some((l) => l.initiative.id === picked.id)) setPicked(null);
+  }, [lanes, picked]);
+
+  useEffect(() => {
+    if (!picked) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || isTypingIn(e.target)) return;
+      setPicked(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked]);
+
+  if (lanes.length === 0) return <EmptyState>Nothing to groom</EmptyState>;
 
   return (
-    <div className="mt-5 flex gap-6 overflow-x-auto pb-3">
-      {ordered.map((l) => (
-        <InitiativeGroomCard key={l.initiative.id} data={data} lane={l} onOpen={onOpen} />
+    <div
+      className="fl-board"
+      style={{ ["--fl-n" as string]: columns.length }}
+      onClick={(e) => {
+        const t = e.target as HTMLElement;
+        if (e.currentTarget.contains(t) && !t.closest(".fl-card")) setPicked(null);
+      }}
+    >
+      {columns.map((c) => (
+        <section key={c.tier} className="fl-col" aria-label={c.label}>
+          <ColumnHead
+            step={c.step}
+            label={c.label}
+            count={c.rows.length}
+            onAdd={c.tier === "raw" ? () => openFloorModal("new-initiative") : undefined}
+            addLabel="New initiative"
+          />
+          {c.rows.length === 0 && <div className="fl-col-empty">None</div>}
+          {c.rows.map((r) => (
+            <InitiativeGroomCard
+              key={r.lane.initiative.id}
+              data={data}
+              lane={r.lane}
+              selected={picked?.id === r.lane.initiative.id}
+              onSelect={() => setPicked({ id: r.lane.initiative.id, tier: r.tier })}
+              onOpen={onOpen}
+            />
+          ))}
+        </section>
       ))}
     </div>
   );

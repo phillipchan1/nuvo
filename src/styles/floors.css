@@ -47,7 +47,9 @@
 }
 .fl-list-head {
   position: sticky;
-  top: 0;
+  /* a sticky box clears the scroller's padding; the list sits in it, so the
+     head sticks at the panel's edge, not 28px below it */
+  top: -28px;
   z-index: 3;
   background: var(--panel);
 }
@@ -182,6 +184,11 @@ html:root .fl-tr:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(
   font-variant-numeric: tabular-nums;
 }
 .fl-cell-end { display: flex; justify-content: flex-end; }
+@media (hover: hover) {
+  .fl-tr .fl-date-clear { opacity: 0; }
+  .fl-tr:hover .fl-date-clear,
+  .fl-tr:focus-within .fl-date-clear { opacity: 1; }
+}
 
 /* the row's ⋯ rests hidden and comes up under the pointer; always there on touch */
 @media (hover: hover) {
@@ -274,6 +281,13 @@ html:root .fl-grp:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var
 }
 
 .fl-card { position: relative; text-align: left; color: var(--ink); }
+/* Selected = the accent ring + a lift. Restated here because the kit's hover
+   ring (.k-card[data-interactive]:hover) outranks its selected ring, so a
+   picked card lost its ring under the pointer that picked it. */
+.k-card.fl-card[aria-selected="true"] {
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop);
+  transform: translateY(-1px);
+}
 .fl-card[data-parked] { opacity: 0.62; }
 .fl-card[data-leaving] { opacity: 0; transform: scale(0.97); }
 html:root .fl-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent-ring); }
