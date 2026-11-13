@@ -12,6 +12,8 @@ import "./styles/frame.css";
 import "./styles/decks.css";
 // The Build floors' List, Board and Document layouts (D-190).
 import "./styles/floors.css";
+// The pool — the Schedule rail and the one task row / list / add box (D-190).
+import "./styles/rail.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

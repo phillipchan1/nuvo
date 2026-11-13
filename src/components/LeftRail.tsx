@@ -15,7 +15,7 @@ import { useTaskFilter } from "../hooks/useTaskFilter";
 import TaskFilter from "./TaskFilter";
 import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
-import { describeQuery, queryFacetCount } from "../lib/taskFilter";
+import { queryFacetCount } from "../lib/taskFilter";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
@@ -26,8 +26,8 @@ import type { ReminderAnchorKind } from "../../supabase/functions/_shared/remind
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { InboxAddressHint } from "./InboxAddress";
-import { SectionLabel } from "./ui";
 import { skipWhenAsleep } from "./KeepAlive";
+import { Button, Dot, Input, IconButton, MenuLabel, Picker, Popover, SectionHeader } from "./kit";
 import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
 import { clockEntries, type ClockEntry } from "../lib/slotRuns";
 import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
@@ -170,9 +170,9 @@ function LeftRail({
   // What renders. Differs from the preference only while squeezed.
   const railWidth = squeezed ? Math.min(railWidthPref, MIN_RAIL_WIDTH) : railWidthPref;
   const [captureError, setCaptureError] = useState<string | null>(null);
-  // Done starts collapsed — it's the quiet tail, a single line until you want it
-  // (the Loose-ends pattern). The active day work is one flat list, not sections.
-  const [todayOpen, setTodayOpen] = useState({ done: false });
+  // Every section of the day is a disclosure (the kit's SectionHeader); Done
+  // starts shut — it's the quiet tail, a single line until you want it.
+  const [todayOpen, setTodayOpen] = useState({ overdue: true, unblocked: true, clock: true, done: false });
   const toggleToday = (key: keyof typeof todayOpen) =>
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
@@ -296,12 +296,22 @@ function LeftRail({
             ],
     [tab, inboxOrdered, trashed, todaySections, clock],
   );
-  const doneIds = useMemo(() => new Set(todaySections.done.map((t) => t.id)), [todaySections.done]);
-  // Only rows that are drawn: a collapsed Done tail is in `visible` but not on
-  // screen, and an invisible row must never be in a selection or a range.
+  // Only rows that are drawn: a shut section (the Done tail, or any other the
+  // hand folded) is in `visible` but not on screen, and an invisible row must
+  // never be in a selection or a range.
+  const hiddenIds = useMemo(() => {
+    const hidden = new Set<string>();
+    if (tab !== "today") return hidden;
+    const hide = (ts: Task[]) => ts.forEach((t) => hidden.add(t.id));
+    if (!todayOpen.overdue) hide(todaySections.pinned);
+    if (!todayOpen.unblocked) hide(todaySections.unblocked);
+    if (!todayOpen.clock) hide(clock.flatMap((e) => (e.kind === "slot" ? e.open : [e.task])));
+    if (!todayOpen.done) hide(todaySections.done);
+    return hidden;
+  }, [tab, todayOpen, todaySections, clock]);
   const drawn: Task[] = useMemo(
-    () => (tab === "today" && !todayOpen.done ? visible.filter((t) => !doneIds.has(t.id)) : visible),
-    [tab, todayOpen.done, visible, doneIds],
+    () => (hiddenIds.size > 0 ? visible.filter((t) => !hiddenIds.has(t.id)) : visible),
+    [visible, hiddenIds],
   );
   const drawnIds = useMemo(() => drawn.map((t) => t.id), [drawn]);
 
@@ -732,6 +742,8 @@ function LeftRail({
       if (title) renameTask(t, title);
     },
     multiSelected: selectedIds.has(t.id),
+    // The Today face already names the day; a row still says its clock.
+    dayShown: tab === "today",
     draggable: true,
     dragging: draggingId === t.id,
     dragGroup: selectedIds.has(t.id) ? dragGroupStr : undefined,
@@ -752,13 +764,13 @@ function LeftRail({
   });
 
   // A slot as the head of its tasks (D-178). The header opens the slot; its ring
-  // picks everything inside for the bulk bar. The spine runs down the tasks so
-  // they read as inside it without a frame around them.
+  // picks everything inside for the bulk bar. A hairline in the slot's hue runs
+  // down the gutter beside its tasks, so they read as inside it without a frame.
   const renderSlotRun = (run: Extract<ClockEntry, { kind: "slot" }>) => {
     const face = slotRunFace(run, slotTitle ? slotTitle(run.slot, run.open) : run.slot.title);
     const ids = run.open.map((t) => t.id);
     return (
-      <div key={`slot:${run.slot.id}`}>
+      <div key={`slot:${run.slot.id}`} style={{ ["--slot-h" as string]: face.color }}>
         <SlotRunHeader
           slotId={run.slot.id}
           {...face}
@@ -772,7 +784,7 @@ function LeftRail({
           }}
         />
         {ids.length > 0 && (
-          <div style={{ boxShadow: `inset 3px 0 0 ${face.color}` }}>
+          <div className="slot-run-tasks">
             {run.open.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
@@ -816,6 +828,30 @@ function LeftRail({
     window.addEventListener("pointerup", onUp);
   };
 
+  // The keyed pickers (# · r · b) open beside the row they act on. Measured
+  // once per open, not per render — the rail re-renders on the clock.
+  const pickerFor = labelPickerFor ?? schedulePickerFor ?? remindPickerFor;
+  const pickerAnchor = useMemo(
+    () => (pickerFor ? rowRect(pickerFor.id) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pickerFor?.id],
+  );
+
+  // A section of the day: the kit's SectionHeader (name · count · disclosure)
+  // over its rows. Shut, its rows leave `drawn` too (see `hiddenIds`).
+  const section = (
+    key: keyof typeof todayOpen,
+    title: string,
+    count: number,
+    body: React.ReactNode,
+  ) => (
+    <section key={key} className="rail-section">
+      <SectionHeader title={title} count={count} collapsed={!todayOpen[key]} onToggle={() => toggleToday(key)} />
+      {todayOpen[key] && body}
+    </section>
+  );
+  const nothingToday = todaySections.pinned.length + todaySections.unblocked.length + clock.length === 0;
+
   return (
     <div
       ref={railRef}
@@ -831,7 +867,7 @@ function LeftRail({
           it shut in focus mode. Window drag is scoped to the titlebar strip +
           crown/tabs — the task list opts out so row drags aren't window drags. */}
       <div
-        className="relative flex h-full flex-col border-r border-line"
+        className="rail-inner relative flex h-full flex-col"
         style={{
           width: railWidth,
           opacity: collapsed ? 0 : 1,
@@ -848,13 +884,13 @@ function LeftRail({
         // pinned to the minimum there, so a drag would grab the handle and
         // move nothing — a control that visibly does nothing is worse than an
         // absent one.
-        className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed || squeezed ? "hidden" : ""}`}
+        className={`rail-resize ${collapsed || squeezed ? "hidden" : ""}`}
       />
       {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
       <div data-tauri-drag-region="deep" className="shrink-0">
-        {/* The week's plan — priorities held in view all week, crowning the rail.
-            Its header is the week door ("Plan the week"). */}
+        {/* The crown — the planner's one hero (the week's span), its fact, and
+            the week's projects. Its door is "Plan the week". */}
         <WeekPanel
           door={weekDoor}
           // ONE task grammar (see WeekPanel's header): a project's work renders
@@ -869,14 +905,14 @@ function LeftRail({
           // hand keyboard completion to whichever copy rendered last.
           //
           // `meta` is dropped too: inside a project's group the row's place is
-          // what you opened to get here, so the place tag restated the parent's
-          // name on every child — and cost each row a second line to do it.
+          // what you opened to get here.
           renderTask={(t, { action, draggable, dragData, whenShown }) => (
             <TaskRow
               key={t.id}
               {...rowProps(t)}
               ref={undefined}
               meta={undefined}
+              dayShown={false}
               draggable={draggable ?? false}
               action={action}
               whenShown={whenShown}
@@ -884,26 +920,23 @@ function LeftRail({
             />
           )}
         />
-        {/* Tabs — Today and Inbox are the day's two faces. Trash is recovery,
-            so it sits as an icon on the same strip rather than splitting the
-            row three ways (D-136). The strip carries one continuous baseline
-            so the active underline sits ON a line instead of floating between
-            the crown's divider and nothing. */}
-        <div className="flex border-b border-line">
+        {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
+            sits as an icon at the strip's end, only while it holds something
+            (D-136). Mid-drag the two faces become the two acts you can perform
+            on the row in hand. */}
+        <div className="rail-tabs">
           {(["today", "inbox"] as const).map((t) => {
             // Three states, because "you could drop here" and "you are about to"
             // are different promises: resting · armed (a compatible row is in
-            // hand) · ready (the pointer is on it, release commits).
-            // Only the tabs that are real drop acts arm — Trash is a face, not
-            // a destination (D-104). Arming it next to Inbox made a drop aimed
-            // at Inbox look like it might delete, and a release over Trash
-            // flipped the strip there so the row appeared to vanish into it.
-            const canDrop = t === "inbox" || t === "today";
-            const armed = Boolean(draggingId) && canDrop && t !== tab;
+            // hand) · ready (the pointer is on it, release commits). Trash is a
+            // face, not a destination (D-104), so it never arms.
+            const armed = Boolean(draggingId) && t !== tab;
             const ready = zone === t;
             return (
               <button
                 key={t}
+                type="button"
+                aria-pressed={tab === t}
                 onClick={() => {
                   if (suppressTabClickRef.current) return;
                   setTab(t);
@@ -911,40 +944,31 @@ function LeftRail({
                 {...(t === "inbox"
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
                   : { "data-today-tab": "" })}
-                className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
-                  tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
-                } ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
+                className={`rail-tab ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
               >
                 {t === "inbox" ? "Inbox" : "Today"}
-                <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
+                <span className="rail-tab-count">{tabCount(t)}</span>
               </button>
             );
           })}
-          {trashed.length > 0 && (
-            <button
-              type="button"
-              data-trash-tab=""
-              aria-label={`Trash · ${trashed.length >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashed.length}`}
-              aria-pressed={tab === "trash"}
-              title="Trash"
-              onClick={() => {
-                if (suppressTabClickRef.current) return;
-                setTab("trash");
-              }}
-              className={`fast -mb-px flex shrink-0 items-center justify-center border-b-2 px-2.5 py-2 ${
-                tab === "trash" ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          )}
-          {/* The filter lives ON the tab strip, not above it: it modifies which
-              face you're looking at, and a control that floats free of the faces
-              reads as a sixth destination. Inert on Trash — the trash is a
-              recovery surface, and a filtered one could hide the row you came
-              back for without saying so. */}
-          {tab !== "trash" && (
-            <div className="flex shrink-0 items-center pr-2">
+          <div className="rail-tabs-end">
+            {trashed.length > 0 && (
+              <IconButton
+                size="xs"
+                data-trash-tab=""
+                label={`Trash · ${trashed.length >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashed.length}`}
+                aria-pressed={tab === "trash"}
+                icon={<Icon name="trash" size={14} />}
+                onClick={() => {
+                  if (suppressTabClickRef.current) return;
+                  setTab("trash");
+                }}
+              />
+            )}
+            {/* The filter modifies the face you're looking at, so it rides the
+                strip. Inert on Trash — a filtered trash could hide the row you
+                came back for without saying so. */}
+            {tab !== "trash" && (
               <TaskFilter
                 query={filter.query}
                 onChange={filter.setQuery}
@@ -956,9 +980,11 @@ function LeftRail({
                 onApplyView={filter.applyView}
                 open={filterOpen}
                 onOpenChange={setFilterOpen}
+                // Its trigger sits in the strip as the kit's 24px icon button.
+                className="rail-filter"
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -969,35 +995,26 @@ function LeftRail({
         data-tauri-drag-region="false"
         data-teach="day-list"
       >
-        {/* Where a released row will land. The list never reflows to show it —
-            rows shifting under the cursor is what made the old drop chrome read
-            as the list jumping away from you. The line node is owned by
-            useListReorder and repainted imperatively per frame. */}
-        {/* The "you're about to..." label itself is plain DOM, owned by
-            useListReorder (`zoneLabel` above) — same idiom as the calendar's
-            slot chip, and for the same reason: it repaints every pointermove,
-            and routing that through React state re-rendered the whole rail. */}
+        {/* Where a released row will land is drawn by useListReorder (the line
+            and the "you're about to…" chip are plain DOM it repaints per frame)
+            — the list never reflows to show it. */}
 
         {tab === "inbox" && (
           <>
             {inboxOrdered.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
-            {inboxOrdered.length === 0 && (
-              // Never claim inbox zero over a filter. A short list reads as
-              // "you're on top of it", which is the one lie a planner must not
-              // tell — so a filtered empty says what it's hiding behind.
-              filtering ? (
-                <EmptyState
-                  text={`Nothing in the inbox matches ${describeQuery(filter.query, { label: (id) => labels.find((l) => l.id === id)?.name, domain: (id) => vertical?.domains.find((d) => d.id === id)?.name })}.`}
-                />
+            {inboxOrdered.length === 0 &&
+              // Never claim inbox zero over a filter: a short list reads as
+              // "you're on top of it", the one lie a planner must not tell.
+              (filtering ? (
+                <EmptyState text="Nothing matches the filter" />
               ) : (
                 <>
                   <EmptyState text="Inbox zero" />
                   <InboxAddressHint />
                 </>
-              )
-            )}
+              ))}
           </>
         )}
 
@@ -1022,93 +1039,58 @@ function LeftRail({
 
         {tab === "today" && (
           <>
-            {/* Overdue — the one group that earns a label, because its members
-                need a *decision* while everything below needs execution. One
-                muted word, the glossary's own term: it states a fact instead of
-                addressing you ("Needs you" was an imperative, P4), and it lets
-                the word come off every individual row.
-                A label above an UNLABELED sibling list over-claims — it reads as
-                covering everything below it. So the zone says how far it reaches
-                twice, without a second word: the count beside the label, and a
-                `--line-strong` closer (the last row inside loses its own hairline
-                to `last:border-b-0`, so this is one line, not two). */}
-            {todaySections.pinned.length > 0 && (
-              <div className="border-b border-line-strong">
-                <SectionLabel count={todaySections.pinned.length}>Overdue</SectionLabel>
-                {todaySections.pinned.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-              </div>
-            )}
+            {/* Overdue — the group whose members need a *decision* while
+                everything below needs execution. The glossary's own term,
+                stated as a fact, so the word comes off every row. */}
+            {todaySections.pinned.length > 0 &&
+              section(
+                "overdue",
+                "Overdue",
+                todaySections.pinned.length,
+                todaySections.pinned.map((t) => <TaskRow key={t.id} {...rowProps(t)} />),
+              )}
             {/* The day's work, split by the one fact that says whether it will
-                happen: does it have a time? The flat list leaned on the calendar
-                beside it to answer that, and the calendar can't — it may be
-                scrolled, on another week, or too narrow to read, and even when
-                it's showing today you have to match titles across the gap to
-                find the ones that AREN'T there. `TaskRow` renders no clock (its
-                note above `durText`), so a timed row and a homeless one were
-                pixel-identical. The work with no time comes first: it's the part
-                of today that's still a wish (D-148). Same two labels as the
-                phone's `MobileTaskList`. */}
-            {todaySections.unblocked.length > 0 && (
-              <div className={todaySections.scheduled.length > 0 ? "border-b border-line-strong" : undefined}>
-                <SectionLabel count={todaySections.unblocked.length}>No time yet</SectionLabel>
-                {todaySections.unblocked.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-              </div>
-            )}
-            {clock.length > 0 && (
-              <div>
-                <SectionLabel count={todaySections.scheduled.length}>On the clock</SectionLabel>
-                {clock.map((entry) =>
-                  entry.kind === "task" ? (
-                    <TaskRow key={entry.task.id} {...rowProps(entry.task)} />
-                  ) : (
-                    renderSlotRun(entry)
-                  ),
-                )}
-              </div>
-            )}
-            {todaySections.pinned.length + todaySections.unblocked.length + clock.length === 0 && (
-              <div className="px-3 py-6 text-center text-caption text-muted">
-                {filtering
-                  ? "Nothing today matches the filter."
-                  : "Nothing today"}
-              </div>
-            )}
-            {/* Done — the quiet tail, folded to a single line (Loose-ends pattern). */}
-            {todaySections.done.length > 0 && (
-              // No border-t: the last active row's own border-b is already the
-              // divider. Together they drew the double hairline under the list.
-              <div>
-                <button
-                  onClick={() => toggleToday("done")}
-                  className="fast tap flex w-full items-center gap-2 px-3 py-2 text-left"
-                  aria-expanded={todayOpen.done}
-                >
-                  <span className="text-caption text-muted">{todaySections.done.length} done today</span>
-                  <span className="ml-auto shrink-0 text-micro text-muted">{todayOpen.done ? "▾" : "▸"}</span>
-                </button>
-                {todayOpen.done &&
-                  todaySections.done.map((t) => (
-                    <TaskRow key={t.id} {...rowProps(t)} />
-                  ))}
-              </div>
-            )}
+                happen: does it have a time? The work with no time comes first —
+                it's the part of today that's still a wish (D-148). Same two
+                names as the phone's `MobileTaskList`. */}
+            {todaySections.unblocked.length > 0 &&
+              section(
+                "unblocked",
+                "No time yet",
+                todaySections.unblocked.length,
+                todaySections.unblocked.map((t) => <TaskRow key={t.id} {...rowProps(t)} />),
+              )}
+            {clock.length > 0 &&
+              section(
+                "clock",
+                "On the clock",
+                todaySections.scheduled.length,
+                clock.map((entry) =>
+                  entry.kind === "task" ? <TaskRow key={entry.task.id} {...rowProps(entry.task)} /> : renderSlotRun(entry),
+                ),
+              )}
+            {nothingToday && <EmptyState text={filtering ? "Nothing matches the filter" : "Nothing today"} />}
+            {/* Done — the quiet tail, shut until you want it. */}
+            {todaySections.done.length > 0 &&
+              section(
+                "done",
+                "Done",
+                todaySections.done.length,
+                todaySections.done.map((t) => <TaskRow key={t.id} {...rowProps(t)} />),
+              )}
           </>
         )}
       </div>
 
-      {/* Capture — floats at the foot of the rail as a pill, out of the
-          hierarchy: it interrupts every mode, so it isn't a titled section (and
-          mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
-          (low-data-entry). Press A (or C) to focus. */}
-      <div className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
+      {/* Capture — the kit's field at the foot of the pool, out of the
+          hierarchy: it interrupts every mode, so it isn't a titled section.
+          Stays a real <input> so iOS dictation works (low-data-entry).
+          A (or C) focuses it — the keycap says so. */}
+      <div className="rail-foot shrink-0" data-tauri-drag-region="false" data-teach="capture">
         <TaskComposer
           ref={captureRef}
           variant="pill"
-          placeholder="Capture anything…"
+          placeholder="Capture"
           shortcut="A"
           context={tab === "today" ? { doDate: todayISO(now) } : undefined}
           contextLabel={tab === "today" ? { name: "Today" } : { name: "Inbox" }}
@@ -1118,7 +1100,7 @@ function LeftRail({
           }}
           onError={setCaptureError}
           onArrowUp={() => {
-            // The last row that's actually drawn — a collapsed "done" tail isn't.
+            // The last row that's actually drawn — a shut section's aren't.
             const drawn = new Set(
               [...(listRef.current?.querySelectorAll<HTMLElement>("[data-task-drag]") ?? [])].map((el) => el.dataset.taskDrag),
             );
@@ -1129,13 +1111,13 @@ function LeftRail({
           }}
         />
         {captureError && (
-          <div className="mt-1 px-1 text-label text-signal">{captureError}</div>
+          <div className="rail-foot-error" role="alert">
+            {captureError}
+          </div>
         )}
       </div>
 
-      {/* Bulk actions — one bar, shared with the phone (BulkBar.tsx). It grew
-          label · priority · schedule · project-move here; the four it had
-          before (today · inbox · done · trash) moved into it unchanged. */}
+      {/* Bulk actions — one bar, shared with the phone (BulkBar.tsx). */}
       {selectedIds.size > 0 && (
         <BulkBar
           count={selectedIds.size}
@@ -1150,6 +1132,7 @@ function LeftRail({
       {labelPickerFor && (
         <LabelPicker
           task={labelPickerFor}
+          anchor={pickerAnchor}
           labels={labels}
           onClose={() => setLabelPickerFor(null)}
           onSet={(ids) => mutations.setLabels(labelPickerFor.id, ids)}
@@ -1158,12 +1141,13 @@ function LeftRail({
       {schedulePickerFor && (
         <SchedulePicker
           task={schedulePickerFor}
+          anchor={pickerAnchor}
           onClose={() => setSchedulePickerFor(null)}
           mutations={mutations}
         />
       )}
       {remindPickerFor && (
-        <RemindPicker task={remindPickerFor} onClose={() => setRemindPickerFor(null)} />
+        <RemindPicker task={remindPickerFor} anchor={pickerAnchor} onClose={() => setRemindPickerFor(null)} />
       )}
 
       {contextMenu && (
@@ -1199,8 +1183,9 @@ function LeftRail({
 
 export default memo(LeftRail, skipWhenAsleep);
 
+/** Two or three words, centred in the pool. */
 function EmptyState({ text }: { text: string }) {
-  return <div className="px-3 py-6 text-center text-caption text-muted">{text}</div>;
+  return <div className="rail-empty">{text}</div>;
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
@@ -1234,46 +1219,51 @@ function buildTodaySections(today: Task[], now: Date) {
 
 function LabelPicker({
   task,
+  anchor,
   labels,
   onClose,
   onSet,
 }: {
   task: Task;
+  anchor: DOMRect | null;
   labels: Label[];
   onClose: () => void;
   onSet: (ids: string[]) => void;
 }) {
-  const current = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
+  // The picker holds its own set: the row's `task` is the snapshot it opened
+  // on, so two ticks in a row must build on each other, not on that snapshot.
+  const [current, setCurrent] = useState<string[]>(() => (task.task_labels ?? []).map((tl) => tl.label_id));
+  if (labels.length === 0) {
+    return (
+      <Popover anchor={anchor} open onClose={onClose} label="Labels" className="rail-pick">
+        <MenuLabel>No labels</MenuLabel>
+      </Popover>
+    );
+  }
   return (
-    <Popover onClose={onClose} title={`Labels — ${task.title}`}>
-      {labels.length === 0 && (
-        <div className="px-1 py-2 text-caption text-muted">No labels yet. Add them in Settings.</div>
-      )}
-      {labels.map((l) => (
-        <label key={l.id} className="flex items-center gap-2 px-1 py-1 text-body hover:bg-bg">
-          <input
-            type="checkbox"
-            defaultChecked={current.has(l.id)}
-            onChange={(e) => {
-              const next = new Set(current);
-              e.target.checked ? next.add(l.id) : next.delete(l.id);
-              onSet([...next]);
-            }}
-          />
-          <span style={{ color: l.color }}>{l.name}</span>
-        </label>
-      ))}
-    </Popover>
+    <Picker
+      anchor={anchor}
+      open
+      onClose={onClose}
+      label="Labels"
+      multiple
+      value={current}
+      options={labels.map((l) => ({ value: l.id, label: l.name, icon: <Dot color={l.color ?? "var(--faint)"} shape="round" /> }))}
+      onChange={(id) => {
+        const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+        setCurrent(next);
+        onSet(next);
+      }}
+    />
   );
 }
 
 /**
  * The trash.
  *
- * Hairline rows on the paper, not cards — nothing here floats (P14). Two acts
- * per row, and the destructive one asks: **Delete forever** is the only act in
- * the app with no undo, so it turns `--signal` only once it is confirming,
- * exactly as the popovers' footer does.
+ * Rows on the pool, not cards — nothing here floats. Two acts per row, and the
+ * destructive one asks: **Delete forever** is the only act in the app with no
+ * undo, so it turns solid danger only once it is confirming.
  *
  * Deliberately NOT a TaskRow: a trashed task has no checkbox, no drag handle,
  * no schedule chip and no context menu — every one of those would offer an act
@@ -1298,34 +1288,32 @@ function TrashList({
   const [emptyConfirm, setEmptyConfirm] = useState(false);
 
   if (tasks.length === 0) {
-    return <EmptyState text="Nothing in the trash." />;
+    return <EmptyState text="Trash is empty" />;
   }
 
   return (
-    <>
-      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-2">
-        <div className="min-w-0 text-meta leading-snug text-muted">
-          Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
-          can't be undone. Items older than {TRASH_RETENTION_DAYS} days are removed automatically.
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (emptyConfirm) {
-              onPurgeAll();
-              setEmptyConfirm(false);
-            } else {
-              setEmptyConfirm(true);
-            }
-          }}
-          onBlur={() => setEmptyConfirm(false)}
-          className={`tap fast shrink-0 rounded-[var(--radius-sm)] px-2 py-1 text-label ${
-            emptyConfirm ? "font-medium text-signal" : "text-muted hover:text-signal"
-          }`}
-        >
-          {emptyConfirm ? "Delete all?" : "Empty trash"}
-        </button>
-      </div>
+    <section className="rail-section">
+      <SectionHeader
+        title={<span title={`Deleted tasks are kept ${TRASH_RETENTION_DAYS} days`}>Trash</span>}
+        count={tasks.length}
+        actions={
+          <Button
+            size="xs"
+            kind={emptyConfirm ? "danger-solid" : "ghost"}
+            onClick={() => {
+              if (emptyConfirm) {
+                onPurgeAll();
+                setEmptyConfirm(false);
+              } else {
+                setEmptyConfirm(true);
+              }
+            }}
+            onBlur={() => setEmptyConfirm(false)}
+          >
+            {emptyConfirm ? "Delete all?" : "Empty trash"}
+          </Button>
+        }
+      />
       {tasks.map((t) => {
         const isConfirming = confirming === t.id;
         return (
@@ -1335,96 +1323,92 @@ function TrashList({
             onClick={() => onSelect(t.id)}
             {...pressable(() => onSelect(t.id), { role: "option", label: t.title || "Untitled" })}
             aria-selected={selectedId === t.id}
-            className={`fast group flex items-center gap-2 border-b border-line px-4 py-2 ${
-              selectedId === t.id ? "bg-accent-soft" : "hover:bg-surface-2"
-            }`}
+            className="trash-row"
           >
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-body text-muted">{t.title || "Untitled"}</div>
-              {t.trashed_at && (
-                <div className="mono text-micro text-muted/70">{deletedWhen(t.trashed_at)}</div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRestore(t);
-              }}
-              className="tap fast shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label text-muted hover:text-ink"
-            >
-              Restore
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isConfirming) {
-                  onPurge(t);
-                  setConfirming(null);
-                } else {
-                  setConfirming(t.id);
-                }
-              }}
-              onBlur={() => isConfirming && setConfirming(null)}
-              className={`tap fast shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
-                isConfirming ? "font-medium text-signal" : "text-muted hover:text-signal"
-              }`}
-            >
-              {isConfirming ? "Sure?" : "Delete forever"}
-            </button>
+            <span className="trash-title">{t.title || "Untitled"}</span>
+            {t.trashed_at && <span className="trash-when">{deletedWhen(t.trashed_at)}</span>}
+            <span className="trash-acts">
+              <Button
+                size="xs"
+                kind="ghost"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRestore(t);
+                }}
+              >
+                Restore
+              </Button>
+              <Button
+                size="xs"
+                kind={isConfirming ? "danger-solid" : "ghost"}
+                title="Can't be undone"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isConfirming) {
+                    onPurge(t);
+                    setConfirming(null);
+                  } else {
+                    setConfirming(t.id);
+                  }
+                }}
+                onBlur={() => isConfirming && setConfirming(null)}
+              >
+                {isConfirming ? "Sure?" : "Delete forever"}
+              </Button>
+            </span>
           </div>
         );
       })}
-    </>
+    </section>
   );
 }
 
-/** "Deleted 2 hours ago" — the one fact a trash row owes you beyond its name. */
+/** "2h ago" — the one fact a trash row owes you beyond its name (the face
+ *  already says they were deleted). */
 function deletedWhen(iso: string): string {
   const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  if (!Number.isFinite(mins)) return "Deleted";
-  if (mins < 1) return "Deleted just now";
-  if (mins < 60) return `Deleted ${mins}m ago`;
+  if (!Number.isFinite(mins)) return "";
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `Deleted ${hours}h ago`;
+  if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
-  return days === 1 ? "Deleted yesterday" : `Deleted ${days}d ago`;
+  return days === 1 ? "yesterday" : `${days}d ago`;
 }
 
 /**
- * Remind, from the keyboard (`b` on the focused row).
- *
- * Plain buttons rather than the popovers' `<select>` on purpose: this one is
- * reached by a key, so the leads have to be *visible* to be discoverable, and a
- * list of buttons is arrow/Tab-navigable with Enter to pick and Esc to leave —
- * no custom roving focus to get wrong.
+ * Remind, from the keyboard (`b` on the focused row) — the shared reminder
+ * select in the kit's popover, beside the row it acts on.
  */
-function RemindPicker({ task, onClose }: { task: Task; onClose: () => void }) {
-  const anchor: ReminderAnchorKind = task.start_time || !task.deadline ? "start" : "deadline";
+function RemindPicker({ task, anchor, onClose }: { task: Task; anchor: DOMRect | null; onClose: () => void }) {
+  const kind: ReminderAnchorKind = task.start_time || !task.deadline ? "start" : "deadline";
   const target = {
     targetKind: "task" as const,
     targetId: task.id,
-    anchor,
-    allDay: !task.start_time && anchor === "start",
+    anchor: kind,
+    allDay: !task.start_time && kind === "start",
   };
 
   return (
-    <Popover onClose={onClose} title={`Remind — ${task.title}`}>
-      {anchor === "deadline" && (
-        <div className="px-1.5 pb-1 text-micro text-muted/80">Before its deadline.</div>
-      )}
-      <ReminderSelect block target={target} />
+    <Popover anchor={anchor} open onClose={onClose} label={`Remind — ${task.title}`} className="rail-pick">
+      <MenuLabel>{kind === "deadline" ? "Remind before its deadline" : "Remind"}</MenuLabel>
+      <div className="rail-pick-body">
+        <ReminderSelect block target={target} />
+      </div>
     </Popover>
   );
 }
 
+/** Schedule, from the keyboard (`r`): a day, and a time if it has one. An
+ *  empty time plans the day without a block. */
 function SchedulePicker({
   task,
+  anchor,
   onClose,
   mutations,
 }: {
   task: Task;
+  anchor: DOMRect | null;
   onClose: () => void;
   mutations: Mutations;
 }) {
@@ -1443,51 +1427,31 @@ function SchedulePicker({
   };
 
   return (
-    <Popover onClose={onClose} title={`Schedule — ${task.title}`}>
-      <div className="flex items-center gap-2 py-1">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="mono border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
-        />
-        <input
-          type="time"
-          value={time}
-          step={900}
-          onChange={(e) => setTime(e.target.value)}
-          className="mono border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
-        />
-        <button onClick={apply} className="fast border border-accent bg-accent px-2.5 py-1 text-caption text-on-accent">
+    <Popover anchor={anchor} open onClose={onClose} label={`Schedule — ${task.title}`} className="rail-pick">
+      <MenuLabel>Schedule</MenuLabel>
+      <form
+        className="rail-pick-body"
+        onSubmit={(e) => {
+          e.preventDefault();
+          apply();
+        }}
+      >
+        <div className="rail-pick-fields">
+          <Input size="sm" type="date" aria-label="Day" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Input
+            size="sm"
+            type="time"
+            aria-label="Time — leave empty to plan the day without a block"
+            title="Leave empty to plan the day without a block"
+            step={900}
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+          />
+        </div>
+        <Button type="submit" kind="primary" full shortcut="↵">
           Set
-        </button>
-      </div>
-      <div className="pt-1 text-label text-muted">Leave time empty to plan the day without a block.</div>
+        </Button>
+      </form>
     </Popover>
-  );
-}
-
-function Popover({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="pop-in [--pop-origin:bottom_left] elev-3 absolute bottom-12 left-2 z-30 w-[330px] rounded-lg border border-line bg-surface p-2.5">
-      <div className="mb-1 flex items-center justify-between">
-        <div className="truncate pr-2 text-label font-medium text-muted">{title}</div>
-        <button onClick={onClose} className="text-label text-muted hover:text-ink">esc</button>
-      </div>
-      {children}
-    </div>
   );
 }
