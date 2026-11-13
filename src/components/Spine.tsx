@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { LADDER, type Rung } from "./AppShell";
-import { useUiScale } from "../hooks/useUiScale";
+import { getUiScale, useUiScale } from "../hooks/useUiScale";
 import { useVerticalSelector } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
 import { toneColor } from "./floors/ReadinessBanner";
@@ -38,13 +38,6 @@ const BUILD = RUNGS.slice(1);
 // (Focus mode is a third state above both: it slides the spine shut entirely.)
 const FULL_W = 228;
 const RAIL_W = 52;
-// The Mac app's traffic lights are drawn by AppKit at fixed window points over
-// the sidebar: close at the wordmark's left (16pt at rest), two more at 20pt
-// spacing, 14pt wide — the cluster ends near 70pt. A 52px rail is narrower
-// than that and put the green light on the panel's corner. So in the Mac app
-// the rail is as wide as the lights need, with a margin, converted to css px at
-// the current zoom; the panel keeps its full height. Everywhere else: 52.
-const MAC_LIGHTS_RAIL_PT = 84;
 
 const RAIL_KEY = "nuvo-spine-rail";
 function readRail(): boolean {
@@ -84,6 +77,9 @@ interface SpineProps {
    * spine springs back to whatever they chose the moment the squeeze lifts.
    */
   forceRail?: boolean;
+  /** A full-screen flow covers the window: the traffic lights go back to rest
+   *  instead of sitting in a page bar nobody can see. */
+  overlaid?: boolean;
 }
 
 /** SpineState is small pure data, so a JSON signature is an honest identity. */
@@ -112,6 +108,7 @@ const SpineBody = memo(function SpineBody({
   openShortcuts,
   collapsed = false,
   forceRail = false,
+  overlaid = false,
 }: SpineProps & { spine: SpineState | null }) {
   // The macOS traffic lights are drawn by AppKit, outside the zoomed document,
   // so they can't left-align themselves to the wordmark — nothing native knows
@@ -119,13 +116,11 @@ const SpineBody = memo(function SpineBody({
   // (css × --ui-scale). Re-runs when the spine rails, focus mode closes it, or
   // the zoom changes, i.e. every time the mark actually moves.
   const wordmarkRef = useRef<HTMLButtonElement>(null);
+  const spineRef = useRef<HTMLDivElement>(null);
   // Kept in CSS px, not points: on a zoom change the layout is unchanged, so
   // the same measurement just gets re-scaled rather than re-measured.
   const wordmarkCssLeft = useRef<number | null>(null);
   const { scale: uiScale } = useUiScale();
-  // `tauri-macos` is set on <html> in main.tsx (desktop Mac app only, never iOS).
-  const [macLights] = useState(() => document.documentElement.classList.contains("tauri-macos"));
-  const railW = macLights ? Math.max(RAIL_W, Math.ceil(MAC_LIGHTS_RAIL_PT / uiScale)) : RAIL_W;
   // `railedPref` is what the user chose and what gets persisted; `railed` is
   // what actually renders. They differ only while the workspace is squeezed.
   const [railedPref, setRailed] = useState(readRail);
@@ -153,47 +148,77 @@ const SpineBody = memo(function SpineBody({
   // popover today) reads `--spine-width`, so the width lives in the token and
   // the two states stay in sync by construction.
   useEffect(() => {
-    document.documentElement.style.setProperty("--spine-width", `${railed ? railW : FULL_W}px`);
-  }, [railed, railW]);
+    document.documentElement.style.setProperty("--spine-width", `${railed ? RAIL_W : FULL_W}px`);
+  }, [railed]);
 
-  // Tell the native titlebar where the wordmark's glyphs start, so the traffic
-  // lights can share its left edge. `getBoundingClientRect()` is post-zoom, and
-  // the buttons live in unzoomed window points — hence the × uiScale. Measured
-  // after paint so the rail's width transition has settled.
+  // Tell the native titlebar where the traffic lights go. AppKit draws them in
+  // unzoomed window points, so every css measurement is × uiScale.
+  //
+  //   Sidebar open — they share the wordmark's left edge, in the titlebar band
+  //   the spine reserves above it.
+  //   Sidebar railed or hidden — a 52px rail can't hold the cluster (it ends
+  //   at 76pt), so they move into the panel's top-left corner, centred on its
+  //   48px top row, and whatever holds that corner — the page bar, or on the
+  //   Schedule the rail's crown — starts after them (frame.css, --lights-room).
+  //   That is where Finder and Safari carry them when their sidebar is shut.
+  //   A full-screen flow on top, or the spine unmounting (signed out) — back
+  //   to rest, so they never land on something that didn't make room.
+  //
+  // They move the moment the sidebar does, to where things END: the corner is
+  // computed from the rail's target width, never measured mid-slide. A timer
+  // waiting out the transition raced it — and a window behind others runs
+  // neither timers nor transitions on time, so it put the lights in the
+  // middle of an open sidebar.
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in globalThis)) return;
-    const send = (cssLeft: number) => {
+    const send = (x: number, centerY: number | null) => {
       void import("@tauri-apps/api/core")
-        .then(({ invoke }) => invoke("align_traffic_lights", { x: cssLeft * uiScale }))
+        .then(({ invoke }) => invoke("align_traffic_lights", { x: x * uiScale, centerY: centerY == null ? null : centerY * uiScale }))
         .catch(() => { /* non-macOS, or the command isn't there — keep the default */ });
     };
 
-    // Measure ONLY in the mark's expanded home. Railed, it centres a single "N"
-    // — following that shoves the cluster right, past the 64px rail and over
-    // the task list. Focus mode removes the mark entirely. And even where it
-    // could be followed, it shouldn't be: window buttons that wander when you
-    // collapse a sidebar are something no Mac app does.
-    if (!collapsed && !railed && wordmarkRef.current) {
+    if (overlaid || (!collapsed && !railed)) {
+      // At rest, on the wordmark's left edge — the glyphs, not the full-width
+      // button. It doesn't move with the rail's width, so it reads true now.
+      // Before it was ever measured (a cold start railed), rest is AppKit's
+      // own 16pt.
       const el = wordmarkRef.current;
-      const t = window.setTimeout(() => {
-        // The glyphs, not the button — the button is full-width.
+      if (el && !overlaid) {
         const range = document.createRange();
         range.selectNodeContents(el);
         const left = range.getBoundingClientRect().left;
         range.detach();
-        if (!left) return;
-        wordmarkCssLeft.current = left;
-        send(left);
-      }, 360); // just past --d-slow, the rail's width transition
-      return () => window.clearTimeout(t);
+        if (left) wordmarkCssLeft.current = left;
+      }
+      send(wordmarkCssLeft.current ?? 16 / uiScale, null);
+      return;
     }
 
-    // Railed or in focus mode: hold the last known spot, re-scaled for the
-    // current zoom, so the buttons stay exactly where they were.
-    if (wordmarkCssLeft.current != null) send(wordmarkCssLeft.current);
-  }, [railed, collapsed, uiScale]);
+    // Railed or hidden: into the panel's corner. Its top row is 48px; the
+    // lights start 16px in, like the row's own content. The panel's left is
+    // where it will be once the rail reaches its target width — its margin
+    // has already switched, only the rail's width is still sliding.
+    const panel = document.querySelector<HTMLElement>(".app-panel");
+    const rail = spineRef.current;
+    if (!panel || !rail) return;
+    const p = panel.getBoundingClientRect();
+    const slide = (collapsed ? 0 : RAIL_W) - rail.getBoundingClientRect().width;
+    send(p.left + slide + 16, p.top + 24);
+  }, [railed, collapsed, overlaid, uiScale]);
 
-  const width = railed ? railW : FULL_W;
+  // Signing out unmounts the spine; the lights go back to rest with it.
+  useEffect(
+    () => () => {
+      if (!("__TAURI_INTERNALS__" in globalThis)) return;
+      const x = wordmarkCssLeft.current == null ? 16 : wordmarkCssLeft.current * getUiScale();
+      void import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("align_traffic_lights", { x, centerY: null }))
+        .catch(() => {});
+    },
+    [],
+  );
+
+  const width = railed ? RAIL_W : FULL_W;
 
   // One row shape for everything in the sidebar — a rung, the week's projects,
   // the footer. Railed, the label is spent and the native tooltip (lib/tooltips)
@@ -248,6 +273,7 @@ const SpineBody = memo(function SpineBody({
 
   return (
     <div
+      ref={spineRef}
       className="spine relative z-40 shrink-0 overflow-hidden"
       data-rail={railed || undefined}
       data-collapsed={collapsed || undefined}

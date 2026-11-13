@@ -857,6 +857,10 @@ function LeftRail({
       ref={railRef}
       data-rail-drop
       data-drop-tab={tab}
+      // Holds the panel's top-left corner while open — the Mac's traffic
+      // lights sit there with the sidebar shut (frame.css --lights-room).
+      data-corner-rail=""
+      data-shut={collapsed || undefined}
       className="relative z-40 h-full shrink-0 overflow-hidden"
       style={{
         width: collapsed ? 0 : railWidth,

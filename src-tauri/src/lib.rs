@@ -252,21 +252,42 @@ fn surface_main(app: tauri::AppHandle) {
     }
 }
 
-/// Left-align the traffic lights with the wordmark. `x` is in WINDOW POINTS —
-/// the frontend measures the glyphs in css px and multiplies by --ui-scale,
-/// because the buttons live outside the zoomed document.
+/// Place the traffic lights. `x` is in WINDOW POINTS — the frontend measures
+/// in css px and multiplies by --ui-scale, because the buttons live outside the
+/// zoomed document. With the sidebar open they line up with the wordmark.
+///
+/// `center_y` (points from the window's top edge) is set only when the sidebar
+/// is collapsed or hidden: the lights then sit in the page bar's left end,
+/// centred on its line, the way Finder and Safari carry them in the toolbar.
+/// `None` restores the resting titlebar position exactly as before.
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn align_traffic_lights(app: tauri::AppHandle, x: f64) {
+fn align_traffic_lights(app: tauri::AppHandle, x: f64, center_y: Option<f64>) {
     // Ignore nonsense rather than flinging the buttons off the titlebar.
     if !(0.0..=400.0).contains(&x) {
         return;
     }
+    let center_y = center_y.filter(|y| (0.0..=200.0).contains(y));
+    let mut changed = false;
     if let Ok(mut slot) = TRAFFIC_LIGHT_X.lock() {
-        if (*slot - x).abs() < 0.5 {
-            return;
+        if (*slot - x).abs() >= 0.5 {
+            *slot = x;
+            changed = true;
         }
-        *slot = x;
+    }
+    if let Ok(mut slot) = TRAFFIC_LIGHT_CENTER_Y.lock() {
+        let same = match (*slot, center_y) {
+            (Some(a), Some(b)) => (a - b).abs() < 0.5,
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            *slot = center_y;
+            changed = true;
+        }
+    }
+    if !changed {
+        return;
     }
     if let Some(win) = app.get_webview_window("main") {
         place_traffic_lights(&win, true);
@@ -522,6 +543,15 @@ pub fn run() {
 static TRAFFIC_LIGHT_X: Mutex<f64> = Mutex::new(16.0);
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_Y: f64 = 24.0;
+/// Set while the sidebar is collapsed or hidden: the lights' vertical centre,
+/// in points from the window's top edge (see align_traffic_lights).
+#[cfg(target_os = "macos")]
+static TRAFFIC_LIGHT_CENTER_Y: Mutex<Option<f64>> = Mutex::new(None);
+/// AppKit's own vertical origin for the buttons at rest, captured on the first
+/// resting placement. Centring them in the bar overwrites it, so coming back
+/// to rest puts it back exactly rather than leaving them a point off.
+#[cfg(target_os = "macos")]
+static TRAFFIC_LIGHT_REST_ORIGIN_Y: Mutex<Option<f64>> = Mutex::new(None);
 
 /// Move the standard window buttons. Same math wry uses internally — grow the
 /// titlebar container to `button height + y` and pin it to the top of the
@@ -541,6 +571,7 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
         let Ok(ptr) = win.ns_window() else { return };
         let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
         let x = TRAFFIC_LIGHT_X.lock().map(|v| *v).unwrap_or(24.0);
+        let center_y = TRAFFIC_LIGHT_CENTER_Y.lock().ok().and_then(|v| *v);
         unsafe {
             let (Some(close), Some(mini)) = (
                 ns_window.standardWindowButton(NSWindowButton::CloseButton),
@@ -558,7 +589,13 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
                 return;
             };
             let mut rect = container.frame();
-            let height = close_frame.size.height + TRAFFIC_LIGHT_Y;
+            // Resting: wry's math (grow the container to button height + Y).
+            // In the bar: tall enough to reach the bar's line plus a margin,
+            // then each button is placed on that line explicitly below.
+            let height = match center_y {
+                Some(cy) => cy + close_frame.size.height / 2.0 + 8.0,
+                None => close_frame.size.height + TRAFFIC_LIGHT_Y,
+            };
             rect.size.height = height;
             rect.origin.y = ns_window.frame().size.height - height;
             container.setFrame(rect);
@@ -570,6 +607,18 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
             for (i, button) in buttons.into_iter().enumerate() {
                 let mut frame = button.frame();
                 frame.origin.x = x + (i as f64) * spacing;
+                match center_y {
+                    // Non-flipped: y runs up from the container's bottom edge.
+                    Some(cy) => frame.origin.y = height - cy - frame.size.height / 2.0,
+                    None => {
+                        if let Ok(mut rest) = TRAFFIC_LIGHT_REST_ORIGIN_Y.lock() {
+                            match *rest {
+                                Some(y) => frame.origin.y = y,
+                                None => *rest = Some(frame.origin.y),
+                            }
+                        }
+                    }
+                }
                 button.setFrameOrigin(frame.origin);
                 // Dev-only, and only on the first placement — a window drag
                 // would otherwise spam this on every resize tick. Keeps the

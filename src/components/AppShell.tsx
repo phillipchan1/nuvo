@@ -497,6 +497,7 @@ const AppShellInner = memo(function AppShellInner() {
       <Spine
         collapsed={focusMode}
         forceRail={squeezed}
+        overlaid={!!nav.flow}
         rung={rung}
         setRung={goRung}
         openSettings={openSettings}

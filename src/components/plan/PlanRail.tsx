@@ -833,11 +833,12 @@ function PlanRailWeek({
     <div
       ref={railRef}
       data-plan-rail
+      data-corner-rail=""
       className="titlebar-pad relative z-40 flex h-full w-[340px] shrink-0 flex-col"
       style={{ borderRight: "1px solid var(--line-1)", ["--titlebar-pad-y" as string]: "0px" }}
     >
       {/* which week · the old walk · close — the rail's own bar */}
-      <div className="flex h-12 shrink-0 items-center gap-1.5 pl-3 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+      <div className="plan-rail-bar flex h-12 shrink-0 items-center gap-1.5 pl-3 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
         <Segmented
           size="sm"
           label="Which week"

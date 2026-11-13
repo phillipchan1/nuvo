@@ -389,6 +389,12 @@ html:root .slot-run-open:focus-visible { outline: none; box-shadow: inset 0 -2px
   min-width: 0;
 }
 .crown-hero-line > .k-btn { margin-left: auto; }
+/* Mac, sidebar shut: the rail holds the panel's corner, so its first line
+   makes room for the traffic lights (frame.css) and sits on their centre —
+   the 48px row's middle, the same line as the calendar's bar beside it. */
+html.tauri-macos .spine:is([data-rail], [data-collapsed]) + .app-panel .crown-hero { padding-top: 9px; }
+html.tauri-macos .crown-hero-line { padding-left: var(--lights-room, 0px); }
+html.tauri-macos .plan-rail-bar { padding-left: calc(12px + var(--lights-room, 0px)); }
 .crown-title {
   flex: 0 1 auto;
   min-width: 0;
