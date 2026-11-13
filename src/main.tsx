@@ -8,6 +8,8 @@ import "./styles/instrument.css";
 import "./styles/kit.css";
 // The frame — ground, sidebar, inset panel (D-190).
 import "./styles/frame.css";
+// The Build floors' List, Board and Document layouts (D-190).
+import "./styles/floors.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

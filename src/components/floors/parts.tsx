@@ -28,6 +28,8 @@ import DomainSymbol from "../domain/DomainSymbol";
 import Sheet from "../mobile/Sheet";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useMenuFocus } from "../../hooks/useMenuFocus";
+import { Target } from "lucide-react";
+import { Button, Dot } from "../kit";
 
 /** Menu portaled to <body> so it isn't clipped or covered by later table rows /
  *  overflow parents / the Record modal's `.moment` transform (which traps
@@ -160,53 +162,51 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
 // (`src/components/ShipStamp.tsx`) — promoted out of this file once it grew
 // real animation state and callers outside floors/.
 
-// ── Ripeness pip — ambient readiness, gray (raw) → green (active) ────────────
-// The one source for the dot is the computed Ripeness; the ramp leans on the
-// "complete" teal already in the status vocab, so no new green is introduced.
+// ── Ripeness — how shaped a record is, drawn as the kit's readiness pie ──────
+// One source for the mark is the computed Ripeness. Raw is the dashed ring, the
+// two middle stages fill a third and two thirds, Active is the full pie. A
+// structurally-Active record Nuvo hasn't verified sound keeps the full pie but
+// wears an amber ring, so the portfolio shows TRUE readiness, not filled boxes.
 const RIPE_GREEN = PROJECT_STATUS_COLORS.complete;
-const RIPE_AMBER = PROJECT_STATUS_COLORS.waiting; // the "looks ready, not verified" caution
-const RIPE_FILL: Record<Ripeness, string> = {
-  raw: "var(--muted)",
-  shaped: `color-mix(in srgb, ${RIPE_GREEN} 40%, var(--muted))`,
-  scaffolded: `color-mix(in srgb, ${RIPE_GREEN} 72%, var(--muted))`,
-  active: RIPE_GREEN,
-  resting: "var(--line-strong)",
+const RIPE_STEP: Record<Ripeness, "0" | "1" | "2" | "3"> = {
+  raw: "0",
+  shaped: "1",
+  scaffolded: "2",
+  active: "3",
+  resting: "0",
 };
 
-/** `unsound` marks a structurally-Active item Nuvo hasn't verified sound — it
- *  reads green-but-flagged (amber ring) so the portfolio shows TRUE readiness,
- *  not just filled boxes. Only meaningful on the Active stage. */
+/** `unsound` marks a structurally-Active item Nuvo hasn't verified sound. Only
+ *  meaningful on the Active stage. `size` is the old dot's radius: the pie is
+ *  drawn at twice it (7 → the kit's 14px). */
 export function RipenessPip({ stage, unsound = false, size = 7 }: { stage: Ripeness; unsound?: boolean; size?: number }) {
-  const fill = RIPE_FILL[stage];
   const resting = stage === "resting";
   const flag = unsound && stage === "active";
+  const px = Math.max(10, size * 2);
   return (
     <span
+      className="k-rdy"
+      data-step={RIPE_STEP[stage]}
+      role="img"
       title={flag ? "Active — but Nuvo hasn't verified it sound yet" : `${RIPENESS_LABEL[stage]} — ${RIPENESS_HINT[stage]}`}
       aria-label={`Ripeness: ${RIPENESS_LABEL[stage]}${flag ? " (unverified)" : ""}`}
-      className="inline-block shrink-0 rounded-full"
       style={{
-        width: size,
-        height: size,
-        background: resting ? "transparent" : fill,
-        border: resting ? `1.5px solid ${fill}` : flag ? `1.5px solid ${RIPE_AMBER}` : "none",
-        opacity: resting ? 0.7 : stage === "raw" ? 0.5 : 1,
-        boxShadow: flag
-          ? `0 0 4px color-mix(in srgb, ${RIPE_AMBER} 55%, transparent)`
-          : stage === "active" ? `0 0 5px color-mix(in srgb, ${RIPE_GREEN} 55%, transparent)` : "none",
+        width: px,
+        height: px,
+        ...(flag ? { borderColor: "var(--warn)" } : {}),
+        ...(resting ? { borderStyle: "solid", opacity: 0.55 } : {}),
       }}
     />
   );
 }
 
 // ── Progress bar with optional baseline marker (the Gain frame) ──────────────
+// At the kit's track weight: `h` 1 is the 3px track, each step adds 2px.
 export function Bar({ pct, color, baseline, h = 1.5 }: { pct: number; color: string; baseline?: number; h?: number }) {
   return (
-    <div className="relative my-1.5 rounded-full" style={{ height: h * 4, background: "var(--line)" }}>
-      <div className="fast absolute left-0 top-0 bottom-0 rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} />
-      {baseline != null && (
-        <div className="absolute top-[-2px] bottom-[-2px] w-px bg-muted" style={{ left: `${baseline}%` }} />
-      )}
+    <div className="fl-bar my-1.5" style={{ height: Math.round(h * 2 + 1) }}>
+      <i style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} />
+      {baseline != null && <b style={{ left: `${baseline}%` }} />}
     </div>
   );
 }
@@ -214,9 +214,9 @@ export function Bar({ pct, color, baseline, h = 1.5 }: { pct: number; color: str
 // ── Up/down traversal hook ───────────────────────────────────────────────────
 export function Hook({ dir, label, onClick }: { dir: "up" | "down"; label: string; onClick?: () => void }) {
   return (
-    <button onClick={onClick} disabled={!onClick} className="fast mono text-meta text-muted hover:text-ink disabled:cursor-default">
+    <Button kind="ghost" size="xs" onClick={onClick} disabled={!onClick}>
       {dir === "up" ? "↑" : "↓"} {label}
-    </button>
+    </Button>
   );
 }
 
@@ -300,6 +300,8 @@ export function InlineText({
 }
 
 // ── Inline multi-line editor ─────────────────────────────────────────────────
+// Reads as the text it holds; a click (or Enter on its tab stop) turns it into
+// the kit's multiline field, which commits on blur or ⌘↵ and reverts on Esc.
 export function InlineTextarea({
   value,
   onChange,
@@ -330,27 +332,32 @@ export function InlineTextarea({
 
   if (editing) {
     return (
-      <textarea
-        ref={ref}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          e.currentTarget.style.height = "auto";
-          e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
-          if (e.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-        className={`w-full resize-none rounded-sm border border-accent bg-surface px-2 py-1.5 leading-relaxed outline-none ${className}`}
-      />
+      <div className="k-field" data-multiline="">
+        <textarea
+          ref={ref}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            e.currentTarget.style.height = "auto";
+            e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
+            if (e.key === "Escape") { setDraft(value); setEditing(false); }
+          }}
+          className={className}
+          style={{ minHeight: 0 }}
+        />
+      </div>
     );
   }
   return (
     <p
+      {...pressable(() => setEditing(true), { label: draft ? `Edit — ${draft}` : placeholder })}
       onClick={() => setEditing(true)}
-      className={`fast cursor-text whitespace-pre-wrap rounded-sm leading-relaxed hover:bg-accent-soft ${className} ${draft ? "" : "text-muted italic"}`}
+      className={`inline-edit whitespace-pre-wrap leading-relaxed ${className}`}
+      style={draft ? undefined : { color: "var(--faint)" }}
       title="Click to edit"
     >
       {draft || placeholder}
@@ -391,7 +398,8 @@ export function InlineNumber({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(String(value)); setEditing(false); } }}
-        className={`w-16 rounded-sm border border-accent bg-surface px-1 py-0.5 text-right outline-none mono ${className}`}
+        className={`w-16 rounded-[var(--r-chip)] border border-[var(--accent)] bg-[var(--raised)] px-1 py-0.5 text-right tabular-nums outline-none ${className}`}
+        style={{ boxShadow: "0 0 0 3px var(--accent-wash)" }}
       />
     );
   }
@@ -400,7 +408,8 @@ export function InlineNumber({
     // no keyboard way to *reach* it, so the whole field was mouse-only.
     <span
       {...pressable(() => setEditing(true), { label: `Edit — currently ${value}${suffix ?? ""}` })}
-      className={`fast mono cursor-text rounded-sm hover:bg-accent-soft ${className}`}
+      onClick={() => setEditing(true)}
+      className={`inline-edit px-0.5 tabular-nums ${className}`}
       title="Click to edit"
     >
       {value}{suffix}
@@ -408,14 +417,17 @@ export function InlineNumber({
   );
 }
 
-// ── Inline date editor (native picker behind a chip) ─────────────────────────
-export function InlineDate({ value, onChange, placeholder = "set date" }: { value: string | null; onChange: (v: string | null) => void; placeholder?: string }) {
+// ── Inline date editor (the native picker behind a quiet value) ──────────────
+export function InlineDate({ value, onChange, placeholder = "Set date" }: { value: string | null; onChange: (v: string | null) => void; placeholder?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
-    <span className="relative inline-flex items-center">
+    <span className="group/date relative inline-flex items-center gap-0.5">
       <button
+        type="button"
         onClick={() => { const el = ref.current; if (el) { try { el.showPicker(); } catch { el.focus(); } } }}
-        className={`fast mono rounded-sm px-1 text-label hover:bg-accent-soft ${value ? "text-ink" : "text-muted italic"}`}
+        className="inline-edit px-1 py-0.5 text-caption tabular-nums"
+        style={{ color: value ? "var(--ink-2)" : "var(--faint)" }}
+        aria-label={value ? `Target ${fmtDate(value)} — change` : "Set a target date"}
       >
         {value ? fmtDate(value) : placeholder}
       </button>
@@ -425,15 +437,31 @@ export function InlineDate({ value, onChange, placeholder = "set date" }: { valu
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
         className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
+        tabIndex={-1}
+        aria-hidden
       />
       {value && (
-        <button onClick={() => onChange(null)} className="fast ml-0.5 text-meta text-muted hover:text-signal" title="Clear">×</button>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="k-btn"
+          data-kind="ghost"
+          data-size="xs"
+          data-icon=""
+          style={{ width: 18, height: 18 }}
+          title="Clear the date"
+          aria-label="Clear the date"
+        >
+          <Icon name="close" size={11} />
+        </button>
       )}
     </span>
   );
 }
 
-// ── Status / momentum chips ──────────────────────────────────────────────────
+// ── Status / momentum ────────────────────────────────────────────────────────
+// A status is a chip: its colour as a dot, its word in ink. Pressing it opens
+// the statuses as a menu (a bottom sheet on the phone, via FloatingMenu).
 export function StatusPill<T extends string>({
   value,
   options,
@@ -455,28 +483,33 @@ export function StatusPill<T extends string>({
   const color = colors[value] ?? "var(--muted)";
   const isFilled = filled?.has(value);
   return (
-    <span className="relative inline-block">
+    <span className="relative inline-flex max-w-full">
       <button
         ref={btnRef}
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        className="fast mono rounded-full border px-2 py-0.5 text-meta"
-        style={{
-          borderColor: color,
-          color: isFilled ? "#fff" : color,
-          background: isFilled ? color : "transparent",
-        }}
+        className="k-chip"
+        data-tone={isFilled ? "accent" : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Change status"
       >
-        {label}
+        <Dot color={color} shape="round" size="sm" />
+        <span>{label}</span>
       </button>
-      <FloatingMenu open={open} anchorRef={btnRef} minWidth={110} onClose={() => setOpen(false)}>
+      <FloatingMenu open={open} anchorRef={btnRef} minWidth={150} onClose={() => setOpen(false)}>
         {options.map((o) => (
           <button
             key={o}
+            type="button"
+            role="menuitem"
             onClick={() => { onChange(o); setOpen(false); }}
-            className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-            style={{ color: colors[o] ?? "var(--muted)" }}
+            className="k-mi"
+            aria-checked={o === value}
           >
-            {labels?.[o] ?? o}
+            <Dot color={colors[o] ?? "var(--muted)"} shape="round" size="sm" />
+            <span className="k-mi-label">{labels?.[o] ?? o}</span>
+            {o === value && <Icon name="check" size={14} className="k-mi-check" />}
           </button>
         ))}
       </FloatingMenu>
@@ -486,16 +519,16 @@ export function StatusPill<T extends string>({
 
 export function MomentumChip({ value, onChange }: { value: Momentum; onChange: (v: Momentum) => void }) {
   const next: Record<Momentum, Momentum> = { up: "flat", flat: "down", down: "up" };
-  const glyph = value === "up" ? "↑ rising" : value === "down" ? "↓ stalled" : "→ steady";
-  const color = value === "up" ? "var(--accent)" : value === "down" ? "var(--signal)" : "var(--muted)";
+  const glyph = value === "up" ? "↑ Rising" : value === "down" ? "↓ Stalled" : "→ Steady";
   return (
-    <button onClick={() => onChange(next[value])} className="fast mono text-meta" style={{ color }} title="Cycle momentum">
-      {glyph}
+    <button type="button" onClick={() => onChange(next[value])} className="k-chip" title="Cycle momentum">
+      <span>{glyph}</span>
     </button>
   );
 }
 
 // ── Domain picker — reassign which domain a record lives under ────────────────
+// The trigger is the kit chip: the domain's symbol in its hue, its name in ink.
 export function DomainPicker({
   domains,
   value,
@@ -511,9 +544,7 @@ export function DomainPicker({
    *  right-aligns it (for triggers near the right edge of the viewport). */
   align?: "left" | "right";
   /** `lg` on the record, where routing this thing to the right area is a primary
-   *  act and not a breadcrumb — it was set at meta size, the same weight as the
-   *  crumb text beside it, so it read as a label rather than a control. The
-   *  border goes with the size: one tinted fill carries it. */
+   *  act and not a breadcrumb: a control-height button, not a chip. */
   size?: "sm" | "lg";
   /** Offers a trailing "no domain" row. Project/Initiative always belong to one
    *  domain, so they never pass this — a task can be genuinely domainless. */
@@ -522,45 +553,51 @@ export function DomainPicker({
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const cur = domains.find((d) => d.id === value);
-  const color = cur?.color ?? "var(--muted)";
+  const color = cur?.color ?? "var(--faint)";
   const lg = size === "lg";
   return (
-    <span className="relative inline-block">
+    <span className="relative inline-flex max-w-full">
       <button
         ref={btnRef}
+        type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={`fast tap flex items-center rounded-full ${
-          lg ? "gap-2 px-3.5 py-1.5 text-caption hover:brightness-95" : "gap-1.5 border px-2 py-0.5 text-meta"
-        }`}
-        style={{ color, background: lg ? `${color}1f` : `${color}12`, ...(lg ? {} : { borderColor: `${color}66` }) }}
+        className={lg ? "k-btn tap" : "k-chip tap-bloom"}
+        aria-haspopup="menu"
+        aria-expanded={open}
         title="Change domain"
       >
-        <span style={{ color }}><DomainSymbol value={cur?.icon} size={lg ? 18 : 14} /></span>
-        <span className="font-medium">{cur?.name ?? "Domain"}</span>
-        <span className="opacity-40">▾</span>
+        <span className="inline-flex shrink-0" style={{ color }}><DomainSymbol value={cur?.icon} size={lg ? 15 : 13} /></span>
+        <span className="truncate" style={cur ? undefined : { color: "var(--faint)" }}>{cur?.name ?? "Domain"}</span>
+        <Icon name="chevron-down" size={12} style={{ color: "var(--faint)", flex: "none" }} />
       </button>
-      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 200 : 170} onClose={() => setOpen(false)}>
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 220 : 180} onClose={() => setOpen(false)}>
         {domains.map((d) => (
           <button
             key={d.id}
+            type="button"
+            role="menuitem"
             onClick={() => { onChange(d.id); setOpen(false); }}
-            className={`fast tap flex w-full items-center gap-2.5 text-left hover:bg-accent-soft ${
-              lg ? "px-3 py-2.5 text-body" : "px-2.5 py-1.5 text-label"
-            }`}
-            style={{ color: d.id === value ? d.color : "var(--text)" }}
+            className="k-mi"
+            aria-checked={d.id === value}
           >
-            <span style={{ color: d.color }}><DomainSymbol value={d.icon} size={lg ? 18 : 14} /></span>
-            <span className="truncate">{d.name}</span>
-            {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+            <span className="inline-flex shrink-0" style={{ color: d.color }}><DomainSymbol value={d.icon} size={15} /></span>
+            <span className="k-mi-label">{d.name}</span>
+            {d.id === value && <Icon name="check" size={14} className="k-mi-check" />}
           </button>
         ))}
         {allowClear && value && (
-          <button
-            onClick={() => { onChange(""); setOpen(false); }}
-            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
-          >
-            no domain
-          </button>
+          <>
+            <div className="k-msep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onChange(""); setOpen(false); }}
+              className="k-mi"
+              style={{ color: "var(--muted)" }}
+            >
+              <span className="k-mi-label">no domain</span>
+            </button>
+          </>
         )}
       </FloatingMenu>
     </span>
@@ -594,51 +631,63 @@ export function InitiativePicker({
   const lg = size === "lg";
   if (!cur && initiatives.length === 0) return null;
   return (
-    <span className="relative inline-block">
+    <span className="relative inline-flex max-w-full">
       <button
         ref={btnRef}
+        type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={`fast tap flex items-center rounded-full ${
-          lg ? "gap-1.5 px-2.5 py-1 text-caption hover:bg-accent-soft/40" : "gap-1 border border-line px-2 py-0.5 text-meta"
-        }`}
-        style={cur ? undefined : { color: "var(--muted)" }}
+        className={lg ? "k-btn tap" : "k-chip tap-bloom"}
+        data-kind={lg ? "ghost" : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
         title="Change which initiative this belongs to"
       >
-        <span className={cur ? "truncate font-medium" : "truncate"} style={{ maxWidth: lg ? 160 : 120 }}>
+        <span className="truncate" style={{ maxWidth: lg ? 180 : 140, ...(cur ? {} : { color: "var(--faint)" }) }}>
           {cur?.name ?? "No initiative"}
         </span>
-        <span className="opacity-40">▾</span>
+        <Icon name="chevron-down" size={12} style={{ color: "var(--faint)", flex: "none" }} />
       </button>
-      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 200 : 170} onClose={() => setOpen(false)}>
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 220 : 180} onClose={() => setOpen(false)}>
         {cur && onOpen && (
           <>
             <button
+              type="button"
+              role="menuitem"
               onClick={() => { onOpen(cur.id); setOpen(false); }}
-              className="fast block w-full px-2.5 py-1.5 text-left text-label text-muted hover:bg-accent-soft"
+              className="k-mi"
             >
-              Open “{cur.name}” →
+              <Icon name="arrow-right" size={14} />
+              <span className="k-mi-label">Open “{cur.name}”</span>
             </button>
-            <div className="my-1 h-px bg-line" />
+            <div className="k-msep" role="separator" />
           </>
         )}
         {initiatives.map((i) => (
           <button
             key={i.id}
+            type="button"
+            role="menuitem"
             onClick={() => { onChange(i.id); setOpen(false); }}
-            className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
-            style={{ color: i.id === value ? "var(--accent)" : "var(--text)" }}
+            className="k-mi"
+            aria-checked={i.id === value}
           >
-            <span className="truncate">{i.name}</span>
-            {i.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+            <span className="k-mi-label">{i.name}</span>
+            {i.id === value && <Icon name="check" size={14} className="k-mi-check" />}
           </button>
         ))}
         {value && (
-          <button
-            onClick={() => { onChange(null); setOpen(false); }}
-            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
-          >
-            no initiative
-          </button>
+          <>
+            <div className="k-msep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onChange(null); setOpen(false); }}
+              className="k-mi"
+              style={{ color: "var(--muted)" }}
+            >
+              <span className="k-mi-label">no initiative</span>
+            </button>
+          </>
         )}
       </FloatingMenu>
     </span>
@@ -670,42 +719,46 @@ export function ProjectAttachPicker({
   if (candidates.length === 0) return null;
 
   return (
-    <span className="relative inline-block">
-      <button
+    <span className="relative inline-flex">
+      <Button
         ref={btnRef}
+        kind="ghost"
+        size="xs"
+        className="tap"
+        icon={<Icon name="plus" size={13} />}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
           setQ("");
           requestAnimationFrame(() => inputRef.current?.focus());
         }}
-        className="fast tap text-meta text-muted hover:text-ink"
       >
-        + Attach an existing project…
-      </button>
-      <FloatingMenu open={open} anchorRef={btnRef} minWidth={220} onClose={() => setOpen(false)}>
-        <div className="px-2 pb-1">
+        Attach a project
+      </Button>
+      <FloatingMenu open={open} anchorRef={btnRef} minWidth={240} onClose={() => setOpen(false)}>
+        <div className="k-msearch">
+          <Icon name="search" size={14} />
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
             placeholder="Find a project…"
-            className="w-full rounded-[var(--radius-sm)] border border-line bg-transparent px-2 py-1 text-label outline-none placeholder:text-muted"
+            aria-label="Find a project"
             style={{ caretColor: accent }}
           />
         </div>
         <div className="max-h-64 overflow-y-auto">
-          {filtered.length === 0 && (
-            <div className="px-2.5 py-1.5 text-label text-muted opacity-70">No match</div>
-          )}
+          {filtered.length === 0 && <div className="k-mlabel">No match</div>}
           {filtered.map((p) => (
             <button
               key={p.id}
+              type="button"
+              role="menuitem"
               onClick={() => { onAttach(p.id); setOpen(false); }}
-              className="fast block w-full truncate px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
+              className="k-mi"
             >
-              {p.name || "Untitled"}
+              <span className="k-mi-label">{p.name || "Untitled"}</span>
             </button>
           ))}
         </div>
@@ -733,62 +786,72 @@ export function KrPicker({
   if (keyResults.length === 0) return null;
   const cur = keyResults.find((k) => k.id === value) ?? null;
   return (
-    <span className="relative inline-block">
+    <span className="relative inline-flex max-w-full">
       <button
         ref={btnRef}
+        type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className="fast flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro"
-        style={
-          cur
-            ? { color, borderColor: `${color}66`, background: softTint(color, 8) }
-            : { color: "var(--muted)", borderColor: "var(--line)" }
-        }
+        className="k-chip tap-bloom"
+        aria-haspopup="menu"
+        aria-expanded={open}
         title={cur ? `Moves: ${cur.name}` : "Link the key result this moves"}
       >
-        <span>◎</span>
-        <span className="max-w-[120px] truncate font-medium">{cur ? cur.name : "link KR"}</span>
+        <span className="inline-flex shrink-0" style={{ color: cur ? color : "var(--faint)" }}><TargetGlyph /></span>
+        <span className="max-w-[140px] truncate" style={cur ? undefined : { color: "var(--faint)" }}>{cur ? cur.name : "Link KR"}</span>
       </button>
-      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={170} onClose={() => setOpen(false)}>
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={180} onClose={() => setOpen(false)}>
         {keyResults.map((k) => (
           <button
             key={k.id}
+            type="button"
+            role="menuitem"
             onClick={() => { onChange(k.id === value ? null : k.id); setOpen(false); }}
-            className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-            style={{ color: k.id === value ? color : "var(--text)" }}
+            className="k-mi"
+            aria-checked={k.id === value}
           >
-            <span style={{ color }}>◎</span>
-            <span className="truncate">{k.name}</span>
-            {k.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+            <span className="inline-flex shrink-0" style={{ color }}><TargetGlyph /></span>
+            <span className="k-mi-label">{k.name}</span>
+            {k.id === value && <Icon name="check" size={14} className="k-mi-check" />}
           </button>
         ))}
         {value && (
-          <button
-            onClick={() => { onChange(null); setOpen(false); }}
-            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
-          >
-            unlink
-          </button>
+          <>
+            <div className="k-msep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onChange(null); setOpen(false); }}
+              className="k-mi"
+              style={{ color: "var(--muted)" }}
+            >
+              <span className="k-mi-label">Unlink</span>
+            </button>
+          </>
         )}
       </FloatingMenu>
     </span>
   );
 }
 
+function TargetGlyph() {
+  return <Target size={13} strokeWidth={1.75} aria-hidden />;
+}
+
 // ── Energy picker ────────────────────────────────────────────────────────────
+// Three exclusive choices, so the kit's segmented control — the domain's hue
+// only marks the one that's on.
 export function EnergyPicker({ value, onChange, color }: { value: Energy | null; onChange: (v: Energy) => void; color: string }) {
   return (
-    <span className="inline-flex gap-1">
+    <span className="k-seg" data-size="sm" role="radiogroup" aria-label="Energy">
       {ENERGY_ORDER.map((e) => (
         <button
           key={e}
+          type="button"
+          role="radio"
+          aria-checked={value === e}
           onClick={() => onChange(e)}
           title={`${ENERGY_META[e].label} — ${ENERGY_META[e].blurb}`}
-          className="fast h-5 w-5 rounded-sm text-label"
-          style={{
-            color: value === e ? "#fff" : "var(--muted)",
-            background: value === e ? color : "transparent",
-            border: `1px solid ${value === e ? color : "var(--line)"}`,
-          }}
+          style={value === e ? { color } : undefined}
         >
           {ENERGY_META[e].icon}
         </button>
@@ -797,13 +860,18 @@ export function EnergyPicker({ value, onChange, color }: { value: Energy | null;
   );
 }
 
-// ── Small round icon button (edit/delete affordances on hover) ───────────────
+// ── Small square icon button (edit/delete affordances) ───────────────────────
 export function IconBtn({ children, onClick, title, danger }: { children: ReactNode; onClick: () => void; title?: string; danger?: boolean }) {
   return (
     <button
+      type="button"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={title}
-      className={`fast flex h-6 w-6 items-center justify-center rounded-full border border-line text-caption hover:border-muted ${danger ? "hover:border-signal hover:text-signal" : "hover:text-ink"} text-muted`}
+      aria-label={title}
+      className="k-btn"
+      data-kind={danger ? "danger" : "ghost"}
+      data-size="xs"
+      data-icon=""
     >
       {children}
     </button>
@@ -813,7 +881,7 @@ export function IconBtn({ children, onClick, title, danger }: { children: ReactN
 // ── Confirm-delete inline ────────────────────────────────────────────────────
 /** Destructive, so it says what it does. A bare ✕ next to a "Done" button reads
  *  as "close" — the one thing it isn't. The word is the affordance; the arm step
- *  is the safety. */
+ *  is the safety: the first press turns it into the question, solid. */
 export function DeleteBtn({ onDelete, what, phone = false }: { onDelete: () => void; what: string; phone?: boolean }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -821,27 +889,30 @@ export function DeleteBtn({ onDelete, what, phone = false }: { onDelete: () => v
     const t = setTimeout(() => setArmed(false), 2600);
     return () => clearTimeout(t);
   }, [armed]);
-  // `phone` only sizes it to a thumb (44px, body type) — the arm-then-confirm
-  // safety and the wording are the same on both shells.
-  const size = phone ? "tap px-4 py-2.5 text-body" : "px-2.5 py-1 text-meta";
+  // `phone` only sizes it to a thumb (44px) — the arm-then-confirm safety and
+  // the wording are the same on both shells.
+  const sizing = phone ? "tap" : "";
   if (armed)
     return (
-      <button
+      <Button
+        kind="danger-solid"
+        size={phone ? "md" : "xs"}
+        className={sizing}
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className={`fast rounded-md border font-medium ${size}`}
-        style={{ borderColor: "var(--signal)", color: "var(--signal)" }}
       >
         Delete {what}?
-      </button>
+      </Button>
     );
   return (
-    <button
+    <Button
+      kind="danger"
+      size={phone ? "md" : "xs"}
+      className={sizing}
       onClick={() => setArmed(true)}
       title={`Delete this ${what}`}
-      className={`fast rounded-md border border-line font-medium text-muted hover:border-signal hover:text-signal ${size}`}
     >
       Delete
-    </button>
+    </Button>
   );
 }
 
@@ -1528,12 +1599,12 @@ function UnassignedTray({
   );
 }
 
-// ── The "refined" vocabulary — pip → tick → seal, one calm green ─────────────
+// ── The "refined" vocabulary — pie → tick → seal, one calm green ─────────────
 // A refined item is one Nuvo understands (shaped + sound, or a domain with
 // routing context). The reward for keeping it that way is quiet: no bar to
-// finish, just a settled check in the same RIPE_GREEN the ripeness pip uses, so
-// "refined" reads identically from a record up to a whole floor.
-const REFINED_INK = `color-mix(in srgb, ${RIPE_GREEN} 55%, var(--muted))`;
+// finish, just a settled check in the same --ok the readiness pie fills with,
+// so "refined" reads identically from a record up to a whole floor.
+const REFINED_INK = RIPE_GREEN;
 
 function Check({ size = 11, pathClassName }: { size?: number; pathClassName?: string }) {
   return (
@@ -1566,66 +1637,58 @@ export function useRefinedCelebration(floorKey: string, atRest: boolean): boolea
 
 /** Record-level mark: a fully-refined project/initiative/domain wears this in
  *  place of a progress bar — done isn't a track to fill, it's a state at rest. */
-export function RefinedTick({ size = 9 }: { size?: number }) {
+export function RefinedTick({ size = 11 }: { size?: number }) {
   return (
     <span
-      className="flex shrink-0 items-center gap-1 text-micro"
-      style={{ color: REFINED_INK, letterSpacing: "0.04em" }}
+      className="inline-flex shrink-0 items-center gap-1 text-label font-medium"
+      style={{ color: REFINED_INK }}
       title="Groomed — shaped and sound; Nuvo can plan and route it"
     >
-      <Check size={size} /> groomed
+      <Check size={size} /> Groomed
     </span>
   );
 }
 
 /** Floor-level seal: the quiet reward a fully-refined Build floor wears in its
- *  header. Not a banner — a small chip, with the "why it pays off" tucked behind
- *  a hover so the at-rest state stays calm but stays teaching. */
+ *  head — a kit chip in the ok tone. Why it pays off rides its tooltip. */
 export function RefinedSeal({ noun, celebrate = false }: { noun: string; celebrate?: boolean }) {
   return (
-    <div className="group/seal relative flex">
-      <span
-        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label ${celebrate ? "seal-draw" : ""}`}
-        style={{
-          color: `color-mix(in srgb, ${RIPE_GREEN} 78%, var(--text))`,
-          background: `color-mix(in srgb, ${RIPE_GREEN} 11%, transparent)`,
-          border: `0.5px solid color-mix(in srgb, ${RIPE_GREEN} 32%, var(--line))`,
-        }}
-      >
-        <Check pathClassName="seal-check" /> all groomed
-        <span aria-hidden className="text-meta" style={{ opacity: 0.55 }}>ⓘ</span>
-      </span>
-      <div
-        role="tooltip"
-        className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-[252px] rounded-lg border border-line bg-surface p-3 text-left text-meta leading-relaxed text-muted opacity-0 transition-opacity duration-150 group-hover/seal:opacity-100"
-        style={{ boxShadow: "var(--shadow-2)" }}
-      >
-        <span className="mb-1 block font-medium text-ink">Why keep it groomed</span>
-        Groomed {noun} are {noun} Nuvo understands — clear charter, sound structure.
-        The more of your map is groomed, the better Nuvo plans your week, routes new
-        captures, and surfaces what actually matters.
-      </div>
-    </div>
+    <span
+      className={`k-chip ${celebrate ? "seal-draw" : ""}`}
+      data-tone="ok"
+      title={`Groomed ${noun} are ${noun} Nuvo understands — clear charter, sound structure. The more of your map is groomed, the better Nuvo plans your week and routes new captures.`}
+    >
+      <Check pathClassName="seal-check" size={12} />
+      <span>All groomed</span>
+    </span>
   );
 }
 
-// ── Page-level header for a floor ────────────────────────────────────────────
+// ── The head of a board / wall page ──────────────────────────────────────────
+// One hero (the children — a `text-display masthead` that states a fact), an
+// optional quiet line under it, and the page's acts on the right. A list page
+// has no hero and doesn't use this (the PageBar names it).
 export function FloorHeader({
   eyebrow,
+  sub,
   children,
   actions,
 }: {
+  /** @deprecated an eyebrow over a hero restates it (D-189) — prefer `sub`. */
   eyebrow?: ReactNode;
+  /** the one quiet line under the hero */
+  sub?: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-start gap-4">
-      <div className="min-w-0 flex-1">
-        {eyebrow && <div className="section-label mb-1">{eyebrow}</div>}
+    <div className="fl-head">
+      <div className="fl-head-main">
+        {eyebrow && <div className="fl-head-sub" style={{ margin: "0 0 6px" }}>{eyebrow}</div>}
         {children}
+        {sub && <p className="fl-head-sub">{sub}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="fl-head-acts">{actions}</div>}
     </div>
   );
 }
