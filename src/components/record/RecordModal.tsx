@@ -85,6 +85,7 @@ import {
   type ReadinessStep,
 } from "../kit";
 
+import type { DraftPhase } from "../tasks/usePathDraft";
 const TaskPopover = lazy(() => import("../SlideOver").then((m) => ({ default: m.TaskPopover })));
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
 import {
@@ -241,6 +242,10 @@ function ProjectRecord({
   const [assessing, setAssessing] = useState(false);
   const [shipping, setShipping] = useState(false);
   const [grooming, setGrooming] = useState(false);
+  // Draft the path (D-193): the trigger lives on the Tasks header; the draft
+  // itself lives in the list.
+  const draftRef = useRef<{ start: () => void }>(null);
+  const [draftPhase, setDraftPhase] = useState<DraftPhase>("idle");
   const [menu, setMenu] = useState(false);
   const [weekOpen, setWeekOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -382,6 +387,19 @@ function ProjectRecord({
               count={tasks.length ? `${done}/${tasks.length}${weight ? ` · ${weight}` : ""}` : undefined}
               onAdd={() => taskRef.current?.focus()}
               addLabel="Add a task (T)"
+              actions={
+                draftPhase === "idle" || draftPhase === "done" ? (
+                  <Button
+                    size="xs"
+                    kind="ghost"
+                    icon={<Icon name="sparkles" size={13} />}
+                    onClick={() => draftRef.current?.start()}
+                    title="Nuvo drafts the steps this project is missing, among yours. Nothing is added until you keep it."
+                  >
+                    Draft the path
+                  </Button>
+                ) : null
+              }
             >
               <div data-assess-anchor="tasks">
                 <TaskList
@@ -394,6 +412,8 @@ function ProjectRecord({
                   refining={grooming}
                   onRefining={setGrooming}
                   onOpenTask={recordTask.open}
+                  draftRef={draftRef}
+                  onDraftPhase={setDraftPhase}
                 />
                 {recordTask.openId && (
                   <RecordTaskPopover taskId={recordTask.openId} anchor={recordTask.anchor} onClose={recordTask.close} />

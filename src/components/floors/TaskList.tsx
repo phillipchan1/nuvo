@@ -14,10 +14,12 @@
 // empty (scaffolding a new project). `a` reaches it from any row, `t` from
 // anywhere in the record when no row is under the cursor.
 
-import { useMemo, useState, type RefObject } from "react";
+import { useEffect, useImperativeHandle, useMemo, useState, type Ref, type RefObject } from "react";
 import { format } from "date-fns";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
-import { useAllTasks } from "../../hooks/useTasks";
+import { useAllTasks, useTaskMutations } from "../../hooks/useTasks";
+import { usePathDraft, type DraftPhase } from "../tasks/usePathDraft";
+import PathDraftBar from "../tasks/PathDraftBar";
 import type { VTask } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
 import TaskRefine from "./TaskRefine";
@@ -74,6 +76,8 @@ export default function TaskList({
   refining: refiningProp,
   onRefining,
   onOpenTask,
+  draftRef,
+  onDraftPhase,
 }: {
   tasks: VTask[];
   parent: TaskParent;
@@ -91,6 +95,10 @@ export default function TaskList({
   onRefining?: (v: boolean) => void;
   /** ↵ / a click — the host opens the task's popover over the record. */
   onOpenTask?: (t: Task, anchor: DOMRect, el: HTMLElement | null) => void;
+  /** The record's ✦ Draft the path (D-193) starts the draft through this. */
+  draftRef?: Ref<{ start: () => void }>;
+  /** So the host can hide its trigger while a draft is open. */
+  onDraftPhase?: (phase: DraftPhase) => void;
 }) {
   const { data } = useVertical();
   const { data: allTasks } = useAllTasks();
@@ -110,6 +118,16 @@ export default function TaskList({
     const name = p?.name ?? i?.name ?? d?.name;
     return name ? { name, color: d?.color ?? null } : null;
   }, [data.projects, data.initiatives, data.domains, parent.projectId, parent.initiativeId, parent.domainId]);
+
+  const mutations = useTaskMutations();
+  const project = parent.projectId ? data.projects.find((x) => x.id === parent.projectId) : null;
+  const home = useMemo(
+    () => (project ? { projectId: project.id, initiativeId: project.initiativeId ?? null, domainId: project.domainId || null } : null),
+    [project?.id, project?.initiativeId, project?.domainId],
+  );
+  const draft = usePathDraft(home, rows, mutations);
+  useImperativeHandle(draftRef, () => ({ start: () => void draft.start() }), [draft.start]);
+  useEffect(() => onDraftPhase?.(draft.phase), [draft.phase, onDraftPhase]);
 
   const controlled = refiningProp != null;
   const refining = controlled ? refiningProp : refiningLocal;
@@ -156,7 +174,9 @@ export default function TaskList({
         composerPlaceholder={spine ? "Add a task…" : "Add a task… ↵ to add another, or paste a list"}
         composerAutoFocus={spine && rows.length === 0}
         emptyHint={spine ? null : emptyHint}
+        draft={home ? draft : null}
       />
+      {home && <PathDraftBar draft={draft} keys={keyboardNav} />}
       {groom}
     </div>
   );

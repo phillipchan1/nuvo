@@ -19,6 +19,13 @@ export interface ScaffoldDraft {
   energy: "deep" | "decide" | "delegate" | "quick" | null;
   durationMins: number;
   rationale?: string;
+  /** Where it goes in the person's own list: the exact title of their step it
+   *  comes straight after, "START" for before all of them, or absent when it
+   *  simply follows the previous proposal (Draft the path, D-193). */
+  after?: string;
+  /** Other ways to put the same step — a different scope or wording. The client
+   *  offers them on ⇥; it never picks one for you. */
+  alternatives?: { title: string; durationMins: number }[];
 }
 
 interface ScaffoldInput {
@@ -30,6 +37,9 @@ interface ScaffoldInput {
   existing?: { title: string; status: string }[];
   /** A one-line redirect from Tending's reshape loop — steers the next draft. */
   guidance?: string;
+  /** Steps Nuvo proposed that the person hasn't kept yet, being redrafted by
+   *  `guidance`. Replace these; don't repeat them unless the steer keeps them. */
+  redraft?: string[];
 }
 
 /** The shared proposer — grounds the LLM in the project's place in the
@@ -46,16 +56,19 @@ ${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input
 
 The person's own steps so far (their plan — do NOT duplicate or restate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
+${input.redraft?.length ? `\nYour previous proposal, which the person is reshaping (replace it, don't append to it):\n${input.redraft.map((t) => `- ${t}`).join("\n")}` : ""}
 ${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.` : ""}
 
 Propose ONLY the tasks their plan is missing to reach the outcome — fill the gaps, don't rewrite their work.
 Rules:
-- If they already have steps, add just the genuine gaps (0–4). If the list is empty, propose 3 to 8 to get started. Always in execution order (a → b → c); the first should be startable today.
+- If they already have steps, add just the genuine gaps (0–6). If the list is empty, propose 3 to 8 to get started. Always in execution order (a → b → c); the first should be startable today.
 - Each task is one sitting of work: concrete verb-first title, 15–120 minutes.
 - energy is one of: "deep" (focused maker work), "decide" (judgment call), "delegate" (hand off / follow up), "quick" (low-friction win).
-- rationale: max 8 words on why it's needed.
+- rationale: one plain sentence, max 12 words, on why the outcome needs it. No "this ensures".
+- after: where it belongs among THEIR steps — the exact title of their step it comes straight after, or "START" if it comes before all of them. Omit it when it simply follows your previous proposal. With no steps of theirs, omit it.
+- alternatives: 0–2 other versions of the same step (a smaller or larger scope, or a different way to do it), each with its own duration_minutes. Only when a real choice exists.
 
-Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minutes":number,"rationale":string}]}`;
+Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minutes":number,"rationale":string,"after"?:string,"alternatives"?:[{"title":string,"duration_minutes":number}]}]}`;
 
   const key = llmKey();
   const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
@@ -84,6 +97,17 @@ Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minu
       energy: ENERGIES.has(String(t.energy)) ? (String(t.energy) as ScaffoldDraft["energy"]) : "quick",
       durationMins: Math.min(480, Math.max(5, Number(t.duration_minutes) || 30)),
       rationale: t.rationale ? String(t.rationale) : undefined,
+      after: typeof t.after === "string" && t.after.trim() ? t.after.trim() : undefined,
+      alternatives: Array.isArray(t.alternatives)
+        ? t.alternatives
+            .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)
+            .map((a) => ({
+              title: String(a.title ?? "").trim(),
+              durationMins: Math.min(480, Math.max(5, Number(a.duration_minutes) || 30)),
+            }))
+            .filter((a) => a.title.length > 0)
+            .slice(0, 2)
+        : undefined,
     }))
     .filter((t) => t.title.length > 0)
     .slice(0, 10);
@@ -103,6 +127,8 @@ export async function scaffoldProject(
     /** A freshly-typed context line (may not be persisted yet) — overrides the
      *  stored description so Nuvo reasons from what the person just told it. */
     description?: string;
+    /** Unkept proposals a steer is reshaping (Draft the path). */
+    redraft?: string[];
   } = {},
 ): Promise<{ tasks: ScaffoldDraft[] }> {
   const { data: project, error } = await admin
@@ -125,6 +151,7 @@ export async function scaffoldProject(
       .select("title, status, energy, duration_minutes")
       .eq("project_id", projectId)
       .neq("status", "trashed")
+      .is("parent_task_id", null)
       .order("sort_order"),
   ]);
 
@@ -144,6 +171,7 @@ export async function scaffoldProject(
     domain: domainRes.data,
     existing: [...saved, ...drafts],
     guidance: opts.guidance,
+    redraft: opts.redraft,
   });
 }
 

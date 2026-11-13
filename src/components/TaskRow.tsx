@@ -216,6 +216,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
   /** The checkbox sits on the host's left edge (a record's spine) instead of
    *  inset — the hover wash and the selection still get room either side. */
   flush?: boolean;
+  /** A step Nuvo drafted and you haven't kept (Draft the path, D-193). The same
+   *  row, not yet yours: the check KEEPS it, a swipe right keeps and left drops,
+   *  and the open one says why it's there and offers its acts. */
+  draft?: DraftRow;
 }>(function TaskRow(
   {
     task,
@@ -246,6 +250,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     editing,
     onRename,
     flush,
+    draft,
   },
   ref,
 ) {
@@ -268,6 +273,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     .filter((l): l is Label => Boolean(l));
 
   const toggle = () => {
+    if (draft) return draft.onKeep();
     if (completing) return;
     if (!done) {
       // Reduced motion: the write is the whole act — no land, no wait.
@@ -592,6 +598,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
       data-completing={completing ? "" : undefined}
       data-dragging={dragging ? "" : undefined}
       data-flush={flush ? "" : undefined}
+      data-draft={draft ? "" : undefined}
+      data-draft-open={draft?.open ? "" : undefined}
       className={`task-row group ${completing ? "task-completing" : ""} ${swipeActions ? "overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
@@ -613,7 +621,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
               }}
             >
               <Icon name="check" size={14} />
-              Done
+              {draft ? "Keep" : "Done"}
             </span>
             <span
               style={{
@@ -622,8 +630,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
                 transform: `scale(${armed && swipeX < 0 ? 1.08 : 1})`,
               }}
             >
-              Tomorrow
-              <Icon name="arrow-right" size={14} />
+              {draft ? "Drop" : "Tomorrow"}
+              <Icon name={draft ? "close" : "arrow-right"} size={14} />
             </span>
           </div>
         );
@@ -645,8 +653,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
         <TaskCheck
           checked={checked}
           onChange={() => toggle()}
-          label={done ? "Mark not done" : "Mark done"}
-          className={completing ? "land-stamp" : undefined}
+          label={draft ? "Keep this step" : done ? "Mark not done" : "Mark done"}
+          className={completing ? "land-stamp" : draft ? "task-check-draft" : undefined}
         />
 
         {editing ? (
@@ -710,9 +718,60 @@ const TaskRow = forwardRef<TaskRowHandle, {
 
         {acceptControls}
       </div>
+      {draft?.open && <DraftActs draft={draft} />}
     </div>
   );
 });
+
+export interface DraftRow {
+  /** The step the keys are on — it says why and shows its acts. */
+  open: boolean;
+  why: string | null;
+  /** Where the size came from: your finished work, or "An estimate". */
+  evidence: string;
+  /** Which of the step's versions is showing, when it has more than one. */
+  version: { at: number; of: number } | null;
+  /** Keycaps ride the controls on a keyboard; a phone has none. */
+  keys: boolean;
+  onKeep: () => void;
+  onDrop: () => void;
+  onVersion: () => void;
+  onEdit: () => void;
+}
+
+/** The open drafted step: its reason, then Keep · Drop · Version · Edit. Keep is
+ *  the one filled control — the default act, one key. */
+function DraftActs({ draft }: { draft: DraftRow }) {
+  const stop = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    fn();
+  };
+  return (
+    <div className="task-row-draft" onClick={(e) => e.stopPropagation()}>
+      <p className="task-row-draft-why">
+        {draft.why}
+        {draft.why ? " " : ""}
+        <span className="task-row-draft-evidence">{draft.evidence}</span>
+      </p>
+      <div className="task-row-draft-acts">
+        <Button size="xs" kind="primary" onClick={stop(draft.onKeep)} shortcut={draft.keys ? "↵" : undefined}>
+          Keep
+        </Button>
+        <Button size="xs" onClick={stop(draft.onDrop)} shortcut={draft.keys ? "⌫" : undefined}>
+          Drop
+        </Button>
+        {draft.version && (
+          <Button size="xs" onClick={stop(draft.onVersion)} shortcut={draft.keys ? "⇥" : undefined}>
+            Version {draft.version.at} of {draft.version.of}
+          </Button>
+        )}
+        <Button size="xs" kind="ghost" onClick={stop(draft.onEdit)} shortcut={draft.keys ? "E" : undefined}>
+          Edit
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default TaskRow;
 

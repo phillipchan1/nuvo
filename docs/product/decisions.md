@@ -6915,6 +6915,52 @@ across by itself once applied; `worker/schema/neon.sql` (the rehearsal schema) g
 columns by hand, and the Worker keeps its own copy of the window (`worker/src/lib/syncWindow.ts`, read by its
 iCloud sync), now also 56 days. Its ICS sync keeps 30: an ICS feed is never your own calendar.*
 
+**D-193 · 2026-11-13 · Draft the path: Nuvo drafts a project's missing steps into its own list,
+and you correct the draft.** *(Asked by the operator: "helping draft the tasks in a meaningful way… see it
+animate and the things get populated… a really great editing experience where easy add remove reorder
+suggest". Prototyped first as the "Draft the Path" artifact.)*
+
+**What.** The project record's Tasks header (desktop) and the phone's project screen carry **✦ Draft the
+path**. Nuvo reads the outcome, the initiative, the domain and the steps already there, and the drafted
+steps land **among yours, where they belong** (`after` names the step each follows), one at a time. A
+drafted step is the same `TaskRow`, not yet yours: a faint accent wash and a dashed check. The step the
+keys are on says why it's there and where its size came from, and offers **Keep ↵ · Drop ⌫ · Version ⇥ ·
+Edit E**; ⌥↑↓ or a drag moves it; **/** steers what you haven't kept ("smaller steps", "skip the
+research" — free text, three chips); **⇧↵ Keep all**, **esc Discard rest**, both with Undo. On a phone the
+same acts are taps, swipe right keeps and left drops, and a hold moves. A kept step is written the way
+the add box writes one: a `backlog` row on the project at the sort order between its neighbours. It
+never reaches a week (P2).
+
+**Anchor.** Closes toward **Q4** ("what are the actual steps?"), whose own note said an empty project
+leans on AI for its first list — and that list existed only in the create moment (D-055); a saved,
+thin project had no way to ask. Strains **P3** (Nuvo proposes; you promote) — held by ghosts that
+write nothing until kept, one key per act, and steering that only reshapes the unkept. Strains **P9**
+— the stream-in and the rows making room are motion, allowed because it is the synchronous answer to
+your press, transform/opacity only, off under reduced motion. **P6**: a size is the median of two or
+more of *your* finished tasks that look alike (`lib/pathDraft.sizeFromHistory`, deliberately strict),
+said as such; otherwise the line reads "An estimate", which is all of a new account (**P7, P16**). Four
+no's: no pool, no place. New names: *Draft the path*, *drafted step*, *steer* (glossary).
+
+**Relation to what exists.** D-055's create-moment ✦ *Draft the first steps* is unchanged (a project
+that doesn't exist yet has no list to draft into). **Groom the steps** (`TaskRefine`) stays: it only
+proofreads titles and proposes a home, and never invents a step; Draft the path only invents. Both
+sit on the same `scaffold` proposer as the Refine run's reshape loop.
+
+**Mechanism.** `lib/pathDraft.ts` (pure: placement, sizing, sort order, layout), `tasks/usePathDraft.ts`
+(state, the write, the keys — registered once so it hears esc before the record does),
+`tasks/PathDraftBar.tsx`, a `draft` prop on `TaskRow` and `TaskListView`. The agent's `scaffold`
+gained `after`, `alternatives` and `redraft`; the client degrades without them (drafts chain at the
+end, no Version).
+
+*Status: built 2026-11-13, uncommitted. The `agent` edge function with the new fields was **deployed
+2026-11-13** (Supabase, project `ebibzojtkzkphykznomv`; the live endpoint answers, unauthenticated calls
+refused). Driven in the `?docs` record harness (desktop) and the `?domains` sheet at 375px with the agent
+response stubbed in the page — streaming, placement, version, move, keep, drop + Undo, steer, esc +
+Undo, keep all; 44px acts and no sideways scroll on the phone. **Not driven against a real account**:
+this checkout has no `.env.local`, so the kept row's landing in the live list and the real model's
+`after` / `alternatives` are unobserved, and the client half is not yet in any shipped build. `npm run perf` not run (the rows' CSS is shared;
+`perf-budget` in `npm test` passes).*
+
 **D-192 · 2026-11-13 · The small pages say the ambition out loud: statement pages.** *(Asked by
 the operator: "redesign the login page… every little page to highlight this ambition.")*
 

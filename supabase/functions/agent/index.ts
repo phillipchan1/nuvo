@@ -72,6 +72,7 @@ Deno.serve(async (req) => {
         guidance: body.scaffold.guidance,
         draftTitles: Array.isArray(body.scaffold.draftTitles) ? body.scaffold.draftTitles.map(String) : undefined,
         description: body.scaffold.description ? String(body.scaffold.description) : undefined,
+        redraft: Array.isArray(body.scaffold.redraft) ? body.scaffold.redraft.map(String) : undefined,
       }));
     }
     // Refine an existing backlog: typo/wording fixes + missing steps + a

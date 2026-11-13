@@ -41,14 +41,16 @@ import {
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
 import { DomainPicker, InitiativePicker, ProjectAttachPicker, RipenessPip } from "../../floors/parts";
 import { ShipStamp } from "../../ShipStamp";
-import { useAllTasks } from "../../../hooks/useTasks";
+import { useAllTasks, useTaskMutations } from "../../../hooks/useTasks";
+import { usePathDraft } from "../../tasks/usePathDraft";
+import PathDraftBar from "../../tasks/PathDraftBar";
 import { byManualOrder } from "../../../lib/taskOrder";
 import type { Task } from "../../../lib/types";
 import TaskListView from "../../tasks/TaskListView";
 import { useMobileOpenTask } from "../openTask";
 import DomainSymbol from "../../domain/DomainSymbol";
 import { Icon } from "../../Icon";
-import { Dot, IconButton } from "../../kit";
+import { Button, Dot, IconButton } from "../../kit";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -409,6 +411,7 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
           parent={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
           placeholder={tasks.length ? "Add a task" : "First step"}
           reorderable
+          draftable
         />
       </Section>
 
@@ -491,11 +494,14 @@ export function DetailTaskList({
   parent,
   placeholder,
   reorderable = false,
+  draftable = false,
 }: {
   tasks: VTask[];
   parent: TaskParent;
   placeholder: string;
   reorderable?: boolean;
+  /** A project's list offers ✦ Draft the path (D-193) — the desktop record's act. */
+  draftable?: boolean;
 }) {
   const { data } = useVertical();
   const { data: allTasks } = useAllTasks();
@@ -510,16 +516,33 @@ export function DetailTaskList({
   const i = !p && parent.initiativeId ? data.initiatives.find((x) => x.id === parent.initiativeId) : null;
   const dom = data.domains.find((x) => x.id === (p?.domainId ?? i?.domainId ?? parent.domainId));
   const name = p?.name ?? i?.name ?? dom?.name;
+  const mutations = useTaskMutations();
+  const home = useMemo(
+    () => (draftable && p ? { projectId: p.id, initiativeId: p.initiativeId ?? null, domainId: p.domainId || null } : null),
+    [draftable, p?.id, p?.initiativeId, p?.domainId],
+  );
+  const draft = usePathDraft(home, rows, mutations);
   return (
-    <TaskListView
-      tasks={rows}
-      context={parent}
-      contextLabel={name ? { name, color: dom?.color ?? null } : null}
-      keyboard={false}
-      reorderable={reorderable}
-      onOpen={(t) => openTask?.(t.id)}
-      composerPlaceholder={placeholder}
-    />
+    <>
+      {home && (draft.phase === "idle" || draft.phase === "done") && (
+        <div className="ph-draft-trigger">
+          <Button kind="ghost" icon={<Icon name="sparkles" size={14} />} onClick={() => void draft.start()}>
+            Draft the path
+          </Button>
+        </div>
+      )}
+      <TaskListView
+        tasks={rows}
+        context={parent}
+        contextLabel={name ? { name, color: dom?.color ?? null } : null}
+        keyboard={false}
+        reorderable={reorderable}
+        onOpen={(t) => openTask?.(t.id)}
+        composerPlaceholder={placeholder}
+        draft={home ? draft : null}
+      />
+      {home && <PathDraftBar draft={draft} keys={false} />}
+    </>
   );
 }
 

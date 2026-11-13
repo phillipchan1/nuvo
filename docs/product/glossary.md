@@ -122,6 +122,9 @@ been used to argue against things it doesn't forbid.
 | Term | Meaning |
 |---|---|
 | **Nuvo** (the assistant) | ⌘J. Say **"ask Nuvo"** for the assistant, **"in Nuvo"** for the app. Endpoints on the `agent` edge function: `scaffold` · `blueprint` · `prepare` · `narrate`. |
+| **Draft the path** | ✦ on a project's Tasks (the record's header; the phone's project screen). Nuvo drafts the steps the project is missing **among yours**, one at a time; nothing is added until you keep it (D-193). Not *Groom the steps*, which only rewords and re-homes. |
+| **Drafted step** | A step Nuvo proposed that you haven't kept: the same task row with a faint wash and a dashed check. Keep ↵ · Drop ⌫ · Version ⇥ · Edit E; a kept one becomes a backlog task on the project. Its size is from your finished work, or says "An estimate". |
+| **Steer** | One free-text line that reshapes the drafted steps you haven't kept ("smaller steps", "skip the research"). Never touches what you kept. |
 | **Prepare** | Pre-work written onto a task (approach, drafts, pitfalls). Carries the **✦** badge; surfaced at Sunrise, boosted in Now. |
 | **Marquee** | Nuvo *shows* an answer alongside telling it — brings a surface forward and holds a warm **limelight** orb on the thing it means. A held session, not a flash; a **return pill** makes it reversible. Vocabulary lives in `src/lib/marqueeRegistry.ts`. [`marquee.md`](../marquee.md) |
 | **Walk me through it** | The first-run walkthrough, and the only door on the welcome (D-065 retired the visual-tour alternative). A panel docks beside the **real** app, names one act per step, lights the real element, and ticks from real data — nothing is simulated, every row it creates is the user's own. Skippable at every step; Esc leaves. It closes on **the law** (D-064): *a task earns a day · a project earns a week · an initiative earns a quarter.* [`orientation.md`](../orientation.md). |

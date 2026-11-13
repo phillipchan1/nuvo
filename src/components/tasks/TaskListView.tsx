@@ -11,7 +11,7 @@
  * only says what the list is (`context`) and how a task opens (`onOpen`).
  */
 
-import { useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Task } from "../../lib/types";
 import { useTaskMutations } from "../../hooks/useTasks";
 import { TaskCaptureSinkContext } from "../../hooks/useTaskCapture";
@@ -28,6 +28,7 @@ import TaskComposer, { type TaskComposerHandle } from "./TaskComposer";
 import TaskActionsMenu from "./TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./TaskMenus";
 import { orderBeside, useTaskListKeys } from "./useTaskListKeys";
+import type { PathDraft } from "./usePathDraft";
 
 export interface TaskListViewProps {
   /** In display order. */
@@ -62,6 +63,9 @@ export interface TaskListViewProps {
   className?: string;
   /** Extra data-* on each row's root (the slot's calendar drag reads them). */
   dragData?: (t: Task) => Record<string, string> | undefined;
+  /** A project's open draft (Draft the path, D-193): its steps are drawn among
+   *  the rows, with the same row, and the list's keys hand over to the draft. */
+  draft?: PathDraft | null;
 }
 
 export default function TaskListView({
@@ -83,6 +87,7 @@ export default function TaskListView({
   emptyHint,
   className = "",
   dragData,
+  draft,
 }: TaskListViewProps) {
   const liveMutations = useTaskMutations();
   // A harness that captures into a sink is looking, not editing: its rows'
@@ -112,12 +117,19 @@ export default function TaskListView({
   const composer = composerRef ?? innerComposer;
   const handles = useRef(new Map<string, TaskRowHandle>());
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
-  const ids = useMemo(() => tasks.map((t) => t.id), [tasks]);
+  // While a draft is open the list draws its layout — your rows and the drafted
+  // steps interleaved — and a drag orders both.
+  const drafting = Boolean(draft?.items);
+  const items = useMemo(
+    () => draft?.items ?? tasks.map((task) => ({ kind: "task" as const, task })),
+    [draft?.items, tasks],
+  );
+  const ids = useMemo(() => items.map((i) => i.task.id), [items]);
 
   const rowEl = (id: string) => listRef.current?.querySelector<HTMLElement>(`[data-list-row="${CSS.escape(id)}"]`) ?? null;
   const rowRect = (id: string) => rowEl(id)?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
 
-  const reorderTo = (next: string[]) => mutations.reorder(tasks, next);
+  const reorderTo = (next: string[]) => (drafting && draft ? draft.reorder(next) : mutations.reorder(tasks, next));
   // The click that ends a drag lands on the row it started on; it isn't an open.
   const lastDrag = useRef(0);
   const open = (t: Task) => {
@@ -159,8 +171,38 @@ export default function TaskListView({
     disabled: !phone || !reorderable,
   });
 
+  // The draft's keys (↵ keep, ⌫ drop, ⇥ version…) replace the list's while it's open.
+  draft?.setKeys(keyboard && !phone && !menu);
+
+  // The rows make room as each drafted step lands — FLIP, transform only, and
+  // only while a draft is open (it reads every row's box, once per change).
+  const tops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (!drafting) {
+      tops.current.clear();
+      return;
+    }
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const next = new Map<string, number>();
+    el.querySelectorAll<HTMLElement>("[data-list-row]").forEach((row) => {
+      const id = row.dataset.listRow as string;
+      const top = row.getBoundingClientRect().top;
+      next.set(id, top);
+      const was = tops.current.get(id);
+      if (reduce) return;
+      if (was == null) {
+        if (tops.current.size) row.animate([{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+      } else if (Math.abs(was - top) > 1) {
+        row.animate([{ transform: `translateY(${was - top}px)` }, { transform: "none" }], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
+      }
+    });
+    tops.current = next;
+  }, [drafting, ids]);
+
   useTaskListKeys({
-    enabled: keyboard && !phone && !menu && !editingId,
+    enabled: keyboard && !phone && !menu && !editingId && !drafting,
     rows: tasks,
     cursor: { cursorId, setCursorId, selectedIds, setSelectedIds },
     acts: {
@@ -207,8 +249,58 @@ export default function TaskListView({
     <div className={className}>
       <div ref={listRef} className="relative outline-none" role="list" tabIndex={-1}>
         {hold.lineTop != null && <div className="reorder-insert-line" style={{ top: hold.lineTop }} aria-hidden />}
-        {tasks.map((t) => (
-          <div key={t.id} role="listitem" data-list-row={t.id}>
+        {items.map((item) => {
+          const t = item.task;
+          if (item.kind === "draft" && draft) {
+            const k = item.step.key;
+            return (
+              <div key={t.id} role="listitem" data-list-row={t.id}>
+                <TaskRow
+                  task={t}
+                  labels={labels}
+                  selected={draft.cursor === k}
+                  draggable={false}
+                  dragging={draggingId === t.id || hold.draggingId === t.id}
+                  action={
+                    phone && reorderable ? (
+                      <span
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          hold.press(e, t.id);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Press and hold to move"
+                        className="task-list-grip tap-icon"
+                        data-arming={hold.armingId === t.id ? "" : undefined}
+                      >
+                        ⠿
+                      </span>
+                    ) : undefined
+                  }
+                  swipeActions={phone ? { onDefer: () => draft.drop(k) } : undefined}
+                  flush={flush}
+                  editing={draft.editing === k}
+                  onRename={(title) => draft.rename(k, title)}
+                  onSelect={() => draft.setCursor(k)}
+                  onOpen={() => draft.setCursor(k)}
+                  onToggleDone={() => draft.keep(k)}
+                  draft={{
+                    open: draft.cursor === k && draft.phase === "review",
+                    why: item.step.why,
+                    evidence: item.step.evidence.text,
+                    version: item.step.versions.length > 1 ? { at: item.step.version + 1, of: item.step.versions.length } : null,
+                    keys: !phone,
+                    onKeep: () => draft.keep(k),
+                    onDrop: () => draft.drop(k),
+                    onVersion: () => draft.version(k, 1),
+                    onEdit: () => draft.setEditing(k),
+                  }}
+                />
+              </div>
+            );
+          }
+          return (
+          <div key={t.id} role="listitem" data-list-row={t.id} data-landed={draft?.landed.has(t.id) ? "" : undefined}>
             <TaskRow
               ref={(h) => {
                 if (h) handles.current.set(t.id, h);
@@ -277,8 +369,9 @@ export default function TaskListView({
               }}
             />
           </div>
-        ))}
-        {tasks.length === 0 && emptyHint && <div className="task-list-empty">{emptyHint}</div>}
+          );
+        })}
+        {items.length === 0 && emptyHint && <div className="task-list-empty">{emptyHint}</div>}
       </div>
 
       <TaskComposer

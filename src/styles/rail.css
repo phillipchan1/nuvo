@@ -831,3 +831,132 @@ html:root .pace-now {
   height: 8px;
   border-radius: 2.5px;
 }
+
+/* ── Draft the path (D-193) ─────────────────────────────────────────────────
+   A drafted step is the same row, not yet yours: a faint accent wash and a
+   dashed check. The open one (the step the keys are on) says why it's there and
+   carries its acts under the title. Nothing here moves except on your press. */
+.task-row[data-draft] {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.task-row[data-draft] .task-row-title { color: var(--ink-2); }
+.task-row[data-draft] .task-row-meta { color: var(--accent-ink); }
+.task-row[data-draft][data-draft-open] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.task-row .k-check.task-check-draft {
+  border-style: dashed;
+  border-color: var(--accent-ring);
+}
+.task-row-draft {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 0 var(--tr-pad) 10px calc(var(--tr-pad) + var(--tr-check) + var(--tr-gap));
+}
+.task-row-draft-why {
+  margin: 0;
+  font: 450 12px/1.45 var(--font-sans);
+  color: var(--muted);
+}
+.task-row-draft-evidence { color: var(--faint); }
+.task-row-draft-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@media (max-width: 767px) {
+  .task-row-draft-acts .k-btn { min-height: 44px; padding: 0 14px; }
+}
+/* A step you just kept lands: one accent wash that fades, on its own layer. */
+[data-landed] > .task-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent-wash);
+  pointer-events: none;
+  animation: draft-land 700ms var(--ease-out) both;
+}
+@keyframes draft-land {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* The draft's one float: status, steer, Discard rest · Keep all. Sticky at the
+   foot of the list so Keep all is in reach however long the list runs. */
+.path-draft-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+}
+.path-draft-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.path-draft-status {
+  padding: 0 4px;
+  font: 450 12.5px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+.path-draft-status b { color: var(--ink); font-weight: 600; }
+.path-draft-line > .path-draft-status:only-child,
+.path-draft-line > .path-draft-status:first-child:nth-last-child(2) { flex: 1; }
+.path-draft-steer { flex: 1 1 220px; min-width: 0; }
+.path-draft-commit { display: flex; gap: 6px; margin-left: auto; }
+.path-draft-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.path-draft-chips::-webkit-scrollbar { display: none; }
+.path-draft-chips .k-chip { flex: none; }
+.path-draft-msg {
+  margin: 0;
+  padding: 0 4px;
+  font: 450 12px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+.path-draft-reading {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  overflow: hidden;
+}
+.path-draft-reading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: var(--accent);
+  animation: draft-sweep 1s var(--ease-out) infinite;
+}
+@keyframes draft-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .path-draft-reading::after { animation: none; width: 100%; opacity: 0.5; }
+  [data-landed] > .task-row::after { animation: none; opacity: 0; }
+}
+@media (max-width: 767px) {
+  .path-draft-bar { bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+  .path-draft-line .k-btn { min-height: 44px; }
+  .path-draft-commit { width: 100%; }
+  .path-draft-commit .k-btn { flex: 1; justify-content: center; }
+  .path-draft-steer { flex-basis: 100%; }
+}
+/* The phone's way in: one quiet control above the project's list, 44px. */
+.ph-draft-trigger { display: flex; justify-content: flex-end; margin: -4px 0 4px; }
+.ph-draft-trigger .k-btn { min-height: 44px; }
