@@ -1,6 +1,9 @@
 // The mark a finished project/initiative wears — Instrument's "shipped"
-// (D-190): a solid --ok disc with the check knocked out of it, the kit's
-// readiness pie at its last step, drawn at stamp size. The wax seal it
+// (D-190): a solid --landed disc with the check knocked out of it — the kit's
+// "shipped" readiness, drawn at stamp size. It wears --landed (the intent's
+// own colour, D-187 — the same seal as a ticked task), NOT --ok: --ok is
+// "ready to place", and a full teal pie beside a teal seal made shipped and
+// ready read alike on the deck. The wax seal it
 // replaces (double rings, an arced "SHIPPED", a pressed rotation) was the
 // old ornamental register. It still animates BOTH ways: it LANDS when work
 // ships (the kit's land-stamp spring, D-187) and lets go when it's reopened.
@@ -17,13 +20,10 @@
 //     shows at rest, and both the land and the let-go play in place, since
 //     the button itself never unmounts.
 //
-// All ink is `PROJECT_STATUS_COLORS.complete` (== var(--ok)) via
-// `currentColor`; the check is knocked out in the panel's colour, so it reads
+// All ink is --landed via `currentColor`; the check is knocked out in the panel's colour, so it reads
 // on either theme. The motion lives in index.css (`.ship-stamp--*`).
 import { useEffect, useRef, useState } from "react";
-import { PROJECT_STATUS_COLORS } from "./floors/statusColors";
-
-const INK = PROJECT_STATUS_COLORS.complete; // var(--ok)
+const INK = "var(--landed, var(--accent))";
 
 // A ceiling above the land (--d-land, ~350ms) — long enough that the CSS
 // animation has always finished painting before this fires and swaps to the
@@ -63,7 +63,7 @@ export function ShipStamp({
     if (settleTimer.current) window.clearTimeout(settleTimer.current);
   }, []);
 
-  // Instrument's mark (D-190): a solid --ok disc with the check knocked out of
+  // Instrument's mark (D-190): a solid --landed disc with the check knocked out of
   // it — the kit's "shipped" readiness, at stamp size. Not shipped is the same
   // ring, hollow and quiet, so a live toggle has something to press.
   return (

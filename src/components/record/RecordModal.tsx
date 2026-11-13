@@ -894,7 +894,7 @@ function InitiativeRecord({
                         weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
                         status={
                           p.status === "complete"
-                            ? { label: "shipped", tone: "ready" }
+                            ? { label: "shipped", tone: "landed" }
                             : p.targetDate
                               ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" }
                               : null

@@ -33,15 +33,18 @@ import { Card, Dot, Readiness, type ReadinessStep } from "../kit";
 
 /** The voice a status word speaks in. `danger` = something is wrong (a passed
  *  date, a bet at risk), `caution` = needs shaping, `ready` = affirmation,
- *  `muted` = settled / parked. `signal` is the old name for `danger`: Instrument
- *  spends --signal on NOW only (D-189), so it draws as danger. */
-export type DeckTone = "danger" | "signal" | "caution" | "ready" | "muted";
+ *  `muted` = settled / parked, `landed` = shipped — the intent made true, in the
+ *  intent's own colour (D-187), so "shipped" never shares a voice with "ready".
+ *  `signal` is the old name for `danger`: Instrument spends --signal on NOW
+ *  only (D-189), so it draws as danger. */
+export type DeckTone = "danger" | "signal" | "caution" | "ready" | "landed" | "muted";
 
 export const TONE_COLOR: Record<DeckTone, string> = {
   danger: "var(--danger)",
   signal: "var(--danger)",
   caution: "var(--warn)",
   ready: "var(--ok)",
+  landed: "var(--landed, var(--accent))",
   muted: "var(--muted)",
 };
 
@@ -106,7 +109,9 @@ export default function DeckCard({
   pipTone?: DeckTone;
   /** parked / settled — the card recedes without disappearing. */
   dim?: boolean;
-  /** finished — full ink, the pie full, "shipped" in the ready voice. */
+  /** finished — the landed seal leads the name, the name ends on a full stop
+   *  ("Ship onboarding." — the way every hero ends, D-191), and "shipped" is
+   *  said in the landed voice. */
   shipped?: boolean;
   /** draw the domain Dot before the area (a marked card). Off where the surface
    *  already names the domain — a lane By domain (D-122: don't write what's drawn). */
@@ -158,7 +163,10 @@ export default function DeckCard({
     >
       <div className="deck-card-head">
         {pie && <Readiness step={pie.step} title={pie.title} />}
-        <div className="deck-card-title">{title}</div>
+        <div className="deck-card-title">
+          {title}
+          {shipped && !/[.!?…]$/.test(title.trim()) && <span className="deck-card-stop" aria-hidden="true">.</span>}
+        </div>
       </div>
 
       {hasMeta && (

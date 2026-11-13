@@ -78,7 +78,9 @@
   --on-danger: #1f1310;
 }
 
-/* ── Verdict — ripe (`--ok`, also "shipped") vs. waiting (`--warn`). Read as
+/* ── Verdict — ripe (`--ok`) vs. waiting (`--warn`). Shipped is NOT --ok: it
+   wears --landed (the intent's own colour), so "ready" and "shipped" never
+   share a voice. Read as
    text, so both clear AA on the light grounds; --warn sits at hue ~36° so it
    never collapses into --signal's ember. */
 :root,

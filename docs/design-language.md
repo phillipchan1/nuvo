@@ -107,6 +107,18 @@ the stems and grows the dot). The icon masters are `src-tauri/app-icon.svg` (mac
 small size. `npm run tauri:icon` regenerates every icon, the PWA set and the launch screens from
 them (needs Pillow). Never draw the mark by hand anywhere else.
 
+## Shipped — the landed seal
+
+**Shipped wears `--landed`, never `--ok`.** `--ok` is *ready to place* (the readiness pie at
+full); shipped is the intent made true, so it takes the intent's own colour, like a ticked task
+(D-187). The kit's `Readiness step="shipped"` and `ShipStamp` are one drawing: a solid `--landed`
+disc with the tick knocked out. On a deck card a shipped project says it three ways that agree:
+the seal leads the name, the name ends on a `--landed` full stop ("Move church accounts to named
+owners." — the way every statement ends, D-191; skipped when the name already ends in
+punctuation), and the status word speaks in the `landed` tone. Full ink, not receded. Before
+this, a full teal pie meant both *ready* and *shipped*, and the only difference on the deck was
+one small word. Check at `?kit` (Marks · Structure) and `?build`.
+
 ## The six layouts and six popovers (D-190)
 
 Every page is one of six layouts, every floating surface one of six kinds — all built on the kit.

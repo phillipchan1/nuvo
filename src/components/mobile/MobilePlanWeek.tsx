@@ -485,7 +485,7 @@ export function ProjectsStep({
                     {/* "ready to schedule" said nothing the filled dot didn't. Only
                         the gaps — the actionable half — still earn a line. */}
                     {shipped ? (
-                      <div className="mt-0.5 text-caption font-medium text-[var(--ok)]">Shipped</div>
+                      <div className="mt-0.5 text-caption font-medium text-[var(--landed,var(--accent))]">Shipped</div>
                     ) : !ready ? (
                       <div className="mt-0.5 text-caption text-[var(--warn)]">{gaps.map((g) => g.label).join(" · ")}</div>
                     ) : null}

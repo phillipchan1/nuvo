@@ -330,7 +330,17 @@ button.k-chip { padding-right: 4px; }
 .k-rdy[data-step="1"] { --c: var(--warn); --p: 0.34; }
 .k-rdy[data-step="2"] { --c: var(--warn); --p: 0.67; }
 .k-rdy[data-step="3"] { --c: var(--ok); --p: 1; }
-.k-rdy[data-step="shipped"] { --c: var(--ok); --p: 1; position: relative; }
+/* Shipped — the landed seal, not a fuller pie: the intent's own colour, solid,
+   the tick knocked out (the same stamp as a ticked task box). */
+.k-rdy[data-step="shipped"] {
+  --c: var(--landed, var(--accent));
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  background: var(--c);
+  color: var(--on-accent);
+}
+.k-rdy[data-step="shipped"] > svg { width: 10px; height: 10px; }
 
 .k-av {
   flex: none;

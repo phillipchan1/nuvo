@@ -70,10 +70,22 @@ const READINESS_LABEL: Record<string, string> = {
   shipped: "Shipped",
 };
 
-/** How shaped a project is, as a pie: dashed (raw) → 1/3 → 2/3 → full (ready). */
+/** How shaped a project is, as a pie: dashed (raw) → 1/3 → 2/3 → full (ready).
+ *  Shipped is not a fifth step of shaping — it is the intent having LANDED, so
+ *  it leaves the pie's colour ladder and wears the landed seal a ticked task
+ *  wears: a solid `--landed` disc with the tick knocked out. A full teal pie
+ *  ("ready to place") and a shipped project must never be the same glyph. */
 export function Readiness({ step, title }: { step: ReadinessStep; title?: string }) {
   const label = title ?? READINESS_LABEL[String(step)];
-  return <span className="k-rdy" data-step={String(step)} role="img" aria-label={label} title={label} />;
+  return (
+    <span className="k-rdy" data-step={String(step)} role="img" aria-label={label} title={label}>
+      {step === "shipped" && (
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2.4 5.2 4.2 7 7.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </span>
+  );
 }
 
 function initials(name: string): string {

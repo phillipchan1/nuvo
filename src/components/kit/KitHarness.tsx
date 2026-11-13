@@ -34,6 +34,7 @@ import {
   TaskCheck,
   Textarea,
 } from "./index";
+import DeckCard from "../ondeck/DeckCard";
 
 // ?kit — every part of the kit, every state, Light and Dark side by side
 // (D-190). Static states that a pointer would normally produce (hover, press,
@@ -212,6 +213,7 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           <Readiness step={1} />
           <Readiness step={2} />
           <Readiness step={3} />
+          <Readiness step="shipped" />
           <span style={{ color: "var(--muted)", fontSize: 12 }}>raw · 1 · 2 · ready</span>
         </Line>
         <Line label="People">
@@ -274,6 +276,12 @@ function Column({ theme }: { theme: "light" | "dark" }) {
             <strong style={{ fontWeight: 600 }}>Selected</strong>
             <Chip dot={HUES.health}>Health</Chip>
           </Card>
+        </div>
+        {/* The deck card's states — ready and shipped must never read alike. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+          <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Build staff rigor plan" weight="1.5h" pips={[true, true, true]} />
+          <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Create spiritual gifts test V1" weight="2.3h" pips={[true, true, false]} status={{ label: "1d overdue", tone: "danger" }} />
+          <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Move church accounts to named owners" pips={[true, true, true]} shipped status={{ label: "shipped", tone: "landed" }} />
         </div>
       </Block>
 

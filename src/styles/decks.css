@@ -131,7 +131,13 @@ html:root .pr-gap:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--acc
 .k-card.deck-card[data-size="phone"] { padding: 12px 14px; gap: 6px; }
 .k-card.deck-card[data-size="phone"][data-variant="bounded"] { padding-left: 16px; }
 .k-card.deck-card[data-dim] { opacity: 0.55; }
+/* Shipped — said once, in three places that agree: the landed seal leads the
+   name, the name ends on a landed full stop (a statement closed — D-191's
+   "Ship onboarding."), and the status word speaks in the landed voice. Full
+   ink: a shipped project is the deck's proudest card, not a receded one. */
 .k-card.deck-card[data-shipped] .deck-card-title { color: var(--ink); }
+.k-card.deck-card[data-shipped] .deck-card-status { font-weight: 600; }
+.deck-card-stop { color: var(--landed, var(--accent)); font-weight: 800; }
 
 @media (hover: hover) {
   .k-card.deck-card[data-interactive]:hover {
