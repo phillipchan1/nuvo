@@ -2,41 +2,31 @@
 // single-record surface for both (neither rung has a full page).
 //
 // ── The shape, and why ───────────────────────────────────────────────────────
-// ONE skeleton at both altitudes: identity → the work → the Log, with a rail of
-// standing beside it. A project and a bet are the same object at two clock
-// speeds (D-048), so the two records may differ in what fills the slots, never
-// in their frame.
+// The DOCUMENT layout (D-190, recordFrame.tsx): a 48px bar (Domain /
+// Initiative / Name · ⋯ · ✕), a main column (the name as the one hero, the
+// outcome as its lead, then the work and its comments) and a property panel.
+// A project and a bet are the same object at two clock speeds (D-048), so the
+// two records differ in what fills the slots, never in their frame.
 //
-//   1. ONE SPINE. Every control hangs in a 26px gutter so the section label,
-//      every row and every composer share one left edge. Three ragged left edges
-//      — label, composer-box padding, checkbox — was most of what read as
-//      "disjointed".
-//   2. ONE INPUT IDIOM. Tasks, key results, projects and the Log all compose
-//      through the same hairline row with a glyph in the gutter. There used to be
-//      three (a raised card, a bordered row, a filled box).
-//   3. THE RULE IS THE METER. The hairline under each section heading fills to
-//      the domain hue — progress drawn, not dialled. It replaces the 54px ring,
-//      which was a second hero beside the masthead AND meant two different things
-//      (ticked tasks for a project, KR attainment for a bet, silently falling
-//      back to child progress with no KRs — an undisclosed basis switch,
-//      Principle 6).
-//   4. PLACEMENT, NOT DATES. `start ▸ … → target ▸ …` in a muted strip was the
-//      only thing deciding which sprint column a project occupies on On Deck,
-//      rendered smaller than a task's duration. D-030 decided a record "opens on
-//      a scale of the next four sprints… not two date fields"; only the phone
-//      ever got it. Now both shells wear `PlacementBand`.
-//   5. THE RAIL IS ANNOTATION. Its every enclosure and every saturated colour is
-//      gone — no bordered chips, no fills, no chroma — and it rests at 78%,
-//      coming full on approach. Weight has to follow importance, and the work is
-//      what the reader came for; the rail only helps them place it.
+//   1. EVERY PROPERTY IS A ROW whose value opens its picker — status, domain,
+//      initiative, placement, target, momentum. Nothing that files the record
+//      lives in the main column, and nothing in the main column is a form.
+//   2. PLACEMENT, NOT DATES. The Week / Quarter property opens `PlacementBand`,
+//      the scale of the next four sprints D-030 decided a record opens on.
+//      The exact target date is its own row, for the finish line that isn't
+//      week-shaped.
+//   3. PROGRESS IS DRAWN ONCE — the Pace row is the same `PaceTrack` the week
+//      crowns use: pieces done in the domain's hue, the pace tick where the
+//      record's span stands today (D-187). No second meter on the page.
+//   4. ONE HERO. The name is 30px; the sections are kit SectionHeaders.
 //
-// The old footer (Delete · Assess · Done) is gone with the meta strip: `esc`,
-// the scrim and ✕ all close, so a mulberry "Done" was the loudest thing on a
-// sheet where `--accent` is supposed to mean *your intent*. Delete and status
-// live in the ··· overflow, where a destructive act belongs.
+// Delete and Assess live in the ⋯ overflow, where an occasional act belongs;
+// `esc`, the scrim and ✕ all close, so there is no Done button.
 
-import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { format, parseISO } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
 import {
   domainById,
   initiativeById,
@@ -53,8 +43,11 @@ import {
   type Project,
   type ProjectStatus,
 } from "../../lib/vertical";
-import { projectReadinessAxes } from "../../lib/lenses";
+import { initiativeReadinessAxes, projectReadinessAxes } from "../../lib/lenses";
 import { weekName } from "../../lib/week";
+import { sprintSpanWeeks } from "../../lib/onDeck";
+import { quarterName } from "../../lib/initiativeDeck";
+import { spanElapsed, deckWeight } from "../../lib/pace";
 import { ProjectShipAssess, type LeftoverVerdict } from "./ShipAssess";
 import { suggestForInitiative, suggestForProject, type Suggestion } from "../../lib/belonging";
 import {
@@ -64,13 +57,10 @@ import {
   InitiativePicker,
   InlineNumber,
   InlineText,
-  PROJECT_STATUS_COLORS,
   ProjectAttachPicker,
 } from "../floors/parts";
 import TaskList, { isTypingIn } from "../floors/TaskList";
 import DeckCard from "../ondeck/DeckCard";
-import { deckWeight } from "../../lib/pace";
-import { ShipStamp } from "../ShipStamp";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import type { TaskComposerHandle } from "../tasks/TaskComposer";
@@ -79,21 +69,37 @@ import { useAllTasks, useTaskMutations } from "../../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { useLabels } from "../../hooks/useCalendar";
 import type { Task } from "../../lib/types";
+import { Icon } from "../Icon";
+import {
+  Button,
+  Dot,
+  IconButton,
+  Menu,
+  MenuItem as KitMenuItem,
+  MenuSeparator,
+  MiniMonth,
+  PaceTrack,
+  Property,
+  Readiness,
+  SectionHeader,
+  type ReadinessStep,
+} from "../kit";
 
 const TaskPopover = lazy(() => import("../SlideOver").then((m) => ({ default: m.TaskPopover })));
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
 import {
+  Bar,
   Body,
-  GUT,
-  GUT_PAD,
   Head,
   IconBtn,
   MenuItem,
-  RailSec,
+  PopProp,
+  PropSlot,
   ReadyTicks,
   RecordScrim,
   Sec,
   Sheet,
+  readinessStep,
   useRecordKeys,
 } from "./recordFrame";
 
@@ -127,34 +133,20 @@ export default function RecordModal({
 }
 
 /** "Belongs here" — the loose work that looks like it wants a home. A count, a
- *  title and a ＋. The explainer line, the reason line and the "+ fold in" link
- *  became a badge and a tooltip. */
+ *  title and a ＋; the reasons ride the tooltip. */
 function Suggestions({ suggestions, onFold }: { suggestions: Suggestion[]; onFold: (taskId: string) => void }) {
   if (suggestions.length === 0) return null; // a silence, not an apology (D-035)
   return (
-    <RailSec label="Belongs here" right={<span className="mono text-meta font-semibold text-muted opacity-80">{suggestions.length}</span>}>
-      <div>
-        {suggestions.map((s) => (
-          <div key={s.task.id} className="flex items-center gap-2 border-b border-line py-1.5 last:border-b-0">
-            <span
-              className="min-w-0 flex-1 text-meta leading-snug text-muted"
-              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-              title={s.reasons.join(" · ")}
-            >
-              {s.task.title || "Untitled"}
-            </span>
-            <button
-              onClick={() => onFold(s.task.id)}
-              title="Fold it in"
-              aria-label="Fold it in"
-              className="fast flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-caption text-muted opacity-70 hover:bg-surface hover:text-accent hover:opacity-100"
-            >
-              ＋
-            </button>
-          </div>
-        ))}
-      </div>
-    </RailSec>
+    <>
+      <div className="doc-props-sep" />
+      <SectionHeader title="Belongs here" count={suggestions.length} />
+      {suggestions.map((s) => (
+        <div key={s.task.id} className="doc-suggest" title={s.reasons.join(" · ")}>
+          <span>{s.task.title || "Untitled"}</span>
+          <IconButton size="xs" label="Fold it in" icon={<Icon name="plus" size={12} />} onClick={() => onFold(s.task.id)} />
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -166,7 +158,70 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
   complete: "Shipped",
 };
 
-const MOMENTUM_LABEL: Record<Momentum, string> = { up: "↑ Rising", flat: "→ Steady", down: "↓ Stalled" };
+const MOMENTUM_LABEL: Record<Momentum, string> = { up: "Rising", flat: "Steady", down: "Stalled" };
+const MOMENTUM_GLYPH: Record<Momentum, string> = { up: "↑", flat: "→", down: "↓" };
+
+/** A property whose value opens a kit Menu (status, momentum). */
+function MenuProp({ label, value, children }: { label: string; value: ReactNode; children: ReactNode }) {
+  const btn = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="k-prop">
+      <span className="k-prop-label">{label}</span>
+      <button ref={btn} type="button" className="k-prop-value" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {value}
+      </button>
+      <Menu anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="left-start" label={label}>
+        {children}
+      </Menu>
+    </div>
+  );
+}
+
+/** The finish line: a date you pick on a month, or clear. */
+function TargetProp({ value, onChange }: { value: string | null; onChange: (iso: string | null) => void }) {
+  const { settings } = useSettings();
+  const date = value ? parseISO(value) : null;
+  return (
+    <PopProp
+      label="Target"
+      empty={!date}
+      value={
+        <>
+          <Icon name="calendar" size={14} style={{ color: "var(--muted)" }} />
+          {date ? format(date, "EEE, MMM d") : "Set target"}
+        </>
+      }
+    >
+      {(close) => (
+        <div className="doc-place">
+          <MiniMonth
+            value={date}
+            weekStartsOn={firstDayOfWeek(settings)}
+            onChange={(d) => {
+              onChange(format(d, "yyyy-MM-dd"));
+              close();
+            }}
+          />
+          {date && (
+            <div className="flex justify-end px-1 pt-1">
+              <Button
+                kind="ghost"
+                size="xs"
+                onClick={() => {
+                  onChange(null);
+                  close();
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </PopProp>
+  );
+}
 
 // ── Project record ───────────────────────────────────────────────────────────
 function ProjectRecord({
@@ -187,6 +242,7 @@ function ProjectRecord({
   const [shipping, setShipping] = useState(false);
   const [grooming, setGrooming] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [weekOpen, setWeekOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
   const taskRef = useRef<TaskComposerHandle>(null);
@@ -196,13 +252,20 @@ function ProjectRecord({
 
   // t = tasks · c = comments · s = sprint. Bare letters, gated on "not typing".
   // With a row under the task list's cursor, `t` is that row's When menu —
-  // the list spends the key first and marks it.
+  // the list spends the key first and marks it. `s` opens the Week property
+  // and hands the band the keys (← → walk it, ⇧ resizes).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      const target = k === "t" ? taskRef.current : k === "c" || k === "l" ? logRef.current : k === "s" ? bandRef.current : null;
+      if (k === "s") {
+        e.preventDefault();
+        setWeekOpen(true);
+        requestAnimationFrame(() => requestAnimationFrame(() => bandRef.current?.focus()));
+        return;
+      }
+      const target = k === "t" ? taskRef.current : k === "c" || k === "l" ? logRef.current : null;
       if (!target) return;
       e.preventDefault();
       target.focus();
@@ -246,83 +309,59 @@ function ProjectRecord({
   const axes = projectReadinessAxes(data, project, new Date());
   const manual = isStatusOverride(project.storedStatus);
   const shipped = isProjectComplete(project.status);
+  const step: ReadinessStep = shipped ? "shipped" : readinessStep([axes.defined, axes.planned, axes.fits ?? true]);
+  const placedAt = project.startDate ?? project.targetDate;
+  const span = sprintSpanWeeks(project);
+  const weight = deckWeight(openMins);
 
   const setStatus = (s: ProjectStatus) => {
-    setMenu(false);
     if (s === "complete") setShipping(true);
     else updateProject(project.id, { status: s });
   };
 
   return (
-    <Sheet variant="marked" spine={accent} wide={assessing} sheetRef={sheetRef}>
-      <Head
-        crumbs={
+    <Sheet wide={assessing} sheetRef={sheetRef} label={project.name || "Project"}>
+      <Bar
+        trail={[
           <>
-            {/* Routing this to the right area is a primary act, not a crumb —
-                it used to be set at the same weight as the text beside it. */}
-            <DomainPicker
-              domains={domains}
-              value={project.domainId}
-              size="lg"
-              onChange={(domainId) => {
-                // An initiative lives in one domain — crossing domains detaches
-                // the project, or it stays nested under the old bet.
-                const init = initiativeById(data, project.initiativeId);
-                const crossDomain = Boolean(init && init.domainId !== domainId);
-                updateProject(project.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
-              }}
-            />
-            {(initiative || domainInitiatives.length > 0) && (
-              <>
-                <span className="text-meta text-muted">›</span>
-                <InitiativePicker
-                  initiatives={domainInitiatives}
-                  value={project.initiativeId}
-                  size="lg"
-                  onOpen={onOpenInitiative}
-                  onChange={(initiativeId) => updateProject(project.id, { initiativeId })}
-                />
-              </>
-            )}
-          </>
-        }
-        acts={
-          <span className="flex items-center gap-0.5">
-            <IconBtn glyph="✦" label="Assess — have Nuvo review this and show where to sharpen it" onClick={() => setAssessing(true)} />
-            <span className="mx-1 h-3.5 w-px bg-line" />
-            <IconBtn glyph="···" label="Groom, status, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
+            <Dot color={accent} />
+            {domain?.name ?? "No domain"}
+          </>,
+          initiative && (
+            <button type="button" className="doc-crumb-link" onClick={() => onOpenInitiative(initiative.id)}>
+              {initiative.name}
+            </button>
+          ),
+          project.name || "Untitled",
+        ]}
+        actions={
+          <>
+            <Button
+              size="sm"
+              icon={<Icon name={shipped ? "refresh" : "check"} size={14} />}
+              onClick={() => (shipped ? updateProject(project.id, { status: "in_progress" }) : setShipping(true))}
+              title={shipped ? "Shipped — reopen it" : "Finished — ship it"}
+            >
+              {shipped ? "Reopen" : "Ship"}
+            </Button>
+            <IconBtn glyph="···" label="Assess, groom, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
             <IconBtn glyph="✕" label="Close" onClick={onClose} />
-            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={170} onClose={() => setMenu(false)}>
-              <MenuItem onClick={() => { setGrooming(true); setMenu(false); }}>
-                <span style={{ color: accent }}>✦</span> Groom the steps
-              </MenuItem>
-              <div className="my-1 h-px bg-line" />
-              <MenuItem onClick={() => setStatus("waiting")} color={PROJECT_STATUS_COLORS.waiting}>Mark waiting</MenuItem>
-              <MenuItem onClick={() => setStatus("cancelled")} color={PROJECT_STATUS_COLORS.cancelled}>Mark cancelled</MenuItem>
-              <MenuItem onClick={() => setStatus("complete")} color={PROJECT_STATUS_COLORS.complete}>Ship it…</MenuItem>
-              {manual && <MenuItem onClick={() => setStatus("in_progress")}>↺ Back to auto</MenuItem>}
-              <div className="my-1 h-px bg-line" />
-              <div className="px-2.5 py-1">
-                <DeleteBtn what="project" onDelete={() => { deleteProject(project.id); onClose(); }} />
+            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={200} onClose={() => setMenu(false)}>
+              <div className="doc-menu">
+                <MenuItem icon={<Icon name="sparkles" size={14} />} onClick={() => { setAssessing(true); setMenu(false); }}>
+                  Assess with Nuvo
+                </MenuItem>
+                <MenuItem icon={<Icon name="sparkles" size={14} />} onClick={() => { setGrooming(true); setMenu(false); }}>
+                  Groom the steps
+                </MenuItem>
+                <div className="k-msep" />
+                <div className="doc-menu-del">
+                  <DeleteBtn what="project" onDelete={() => { deleteProject(project.id); onClose(); }} />
+                </div>
               </div>
             </FloatingMenu>
-          </span>
+          </>
         }
-        name={project.name}
-        onName={(v) => updateProject(project.id, { name: v })}
-        titlePrefix={
-          <button
-            onClick={() => (shipped ? updateProject(project.id, { status: "in_progress" }) : setShipping(true))}
-            aria-label={shipped ? "Reopen project" : "Ship project — mark complete"}
-            title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
-            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center"
-          >
-            <ShipStamp shipped={shipped} size={22} />
-          </button>
-        }
-        outcome={project.outcome}
-        onOutcome={(v) => updateProject(project.id, { outcome: v })}
-        outcomePlaceholder="What does done look like, in one line?"
       />
 
       <Body
@@ -330,11 +369,19 @@ function ProjectRecord({
         scrollRef={scrollRef}
         main={
           <>
+            <Head
+              name={project.name}
+              onName={(v) => updateProject(project.id, { name: v })}
+              outcome={project.outcome}
+              onOutcome={(v) => updateProject(project.id, { outcome: v })}
+              outcomePlaceholder="What does done look like, in one line?"
+            />
+
             <Sec
               label="Tasks"
-              spine={accent}
-              fill={projectProgress(data, project)}
-              meter={tasks.length ? `${done}/${tasks.length}${openMins ? ` · ${deckWeight(openMins)}` : ""}` : null}
+              count={tasks.length ? `${done}/${tasks.length}${weight ? ` · ${weight}` : ""}` : undefined}
+              onAdd={() => taskRef.current?.focus()}
+              addLabel="Add a task (T)"
             >
               <div data-assess-anchor="tasks">
                 <TaskList
@@ -354,7 +401,7 @@ function ProjectRecord({
               </div>
             </Sec>
 
-            <Sec label="Comments" spine={accent}>
+            <Sec label="Comments">
               <RecordLog kind="project" id={project.id} accent={accent} spine composerRef={logRef} />
             </Sec>
           </>
@@ -371,10 +418,106 @@ function ProjectRecord({
             />
           )
         }
-        rail={
+        props={
           assessing ? null : (
             <>
-              <WeekBand p={project} store={store} color={accent} bandRef={bandRef} />
+              <MenuProp
+                label="Status"
+                value={
+                  <>
+                    <Readiness step={step} />
+                    {STATUS_LABEL[project.status]}
+                  </>
+                }
+              >
+                <KitMenuItem checked={project.status === "waiting"} onSelect={() => setStatus("waiting")}>
+                  Waiting
+                </KitMenuItem>
+                <KitMenuItem checked={project.status === "cancelled"} onSelect={() => setStatus("cancelled")}>
+                  Cancelled
+                </KitMenuItem>
+                <KitMenuItem checked={shipped} onSelect={() => setStatus("complete")}>
+                  Ship it…
+                </KitMenuItem>
+                {manual && (
+                  <>
+                    <MenuSeparator />
+                    <KitMenuItem icon={<Icon name="refresh" size={14} />} onSelect={() => setStatus("in_progress")}>
+                      Back to auto
+                    </KitMenuItem>
+                  </>
+                )}
+              </MenuProp>
+              {/* Routing this to the right area is a primary act — the shared
+                  picker, dressed as the property's value. */}
+              <PropSlot label="Domain">
+                <DomainPicker
+                  domains={domains}
+                  value={project.domainId}
+                  size="lg"
+                  align="right"
+                  onChange={(domainId) => {
+                    // An initiative lives in one domain — crossing domains detaches
+                    // the project, or it stays nested under the old bet.
+                    const init = initiativeById(data, project.initiativeId);
+                    const crossDomain = Boolean(init && init.domainId !== domainId);
+                    updateProject(project.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
+                  }}
+                />
+              </PropSlot>
+              <PropSlot label="Initiative">
+                {initiative || domainInitiatives.length > 0 ? (
+                  <InitiativePicker
+                    initiatives={domainInitiatives}
+                    value={project.initiativeId}
+                    size="lg"
+                    align="right"
+                    onOpen={onOpenInitiative}
+                    onChange={(initiativeId) => updateProject(project.id, { initiativeId })}
+                  />
+                ) : (
+                  <span className="doc-prop-empty">None</span>
+                )}
+              </PropSlot>
+              <PopProp
+                label="Week"
+                empty={!placedAt}
+                open={weekOpen}
+                onOpenChange={setWeekOpen}
+                value={
+                  <>
+                    <Icon name="clock" size={14} style={{ color: "var(--muted)" }} />
+                    {placedAt ? `${weekName(placedAt)}${span > 1 ? ` · ${span}w` : ""}` : "Not placed"}
+                  </>
+                }
+              >
+                {() => (
+                  <div className="doc-place">
+                    <WeekBand p={project} store={store} color={accent} bandRef={bandRef} />
+                  </div>
+                )}
+              </PopProp>
+              <TargetProp value={project.targetDate} onChange={(targetDate) => updateProject(project.id, { targetDate })} />
+              <Property label="Pace" empty={tasks.length === 0}>
+                {tasks.length ? (
+                  <>
+                    <PaceTrack
+                      done={done}
+                      total={tasks.length}
+                      color={accent}
+                      elapsed={shipped ? null : spanElapsed(project, new Date())}
+                      width={120}
+                    />
+                    <span className="text-caption tabular-nums text-muted">
+                      {done}/{tasks.length}
+                    </span>
+                  </>
+                ) : (
+                  "No tasks"
+                )}
+              </Property>
+
+              <div className="doc-props-sep" />
               <ReadyTicks
                 axes={[
                   { label: "Outcome", met: project.outcome.trim() !== "" },
@@ -398,7 +541,7 @@ function krPct(kr: KeyResult) {
   return Math.max(0, Math.min(100, Math.round(((kr.current - kr.baseline) / (kr.target - kr.baseline)) * 100)));
 }
 
-/** The project composer, on the same spine as everything else. */
+/** The project composer — the same row shape as every add line on the page. */
 function ProjectComposer({
   domainId,
   initiativeId,
@@ -438,8 +581,8 @@ function ProjectComposer({
   };
 
   return (
-    <div className="flex items-center" style={{ minHeight: 36 }}>
-      <span className={`flex shrink-0 items-center text-body ${GUT}`} style={{ color: accent }}>＋</span>
+    <div className="doc-compose">
+      <Icon name="plus" size={14} />
       <input
         ref={inputRef}
         value={draft}
@@ -449,8 +592,8 @@ function ProjectComposer({
           if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
         }}
         onPaste={onPaste}
-        placeholder="Add a project… ⌘↵ to open it"
-        className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted"
+        placeholder="Add a project"
+        aria-label="Add a project (⌘↵ opens it)"
         style={{ caretColor: accent }}
       />
     </div>
@@ -476,6 +619,7 @@ function InitiativeRecord({
   const initiative = initiativeById(data, id);
   const [assessing, setAssessing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [quarterOpen, setQuarterOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
   const projRef = useRef<HTMLInputElement>(null);
@@ -493,7 +637,13 @@ function InitiativeRecord({
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "k") { e.preventDefault(); addKeyResult(id); setKrFocus((n) => n + 1); return; }
-      const target = k === "p" ? projRef.current : k === "c" || k === "l" ? logRef.current : k === "q" ? bandRef.current : null;
+      if (k === "q") {
+        e.preventDefault();
+        setQuarterOpen(true);
+        requestAnimationFrame(() => requestAnimationFrame(() => bandRef.current?.focus()));
+        return;
+      }
+      const target = k === "p" ? projRef.current : k === "c" || k === "l" ? logRef.current : null;
       if (!target) return;
       e.preventDefault();
       target.focus();
@@ -594,59 +744,47 @@ function InitiativeRecord({
     ? Math.round(projects.reduce((s, p) => s + projectProgress(data, p), 0) / projects.length)
     : 0;
   const shipped = isProjectComplete(initiative.status);
+  const axes = initiativeReadinessAxes(data, initiative);
+  const step: ReadinessStep = shipped ? "shipped" : readinessStep([axes.defined, axes.planned]);
+  // The needle, not the activity: KR attainment when there is a number to move,
+  // the projects' progress otherwise — and the row says which.
+  const pace = attainment ?? (projects.length ? childPct : null);
 
   return (
-    <Sheet variant="bounded" spine={accent} wide={assessing} sheetRef={sheetRef}>
-      <Head
-        crumbs={<DomainPicker domains={domains} value={initiative.domainId} size="lg" onChange={changeDomain} />}
-        acts={
-          <span className="flex items-center gap-0.5">
-            <IconBtn glyph="✦" label="Assess — have Nuvo review this and show where to sharpen it" onClick={() => setAssessing(true)} />
-            <span className="mx-1 h-3.5 w-px bg-line" />
-            <IconBtn glyph="···" label="Momentum, status, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
+    <Sheet wide={assessing} sheetRef={sheetRef} label={initiative.name || "Initiative"}>
+      <Bar
+        trail={[
+          <>
+            <Dot color={accent} />
+            {domain?.name ?? "No domain"}
+          </>,
+          initiative.name || "Untitled",
+        ]}
+        actions={
+          <>
+            <Button
+              size="sm"
+              icon={<Icon name={shipped ? "refresh" : "check"} size={14} />}
+              onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
+              title={shipped ? "Shipped — reopen it" : "Finished — ship it"}
+            >
+              {shipped ? "Reopen" : "Ship"}
+            </Button>
+            <IconBtn glyph="···" label="Assess, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
             <IconBtn glyph="✕" label="Close" onClick={onClose} />
-            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={170} onClose={() => setMenu(false)}>
-              {(["up", "flat", "down"] as Momentum[]).map((m) => (
-                <MenuItem key={m} onClick={() => { updateInitiative(initiative.id, { momentum: m }); setMenu(false); }}>
-                  {MOMENTUM_LABEL[m]}
-                  {initiative.momentum === m && <span className="ml-2 text-micro opacity-60">✓</span>}
+            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={200} onClose={() => setMenu(false)}>
+              <div className="doc-menu">
+                <MenuItem icon={<Icon name="sparkles" size={14} />} onClick={() => { setAssessing(true); setMenu(false); }}>
+                  Assess with Nuvo
                 </MenuItem>
-              ))}
-              <div className="my-1 h-px bg-line" />
-              {(["waiting", "cancelled", "complete"] as ProjectStatus[]).map((s) => (
-                <MenuItem
-                  key={s}
-                  color={PROJECT_STATUS_COLORS[s]}
-                  onClick={() => { updateInitiative(initiative.id, { status: s }); setMenu(false); }}
-                >
-                  Mark {STATUS_LABEL[s].toLowerCase()}
-                </MenuItem>
-              ))}
-              <div className="my-1 h-px bg-line" />
-              <div className="px-2.5 py-1">
-                <DeleteBtn what="initiative" onDelete={() => { deleteInitiative(initiative.id); onClose(); }} />
+                <div className="k-msep" />
+                <div className="doc-menu-del">
+                  <DeleteBtn what="initiative" onDelete={() => { deleteInitiative(initiative.id); onClose(); }} />
+                </div>
               </div>
             </FloatingMenu>
-          </span>
+          </>
         }
-        name={initiative.name}
-        onName={(v) => updateInitiative(initiative.id, { name: v })}
-        titlePrefix={
-          // A bet outweighs a project (D-048's "scope reads as mass") — the same
-          // stamp as ProjectRecord's, just bigger, so a shipped initiative
-          // visibly carries more weight at rest.
-          <button
-            onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
-            aria-label={shipped ? "Reopen initiative" : "Ship initiative — mark complete"}
-            title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
-            className="group/chk fast mt-[3px] flex h-[26px] w-[26px] shrink-0 items-center justify-center"
-          >
-            <ShipStamp shipped={shipped} size={26} />
-          </button>
-        }
-        outcome={initiative.outcome}
-        onOutcome={(v) => updateInitiative(initiative.id, { outcome: v })}
-        outcomePlaceholder="The outcome, one inspiring line — not a task"
       />
 
       <Body
@@ -654,44 +792,47 @@ function InitiativeRecord({
         scrollRef={scrollRef}
         main={
           <>
-            {/* The Objective used to head this section as its own block; it's now
-                the record's lead line, where an outcome belongs at every altitude. */}
+            <Head
+              name={initiative.name}
+              onName={(v) => updateInitiative(initiative.id, { name: v })}
+              outcome={initiative.outcome}
+              onOutcome={(v) => updateInitiative(initiative.id, { outcome: v })}
+              outcomePlaceholder="The outcome, one inspiring line — not a task"
+            />
+            {/* The Objective used to head its own block; it's the record's lead
+                line now, where an outcome belongs at every altitude. */}
             <div data-assess-anchor="objective" />
 
             <Sec
               label="Key results"
-              spine={accent}
-              fill={attainment ?? 0}
-              meter={attainment != null ? `${attainment}%` : null}
+              count={attainment != null ? `${attainment}%` : undefined}
+              onAdd={() => { addKeyResult(initiative.id); setKrFocus((n) => n + 1); }}
+              addLabel="Add a key result (K)"
             >
               {initiative.keyResults.map((kr, i) => (
-                <div
-                  key={kr.id}
-                  data-assess-anchor={`kr:${kr.id}`}
-                  className="group fast -mx-2 rounded-[var(--radius-sm)] border-b border-line px-2 py-2 last:border-b-0 hover:bg-accent-soft/40"
-                >
-                  <div className="flex items-center">
-                    <span className={`shrink-0 text-meta text-muted ${GUT}`}>◇</span>
+                <div key={kr.id} data-assess-anchor={`kr:${kr.id}`} className="doc-kr" style={{ ["--h" as string]: accent }}>
+                  <div className="doc-kr-top">
+                    <Icon name="arrow-right" size={14} style={{ color: "var(--faint)" }} />
                     <InlineText
                       value={kr.name}
                       onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })}
                       placeholder="What number moves?"
                       autoFocusEmpty={i === initiative.keyResults.length - 1 && krFocus > 0}
-                      className="min-w-0 flex-1 text-body font-medium"
+                      className="doc-kr-name"
                     />
-                    <span className="mono shrink-0 pl-3 text-meta text-muted">{krPct(kr)}%</span>
-                    <span className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="doc-kr-pct">{krPct(kr)}%</span>
+                    <span className="doc-kr-del">
                       <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
                     </span>
                   </div>
-                  <div className={`mt-1.5 flex items-center gap-3 ${GUT_PAD}`}>
-                    <span className="mono flex shrink-0 items-center gap-1 text-meta text-muted">
+                  <div className="doc-kr-line">
+                    <span className="doc-kr-nums">
                       <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
-                      <span className="opacity-50">→</span>
-                      <span style={{ color: accent }}>
+                      <span aria-hidden>→</span>
+                      <span className="text-ink">
                         <InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} />
                       </span>
-                      <span className="opacity-50">→</span>
+                      <span aria-hidden>→</span>
                       <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
                       <InlineText
                         value={kr.unit}
@@ -700,34 +841,34 @@ function InitiativeRecord({
                         className="ml-0.5 w-10"
                       />
                     </span>
-                    <span className="h-0.5 flex-1 rounded-full" style={{ background: "var(--line)" }}>
-                      <span
-                        className="fast block h-full rounded-full"
-                        style={{ width: `${krPct(kr)}%`, background: accent }}
-                      />
+                    <span className="doc-kr-track" aria-hidden>
+                      <span style={{ width: `${krPct(kr)}%` }} />
                     </span>
                   </div>
                 </div>
               ))}
-              <div className="flex items-center" style={{ minHeight: 36 }}>
-                <span className={`flex shrink-0 items-center text-body ${GUT}`} style={{ color: accent }}>＋</span>
-                <button
-                  onClick={() => { addKeyResult(initiative.id); setKrFocus((n) => n + 1); }}
-                  className="fast flex-1 text-left text-body text-muted hover:text-ink"
-                >
-                  Add a key result…
-                </button>
-              </div>
+              {initiative.keyResults.length === 0 && (
+                <div className="doc-compose">
+                  <Icon name="plus" size={14} />
+                  <button
+                    type="button"
+                    className="doc-compose-btn"
+                    onClick={() => { addKeyResult(initiative.id); setKrFocus((n) => n + 1); }}
+                  >
+                    Add a key result
+                  </button>
+                </div>
+              )}
             </Sec>
 
             <Sec
-              label="Projects feeding it"
-              spine={accent}
-              fill={childPct}
-              meter={projects.length ? `${projects.length} · ${childPct}%` : null}
+              label="Projects"
+              count={projects.length ? `${projects.length} · ${childPct}%` : undefined}
+              onAdd={() => projRef.current?.focus()}
+              addLabel="Add a project (P)"
             >
               {/* The same card the deck behind this modal shows — one object, not
-                  a bespoke tile in a half-empty two-column grid. */}
+                  a bespoke tile. */}
               <div ref={projListRef} className="relative">
                 {projReorderLineTop != null && (
                   <div className="reorder-insert-line" style={{ top: projReorderLineTop }} aria-hidden />
@@ -768,7 +909,7 @@ function InitiativeRecord({
                         {projects.length > 1 && (
                           <span
                             onPointerDown={(e) => startReorderProject(e, p.id)}
-                            className="fast absolute right-2 top-2 z-10 cursor-grab touch-none select-none rounded px-1 text-micro leading-none text-muted/40 opacity-0 transition-opacity hover:text-ink group-hover/card:opacity-100 active:cursor-grabbing"
+                            className="absolute right-2 top-2 z-10 cursor-grab touch-none select-none rounded-[var(--r-chip)] px-1 text-micro leading-none text-muted opacity-0 transition-opacity group-hover/card:opacity-100 active:cursor-grabbing"
                             title="Drag to reorder"
                             aria-hidden
                           >
@@ -790,7 +931,7 @@ function InitiativeRecord({
                   inputRef={projRef}
                 />
               </div>
-              <div className={GUT_PAD}>
+              <div className="pl-[22px]">
                 <ProjectAttachPicker
                   candidates={attachable}
                   accent={accent}
@@ -799,7 +940,7 @@ function InitiativeRecord({
               </div>
             </Sec>
 
-            <Sec label="Comments" spine={accent}>
+            <Sec label="Comments">
               <RecordLog kind="initiative" id={initiative.id} accent={accent} spine composerRef={logRef} />
             </Sec>
           </>
@@ -816,10 +957,71 @@ function InitiativeRecord({
             />
           )
         }
-        rail={
+        props={
           assessing ? null : (
             <>
-              <QuarterBand i={initiative} store={store} color={accent} bandRef={bandRef} />
+              <MenuProp
+                label="Status"
+                value={
+                  <>
+                    <Readiness step={step} title={shipped ? "Shipped" : `${[axes.defined, axes.planned].filter(Boolean).length} of 2 set`} />
+                    {STATUS_LABEL[initiative.status]}
+                  </>
+                }
+              >
+                {(["waiting", "cancelled", "complete"] as ProjectStatus[]).map((s) => (
+                  <KitMenuItem key={s} checked={initiative.status === s} onSelect={() => updateInitiative(initiative.id, { status: s })}>
+                    {STATUS_LABEL[s]}
+                  </KitMenuItem>
+                ))}
+              </MenuProp>
+              <PropSlot label="Domain">
+                <DomainPicker domains={domains} value={initiative.domainId} size="lg" align="right" onChange={changeDomain} />
+              </PropSlot>
+              <PopProp
+                label="Quarter"
+                empty={!initiative.targetDate}
+                open={quarterOpen}
+                onOpenChange={setQuarterOpen}
+                value={
+                  <>
+                    <Icon name="clock" size={14} style={{ color: "var(--muted)" }} />
+                    {initiative.targetDate ? quarterName(new Date(initiative.targetDate + "T12:00:00")) : "Not placed"}
+                  </>
+                }
+              >
+                {() => (
+                  <div className="doc-place">
+                    <QuarterBand i={initiative} store={store} color={accent} bandRef={bandRef} />
+                  </div>
+                )}
+              </PopProp>
+              <TargetProp value={initiative.targetDate} onChange={(targetDate) => updateInitiative(initiative.id, { targetDate })} />
+              <MenuProp label="Momentum" value={<>{MOMENTUM_GLYPH[initiative.momentum]} {MOMENTUM_LABEL[initiative.momentum]}</>}>
+                {(["up", "flat", "down"] as Momentum[]).map((m) => (
+                  <KitMenuItem key={m} checked={initiative.momentum === m} onSelect={() => updateInitiative(initiative.id, { momentum: m })}>
+                    {`${MOMENTUM_GLYPH[m]} ${MOMENTUM_LABEL[m]}`}
+                  </KitMenuItem>
+                ))}
+              </MenuProp>
+              <Property label="Pace" empty={pace == null} title={attainment != null ? "Key results attained" : "Projects' progress"}>
+                {pace != null ? (
+                  <>
+                    <PaceTrack
+                      done={pace}
+                      total={100}
+                      color={accent}
+                      elapsed={shipped ? null : spanElapsed(initiative, new Date())}
+                      width={120}
+                    />
+                    <span className="text-caption tabular-nums text-muted">{pace}%</span>
+                  </>
+                ) : (
+                  "Nothing to measure"
+                )}
+              </Property>
+
+              <div className="doc-props-sep" />
               <ReadyTicks
                 axes={[
                   { label: "Objective", met: initiative.outcome.trim() !== "" },

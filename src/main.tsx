@@ -89,8 +89,18 @@ const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
+// `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
+const showDocsHarness = import.meta.env.DEV && params.has("docs");
 
-if (showPickHarness) {
+if (showDocsHarness) {
+  void import("./components/record/DocumentHarness").then(({ default: DocumentHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <DocumentHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showPickHarness) {
   void import("./components/AgentPickHarness").then(({ default: AgentPickHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>

@@ -1,33 +1,34 @@
-// The record's frame — the sheet, the identity head, the two-column body, the
-// section rule, the rail. Extracted from RecordModal so that BIRTH AND LIFE WEAR
-// ONE SKELETON: `CreateRecord` (new project / new initiative) is this same frame
-// with a draft inside it, not a second design language.
+// The record's frame — the DOCUMENT layout (D-190). Extracted from RecordModal
+// so that BIRTH AND LIFE WEAR ONE SKELETON: `CreateRecord` (new project / new
+// initiative) is this same frame with a draft inside it, not a second design
+// language.
 //
-// That was the bug worth fixing. Creating used to open a bordered form — eyebrow
-// + instructional headline, a pill row per domain, a boxed name field with a flat
-// focus ring, hardcoded px type — while the thing it created opened as a document
-// with a Fraunces masthead on one 26px spine. The object changed typeface at
-// birth, and "more options…" swapped in a THIRD layout mid-typing. A different
-// layout for creating is right (create is one field and a commit; the record is
-// accumulated state). A different grammar for the same object never is.
+// A record is a document with a property panel:
 //
-// So the rules live here, once:
-//   · ONE SPINE — every control hangs in a 26px gutter, one left edge.
-//   · ONE HERO — Fraunces carries the name, and only the name.
-//   · THE RULE IS THE METER — the hairline under a heading fills to the domain hue.
-//   · THE RAIL IS ANNOTATION — no enclosures, no chroma, resting at 78%.
-//   · FOCUS LIFTS, IT DOESN'T OUTLINE.
+//   ┌ bar ─ Domain / Initiative / Name ───────────────── acts · ⋯ · ✕ ┐
+//   │ main column                              │ properties (288px)   │
+//   │   Name (30px, the one hero)              │   Status   ◔ Ready   │
+//   │   the outcome, as its lead               │   Domain   ■ Work    │
+//   │   Steps ─────────────────────── 7/9  ＋  │   Week     Next week │
+//   │   Comments ──────────────────────────    │   Pace     ▬▬▬▬╎▭▭   │
+//   └──────────────────────────────────────────┴──────────────────────┘
+//
+// The rules live here, once:
+//   · ONE HERO — the name, 30px 700. Everything else on the page is quiet.
+//   · EVERY PROPERTY IS A ROW whose value opens its picker. No property is a
+//     sentence and no property lives in the main column.
+//   · THE PANEL IS ANNOTATION — a faint well beside the work, never a frame
+//     around it.
+//   · Geometry from the kit only (styles/documents.css): the bar is the kit's
+//     PageBar shape, sections are kit SectionHeaders, values are kit Property.
 
-import { useEffect, type ReactNode, type RefObject } from "react";
-import { Icon } from "../Icon";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "../Icon";
 import { InlineText } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
 import { isTypingIn } from "../floors/TaskList";
-
-/** The gutter every control hangs in. One number, so the spine can't drift. */
-export const GUT = "w-[26px]";
-export const GUT_PAD = "pl-[26px]";
+import { IconButton, Popover, SectionHeader, type Placement } from "../kit";
+import { cx } from "../kit/cx";
 
 // ── The scrim + the keyboard contract ────────────────────────────────────────
 /** Escape · Tab-trap · focus restore. A FIELD OWNS ESCAPE FIRST — leaving a
@@ -44,7 +45,8 @@ export function useRecordKeys(sheetRef: RefObject<HTMLDivElement>, onClose: () =
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || isTypingIn(e.target)) return;
       // A task list spent it (clearing its cursor), or something nested in the
-      // sheet — a row menu, a task's popover — closes first, on its own press.
+      // sheet — a row menu, a task's popover, a property's picker — closes
+      // first, on its own press.
       if (e.defaultPrevented || document.querySelector("[data-nested-surface]")) return;
       // A nested dialog (ShipAssess) is a later [role=dialog] sibling. This
       // listener is registered first, so it would otherwise close the sheet
@@ -86,14 +88,10 @@ export function RecordScrim({ onClose, children }: { onClose: () => void; childr
       // first project" (the walk's own target) opened a sheet nobody could see.
       // Same class of bug as Modal's z-70 climb over Plan the week. Settings stays
       // at 70 on purpose so the calendars step can still cut a hole into it.
-      className="fixed inset-0 z-[81] flex items-start justify-center px-4 py-[5vh]"
+      // The dim is the kit's flat scrim (`.doc-scrim::before`) — nothing blurs.
+      className="doc-scrim fixed inset-0 z-[81] flex items-center justify-center p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      {/* Blur and dim split so only the (cheap) dim fades — animating opacity on
-          the same element as backdrop-filter forces a re-blur every frame,
-          which is what made the record open read as a slow-motion fade. */}
-      <div className="scrim-blur fixed inset-0 backdrop-blur-[3px]" aria-hidden="true" />
-      <div className="scrim pointer-events-none fixed inset-0 bg-black/35" aria-hidden="true" />
       {children}
     </div>,
     document.body,
@@ -101,22 +99,23 @@ export function RecordScrim({ onClose, children }: { onClose: () => void; childr
 }
 
 // ── The sheet ────────────────────────────────────────────────────────────────
-// The altitude tell is the sheet's own left edge, exactly DeckCard's law: a
-// project wears a 3px spine inset from the ends, a bet the same colour at 5px
-// running full-height as the actual boundary. Scope reads as mass — never as a
-// different species.
 export function Sheet({
-  variant,
-  spine,
-  wide,
   sheetRef,
+  wide = false,
+  fit = false,
+  label,
+  className,
+  style,
   children,
 }: {
-  variant: "marked" | "bounded";
-  spine: string;
-  /** the coach's margin needs a wider sheet to lay its notes in. */
-  wide: boolean;
   sheetRef: RefObject<HTMLDivElement>;
+  /** Assess lays its margin notes beside the work, so the page widens. */
+  wide?: boolean;
+  /** Hug the content (the create sheet) instead of standing at full height. */
+  fit?: boolean;
+  label?: string;
+  className?: string;
+  style?: React.CSSProperties;
   children: ReactNode;
 }) {
   return (
@@ -124,244 +123,304 @@ export function Sheet({
       ref={sheetRef}
       role="dialog"
       aria-modal="true"
-      className={`moment elev-3 fast relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-bg ${
-        wide ? "max-w-[1180px]" : "max-w-[1000px]"
-      }`}
+      aria-label={label}
+      tabIndex={-1}
+      className={cx("doc", className)}
+      data-wide={wide || undefined}
+      data-fit={fit || undefined}
+      style={style}
     >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute z-10"
-        style={
-          variant === "bounded"
-            ? { insetBlock: 0, left: 0, width: 5, background: spine, borderRadius: "var(--radius-lg) 0 0 var(--radius-lg)" }
-            : { top: 18, bottom: 18, left: 7, width: 3, background: spine, borderRadius: 999 }
-        }
-      />
       {children}
     </div>
   );
 }
 
-// ── Identity: crumbs + acts, the name, the outcome ───────────────────────────
+// ── The bar: Domain / Initiative / Name · acts ───────────────────────────────
+/** The kit PageBar's shape without its window-drag region — this bar sits on
+ *  a dialog, and dragging it must not move the app window. */
+export function Bar({ trail, actions }: { trail: readonly ReactNode[]; actions?: ReactNode }) {
+  const items = trail.filter((t) => t != null && t !== false && t !== "");
+  return (
+    <header className="k-bar">
+      <nav className="k-crumb" aria-label="Breadcrumb">
+        {items.map((t, i) => (
+          <span key={i} className="contents">
+            {i > 0 && (
+              <span className="k-crumb-sep" aria-hidden="true">
+                /
+              </span>
+            )}
+            <span className={i === items.length - 1 ? "k-crumb-here" : "k-crumb-up"} aria-current={i === items.length - 1 ? "page" : undefined}>
+              {t}
+            </span>
+          </span>
+        ))}
+      </nav>
+      <div className="k-bar-fill" />
+      {actions && <div className="k-bar-actions">{actions}</div>}
+    </header>
+  );
+}
+
+// ── Identity: the name, the outcome ──────────────────────────────────────────
 export function Head({
-  crumbs,
-  acts,
   name,
   onName,
   namePlaceholder = "Untitled",
   autoFocusName = false,
-  titlePrefix,
   outcome,
   onOutcome,
   outcomePlaceholder,
 }: {
-  crumbs: ReactNode;
-  acts: ReactNode;
   name: string;
   onName: (v: string) => void;
   namePlaceholder?: string;
   /** create only: the name is the first thing you'd type, so take the caret. */
   autoFocusName?: boolean;
-  /** Ship / complete control beside the masthead (project records). */
-  titlePrefix?: ReactNode;
   outcome: string;
   onOutcome: (v: string) => void;
   outcomePlaceholder: string;
 }) {
   return (
-    <div className="shrink-0 pb-4 pl-[30px] pr-4 pt-3">
-      <div className="mb-2.5 flex items-center gap-2">
-        {crumbs}
-        <div className="flex-1" />
-        {acts}
-      </div>
-      {/* the ONE hero. Fraunces carries a name, never a number. */}
-      <div className="flex items-start gap-2.5">
-        {titlePrefix}
-        <h1 className="min-w-0 flex-1 text-display masthead leading-tight">
-          <InlineText
-            value={name}
-            onChange={onName}
-            placeholder={namePlaceholder}
-            autoFocusEmpty={autoFocusName}
-            live={autoFocusName}
-          />
-        </h1>
-      </div>
+    <div>
+      {/* the ONE hero. */}
+      <h1 className="doc-title">
+        <InlineText
+          value={name}
+          onChange={onName}
+          placeholder={namePlaceholder}
+          autoFocusEmpty={autoFocusName}
+          live={autoFocusName}
+          quiet
+        />
+      </h1>
       {/* No "GOAL" eyebrow: a lead line directly under a name is self-evidently
           the outcome, and the placeholder teaches it when empty (D-041 — a thing
-          is named once). Set below the hero, not beside it. */}
-      <div
-        className="mt-1.5 max-w-[62ch] text-head leading-snug"
-        style={{ color: "color-mix(in srgb, var(--text) 72%, var(--muted))" }}
-      >
-        <InlineText value={outcome} onChange={onOutcome} placeholder={outcomePlaceholder} />
-      </div>
+          is named once). */}
+      <p className="doc-lead">
+        <InlineText value={outcome} onChange={onOutcome} placeholder={outcomePlaceholder} live={autoFocusName} quiet />
+      </p>
     </div>
   );
 }
 
+// ── Acts ─────────────────────────────────────────────────────────────────────
+const GLYPH_ICONS: Record<string, ReactNode> = {
+  "···": <Icon name="more" size={16} />,
+  "✕": <Icon name="close" size={16} />,
+  "✦": <Icon name="sparkles" size={15} />,
+  "＋": <Icon name="plus" size={14} />,
+};
+
+/** A kit IconButton named by the glyph it used to print. The label is its name
+ *  and its tooltip. */
 export function IconBtn({
   glyph,
   label,
   onClick,
   badge,
   btnRef,
+  size,
 }: {
   glyph: string;
   label: string;
   onClick: () => void;
   badge?: number;
   btnRef?: RefObject<HTMLButtonElement>;
+  size?: "xs" | "sm";
+}) {
+  return (
+    <span className="relative inline-flex">
+      <IconButton
+        ref={btnRef}
+        label={label}
+        size={size}
+        icon={GLYPH_ICONS[glyph] ?? <span aria-hidden>{glyph}</span>}
+        onClick={onClick}
+        className="tap-icon"
+      />
+      {badge != null && badge > 0 && (
+        <span className="pointer-events-none absolute -right-0.5 -top-0.5 text-micro font-semibold tabular-nums text-muted">{badge}</span>
+      )}
+    </span>
+  );
+}
+
+/** A menu row inside the shared FloatingMenu — the kit menu item's look. */
+export function MenuItem({
+  children,
+  onClick,
+  icon,
+  danger,
+  checked,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  icon?: ReactNode;
+  danger?: boolean;
+  checked?: boolean;
 }) {
   return (
     <button
-      ref={btnRef}
+      type="button"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
       onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="fast relative flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-caption text-muted opacity-75 hover:bg-surface hover:text-ink hover:opacity-100"
+      className="k-mi tap-h"
+      data-danger={danger || undefined}
     >
-      {glyph}
-      {badge != null && badge > 0 && (
-        // muted, not filled: a bright dot in the top-right corner pulled the eye
-        // away from the work as hard as the rail did.
-        <span className="mono absolute right-0 top-0 text-micro font-semibold text-muted">{badge}</span>
-      )}
+      {icon}
+      <span className="k-mi-label">{children}</span>
+      {checked && <Icon name="check" size={14} className="k-mi-check" />}
     </button>
   );
 }
 
-export function MenuItem({ children, onClick, color }: { children: ReactNode; onClick: () => void; color?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className="fast block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-      style={color ? { color } : undefined}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ── Body: the work, and the rail beside it ───────────────────────────────────
+// ── Body: the work, and the property panel beside it ─────────────────────────
 export function Body({
   main,
-  rail,
+  props,
   overlay,
   scrollRef,
   assessing = false,
 }: {
   main: ReactNode;
-  rail: ReactNode;
+  props: ReactNode;
   overlay?: ReactNode;
   scrollRef?: RefObject<HTMLDivElement>;
   assessing?: boolean;
 }) {
   return (
-    <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
-      {/* The rail column keeps its track while assessing — that empty gutter is
-          where AssessLayer lays its margin notes. */}
-      <div className={`grid grid-cols-1 ${assessing ? "lg:grid-cols-[1fr_320px]" : "lg:grid-cols-[1fr_236px]"}`}>
-        <div className="min-w-0 pb-7 pl-[30px] pr-6 pt-4">{main}</div>
-        <div className="fast flex flex-col gap-5 border-t border-line px-5 pb-7 pt-4 opacity-[0.78] hover:opacity-100 focus-within:opacity-100 lg:border-l lg:border-t-0">
-          {rail}
-        </div>
-      </div>
+    <div ref={scrollRef} className="doc-body" data-assess={assessing || undefined}>
+      <div className="doc-main">{main}</div>
+      {/* The panel keeps its track while assessing — that empty column is where
+          AssessLayer lays its margin notes. */}
+      <aside className="doc-props" aria-label="Properties">
+        <div className="doc-props-inner">{props}</div>
+      </aside>
       {overlay}
     </div>
   );
 }
 
-/** A section of the work. The hairline under the heading IS the meter. */
+/** A section of the work: a kit SectionHeader with its count and its ＋. */
 export function Sec({
   label,
-  meter,
-  fill,
-  spine,
+  count,
+  onAdd,
+  addLabel,
+  actions,
   children,
 }: {
   label: string;
-  meter?: string | null;
-  /** 0–100, or null for a section with nothing to measure (the Log, a draft). */
-  fill?: number | null;
-  spine: string;
+  count?: ReactNode;
+  onAdd?: () => void;
+  addLabel?: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="mt-6 first:mt-0">
-      <div className={`flex items-baseline gap-3 ${GUT_PAD}`}>
-        <span className="section-label flex-1" style={{ color: "color-mix(in srgb, var(--text) 55%, var(--muted))" }}>
-          {label}
-        </span>
-        {meter && <span className="mono text-meta text-muted">{meter}</span>}
-      </div>
-      <div className="relative mt-1.5 h-0.5 rounded-full" style={{ background: "var(--line)" }}>
-        {fill != null && (
-          <div
-            className="fast absolute inset-y-0 left-0 rounded-full"
-            style={{ width: `${Math.max(0, Math.min(100, fill))}%`, background: spine }}
-          />
-        )}
-      </div>
-      {children}
+    <section className="doc-sec">
+      <SectionHeader
+        title={label}
+        count={count}
+        className="doc-sec-head"
+        actions={
+          <>
+            {actions}
+            {onAdd && <IconBtn glyph="＋" size="xs" label={addLabel ?? `Add to ${label.toLowerCase()}`} onClick={onAdd} />}
+          </>
+        }
+      />
+      <div className="doc-sec-body">{children}</div>
     </section>
   );
 }
 
-export function RailSec({ label, right, children }: { label: string; right?: ReactNode; children: ReactNode }) {
+// ── Properties ───────────────────────────────────────────────────────────────
+/** A property whose picker is a shared part (DomainPicker, InitiativePicker):
+ *  the kit Property row, with the part dressed as its value. */
+export function PropSlot({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
-    <section>
-      <div className="section-label mb-2 flex items-center gap-1.5">
-        <span className="flex-1">{label}</span>
-        {right}
-      </div>
-      {children}
-    </section>
+    <div className="k-prop">
+      <span className="k-prop-label">{label}</span>
+      <span className="doc-prop-slot">{children}</span>
+    </div>
   );
 }
 
-/** Readiness as a checklist you watch fill in, not a sentence and not a dial.
- *  The finish line is deliberately absent — the placement band right above says
- *  whether one is set, and a thing is named once (D-041). Met axes wear the same
- *  green check the spine uses at rest; unmet axes stay hollow. */
-function ReadyMark({ met }: { met: boolean }) {
-  const box = "flex h-[11px] w-[11px] shrink-0 items-center justify-center";
-  if (met) {
-    return (
-      <span className={box} style={{ color: `color-mix(in srgb, ${READY} 66%, var(--muted))` }} aria-hidden>
-        <Icon name="check" size={11} />
-      </span>
-    );
-  }
+/** A property whose value opens a kit Popover — placement, a date. The render
+ *  prop gets `close` so a pick can dismiss it. */
+export function PopProp({
+  label,
+  value,
+  empty,
+  title,
+  placement = "left-start",
+  className,
+  open: controlledOpen,
+  onOpenChange,
+  children,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  empty?: boolean;
+  title?: string;
+  placement?: Placement;
+  className?: string;
+  /** controlled, so a shortcut (`s`, `q`) can open it */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children: (close: () => void) => ReactNode;
+}) {
+  const btn = useRef<HTMLButtonElement>(null);
+  const [own, setOwn] = useState(false);
+  const open = controlledOpen ?? own;
+  const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOwn(v));
   return (
-    <span
-      className={`${box} rounded-full`}
-      style={{ boxShadow: "inset 0 0 0 1px var(--line-strong)" }}
-      aria-hidden
-    />
+    <div className="k-prop">
+      <span className="k-prop-label">{label}</span>
+      <button
+        ref={btn}
+        type="button"
+        className="k-prop-value"
+        data-empty={empty || undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={title}
+        onClick={() => setOpen(!open)}
+      >
+        {value}
+      </button>
+      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement={placement} label={typeof label === "string" ? label : undefined} className={className} flush>
+        {children(() => setOpen(false))}
+      </Popover>
+    </div>
   );
 }
 
+/** Readiness as checks you watch fill in. Met axes wear a filled box; unmet
+ *  ones stay hollow and faint. */
 export function ReadyTicks({ axes }: { axes: { label: string; met: boolean }[] }) {
-  const all = axes.length > 0 && axes.every((a) => a.met);
+  const met = axes.filter((a) => a.met).length;
   return (
-    <RailSec
-      label="Ready"
-      right={all ? <ReadyMark met /> : undefined}
-    >
-      <div className="flex flex-col gap-1.5">
+    <>
+      <SectionHeader title="Ready" count={`${met}/${axes.length}`} />
+      <div className="doc-checks">
         {axes.map((a) => (
-          <div
-            key={a.label}
-            className={`flex items-center gap-2 text-meta text-muted ${a.met ? "" : "opacity-60"}`}
-            title={a.met ? `${a.label} — set` : `${a.label} — not set yet`}
-          >
-            <ReadyMark met={a.met} />
+          <div key={a.label} className="doc-check" data-missing={a.met ? undefined : ""} title={a.met ? `${a.label} — set` : `${a.label} — not set yet`}>
+            <span className="doc-check-box" data-on={a.met ? "" : undefined} aria-hidden />
             {a.label}
           </div>
         ))}
       </div>
-    </RailSec>
+    </>
   );
+}
+
+/** The readiness pie's step from a record's axes: met of all → ready (3). */
+export function readinessStep(axes: readonly boolean[]): 0 | 1 | 2 | 3 {
+  const met = axes.filter(Boolean).length;
+  if (met >= axes.length) return 3;
+  return Math.min(2, met) as 0 | 1 | 2;
 }

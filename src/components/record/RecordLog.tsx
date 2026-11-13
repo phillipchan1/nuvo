@@ -1,5 +1,7 @@
-// Record comments — a Notion-style thread below the work. Each line carries
-// an author (you today; Nuvo when agent comments land) with edit/delete on ⋯.
+// Record comments — a thread below the work, on both shells (the desktop
+// record and the phone's detail sheet). Each line carries an author (you
+// today; Nuvo when agent comments land) with edit/delete on ⋯. Drawn with kit
+// parts: an Avatar, plain text, a Textarea to write in.
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
@@ -7,6 +9,8 @@ import { useAuth } from "../../hooks/useAuth";
 import { useRecordLog, type RecordComment, type RecordKind } from "../../hooks/useRecordLog";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import { FloatingMenu } from "../floors/parts";
+import { Avatar, Button, IconButton, Textarea } from "../kit";
+import { Icon } from "../Icon";
 import { MenuItem } from "./recordFrame";
 
 function ago(iso: string): string {
@@ -40,42 +44,14 @@ function displayNameFromSession(session: ReturnType<typeof useAuth>["session"]):
   return "You";
 }
 
-function authorOf(
-  comment: RecordComment,
-  selfName: string,
-): { name: string; initial: string; agent: boolean } {
-  if (comment.author_kind === "agent") {
-    return { name: ASSISTANT_NAME, initial: "N", agent: true };
-  }
-  const initial = (selfName.match(/\b\w/g)?.slice(0, 2).join("") ?? selfName.charAt(0)).toUpperCase();
-  return { name: selfName, initial, agent: false };
+function authorOf(comment: RecordComment, selfName: string): { name: string; agent: boolean } {
+  if (comment.author_kind === "agent") return { name: ASSISTANT_NAME, agent: true };
+  return { name: selfName, agent: false };
 }
 
-function CommentAvatar({
-  initial,
-  agent,
-  accent,
-}: {
-  initial: string;
-  agent: boolean;
-  accent: string;
-}) {
-  return (
-    <span
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-micro font-semibold"
-      style={
-        agent
-          ? { background: "var(--accent-soft)", color: "var(--accent)" }
-          : {
-              background: `color-mix(in srgb, ${accent} 16%, var(--surface))`,
-              color: `color-mix(in srgb, ${accent} 72%, var(--ink))`,
-            }
-      }
-      aria-hidden
-    >
-      {agent ? "✦" : initial}
-    </span>
-  );
+/** You wear your record's domain hue; Nuvo wears the accent (its voice). */
+function CommentAvatar({ name, agent, accent }: { name: string; agent: boolean; accent: string }) {
+  return <Avatar name={name} color={agent ? "var(--accent)" : accent} size="lg" />;
 }
 
 function CommentRow({
@@ -122,56 +98,62 @@ function CommentRow({
   };
 
   return (
-    <div className="group fast flex gap-3 rounded-[var(--radius-sm)] py-2.5 hover:bg-accent-soft/30">
-      <CommentAvatar initial={author.initial} agent={author.agent} accent={accent} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-caption font-medium text-ink">{author.name}</span>
-          <span className="mono text-meta text-muted">
+    <div className="doc-comment">
+      <CommentAvatar name={author.name} agent={author.agent} accent={accent} />
+      <div className="doc-comment-main">
+        <div className="doc-comment-head">
+          <span className="doc-comment-name">{author.name}</span>
+          <span className="doc-comment-when">
             {ago(comment.created_at)}
-            {wasEdited(comment) && <span className="ml-1 opacity-70">(edited)</span>}
+            {wasEdited(comment) && " · edited"}
           </span>
           {(canEdit || canDelete) && !editing && (
-            <span className="relative ml-auto">
-              <button
+            <span className="doc-comment-more">
+              <IconButton
                 ref={menuRef}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-                className="tap-icon fast flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-meta text-muted opacity-50 hover:bg-surface hover:text-ink hover:opacity-100 group-hover:opacity-100"
-                title="Comment options"
-                aria-label="Comment options"
-              >
-                ⋯
-              </button>
-              <FloatingMenu open={menuOpen} anchorRef={menuRef} align="right" minWidth={130} onClose={() => setMenuOpen(false)}>
-                {canEdit && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onEdit();
-                    }}
-                  >
-                    Edit
-                  </MenuItem>
-                )}
-                {canDelete && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onRemove();
-                    }}
-                    color="var(--signal)"
-                  >
-                    Delete
-                  </MenuItem>
-                )}
+                size="xs"
+                label="Comment options"
+                icon={<Icon name="more" size={14} />}
+                className="tap"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen((o) => !o);
+                }}
+              />
+              <FloatingMenu open={menuOpen} anchorRef={menuRef} align="right" minWidth={150} onClose={() => setMenuOpen(false)}>
+                <div className="doc-menu">
+                  {canEdit && (
+                    <MenuItem
+                      icon={<Icon name="pen" size={14} />}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onEdit();
+                      }}
+                    >
+                      Edit
+                    </MenuItem>
+                  )}
+                  {canDelete && (
+                    <MenuItem
+                      danger
+                      icon={<Icon name="trash" size={14} />}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onRemove();
+                      }}
+                    >
+                      Delete
+                    </MenuItem>
+                  )}
+                </div>
               </FloatingMenu>
             </span>
           )}
         </div>
 
         {editing ? (
-          <div className="mt-1.5">
-            <textarea
+          <div className="mt-1.5 grid gap-2">
+            <Textarea
               ref={editRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -180,28 +162,21 @@ function CommentRow({
                 if (e.key === "Escape") { e.stopPropagation(); onCancelEdit(); }
               }}
               rows={3}
-              className="nuvo-inline-input w-full resize-none rounded-[var(--radius-sm)] bg-surface px-2.5 py-2 text-body leading-relaxed outline-none"
-              style={{ caretColor: accent, boxShadow: "var(--shadow-1)" }}
+              aria-label="Edit comment"
             />
-            <div className="mt-1.5 flex items-center gap-2">
-              <button
-                onClick={save}
-                disabled={!draft.trim() || draft.trim() === comment.body.trim()}
-                className="fast rounded-[var(--radius-sm)] px-2.5 py-1 text-caption font-medium text-white disabled:opacity-40"
-                style={{ background: accent }}
-              >
+            <div className="flex items-center gap-2">
+              <Button kind="primary" size="xs" className="tap" onClick={save} disabled={!draft.trim() || draft.trim() === comment.body.trim()}>
                 Save
-              </button>
-              <button
-                onClick={onCancelEdit}
-                className="fast rounded-[var(--radius-sm)] px-2 py-1 text-caption text-muted hover:text-ink"
-              >
+              </Button>
+              <Button kind="ghost" size="xs" className="tap" onClick={onCancelEdit}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <div className="mt-1 whitespace-pre-wrap text-body leading-relaxed text-ink/90">{comment.body}</div>
+          <div className="doc-comment-body" data-selectable>
+            {comment.body}
+          </div>
         )}
       </div>
     </div>
@@ -218,9 +193,11 @@ export function RecordLog({
   kind: RecordKind;
   id: string;
   accent: string;
+  /** kept for call-site compat — the thread is one shape everywhere now */
   spine?: boolean;
   composerRef?: RefObject<HTMLTextAreaElement>;
 }) {
+  void spine;
   const { session } = useAuth();
   const { comments, addComment, deleteComment, updateComment, error: loadError } = useRecordLog(kind, id);
   const [draft, setDraft] = useState("");
@@ -229,10 +206,6 @@ export function RecordLog({
   const ref = composerRef ?? inner;
   const selfName = useMemo(() => displayNameFromSession(session), [session]);
   const selfId = session?.user.id;
-  const selfInitial = useMemo(
-    () => (selfName.match(/\b\w/g)?.slice(0, 2).join("") ?? selfName.charAt(0)).toUpperCase(),
-    [selfName],
-  );
 
   const post = () => {
     const text = draft.trim();
@@ -261,49 +234,39 @@ export function RecordLog({
     setEditingId(null);
   };
 
-  const composer = (
-    <div className={`flex gap-3 ${comments.length > 0 ? "border-t border-line pt-3" : "pt-1"}`}>
-      <CommentAvatar initial={selfInitial} agent={false} accent={accent} />
-      <textarea
-        ref={ref}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); post(); }
-          if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
-        }}
-        rows={spine ? 2 : 2}
-        placeholder="Add a comment…"
-        className="nuvo-inline-input min-w-0 flex-1 resize-none bg-transparent text-body leading-relaxed outline-none placeholder:text-muted"
-        style={{ caretColor: accent }}
-      />
-    </div>
-  );
-
   return (
-    <div className={spine ? "-mx-1 px-1" : ""}>
-      {loadError && (
-        <p className="mb-2 text-caption text-signal">Comments couldn't load — try refreshing.</p>
-      )}
-      {comments.length === 0 && !loadError ? null : (
-        <div className="flex flex-col">
-          {comments.map((c) => (
-            <CommentRow
-              key={c.id}
-              comment={c}
-              accent={accent}
-              selfName={selfName}
-              selfId={selfId}
-              editing={editingId === c.id}
-              onEdit={() => setEditingId(c.id)}
-              onCancelEdit={() => setEditingId(null)}
-              onSave={(body) => void saveEdit(c, body)}
-              onRemove={() => remove(c)}
-            />
-          ))}
-        </div>
-      )}
-      {composer}
+    <div>
+      {loadError && <p className="mb-2 text-caption text-danger">Comments couldn't load. Try refreshing.</p>}
+      {comments.length > 0 &&
+        comments.map((c) => (
+          <CommentRow
+            key={c.id}
+            comment={c}
+            accent={accent}
+            selfName={selfName}
+            selfId={selfId}
+            editing={editingId === c.id}
+            onEdit={() => setEditingId(c.id)}
+            onCancelEdit={() => setEditingId(null)}
+            onSave={(body) => void saveEdit(c, body)}
+            onRemove={() => remove(c)}
+          />
+        ))}
+      <div className="doc-comment-compose" data-after={comments.length > 0 ? "" : undefined}>
+        <CommentAvatar name={selfName} agent={false} accent={accent} />
+        <Textarea
+          ref={ref}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); post(); }
+            if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
+          }}
+          rows={2}
+          placeholder="Add a comment…"
+          aria-label="Add a comment"
+        />
+      </div>
     </div>
   );
 }

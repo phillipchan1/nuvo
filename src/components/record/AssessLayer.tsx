@@ -7,6 +7,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { supabase } from "../../lib/supabase";
+import { Icon } from "../Icon";
+import { Button } from "../kit";
 
 export interface AssessPatch {
   kind: "outcome" | "kr" | "title";
@@ -25,10 +27,11 @@ export interface AssessFinding {
   patch?: AssessPatch;
 }
 
+// Severity is a verdict, not "now": high reads as danger, medium as a caution.
 const SEV_COLOR: Record<AssessFinding["severity"], string> = {
-  high: "var(--signal)",
-  medium: "#D97706",
-  low: "var(--muted)",
+  high: "var(--danger)",
+  medium: "var(--warn)",
+  low: "var(--faint)",
 };
 
 const CARD_W = 300;
@@ -49,6 +52,8 @@ export function AssessLayer({
   onAccept: (f: AssessFinding) => void;
   onExit: () => void;
 }) {
+  // The review speaks in the accent (Nuvo's voice), not the record's hue.
+  void accent;
   const [findings, setFindings] = useState<AssessFinding[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<number>>(new Set()); // dismissed/accepted indices
@@ -120,20 +125,22 @@ export function AssessLayer({
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0" style={{ height: 1 }}>
-      {/* floating toolbar */}
-      <div className="pointer-events-auto sticky top-2 z-20 mx-auto flex w-fit items-center gap-3 rounded-full border border-line bg-surface px-3.5 py-1.5 [box-shadow:var(--shadow-2)]">
-        <span className="mono text-micro font-semibold tracking-widest" style={{ color: accent }}>✦ NUVO'S REVIEW</span>
+      {/* the review's bar, pinned over the page */}
+      <div className="doc-assess-bar">
+        <b>
+          <Icon name="sparkles" size={14} />
+          {"Nuvo's review"}
+        </b>
         {findings === null && !error ? (
-          <span className="flex items-center gap-1.5 text-meta text-muted">
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-line border-t-current" style={{ color: accent }} />
-            reading…
-          </span>
+          <span className="doc-pulse">Reading…</span>
         ) : error ? (
-          <span className="text-meta text-signal">{error}</span>
+          <span className="text-danger">{error}</span>
         ) : (
-          <span className="text-meta text-muted">{live.length ? `${live.length} suggestion${live.length === 1 ? "" : "s"}` : "nothing to sharpen ✓"}</span>
+          <span className="tabular-nums">{live.length ? `${live.length} to sharpen` : "Nothing to sharpen"}</span>
         )}
-        <button onClick={onExit} className="fast mono rounded-full px-2 py-0.5 text-meta font-medium text-white" style={{ background: accent }}>Done</button>
+        <Button kind="primary" size="xs" onClick={onExit}>
+          Done
+        </Button>
       </div>
 
       {/* highlights over the anchored elements */}
@@ -143,12 +150,14 @@ export function AssessLayer({
         return (
           <div
             key={`mark-${i}`}
-            className="pointer-events-none absolute rounded-[6px]"
+            className="doc-assess-mark"
             style={{
-              top: pos.markTop - 4, left: pos.markLeft - 6, height: pos.markHeight + 8, width: `calc(100% - ${CARD_W + 40}px)`,
-              maxWidth: 620,
-              boxShadow: `inset 0 0 0 1.5px ${SEV_COLOR[f.severity]}55`,
-              background: `${SEV_COLOR[f.severity]}0d`,
+              top: pos.markTop - 4,
+              left: pos.markLeft - 6,
+              height: pos.markHeight + 8,
+              width: `calc(100% - ${CARD_W + 52}px)`,
+              maxWidth: 732,
+              ["--m" as string]: SEV_COLOR[f.severity],
             }}
           />
         );
@@ -161,26 +170,24 @@ export function AssessLayer({
           <div
             key={`card-${i}`}
             ref={(el) => { cardRefs.current[i] = el; }}
-            className="pointer-events-auto absolute rounded-[var(--radius)] border border-line bg-surface p-2.5 [box-shadow:var(--shadow-2)]"
-            style={{ top: pos?.cardTop ?? 8, right: 4, width: CARD_W, opacity: pos ? 1 : 0 }}
+            className="k-card doc-assess-note"
+            style={{ top: pos?.cardTop ?? 8, width: CARD_W, opacity: pos ? 1 : 0, ["--m" as string]: SEV_COLOR[f.severity] }}
           >
             <div className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: SEV_COLOR[f.severity] }} />
-              <div className="min-w-0 flex-1">
-                <div className="text-caption leading-snug">{f.issue}</div>
-                {f.suggestion && !f.patch && <div className="mt-1 text-label leading-snug text-muted">{f.suggestion}</div>}
-                {f.patch && (
-                  <div className="mt-1.5 rounded-md border border-dashed border-line px-2 py-1 text-label leading-snug" style={{ color: accent }}>
-                    {patchPreview(f.patch)}
-                  </div>
-                )}
-                <div className="mt-2 flex items-center gap-2">
+              <span className="doc-assess-sev" aria-hidden />
+              <div className="grid min-w-0 flex-1 gap-1.5">
+                <p>{f.issue}</p>
+                {f.suggestion && !f.patch && <p className="doc-assess-sub">{f.suggestion}</p>}
+                {f.patch && <div className="doc-assess-patch">{patchPreview(f.patch)}</div>}
+                <div className="flex items-center gap-1.5">
                   {f.patch && (
-                    <button onClick={() => accept(i, f)} className="fast rounded-md border px-2 py-0.5 text-meta font-medium" style={{ borderColor: `${accent}55`, color: accent, background: `${accent}12` }}>
-                      ✓ Accept
-                    </button>
+                    <Button size="xs" kind="primary" onClick={() => accept(i, f)} icon={<Icon name="check" size={12} />}>
+                      Accept
+                    </Button>
                   )}
-                  <button onClick={() => remove(i)} className="fast text-meta text-muted hover:text-ink">{f.patch ? "Dismiss" : "Got it"}</button>
+                  <Button size="xs" kind="ghost" onClick={() => remove(i)}>
+                    {f.patch ? "Dismiss" : "Got it"}
+                  </Button>
                 </div>
               </div>
             </div>
