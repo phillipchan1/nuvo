@@ -1,5 +1,5 @@
 import { addDays, format, startOfWeek } from "date-fns";
-import { planningWeekStart } from "../../supabase/functions/_shared/planningRules.ts";
+import { planSessionWeekStart, planningWeekStart } from "../../supabase/functions/_shared/planningRules.ts";
 import { isOverdue as kernelIsOverdue } from "../../supabase/functions/_shared/taskQuery.ts";
 import { civilDateOf } from "../../supabase/functions/_shared/reminderAnchors.ts";
 
@@ -40,6 +40,19 @@ export function planningWeekStartISO(now: Date = new Date()): string {
   // The rule itself lives in the planning kernel — the agent plans from the same
   // one. (It used to be written twice, and the two disagreed about Saturday.)
   return planningWeekStart(todayISO(now));
+}
+
+/** Minutes past midnight now, on the APP_TZ clock (the zone `todayISO` reads). */
+export function nowMinutesInAppTz(now: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: APP_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const n = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return n("hour") * 60 + n("minute");
+}
+
+/** The week Plan the week opens on — the kernel's `planSessionWeekStart` on the
+ *  APP_TZ clock: this week until your last working day is nearly spent. */
+export function planSessionWeekStartISO(workEndMin: number, workingDays: readonly number[], now: Date = new Date()): string {
+  return planSessionWeekStart(todayISO(now), nowMinutesInAppTz(now), workEndMin, workingDays);
 }
 
 /** A week's span in one label: "Aug 10 – 16", or "Jul 27 – Aug 2" across a month

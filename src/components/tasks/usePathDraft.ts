@@ -22,6 +22,8 @@ import { isTypingIn } from "../../lib/a11y";
 import { announce } from "../../lib/announce";
 import { onPathDraftRequest, pathDraftPending, settlePathDraft } from "../../lib/draftIntent";
 import { ASSISTANT_NAME } from "../../lib/assistant";
+import { gradeKept, type GradeIn } from "../../lib/memoryGrade";
+import { useGrade } from "../memory/GradeContext";
 import {
   cleanSteer,
   current,
@@ -72,6 +74,14 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
   const [kept, setKept] = useState(0);
   const [landed, setLanded] = useState<Set<string>>(new Set());
   const run = useRef(0);
+  // Memory grades every drafted step against what you did with it (§13.4): the
+  // step as first drafted, so a rename or a resize reads as an edit.
+  const grade = useGrade();
+  const origins = useRef(new Map<string, { title: string; durationMins: number }>());
+  const remember = (drafted: DraftStep[]) => drafted.forEach((d) => origins.current.set(d.key, { ...d.versions[0] }));
+  const graded = (step: DraftStep, o: GradeIn["o"]): GradeIn => ({ s: "path", o, t: current(step).title });
+  const keptGrade = (step: DraftStep): GradeIn =>
+    graded(step, gradeKept(origins.current.get(step.key) ?? step.versions[0], current(step), step.version));
   const revealTimer = useRef<number | null>(null);
   const doneTimer = useRef<number | null>(null);
 
@@ -95,6 +105,17 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
       if (doneTimer.current) window.clearTimeout(doneTimer.current);
     },
     [],
+  );
+
+  // Leaving with steps still waiting for an answer: those were shown and ignored.
+  const pending = useRef<{ phase: DraftPhase; steps: Map<string, DraftStep> }>({ phase, steps });
+  pending.current = { phase, steps };
+  useEffect(
+    () => () => {
+      const { phase: p, steps: left } = pending.current;
+      if (p === "review" && left.size) grade([...left.values()].map((st) => ({ s: "path" as const, o: "ignored" as const, t: current(st).title })));
+    },
+    [grade],
   );
 
   const ghostKeys = useCallback(
@@ -170,6 +191,7 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
         return;
       }
       const drafted = toSteps(proposals, finished);
+      remember(drafted);
       setSteps(new Map(drafted.map((s) => [s.key, s])));
       setLayout(placeSteps(realIds, (id) => byId.get(id)?.title ?? "", drafted, proposals));
       announce(`${ASSISTANT_NAME} drafted ${drafted.length} step${drafted.length === 1 ? "" : "s"}`);
@@ -263,6 +285,7 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
       setSteps(nextSteps);
       setLayout(w.layout);
       setKept((k) => k + 1);
+      grade([keptGrade(step)]);
       setCursor(nx);
       setEditing(null);
       land([w.id]);
@@ -277,6 +300,7 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
     if (phase !== "review") return;
     let l = layout;
     const made: { id: string; task: Promise<Task> }[] = [];
+    const outcomes: GradeIn[] = [];
     for (const key of ghostKeys(layout)) {
       const step = steps.get(key);
       if (!step) continue;
@@ -284,8 +308,10 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
       if (!w) continue;
       l = w.layout;
       made.push({ id: w.id, task: w.task });
+      outcomes.push(keptGrade(step));
     }
     if (!made.length) return;
+    grade(outcomes);
     setLayout(l);
     setSteps(new Map());
     setKept((k) => k + made.length);
@@ -324,6 +350,7 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
       setLayout(layout.filter((x) => x !== draftId(key)));
       setCursor(nx);
       setEditing(null);
+      grade([graded(step, "dropped")]);
       finishIfEmpty(nextSteps.size);
       toast(`Dropped “${current(step).title}”`, { action: { label: "Undo", onClick: () => restore(saved) } });
     },
@@ -343,6 +370,7 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
     const n = steps.size;
     if (!n) return;
     const saved = { steps, layout, shown };
+    grade([...steps.values()].map((st) => graded(st, "dropped")));
     setSteps(new Map());
     setLayout(layout.filter((x) => !isDraftId(x)));
     finishIfEmpty(0);
@@ -408,6 +436,9 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
         if (mine !== run.current || !proposals) return;
         const realNow = layout.filter((x) => !isDraftId(x));
         const drafted = toSteps(proposals, finished);
+        // You steered away from what was drafted: each step you hadn't kept was edited.
+        grade([...steps.values()].map((st) => graded(st, "edited")));
+        remember(drafted);
         setSteps(new Map(drafted.map((s) => [s.key, s])));
         setShown(new Set());
         setLayout(placeSteps(realNow, (id) => byId.get(id)?.title ?? "", drafted, proposals));

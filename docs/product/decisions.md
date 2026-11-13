@@ -6809,6 +6809,42 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-199 · 2026-11-13 · Plan the week has a way out, and Friday afternoon plans next week.**
+*(Asked by the operator after opening the plan on a Friday morning.)*
+
+**Why.** Three things went wrong. Esc never closed the plan: it only cleared the block under
+review, and the walk selects block 1 when it opens, so pressing Esc did nothing visible. The
+only way out was a small ✕ next to "Old walk". Opening the plan with the sidebar shut brought
+the macOS traffic lights back, because any open flow counted as covering the window (#146).
+The plan, though, is a rail inside the panel. And the default week depended on how full your
+week was (it switched once less than 60 minutes of open time was left), not on how much of
+the week was left.
+
+**What.**
+- **Esc leaves.** It cancels placing a block by hand (the one real mode), and otherwise
+  closes. The block under review is the walk's cursor, not a mode, so Esc doesn't stop on it.
+  With nothing touched, Esc and ✕ close at once. Nothing is written until Commit, so nothing is
+  lost. With accepted blocks or your own edits, the footer asks "Discard N changes?" with
+  *Keep planning* and *Discard* (Esc). A second Esc discards. The "Old walk" button is gone;
+  the `sunday-walk` flow still renders but nothing links to it.
+- **The lights stay hidden** while the plan is open with the sidebar shut. Only flows that
+  cover the window (`sunday-walk`, Summit, Capacity) bring them back.
+- **`planSessionWeekStart`** (kernel) chooses which week the plan opens on: this week, until
+  less than `WEEK_HANDOVER_MINS` (2h) of your last working day is left, or that day has passed.
+  Then it opens on next week. A Friday morning can still be filled. `planningWeekStart` keeps
+  its date-only answer to "what is this week" for the crown, the sprint and the agent. The
+  60-minute open-time handover remains for a booked-solid week. The default is decided once,
+  when your hours load, so crossing the cutoff mid-plan never swaps the draft out.
+
+**Anchor.** Closes no ledger row on its own; it keeps W1/W2's plan reachable and leaveable.
+The cutoff is measured against **your** working day's end and working days, not "Friday 3pm",
+which fits only the operator's 4:30 finish (P16). It adds no pool or name (P10/P11).
+No agent tool drafts a week yet, so the rule has no agent caller; one that does must use it.
+
+*Status: built 2026-11-13 on `claude/plan-exit-friday`. Covered by `tests/plan-walk.test.tsx`
+(the way out) and `tests/planning-kernel.test.ts`. Not driven in the dev app: this
+machine has no Supabase env. Not checked in the Tauri window (the lights).*
+
 **D-198 · 2026-11-13 · The Nuvo panel offers what would help on the page beside it — inside the panel the chat already has.** *(Asked by the operator: "instead of chat… Nuvo side bar should be the intelligent recommendations UI area where it can automatically interact with the stuff to the left of it", then "work with the memory engine". Anchored the same day (Q-15); prototype [Nuvo panel](https://claude.ai/artifact/MJ1dQ8BFhRyWmsSmKpdtih).)*
 
 → **No new place (P10).** Suggestions are the panel's state before you type: open Nuvo (✦, ⌘J) on a page and that page's suggestions sit above the message box. The chat stays (N-22).
@@ -6824,6 +6860,56 @@ can't tell `checks.yml` from `checks.YML`) — not from this change.*
 → **It retires, over time:** Memory's three asking places (the Schedule's Rhythm popover ask, Plan the week's What I noticed rows, the phone's noticed card) fold into the panel once its counts show cards are answered. Every outcome feeds the suggestion log (D-197).
 
 *Status: built 2026-11-13 on branch `claude/nuvo-panel` (stacked on D-196's `claude/draft-then-correct`, not merged). `lib/nuvoOffers` (pure: compose, snooze, the dot), `components/nuvo/useNuvoOffers` + `NuvoOffers`, wired into `AgentSidebar` (desktop: the empty state, the rail's dot) and `ChatPane` via `MobileShell` (the phone: the chat's empty state, the ✦'s dot). On a project the panel offers only that project's thin path; elsewhere up to two thin paths and Memory's sure questions, three in all. Draft the path reaches a list already on screen (`onPathDraftRequest` in `lib/draftIntent`). **The one motion is Collect** (`collectInto` in `lib/motion`): on Keep or Draft the path the card's ghost lifts, arcs home (Memory's row, or the page) and the home lands with the material's spring. One ghost per act, transform and opacity only, `--d-advance` on `--ease-momentum`, off under reduced motion; a success haptic on the phone. Guarded by `tests/nuvo-offers.test.ts`; driven at `?offers` (desktop) and `?offers&phone` (375px, 44px acts, no overflow), which run the real cards and motion over a fixture teacher. **Not driven against a live account** (no `.env` in the worktree), and `npm run perf` not run: the panel adds a third `useMemory` on desktop (Spine and Planner hold the others). **Not built:** the suggestion log's grading of these acts (D-197, its own session), in-place previews for Memory offers, retiring Memory's other asking places.*
+
+**D-197 · 2026-11-13 · Memory gets better by grading its own guesses: four sources, three tiers,
+a written portrait, and five outcomes.** *(Asked by the operator: "in domains we have things about
+the domain to inform intelligence… should that be consolidated into memory", "how to really build a
+system that is truly better and 'knows me more' over time", "what's a visual that denotes 'I know
+you'", "how much should be passively picked up vs actively decided", and "if we're outcome-based,
+what outcomes show we know you and we're getting better at predicting what you need in the right
+places". Spec: [`memory.md`](../memory.md) §13. D-196 is taken by Draft the projects, on its own
+branch.)*
+
+→ **Four sources, trusted differently:** Said (you wrote it) · Seen (a pattern) · Corrected (you
+changed Nuvo's output — the strongest signal) · Told (said in the chat, quoted, with an expiry).
+
+→ **The domain splits.** Charter, intention and kind are Said and stay on the domain; Memory shows
+them read-only under *You told Nuvo*. The generated `domains.context` moves into the Words chapter,
+with evidence and a way to refuse it. Domain judgments stay the Review's (D-061).
+
+→ **Three tiers.** Silent for defaults you'd see and undo in a tap (listed under *Used quietly*,
+marked *from Memory* where used); Ask once for anything standing or anything Nuvo says about you;
+Never inferred for what matters to you. Questions ride Plan the week, one or two a week at most
+(N-07, P9).
+
+→ **The hero becomes a written portrait**, with the predicted week beneath it; the heat map
+becomes evidence. Rejected: node graphs, a "brain", a completeness meter.
+
+→ **Every proposal is a prediction, graded against what you did** (`plan_signals`, widened). Five
+outcomes: *Kept as drafted*, *Would have drawn it*, *Never twice* (shown to you) · *Answered*,
+*Sure means sure* (ours). Read in pairs, by account age across accounts (P16), as counts in the
+evidence voice — they grade Nuvo, never you, so N-04 holds.
+
+→ **Open, before any of it is built:** the two "ours" outcomes need counts read across accounts,
+which Memory's "never leaves your account" line forbids today. They leave as counts only, and
+the line changes to say so, or they don't ship.
+
+*Status: partly built (2026-11-13) — [`memory.md`](../memory.md) §13.6. **Reworked as it was built**,
+on the operator's read of the long prototype ("actions I need to take, confirmation that it's
+learning me, less reading"): Memory's page is two tabs, **Now** (headline, the portrait as pills,
+To answer, three counts and Learned lately, the predicted week) and **Everything** (every memory,
+You told Nuvo, the evidence, the trust controls); on a phone the questions follow the headline.
+**Storage deviates from the spec, on purpose:** the log is a 200-entry ring in
+`user_settings.memory.graded`, not a widened `plan_signals` table — it rides the outbox and the
+Cloudflare copy with no migration; a table comes with the cross-account counts. Graded: Draft the
+path's steps (kept / edited / dropped / ignored) and Memory's questions. *Kept as drafted* and *Would
+have drawn it* are live behind honest gates; *Never twice* shows a dash until a correction chapter
+exists. The two-a-week budget holds on the page, Plan the week's rail and the phone card. Pure
+rules `lib/memoryGrade.ts`, the read `lib/memoryRead.ts`, tests `tests/memory-grade.test.ts`. Driven
+at `?memory` (lived-in and `&account=fresh`) on desktop and at 375px — not on a live account.
+**Not run:** `npm run perf` (no signed-in dev account in the worktree). **Not built:** source chips,
+Used quietly, Your words, From the chat, from-Memory marks, the "ours" outcomes.*
+
 **D-196 · 2026-11-13 · Draft, then correct, at the moment it matters: a thin path is marked where
 you're about to plan, and an initiative's missing projects are drafted across its quarter.**
 *(Asked by the operator: intelligence across the app "in non-annoying, genuinely helpful ways", and
@@ -6903,6 +6989,7 @@ driven against a real account**: no `.env.local` here. **Deployed 2026-11-13**: 
 `draftProjects` (Supabase, project `ebibzojtkzkphykznomv`; unauthenticated calls refused, 401). Plan the week's rail row is
 covered by the test, not seen in a browser. `npm run perf` not run (the deck reads one more slots
 query; `perf-budget` in `npm test` passes).*
+
 
 **D-195 · 2026-11-13 · The site follows Instrument, keeps Fraunces for its headlines, and sells
 Memory.** *(Asked by the operator: "make those same updates to the marketing website… I do really

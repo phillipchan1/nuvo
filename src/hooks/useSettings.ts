@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
 import type { UserSettings } from "../lib/types";
@@ -7,6 +7,17 @@ import { DEFAULT_MEET_PREFERENCE, normalizeMeetPreference } from "../../supabase
 import { DEFAULT_REMINDER_PREFS, normalizeReminderPrefs } from "../../supabase/functions/_shared/reminderRules.ts";
 
 const KEY = ["settings"];
+export const SETTINGS_KEY = KEY;
+
+/** The one way a settings field is written: into the cache now, through the
+ *  outbox after. `useSettings().update` is this; so is anything that must write
+ *  a setting without subscribing to settings (Memory's grading, at the shell). */
+export function patchSettings(qc: QueryClient, patch: Partial<UserSettings>) {
+  const prev = qc.getQueryData<UserSettings>(KEY);
+  if (prev) qc.setQueryData(KEY, { ...prev, ...patch });
+  void queueWrite(makeOp("user_settings", "update", OWNER_ROW, patch as Record<string, unknown>));
+  invalidateWhenSafe(qc, "user_settings", KEY);
+}
 
 const DEFAULTS: Omit<UserSettings, "user_id"> = {
   theme: "system",
@@ -115,12 +126,7 @@ export function useSettings() {
    * a lost setting, so reverting the toggle under the user's finger — which is
    * what `onError` did on any blip — is now a lie rather than a safeguard.
    */
-  const update = (patch: Partial<UserSettings>) => {
-    const prev = qc.getQueryData<UserSettings>(KEY);
-    if (prev) qc.setQueryData(KEY, { ...prev, ...patch });
-    void queueWrite(makeOp("user_settings", "update", OWNER_ROW, patch as Record<string, unknown>));
-    invalidateWhenSafe(qc, "user_settings", KEY);
-  };
+  const update = (patch: Partial<UserSettings>) => patchSettings(qc, patch);
 
   return { settings: query.data, isLoading: query.isLoading, update };
 }

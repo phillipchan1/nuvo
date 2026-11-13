@@ -1,4 +1,5 @@
 import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { MemoryGradeProvider } from "./memory/GradeContext";
 import { createPortal } from "react-dom";
 import {
   initiativesOf,
@@ -85,7 +86,9 @@ const AppShell = memo(function AppShell() {
   return (
     <VerticalProvider>
       <OrientationProvider>
-        <ResponsiveShell />
+        <MemoryGradeProvider>
+          <ResponsiveShell />
+        </MemoryGradeProvider>
       </OrientationProvider>
     </VerticalProvider>
   );
@@ -497,7 +500,10 @@ const AppShellInner = memo(function AppShellInner() {
       <Spine
         collapsed={focusMode}
         forceRail={squeezed}
-        overlaid={!!nav.flow}
+        // Only a flow that covers the WINDOW brings the lights back. Plan the
+        // week ("sunday") is a rail inside the panel — the sidebar is still
+        // shut around it, so the lights stay hidden too.
+        overlaid={!!nav.flow && nav.flow !== "sunday"}
         rung={rung}
         setRung={goRung}
         openSettings={openSettings}
@@ -578,7 +584,7 @@ const AppShellInner = memo(function AppShellInner() {
           the sources instead of dropping out of the flow */}
       {/* Plan the week ("sunday") is no longer a full-screen walk on the desktop:
           Planner draws it as an overlay on the Schedule (docs/plan-the-week-v2.md).
-          The old walk stays reachable as "sunday-walk" while v2 is on trial. */}
+          The old walk still renders for "sunday-walk", though nothing links to it. */}
       {flow === "sunday-walk" && (
         <Suspense fallback={null}>
           <SundayRitual step={flowStep} setStep={(s) => navigate({ flowStep: s })} onClose={closeFlow} />

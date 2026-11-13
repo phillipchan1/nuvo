@@ -109,6 +109,43 @@ export function planningWeekStart(todayISO: string): string {
   return mondayOf(isoOf(base + shift * DAY_MS));
 }
 
+/** How much of the working day must be left on the week's last working day
+ *  for "the rest of this week" to still be worth planning. */
+export const WEEK_HANDOVER_MINS = 120;
+
+/**
+ * The week a PLANNING SESSION opens on — `planningWeekStart`, plus the clock.
+ * On your last working day, once less than `WEEK_HANDOVER_MINS` of it is left
+ * (or once that day is behind you), there is nothing of this week to shape and
+ * the plan opens on the next one. Before then it opens on this week, so a
+ * Friday morning can still be filled.
+ *
+ * Measured against YOUR day's end and YOUR working days, not a fixed "Friday
+ * 3pm": the same rule is ~2:30pm for a 4:30 finish and 5pm for a 7pm one (P16).
+ * `planningWeekStart` stays the date-only answer to "what is this week" — the
+ * crown, the sprint and the agent read that; only the plan's default moves.
+ *
+ * @param nowMin      minutes past midnight, in the user's zone
+ * @param workEndMin  the working day's end, minutes past midnight
+ * @param workingDays 0 = Sunday … 6 = Saturday
+ */
+export function planSessionWeekStart(
+  todayISO: string,
+  nowMin: number,
+  workEndMin: number,
+  workingDays: readonly number[] = [1, 2, 3, 4, 5],
+): string {
+  const week = planningWeekStart(todayISO);
+  if (Number.isNaN(dayMs(todayISO)) || week !== mondayOf(todayISO)) return week; // the weekend already plans ahead
+  const fromMonday = (d: number) => (d + 6) % 7;
+  const days = workingDays.filter((d) => d >= 0 && d <= 6).map(fromMonday);
+  if (!days.length) return week;
+  const last = Math.max(...days);
+  const today = fromMonday(dayOfWeek(todayISO));
+  const left = today < last ? Infinity : today > last ? 0 : workEndMin - nowMin;
+  return left < WEEK_HANDOVER_MINS ? isoOf(dayMs(week) + 7 * DAY_MS) : week;
+}
+
 /**
  * The span a project takes when it is committed to a week: Monday → Friday,
  * widened by whole weeks for anything that already spanned several. This is the

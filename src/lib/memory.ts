@@ -8,6 +8,7 @@
 
 import { at, span } from "../components/mobile/dayPlan";
 import type { Confidence, Observation } from "../../supabase/functions/_shared/memory/rhythm";
+import type { Graded, WeekBlock } from "./memoryGrade";
 
 export type MemoryArea = "Time";
 
@@ -33,6 +34,16 @@ export interface MemoryAnswer {
   /** What Forget does, said when it was kept. */
   forget?: string;
   wrote?: MemoryWrite;
+  /** The portrait's clause for it, said when it was kept (§13.3). */
+  clause?: string;
+  /** Where it sits in a week, so the predicted week survives the pattern
+   *  going quiet after you kept it. */
+  blocks?: WeekBlock[];
+  /** A short label for its block ("Swim", "Open"), its pill, and what kind it was. */
+  label?: string;
+  chip?: string;
+  kind?: Observation["kind"];
+  domainId?: string | null;
 }
 
 export interface MemoryState {
@@ -43,6 +54,8 @@ export interface MemoryState {
   answers?: MemoryAnswer[];
   /** When "your week, as your calendar tells it" was shown — it's shown once (§5.3). */
   introducedAt?: string | null;
+  /** Every guess Nuvo made and what you did with it — the ring (§13.4, lib/memoryGrade). */
+  graded?: Graded[];
 }
 
 export type Section = "new" | "kept" | "watch" | "no";
@@ -214,6 +227,102 @@ export function describe(
 }
 
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** How sure the portrait says it: kept (you said so), asking (Nuvo thinks so), watching. */
+export type ClauseState = "kept" | "asking" | "watch";
+
+/**
+ * The portrait's clause for one observation (§13.3): a sentence about you, in
+ * the second person, whose certainty is carried by the type it's set in — and,
+ * when Nuvo is only watching, by a softer verb too.
+ */
+export function clauseOf(o: Observation, state: ClauseState): string {
+  const soft = state === "watch";
+  switch (o.kind) {
+    case "hours": {
+      const parts = listOf(hoursPhrase(o.days));
+      return soft ? `Your workdays seem to run ${parts}.` : `You work ${parts}.`;
+    }
+    case "habit":
+      return `${o.title} ${soft ? "might be" : "is"} ${recurringDays(o.weekdays)}, ${spanMin(o.startMin, o.endMin)}.`;
+    case "window":
+      return `${cap(recurringDays(o.weekdays))}, ${spanMin(o.startMin, o.endMin)} ${soft ? "may stay" : "stays"} open.`;
+    case "repeat": {
+      const when =
+        o.cadence === "weekly"
+          ? `on ${WD_LONG[o.weekday ?? 0]}s`
+          : o.cadence === "monthly-last-weekday"
+            ? "on the last weekday of the month"
+            : "around the same date each month";
+      return `You ${soft ? "may write" : "write"} “${o.title}” ${when}.`;
+    }
+  }
+}
+
+/** Days, short: "weekdays", "weekends", "daily", "Mon–Thu", "Tue & Thu", "Mon, Wed & Fri". */
+export function daysShort(days: number[]): string {
+  const d = [...days].sort((a, b) => a - b);
+  const key = d.join("");
+  if (key === "0123456") return "daily";
+  if (key === "01234") return "weekdays";
+  if (key === "56") return "weekends";
+  if (d.length >= 3 && d.every((x, i) => i === 0 || x === d[i - 1] + 1)) return `${WD[d[0]]}–${WD[d[d.length - 1]]}`;
+  if (d.length === 1) return `${WD_LONG[d[0]]}s`;
+  return `${d.slice(0, -1).map((x) => WD[x]).join(", ")} & ${WD[d[d.length - 1]]}`;
+}
+
+/**
+ * The portrait as something you glance at, not read (§13.3, reworked the same
+ * day: "less reading"): each memory as a few words on a pill. The full clause
+ * is one tap away.
+ */
+export function chipOf(o: Observation, workLabel: string): string {
+  switch (o.kind) {
+    case "hours": {
+      const main = mainHours(o.days);
+      return `${workLabel} ${spanMin(main.startMin, main.endMin)}, ${daysShort(o.days.map((x) => x.weekday))}`;
+    }
+    case "habit":
+      return `${o.title}, ${daysShort(o.weekdays)} ${atMin(o.startMin)}`;
+    case "window":
+      return `Open ${daysShort(o.weekdays)} ${spanMin(o.startMin, o.endMin)}`;
+    case "repeat":
+      return `“${o.title}” ${o.cadence === "weekly" ? `${WD_LONG[o.weekday ?? 0]}s` : "monthly"}`;
+  }
+}
+
+/** The portrait's opening: what you said your work is. */
+export function saidClause(workDomainNames: string[]): string | null {
+  if (!workDomainNames.length) return null;
+  return `${listOf(workDomainNames)} ${workDomainNames.length > 1 ? "are" : "is"} your paid work.`;
+}
+
+/** Where an observation sits in a week. A repeat has no time, so no block. */
+export function blocksOf(o: Observation): WeekBlock[] {
+  switch (o.kind) {
+    case "hours":
+      return o.days.map((d) => ({ weekday: d.weekday, startMin: d.startMin, endMin: d.endMin }));
+    case "habit":
+    case "window":
+      return o.weekdays.map((weekday) => ({ weekday, startMin: o.startMin, endMin: o.endMin }));
+    case "repeat":
+      return [];
+  }
+}
+
+/** A block's short label in the predicted week. */
+export function labelOf(o: Observation, workLabel: string): string {
+  switch (o.kind) {
+    case "hours":
+      return workLabel;
+    case "habit":
+      return o.title;
+    case "window":
+      return "Open";
+    case "repeat":
+      return o.title;
+  }
+}
 
 const ordinal = (n: number) => {
   const s = ["th", "st", "nd", "rd"];
