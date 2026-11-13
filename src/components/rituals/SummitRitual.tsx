@@ -1,7 +1,7 @@
-// Summit — the quarterly flow. Inputs: the quarter's ledger and the standing
-// mandates. Output: a re-affirmed set of domains and a decided portfolio of initiatives,
-// rough-cut across the months. Four steps: the Quarter's Gain → the Mandates →
-// the Portfolio → the Months.
+// Summit — the quarterly flow, on the Flow layout (D-190). Inputs: the
+// quarter's ledger and the standing mandates. Output: a re-affirmed set of
+// domains and a decided portfolio of initiatives, rough-cut across the months.
+// Four steps: Gain → Mandates → Portfolio → Months.
 
 import { useMemo, useState } from "react";
 import { subDays } from "date-fns";
@@ -19,20 +19,24 @@ import {
 } from "../../lib/vertical";
 import { fmtHours as hrs } from "../../lib/dates";
 import {
-  Bar,
   InlineNumber,
   InlineTextarea,
   MomentumChip,
   Timeline,
   type TimelineItem,
 } from "../floors/parts";
-import FlowShell, { type FlowStage } from "./FlowShell";
-import { Btn } from "../ui";
+import FlowShell, { FlowHead, FlowMeter, type FlowStage } from "./FlowShell";
+import { Button, Chip, Dot, EmptyState, Row, SectionHeader } from "../kit";
+import { Icon } from "../Icon";
 import DomainSymbol from "../domain/DomainSymbol";
 
 const QUARTER_KEY = () => {
   const d = new Date();
   return `nuvo-summit-${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+};
+const QUARTER_NAME = () => {
+  const d = new Date();
+  return `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`;
 };
 
 export default function SummitRitual({
@@ -55,7 +59,7 @@ export default function SummitRitual({
     setDone(true);
   };
 
-  // header pipeline: live outputs along the canvas
+  // the live outputs — each stage's one line, in the footer while you're on it
   const gain = useMemo(() => quarterGain(data), [data]);
   const active = data.initiatives.filter((i) => isProjectInFlight(i.status));
   const paused = data.initiatives.filter((i) => i.status === "waiting");
@@ -65,26 +69,26 @@ export default function SummitRitual({
   const stages: FlowStage[] = [
     {
       id: "gain",
-      label: "Quarter's Gain",
+      label: "Gain",
       value: `${hrs(gain.doneMins)}h · ${gain.shipped.length} shipped`,
       body: <QuarterGainStep />,
     },
     {
       id: "mandates",
-      label: "The Mandates",
+      label: "Mandates",
       value: `${data.domains.length} mandates · ${targetSum}h/wk`,
       body: <MandatesStep />,
     },
     {
       id: "portfolio",
-      label: "The Portfolio",
+      label: "Portfolio",
       value: `${active.length} live · ${paused.length} paused`,
       body: <PortfolioStep onNewBet={onNewBet} />,
     },
     {
       id: "months",
-      label: "The Months",
-      value: `${dated.length}/${active.length} dated`,
+      label: "Months",
+      value: `${dated.length} of ${active.length} dated`,
       body: <MonthsStep />,
     },
   ];
@@ -93,7 +97,7 @@ export default function SummitRitual({
     <FlowShell
       title="Summit"
       sub="the quarter, decided"
-      inputs={{ label: "the season", value: `90 days · ${data.domains.length} domains` }}
+      inputs={{ label: "the season", value: `${QUARTER_NAME()} · ${data.domains.length} domains` }}
       output={{
         label: "the quarter",
         value: done ? `${active.length} initiatives sealed` : `${active.length} initiatives in play`,
@@ -105,18 +109,24 @@ export default function SummitRitual({
       onStepBack={back}
       finished={
         done ? (
-          <div className="flex min-h-[50vh] items-center justify-center">
-            <div className="max-w-[460px] text-center">
-              <div className="text-display masthead">The quarter is shaped.</div>
-              <div className="mt-2 text-body text-muted">
-                Mandates re-affirmed, initiatives decided, months rough-cut. The Sunday flow takes it from here, week by week.
-              </div>
-              <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
-            </div>
+          <div className="flex min-h-[50vh] flex-col items-center justify-center gap-6 text-center">
+            <FlowHead
+              align="center"
+              kicker={QUARTER_NAME()}
+              hero="The quarter is shaped."
+              fact={
+                <>
+                  <b>{data.domains.length}</b> mandates · <b>{active.length}</b> initiatives · <b>{dated.length}</b> dated
+                </>
+              }
+            />
+            <Button kind="primary" size="md" onClick={onClose}>
+              Back to the week
+            </Button>
           </div>
         ) : undefined
       }
-      lastCta={{ label: "Seal the quarter →", onClick: finish }}
+      lastCta={{ label: "Seal the quarter", onClick: finish }}
       onClose={onClose}
     />
   );
@@ -165,71 +175,94 @@ function QuarterGainStep() {
   );
 
   return (
-    <div>
-      <StepTitle title="The Quarter's Gain" sub="Ninety days, measured from where you started. Including what shipped — gains need a place to live." />
-
-      <div className="mb-6 rounded-md border border-line bg-surface px-5 py-4">
-        <div className="text-head font-medium">
-          {gain.done.length} tasks done · {hrs(gain.doneMins)}h invested · {gain.shipped.length} initiative{gain.shipped.length === 1 ? "" : "s"} shipped
-        </div>
-        {narrated && <div className="mt-1 text-body text-muted">{narrated}</div>}
-      </div>
+    <div className="grid gap-8">
+      <FlowHead
+        hero="Read the quarter."
+        fact={
+          <>
+            <b>{gain.done.length}</b> tasks done · <b>{hrs(gain.doneMins)}h</b> invested · <b>{gain.shipped.length}</b>{" "}
+            initiative{gain.shipped.length === 1 ? "" : "s"} shipped
+          </>
+        }
+      >
+        {narrated && <p className="f-line mt-1">{narrated}</p>}
+      </FlowHead>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <section>
-          <div className="section-label mb-2">The long arc, by domain</div>
-          <div className="space-y-3">
+        <section className="f-section">
+          <SectionHeader title="By domain" count={data.domains.length} />
+          <div className="f-rows">
             {data.domains.map((d) => {
               const target = d.weeklyTargetHours * 13;
-              const pct = target > 0 ? Math.min(100, (d.quarterHours / target) * 100) : 0;
               return (
-                <div key={d.id}>
-                  <div className="flex items-baseline justify-between text-caption">
-                    <span className="flex items-center gap-1.5"><span style={{ color: d.color }}><DomainSymbol value={d.icon} size={14} /></span> {d.name}</span>
-                    <span className="mono text-meta text-muted">{d.quarterHours}h / ~{Math.round(target)}h</span>
+                <div key={d.id} className="grid gap-2 px-1 py-2.5">
+                  <div className="flex items-center gap-2 text-body font-medium">
+                    <span style={{ color: d.color }} className="inline-flex">
+                      <DomainSymbol value={d.icon} size={14} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                    <span className="f-num text-caption font-normal text-muted">
+                      {d.quarterHours}h of ~{Math.round(target)}h
+                    </span>
                   </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-surface">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: d.color }} />
-                  </div>
+                  <FlowMeter
+                    size="sm"
+                    total={Math.max(target, d.quarterHours, 1)}
+                    segments={[{ key: d.id, value: d.quarterHours, color: d.color }]}
+                    label={`${d.name}: ${d.quarterHours} of about ${Math.round(target)} hours`}
+                  />
                 </div>
               );
             })}
           </div>
         </section>
 
-        <section>
-          <div className="section-label mb-2">The trophy shelf</div>
-          {gain.shipped.length > 0 ? (
-            <div className="flex flex-wrap gap-2.5">
-              {gain.shipped.map((i) => {
-                const domain = domainById(data, i.domainId);
-                return (
-                  <div key={i.id} className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2">
-                    <span className="text-body" style={{ color: domain?.color }}>✓</span>
-                    <span className="text-caption font-medium">{i.name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-caption text-muted italic">Nothing shipped yet this season — the initiatives below are how that changes.</div>
-          )}
+        <div className="grid content-start gap-8">
+          <section className="f-section">
+            <SectionHeader title="Shipped" count={gain.shipped.length} />
+            {gain.shipped.length > 0 ? (
+              <div className="f-rows">
+                {gain.shipped.map((i) => {
+                  const domain = domainById(data, i.domainId);
+                  return (
+                    <Row
+                      key={i.id}
+                      leading={<Dot color={domain?.color ?? "var(--accent)"} />}
+                      title={i.name}
+                      trailing={
+                        <Chip tone="ok" icon={<Icon name="check" size={11} />}>
+                          Shipped
+                        </Chip>
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState>Nothing shipped yet</EmptyState>
+            )}
+          </section>
 
           {gain.moved.length > 0 && (
-            <>
-              <div className="section-label mb-2 mt-6">Still in flight, moved</div>
-              <div className="space-y-2">
+            <section className="f-section">
+              <SectionHeader title="Moved" count={gain.moved.length} />
+              <div className="f-rows">
                 {gain.moved.slice(0, 6).map(({ initiative, from, to }) => (
-                  <div key={initiative.id} className="flex items-center gap-2.5 rounded-md border border-line bg-surface px-3 py-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: domainById(data, initiative.domainId)?.color }} />
-                    <span className="min-w-0 flex-1 truncate text-caption">{initiative.name}</span>
-                    <span className="mono shrink-0 text-label" style={{ color: "var(--accent)" }}>{from}% → {to}%</span>
-                  </div>
+                  <Row
+                    key={initiative.id}
+                    leading={<Dot color={domainById(data, initiative.domainId)?.color ?? "var(--accent)"} />}
+                    title={initiative.name}
+                    meta={
+                      <span>
+                        {from}% → <span style={{ color: "var(--accent-ink)" }}>{to}%</span>
+                      </span>
+                    }
+                  />
                 ))}
               </div>
-            </>
+            </section>
           )}
-        </section>
+        </div>
       </div>
     </div>
   );
@@ -238,30 +271,41 @@ function QuarterGainStep() {
 // ── 2 · The Mandates — re-read every intention, re-set every target ─────────────
 function MandatesStep() {
   const { data, updateDomain } = useVertical();
+  const targetSum = Math.round(data.domains.reduce((s, d) => s + d.weeklyTargetHours, 0));
   return (
-    <div>
-      <StepTitle title="The Mandates" sub="Domains are mandates, not goals. Re-read each one — edit it or let it stand — and re-set the weekly hours it deserves this season." />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="grid gap-8">
+      <FlowHead
+        hero="Re-affirm the mandates."
+        fact={
+          <>
+            <b>{data.domains.length}</b> domains · <b>{targetSum}h</b> a week between them
+          </>
+        }
+      />
+      <div className="f-rows" style={{ borderTop: "1px solid var(--line-1)", borderBottom: "1px solid var(--line-1)" }}>
         {data.domains.map((d) => (
-          <div key={d.id} className="rounded-md border border-line bg-surface p-4">
+          <div key={d.id} className="grid gap-1.5 px-1 py-3.5">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md text-head" style={{ background: `${d.color}1a`, color: d.color }}>
-                <DomainSymbol value={d.icon} size={18} />
+              <span
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--r-ctl)]"
+                style={{ background: `color-mix(in srgb, ${d.color} 12%, transparent)`, color: d.color }}
+              >
+                <DomainSymbol value={d.icon} size={16} />
               </span>
-              <span className="text-head font-semibold">{d.name}</span>
-              <span className="mono ml-auto text-meta text-muted">
+              <span className="f-title min-w-0 flex-1 truncate">{d.name}</span>
+              <span className="f-num hidden shrink-0 text-caption text-muted sm:inline">{d.quarterHours}h this quarter</span>
+              <span className="f-num shrink-0 text-body font-medium">
                 <InlineNumber value={d.weeklyTargetHours} onChange={(v) => updateDomain(d.id, { weeklyTargetHours: v })} suffix="h/wk" />
               </span>
             </div>
-            <div className="mt-2.5 border-l-2 pl-3" style={{ borderColor: `${d.color}55` }}>
+            <div className="pl-[38px]">
               <InlineTextarea
                 value={d.intention}
                 onChange={(v) => updateDomain(d.id, { intention: v })}
                 placeholder="State the standing mandate…"
-                className="text-body italic text-muted"
+                className="text-body text-[var(--ink-2)]"
               />
             </div>
-            <div className="mono mt-2 text-meta text-muted">{d.quarterHours}h this quarter</div>
           </div>
         ))}
       </div>
@@ -273,46 +317,82 @@ function MandatesStep() {
 function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
   const { data, updateInitiative } = useVertical();
   const rows = data.initiatives.filter((i) => isOpenStatus(i.status));
+  const live = rows.filter((i) => i.status !== "waiting").length;
 
   return (
-    <div>
-      <StepTitle title="The Portfolio" sub="Every initiative gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next initiative here, then ripen it in Grooming." />
-      <div className="mb-4">
-        <Btn kind="primary" onClick={onNewBet}>✦ name a new initiative</Btn>
-      </div>
-      <div className="space-y-1.5">
-        {rows.map((i) => {
-          const domain = domainById(data, i.domainId);
-          const pct = initiativeProgress(data, i);
-          const paused = i.status === "waiting";
-          return (
-            <div key={i.id} className="flex items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-2.5" style={{ opacity: paused ? 0.55 : 1 }}>
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-body font-medium">{i.name}</div>
-                <div className="mono truncate text-micro text-muted">{domain?.name}{i.outcome && ` · ${i.outcome}`}</div>
-              </div>
-              <div className="hidden w-[120px] shrink-0 sm:block"><Bar pct={pct} color={domain?.color ?? "var(--accent)"} h={2} /></div>
-              <span className="mono shrink-0 text-label text-muted">{pct}%</span>
-              <MomentumChip value={i.momentum} onChange={(m) => updateInitiative(i.id, { momentum: m })} />
-              {paused ? (
-                <Btn onClick={() => updateInitiative(i.id, { status: "in_progress" })}>resume</Btn>
-              ) : (
-                <>
-                  <Btn onClick={() => updateInitiative(i.id, { status: "complete" })} title="Done — onto the trophy shelf">✓ ship</Btn>
-                  <Btn onClick={() => updateInitiative(i.id, { status: "waiting" })}>pause</Btn>
-                  <Btn kind="signal" onClick={() => updateInitiative(i.id, { status: "cancelled" })}>drop</Btn>
-                </>
-              )}
-            </div>
-          );
-        })}
-        {rows.length === 0 && (
-          <div className="rounded-md border border-dashed border-line p-8 text-center text-caption text-muted">
-            No live initiatives. Blueprint the first one above.
+    <div className="grid gap-8">
+      <FlowHead
+        hero="Decide the portfolio."
+        fact={
+          <>
+            <b>{live}</b> live · <b>{rows.length - live}</b> paused — ship, keep, pause or drop each one
+          </>
+        }
+      />
+      <section className="f-section">
+        <SectionHeader
+          title="Initiatives"
+          count={rows.length}
+          actions={
+            <Button size="xs" icon={<Icon name="plus" size={12} />} onClick={onNewBet}>
+              New initiative
+            </Button>
+          }
+        />
+        {rows.length === 0 ? (
+          <EmptyState>No live initiatives</EmptyState>
+        ) : (
+          <div className="f-rows">
+            {rows.map((i) => {
+              const domain = domainById(data, i.domainId);
+              const pct = initiativeProgress(data, i);
+              const paused = i.status === "waiting";
+              const color = domain?.color ?? "var(--accent)";
+              return (
+                <div key={i.id} className="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-1.5 px-1 py-2" style={{ opacity: paused ? 0.55 : 1 }}>
+                  <Dot color={color} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-body font-medium">{i.name}</div>
+                    <div className="truncate text-caption text-muted">
+                      {domain?.name}
+                      {i.outcome && ` · ${i.outcome}`}
+                    </div>
+                  </div>
+                  <div className="hidden w-[120px] shrink-0 sm:block">
+                    <FlowMeter size="sm" total={100} segments={[{ key: i.id, value: pct, color }]} label={`${pct}% done`} />
+                  </div>
+                  <span className="f-num w-9 shrink-0 text-right text-caption text-muted">{pct}%</span>
+                  <MomentumChip value={i.momentum} onChange={(m) => updateInitiative(i.id, { momentum: m })} />
+                  <div className="flex shrink-0 items-center gap-1">
+                    {paused ? (
+                      <Button size="xs" onClick={() => updateInitiative(i.id, { status: "in_progress" })}>
+                        Resume
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="xs"
+                          icon={<Icon name="check" size={12} />}
+                          onClick={() => updateInitiative(i.id, { status: "complete" })}
+                          title="Done — onto the trophy shelf"
+                        >
+                          Ship
+                        </Button>
+                        <Button size="xs" kind="ghost" onClick={() => updateInitiative(i.id, { status: "waiting" })}>
+                          Pause
+                        </Button>
+                        <Button size="xs" kind="ghost" className="f-danger" onClick={() => updateInitiative(i.id, { status: "cancelled" })}>
+                          Drop
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
@@ -320,37 +400,33 @@ function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
 // ── 4 · The Months — stagger the finish lines on purpose ────────────────────
 function MonthsStep() {
   const { data, updateInitiative } = useVertical();
-  const items: TimelineItem[] = data.initiatives
-    .filter((i) => isProjectInFlight(i.status))
-    .map((i) => {
-      const domain = domainById(data, i.domainId);
-      return {
-        id: i.id,
-        label: i.name,
-        color: domain?.color ?? "var(--accent)",
-        start: i.startDate,
-        end: i.targetDate,
-        progress: initiativeProgress(data, i),
-        onChangeDates: (start, end) => updateInitiative(i.id, { startDate: start, targetDate: end }),
-      };
-    });
+  const inFlight = data.initiatives.filter((i) => isProjectInFlight(i.status));
+  const items: TimelineItem[] = inFlight.map((i) => {
+    const domain = domainById(data, i.domainId);
+    return {
+      id: i.id,
+      label: i.name,
+      color: domain?.color ?? "var(--accent)",
+      start: i.startDate,
+      end: i.targetDate,
+      progress: initiativeProgress(data, i),
+      onChangeDates: (start, end) => updateInitiative(i.id, { startDate: start, targetDate: end }),
+    };
+  });
+  const dated = inFlight.filter((i) => i.startDate || i.targetDate).length;
 
   return (
-    <div>
-      <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Undated initiatives wait in the tray below — drag them onto the grid. Projects inherit the rhythm in their own floors." />
-      <Timeline items={items} defaultZoom="quarter" persistKey="summit-months" />
-      {data.initiatives.filter((i) => isProjectInFlight(i.status)).length === 0 && (
-        <div className="mt-3 text-caption text-muted italic">Nothing in flight to place.</div>
-      )}
+    <div className="grid gap-8">
+      <FlowHead
+        hero="Stagger the finish lines."
+        fact={
+          <>
+            <b>{dated}</b> of <b>{inFlight.length}</b> dated — drag the bars; the undated wait in the tray
+          </>
+        }
+      />
+      {inFlight.length === 0 ? <EmptyState>Nothing in flight</EmptyState> : <Timeline items={items} defaultZoom="quarter" persistKey="summit-months" />}
     </div>
   );
 }
 
-function StepTitle({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div className="mb-6">
-      <h1 className="text-display masthead">{title}</h1>
-      <p className="mt-1 max-w-[680px] text-body text-muted">{sub}</p>
-    </div>
-  );
-}

@@ -13,6 +13,8 @@ import { parseDateISO } from "../../lib/dates";
 import { DIAL_NOTE, useDial } from "../../lib/planDial";
 import { at } from "../mobile/dayPlan";
 import type { PlanOverlay } from "./planOverlay";
+import { Button, Chip, IconButton, Segmented } from "../kit";
+import { Icon } from "../Icon";
 
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export const instantOf = (dayISO: string, min: number) => {
@@ -132,84 +134,74 @@ export default function RepairBar({
   if (!r.staged.length && !r.applied.length && !(r.dial === "ask" && broke)) return null;
 
   return (
-    <div className="glass-card absolute bottom-4 left-4 z-30 flex w-[340px] max-w-[calc(100%-2rem)] flex-col gap-2 rounded-[12px] border border-line p-3">
-      <div className="flex items-center justify-between">
-        <span className="section-label">The week broke</span>
-        <div className="flex gap-0.5 rounded-[8px] border border-line p-0.5" role="group" aria-label="How much Nuvo moves">
-          {(["ask", "suggest", "handle"] as const).map((v) => (
-            <button
-              key={v}
-              aria-pressed={r.dial === v}
-              title={DIAL_NOTE[v]}
-              onClick={() => setDial(v)}
-              className="rounded-[6px] px-1.5 text-micro capitalize"
-              style={{ background: r.dial === v ? "var(--accent-soft)" : undefined, color: r.dial === v ? "var(--accent)" : "var(--muted)" }}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
+    <div className="f-dock absolute bottom-4 left-4 z-30 w-[352px] max-w-[calc(100%-2rem)] pop-in" style={{ ["--pop-origin" as string]: "bottom left" }}>
+      <div className="flex items-center gap-2 py-2.5 pl-4 pr-2.5" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+        <span className="f-title min-w-0 flex-1 truncate">The week broke</span>
+        <Segmented
+          size="sm"
+          label="How much Nuvo moves"
+          value={r.dial}
+          onChange={setDial}
+          options={(["ask", "suggest", "handle"] as const).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), title: DIAL_NOTE[v] }))}
+        />
       </div>
 
-      {r.dial === "ask" && !r.asked && broke > 0 && (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-caption text-muted">
-            {broke} broke · nothing moved
-          </span>
-          <button className="rounded-full bg-accent px-3 py-1 text-caption text-on-accent" onClick={() => r.setAsked(true)}>
-            Re-plan the rest of the week
-          </button>
-        </div>
-      )}
-
-      {r.staged.map((x, i) => {
-        const o = x.options[r.ix[x.key] ?? 0];
-        const s = instantOf(o.dayISO, o.startMin);
-        return (
-          <div
-            key={x.key}
-            className="-mx-1.5 flex min-h-[40px] items-center gap-1.5 rounded-[8px] px-1.5"
-            style={{ background: focused?.key === x.key ? "var(--accent-soft)" : undefined }}
-            onMouseEnter={() => setFocus(i)}
-          >
-            <span className="w-[16px] shrink-0 text-center text-accent" title={x.why === "missed" ? "missed" : `${x.event} landed on it`}>
-              {x.why === "missed" ? "◌" : "↯"}
+      <div className="grid gap-0.5 p-1.5">
+        {r.dial === "ask" && !r.asked && broke > 0 && (
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+            <span className="f-fact">
+              <b>{broke}</b> broke · nothing moved
             </span>
-            <span className="min-w-0 flex-1 truncate text-body" title={x.why === "missed" ? "Missed" : `${x.event} landed on it`}>
-              {x.title}
-            </span>
-            <button aria-label="Earlier option" className="text-muted" onClick={() => r.cycle(x, -1)}>
-              ‹
-            </button>
-            <span className="shrink-0 whitespace-nowrap rounded-full border border-accent px-2 text-micro">
-              {DAY[s.getDay()]} {at(s)}
-            </span>
-            <button aria-label="Next option" className="text-muted" onClick={() => r.cycle(x, 1)}>
-              ›
-            </button>
-            <button aria-label="Take it" onClick={() => r.take(x)} className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-[7px] bg-accent text-on-accent">
-              ✓
-            </button>
-            <button aria-label="Leave it" onClick={() => r.leave(x)} className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-[7px] border border-line-strong">
-              ✕
-            </button>
+            <Button size="xs" kind="primary" onClick={() => r.setAsked(true)}>
+              Re-plan the rest of the week
+            </Button>
           </div>
-        );
-      })}
+        )}
 
-      {r.applied.length > 0 && (
-        <div className="flex flex-col border-t border-line pt-1">
-          {r.applied.map((a, i) => (
-            <div key={a.key} className="flex items-center justify-between gap-2 py-0.5 text-caption">
-              <span className="min-w-0 truncate">✓ {a.label}</span>
-              <button className="text-micro text-muted hover:text-text" onClick={() => r.undo(i)}>
-                Undo
-              </button>
+        {r.staged.map((x, i) => {
+          const o = x.options[r.ix[x.key] ?? 0];
+          const s = instantOf(o.dayISO, o.startMin);
+          const why = x.why === "missed" ? "Missed" : `${x.event} landed on it`;
+          return (
+            <div
+              key={x.key}
+              className="flex min-h-[38px] items-center gap-1.5 rounded-[var(--r-ctl)] px-2"
+              style={{ background: focused?.key === x.key ? "var(--accent-wash)" : undefined }}
+              onPointerEnter={() => setFocus(i)}
+            >
+              <span className="w-4 shrink-0 text-center text-body" style={{ color: "var(--accent-ink)" }} title={why} aria-label={why}>
+                {x.why === "missed" ? "◌" : "↯"}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-body font-medium" title={why}>
+                {x.title}
+              </span>
+              <IconButton size="xs" label="Earlier option" icon={<Icon name="chevron-left" size={12} />} onClick={() => r.cycle(x, -1)} />
+              <Chip tone="accent">
+                <span className="f-num">
+                  {DAY[s.getDay()]} {at(s)}
+                </span>
+              </Chip>
+              <IconButton size="xs" label="Next option" icon={<Icon name="chevron-right" size={12} />} onClick={() => r.cycle(x, 1)} />
+              <IconButton size="xs" kind="primary" label="Take it" icon={<Icon name="check" size={12} />} onClick={() => r.take(x)} />
+              <IconButton size="xs" label="Leave it" icon={<Icon name="close" size={12} />} onClick={() => r.leave(x)} />
             </div>
-          ))}
-        </div>
-      )}
-      <span className="text-micro text-muted">↯ a meeting landed · ◌ missed · only the block that broke moves</span>
+          );
+        })}
+
+        {r.applied.length > 0 && (
+          <div className="grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1)", marginTop: 2, paddingTop: 2 }}>
+            {r.applied.map((a, i) => (
+              <div key={a.key} className="flex min-h-[32px] items-center gap-2 px-2">
+                <Icon name="check" size={12} className="shrink-0" style={{ color: "var(--ok)" }} />
+                <span className="f-num min-w-0 flex-1 truncate text-caption text-[var(--ink-2)]">{a.label}</span>
+                <Button size="xs" kind="ghost" onClick={() => r.undo(i)}>
+                  Undo
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

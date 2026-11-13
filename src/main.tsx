@@ -16,6 +16,8 @@ import "./styles/floors.css";
 import "./styles/rail.css";
 // Documents, dialogs and the chat (D-190) — the record, Settings, Nuvo.
 import "./styles/documents.css";
+// The Flow layout — rituals, Plan the week, onboarding, login (D-190).
+import "./styles/flows.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

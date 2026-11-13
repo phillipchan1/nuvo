@@ -1,0 +1,374 @@
+/* ════════════════════════════════════════════════════════════════════════
+   FLOWS — the Flow layout (D-190, "Six layouts"): the rituals (Summit, the
+   old Plan-the-week walk), Plan the week's rail on the Schedule, the Week's
+   Plan / Review, the capacity run, and the doors in — orientation, first run,
+   login.
+
+   One shape for every one of them. A flow takes the window (or the panel):
+   a 56px top bar with ✕ at the left and a centred stepper, one hero per step,
+   a one-line fact in tabular figures, content built from kit parts, and a
+   56px footer — a quiet summary left, ghost Back and the primary act right
+   with its keycap. The doors in are the window ground with one 12px raised
+   card on it.
+
+   Geometry only from the kit tokens (index.css). Motion is transform and
+   opacity only. Hover lives under (hover: hover); no cursor-pointer.
+   Components: src/components/rituals/FlowShell.tsx (FlowFrame · FlowStepper ·
+   FlowHead · FlowFoot · FlowMeter · FlowMark).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── The frame ──────────────────────────────────────────────────────────── */
+.f-flow {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--panel);
+  color: var(--ink);
+  animation: f-rise var(--d-slow) var(--ease-out) both;
+}
+/* A flow arrives the way a hero does (D-187, "Arrive"): a short rise, no fade —
+   it must be readable on frame one. */
+@keyframes f-rise {
+  from { transform: translateY(6px); }
+  to { transform: none; }
+}
+
+.f-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-1);
+  min-width: 0;
+}
+.f-top-l { display: flex; align-items: center; gap: 8px; min-width: 0; justify-self: start; }
+.f-top-c { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.f-top-r { display: flex; align-items: center; gap: 6px; min-width: 0; justify-self: end; }
+.f-top-title { font: 600 13px/1 var(--font-sans); color: var(--ink); letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f-top-meta { font: 500 12.5px/1 var(--font-sans); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The flow covers the WINDOW, so the macOS traffic lights float over its bar. */
+html.tauri-macos .f-flow > .f-top { padding-left: calc(var(--titlebar-x, 78px) + 4px); }
+
+.f-main { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.f-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.f-page { width: 100%; max-width: 1040px; margin: 0 auto; padding: 28px 40px 48px; }
+.f-page[data-width="narrow"] { max-width: 680px; }
+
+.f-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 16px 0 20px;
+  border-top: 1px solid var(--line-1);
+  min-width: 0;
+}
+.f-sum {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font: 450 12.5px/1.3 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.f-sum b { color: var(--ink); font-weight: 600; }
+
+/* ── The stepper ────────────────────────────────────────────────────────── */
+.f-steps { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.f-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-sm);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--faint);
+  font: 500 13px/1 var(--font-sans);
+  white-space: nowrap;
+  min-width: 0;
+  transition: background-color var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
+}
+.f-step-n {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font: 600 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--d-base) var(--ease-out), border-color var(--d-base) var(--ease-out);
+}
+.f-step-label { overflow: hidden; text-overflow: ellipsis; }
+.f-step[data-state="done"] { color: var(--muted); }
+.f-step[data-state="done"] .f-step-n { background: var(--ok); border-color: var(--ok); color: var(--panel); }
+.f-step[data-state="current"] { color: var(--ink); }
+.f-step[data-state="current"] .f-step-n { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.f-step-sep { flex: none; width: 16px; height: 1px; background: var(--line-2); }
+@media (hover: hover) {
+  .f-step:not([data-state="current"]):not([disabled]):hover { background: var(--hover); color: var(--ink-2); transition-duration: 0ms; }
+}
+html:root .f-step:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.f-steps[data-dense] .f-step { min-height: 44px; }
+
+/* ── One hero per step ──────────────────────────────────────────────────── */
+.f-head { display: grid; gap: 6px; min-width: 0; }
+.f-head > h1, .f-head > h2 { margin: 0; color: var(--ink); text-wrap: balance; }
+.f-head[data-align="center"] { justify-items: center; text-align: center; }
+.f-head[data-align="center"] > .f-kicker { justify-content: center; }
+.f-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font: 600 12px/1.3 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.f-kicker > .k-dot { margin-right: 1px; }
+.f-fact { color: var(--muted); font: 450 13px/1.45 var(--font-sans); font-variant-numeric: tabular-nums; }
+.f-fact b { color: var(--ink); font-weight: 600; }
+.f-fact [data-tone="warn"] { color: var(--warn); }
+.f-line { color: var(--ink-2); font: 450 13px/1.5 var(--font-sans); max-width: 62ch; }
+/* The small hero — a docked or rail surface's one heading, at the 20px step. */
+.f-hero-sm { margin: 0; color: var(--ink); font: 700 20px/1.15 var(--font-sans); letter-spacing: -0.022em; text-wrap: balance; }
+.f-title { margin: 0; color: var(--ink); font: 650 15px/1.25 var(--font-sans); letter-spacing: -0.012em; }
+.f-num { font-variant-numeric: tabular-nums; }
+
+/* A section inside a step: the kit SectionHeader over hairline rows. */
+.f-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
+.f-section > .k-section { padding-left: 0; padding-right: 0; }
+.f-rows { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.f-rows > * + * { box-shadow: inset 0 1px 0 var(--line-1); border-radius: 0; }
+.f-rows > .k-row { padding-left: 4px; padding-right: 4px; }
+
+/* ── The meter — a segmented bar in domain hues on --sunk ───────────────── */
+/* Each segment spans the whole track and is placed with transform alone —
+   translateX(start) scaleX(width) from the left edge — so a keep or a drop
+   slides the week's load without a layout. The 2px seams between segments
+   ride the same way: a full-width layer whose left edge is the seam. */
+.f-meter {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  overflow: hidden;
+  contain: paint;
+}
+.f-meter[data-size="sm"] { height: 6px; border-radius: 3px; }
+.f-meter-seg,
+.f-meter-seam,
+.f-meter-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--d-slow) var(--ease-out), opacity var(--d-slow) var(--ease-out);
+}
+.f-meter-seam::before,
+.f-meter-tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--sunk);
+}
+.f-meter-tick::before { background: var(--ink-2); width: 2px; }
+.f-meter-tick[data-tone="warn"]::before { background: var(--warn); }
+.f-meter-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font: 450 12px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; }
+.f-meter-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* A chip that reads "mind this" without spending the ember (--signal = now). */
+.k-chip.f-chip-warn { background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: transparent; color: var(--warn); }
+/* The duration chip (DurationSelect) as a quiet trailing control. */
+.f-dur { height: 22px; padding: 0 6px; border-radius: var(--r-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+.f-dur > span { font: 500 12px/1 var(--font-sans); color: var(--muted); }
+@media (hover: hover) {
+  .f-dur:hover { background: var(--hover); }
+}
+
+/* A pip you press — a project on the slate, a block in the walk: a ring in its
+   hue, filled when it's on. The mark stays small; the hit area doesn't. */
+.f-pip {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--h, var(--accent));
+  transition: background-color var(--d-base) var(--ease-out), transform var(--d-fast) var(--ease-out);
+}
+.f-pip::before { content: ""; position: absolute; inset: -6px; }
+.f-pip[data-size="sm"] { width: 10px; height: 10px; box-shadow: inset 0 0 0 1.5px var(--h, var(--accent)); }
+.f-pip[data-size="sm"]::before { inset: -3px; }
+.f-pip[aria-pressed="true"] { background: var(--h, var(--accent)); }
+.f-pip[aria-current="true"] { box-shadow: inset 0 0 0 1.5px var(--h, var(--accent)), 0 0 0 1.5px var(--panel), 0 0 0 3px var(--ink); }
+@media (hover: hover) and (pointer: fine) {
+  .f-pip:hover { transform: scale(1.15); transition-duration: 0ms; }
+}
+html:root .f-pip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--h, var(--accent)), 0 0 0 2px var(--panel), 0 0 0 4px var(--accent-ring); }
+@media (pointer: coarse) {
+  .f-pip::before { inset: -15px; }
+}
+/* A week's receipt (WeekEvidence) — answers the pointer like any kit card. */
+@media (hover: hover) {
+  a.f-receipt:hover, button.f-receipt:hover, div.f-receipt[data-receipt-drag]:hover { background-image: linear-gradient(var(--hover) 0 0); }
+}
+html:root .f-receipt:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) !important; }
+
+/* A first-run kind: the whole row is the checkbox's hit area. */
+@media (hover: hover) {
+  .f-kind:hover { background: var(--hover); }
+}
+
+/* A chip you've picked — the accent wash, in place. */
+.k-chip.f-chip-on { background: var(--accent-wash); border-color: var(--accent-ring); color: var(--accent-ink); }
+
+/* ── A static done-mark (a milestone ticks in real data, never by click) ── */
+.f-tick {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  color: var(--on-accent);
+}
+.f-tick[data-done] { background: var(--landed, var(--accent)); border-color: var(--landed, var(--accent)); animation: land-stamp var(--d-land) var(--ease-land) both; }
+
+/* ── The doors in — the window ground and one raised card ───────────────── */
+.f-ground {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--ground);
+  color: var(--ink);
+}
+.f-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  padding: 28px;
+  border-radius: var(--r-dialog);
+  background: var(--raised);
+  box-shadow: var(--sh-modal);
+  animation: f-rise var(--d-slow) var(--ease-out) both;
+}
+.f-card[data-width="wide"] { max-width: 560px; }
+.f-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 24px -28px -28px;
+  padding: 12px 16px 12px 28px;
+  border-top: 1px solid var(--line-1);
+}
+.f-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-ctl);
+  background: var(--accent);
+  color: var(--on-accent);
+  overflow: hidden;
+}
+.f-brand { display: flex; align-items: center; gap: 8px; font: 700 15px/1 var(--font-brand); letter-spacing: -0.03em; color: var(--ink); }
+.f-note {
+  padding: 8px 10px;
+  border-radius: var(--r-ctl);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  color: var(--muted);
+  font: 450 12.5px/1.45 var(--font-sans);
+}
+.f-note b { color: var(--ink); font-weight: 600; }
+.f-note[data-tone="danger"] { background: var(--danger-soft); box-shadow: none; color: var(--danger); }
+.f-error { color: var(--danger); font: 500 12.5px/1.4 var(--font-sans); }
+/* a quiet destructive act — ghost, in the danger ink */
+.k-btn.f-danger { color: var(--danger); }
+@media (hover: hover) {
+  .k-btn.f-danger:not(:disabled):hover { color: var(--danger); }
+}
+.f-stack { display: grid; gap: 8px; }
+
+
+/* ── A floating coach / repair card (docked, not a flow) ────────────────── */
+.f-dock {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-dialog);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  min-width: 0;
+}
+.f-dock-body { padding: 14px 16px; display: grid; gap: 8px; }
+.f-dock-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-top: 1px solid var(--line-1); }
+.f-pips { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
+.f-pips > i { display: block; width: 6px; height: 6px; border-radius: 2px; background: var(--line-2); transition: background-color var(--d-base) var(--ease-out), transform var(--d-base) var(--ease-out); }
+.f-pips > i[data-on] { background: var(--ink); transform: scaleX(1.0); }
+.f-pips > i[data-done] { background: var(--ok); }
+
+/* ── Phone ──────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .f-top {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 8px 0;
+    gap: 6px;
+  }
+  .f-top-c { overflow: hidden; }
+  /* the bar's quiet meta yields to the stepper on a phone */
+  .f-top-meta { display: none; }
+  .f-foot {
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 0 12px env(safe-area-inset-bottom, 0px) 16px;
+  }
+  .f-page { padding: 20px 16px 40px; }
+  .f-step { padding: 0 4px; gap: 6px; }
+  .f-step-sep { width: 10px; }
+  .f-step:not([data-state="current"]) .f-step-label { display: none; }
+  .f-ground { align-items: flex-start; padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .f-card { padding: 22px 20px; }
+  .f-card-foot { margin: 20px -20px -22px; padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 20px; }
+  .f-card-foot > .f-sum { display: none; }
+  .f-card-foot > .k-btn[data-kind="primary"] { margin-left: auto; }
+}
+/* A finger needs 44px; the kit's controls stay 28–32 under a mouse. */
+@media (pointer: coarse) {
+  .f-foot .k-btn,
+  .f-card .k-btn,
+  .f-dock .k-btn { min-height: 44px; }
+  .f-card .k-field { min-height: 44px; }
+  .f-step { min-height: 44px; }
+  /* a lens switch that also lives on the phone (the Review's breakdown) */
+  .f-lens .k-seg { display: flex; }
+  .f-lens .k-seg button { flex: 1; justify-content: center; height: 40px; }
+  /* a keycap means nothing under a finger */
+  .f-foot .k-kbds, .f-card .k-kbds, .f-dock .k-kbds { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .f-flow, .f-card, .f-tick[data-done] { animation: none; }
+  .f-meter-seg, .f-meter-seam, .f-meter-tick { transition: none; }
+}

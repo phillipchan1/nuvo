@@ -11,6 +11,9 @@
 // (so iOS dictation works), and "add your own" is always available.
 import { useState } from "react";
 import { useVertical } from "../hooks/useVertical";
+import { Button, Checkbox, Dot, FormField, Input } from "./kit";
+import { Icon } from "./Icon";
+import { FlowHead, FlowMark } from "./rituals/FlowShell";
 
 type Kind = {
   key: string;
@@ -108,128 +111,106 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
   };
 
   return (
-    <div className="atmosphere h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-5 pb-24 pt-safe sm:px-8">
-        <header className="pt-10 sm:pt-16">
-          <h1 className="masthead text-display text-ink">What are you carrying?</h1>
-          <p className="mt-4 max-w-lg text-body text-muted">
-            A <span className="text-ink">domain</span> is an area you're responsible for over the
-            long run — not a project and not a list. <span className="text-ink">Work</span> is a
-            domain; <span className="italic">shipping the new site</span> is a project inside it.
-          </p>
-          <p className="mt-3 max-w-lg text-caption text-muted">
-            Pick the ones you carry and name them the way you'd say them out loud. You can rename,
-            add, or remove any of this later.
-          </p>
-        </header>
+    // The window ground, one raised card (D-190): the mark, one hero, the kinds
+    // as kit rows, the act bottom-right. Scrolls as one page on a phone.
+    <div className="h-full overflow-y-auto" style={{ background: "var(--ground)" }}>
+      <div className="f-ground">
+        <div className="f-card" data-width="wide">
+          <div className="grid gap-5">
+            <FlowMark />
+            <FlowHead
+              hero="What are you carrying?"
+              fact="A domain is an area you're responsible for over the long run — not a project, not a list. Name them the way you'd say them out loud."
+            />
+          </div>
 
-        <ul className="mt-8 border-t border-line">
-          {KINDS.map((k) => {
-            const on = k.key in picked;
-            return (
-              <li key={k.key} className="border-b border-line">
-                <div className="flex items-start gap-3 py-3">
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggle(k)}
-                    className="tap fast -ml-1 flex min-h-[44px] flex-1 items-start gap-3 rounded-md px-1 text-left"
-                  >
-                    <span
-                      aria-hidden
-                      className="mt-[3px] h-4 w-4 shrink-0 rounded-full border"
-                      style={{
-                        borderColor: on ? k.color : "var(--line-strong)",
-                        background: on ? k.color : "transparent",
-                      }}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-body text-ink">{k.prompt}</span>
-                      {!on && (
-                        <span className="mt-1 block text-caption text-muted">{k.examples}</span>
-                      )}
+          <ul className="mt-6 grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1), inset 0 -1px 0 var(--line-1)" }}>
+            {KINDS.map((k) => {
+              const on = k.key in picked;
+              return (
+                <li key={k.key} style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+                  {/* The checkbox is the control (its name is the question); the
+                      whole row is its label, so the row is its hit area and the
+                      keyboard reaches it through the checkbox itself. */}
+                  <label className="f-kind flex min-h-[52px] items-start gap-3 rounded-[var(--r-ctl)] px-1 py-3">
+                    <span className="flex h-5 items-center">
+                      <Checkbox checked={on} onChange={() => toggle(k)} label={k.prompt} />
                     </span>
-                  </button>
-                </div>
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="text-body font-medium text-[var(--ink)]">{k.prompt}</span>
+                      {!on && <span className="text-caption text-muted">{k.examples}</span>}
+                    </span>
+                    <span className="flex h-5 items-center">
+                      <Dot color={k.color} />
+                    </span>
+                  </label>
 
-                {on && (
-                  <div className="-mt-1 pb-3 pl-7">
-                    <label className="section-label block text-muted" htmlFor={`d-${k.key}`}>
-                      Call it
-                    </label>
-                    <input
-                      id={`d-${k.key}`}
-                      type="text"
-                      value={picked[k.key]}
-                      autoComplete="off"
-                      onChange={(e) => setPicked((p) => ({ ...p, [k.key]: e.target.value }))}
-                      placeholder={k.suggested}
-                      className="tap mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
-                    />
-                  </div>
-                )}
+                  {on && (
+                    <div className="pb-3 pl-8 pr-1">
+                      <FormField label="Call it">
+                        {(id) => (
+                          <Input
+                            id={id}
+                            type="text"
+                            value={picked[k.key]}
+                            autoComplete="off"
+                            onChange={(e) => setPicked((p) => ({ ...p, [k.key]: e.target.value }))}
+                            placeholder={k.suggested}
+                          />
+                        )}
+                      </FormField>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+
+            {extras.map((name, i) => (
+              <li key={`extra-${i}`} className="py-3 pl-8 pr-1" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+                <FormField label="Your own">
+                  {(id) => (
+                    <span className="flex items-center gap-2">
+                      <Input
+                        id={id}
+                        type="text"
+                        value={name}
+                        autoFocus
+                        autoComplete="off"
+                        onChange={(e) => setExtras((x) => x.map((v, j) => (j === i ? e.target.value : v)))}
+                        placeholder="Name it"
+                        frameClassName="flex-1"
+                      />
+                      <Button kind="ghost" size="md" onClick={() => setExtras((x) => x.filter((_, j) => j !== i))}>
+                        Remove
+                      </Button>
+                    </span>
+                  )}
+                </FormField>
               </li>
-            );
-          })}
+            ))}
+          </ul>
 
-          {extras.map((name, i) => (
-            <li key={`extra-${i}`} className="border-b border-line py-3">
-              <label className="section-label block text-muted" htmlFor={`x-${i}`}>
-                Your own
-              </label>
-              <div className="mt-1 flex items-center gap-2">
-                <input
-                  id={`x-${i}`}
-                  type="text"
-                  value={name}
-                  autoFocus
-                  autoComplete="off"
-                  onChange={(e) => setExtras((x) => x.map((v, j) => (j === i ? e.target.value : v)))}
-                  placeholder="Name it"
-                  className="tap w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
-                />
-                <button
-                  type="button"
-                  onClick={() => setExtras((x) => x.filter((_, j) => j !== i))}
-                  className="tap fast shrink-0 rounded-md px-3 py-2 text-caption text-muted hover:text-ink"
-                >
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+          <div className="mt-3">
+            <Button kind="ghost" icon={<Icon name="plus" size={14} />} onClick={() => setExtras((x) => [...x, ""])}>
+              Add one of your own
+            </Button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setExtras((x) => [...x, ""])}
-          className="tap fast mt-3 min-h-[44px] text-caption text-accent"
-        >
-          + Add one of your own
-        </button>
+          {error && <p className="f-error mt-3">{error}</p>}
 
-        {error && <p className="mt-4 text-caption text-signal">{error}</p>}
-
-        <div className="mt-8 flex flex-wrap items-center gap-3 pb-safe">
-          <button
-            type="button"
-            disabled={!chosen.length || busy}
-            onClick={create}
-            className="tap fast min-h-[44px] rounded-md bg-accent px-4 py-2.5 text-body font-medium text-on-accent disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-          >
-            {busy
-              ? "Setting up…"
-              : chosen.length
-                ? `Create ${chosen.length} domain${chosen.length === 1 ? "" : "s"}`
-                : "Pick at least one"}
-          </button>
-          <button
-            type="button"
-            onClick={onSkip}
-            className="tap fast min-h-[44px] px-2 text-caption text-muted hover:text-ink"
-          >
-            Skip for now
-          </button>
+          <div className="f-card-foot">
+            <span className="f-sum">Change any of this later.</span>
+            <Button kind="ghost" size="md" onClick={onSkip}>
+              Skip for now
+            </Button>
+            <Button kind="primary" size="md" disabled={!chosen.length || busy} onClick={create}>
+              {busy
+                ? "Setting up…"
+                : chosen.length
+                  ? `Create ${chosen.length} domain${chosen.length === 1 ? "" : "s"}`
+                  : "Pick at least one"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

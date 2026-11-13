@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
-import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useAllTasks } from "../../hooks/useTasks";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { Btn } from "../ui";
+import { Button, IconButton, Popover, Row } from "../kit";
+import { FlowMeter } from "../rituals/FlowShell";
 
 // The "Getting Started" tracker — the reward spine of onboarding. Five milestones,
 // each DERIVED from real data so it never lies; every checkmark is earned. It lives
@@ -49,6 +49,7 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
 
   const [askedNuvo, setAskedNuvo] = useState(() => lsGet(LS.askedNuvo));
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const wasIncomplete = useRef(false);
 
   // Latch "asked Nuvo" the first time a user message appears in the agent thread.
@@ -116,80 +117,78 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
 
   return (
     <>
-      {/* Spine entry — matches the Settings/Shortcuts rows, with a progress ring.
-          Railed, the ring is already an icon: it stands alone and the count moves
-          into the tooltip. */}
-      <div className={compact ? "flex justify-center py-0.5" : undefined}>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          title={`Getting started — ${doneCount} of ${steps.length}`}
-          className={`fast flex items-center rounded-lg border border-transparent text-muted hover:text-ink ${
-            compact ? "h-11 w-11 justify-center" : "w-full gap-2.5 px-2.5 py-2 text-left"
-          }`}
-          style={open ? { color: "var(--ink)" } : undefined}
-        >
+      {/* Spine entry — the frame's own row (`sb-item`), with a progress ring for
+          its icon. Railed, the ring stands alone and the count rides the
+          tooltip. */}
+      <button
+        ref={setAnchor}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={`Getting started — ${doneCount} of ${steps.length}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className="sb-item"
+      >
+        <span className="sb-icon">
           <Ring done={doneCount} total={steps.length} />
-          {!compact && (
-            <>
-              <span className="flex-1 text-caption leading-none">Getting started</span>
-              <span className="mono text-micro leading-none" style={{ color: "var(--accent)" }}>{doneCount}/{steps.length}</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {open &&
-        createPortal(
+        </span>
+        {!compact && (
           <>
-            <div className="fixed inset-0 z-[55]" onMouseDown={() => setOpen(false)} />
-            <div
-              className="moment glass elev-3 fixed z-[56] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-line p-3.5"
-              style={{ left: "calc(var(--spine-width, 188px) + 8px)", bottom: 12 }}
-              role="dialog"
-              aria-label="Getting started"
-            >
-              <div className="flex items-center gap-2">
-                <span className="section-label flex-1">Getting started</span>
-                {!celebrate && <span className="mono text-micro text-muted">{doneCount} of {steps.length}</span>}
-                <button onClick={dismiss} className="tap fast text-muted hover:text-ink" aria-label="Dismiss for good">
-                  <Icon name="close" size={14} />
-                </button>
-              </div>
-
-              {!celebrate && (
-                <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                  <span className="fast block h-full rounded-full" style={{ width: `${(doneCount / steps.length) * 100}%`, background: "var(--accent)" }} />
-                </div>
-              )}
-
-              {celebrate ? (
-                <div className="flex flex-col items-center gap-2 py-3 text-center">
-                  <span className="text-lead" style={{ color: "var(--accent)" }}>✦</span>
-                  <div className="serif text-body text-ink">You're all set.</div>
-                  <p className="text-caption text-muted">Nuvo's yours now — go make the week land.</p>
-                  <Btn kind="primary" onClick={finish} className="mt-1">Done</Btn>
-                </div>
-              ) : (
-                <ul className="mt-2.5 flex flex-col gap-0.5">
-                  {steps.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        onClick={s.done ? undefined : () => runStep(s.go)}
-                        disabled={s.done}
-                        className={`tap fast group flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left ${s.done ? "cursor-default" : "hover:bg-surface-2"}`}
-                      >
-                        <Tick done={s.done} />
-                        <span className={`flex-1 text-caption ${s.done ? "text-muted line-through decoration-line" : "text-ink"}`}>{s.label}</span>
-                        {!s.done && <span className="text-caption text-muted opacity-0 transition-opacity group-hover:opacity-100">→</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>,
-          document.body
+            <span className="sb-label">Getting started</span>
+            <span className="sb-trail" style={{ color: "var(--accent-ink)" }}>
+              {doneCount}/{steps.length}
+            </span>
+          </>
         )}
+      </button>
+
+      <Popover anchor={anchor} open={open} onClose={() => setOpen(false)} placement="right-start" label="Getting started" flush className="w-[300px]">
+        <div className="flex items-center gap-2 py-2.5 pl-3.5 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+          <span className="f-title min-w-0 flex-1">Getting started</span>
+          {!celebrate && (
+            <span className="f-num text-caption text-[var(--faint)]">
+              {doneCount} of {steps.length}
+            </span>
+          )}
+          <IconButton size="xs" label="Dismiss for good" icon={<Icon name="close" size={12} />} onClick={dismiss} />
+        </div>
+
+        {celebrate ? (
+          <div className="grid justify-items-center gap-2 px-4 py-5 text-center">
+            <span className="f-tick" data-done="" style={{ width: 24, height: 24 }}>
+              <Icon name="check" size={14} strokeWidth={2.6} />
+            </span>
+            <div className="f-hero-sm">You're all set.</div>
+            <p className="text-caption text-muted">Nuvo's yours now — go make the week land.</p>
+            <Button kind="primary" size="md" onClick={finish} className="mt-1">
+              Done
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-2 p-1.5">
+            <div className="px-2 pt-1">
+              <FlowMeter size="sm" total={steps.length} segments={[{ key: "done", value: doneCount, color: "var(--landed, var(--accent))" }]} label={`${doneCount} of ${steps.length} done`} />
+            </div>
+            <ul className="grid">
+              {steps.map((s) => (
+                <li key={s.id}>
+                  <Row
+                    done={s.done}
+                    onActivate={s.done ? undefined : () => runStep(s.go)}
+                    leading={
+                      <span className="f-tick" data-done={s.done || undefined} aria-hidden>
+                        {s.done && <Icon name="check" size={10} strokeWidth={2.6} />}
+                      </span>
+                    }
+                    title={s.label}
+                    trailing={s.done ? undefined : <Icon name="arrow-right" size={12} style={{ color: "var(--faint)" }} />}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Popover>
     </>
   );
 }
@@ -200,23 +199,12 @@ function Ring({ done, total }: { done: number; total: number }) {
   const c = 2 * Math.PI * r;
   const pct = total ? done / total : 0;
   return (
-    <svg width="15" height="15" viewBox="0 0 16 16" className="shrink-0 -rotate-90">
-      <circle cx="8" cy="8" r={r} fill="none" stroke="var(--line-strong)" strokeWidth="1.6" />
+    <svg width="15" height="15" viewBox="0 0 16 16" className="shrink-0 -rotate-90" aria-hidden>
+      <circle cx="8" cy="8" r={r} fill="none" stroke="var(--line-2)" strokeWidth="1.6" />
       <circle
         cx="8" cy="8" r={r} fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round"
         strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
       />
     </svg>
   );
-}
-
-function Tick({ done }: { done: boolean }) {
-  if (done) {
-    return (
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--accent)" }}>
-        <Icon name="check" size={10} />
-      </span>
-    );
-  }
-  return <span className="h-4 w-4 shrink-0 rounded-full border border-line-strong" />;
 }

@@ -507,15 +507,8 @@ html.tauri-macos .app-topbar {
   padding-top: var(--titlebar-inset-top);
 }
 
-/* Full-screen ritual overlays (FlowShell) have no spine, so they need both top
-   AND left padding to clear the macOS traffic lights. */
-/* FlowShell is `fixed inset-0` — it covers the whole WINDOW, ground and all,
-   even though it renders inside the frame. So it reads the preserved values,
-   not the in-frame insets (which are zeroed): the lights really are over it. */
-html.tauri-macos .flow-topbar {
-  padding-top: var(--titlebar-h, var(--titlebar-inset-top));
-  padding-left: var(--titlebar-x, var(--titlebar-inset-left));
-}
+/* Full-screen flows (FlowShell's FlowFrame) cover the WINDOW, so they clear the
+   macOS traffic lights from the preserved values — styles/flows.css. */
 
 /* The trial banner sits above the Spine, at the true top of the window, so it
    — not the Spine — is what the traffic lights float over here. Its height
@@ -1371,13 +1364,6 @@ body.nuvo-selecting * {
 }
 .pulse-glow { animation: pulse-glow 2.4s var(--ease-in-out) infinite; }
 
-/* A lit pipeline arrow nudges forward — the artifact flowing to the next stage. */
-@keyframes pulse-arrow {
-  0%, 100% { transform: translateX(0); opacity: 0.7; }
-  50% { transform: translateX(2px); opacity: 1; }
-}
-.pulse-arrow { animation: pulse-arrow 1.8s var(--ease-in-out) infinite; }
-
 /* Shimmer for "Thinking…" copy. */
 @keyframes shimmer {
   0% { background-position: 100% 0; }
@@ -1578,11 +1564,13 @@ select.field { appearance: none; -webkit-appearance: none; }
  * radius, .tap floor) is ours, and matches Continue with Google exactly.
  *
  * These are class rules, not token declarations, so tests/token-contrast.ts —
- * which parses the :root / html blocks — correctly ignores them. */
-.apple-signin {
+ * which parses the :root / html blocks — correctly ignores them. The button is
+ * the kit's (D-190), so these out-rank `.k-btn`'s surface by one step. */
+html .apple-signin {
   background: #000;
   color: #fff;
   border: 1px solid #000;
+  box-shadow: none;
 }
 [data-theme="dark"] .apple-signin {
   background: #fff;
@@ -1604,15 +1592,6 @@ select.field { appearance: none; -webkit-appearance: none; }
   touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
-}
-@media (hover: hover) and (pointer: fine) {
-  .login-action-surface:hover:not(:disabled) {
-    background: var(--surface);
-  }
-  .login-action-muted:hover:not(:disabled) {
-    color: var(--ink);
-    text-decoration: underline;
-  }
 }
 
 ::-webkit-scrollbar {

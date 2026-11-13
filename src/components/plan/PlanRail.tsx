@@ -31,6 +31,24 @@ import {
 } from "../../lib/planMemory";
 import { DIAL_NOTE, useDial } from "../../lib/planDial";
 import type { DayContext } from "../../lib/compose";
+import {
+  Button,
+  Card,
+  Chip,
+  ChipButton,
+  Dot,
+  EmptyState,
+  IconButton,
+  Kbd,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  Row,
+  SectionHeader,
+  Segmented,
+} from "../kit";
+import { Icon } from "../Icon";
+import { FlowHead, FlowMeter } from "../rituals/FlowShell";
 
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const instant = (dayISO: string, min: number) => {
@@ -724,6 +742,8 @@ function PlanRailWeek({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target instanceof HTMLElement ? e.target : null;
       if (t && (t.closest("input, textarea, [contenteditable=true]") || t.isContentEditable)) return;
+      // a menu over the rail (a day's acts) owns its own arrows and ↵
+      if (t && t.closest("[data-nested-surface]")) return;
       const k = e.key;
       const mod = e.metaKey || e.ctrlKey;
       const s = keyState.current;
@@ -796,432 +816,425 @@ function PlanRailWeek({
 
   const selP = sel ? byKey.get(sel) : null;
 
+  // The week's load by world — the meter in domain hues, against the open time.
+  const byHue = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of placements) {
+      const c = colorOf(p) ?? "var(--accent)";
+      m.set(c, (m.get(c) ?? 0) + p.durationMin);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [placements, colorOf]);
+  const over = tag === "over" || unplacedN > 0;
+  const [dayAnchor, setDayAnchor] = useState<HTMLElement | null>(null);
+  const keptRules = describeRules(memory.rules);
+
   return (
     <div
       ref={railRef}
       data-plan-rail
-      className="relative z-40 flex h-full w-[340px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-line px-4 pb-4 titlebar-pad"
+      className="titlebar-pad relative z-40 flex h-full w-[340px] shrink-0 flex-col"
+      style={{ borderRight: "1px solid var(--line-1)", ["--titlebar-pad-y" as string]: "0px" }}
     >
-      <div className="flex items-baseline justify-between pt-3">
-        <span className="flex items-center gap-1">
-          {([[weekLabel(weeks.thisWeek), weeks.thisWeek], [weekLabel(weeks.nextWeek), weeks.nextWeek]] as const).map(([label, iso]) => (
-            <button
-              key={iso}
-              onClick={() => iso !== weekStartISO && onWeek(iso, true)}
-              className="rounded-full px-2 py-0.5 text-caption"
-              style={{
-                background: iso === weekStartISO ? "var(--accent-soft)" : undefined,
-                color: iso === weekStartISO ? "var(--accent)" : "var(--muted)",
-              }}
-              aria-pressed={iso === weekStartISO}
-            >
-              {label}
-            </button>
-          ))}
-        </span>
-        <span className="flex items-center gap-3">
-          {/* trial escape hatch: the v1 walk, while v2 is being tried */}
-          <button
-            className="text-caption text-muted hover:text-text"
-            onClick={() => navigate({ flow: "sunday-walk", flowStep: 0 }, "replace")}
-            title="Open the previous full-screen walk"
-          >
-            Old walk
-          </button>
-          <button className="text-caption text-muted hover:text-text" onClick={onClose} aria-label="Close the plan">
-            Close
-          </button>
-        </span>
+      {/* which week · the old walk · close — the rail's own bar */}
+      <div className="flex h-12 shrink-0 items-center gap-1.5 pl-3 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+        <Segmented
+          size="sm"
+          label="Which week"
+          value={weekStartISO}
+          onChange={(iso) => iso !== weekStartISO && onWeek(iso, true)}
+          options={[
+            { value: weeks.thisWeek, label: weekLabel(weeks.thisWeek) },
+            { value: weeks.nextWeek, label: weekLabel(weeks.nextWeek) },
+          ]}
+        />
+        <span className="min-w-0 flex-1" />
+        {/* trial escape hatch: the v1 walk, while v2 is being tried */}
+        <Button
+          size="xs"
+          kind="ghost"
+          onClick={() => navigate({ flow: "sunday-walk", flowStep: 0 }, "replace")}
+          title="Open the previous full-screen walk"
+        >
+          Old walk
+        </Button>
+        <IconButton label="Close the plan" icon={<Icon name="close" size={14} />} onClick={onClose} />
       </div>
 
       {done ? (
         // COMMIT (D-187) — the same moment the phone ends on: the week by
         // world, landing band by band, sealed by one accent line.
-        <WeekSetMoment
-          align="start"
-          eyebrow="Committed"
-          bands={sprintMinsByDomain(d.data).map((x) => ({ key: x.domain.id, label: x.domain.name, color: x.domain.color, mins: x.mins }))}
-          facts={
-            <>
-              {done.things} things → {done.blocks} blocks ·{" "}
-              {done.secs >= 60 ? `${Math.floor(done.secs / 60)}m ` : ""}
-              {done.secs % 60}s · {done.changes} change{done.changes === 1 ? "" : "s"} by you
-            </>
-          }
-          action={
-            <button className="h-11 w-full rounded-[10px] bg-accent font-semibold text-on-accent" onClick={onClose}>
-              Done
-            </button>
-          }
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-6">
+          <WeekSetMoment
+            align="start"
+            eyebrow="Committed"
+            bands={sprintMinsByDomain(d.data).map((x) => ({ key: x.domain.id, label: x.domain.name, color: x.domain.color, mins: x.mins }))}
+            facts={
+              <>
+                {done.things} things → {done.blocks} blocks · {done.secs >= 60 ? `${Math.floor(done.secs / 60)}m ` : ""}
+                {done.secs % 60}s · {done.changes} change{done.changes === 1 ? "" : "s"} by you
+              </>
+            }
+            action={
+              <Button kind="primary" size="md" full onClick={onClose}>
+                Done
+              </Button>
+            }
+          />
+        </div>
       ) : (
         <>
-          {/* verdict + slate */}
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-baseline gap-1.5">
-              <span className="masthead text-[28px] leading-none">{Math.round(placedMins / 60)}h</span>
-              <span className="text-caption text-muted">/ {Math.round(openMins / 60)}h open</span>
-              <span
-                className="rounded-full px-2 text-micro"
-                style={{
-                  background: tag === "over" || unplacedN ? "color-mix(in srgb, var(--signal) 14%, transparent)" : "var(--accent-soft)",
-                  color: tag === "over" || unplacedN ? "var(--signal)" : "var(--accent)",
-                }}
-              >
-                {tag}
-              </span>
+          <div className="grid min-h-0 flex-1 content-start gap-6 overflow-y-auto px-4 pb-5 pt-5">
+            {/* the crown — one hero, the claim in figures, the load by world */}
+            <div className="grid gap-3">
+              <FlowHead
+                hero="Shape the week."
+                fact={
+                  <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <span>
+                      <b>{Math.round(placedMins / 60)}h</b> of <b>{Math.round(openMins / 60)}h</b> open time claimed
+                    </span>
+                    <Chip className={over ? "f-chip-warn" : undefined} tone={over ? undefined : "accent"}>
+                      {tag}
+                    </Chip>
+                  </span>
+                }
+              />
+              <FlowMeter
+                total={Math.max(openMins, placedMins, 1)}
+                segments={byHue.map(([color, mins]) => ({ key: color, value: mins, color }))}
+                label={`${Math.round(placedMins / 60)} of ${Math.round(openMins / 60)} open hours claimed (${pct}%)`}
+              />
+              {slate.length > 0 && (
+                <div className="flex min-w-0 flex-wrap items-center gap-2" onPointerLeave={() => setPipName(null)}>
+                  {slate.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      aria-pressed={p.on}
+                      aria-label={p.name}
+                      title={p.name}
+                      onPointerEnter={() => setPipName(p.name)}
+                      onFocus={() => setPipName(p.name)}
+                      onClick={() => togglePip(p)}
+                      className="f-pip"
+                      style={{ ["--h" as string]: p.color }}
+                    />
+                  ))}
+                  <span className="min-w-0 flex-1 truncate text-caption text-muted">{pipName ?? "This week's projects"}</span>
+                </div>
+              )}
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-line">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, pct)}%` }} />
-            </div>
-            {slate.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 pt-1" onMouseLeave={() => setPipName(null)}>
-                {slate.map((p) => (
-                  <button
-                    key={p.id}
-                    aria-pressed={p.on}
-                    aria-label={p.name}
-                    title={p.name}
-                    onMouseEnter={() => setPipName(p.name)}
-                    onClick={() => togglePip(p)}
-                    className="h-4 w-4 rounded-full"
-                    style={{ border: `2px solid ${p.color}`, background: p.on ? p.color : "transparent" }}
-                  />
-                ))}
-                <span className="truncate text-caption text-muted">{pipName ?? "this week's projects"}</span>
-              </div>
-            )}
-          </div>
 
-          {/* the days — tap one for its acts (Lighten · Clear the afternoon · Day off) */}
-          <div className="flex flex-col gap-1.5">
+            {/* the days — each one's acts (Lighten · Clear the afternoon · Day off) in its menu */}
             <div className="flex gap-1">
               {workingDayISOs.map((iso) => {
                 const ctx = d.dayContexts[iso];
                 return (
-                  <button
+                  <Button
                     key={iso}
-                    onClick={() => setDayMenu((x) => (x === iso ? null : iso))}
+                    size="xs"
+                    full
+                    active={dayMenu === iso}
+                    aria-haspopup="menu"
                     aria-expanded={dayMenu === iso}
-                    className="flex-1 rounded-[8px] border py-1 text-caption"
-                    style={{
-                      borderColor: dayMenu === iso ? "var(--accent)" : "var(--line)",
-                      color: ctx === "off" ? "var(--muted)" : undefined,
-                      textDecoration: ctx === "off" ? "line-through" : undefined,
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      setDayMenu((x) => (x === iso ? null : iso));
+                      setDayAnchor(el);
                     }}
                     title={ctx && ctx !== "normal" ? `${dayName(iso)} · ${ctx}` : dayName(iso)}
+                    style={{ flex: 1, minWidth: 0, color: ctx === "off" ? "var(--faint)" : undefined, textDecoration: ctx === "off" ? "line-through" : undefined }}
                   >
                     {dayName(iso)}
-                    {ctx === "light" ? <span className="text-accent"> ◐</span> : null}
-                  </button>
+                    {ctx === "light" ? <span style={{ color: "var(--accent-ink)" }}>◐</span> : null}
+                  </Button>
                 );
               })}
             </div>
-            {dayMenu && (
-              <div className="flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["light", "Lighten"],
-                    ["afternoon", "Clear afternoon"],
-                    ["off", "Day off"],
-                    ["normal", "Normal"],
-                  ] as const
-                ).map(([a, label]) => (
-                  <button key={a} onClick={() => dayAct(dayMenu, a)} className="rounded-full border border-line-strong px-2.5 py-0.5 text-caption">
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {placing && (
-            <div className="flex flex-col gap-2 rounded-[12px] border p-3" style={{ borderColor: "var(--slot)" }}>
-              <div className="text-body">
-                Pick a time for <b>{placing.name}</b>
-              </div>
-              <p className="text-caption text-muted">
-                Every open stretch is shaded on the calendar ({gaps.length}). Click one — it goes there, shortened if the gap is smaller than {fmtMins(placing.mins)}.
-              </p>
-              <button onClick={() => setPlacing(null)} className="h-8 self-start rounded-[8px] border border-line-strong px-3 text-caption">
-                Cancel
-              </button>
-            </div>
-          )}
-          {/* the walk — one group at a time */}
-          {order.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="section-label flex justify-between">
-                <span>{selP ? `Block ${order.indexOf(sel!) + 1} of ${order.length}` : "Nuvo's draft"}</span>
-                <span className="mono">
-                  {reviewed}/{order.length} accepted
-                </span>
-              </div>
-              {/* one pip per block, in time order — filled once accepted; tap one to look at it */}
-              <div className="flex flex-wrap gap-[3px]" role="group" aria-label="Blocks in the draft">
-                {order.map((k) => {
-                  const p = byKey.get(k)!;
-                  const held = d.isHeld(k);
-                  const hue = colorOf(p) ?? "var(--accent)";
-                  return (
-                    <button
-                      key={k}
-                      onClick={() => setSel(k)}
-                      title={`${titleOf(p)} · ${where(p)}`}
-                      aria-label={`${titleOf(p)}, ${where(p)}${held ? ", accepted" : ""}`}
-                      aria-current={k === sel}
-                      className="h-[10px] w-[10px] rounded-full"
-                      style={{
-                        background: held ? hue : "transparent",
-                        border: `1.5px solid ${hue}`,
-                        outline: k === sel ? "1.5px solid var(--text)" : undefined,
-                        outlineOffset: 1.5,
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {selP ? (
-            (() => {
-              const items = itemsOf(selP);
-              const held = d.isHeld(sel!);
-              return (
-                <div className="glass-card flex flex-col gap-2 rounded-[12px] border border-line p-3">
-                  <div className="masthead text-display leading-tight">{titleOf(selP)}</div>
-                  <div className="text-caption text-muted">
-                    {where(selP)}
-                    {items.length > 1 ? ` · ${items.length} tasks` : ""}
-                    {held ? " · accepted" : ""}
-                  </div>
-                  {items.length > 1 && (
-                    <ul className="flex flex-col border-t border-line">
-                      {items.map((t) => (
-                        <li key={t.id} className="flex items-baseline gap-2 border-b border-line py-1.5">
-                          <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
-                            {t.title}
-                          </span>
-                          <span className="mono shrink-0 text-micro text-muted">{t.mins}m</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="text-caption text-muted">{selP.reason}</div>
-                  {/* how long — your estimate beats the sum of the tasks; Nuvo re-places it */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-micro text-muted">How long</span>
-                    <div className="flex flex-wrap gap-1" role="group" aria-label="Block length">
-                      {[...new Set([15, 30, 45, 60, 90, 120, selP.durationMin])].sort((a, b) => a - b).map((m) => (
-                        <button
-                          key={m}
-                          aria-pressed={m === selP.durationMin}
-                          onClick={() => m !== selP.durationMin && setLength(sel!, m)}
-                          className="mono rounded-full border px-2 py-0.5 text-micro"
-                          style={{
-                            borderColor: m === selP.durationMin ? "var(--accent)" : "var(--line-strong)",
-                            color: m === selP.durationMin ? "var(--accent)" : undefined,
-                            background: m === selP.durationMin ? "var(--accent-soft)" : undefined,
-                          }}
-                        >
-                          {fmtMins(m)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5 pt-1">
-                    <button
-                      onClick={() => accept(sel!)}
-                      className="h-9 flex-1 rounded-[9px] bg-accent px-3 text-caption font-semibold text-on-accent"
-                    >
-                      {held ? "Keep · next" : "Looks good"} <span className="opacity-75">↵</span>
-                    </button>
-                    <button onClick={() => advance(sel)} className="h-9 rounded-[9px] border border-line-strong px-3 text-caption">
-                      Later <kbd className="mono text-micro text-muted">J</kbd>
-                    </button>
-                  </div>
-                  {altList.length > 1 && (
-                    <div className="flex flex-col gap-1 pt-1">
-                      <span className="text-micro text-muted">Nuvo's other picks (numbered in the open time)</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {altList.map((a, i) => (
-                          <button
-                            key={i}
-                            onClick={() => pickAlt(i)}
-                            className="rounded-full border px-2.5 py-0.5 text-caption"
-                            style={{
-                              borderColor: i === altIx ? "var(--accent)" : "var(--line-strong)",
-                              color: i === altIx ? "var(--accent)" : undefined,
-                            }}
-                          >
-                            <span className="mono mr-1 text-micro text-muted">{i === 0 ? "·" : i}</span>
-                            {dayName(a.dayISO)} {at(instant(a.dayISO, a.startMin))}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-1.5">
-                    {(
-                      [
-                        ...(held ? ([["H", "Release", () => act.hold(sel!)]] as const) : []),
-                        ["S", "Split", () => act.split(sel!)],
-                        ["X", "Off this week", () => act.off(sel!)],
-                      ] as const
-                    ).map(([key, label, run]) => (
-                      <button key={key} className="rounded-full border border-line px-2.5 py-0.5 text-caption text-muted" onClick={run}>
-                        {label} <kbd className="mono text-micro">{key}</kbd>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-micro text-muted">
-                    Click any shaded open time to put it there — it shortens to fit. Or drag it, or pull its edge to change the length.
-                  </p>
-                </div>
-              );
-            })()
-          ) : order.length > 0 ? (
-            <div className="flex flex-col gap-2 rounded-[12px] border border-line p-3">
-              {reviewed >= order.length ? (
-                <p className="text-body">All {order.length} blocks accepted. Settle anything below, then Commit.</p>
-              ) : (
+            <Menu anchor={dayAnchor} open={dayMenu != null} onClose={() => setDayMenu(null)} label={dayMenu ? `${dayName(dayMenu)} — what kind of day` : "Day"}>
+              {dayMenu && (
                 <>
-                  <p className="text-body">
-                    {order.length - reviewed} block{order.length - reviewed === 1 ? "" : "s"} still to look at.
-                  </p>
-                  <button onClick={() => advance(null)} className="h-9 rounded-[9px] bg-accent px-3 text-caption font-semibold text-on-accent">
-                    Review the next one
-                  </button>
+                  <MenuLabel>{dayName(dayMenu)}</MenuLabel>
+                  {(
+                    [
+                      ["light", "Lighten"],
+                      ["afternoon", "Clear afternoon"],
+                      ["off", "Day off"],
+                      ["normal", "Normal"],
+                    ] as const
+                  ).map(([a, label]) => (
+                    <MenuItem
+                      key={a}
+                      checked={a === "afternoon" ? undefined : (d.dayContexts[dayMenu] ?? "normal") === a}
+                      onSelect={() => dayAct(dayMenu, a)}
+                    >
+                      {label}
+                    </MenuItem>
+                  ))}
                 </>
               )}
-            </div>
-          ) : (
-            <p className="text-caption text-muted">Nothing to place this week yet.</p>
-          )}
+            </Menu>
 
-          {/* the stack */}
-          <div className="flex flex-col">
-            <div className="section-label flex justify-between">
-              <span>To settle</span>
-              <span className="mono">{stack.length || "✓"}</span>
-            </div>
-            {paint && (
-              <div className="-mx-1.5 flex min-h-[44px] items-center gap-1.5 rounded-[8px] border-b border-line px-1.5" style={{ background: "var(--accent-soft)" }}>
-                <span className="w-[18px] shrink-0 text-center text-accent">▨</span>
-                <span className="min-w-0 flex-1 truncate text-body">
-                  Keep {dayName(paint.dayISO)} {span(instant(paint.dayISO, paint.startMin), instant(paint.dayISO, paint.endMin))} clear
-                </span>
-                <button onClick={() => keepClear(false)} className="rounded-full border border-line-strong px-2 text-micro">
-                  {dayName(paint.dayISO)}
-                </button>
-                <button onClick={() => keepClear(true)} className="rounded-full bg-accent px-2 text-micro text-on-accent">
-                  Every day
-                </button>
-                <button aria-label="Cancel" onClick={() => setPaint(null)} className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line-strong">
-                  ✕
-                </button>
+            {placing && (
+              <Card style={{ boxShadow: "0 0 0 1.5px var(--slot), var(--sh-1)" }}>
+                <div className="f-title">
+                  Pick a time for <span style={{ color: "var(--slot)" }}>{placing.name}</span>
+                </div>
+                <div className="f-fact" title={`Click one — it goes there, shortened if the gap is smaller than ${fmtMins(placing.mins)}.`}>
+                  <b>{gaps.length}</b> open stretch{gaps.length === 1 ? "" : "es"} shaded on the calendar
+                </div>
+                <div>
+                  <Button size="xs" onClick={() => setPlacing(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {/* the walk — one group at a time */}
+            {order.length > 0 && (
+              <div className="grid gap-2">
+                <SectionHeader title={selP ? `Block ${order.indexOf(sel!) + 1} of ${order.length}` : "Nuvo's draft"} count={`${reviewed}/${order.length} accepted`} className="!px-0" />
+                {/* one pip per block, in time order — filled once accepted; tap one to look at it */}
+                <div className="flex flex-wrap gap-[3px]" role="group" aria-label="Blocks in the draft">
+                  {order.map((k) => {
+                    const p = byKey.get(k)!;
+                    const held = d.isHeld(k);
+                    const hue = colorOf(p) ?? "var(--accent)";
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setSel(k)}
+                        title={`${titleOf(p)} · ${where(p)}`}
+                        aria-label={`${titleOf(p)}, ${where(p)}${held ? ", accepted" : ""}`}
+                        aria-current={k === sel}
+                        className="f-pip"
+                        data-size="sm"
+                        aria-pressed={held}
+                        style={{ ["--h" as string]: hue }}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             )}
-            {stack.length === 0 && !paint && <p className="py-1 text-caption text-muted">Nothing needs you.</p>}
-            {stack.map((it) => (
-              <div
-                key={it.id}
-                className="-mx-1.5 flex flex-col gap-1.5 rounded-[8px] border-b border-line px-1.5 py-2"
-                style={{ background: focus === it.id ? "var(--accent-soft)" : undefined }}
-                onMouseEnter={() => !sel && setFocus(it.id)}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="w-[18px] shrink-0 text-center text-accent" title={it.cause}>
-                    {it.glyph}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-body" title={it.label}>
-                    {it.label}
-                  </span>
-                  {it.pips && (
-                    <span className="flex shrink-0 gap-[2px]" aria-label={`${it.pips.filter(Boolean).length} of ${it.pips.length} weeks`}>
-                      {it.pips.map((on, i) => (
-                        <i key={i} className="block h-[5px] w-[5px] rounded-full" style={{ background: on ? "var(--text)" : "var(--line-strong)" }} />
+            {selP ? (
+              (() => {
+                const items = itemsOf(selP);
+                const held = d.isHeld(sel!);
+                return (
+                  <Card selected>
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="pt-[5px]">
+                        <Dot color={colorOf(selP) ?? "var(--accent)"} />
+                      </span>
+                      <div className="grid min-w-0 flex-1 gap-0.5">
+                        <div className="f-title">{titleOf(selP)}</div>
+                        <div className="f-fact text-caption">
+                          {where(selP)}
+                          {items.length > 1 ? ` · ${items.length} tasks` : ""}
+                          {held ? " · accepted" : ""}
+                        </div>
+                      </div>
+                    </div>
+                    {items.length > 1 && (
+                      <ul className="grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
+                        {items.map((t) => (
+                          <li key={t.id} className="flex min-h-[28px] items-center gap-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+                            <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
+                              {t.title}
+                            </span>
+                            <span className="f-num shrink-0 text-caption text-[var(--faint)]">{t.mins}m</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="text-caption text-muted">{selP.reason}</div>
+                    {/* how long — your estimate beats the sum of the tasks; Nuvo re-places it */}
+                    <div className="grid gap-1">
+                      <span className="text-label font-semibold text-[var(--faint)]">How long</span>
+                      <div className="flex flex-wrap gap-1" role="group" aria-label="Block length">
+                        {[...new Set([15, 30, 45, 60, 90, 120, selP.durationMin])]
+                          .sort((a, b) => a - b)
+                          .map((m) => (
+                            <Button
+                              key={m}
+                              size="xs"
+                              kind={m === selP.durationMin ? "secondary" : "ghost"}
+                              aria-pressed={m === selP.durationMin}
+                              onClick={() => m !== selP.durationMin && setLength(sel!, m)}
+                            >
+                              {fmtMins(m)}
+                            </Button>
+                          ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 pt-0.5">
+                      <Button kind="primary" size="md" shortcut="↵" onClick={() => accept(sel!)} style={{ flex: 1 }}>
+                        {held ? "Keep · next" : "Looks good"}
+                      </Button>
+                      <Button size="md" shortcut="J" onClick={() => advance(sel)}>
+                        Later
+                      </Button>
+                    </div>
+                    {altList.length > 1 && (
+                      <div className="grid gap-1">
+                        <span className="flex items-center gap-1.5 text-label font-semibold text-[var(--faint)]">
+                          Other times <Kbd keys={["←", "→"]} />
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {altList.map((a, i) => (
+                            <ChipButton key={i} onClick={() => pickAlt(i)} className={i === altIx ? "f-chip-on" : undefined} aria-pressed={i === altIx}>
+                              <span className="f-num text-[var(--faint)]">{i === 0 ? "·" : i}</span> {dayName(a.dayISO)} {at(instant(a.dayISO, a.startMin))}
+                            </ChipButton>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-0.5" style={{ boxShadow: "inset 0 1px 0 var(--line-1)", paddingTop: 6 }}>
+                      {(
+                        [
+                          ...(held ? ([["H", "Release", () => act.hold(sel!)]] as const) : []),
+                          ["S", "Split", () => act.split(sel!)],
+                          ["X", "Off this week", () => act.off(sel!)],
+                        ] as const
+                      ).map(([key, label, run]) => (
+                        <Button key={key} size="xs" kind="ghost" shortcut={key} onClick={run} className={key === "X" ? "f-danger" : undefined}>
+                          {label}
+                        </Button>
                       ))}
+                    </div>
+                  </Card>
+                );
+              })()
+            ) : order.length > 0 ? (
+              <Card>
+                {reviewed >= order.length ? (
+                  <div className="flex items-center gap-2 text-body">
+                    <span className="f-tick" data-done="">
+                      <Icon name="check" size={10} strokeWidth={2.6} />
                     </span>
-                  )}
+                    All {order.length} blocks accepted.
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-body">
+                      <b className="f-num">{order.length - reviewed}</b> block{order.length - reviewed === 1 ? "" : "s"} still to look at.
+                    </div>
+                    <Button kind="primary" size="md" full onClick={() => advance(null)}>
+                      Review the next one
+                    </Button>
+                  </>
+                )}
+              </Card>
+            ) : (
+              <EmptyState>Nothing to place yet</EmptyState>
+            )}
+
+            {/* the stack */}
+            <section className="f-section">
+              <SectionHeader title="To settle" count={stack.length || "✓"} className="!px-0" />
+              {paint && (
+                <div className="flex min-h-[44px] items-center gap-1.5 rounded-[var(--r-ctl)] px-2" style={{ background: "var(--accent-wash)" }}>
+                  <span className="w-[18px] shrink-0 text-center" style={{ color: "var(--accent-ink)" }} aria-hidden>
+                    ▨
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-body">
+                    Keep {dayName(paint.dayISO)} {span(instant(paint.dayISO, paint.startMin), instant(paint.dayISO, paint.endMin))} clear
+                  </span>
+                  <Button size="xs" onClick={() => keepClear(false)}>
+                    {dayName(paint.dayISO)}
+                  </Button>
+                  <Button size="xs" kind="primary" onClick={() => keepClear(true)}>
+                    Every day
+                  </Button>
+                  <IconButton size="xs" label="Cancel" icon={<Icon name="close" size={12} />} onClick={() => setPaint(null)} />
                 </div>
-                {it.sub && <p className="pl-[24px] text-caption text-muted">{it.sub}</p>}
-                <div className="flex gap-1.5 pl-[24px]">
-                  <button onClick={() => decide(it.id, true)} className="h-[30px] rounded-[8px] bg-accent px-3 text-caption font-semibold text-on-accent">
-                    {it.yesLabel}
-                  </button>
-                  <button onClick={() => decide(it.id, false)} className="h-[30px] rounded-[8px] border border-line-strong px-3 text-caption">
-                    {it.noLabel}
-                  </button>
-                </div>
-                {it.extra && it.extra.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pl-[24px]">
-                    {it.extra.map((x) => (
-                      <button key={x.label} onClick={x.run} className="h-[30px] rounded-[8px] border border-line-strong px-3 text-caption">
-                        {x.label}
-                      </button>
+              )}
+              {stack.length === 0 && !paint && <EmptyState>Nothing needs you</EmptyState>}
+              <div className="f-rows">
+                {stack.map((it) => (
+                  <div
+                    key={it.id}
+                    className="grid gap-1.5 rounded-[var(--r-ctl)] px-1.5 py-2.5"
+                    style={{ background: focus === it.id ? "var(--accent-wash)" : undefined }}
+                    onPointerEnter={() => !sel && setFocus(it.id)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-[18px] shrink-0 text-center text-body" style={{ color: "var(--accent-ink)" }} title={it.cause}>
+                        {it.glyph}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-body font-medium" title={it.label}>
+                        {it.label}
+                      </span>
+                      {it.pips && (
+                        <span className="flex shrink-0 gap-[2px]" aria-label={`${it.pips.filter(Boolean).length} of ${it.pips.length} weeks`}>
+                          {it.pips.map((on, i) => (
+                            <i key={i} className="block h-[5px] w-[5px] rounded-full" style={{ background: on ? "var(--ink)" : "var(--line-2)" }} />
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                    {it.sub && <p className="pl-6 text-caption leading-snug text-muted">{it.sub}</p>}
+                    <div className="flex flex-wrap gap-1 pl-6">
+                      <Button size="xs" kind="primary" onClick={() => decide(it.id, true)}>
+                        {it.yesLabel}
+                      </Button>
+                      <Button size="xs" onClick={() => decide(it.id, false)}>
+                        {it.noLabel}
+                      </Button>
+                      {it.extra?.map((x) => (
+                        <Button key={x.label} size="xs" kind="ghost" onClick={x.run}>
+                          {x.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {keptRules.length > 0 && (
+              <section className="f-section">
+                <SectionHeader title="Nuvo keeps" count={keptRules.length} collapsed={!showKept} onToggle={() => setShowKept((x) => !x)} className="!px-0" />
+                {showKept && (
+                  <div className="f-rows">
+                    {keptRules.map((r) => (
+                      <Row
+                        key={r.id}
+                        title={r.text}
+                        trailing={
+                          <Button size="xs" kind="ghost" onClick={() => setMemory((m) => ({ ...m, rules: r.remove(m.rules) }))}>
+                            Remove
+                          </Button>
+                        }
+                      />
                     ))}
                   </div>
                 )}
-              </div>
-            ))}
+              </section>
+            )}
+
+            <section className="grid gap-1.5">
+              <span className="text-caption font-semibold text-muted">During the week</span>
+              <Segmented
+                label="How much Nuvo moves"
+                value={dial}
+                onChange={setDial}
+                options={(["ask", "suggest", "handle"] as const).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), title: DIAL_NOTE[v] }))}
+              />
+            </section>
           </div>
 
-          <div className="mt-auto flex flex-col gap-2 border-t border-line pt-3">
-            {(() => {
-              const kept = describeRules(memory.rules);
-              if (!kept.length) return null;
-              return (
-                <div className="flex flex-col">
-                  <button className="section-label flex justify-between text-left" onClick={() => setShowKept((x) => !x)} aria-expanded={showKept}>
-                    <span>Nuvo keeps</span>
-                    <span className="mono">{kept.length}</span>
-                  </button>
-                  {showKept &&
-                    kept.map((r) => (
-                      <div key={r.id} className="flex items-center justify-between border-b border-line py-1 text-caption">
-                        <span>{r.text}</span>
-                        <button
-                          className="text-micro text-muted hover:text-text"
-                          onClick={() => setMemory((m) => ({ ...m, rules: r.remove(m.rules) }))}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              );
-            })()}
-            <div className="flex flex-col gap-1">
-              <span className="section-label">During the week</span>
-              <div className="flex gap-0.5 rounded-[9px] border border-line p-0.5" role="group" aria-label="How much Nuvo moves">
-                {(["ask", "suggest", "handle"] as const).map((v) => (
-                  <button
-                    key={v}
-                    aria-pressed={dial === v}
-                    onClick={() => setDial(v)}
-                    className="flex-1 rounded-[7px] py-1 text-caption capitalize"
-                    style={{ background: dial === v ? "var(--accent-soft)" : undefined, color: dial === v ? "var(--accent)" : "var(--muted)" }}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-              <span className="text-micro text-muted">{DIAL_NOTE[dial]}</span>
+          <div className="f-foot">
+            <div className="f-sum">
+              <b>{things}</b> things · <b>{placements.length}</b> blocks
             </div>
-            <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-micro text-muted">
-              <span>↻ noticed</span>
-              <span>⊘ no room</span>
-              <span>⇣ new</span>
-              <span>↵ accept · J/K block · ←→ fits · ↑↓ day · H hold · S split · X off · ⌘Z undo · drag empty time to keep it clear</span>
-            </div>
-            <button
-              className="h-11 rounded-[10px] bg-accent font-semibold text-on-accent disabled:opacity-60"
-              onClick={() => void commit()}
-              disabled={d.applying || placements.length === 0}
-            >
-              {d.applying ? "Committing…" : `Commit ${things} things`} <span className="opacity-75">⌘↵</span>
-            </button>
+            <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying || placements.length === 0}>
+              {d.applying ? "Committing…" : `Commit ${things} things`}
+            </Button>
           </div>
         </>
       )}
