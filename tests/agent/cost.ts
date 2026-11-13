@@ -82,6 +82,10 @@ export const PRICES: Record<string, Price> = {
   "gpt-5.6-sol": { input: 4, cached: 0.4, output: 20 },
   "gpt-5.6-terra": { input: 2, cached: 0.2, output: 12 },
   "gpt-5.6-luna": { input: 0.2, cached: 0.02, output: 1.2 },
+  // Read from developers.openai.com/api/docs/models/gpt-6-luna on 2026-11-13
+  // (standard rate). Already the domain router's model (DECISIONS_MODEL); added
+  // here so the chat can be measured on it.
+  "gpt-6-luna": { input: 0.1, cached: 0.01, output: 0.5 },
 };
 
 /** EVAL_PRICE="2,0.2,12" overrides the table. Junk is ignored, not guessed at. */
