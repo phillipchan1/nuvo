@@ -28,7 +28,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Modal } from "../ui";
+import { DialogFoot, DialogHead, Modal } from "../ui";
+import { Button } from "../kit";
 import { useVertical } from "../../hooks/useVertical";
 import { domainById, openTasksOf, projectById, tasksOf, type VTask } from "../../lib/vertical";
 
@@ -120,40 +121,32 @@ export default function ShipAssess({
     // record used the default Modal z-70 — under the sheet — so "Ship it"
     // opened a dialog nobody could reach. Settings stays at 70 on purpose.
     <Modal onClose={onCancel} width="max-w-md" zClass="z-[90]">
-      <div className="px-6 pb-5 pt-6">
-        <div className="section-label !px-0 !pb-2" style={{ color: accent }}>
-          Ship
-        </div>
-
-        {/* The hero is the OUTCOME — the thing you're judging. The name is the
-            label above it; a checklist never gets to be the hero here. */}
-        <h2 className="masthead text-head leading-snug text-ink">{name}</h2>
+      {/* The name heads the dialog; the hero is the OUTCOME — the thing you're
+          judging. A checklist never gets to be the hero here. */}
+      <DialogHead title={`Ship ${name || "this project"}?`} onClose={onCancel} />
+      <div className="dlg-body">
         {outcome ? (
-          <p className="mt-2 text-body leading-relaxed text-muted">
-            <span className="text-ink">{outcome}</span>
-          </p>
+          <p className="doc-lead !mt-0 text-ink">{outcome}</p>
         ) : (
-          <p className="mt-2 text-body italic leading-relaxed text-muted">
-            No outcome was ever written down — so this one's on memory alone.
-          </p>
+          <p className="doc-lead !mt-0 text-muted">No outcome was written down.</p>
         )}
-        <p className="mt-3 text-caption leading-relaxed text-muted">
+        <p className="mt-2 text-body text-muted">
           {total === 0
             ? // Nothing was ever broken down, so the tasks can't vouch for this one
               // — which is exactly why a task-less project never completes itself.
-              "This one never had any tasks, so nothing here can vouch for it. Your call alone."
+              "No tasks can vouch for this one. Your call."
             : clean
-              ? "Every task is done. Did that actually get you the outcome?"
-              : "Only you can call this one — the work isn't finished, but the outcome might be."}
+              ? "Every task is done. Did it get you the outcome?"
+              : "The work isn't finished. The outcome might be."}
         </p>
 
         {/* Evidence — demoted beneath the question it can't answer. */}
         {total > 0 && (
-          <div className="mt-4 flex items-center gap-2.5 border-t border-line pt-3">
-            <span className="block h-1 flex-1 overflow-hidden rounded-full bg-line">
-              <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: accent }} />
+          <div className="ship-evidence">
+            <span className="doc-kr-track" style={{ ["--h" as string]: accent }}>
+              <span style={{ width: `${pct}%` }} />
             </span>
-            <span className="mono shrink-0 text-micro text-muted">
+            <span>
               {done}/{total} done
             </span>
           </div>
@@ -163,88 +156,66 @@ export default function ShipAssess({
             project can't leave live tasks nagging from the rail's Overdue group);
             you say what the closing meant, because only you know. */}
         {!clean && (
-          <div className="mt-4">
-            <div className="section-label !px-0 !pb-1.5" style={{ color: "var(--signal)" }}>
-              {n} task{n === 1 ? "" : "s"} still open
+          <div className="ship-open">
+            <div className="k-section !h-auto !px-0 pb-1" style={{ color: "var(--warn)" }}>
+              {n} still open
             </div>
-            <div className="max-h-28 overflow-y-auto">
+            <div className="ship-open-list">
               {openTasks.map((t) => (
-                <div key={t.id} className="flex items-center gap-2 py-1">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ border: "1.5px solid var(--line-strong)" }} aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-caption text-muted">{t.title}</span>
+                <div key={t.id} className="ship-open-row">
+                  <i aria-hidden />
+                  <span>{t.title}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-caption leading-relaxed text-muted">
-              Shipping closes {n === 1 ? "it" : "them"} — nothing stays open under a shipped project.
-              What {n === 1 ? "was it" : "were they"}?
-            </p>
-            <div className="mt-2 flex flex-col gap-1.5">
+            <p className="mt-2 text-body text-muted">Shipping closes {n === 1 ? "it" : "them"}. What {n === 1 ? "was it" : "were they"}?</p>
+            <div className="mt-2 grid gap-1.5">
               <Choice
                 on={verdict === "done"}
-                accent={accent}
                 label={n === 1 ? "Mark it done" : "Mark them done"}
-                hint="You did the work. It counts — completed today, and it shows up in what you built."
+                hint="You did the work. It counts."
                 onPick={() => setVerdict("done")}
               />
               <Choice
                 on={verdict === "drop"}
-                accent={accent}
                 label={n === 1 ? "Drop it" : "Drop them"}
-                hint="Turned out not to be needed. Off the list, and never counted as work you did."
+                hint="Not needed after all. Never counted."
                 onPick={() => setVerdict("drop")}
               />
             </div>
           </div>
         )}
-
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button onClick={onCancel} className="fast tap rounded-full px-3 py-1.5 text-label font-medium text-muted hover:text-ink">
-            Not yet
-          </button>
-          <button
-            onClick={() => onShip(clean ? null : verdict)}
-            className="fast tap rounded-full px-4 py-1.5 text-label font-medium text-white hover:brightness-110"
-            style={{ background: accent }}
-          >
-            Ship it
-          </button>
-        </div>
       </div>
+      <DialogFoot>
+        <Button kind="ghost" size="md" className="tap" onClick={onCancel}>
+          Not yet
+        </Button>
+        <Button kind="primary" size="md" className="tap" onClick={() => onShip(clean ? null : verdict)}>
+          Ship it
+        </Button>
+      </DialogFoot>
     </Modal>
   );
 }
 
-// A verdict option — dissolved onto the paper, lifting when chosen. No ring.
+// A verdict option — a radio row; the chosen one takes the accent wash.
 function Choice({
   on,
-  accent,
   label,
   hint,
   onPick,
 }: {
   on: boolean;
-  accent: string;
   label: string;
   hint: string;
   onPick: () => void;
 }) {
   return (
-    <button
-      onClick={onPick}
-      className={`fast tap flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left ${on ? "glass-lift" : "hover:bg-surface-2"}`}
-      aria-pressed={on}
-      aria-label={label}
-    >
-      <span
-        className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-micro"
-        style={{ borderColor: on ? accent : "var(--line-strong)", background: on ? accent : "transparent", color: "#fff" }}
-      >
-        {on && <span style={{ lineHeight: 1 }}>✓</span>}
-      </span>
+    <button type="button" onClick={onPick} className="ship-choice" aria-pressed={on} aria-label={label}>
+      <span className="ship-choice-radio" aria-hidden />
       <span className="min-w-0 flex-1">
-        <span className={`block text-label font-medium ${on ? "text-ink" : "text-muted"}`}>{label}</span>
-        <span className="mt-0.5 block text-micro leading-relaxed text-muted">{hint}</span>
+        <b>{label}</b>
+        <small>{hint}</small>
       </span>
     </button>
   );

@@ -3,13 +3,19 @@ import { Icon } from "./Icon";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "../hooks/useDialogFocus";
+import { IconButton, SectionHeader } from "./kit";
+import { cx } from "./kit/cx";
+
+// The shared small parts — on the kit (D-190). Every export keeps the API it
+// had, because half the app calls these: Keycap is the kit's keycap, Btn is a
+// kit Button, Modal wears the kit Dialog's shell (12px, solid, on a scrim).
 
 export function Keycap({ children }: { children: ReactNode }) {
-  return <kbd className="keycap">{children}</kbd>;
+  return <kbd className="k-kbd">{children}</kbd>;
 }
 
-/** Section eyebrow. Pass `open` + `onToggle` to make it a collapse control
- *  (same ▾/▸ affordance as Loose ends) — plain labels stay a static div. */
+/** A section's heading. Pass `open` + `onToggle` to make it a disclosure —
+ *  plain labels stay a static heading. The kit SectionHeader underneath. */
 export function SectionLabel({
   children,
   open,
@@ -23,44 +29,14 @@ export function SectionLabel({
   /** Optional count — useful when collapsed so you still see what's hidden. */
   count?: number;
 }) {
-  if (onToggle != null && open != null) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="section-label fast tap-h flex w-full items-center gap-2 px-3 pt-3 pb-1.5 text-left hover:text-ink"
-      >
-        <span>{children}</span>
-        {count != null && count > 0 && (
-          <span className="mono font-normal normal-case tracking-normal text-muted">{count}</span>
-        )}
-        <svg
-          aria-hidden
-          viewBox="0 0 16 16"
-          className="ml-auto h-3.5 w-3.5 shrink-0 text-muted"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          {open ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
-        </svg>
-      </button>
-    );
-  }
   // A static label still takes a count — it's how the label says how far it
   // reaches. Without one, a label above an unlabeled sibling list reads as
   // covering everything below it.
-  return (
-    <div className="section-label flex items-center gap-2 px-3 pt-3 pb-1.5">
-      <span>{children}</span>
-      {count != null && count > 0 && (
-        <span className="mono font-normal normal-case tracking-normal text-muted">{count}</span>
-      )}
-    </div>
-  );
+  const shown = count != null && count > 0 ? count : undefined;
+  if (onToggle != null && open != null) {
+    return <SectionHeader title={children} count={shown} collapsed={!open} onToggle={onToggle} className="ui-section" />;
+  }
+  return <SectionHeader title={children} count={shown} className="ui-section" />;
 }
 
 export function Modal({
@@ -76,7 +52,7 @@ export function Modal({
   width?: string;
   // "top" (default): the small-dialog look — pinned 12vh down. "center": for a
   // tall modal — vertically centered and bounded to the viewport, so a near-
-  // full-height sheet keeps even margins and never spills off the bottom.
+  // full-height dialog keeps even margins and never spills off the bottom.
   align?: "top" | "center";
   // Default z-[70] clears Orientation / PlanWeek (60). Do NOT raise the default:
   // Settings stays at 70 so the calendars walkthrough can cut a hole into it.
@@ -103,41 +79,42 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose, closeOnEscape]);
 
-  const scrimPos =
-    align === "center" ? "sm:items-center sm:p-4" : "sm:items-start sm:p-0 sm:pt-[12vh]";
-  // A centered modal must stay inside the viewport; a top-anchored one lets its
-  // children own the height (unchanged).
-  const heightCap = align === "center" ? "sm:max-h-[92vh]" : "sm:max-h-none";
-
   // Portal to <body> + sit above full-screen flows. Settings / Shortcuts mount
   // inside Planner or under MobileShell; Plan the week (z-50/60) and Sunday
   // ritual (z-50) are later siblings, so an in-tree z-50 Modal painted *under*
   // them — ⌘, looked like a no-op. z-[70] clears Orientation / PlanWeek (60).
+  // The scrim is the kit's (styles/documents.css `.dlg-scrim`): a flat dim,
+  // no blur. The layer stays a class so callers can name it.
   return createPortal(
-    <div
-      // Mobile-first: centered with a margin and scrollable so it can't overflow
-      // a phone. sm+ restores the desktop look (top-anchored, or centered for a
-      // tall sheet — children own their scroll).
-      className={`fixed inset-0 ${zClass} flex items-center justify-center p-3 ${scrimPos}`}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      {/* Blur and dim are split so only the (cheap) dim fades — animating opacity
-          on the same element as backdrop-filter forces a re-blur every frame,
-          which is what made the open read as a slow-motion fade. `fixed inset-0`
-          (not `absolute`) so the parent's own p-3 doesn't inset them. */}
-      <div className="scrim-blur fixed inset-0 backdrop-blur-[2px]" aria-hidden="true" />
-      <div className="scrim pointer-events-none fixed inset-0 bg-black/30" aria-hidden="true" />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        tabIndex={-1}
-        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line ${heightCap} outline-none sm:overflow-hidden`}
-      >
+    <div className={`dlg-scrim ${zClass}`} data-align={align} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={panelRef} role="dialog" aria-modal="true" tabIndex={-1} className={`dlg ${width}`} data-align={align}>
         {children}
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** A dialog's head: its title and the ✕. The kit Dialog's own head, for the
+ *  callers of Modal that own their content. */
+export function DialogHead({ title, onClose, children }: { title: ReactNode; onClose?: () => void; children?: ReactNode }) {
+  return (
+    <div className="k-dialog-head">
+      <h2>{title}</h2>
+      {children}
+      {onClose && <IconButton label="Close" shortcut="Esc" icon={<Icon name="close" size={14} />} onClick={onClose} />}
+    </div>
+  );
+}
+
+/** A dialog's actions, primary last. `start` sits at the left edge. */
+export function DialogFoot({ start, children }: { start?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="k-dialog-foot">
+      {start}
+      {start && <span className="k-grow" />}
+      {children}
+    </div>
   );
 }
 
@@ -156,18 +133,18 @@ export function Btn({
   title?: string;
   disabled?: boolean;
 }) {
-  const styles =
-    kind === "primary"
-      ? "bg-accent text-on-accent border-accent shadow-sm hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-      : kind === "signal"
-        ? "text-signal border-line hover:border-signal hover:bg-signal-soft disabled:opacity-40"
-        : "text-ink border-line hover:border-line-strong hover:bg-surface-2 disabled:opacity-40";
+  // The old three kinds, mapped onto the kit's: "ghost" was always a bordered
+  // neutral button (the kit's secondary), "signal" was the destructive one.
+  const k = kind === "primary" ? "primary" : kind === "signal" ? "danger" : undefined;
   return (
+    // No `type`: a Btn inside a <form> (Settings → Labels' Add) submits it.
     <button
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`fast press whitespace-nowrap rounded-md border px-4 py-2.5 text-body font-medium ${styles} ${className}`}
+      className={cx("k-btn ui-btn", className)}
+      data-kind={k}
+      data-size="md"
     >
       {children}
     </button>
@@ -197,7 +174,7 @@ export function carriedTitle(days: number): string {
 export function RollBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="mono shrink-0 text-meta leading-none text-muted" title={carriedTitle(count)}>
+    <span className="shrink-0 text-meta leading-none tabular-nums text-muted" title={carriedTitle(count)}>
       ↻{count}d
     </span>
   );

@@ -22,7 +22,7 @@ import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
 import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
-import { Btn } from "./ui";
+import { Button, SectionHeader, Segmented } from "./kit";
 
 interface Connection {
   id: string;
@@ -85,21 +85,10 @@ async function copyText(text: string, ok: string) {
   }
 }
 
-function Mark({
-  icon,
-  tone = "quiet",
-}: {
-  icon: IconName;
-  tone?: "accent" | "quiet";
-}) {
+function Mark({ icon }: { icon: IconName; tone?: "accent" | "quiet" }) {
   return (
-    <span
-      aria-hidden
-      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-        tone === "accent" ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink"
-      }`}
-    >
-      <Icon name={icon} size={16} />
+    <span aria-hidden className="set-acct-mark">
+      <Icon name={icon} size={14} />
     </span>
   );
 }
@@ -114,28 +103,17 @@ function CopyBtn({
   kind?: "primary" | "ghost";
 }) {
   return (
-    <Btn kind={kind === "primary" ? "primary" : "ghost"} className="tap shrink-0" onClick={onClick}>
-      <span className="inline-flex items-center gap-1.5">
-        <Icon name="copy" size={13} />
-        {children}
-      </span>
-    </Btn>
+    <Button kind={kind === "primary" ? "primary" : "secondary"} className="tap shrink-0" icon={<Icon name="copy" size={13} />} onClick={onClick}>
+      {children}
+    </Button>
   );
 }
 
 function StepList({ steps }: { steps: string[] }) {
   return (
-    <ol className="space-y-2">
-      {steps.map((step, i) => (
-        <li key={step} className="flex gap-2.5">
-          <span
-            aria-hidden
-            className="mono mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-micro text-accent"
-          >
-            {i + 1}
-          </span>
-          <span className="text-caption leading-snug text-muted">{step}</span>
-        </li>
+    <ol className="set-steps">
+      {steps.map((step) => (
+        <li key={step}>{step}</li>
       ))}
     </ol>
   );
@@ -211,85 +189,51 @@ export function AppsDevicesPane() {
 
   return (
     <div>
-      <PaneHeader
-        title="Apps & devices"
-        sub="A key for something you own — a teammate, a watch, a shortcut."
-      />
+      <PaneHeader title="Apps & devices" />
 
-      <div className="max-w-2xl space-y-5">
-        {isLoading ? (
-          <div className="text-caption text-muted">Loading…</div>
-        ) : live.length === 0 ? (
-          <div className="flex items-center gap-3 text-caption text-muted">
-            <Mark icon="package" />
-            <p>No keys yet. Mint one below.</p>
-          </div>
-        ) : (
-          <div>
-            <div className="section-label">Live keys</div>
-            {live.map((c) => {
-              const meta = kindMeta(c.scopes);
-              const account = meta.id === "account";
-              return (
-                <div
-                  key={c.id}
-                  className="flex flex-wrap items-center gap-3 border-b border-line py-3"
-                >
-                  <Mark icon={meta.icon} tone={account ? "accent" : "quiet"} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-caption font-medium text-ink">{c.name}</div>
-                    <div className="text-label text-muted">
-                      {meta.label}
-                      {c.last_four && (
-                        <>
-                          {" · "}
-                          <span className="mono">…{c.last_four}</span>
-                        </>
-                      )}
-                    </div>
-                    <div className="text-label text-muted">
-                      Added {fmtDate(c.created_at)}
-                      {" · "}
-                      {c.last_used_at ? `last used ${fmtDate(c.last_used_at)}` : "never used"}
-                    </div>
-                  </div>
-                  <Btn
-                    className="tap shrink-0"
-                    disabled={revoke.isPending}
-                    onClick={() => revoke.mutate(c.id)}
-                  >
-                    Revoke
-                  </Btn>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-2 sm:flex-row" role="radiogroup" aria-label="What this token can do">
-          {KINDS.map((opt) => {
-            const on = kind === opt.id;
+      {isLoading ? (
+        <p className="set-note">Loading…</p>
+      ) : live.length === 0 ? (
+        <div className="set-row">
+          <Mark icon="package" />
+          <span className="set-note flex-1">No keys yet</span>
+        </div>
+      ) : (
+        <div className="set-list">
+          {live.map((c) => {
+            const meta = kindMeta(c.scopes);
             return (
-              <button
-                key={opt.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setKind(opt.id)}
-                className={`tap flex min-h-[44px] flex-1 items-center gap-3 rounded-lg border px-3 py-2.5 text-left ${
-                  on ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong"
-                }`}
-              >
-                <Mark icon={opt.icon} tone={opt.id === "account" ? "accent" : "quiet"} />
-                <div>
-                  <div className="text-caption font-medium text-ink">{opt.label}</div>
-                  <div className="text-label text-muted">{opt.hint}</div>
+              <div key={c.id} className="set-row">
+                <Mark icon={meta.icon} />
+                <div className="set-row-label">
+                  <span className="set-row-title">{c.name}</span>
+                  <div className="set-row-desc">
+                    {meta.label}
+                    {c.last_four && <> · …{c.last_four}</>}
+                    {" · "}added {fmtDate(c.created_at)} · {c.last_used_at ? `used ${fmtDate(c.last_used_at)}` : "never used"}
+                  </div>
                 </div>
-              </button>
+                <div className="set-row-ctl">
+                  <Button kind="danger" className="tap" disabled={revoke.isPending} onClick={() => revoke.mutate(c.id)}>
+                    Revoke
+                  </Button>
+                </div>
+              </div>
             );
           })}
         </div>
+      )}
 
+      <SectionHeader title="New key" className="set-group" />
+      <div className="grid gap-3">
+        <Segmented
+          label="What this token can do"
+          value={kind}
+          onChange={setKind}
+          className="fm-seg self-start"
+          options={KINDS.map((k) => ({ value: k.id, label: k.label, icon: <Icon name={k.icon} size={12} />, title: k.hint }))}
+        />
+        <p className="set-note">{KINDS.find((k) => k.id === kind)?.hint}</p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <TextInput
             value={name}
@@ -298,139 +242,107 @@ export function AppsDevicesPane() {
             onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate({ label: name, tokenKind: kind })}
             aria-label="Name this app or device"
           />
-          <Btn
+          <Button
             kind="primary"
+            size="md"
             className="tap shrink-0"
             disabled={!name.trim() || create.isPending}
             onClick={() => create.mutate({ label: name, tokenKind: kind })}
           >
             {create.isPending ? "Creating…" : "Create token"}
-          </Btn>
+          </Button>
         </div>
+      </div>
 
-        {fresh && (
-          <div className="space-y-3 rounded-lg border border-line bg-surface-2 p-4">
-            <div className="flex items-center gap-3">
-              <Mark
-                icon={fresh.kind === "account" ? "user" : "package"}
-                tone={fresh.kind === "account" ? "accent" : "quiet"}
-              />
-              <div className="text-caption font-medium">
-                Token for {fresh.name} — copy it now
-              </div>
-            </div>
-            <p className="text-label text-muted">
-              Shown once. Treat it like a password; if you lose it, revoke and make another.
-            </p>
-            <div className="mono break-all rounded border border-line bg-bg p-3 text-label">
-              {fresh.token}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <CopyBtn kind="primary" onClick={() => void copyText(fresh.token, "Token copied")}>
-                Copy token
+      {fresh && (
+        <div className="set-well">
+          <div className="set-well-title">Token for {fresh.name} — copy it now</div>
+          <p className="set-note">Shown once. Treat it like a password; lose it and you revoke and mint another.</p>
+          <code className="block break-all rounded-[var(--r-ctl)] bg-[var(--raised)] p-3 text-caption shadow-[0_0_0_1px_var(--line-1)]" data-selectable>
+            {fresh.token}
+          </code>
+          <div className="flex flex-wrap gap-2">
+            <CopyBtn kind="primary" onClick={() => void copyText(fresh.token, "Token copied")}>
+              Copy token
+            </CopyBtn>
+            {fresh.kind === "account" && (
+              <CopyBtn
+                onClick={() =>
+                  void copyText(`URL: ${mcpUrl}\nAuthorization: Bearer ${fresh.token}`, "URL + token copied")
+                }
+              >
+                Copy URL + token
               </CopyBtn>
-              {fresh.kind === "account" && (
-                <CopyBtn
-                  onClick={() =>
-                    void copyText(
-                      `URL: ${mcpUrl}\nAuthorization: Bearer ${fresh.token}`,
-                      "URL + token copied",
-                    )
-                  }
-                >
-                  Copy URL + token
-                </CopyBtn>
-              )}
-              <Btn className="tap" onClick={() => setFresh(null)}>
-                Done
-              </Btn>
+            )}
+            <Button kind="ghost" className="tap" onClick={() => setFresh(null)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <details ref={stepsRef} className="mt-4 border-t border-[var(--line-1)]">
+        <summary className="tap-h flex min-h-[44px] items-center text-body font-medium text-ink">Next steps</summary>
+        <div className="grid gap-5 pb-2">
+          <div className="grid gap-2">
+            <div className="set-row-title">Full account</div>
+            <p className="set-note">
+              A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools as ⌘J. Destructive acts still
+              ask first. The token is this account; never drop it into a team-wide connector.
+            </p>
+            <StepList
+              steps={[
+                "Create a Full account token — shown once.",
+                "In that app, add a custom connector. Not a team one.",
+                "Paste the endpoint URL and Authorization: Bearer <token>.",
+                "Skip any login card. This is a Bearer token, not OAuth.",
+              ]}
+            />
+            <div>
+              <CopyBtn onClick={() => void copyText(mcpUrl, "Endpoint copied")}>Copy URL</CopyBtn>
             </div>
           </div>
-        )}
 
-          <details ref={stepsRef} className="border-t border-line pt-1">
-            <summary className="tap min-h-[44px] py-2 text-caption font-medium text-ink">
-              Next steps
-            </summary>
-          <div className="space-y-5 pb-2">
-            <div className="flex gap-3">
-              <Mark icon="user" tone="accent" />
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <div className="text-caption font-medium text-ink">Full account</div>
-                  <p className="text-label leading-snug text-muted">
-                    A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools as ⌘J.
-                    Destructive acts still ask first. The token is this account; never drop it into a team-wide connector.
-                  </p>
-                </div>
-                <StepList
-                  steps={[
-                    "Create a Full account token — shown once.",
-                    "In that app, add a custom connector. Not a team one.",
-                    "Paste the endpoint URL and Authorization: Bearer <token>.",
-                    "Skip any login card. This is a Bearer token, not OAuth.",
-                  ]}
-                />
-                <CopyBtn onClick={() => void copyText(mcpUrl, "Endpoint copied")}>
-                  Copy URL
-                </CopyBtn>
-              </div>
+          <div className="grid gap-2">
+            <div className="set-row-title">Inbox</div>
+            <p className="set-note">A watch, shortcut, or app you own. It can add tasks. It cannot read your week.</p>
+            <StepList
+              steps={[
+                "Create an Inbox token — shown once.",
+                "POST to the capture endpoint with Authorization: Bearer <token>.",
+              ]}
+            />
+            <div>
+              <CopyBtn onClick={() => void copyText(captureUrl, "Endpoint copied")}>Copy URL</CopyBtn>
             </div>
+          </div>
+        </div>
+      </details>
 
-            <div className="flex gap-3">
-              <Mark icon="package" />
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <div className="text-caption font-medium text-ink">Inbox</div>
-                  <p className="text-label leading-snug text-muted">
-                    A watch, shortcut, or app you own. It can add tasks. It cannot read your week.
-                  </p>
+      {revoked.length > 0 && (
+        <details className="border-t border-[var(--line-1)]">
+          <summary className="tap-h flex min-h-[44px] items-center text-caption text-muted">{revoked.length} revoked</summary>
+          <div className="set-list">
+            {revoked.map((c) => {
+              const meta = kindMeta(c.scopes);
+              return (
+                <div key={c.id} className="set-list-row" data-off="">
+                  <span className="opacity-50">
+                    <Mark icon={meta.icon} />
+                  </span>
+                  <span className="set-list-main">
+                    <span className="set-list-title">
+                      {c.name}
+                      {c.last_four && <> …{c.last_four}</>}
+                    </span>
+                    <span className="set-list-meta">Revoked {fmtDate(c.revoked_at!)}</span>
+                  </span>
                 </div>
-                <StepList
-                  steps={[
-                    "Create an Inbox token — shown once.",
-                    "POST to the capture endpoint with Authorization: Bearer <token>.",
-                  ]}
-                />
-                <CopyBtn onClick={() => void copyText(captureUrl, "Endpoint copied")}>
-                  Copy URL
-                </CopyBtn>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </details>
-
-        {revoked.length > 0 && (
-          <details className="text-label text-muted">
-            <summary className="tap min-h-[44px] py-2">
-              {revoked.length} revoked
-            </summary>
-            <div className="mt-1">
-              {revoked.map((c) => {
-                const meta = kindMeta(c.scopes);
-                return (
-                  <div key={c.id} className="flex items-center gap-3 border-b border-line py-2">
-                    <span className="opacity-40">
-                      <Mark icon={meta.icon} />
-                    </span>
-                    <div>
-                      <span className="text-ink/60">{c.name}</span>
-                      {c.last_four && (
-                        <>
-                          {" "}
-                          <span className="mono">…{c.last_four}</span>
-                        </>
-                      )}
-                      {" · revoked "}
-                      {fmtDate(c.revoked_at!)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </details>
-        )}
-      </div>
+      )}
     </div>
   );
 }

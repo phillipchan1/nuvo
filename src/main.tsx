@@ -14,6 +14,8 @@ import "./styles/decks.css";
 import "./styles/floors.css";
 // The pool — the Schedule rail and the one task row / list / add box (D-190).
 import "./styles/rail.css";
+// Documents, dialogs and the chat (D-190) — the record, Settings, Nuvo.
+import "./styles/documents.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";
@@ -93,8 +95,18 @@ const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
+// `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
+const showDocsHarness = import.meta.env.DEV && params.has("docs");
 
-if (showPickHarness) {
+if (showDocsHarness) {
+  void import("./components/record/DocumentHarness").then(({ default: DocumentHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <DocumentHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showPickHarness) {
   void import("./components/AgentPickHarness").then(({ default: AgentPickHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>

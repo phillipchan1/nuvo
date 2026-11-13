@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
-import { Btn } from "../ui";
 import { TextInput } from "../form";
+import { Button, SectionHeader } from "../kit";
 import {
   ACCOUNT_DELETE_CONFIRM,
   APPLE_DELETE_NOTICE,
@@ -52,39 +52,30 @@ export function DeleteAccount({
 
   if (!open) {
     return (
-      <div className={compact ? "mt-3" : "mt-8"}>
-        {!compact && <div className="section-label mb-2">Leave Nuvo</div>}
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="tap fast text-caption text-muted hover:text-signal"
-        >
+      <div className={compact ? "mt-3" : ""}>
+        {!compact && <SectionHeader title="Leave Nuvo" className="set-group" />}
+        <Button kind="ghost" className="tap -ml-2" onClick={() => setOpen(true)} style={{ color: "var(--danger)" }}>
           Delete account
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className={compact ? "mt-3" : "mt-8"}>
-      {!compact && <div className="section-label mb-2">Leave Nuvo</div>}
-      <div className="rounded-lg border border-line px-3.5 py-3">
-        <div className="text-body text-ink">Delete this account</div>
-        <p className="mt-1 text-caption leading-snug text-muted">
-          This permanently deletes your Nuvo account and everything we store —
-          plans, projects, calendar connections, and settings. You will not be
-          able to sign back in.
+    <div className={compact ? "mt-3" : ""}>
+      {!compact && <SectionHeader title="Leave Nuvo" className="set-group" />}
+      <div className="set-well !mt-0">
+        <div className="set-well-title">Delete this account</div>
+        <p className="set-note">
+          This permanently deletes your Nuvo account and everything we store — plans, projects, calendar connections,
+          and settings. You will not be able to sign back in.
         </p>
         {planSource === "stripe" && (
-          <p className="mt-2 text-caption leading-snug text-muted">
-            {stripeDeleteCopy({ workers: workersEnabled, iapOnly: IAP_ONLY })}
-          </p>
+          <p className="set-note">{stripeDeleteCopy({ workers: workersEnabled, iapOnly: IAP_ONLY })}</p>
         )}
-        {planSource === "apple" && (
-          <p className="mt-2 text-caption leading-snug text-muted">{APPLE_DELETE_NOTICE}</p>
-        )}
-        <label htmlFor={inputId} className="mt-3 block text-caption text-ink">
-          Type <span className="mono">{ACCOUNT_DELETE_CONFIRM}</span> to confirm
+        {planSource === "apple" && <p className="set-note">{APPLE_DELETE_NOTICE}</p>}
+        <label htmlFor={inputId} className="set-row-title">
+          Type {ACCOUNT_DELETE_CONFIRM} to confirm
         </label>
         <TextInput
           id={inputId}
@@ -96,19 +87,18 @@ export function DeleteAccount({
           spellCheck={false}
           enterKeyHint="done"
           aria-label={`Type ${ACCOUNT_DELETE_CONFIRM} to confirm`}
-          className="mt-1.5"
           onKeyDown={(e) => {
             if (e.key === "Enter") void submit();
           }}
         />
-        {error && <div className="mt-2 text-caption text-signal">{error}</div>}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Btn kind="signal" disabled={!ready || busy} onClick={() => void submit()} className="tap">
+        {error && <div className="text-caption text-danger">{error}</div>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button kind="danger-solid" size="md" disabled={!ready || busy} onClick={() => void submit()} className="tap">
             {busy ? "Deleting…" : "Delete forever"}
-          </Btn>
-          <Btn disabled={busy} onClick={cancel} className="tap">
+          </Button>
+          <Button kind="ghost" size="md" disabled={busy} onClick={cancel} className="tap">
             Cancel
-          </Btn>
+          </Button>
         </div>
       </div>
     </div>

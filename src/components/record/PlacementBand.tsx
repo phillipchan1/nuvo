@@ -13,13 +13,11 @@
 // surface is asking of it:
 //
 //   · `primary` — the phone's detail sheet, where placement IS the screen's act.
-//     Chunky bordered cells, 44px targets.
-//   · `quiet`   — the desktop record's rail, where placement is ANNOTATION beside
-//     the work. A hairline track with the span filled: no borders, no fills, no
-//     chroma, because every enclosure on the sheet belongs to the tasks.
+//     Bordered cells, 56px targets.
+//   · `quiet`   — the desktop record, where it opens from the Week / Quarter
+//     property. A track of cells with the span filled in the domain's hue.
 //
-// The quiet tone is also the more honest drawing: on On Deck this literally is a
-// bar laid across columns of time, not four buttons.
+// Drawn by styles/documents.css (`.band*`), on kit tokens.
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { addQuarters, endOfQuarter, format, parseISO, startOfQuarter } from "date-fns";
@@ -30,6 +28,8 @@ import { quarterEndISO, quarterName, quarterRangeLabel } from "../../lib/initiat
 import type { useVertical } from "../../hooks/useVertical";
 import { useDeferProject } from "../../hooks/useProjectTime";
 import type { Initiative, Project } from "../../lib/vertical";
+import { Icon } from "../Icon";
+import { Button, IconButton } from "../kit";
 
 type Store = ReturnType<typeof useVertical>;
 export type PlacementTone = "primary" | "quiet";
@@ -57,7 +57,6 @@ function Cell({
   now,
   label,
   sub,
-  color,
   onClick,
   title,
 }: {
@@ -66,56 +65,26 @@ function Cell({
   now: boolean;
   label: string;
   sub: string;
-  color: string;
   onClick: () => void;
   title: string;
 }) {
-  if (tone === "primary") {
-    return (
-      <button
-        onClick={onClick}
-        title={title}
-        className="tap fast flex-1 rounded-xl border px-1 py-2 text-center"
-        style={
-          lit
-            ? { borderColor: color, background: `color-mix(in srgb, ${color} 12%, transparent)`, color }
-            : { borderColor: "var(--line)" }
-        }
-      >
-        <div className="mono text-caption font-semibold leading-none">{label}</div>
-        <div className="mono mt-1 text-micro leading-none text-muted">{sub}</div>
-        <div className="mx-auto mt-1.5 h-1 w-1 rounded-full" style={{ background: now ? "var(--signal)" : "transparent" }} />
-      </button>
-    );
-  }
-  // quiet: a segment of a track. The tick labels it, the bar carries the span.
   return (
-    <button onClick={onClick} title={title} className="fast group flex-1 py-1 text-center" aria-pressed={lit}>
-      <div
-        className="mono text-meta leading-none"
-        style={{
-          color: lit ? "color-mix(in srgb, var(--ink) 70%, var(--muted))" : "var(--muted)",
-          fontWeight: lit ? 600 : 400,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        className="fast mt-1.5 h-1 rounded-full group-hover:opacity-100"
-        style={{
-          background: lit ? `color-mix(in srgb, ${color} 55%, transparent)` : "var(--line)",
-          opacity: lit ? 1 : 0.9,
-        }}
-      />
-      <div className="mt-1 flex h-1 justify-center">
-        <span className="h-[3px] w-[3px] rounded-full" style={{ background: now ? "var(--signal)" : "transparent" }} />
-      </div>
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={lit}
+      data-now={now || undefined}
+      className={tone === "primary" ? "band-cell tap" : "band-cell"}
+    >
+      <span>{label}</span>
+      {tone === "primary" ? <small>{sub}</small> : <i aria-hidden />}
+      <b aria-hidden />
     </button>
   );
 }
 
-/** −/＋ span stepper. Borderless in the quiet tone: a bordered pill was one more
- *  enclosure in a column that is supposed to have none. */
+/** −/＋ span stepper. */
 function Stepper({
   tone,
   value,
@@ -131,35 +100,39 @@ function Stepper({
 }) {
   if (tone === "primary") {
     return (
-      <div className="flex items-center rounded-full border border-line">
-        <button onClick={onLess} aria-label={`One ${unit} shorter`} className="tap fast px-3 text-head text-muted">−</button>
-        <span className="mono w-[74px] text-center text-caption text-ink">{value} {unit}{value === 1 ? "" : "s"}</span>
-        <button onClick={onMore} aria-label={`One ${unit} longer`} className="tap fast px-3 text-head text-muted">＋</button>
-      </div>
+      <span className="fm-stepper">
+        <IconButton size="xs" label={`One ${unit} shorter`} icon={<span aria-hidden>−</span>} onClick={onLess} className="tap" />
+        <output>
+          {value} {unit}
+          {value === 1 ? "" : "s"}
+        </output>
+        <IconButton size="xs" label={`One ${unit} longer`} icon={<Icon name="plus" size={12} />} onClick={onMore} className="tap" />
+      </span>
     );
   }
   return (
-    <span className="flex items-center">
-      <button onClick={onLess} aria-label={`One ${unit} shorter`} title={`One ${unit} shorter`}
-        className="fast px-1 text-label text-muted opacity-70 hover:text-ink hover:opacity-100">−</button>
-      <span className="mono px-0.5 text-micro text-muted">{value}</span>
-      <button onClick={onMore} aria-label={`One ${unit} longer`} title={`One ${unit} longer`}
-        className="fast px-1 text-label text-muted opacity-70 hover:text-ink hover:opacity-100">＋</button>
+    <span className="band-step">
+      <IconButton size="xs" label={`One ${unit} shorter`} icon={<span aria-hidden>−</span>} onClick={onLess} />
+      <output>{value}</output>
+      <IconButton size="xs" label={`One ${unit} longer`} icon={<Icon name="plus" size={12} />} onClick={onMore} />
     </span>
   );
 }
 
 /** The quiet tone's two trailing acts — shelve, and the escape hatch to raw
- *  dates for the odd finish line that isn't week-shaped. Glyphs, not sentences. */
+ *  dates for the odd finish line that isn't week-shaped. */
 function TrailActs({ onShelve, onDates, datesOpen }: { onShelve?: () => void; onDates: () => void; datesOpen: boolean }) {
   return (
-    <span className="flex items-center gap-0.5">
-      {onShelve && (
-        <button onClick={onShelve} title="Take it off the deck" aria-label="Take it off the deck"
-          className="fast flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-label text-muted opacity-70 hover:bg-surface hover:text-ink hover:opacity-100">⌫</button>
-      )}
-      <button onClick={onDates} title="Exact dates" aria-label="Exact dates" aria-expanded={datesOpen}
-        className="fast flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-label text-muted opacity-70 hover:bg-surface hover:text-ink hover:opacity-100">▤</button>
+    <span className="inline-flex items-center">
+      {onShelve && <IconButton size="xs" label="Take it off the deck" icon={<Icon name="close" size={12} />} onClick={onShelve} />}
+      <IconButton
+        size="xs"
+        label="Exact dates"
+        icon={<Icon name="calendar" size={12} />}
+        onClick={onDates}
+        active={datesOpen}
+        aria-expanded={datesOpen}
+      />
     </span>
   );
 }
@@ -251,10 +224,10 @@ export function WeekBand({
       : null;
 
   return (
-    <div>
+    <div style={{ ["--h" as string]: color }}>
       {tone === "quiet" && (
-        <div className="section-label mb-2 flex items-center gap-1.5">
-          <span className="flex-1">Week</span>
+        <div className="band-head">
+          <span className="band-head-label">Week</span>
           {from >= 0 && <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(horizon - from, span + 1))} />}
           <TrailActs onShelve={from >= 0 ? shelve : undefined} onDates={() => setShowDates((v) => !v)} datesOpen={showDates} />
         </div>
@@ -266,7 +239,8 @@ export function WeekBand({
         onKeyDown={onKeyDown}
         role="group"
         aria-label="Week placement"
-        className={`flex items-stretch outline-none ${tone === "primary" ? "gap-1.5" : "gap-0.5 rounded-[var(--radius-sm)] focus-visible:[box-shadow:0_0_0_2px_var(--accent-soft)]"}`}
+        className="band"
+        data-tone={tone}
       >
         {weeks.map((w, i) => (
           <Cell
@@ -278,7 +252,6 @@ export function WeekBand({
             // date and prints "Sep 6" over "Sep 6".
             label={weekTick(w.weekStart, { within: horizon })}
             sub={fmtDay(w.weekStart)}
-            color={color}
             onClick={() => place(i)}
             title={`${weekName(w.weekStart)} — ${weekSpan(w.weekStart)}`}
           />
@@ -286,31 +259,36 @@ export function WeekBand({
       </div>
 
       {tone === "quiet" ? (
-        <div className="mono mt-1.5 text-micro text-muted opacity-70">
-          {from >= 0 ? litRange : outside ? `Finish line outside the next ${horizon} weeks` : null}
+        <div className="band-note">
+          {from >= 0 ? litRange : outside ? `Finish line past ${horizon} weeks` : "Not placed"}
         </div>
       ) : (
         <>
-          {from >= 0 ? (
-            <div className="mt-2.5 flex items-center gap-2">
-              <span className="shrink-0 text-caption text-muted">Spans</span>
-              <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(horizon - from, span + 1))} />
-              <button onClick={shelve} className="tap fast ml-auto shrink-0 text-caption text-muted active:text-accent">Shelve</button>
-            </div>
-          ) : (
-            <div className="mt-2 text-caption text-muted">
-              {outside
-                ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${horizon} weeks. Tap one to pull it in.`
-                : "No week yet — tap one to commit it."}
-            </div>
-          )}
-          <button onClick={() => setShowDates((v) => !v)} className="tap fast mt-1 text-micro text-muted active:text-accent">
-            Exact dates {showDates ? "▾" : "▸"}
-          </button>
+          <div className="band-primary-foot">
+            {from >= 0 ? (
+              <>
+                <span>Spans</span>
+                <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(horizon - from, span + 1))} />
+                <span className="k-grow" />
+                <Button kind="ghost" className="tap" onClick={shelve}>
+                  Shelve
+                </Button>
+              </>
+            ) : (
+              <span>
+                {outside
+                  ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — past ${horizon} weeks.`
+                  : "Not placed"}
+              </span>
+            )}
+          </div>
+          <Button kind="ghost" size="sm" className="tap mt-1 -ml-2" onClick={() => setShowDates((v) => !v)} aria-expanded={showDates} trailing={<Icon name={showDates ? "chevron-down" : "chevron-right"} size={12} />}>
+            Exact dates
+          </Button>
         </>
       )}
 
-      {showDates && <div className="mt-2">{dates}</div>}
+      {showDates && <div className={tone === "quiet" ? "band-dates" : "mt-2"}>{dates}</div>}
     </div>
   );
 }
@@ -378,10 +356,10 @@ export function QuarterBand({
     : <CompactDates start={i.startDate} target={i.targetDate} onStart={onStart} onTarget={onTarget} />;
 
   return (
-    <div>
+    <div style={{ ["--h" as string]: color }}>
       {tone === "quiet" && (
-        <div className="section-label mb-2 flex items-center gap-1.5">
-          <span className="flex-1">Quarter</span>
+        <div className="band-head">
+          <span className="band-head-label">Quarter</span>
           <TrailActs onShelve={i.targetDate ? shelve : undefined} onDates={() => setShowDates((v) => !v)} datesOpen={showDates} />
         </div>
       )}
@@ -392,7 +370,8 @@ export function QuarterBand({
         onKeyDown={onKeyDown}
         role="group"
         aria-label="Quarter placement"
-        className={`flex items-stretch outline-none ${tone === "primary" ? "gap-1.5" : "gap-0.5 rounded-[var(--radius-sm)] focus-visible:[box-shadow:0_0_0_2px_var(--accent-soft)]"}`}
+        className="band"
+        data-tone={tone}
       >
         {quarters.map((q, k) => (
           <Cell
@@ -402,67 +381,60 @@ export function QuarterBand({
             now={k === 0}
             label={q.name.split(" ")[0]}
             sub={String(q.start.getFullYear())}
-            color={color}
             onClick={() => place(k)}
             title={quarterRangeLabel(q.start, q.end)}
           />
         ))}
       </div>
 
-      {/* the runway — one pip per week between now and the finish line. In the
-          quiet tone it loses its caption: the pips and a number say what
-          "14 weeks left" said. */}
+      {/* the runway — one mark per week between now and the finish line, now
+          in the signal, the number beside it. */}
       {i.targetDate && left > 0 && (
-        <div className={`flex items-center gap-2 ${tone === "primary" ? "mt-2.5" : "mt-2"}`}>
-          <span className="flex flex-1 items-center gap-[3px]">
+        <div className="band-runway">
+          <span aria-hidden>
             {Array.from({ length: Math.min(left, 26) }).map((_, k) => (
-              <span
-                key={k}
-                className="flex-1 rounded-full"
-                style={{
-                  height: tone === "primary" ? 6 : 3,
-                  background: k === 0 ? "var(--signal)" : tone === "primary" ? color : "var(--line-strong)",
-                  opacity: k === 0 ? 1 : tone === "primary" ? 0.5 : 0.6,
-                }}
-              />
+              <i key={k} data-now={k === 0 || undefined} />
             ))}
           </span>
-          <span className="mono shrink-0 text-micro tabular-nums text-muted opacity-75">
-            {left}{tone === "primary" ? ` week${left === 1 ? "" : "s"} left` : ""}
+          <span>
+            {left}
+            {tone === "primary" ? ` week${left === 1 ? "" : "s"} left` : "w"}
           </span>
         </div>
       )}
 
       {tone === "quiet" ? (
-        <div className="mono mt-1.5 text-micro text-muted opacity-70">
-          {chosen ? quarterRangeLabel(chosen.start, chosen.end) : targetName ? `Finish line in ${targetName}` : null}
+        <div className="band-note">
+          {chosen ? quarterRangeLabel(chosen.start, chosen.end) : targetName ? `Finish line in ${targetName}` : "Not placed"}
         </div>
       ) : (
         <>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-caption text-muted">
+          <div className="band-primary-foot">
+            <span className="min-w-0 flex-1 truncate">
               {chosen
                 ? quarterRangeLabel(chosen.start, chosen.end)
                 : targetName
-                  ? `Finish line in ${targetName} — beyond the shown quarters.`
-                  : "No quarter yet — tap one to give this bet a finish line."}
+                  ? `Finish line in ${targetName} — past the shown quarters.`
+                  : "Not placed"}
             </span>
             {i.targetDate && (
-              <button onClick={shelve} className="tap fast shrink-0 text-caption text-muted active:text-accent">Shelve</button>
+              <Button kind="ghost" className="tap" onClick={shelve}>
+                Shelve
+              </Button>
             )}
           </div>
-          <button onClick={() => setShowDates((v) => !v)} className="tap fast mt-1 text-micro text-muted active:text-accent">
-            Exact dates {showDates ? "▾" : "▸"}
-          </button>
+          <Button kind="ghost" size="sm" className="tap mt-1 -ml-2" onClick={() => setShowDates((v) => !v)} aria-expanded={showDates} trailing={<Icon name={showDates ? "chevron-down" : "chevron-right"} size={12} />}>
+            Exact dates
+          </Button>
         </>
       )}
 
-      {showDates && <div className="mt-2">{dates}</div>}
+      {showDates && <div className={tone === "quiet" ? "band-dates" : "mt-2"}>{dates}</div>}
     </div>
   );
 }
 
-// ── The desktop escape hatch: raw dates, small, behind ▤ ─────────────────────
+// ── The desktop escape hatch: raw dates, small, behind the calendar glyph ────
 function CompactDates({
   start,
   target,
@@ -475,27 +447,22 @@ function CompactDates({
   onTarget: (v: string | null) => void;
 }) {
   return (
-    <div className="mono flex flex-col gap-1 text-micro text-muted">
-      <DateInput label="start" value={start} onChange={onStart} />
-      <DateInput label="target" value={target} onChange={onTarget} />
-    </div>
+    <>
+      <DateInput label="Start" value={start} onChange={onStart} />
+      <DateInput label="Target" value={target} onChange={onTarget} />
+    </>
   );
 }
 
 function DateInput({ label, value, onChange }: { label: string; value: string | null; onChange: (v: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
-    <span className="flex items-center gap-1.5">
-      <span className="w-9 shrink-0 opacity-70">{label}</span>
-      <button
-        onClick={() => ref.current?.showPicker?.()}
-        className="fast rounded-[var(--radius-sm)] px-1 py-0.5 hover:bg-surface hover:text-ink"
-      >
+    <span className="band-date">
+      <span>{label}</span>
+      <Button kind="ghost" size="xs" className="tabular-nums" onClick={() => ref.current?.showPicker?.()}>
         {value ? format(parseISO(value), "MMM d") : "—"}
-      </button>
-      {value && (
-        <button onClick={() => onChange(null)} className="fast opacity-60 hover:text-signal hover:opacity-100" aria-label={`Clear ${label}`}>✕</button>
-      )}
+      </Button>
+      {value && <IconButton size="xs" label={`Clear ${label.toLowerCase()}`} icon={<Icon name="close" size={11} />} onClick={() => onChange(null)} />}
       <input
         ref={ref}
         type="date"

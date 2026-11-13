@@ -13,7 +13,8 @@ import AgentDropOverlay from "./AgentDropOverlay";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
 import AgentThinking from "./AgentThinking";
-import { Keycap } from "./ui";
+import { Icon } from "./Icon";
+import { Button, IconButton } from "./kit";
 
 const STORAGE_KEY = "nuvo-agent-open";
 
@@ -129,7 +130,7 @@ export default function AgentSidebar({
   if (!open) {
     return (
       <aside
-        className="agent-rail-collapsed flex h-full w-16 shrink-0 flex-col items-center"
+        className="chat-rail agent-rail-collapsed"
         onDragEnter={(e) => {
           if (isFileDrag(e)) {
             e.preventDefault();
@@ -141,24 +142,19 @@ export default function AgentSidebar({
         }}
       >
         <button
+          type="button"
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
           aria-label={`Open ${ASSISTANT_NAME}`}
-          className="agent-rail-toggle fast group flex h-full w-full flex-col items-center gap-2.5 py-4 text-muted hover:text-accent"
+          className="chat-rail-btn agent-rail-toggle"
         >
           {/* The walkthrough lights the badge, not the rail: the rail is a
               full-height sliver, and an orb around it is a bar with its ends
               off-screen. This is the thing you actually click. */}
-          <span
-            aria-hidden
-            data-teach="nuvo"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-lead leading-none text-accent transition-colors group-hover:bg-accent/15"
-          >
-            ✦
+          <span aria-hidden data-teach="nuvo" className="chat-mark">
+            <Icon name="sparkles" size={15} />
           </span>
-          <span className="text-meta font-semibold tracking-tight [writing-mode:vertical-rl] rotate-180">
-            {ASSISTANT_NAME}
-          </span>
+          <span>{ASSISTANT_NAME}</span>
         </button>
       </aside>
     );
@@ -166,55 +162,44 @@ export default function AgentSidebar({
 
   return (
     <aside
-      // No border and no fill: this is not a pane beside the app, it is the
-      // shell the app is resting on. A divider here would flatten the two
-      // planes back into one. The width is fixed so the slot can clip it
-      // during the slide instead of squashing the content.
-      className="agent-rail relative flex h-full min-h-0 w-[380px] shrink-0 flex-col"
+      // No border and no fill: the chat sits on the ground beside the panel
+      // (D-190, the frame). The width is fixed so the slot can clip it during
+      // the slide instead of squashing the content.
+      className="chat agent-rail"
       data-agent-drop=""
       {...dropHandlers}
     >
       {dragging && <AgentDropOverlay />}
 
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3.5">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-soft text-caption text-accent">✦</span>
-        <span className="text-body font-semibold">{ASSISTANT_NAME}</span>
-        <span className="mono text-meta text-muted">your planner</span>
-        <div className="flex-1" />
+      <header className="chat-head">
+        <span className="chat-title">
+          <span className="chat-mark" aria-hidden>
+            <Icon name="sparkles" size={12} />
+          </span>
+          {ASSISTANT_NAME}
+        </span>
         {messages.length > 0 && (
-          <button
-            onClick={clear}
-            className="fast rounded-md px-2 py-1 text-label text-muted hover:bg-surface-2 hover:text-ink"
-            title="Clear chat"
-          >
+          <Button kind="ghost" size="xs" onClick={clear} title="Clear chat">
             Clear
-          </button>
+          </Button>
         )}
-        <button
-          onClick={onToggle}
-          className="fast rounded-md px-1.5 py-1 text-muted hover:bg-surface-2 hover:text-ink"
-          title="Collapse (⌘J)"
-        >
-          <Keycap>⌘J</Keycap>
-        </button>
+        <IconButton label="Collapse" shortcut={["⌘", "J"]} icon={<Icon name="chevron-right" size={16} />} onClick={onToggle} />
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3.5 py-3">
+      <div className="chat-log">
         {messages.length === 0 && !loading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 text-center">
-            <p className="text-body leading-relaxed text-muted">{hints.prompt}</p>
-            <div className="w-full max-w-[300px]">
-              <AgentSuggestionChips
-                suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
-                onPick={pickSuggestion}
-                onOther={focusOther}
-              />
-            </div>
+          <div className="chat-empty">
+            <p>{hints.prompt}</p>
+            <AgentSuggestionChips
+              suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
+              onPick={pickSuggestion}
+              onOther={focusOther}
+            />
           </div>
         ) : (
-          // Unboxed turns need air — without the bubble edge, 12px reads as one
-          // run-on paragraph from two different speakers.
-          <div className="mt-auto space-y-5">
+          // Unboxed turns need air — without the bubble edge, a tight gap reads
+          // as one run-on paragraph from two different speakers.
+          <div className="chat-turns">
             {messages.map((m) => (
               <AgentMessageBubble
                 key={m.id}
@@ -224,14 +209,12 @@ export default function AgentSidebar({
             ))}
             {loading && last?.role !== "assistant" && <AgentThinking />}
             {activeSuggestions && (
-              <div className="pl-0.5">
-                <AgentSuggestionChips
-                  suggestions={activeSuggestions}
-                  onPick={pickSuggestion}
-                  onOther={focusOther}
-                  disabled={loading}
-                />
-              </div>
+              <AgentSuggestionChips
+                suggestions={activeSuggestions}
+                onPick={pickSuggestion}
+                onOther={focusOther}
+                disabled={loading}
+              />
             )}
             <div ref={bottomRef} />
           </div>
@@ -246,28 +229,19 @@ export default function AgentSidebar({
           failed hardest was the one case with no way back but retyping.
           `retry` rewinds to the last USER turn, so it is the right act here. */}
       {error && (
-        <div
-          role="alert"
-          className="flex shrink-0 items-center gap-2 border-t border-line px-3.5 py-2 text-label"
-          style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
-        >
-          <span className="min-w-0 flex-1">{error}</span>
+        <div role="alert" className="chat-error">
+          <span>{error}</span>
           {!loading && (
-            <button
-              type="button"
-              onClick={retry}
-              className="tap-desk-h fast shrink-0 rounded-md border px-2 py-0.5 font-medium"
-              style={{ borderColor: "color-mix(in srgb, var(--danger) 40%, transparent)" }}
-            >
+            <Button size="xs" kind="danger" onClick={retry}>
               Try again
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {/* The walkthrough opens this rail and lights the composer — the place you
           type, not the whole 380px column. */}
-      <footer className="shrink-0 border-t border-line p-3" data-teach="nuvo-panel">
+      <footer className="chat-foot" data-teach="nuvo-panel">
         <AgentChatInput
           value={input}
           onChange={setInput}
@@ -275,7 +249,7 @@ export default function AgentSidebar({
           onAttachmentsChange={setAttachments}
           onSubmit={() => submit()}
           loading={loading}
-          placeholder={otherMode ? "Say something else…" : "Ask Nuvo…"}
+          placeholder={otherMode ? "Say something else…" : `Ask ${ASSISTANT_NAME}…`}
           autoFocus={otherMode}
           inputRef={inputRef}
         />

@@ -11,10 +11,15 @@
 // Nothing about the draft is trusted as state: it's a proposal until the user
 // acts on it, and once they have, the card stops being a control and becomes a
 // receipt.
+//
+// A kit Card (D-190): the event as its title, the guests as hairline rows, the
+// two outcomes as kit Buttons, primary first.
 import { useState } from "react";
 import { toast } from "sonner";
 import { useExternalEventMutations } from "../hooks/useCalendar";
 import { fmtDayLabel, fmtDuration, fmtTime } from "../lib/dates";
+import { Icon } from "./Icon";
+import { Button, IconButton } from "./kit";
 import {
   QUIET_HINT,
   inviteConsentPrompt,
@@ -104,14 +109,19 @@ export default function AgentInviteCard({ draft }: { draft: InviteDraft }) {
   if (phase === "sent" || phase === "quiet") {
     const names = draft.recipients.filter((r) => !dropped.includes(r.email)).map((r) => r.name ?? r.email);
     return (
-      <div className="glass-card mt-2 rounded-lg border border-line/60 px-3 py-2.5">
-        <div className="text-caption text-ink">
-          {phase === "sent" ? "Invite sent" : "Added quietly"} · <span className="font-medium">{draft.title}</span>
-        </div>
-        <div className="mt-1 text-micro text-muted">
-          {names.join(", ")}
-          {phase === "quiet" ? " — no email went out" : ""}
-          {when ? ` · ${when}` : ""}
+      <div className="k-card agent-card agent-invite">
+        <div className="agent-card-top">
+          <Icon name="check" size={14} />
+          <div className="agent-card-main">
+            <div className="agent-card-title">
+              {phase === "sent" ? "Invite sent" : "Added quietly"} · {draft.title}
+            </div>
+            <div className="agent-card-sub">
+              {names.join(", ")}
+              {phase === "quiet" ? " — no email went out" : ""}
+              {when ? ` · ${when}` : ""}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -120,97 +130,70 @@ export default function AgentInviteCard({ draft }: { draft: InviteDraft }) {
   const busy = phase === "working";
 
   return (
-    <div className="glass-card mt-2 rounded-lg border border-line/60 px-3 py-3">
+    <div className="k-card agent-card agent-invite">
       {/* What is being proposed — the event first, so the recipients have a
           subject. On add_guests the event already exists; say which. */}
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-caption font-medium text-ink">{draft.title}</div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-micro text-muted">
-            {when && <span>{when}</span>}
-            {recurrenceLabel(draft.recurrence) && <span>· {recurrenceLabel(draft.recurrence)}</span>}
-            {draft.calendarName && <span>· {draft.calendarName}</span>}
-            {draft.location && <span>· {draft.location}</span>}
-            {draft.addMeet && <span>· Google Meet</span>}
+      <div className="agent-card-top">
+        <div className="agent-card-main">
+          <div className="agent-card-title">{draft.title}</div>
+          <div className="agent-card-sub">
+            {[when, recurrenceLabel(draft.recurrence), draft.calendarName, draft.location, draft.addMeet ? "Google Meet" : null]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setPhase("dismissed")}
-          aria-label="Dismiss"
-          className="fast tap -mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink md:h-8 md:w-8"
-        >
-          ✕
-        </button>
+        <IconButton size="xs" label="Dismiss" icon={<Icon name="close" size={12} />} onClick={() => setPhase("dismissed")} className="tap-icon" />
       </div>
 
       {/* Who. Named, removable, and honest about where the address came from —
           "met before" is a weaker claim than an address book and reads that way. */}
-      <ul className="mt-2.5 space-y-1">
+      <ul className="agent-invite-list">
         {recipients.map((r) => (
-          <li
-            key={r.email}
-            className="flex items-center gap-2 rounded-md border border-line/60 bg-surface-2/60 px-2 py-1.5"
-          >
+          <li key={r.email} className="agent-invite-row">
             {/* Two lines, not one: at rail width a single line truncates the
                 address, and the address is the part that decides who actually
                 gets the mail. The name can be missing; the address never is. */}
-            <span className="flex min-w-0 flex-1 flex-col">
-              {r.name && <span className="truncate text-micro text-ink">{r.name}</span>}
-              <span className={`truncate text-micro ${r.name ? "text-muted" : "text-ink"}`}>{r.email}</span>
+            <span className="agent-invite-who">
+              {r.name && <span className="agent-invite-name">{r.name}</span>}
+              <span className={r.name ? "agent-invite-mail" : "agent-invite-name"}>{r.email}</span>
             </span>
-            <span className="shrink-0 text-micro text-muted/70">
-              {r.known ? r.sources.map(sourceLabel).join(" · ") : "not in contacts"}
-            </span>
-            <button
-              type="button"
+            <span className="agent-invite-src">{r.known ? r.sources.map(sourceLabel).join(" · ") : "not in contacts"}</span>
+            <IconButton
+              size="xs"
+              label={`Remove ${r.name ?? r.email}`}
+              icon={<Icon name="close" size={12} />}
               onClick={() => setDropped((d) => [...d, r.email])}
               disabled={busy}
-              aria-label={`Remove ${r.name ?? r.email}`}
-              className="fast tap -mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted hover:text-signal disabled:opacity-40 md:-my-1.5 md:h-8 md:w-8"
-            >
-              ✕
-            </button>
+              className="tap-icon"
+            />
           </li>
         ))}
       </ul>
 
       {unresolved.length > 0 && (
-        <div className="mt-2 rounded-md border border-dashed border-line px-2 py-1.5 text-micro text-muted">
-          Still unplaced:{" "}
-          {unresolved.map((u) => `"${u.query}"`).join(", ")} — answer above and I'll add them. Sending now goes to the{" "}
+        <p className="agent-card-sub">
+          Still unplaced: {unresolved.map((u) => `"${u.query}"`).join(", ")} — answer above and I'll add them. Sending now goes to the{" "}
           {recipients.length} listed.
-        </div>
+        </p>
       )}
 
-      {error && <div className="mt-2 text-micro text-signal">{error}</div>}
+      {error && <p className="agent-card-sub text-danger">{error}</p>}
 
       {/* The consent sentence, shared with the composer so both doors say the
           same thing, then the two outcomes as separate buttons. */}
-      <div className="mt-3 border-t border-line/60 pt-2.5">
-        <div className="text-micro text-muted">
+      <div className="agent-card-foot agent-invite-foot">
+        <p className="agent-card-sub">
           {recipients.length
             ? inviteConsentPrompt({ mode: draft.mode, count: recipients.length, addMeet: draft.addMeet })
             : "Nobody left on this invite."}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => run(true)}
-            disabled={busy || !recipients.length}
-            className="fast tap inline-flex flex-1 items-center justify-center rounded-[var(--radius)] bg-accent px-3 py-2.5 text-caption font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-          >
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button kind="primary" size="md" className="tap flex-1" onClick={() => run(true)} disabled={busy || !recipients.length}>
             {busy ? "Sending…" : recipients.length > 1 ? `Send to ${recipients.length}` : "Send invite"}
-          </button>
-          <button
-            type="button"
-            onClick={() => run(false)}
-            disabled={busy || !recipients.length}
-            title={QUIET_HINT}
-            className="fast tap inline-flex flex-1 items-center justify-center rounded-[var(--radius)] border border-line px-3 py-2.5 text-caption font-medium text-ink hover:bg-surface-2 disabled:opacity-40"
-          >
+          </Button>
+          <Button size="md" className="tap flex-1" onClick={() => run(false)} disabled={busy || !recipients.length} title={QUIET_HINT}>
             Add without emailing
-          </button>
+          </Button>
         </div>
       </div>
     </div>

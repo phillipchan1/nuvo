@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { rememberError } from "../lib/appError";
 import { captureAppException } from "../lib/posthog";
+import { Button } from "./kit";
 
 // The app-level crash net. Without one, a render error anywhere unmounts the
 // whole tree to a white screen — unrecoverable in an installed PWA, where there
@@ -50,11 +51,11 @@ export default class ErrorBoundary extends Component<
     if (!this.state.error) return this.props.children;
     return (
       <div className="atmosphere flex h-full min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
-        <div className="elev-3 w-96 max-w-full rounded-lg border border-line bg-surface p-7 text-center">
-          <div className="mb-2 text-lead masthead text-ink">Something broke.</div>
-          <p className="mb-1 text-body text-muted">
-            {this.props.label ? `The ${this.props.label} hit an error` : "Nuvo hit an error"} it
-            couldn't recover from. Your data is safe — reloading usually fixes it.
+        <div className="k-card w-96 max-w-full !gap-0 !p-6" style={{ boxShadow: "var(--sh-modal)" }}>
+          <h1 className="set-title !m-0">Something broke.</h1>
+          <p className="mt-2 text-body text-muted">
+            {this.props.label ? `The ${this.props.label} hit an error` : "Nuvo hit an error"} it couldn't recover from.
+            Your data is safe — reloading usually fixes it.
           </p>
           {/* The raw message is a minified identifier — "agendaAnchor is not
               defined" — which means nothing to the person reading it and
@@ -64,29 +65,19 @@ export default class ErrorBoundary extends Component<
               already carries the full stack. Kept reachable rather than
               removed: a user who can paste the message into a bug report is
               worth far more than one who can't. */}
-          <details className="mb-5 text-left">
-            <summary className="tap-desk-h fast list-none text-center text-caption text-muted hover:text-ink">
-              Technical details
-            </summary>
-            <p className="mono mt-2 break-words text-caption text-muted">
+          <details className="mt-3">
+            <summary className="tap-desk-h text-caption text-muted">Technical details</summary>
+            <p className="mt-2 break-words font-mono text-caption text-muted" data-selectable>
               {this.state.error.message}
             </p>
           </details>
-          <div className="flex flex-col items-stretch gap-2">
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="tap fast rounded-md border border-accent bg-accent px-4 py-2.5 text-body font-semibold text-on-accent active:translate-y-px"
-            >
+          <div className="mt-5 flex flex-col items-stretch gap-2">
+            <Button kind="primary" size="md" full className="tap" onClick={() => window.location.reload()}>
               Reload
-            </button>
-            <button
-              type="button"
-              onClick={() => void this.copyDetails()}
-              className="tap fast rounded-md border border-line px-4 py-2.5 text-body font-medium text-muted active:bg-surface-2"
-            >
+            </Button>
+            <Button size="md" full className="tap" onClick={() => void this.copyDetails()}>
               {this.state.copied ? "Copied" : "Copy details"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

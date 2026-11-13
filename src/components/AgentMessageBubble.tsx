@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { Icon } from "./Icon";
+import { IconButton } from "./kit";
 // react-markdown (plus its unified/remark tail) is ~107 KB that only chat
 // replies render — lazy so opening the app doesn't parse it. The fallback is
 // the raw text, so a reply streaming in before the chunk lands is still
@@ -38,25 +39,16 @@ function AgentTurnActions({
     }
   };
 
-  const btn =
-    "tap-icon fast flex h-6 w-6 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink";
-
   return (
-    <div
-      className={`agent-turn-actions mt-1.5 flex items-center gap-0.5 ${compact ? "" : "opacity-0"}`}
-    >
-      <button onClick={copy} className={btn} title={copied ? "Copied" : "Copy reply"} aria-label="Copy reply">
-        {copied ? (
-          <Icon name="check" size={13} />
-        ) : (
-          <Icon name="copy" size={13} />
-        )}
-      </button>
-      {onRetry && (
-        <button onClick={onRetry} className={btn} title="Try again" aria-label="Try again">
-          <Icon name="refresh" size={13} />
-        </button>
-      )}
+    <div className={`agent-turn-actions ${compact ? "" : "opacity-0"}`}>
+      <IconButton
+        size="xs"
+        label={copied ? "Copied" : "Copy reply"}
+        icon={<Icon name={copied ? "check" : "copy"} size={13} />}
+        onClick={copy}
+        className="tap-icon"
+      />
+      {onRetry && <IconButton size="xs" label="Try again" icon={<Icon name="refresh" size={13} />} onClick={onRetry} className="tap-icon" />}
     </div>
   );
 }
@@ -73,33 +65,19 @@ export default function AgentMessageBubble({
   onRetry?: () => void;
 }) {
   const isUser = message.role === "user";
-  const textSize = compact ? "text-caption" : "text-body";
 
   const attachments = message.attachments?.length ? (
-    <div className="mb-2 flex flex-wrap gap-1.5">
+    <div className="agent-attachments">
       {message.attachments.map((a) =>
         isImageAttachment(a) && a.dataUrl ? (
-          <a
-            key={a.id}
-            href={a.dataUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="agent-attachment-thumb group block overflow-hidden rounded-md border border-line/60"
-          >
-            <img
-              src={a.dataUrl}
-              alt={a.name}
-              className="max-h-36 max-w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-            />
+          <a key={a.id} href={a.dataUrl} target="_blank" rel="noreferrer" className="agent-attachment-thumb">
+            <img src={a.dataUrl} alt={a.name} />
           </a>
         ) : (
-          <span
-            key={a.id}
-            className="agent-attachment-chip mono flex items-center gap-1.5 rounded-md border border-line/60 bg-surface px-2 py-1 text-meta text-muted"
-          >
-            <span aria-hidden>📄</span>
-            <span className="max-w-[140px] truncate">{a.name}</span>
-            <span className="text-line">{formatBytes(a.size)}</span>
+          <span key={a.id} className="k-chip agent-attachment-chip">
+            <Icon name="paperclip" size={12} />
+            <span>{a.name}</span>
+            <span className="agent-attachment-size">{formatBytes(a.size)}</span>
           </span>
         ),
       )}
@@ -113,38 +91,36 @@ export default function AgentMessageBubble({
   // Speaking for the user is worse than saying nothing (D-087).
   if (isUser) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="agent-user">
         {message.display ? (
           <span
-            className="agent-bubble-pick max-w-[85%] text-caption"
+            className="agent-bubble-pick"
             // The wire text stays reachable for the curious, and nowhere else.
             title={message.content !== message.display ? message.content : undefined}
           >
-            <span aria-hidden className="agent-bubble-pick-mark">✓</span>
-            <span className="min-w-0 leading-snug">{message.display}</span>
+            <Icon name="check" size={12} className="agent-bubble-pick-mark" />
+            <span className="min-w-0">{message.display}</span>
           </span>
         ) : (
-          <div className="agent-bubble agent-bubble-user max-w-[85%]">
+          <div className="agent-bubble agent-bubble-user" data-compact={compact || undefined} data-selectable>
             {attachments}
-            {message.content && (
-              <p className={`whitespace-pre-wrap leading-relaxed ${textSize}`}>{message.content}</p>
-            )}
+            {message.content && <p>{message.content}</p>}
           </div>
         )}
-        {message.at && <span className="mono text-micro text-muted">{fmtTime(message.at)}</span>}
+        {message.at && <span className="agent-time">{fmtTime(message.at)}</span>}
       </div>
     );
   }
 
-  // What Nuvo says is the page itself — no bubble. A reply boxed in --surface-2
-  // reads as a quotation from somewhere else; on the paper it reads as the app
-  // talking, and the record cards below it stop looking like a nested frame.
+  // What Nuvo says is plain text on the ground — no bubble. A boxed reply reads
+  // as a quotation from somewhere else; unboxed it reads as the app talking,
+  // and the record cards below it stop looking like a nested frame.
   return (
     <div className="agent-turn group/turn w-full">
       {attachments}
 
       {message.content && (
-        <div className={`agent-markdown leading-relaxed ${textSize}`}>
+        <div className="agent-markdown" data-compact={compact || undefined} data-selectable>
           <Suspense fallback={<span className="whitespace-pre-wrap">{message.content}</span>}>
             <ReactMarkdown>{message.content}</ReactMarkdown>
           </Suspense>
@@ -155,13 +131,9 @@ export default function AgentMessageBubble({
 
       {/* A turn that ran out of steps carries a visible mark. Without it the
           synthesized "Created X. Scheduled Y." reads exactly like success and
-          the dropped remainder is never noticed. Hairline + --signal, no
-          frame — it's a state of this reply, not a card of its own. */}
-      {message.incomplete && (
-        <p className="text-meta mt-2 border-t border-[--line] pt-2 text-[--signal]">
-          Unfinished — I hit my step limit with work still queued.
-        </p>
-      )}
+          the dropped remainder is never noticed. Hairline + --warn, no frame —
+          it's a state of this reply, not a card of its own. */}
+      {message.incomplete && <p className="agent-incomplete">Unfinished — I hit my step limit with work still queued.</p>}
       {/* A staged invite — the only thing in a reply that hasn't happened yet. */}
       {message.invite && <AgentInviteCard draft={message.invite} />}
 

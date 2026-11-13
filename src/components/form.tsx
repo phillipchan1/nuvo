@@ -1,30 +1,38 @@
 import { useEffect, useState } from "react";
 import type { ReactNode, SelectHTMLAttributes, InputHTMLAttributes } from "react";
+import { Icon } from "./Icon";
+import {
+  Checkbox as KitCheckbox,
+  IconButton,
+  Input,
+  Segmented as KitSegmented,
+  Switch,
+} from "./kit";
+import { cx } from "./kit/cx";
 
-/* ── The input design language ─────────────────────────────────────────────
-   One coherent set of form primitives, all built on the `.field` surface (see
-   index.css). Generous by default — 40px on desktop, 44px on a phone — so
-   nothing is ever a squint-and-tap. Reach for these instead of hand-rolling
-   `border border-line px-2 py-1`; that recipe is retired.
+/* ── The settings form, on the kit (D-190) ──────────────────────────────────
+   These keep the API they always had — Settings, the account and app panes,
+   the rituals and the groom wall call them — but every one is a kit part
+   underneath, so a field here and a field anywhere else are the same field.
 
-   Field      — a labelled row (title · description · control), the settings unit
-   TextInput  — single-line text / url / password / email
-   TimeInput  — a clock time, saved once you've finished setting it
-   Select    — native select with our own chevron
-   Toggle     — the on/off switch
-   Checkbox   — inline check (when a switch would be too heavy)
+   PaneHeader — a pane's one hero (20px, 700)
+   Field      — a 52px label-left / control-right row, hairline-separated
+   TextInput  — kit Input
+   TimeInput  — a clock time in a kit field, saved once you've finished
+   Select     — a native select in a kit field (keeps optgroups + the phone's wheel)
+   Toggle     — kit Switch, with a touch-sized hit area
+   Checkbox   — kit Checkbox with its label
    Stepper    — −  value  +  for bounded numbers
-   Segmented  — a small pill group for 2–4 exclusive choices                */
+   Segmented  — kit Segmented                                                 */
 
-// ── Field: label-left / control-right, stacking on a phone ─────────────────
 /** The heading at the top of a settings pane. Lives here rather than in
  *  SettingsModal so a pane split into its own file wears the same crown. */
 export function PaneHeader({ title, sub }: { title: string; sub?: string }) {
   return (
-    <div className="mb-6">
-      <h2 className="text-lead font-semibold text-ink">{title}</h2>
-      {sub && <p className="mt-1 text-caption leading-snug text-muted">{sub}</p>}
-    </div>
+    <>
+      <h2 className="set-title">{title}</h2>
+      {sub && <p className="set-sub">{sub}</p>}
+    </>
   );
 }
 
@@ -41,49 +49,47 @@ export function Field({
   htmlFor?: string;
   children: ReactNode;
   className?: string;
-  /** "row" = label-left / control-right (stacks on a phone). "stack" = label
-   *  above control — the cell shape that tiles into a multi-column form grid. */
+  /** "row" = label-left / control-right (wraps under on a narrow pane).
+   *  "stack" = label above control — for a control that needs the width. */
   layout?: "row" | "stack";
 }) {
+  const label = (
+    <div className="set-row-label">
+      <label htmlFor={htmlFor} className="set-row-title">
+        {title}
+      </label>
+      {desc && <div className="set-row-desc">{desc}</div>}
+    </div>
+  );
   if (layout === "stack") {
     return (
-      <div className={`flex flex-col gap-3 ${className}`}>
-        <div>
-          <label htmlFor={htmlFor} className="text-body font-medium text-ink">
-            {title}
-          </label>
-          {desc && <div className="mt-1 text-caption leading-snug text-muted">{desc}</div>}
-        </div>
-        <div>{children}</div>
+      <div className={cx("set-stack", className)}>
+        {label}
+        <div className="min-w-0">{children}</div>
       </div>
     );
   }
   return (
-    <div
-      className={`flex flex-col items-start gap-2.5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 ${className}`}
-    >
-      <div className="min-w-0 sm:max-w-[62%]">
-        <label htmlFor={htmlFor} className="text-body font-medium text-ink">
-          {title}
-        </label>
-        {desc && <div className="mt-1 text-caption leading-snug text-muted">{desc}</div>}
-      </div>
-      <div className="w-full shrink-0 sm:w-auto">{children}</div>
+    <div className={cx("set-row", className)}>
+      {label}
+      <div className="set-row-ctl">{children}</div>
     </div>
   );
 }
 
-// ── A group of fields on a hairline-divided card ───────────────────────────
+// ── A group of fields — the rows carry their own hairlines ─────────────────
 export function FieldGroup({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`divide-y divide-line ${className}`}>{children}</div>;
+  return <div className={className}>{children}</div>;
 }
 
 // ── TextInput ──────────────────────────────────────────────────────────────
+/** `className` sizes the field's frame (width, margin, `mono`). */
 export function TextInput({
   className = "",
+  size: _size,
   ...props
 }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`field w-full ${className}`} />;
+  return <Input {...props} frameClassName={cx("fm-field w-full", className)} />;
 }
 
 // ── TimeInput ──────────────────────────────────────────────────────────────
@@ -105,6 +111,7 @@ export function TimeInput({
   onCommit,
   className = "",
   onKeyDown,
+  size: _size,
   ...props
 }: { minutes: number; onCommit: (minutes: number) => void } & Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -128,7 +135,7 @@ export function TimeInput({
   };
 
   return (
-    <input
+    <Input
       {...props}
       type="time"
       value={draft}
@@ -141,37 +148,28 @@ export function TimeInput({
         if (e.key === "Enter") e.currentTarget.blur();
         onKeyDown?.(e);
       }}
-      className={`field w-full ${className}`}
+      frameClassName={cx("fm-field fm-time w-full", className)}
     />
   );
 }
 
-// ── Select (custom chevron) ─────────────────────────────────────────────────
-// `className` sizes/positions the wrapper (e.g. `w-full sm:w-28`, `shrink-0`);
-// the inner <select> always fills it. Font utilities on the wrapper cascade in.
+// ── Select (native, in a kit field) ─────────────────────────────────────────
+// `className` sizes/positions the frame (e.g. `w-full sm:w-28`, `shrink-0`);
+// the inner <select> always fills it. A native select on purpose: optgroups
+// (the time zone list, the calendar groups) and the phone's own wheel.
 export function Select({
   className = "w-full",
   children,
+  disabled,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <div className={`relative inline-block ${className}`}>
-      <select {...props} className="field w-full truncate pr-9">
+    <span className={cx("k-field fm-select", className)} data-disabled={disabled || undefined}>
+      <select {...props} disabled={disabled}>
         {children}
       </select>
-      <svg
-        aria-hidden
-        viewBox="0 0 16 16"
-        className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 6l4 4 4-4" />
-      </svg>
-    </div>
+      <Icon name="chevron-down" size={12} />
+    </span>
   );
 }
 
@@ -190,27 +188,12 @@ export function Toggle({
   label?: string;
   className?: string;
 }) {
-  // A 44px-tall hit area (per the mobile tap rule) wrapping a 28px pill — so the
-  // switch reads as a switch, not a fat circle, while staying easy to tap.
+  // The kit switch is 28×16; its hit area grows past the drawing (documents.css
+  // `.fm-switch`), to 44px under a finger, so the switch never looks fat.
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`fast group inline-flex h-11 w-12 shrink-0 items-center justify-center disabled:opacity-40 ${className}`}
-    >
-      <span
-        className={`fast relative h-7 w-12 rounded-full ${checked ? "bg-accent" : "bg-line-strong"}`}
-      >
-        <span
-          className="fast absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm"
-          style={{ left: checked ? "24px" : "4px" }}
-        />
-      </span>
-    </button>
+    <span className={cx("fm-switch", className)}>
+      <Switch checked={checked} onChange={onChange} disabled={disabled} label={label ?? ""} />
+    </span>
   );
 }
 
@@ -227,14 +210,8 @@ export function Checkbox({
   children?: ReactNode;
 }) {
   return (
-    <label className={`tap inline-flex items-center gap-2 text-body text-muted ${disabled ? "opacity-40" : ""}`}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-[var(--accent)]"
-      />
+    <label className="fm-check tap-h" data-disabled={disabled || undefined}>
+      <KitCheckbox checked={checked} onChange={onChange} disabled={disabled} label={typeof children === "string" ? children : ""} />
       {children}
     </label>
   );
@@ -258,47 +235,38 @@ export function Stepper({
   decHint?: string;
   incHint?: string;
 }) {
-  const btn =
-    "fast tap flex w-10 items-center justify-center text-head leading-none text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent";
   return (
-    <div className="inline-flex items-stretch overflow-hidden rounded-[var(--radius)] border border-line bg-surface">
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} className={btn} title={decHint}>
-        −
-      </button>
-      <span className="mono flex min-w-14 select-none items-center justify-center border-x border-line px-1 text-center text-body tabular-nums text-ink">
-        {format(value)}
-      </span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} className={btn} title={incHint}>
-        +
-      </button>
-    </div>
+    <span className="fm-stepper">
+      <IconButton
+        size="xs"
+        label={decHint ?? "Less"}
+        icon={<span aria-hidden>−</span>}
+        disabled={value <= min}
+        onClick={() => onChange(Math.max(min, value - 1))}
+      />
+      <output aria-live="polite">{format(value)}</output>
+      <IconButton
+        size="xs"
+        label={incHint ?? "More"}
+        icon={<Icon name="plus" size={12} />}
+        disabled={value >= max}
+        onClick={() => onChange(Math.min(max, value + 1))}
+      />
+    </span>
   );
 }
 
-// ── Segmented: a small pill group for 2–4 exclusive choices ─────────────────
+// ── Segmented: 2–4 exclusive choices ────────────────────────────────────────
 export function Segmented<T extends string>({
   value,
   onChange,
   options,
+  label = "Choose one",
 }: {
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
+  label?: string;
 }) {
-  return (
-    <div className="inline-flex rounded-[var(--radius)] border border-line bg-surface-2 p-1">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`fast tap rounded-[calc(var(--radius)-3px)] px-4 text-caption font-medium ${
-            value === o.value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <KitSegmented options={options} value={value} onChange={onChange} label={label} className="fm-seg" />;
 }

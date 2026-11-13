@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Btn } from "../../ui";
+import { PaneHeader } from "../../form";
+import { Icon } from "../../Icon";
+import { Button, SectionHeader } from "../../kit";
 import { useSubscription } from "../../../hooks/useSubscription";
 import { fetchPortalUrl, fetchReferralCode, openBillingUrl } from "../../../lib/stripeBilling";
 import { planOf, trialDaysRemaining, type Subscription } from "../../../lib/subscription";
@@ -17,10 +19,7 @@ export function WebBillingPane() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h2 className="text-head font-semibold text-ink">Billing</h2>
-        <p className="mt-0.5 text-caption leading-snug text-muted">Your plan and payment method.</p>
-      </div>
+      <PaneHeader title="Billing" />
 
       {plan === "trialing" && subscription ? (
         <TrialingCard subscription={subscription} onUpgrade={() => setUpgrading(true)} />
@@ -29,7 +28,7 @@ export function WebBillingPane() {
       ) : plan === "active" && subscription ? (
         <ActiveCard subscription={subscription} />
       ) : (
-        <div className="text-caption text-muted">Loading…</div>
+        <p className="set-note">Loading…</p>
       )}
 
       {subscription && (plan === "trialing" || (plan === "active" && source !== "apple")) && (
@@ -93,28 +92,25 @@ function ShareCodeBlock({
   };
 
   return (
-    <div className="mt-6 border-t border-line pt-4">
-      <div className="text-label uppercase tracking-wider text-muted">Share Nuvo</div>
-      <p className="mt-1 text-caption leading-snug text-muted">{shareBlurb()}</p>
+    <div>
+      <SectionHeader title="Share Nuvo" className="set-group" />
+      <p className="set-note">{shareBlurb()}</p>
       {busy && !code ? (
-        <div className="mt-2 text-caption text-muted">Getting your code…</div>
+        <p className="set-note mt-2">Getting your code…</p>
       ) : code ? (
         <div className="mt-2 flex items-center gap-2">
-          <code className="mono rounded-md border border-line bg-surface-2 px-3 py-2 text-body text-ink">
+          <code className="k-field !h-auto px-3 py-1.5 font-mono text-body text-ink" data-selectable>
             {code}
           </code>
-          <Btn kind="ghost" onClick={copy}>
+          <Button className="tap" onClick={copy} icon={<Icon name="copy" size={13} />}>
             {copied ? "Copied" : "Copy"}
-          </Btn>
+          </Button>
         </div>
       ) : !error ? (
-        <div className="mt-2 text-caption text-muted">
-          Your code will appear here once friend-codes are turned on. Nothing to apply for —
-          open this pane and we mint one.
-        </div>
+        <p className="set-note mt-2">Your code appears here once friend-codes are on.</p>
       ) : null}
       {uses > 0 && (
-        <p className="mt-3 text-caption leading-snug text-ink">
+        <p className="mt-3 text-body text-ink">
           {uses === 1 ? "1 friend has used your code" : `${uses} friends have used your code`}
           {creditsEarned > 0
             ? ` · you’ve earned ${creditsEarned} free month${creditsEarned === 1 ? "" : "s"}`
@@ -123,12 +119,12 @@ function ShareCodeBlock({
         </p>
       )}
       {uses === 0 && creditsEarned > 0 && (
-        <p className="mt-3 text-caption leading-snug text-ink">
+        <p className="mt-3 text-body text-ink">
           You’ve earned {creditsEarned} free month{creditsEarned === 1 ? "" : "s"} from friends.
           Credit applies to your next invoice automatically.
         </p>
       )}
-      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+      {error && <div className="mt-2 text-caption text-danger">{error}</div>}
     </div>
   );
 }
@@ -148,18 +144,17 @@ function TrialingCard({
   });
 
   return (
-    <div>
-      <div className="rounded-lg border border-line bg-surface-2 p-3">
-        <div className="text-label uppercase tracking-wider text-muted">Current plan</div>
-        <div className="mt-0.5 text-body text-ink">
+    <div className="set-row">
+      <div className="set-row-label">
+        <span className="set-row-title">
           Free trial · {days} day{days === 1 ? "" : "s"} left
-        </div>
-        <div className="mt-1 text-caption text-muted">Ends {ends}</div>
+        </span>
+        <div className="set-row-desc">Ends {ends}</div>
       </div>
-      <div className="mt-4">
-        <Btn kind="primary" onClick={onUpgrade}>
+      <div className="set-row-ctl">
+        <Button kind="primary" className="tap" onClick={onUpgrade}>
           See plans
-        </Btn>
+        </Button>
       </div>
     </div>
   );
@@ -177,18 +172,17 @@ function AppleActiveCard({ subscription }: { subscription: Subscription }) {
 
   return (
     <div>
-      <div className="rounded-lg border border-line bg-surface-2 p-3">
-        <div className="text-label uppercase tracking-wider text-muted">Current plan</div>
-        <div className="mt-0.5 text-body text-ink">Nuvo · active</div>
-        {periodEnd && (
-          <div className={`mt-1 text-caption ${ending ? "text-signal" : "text-muted"}`}>
-            {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
-          </div>
-        )}
+      <div className="set-row">
+        <div className="set-row-label">
+          <span className="set-row-title">Nuvo · active</span>
+          {periodEnd && (
+            <div className="set-row-desc" style={ending ? { color: "var(--warn)" } : undefined}>
+              {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
+            </div>
+          )}
+        </div>
       </div>
-      <p className="mt-3 text-caption leading-snug text-muted">
-        Subscribed through the App Store. Manage or cancel the subscription on your iPhone.
-      </p>
+      <p className="set-note mt-3">Through the App Store. Manage or cancel it on your iPhone.</p>
     </div>
   );
 }
@@ -220,24 +214,28 @@ function ActiveCard({ subscription }: { subscription: Subscription }) {
 
   return (
     <div>
-      <div className="rounded-lg border border-line bg-surface-2 p-3">
-        <div className="text-label uppercase tracking-wider text-muted">Current plan</div>
-        <div className="mt-0.5 text-body text-ink">Nuvo · active</div>
-        {periodEnd && (
-          <div className={`mt-1 text-caption ${ending ? "text-signal" : "text-muted"}`}>
-            {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
-          </div>
-        )}
+      <div className="set-row">
+        <div className="set-row-label">
+          <span className="set-row-title">Nuvo · active</span>
+          {periodEnd && (
+            <div className="set-row-desc" style={ending ? { color: "var(--warn)" } : undefined}>
+              {ending ? `Ends ${periodEnd} — you'll keep access until then` : `Renews ${periodEnd}`}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="mt-4">
-        <Btn kind={ending ? "primary" : "ghost"} disabled={busy} onClick={openPortal}>
-          {busy ? "Opening…" : ending ? "Resume subscription" : "Manage billing"}
-        </Btn>
+      <div className="set-row">
+        <div className="set-row-label">
+          <span className="set-row-title">Billing</span>
+          <div className="set-row-desc">Card, plan, invoices, or cancel.</div>
+        </div>
+        <div className="set-row-ctl">
+          <Button kind={ending ? "primary" : "secondary"} className="tap" disabled={busy} onClick={openPortal}>
+            {busy ? "Opening…" : ending ? "Resume subscription" : "Manage billing"}
+          </Button>
+        </div>
       </div>
-      <p className="mt-2 text-caption text-muted">
-        Update your card, switch plans, download invoices, or cancel.
-      </p>
-      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+      {error && <div className="mt-2 text-caption text-danger">{error}</div>}
     </div>
   );
 }
