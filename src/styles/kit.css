@@ -652,7 +652,7 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
   .k-field { min-height: 44px; font-size: 16px; }
   .k-field input, .k-field textarea { font-size: 16px; } /* iOS zooms anything smaller */
   .k-seg button { height: 36px; padding: 0 14px; font-size: 13px; }
-  .k-switch { width: 44px; height: 26px; border-radius: 13px; }
+  .k-switch { width: 44px; height: 26px; border-radius: 999px; } /* a pill: the switch track only */
   .k-switch::after { width: 22px; height: 22px; }
   .k-switch[aria-checked="true"]::after { transform: translateX(18px); }
   .k-mi { height: 44px; font-size: 15px; }

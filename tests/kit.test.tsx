@@ -135,7 +135,7 @@ describe("kit.css", () => {
   const css = readFileSync(resolve(__dirname, "../src/styles/kit.css"), "utf8");
   it("uses the kit's four radii, plus their nested (concentric) steps", () => {
     const radii = [...css.matchAll(/border-radius:\s*([^;]+);/g)].map((m) => m[1].trim());
-    const allowed = /^(var\(--r-(chip|ctl|card|dialog)\)|50%|0|5px|7px|8px|10px|1px|2px|2\.5px|2px 2px 0 0|calc\(var\(--r-ctl\) - 2px\)|inherit)$/;
+    const allowed = /^(var\(--r-(chip|ctl|card|dialog)\)|50%|0|5px|7px|8px|10px|1px|2px|2\.5px|2px 2px 0 0|calc\(var\(--r-ctl\) - 2px\)|inherit|999px)$/; // 999px: the switch track (a pill) under touch
     for (const r of radii) expect(r, `radius ${r}`).toMatch(allowed);
   });
   it("never asks for a pointer cursor", () => {
