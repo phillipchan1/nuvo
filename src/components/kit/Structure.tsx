@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { cx } from "./cx";
 
@@ -134,16 +134,12 @@ export function Property({
 }
 
 /** A floating card — the board's unit. Selection rings it in accent and lifts. */
-export function Card({
-  selected,
-  interactive,
-  className,
-  children,
-  ...rest
-}: { selected?: boolean; interactive?: boolean; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div className={cx("k-card", className)} aria-selected={selected ?? undefined} data-interactive={interactive || undefined} {...rest}>
-      {children}
-    </div>
-  );
-}
+export const Card = forwardRef<HTMLDivElement, { selected?: boolean; interactive?: boolean; children: ReactNode } & HTMLAttributes<HTMLDivElement>>(
+  function Card({ selected, interactive, className, children, ...rest }, ref) {
+    return (
+      <div ref={ref} className={cx("k-card", className)} aria-selected={selected ?? undefined} data-interactive={interactive || undefined} {...rest}>
+        {children}
+      </div>
+    );
+  },
+);

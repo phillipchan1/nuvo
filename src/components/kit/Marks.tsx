@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cx } from "./cx";
 
 // Chip · Dot · Readiness · Avatar · AvatarStack — the small marks that carry
@@ -34,21 +34,17 @@ export function Chip({
 }
 
 /** A chip you can press — a property shortcut, a removable filter. */
-export function ChipButton({
-  children,
-  dot,
-  icon,
-  className,
-  ...rest
-}: { children: ReactNode; dot?: string; icon?: ReactNode } & ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button type="button" className={cx("k-chip", className)} {...rest}>
-      {dot && <Dot color={dot} />}
-      {icon}
-      <span>{children}</span>
-    </button>
-  );
-}
+export const ChipButton = forwardRef<HTMLButtonElement, { children: ReactNode; dot?: string; icon?: ReactNode } & ButtonHTMLAttributes<HTMLButtonElement>>(
+  function ChipButton({ children, dot, icon, className, ...rest }, ref) {
+    return (
+      <button ref={ref} type="button" className={cx("k-chip", className)} {...rest}>
+        {dot && <Dot color={dot} />}
+        {icon}
+        <span>{children}</span>
+      </button>
+    );
+  },
+);
 
 /** A domain's identity, as a square (default) or a round dot. */
 export function Dot({ color, shape = "square", size = "md", title }: { color: string; shape?: "square" | "round"; size?: "sm" | "md"; title?: string }) {
