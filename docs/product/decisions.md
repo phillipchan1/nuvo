@@ -6830,6 +6830,16 @@ typecheck, build, `tests/kit.test.tsx` (placement, month grid, keycaps, keyboard
 CSS guards), `?kit` at 1440 and 375 in Light and Dark, the live menu (↑/↓, Esc returns focus),
 the dialog (scrim, focus).*
 
+*Then every layout, page and popover (2026-11-13, overnight, eight parallel groups merged onto
+the branch): Planner (Schedule grid, rail and the one TaskRow, both decks), List and Board
+(Table, Groom, Shipped, Domains), Document and Dialog (the record with a property panel,
+Settings, the chat), Flow (Plan the week, rituals, onboarding, login), the six popover kinds and
+capture, and the phone. Calls made on the way: `--signal` marks only *now* (overdue, at-risk and
+late read `--danger` / `--warn`); board heroes state a fact ("N to shape", "N shipped"); the
+all-day row keeps its name *anytime* (P11); phone Calendar rows can tick a task; the phone's top
+bar carries each tab's name as its hero. Verified: typecheck, build, the suite (bar the 18 known),
+every harness in Light and Dark at desktop and 375. Not verified: live data, `npm run perf`, e2e.*
+
 **D-189 · 2026-11-12 · Instrument replaces Warm Paper. One material, Light and Dark, Inter,
 a bold hero, fewer words, faster motion.** *(Decided by the operator after the D-186 site: "the
 perfectionism of Linear app, but with our ambitious boldness"; voice chosen from a mockup:

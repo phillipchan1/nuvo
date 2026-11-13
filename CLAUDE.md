@@ -61,6 +61,9 @@ in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain
 
 - **The frame** (D-190): sidebar on a `--ground`, all work in one inset `.app-panel`, one
   `PageBar` per page (breadcrumb · tabs · actions). No page draws its own toolbar. `?rail=frame`.
+- **Six layouts, six popovers** (D-190): every page is Planner · List · Board · Document ·
+  Dialog · Flow and every floating thing is Menu · Picker · Date · Inspector · Tooltip/Toast ·
+  Command — see `docs/design-language.md`. A new page picks a layout; it doesn't invent one.
 - **Build from the kit** (`src/components/kit/`, D-190). A button, field, choice, chip, row,
   menu, picker, popover or dialog is a kit part — never hand-rolled, never re-styled at the call
   site. Need something it lacks? Add it to the kit (and to `?kit`) first. Verify at `?kit`.
