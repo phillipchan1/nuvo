@@ -121,13 +121,16 @@ all).
 horizontal scroll at 375px, tap targets under 44px, hover-only affordances, or a
 cursor-anchored popover on a phone.
 
-### 14 · Warm Paper — dissolve, don't frame
+### 14 · Instrument — exact chrome, heroes that mean it
 
-**Why.** One continuous sheet of paper, written on with an editorial hand; the things you
-touch lift toward you. The full grammar is [`design-language.md`](../design-language.md).
-**Violated when** an opaque `bg-*` paints over `.atmosphere`, a hero isn't Fraunces, a flat
-focus ring replaces the lift, or a raw hex appears instead of a token. *Amended by D-187: the grammar
-has a seventh move — what you do lands — and the hero is set at `--hero-weight`.*
+**Why.** Nuvo serves ambitious people; the tool should feel engineered and confident. One
+flat ground, hairlines at an exact weight, Inter for all work, one committed accent, one bold
+hero per surface, motion that answers the hand. The full grammar is
+[`design-language.md`](../design-language.md).
+**Violated when** a second theme, material or typeface appears; a surface carries more than
+one hero or a hero that isn't `text-display masthead`; a label explains what the UI already
+shows; anything blurs; or a raw hex appears instead of a token. *Replaced "Warm Paper" in D-189;
+D-187's Momentum moves carry over.*
 
 ### 15 · Protect the boring core
 

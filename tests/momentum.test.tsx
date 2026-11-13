@@ -5,14 +5,14 @@
  *
  * Three things have to stay true and none of them shows up in a screenshot:
  *
- *  1. EVERY MATERIAL SPEAKS IT. The vocabulary is roles, re-expressed per skin
- *     (Paper springs, Flat snaps, Blueprint drafts, Terminal steps, E-ink holds
- *     still). A skin that forgets a token silently inherits Paper's — a spring
- *     on a console, a glow on e-paper — which is exactly the drift this guards.
+ *  1. INSTRUMENT SPEAKS IT. The vocabulary is roles (momentum.css declares the
+ *     defaults); Instrument, the one material (D-189), restates every role in
+ *     its own idiom in styles/instrument.css. A role it forgets silently falls
+ *     back to the default — exactly the drift this guards.
  *  2. IT IS CHEAP. Keyframes move transform and opacity only.
  *  3. IT IS EARNED. Progress advances only when it increases after mount; data
- *     arriving, or an undo, never plays it. And a material that doesn't move
- *     (E-ink's 1ms ladder) or a reduced-motion user never starts one.
+ *     arriving, or an undo, never plays it. And a reduced-motion user (or a
+ *     ladder that resolves to nothing) never starts one.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -25,7 +25,7 @@ import { spanElapsed } from "../src/lib/pace";
 
 const read = (p: string) => readFileSync(resolve(__dirname, "..", p), "utf8");
 const MOMENTUM = read("src/styles/momentum.css");
-const SKINS = ["flat", "blueprint", "terminal", "eink"] as const;
+const INSTRUMENT = read("src/styles/instrument.css");
 
 /** The role tokens a material must restate in its own idiom. Durations are
  *  NOT here on purpose: they derive from each material's own --d-* ladder. */
@@ -40,21 +40,20 @@ const ROLE_TOKENS = [
   "--now-wake-h",
 ];
 
-describe("every material speaks momentum", () => {
-  it("Paper (the base) declares every role and every duration", () => {
+describe("Instrument speaks momentum", () => {
+  it("momentum.css (the defaults) declares every role and every duration", () => {
     for (const t of [...ROLE_TOKENS, "--d-land", "--d-advance", "--d-commit", "--d-stagger", "--d-task-complete"]) {
       expect(MOMENTUM, t).toMatch(new RegExp(`${t}\\s*:`));
     }
   });
 
-  it.each(SKINS)("%s restates every role token in its own MOMENTUM block", (skin) => {
-    const css = read(`src/skins/${skin}.css`);
-    const block = css.slice(css.indexOf("MOMENTUM (D-187)"));
-    expect(block.length, `${skin}.css has no MOMENTUM block`).toBeGreaterThan(20);
-    for (const t of ROLE_TOKENS) expect(block, `${skin} is missing ${t}`).toMatch(new RegExp(`${t}\\s*:`));
+  it("instrument.css restates every role token in its MOMENTUM block", () => {
+    const block = INSTRUMENT.slice(INSTRUMENT.indexOf("MOMENTUM (D-187)"));
+    expect(block.length, "instrument.css has no MOMENTUM block").toBeGreaterThan(20);
+    for (const t of ROLE_TOKENS) expect(block, `instrument is missing ${t}`).toMatch(new RegExp(`${t}\\s*:`));
   });
 
-  it("durations derive from each material's own ladder, never a fixed time", () => {
+  it("durations derive from the material's own ladder, never a fixed time", () => {
     for (const t of ["--d-land", "--d-advance", "--d-commit", "--d-stagger"]) {
       const decl = new RegExp(`\\n\\s*${t}:\\s*calc\\(var\\(--d-`).test(MOMENTUM);
       expect(decl, `${t} must be calc(var(--d-…) * k)`).toBe(true);
@@ -92,8 +91,8 @@ describe("lib/motion", () => {
     expect(parseTime("")).toBe(0);
   });
 
-  it("treats a material with no moving ladder as reduced motion", () => {
-    // jsdom has no stylesheet: --d-land resolves to nothing, i.e. E-ink's case.
+  it("treats a ladder that resolves to nothing as reduced motion", () => {
+    // jsdom has no stylesheet: --d-land resolves to nothing.
     expect(motionOff()).toBe(true);
   });
 });

@@ -580,7 +580,7 @@ export default function OnDeckPlanner() {
       >
         {inbox.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
-            Nothing waiting — every project has a sprint. Drag a project here to shelve it.
+            Nothing waiting
           </p>
         ) : (
           <div className="mt-1.5 flex flex-col gap-2">
@@ -775,7 +775,7 @@ export default function OnDeckPlanner() {
                   </div>
                 ) : (
                   <div className="pointer-events-none relative px-4 pt-14 text-center text-caption text-muted">
-                    No projects placed yet — drag one in from the rail, or tap a week to start one here.
+                    No projects placed
                   </div>
                 )
               ) : (
@@ -805,8 +805,7 @@ export default function OnDeckPlanner() {
         )}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
           <ShippedStrip rung="project" />
         </div>
       </div>

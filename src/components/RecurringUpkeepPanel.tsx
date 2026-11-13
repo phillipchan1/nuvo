@@ -226,7 +226,7 @@ function UpkeepRow({
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
-            <div className="rise elev-2 absolute right-0 top-full z-[71] mt-1 min-w-[140px] rounded-[var(--radius)] border border-line bg-surface py-1">
+            <div className="pop-in [--pop-origin:top_right] elev-2 absolute right-0 top-full z-[71] mt-1 min-w-[140px] rounded-[var(--radius)] border border-line bg-surface py-1">
               <button
                 type="button"
                 className="fast block w-full px-3 py-2 text-left text-caption hover:bg-bg"

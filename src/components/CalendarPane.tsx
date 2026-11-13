@@ -3961,9 +3961,6 @@ function CalendarPane({
                 )}
               </div>
             )}
-            {showChildren && slotChildren.length === 0 && (
-              <span className="mt-1 text-meta italic text-muted/70">empty — click to add</span>
-            )}
           </div>
         </div>
       );
@@ -4424,7 +4421,7 @@ function CalendarPane({
           <div
             ref={eventMenuRef}
             data-nested-surface=""
-            className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
@@ -4694,7 +4691,7 @@ function CalendarPane({
         <div
           ref={taskEventPickRef}
           data-nested-surface=""
-          className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+          className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
           style={{
             top: fixedCssPx(Math.min(taskEventPick.y, window.innerHeight - 300)),
             left: fixedCssPx(Math.min(taskEventPick.x, window.innerWidth - 210)),
@@ -4737,7 +4734,7 @@ function CalendarPane({
           <div
             ref={slotMenuRef}
             data-nested-surface=""
-            className="rise elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            className="pop-in [--pop-origin:top_left] elev-3 fixed z-[60] w-[224px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
@@ -4832,7 +4829,7 @@ function CalendarPane({
               {name}
             </div>
             <p className="mt-1.5 text-caption text-ink">
-              Sitting placed. {waiting.length} piece{waiting.length === 1 ? "" : "s"} already{" "}
+              {waiting.length} piece{waiting.length === 1 ? "" : "s"} already{" "}
               {waiting.length === 1 ? "has" : "have"} a time this week.
             </p>
             <div className="mt-1.5 border-t border-line">
@@ -5057,7 +5054,7 @@ function CalendarPane({
                 <div className="fixed inset-0 z-40" onClick={() => setUtilsOpen(false)} />
                 <div
                   role="menu"
-                  className="rise elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
+                  className="pop-in [--pop-origin:top_right] elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
                 >
                   {onOpenUpkeep && (
                     <button

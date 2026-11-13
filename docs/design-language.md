@@ -1,46 +1,45 @@
-# Nuvo design language — "Warm Paper" + glass + momentum
+# Nuvo design language — Instrument (D-189)
 
-The look every screen is converging on. **Read this before building any new surface.**
-Tokens live in [`src/index.css`](../src/index.css); this file is the *grammar* — why the
-tokens are used the way they are, and the rules that keep new work coherent.
+**Read this before building any new surface.** Tokens: [`src/index.css`](../src/index.css)
+(Light and Dark). Chrome and motion: [`src/styles/instrument.css`](../src/styles/instrument.css).
+This file is the grammar.
 
-The thesis, in one line: **one continuous sheet of warm paper, written on with an
-editorial hand — the things you touch are panes of glass that lift toward you, and the
-things you do land on it with weight.** It is not a color theme. It is spacing,
-hierarchy, flatness, restraint, type, a single, physical idea of "focus" — and, since
-D-187, a single idea of **momentum**: progress you can see move, a week you can feel lock
-in, a hero that says its name like it means it. That axis is
-[**Momentum**](#momentum--the-ambition-axis-d-187) below, and every material speaks it. Reference screens: the **Schedule** calendar
-(`CalendarPane` + `LeftRail`) and the **Domain** wall + open domain (`DomainFloor`). When in
-doubt, go look at those.
+The thesis: **exact chrome, heroes that mean it.** The perfectionism of a precision tool, with
+the boldness of the people who use it. Reference screens: the **Schedule** (`CalendarPane` +
+`LeftRail`) and the **Domain** wall + open domain (`DomainFloor`).
+
+*History: until D-189 this was "Warm Paper" (a cream gradient, Fraunces heroes, glass that
+lifts) across five materials and 27 schemes. Sections below that still describe glass describe
+class names that now render as solid surfaces; the rules in this header win.*
 
 ---
 
-## The grammar (seven moves)
+## The grammar (eight moves)
 
-1. **One continuous paper, no panels.** Surfaces dissolve into spacing, not boxes.
-   Borders are hairlines (`--line`) at the edge of perception, often replaced by
-   whitespace entirely. A wall of bordered cards is the old idiom.
-2. **Serif for ceremony, system for work.** Fraunces (`masthead` / `serif`) carries the
-   things that *matter* — the date, the greeting, a floor's name, a mandate, a record's
-   title. The system font does everything else and recedes.
-3. **Color is a whisper, and always semantic.** Nothing is colored for decoration. Every
-   hue means something (roles below) at low saturation. If you can't name what a color
-   *means*, it shouldn't be there.
-4. **Soft tonal blocks, not cards.** When something must be set apart, prefer a
-   low-saturation tinted fill with no border over a bordered container.
-5. **Calm hierarchy, confident hero.** Tracked small-caps eyebrows (`section-label`),
-   generous air, the eye never jostled. Density is fine (the planner is dense); *visual
-   noise* is not. The one hero on a surface is set with conviction (28px, `--hero-weight`)
-   — calm is in everything around it, not in a timid headline.
-6. **The thing in focus lifts.** Selection / drag / active / open is shown by a glass
-   pane physically rising toward you — never a flat outline or color swap. (See **Focus**.)
-   **While you drag-and-hold, the thing you're holding is glass in your hand and the
-   destination is always shown** — no exceptions. (See **Drag-and-hold**.)
-7. **What you do lands.** A task ticked, a block placed, a week committed resolves
-   visibly — a short, weighted motion that is the consequence of *your* act, in the
-   moment of it, and nothing else. Progress is drawn with mass and pace, never scored.
-   (See **Momentum**.) This is the ambition axis; calm is still the default between acts.
+1. **One flat ground per theme.** `--bg` is the ground (chrome, pools, the grid ride it);
+   `--surface` is the sheet (things that float). No gradient, no frost. Structure is a 1px
+   hairline at an exact weight, never a tinted panel.
+2. **Inter does the work.** One face on every shell, with cv02–04 and cv11. No serif, no
+   italic (only the upright axis ships). Emphasis is weight and ink.
+3. **One hero per surface, and it is loud.** `text-display masthead`: 28px desktop / 25px
+   phone, 700, tracked −0.03em. It states a fact or an intent. Everything around it is quiet.
+4. **Say it once.** No eyebrow over a heading that says the same thing, no sentence explaining
+   what the control shows, no keyboard-hint rows (shortcuts live in the Shortcuts sheet and on
+   the control as a keycap), empty states in two or three words. If a visual says it, words
+   don't.
+5. **Colour is semantic.** `--accent` (saturated mulberry) = intent and its landing. `--signal`
+   (ember) = now, only. Domain hue = identity and the work it moved. `--slot` = open time.
+   Never a raw hex.
+6. **State fills, focus rings.** Selected / current = an accent wash with an accent edge, in
+   place. Keyboard focus = a crisp 2px accent ring. Drag ghosts still lift (a thing in your hand
+   looks picked up).
+7. **Motion answers the hand.** Ladder 110 / 180 / 260 / 380ms. Arrivals ease quint-out;
+   popovers and menus scale from their origin (`.pop-in` + `--pop-origin`); modals settle on a
+   spring. Hover is instant in, fades out. Every control gives under a pointer press.
+   Transform and opacity only; nothing blurs.
+8. **What you do lands.** A ticked box, a placed block, a committed week resolve on a real
+   spring (~9% overshoot) in under 300ms, as the consequence of your act and nothing else
+   (Momentum, below).
 
 ---
 
@@ -116,27 +115,12 @@ Laws that hold for every row of that table:
    block in `momentum.css`; WAAPI through `motionOff()`, which also treats a material whose
    ladder is under 30ms (E-ink) as reduced motion. TaskRow then writes at once.
 
-### Every material speaks it in its own idiom
+### Instrument's idiom
 
-The vocabulary is **roles**, not a look. Each material restates every role token in its own
-`MOMENTUM (D-187)` block; the guard fails if one is missing, because a missing token silently
-inherits Paper's — a spring on a console, a glow on e-paper.
-
-| Material | Land | Advance | Commit | Now | Weight (hero · track) |
-|---|---|---|---|---|---|
-| **Paper** (Daybreak · Dusk · Fog) | a warm settle — spring, ~8% overshoot, the bloom ring in `--landed` | glides on `--ease-momentum` | bands drop in on the spring, the accent seal sweeps | 2px line, glow, 22px wake | Fraunces 600 at 28px · 3px rounded |
-| **Flat** (Snow · Chalk · Ink · Arctic · Linen) | **snaps** — crisp ease, no overshoot (a spring on a flat UI reads as a toy) | quick ease | same, crisper | line, **no wake** (Flat has no gradients) | the sans at 700 · 3px |
-| **Blueprint** (Cyanotype · Whiteprint · Sepia) | **drafted** — linear at plotter speed (≈184ms): the box is inked in, the strike ruled | a line ruled across, linear | a rule drawn under the week | line, a 12px pencil-shadow wake | Fraunces 600 · **2px square-ended rule** |
-| **Terminal** (13 themes) | **cell by cell** — `steps(3)`: a block cursor stamping in; no bloom (no light) | `steps(8)` — a TUI progress bar filling cells | bands and seal square, stepped | line, **no wake**; the pace tick is **the cursor** (`--text`) | one cell size, rank by **700** · 4px square blocks |
-| **E-ink** (Paperwhite · Sepia · Carta) | **does not move** — the panel refreshes; `motionOff()` is true, keyframes collapse to their last frame | none — the new state, drawn | the final frame | line, no wake | **size and contrast**: hero 26px (was 23) inside the 400–500 band · 4px **ink** track, ink tick, ink landed mark |
-
-Colour roles always resolve through the scheme's own tokens (`--signal`, `--accent`, `--text`,
-`--line`), never Paper's values. Measured in all 42 skin × scheme × mode combinations on
-2026-11-13 (non-text contrast, WCAG 1.4.11 asks 3:1): the pace tick is **≥4.59:1 on `--bg`
-and ≥3.28:1 on its own `--line` track** everywhere, the landed mark **≥3.33:1** (Gruvbox
-light), the phone's `--warn` light **≥3.71:1** (E-ink Sepia light). Terminal's tick is the
-cursor because its themes' `--signal` fell to 1.8–2.9:1 against `--line` in six schemes. A
-domain hue on a track is the user's own colour and is not measured.
+The vocabulary is **roles**. `momentum.css` declares the defaults; `instrument.css` restates
+every role in its `MOMENTUM (D-187)` block (the guard fails if one is missing). Instrument
+**lands**: a ~9% spring on `--ease-land`, progress gliding in on `--ease-momentum`, a 700 hero, a
+3px track, no now-line wake (no gradient to draw it with).
 
 ### Where it lives
 
@@ -158,121 +142,16 @@ domain hue on a track is the user's own colour and is not measured.
 
 ---
 
-## The material — the atmosphere is sacred
+## Surfaces and focus (replaces "the material", "the three planes" and "glass")
 
-The warm paper is `--bg`; the **`.atmosphere`** class lays a whisper of dawn (top-left)
-+ dusk (bottom-right) light over it. It is applied **once**, high in the shell — on
-**`.app-frame`** (see *The frame* below) — and must read continuously across spine ·
-rail · calendar · floors · Nuvo rail.
-
-> **Cardinal rule: never paint an opaque background over `.atmosphere`.** `bg-bg` /
-> `bg-surface` on a full-bleed container is the "funky seam" — it covers the one canvas
-> and the surface beneath reads as a different, flatter tone (the calendar "frost" that
-> was lighter than the rail). Full-bleed structural containers (floor wrappers, the
-> calendar pane, the agent rail) stay **transparent** and separate with a `border-l/-r`
-> hairline only.
-
----
-
-## The three planes — Aurora only
-
-In **Aurora** (the `paper` skin — the one that sets no `data-skin` attribute) the desktop
-app is three real planes, and **the chat is one of them**:
-
-| Plane | Class | What it is |
-|---|---|---|
-| ground | `.app-ground` | the deep paper everything rests on; a 10px gutter, `--ground` |
-| **shell** | `.app-shell` | a frosted pane — **the chat is printed on this**, it is not a panel on top of it |
-| sheet | `.app-canvas` | the app itself (spine · rail · calendar), raised off the shell |
-
-**Opening Nuvo slides the *sheet* left to uncover a chat that was underneath the whole
-time.** That is the entire argument: the app sits **on** the conversation, so the chat
-visibly holds everything rather than sitting beside it. `.app-chat-slot` animates the
-width (not a transform) so the calendar genuinely reflows into the space.
-
-> **A hairline divider between the sheet and the chat defeats this.** A divider says
-> "two panes, one plane." The chat has no border and no fill of its own — what you see
-> behind it is the shell's own material.
-
-**The cardinal rule holds:** `.atmosphere` lives on the **sheet**, still painted exactly
-once, still continuous across spine · rail · calendar. `--atmosphere-base` lets the sheet
-go translucent (`--bg` at 82%) without touching the two lights, so the shell diffuses up
-through the app instead of being sealed off by it — that translucency is where the airiness
-comes from.
-
-- **`--ground` is derived, never bespoke,** and `--shell` lands between it and `--bg`.
-  Light grounds darken (`black 5%`); dark ones step toward `--line` instead, because
-  mixing black into a near-black yields nothing (measured: 0.7/255 of separation).
-- **Below 1280px all three flatten** — no gutter, no radius, no border, and the sheet's
-  atmosphere goes fully opaque again. Same threshold at which the Nuvo rail auto-collapses.
-- **macOS (Tauri):** the traffic lights live in the ground's top band, *above* the shell,
-  so `--titlebar-inset-top/-left` are zeroed on `.app-shell` and every consumer
-  (`.spine-top`, `.trial-banner`, `.app-topbar`, `.titlebar-pad`, `.spine-separator`)
-  collapses through the cascade. Anything `fixed inset-0` covers the whole *window*, not
-  the sheet, so it reads the preserved `--titlebar-h` / `--titlebar-x` — `.flow-topbar`
-  is the one such case.
-
-### Why the other four materials don't get this
-
-Flat, Terminal, Blueprint and E-ink stay **edge to edge, exactly as before.** They kill
-`backdrop-filter` wholesale and E-ink zeroes every shadow, so a "floating glass sheet"
-there degrades into three flat rectangles pretending to be layered — worse than the honest
-full-bleed canvas they already had. Glass is an Aurora idea; the whole block is scoped
-`html:not([data-skin])`.
-
----
-
-## Glass — the resting material AND the focus system
-
-This is the layer that makes "focus lifts" actually read. Two ideas, one material:
-
-**1. The resting material is already glass.** Cards and event blocks are *translucent*
-(so the atmosphere gradient reads through them), frosted by a backdrop blur, with a
-faint top-light sheen. Lift only reads as elevation because there's a glass plane to
-rise *from* — **never lift a solid-white card; make it glass first.**
-
-**2. Focus = the same glass, lifted.** The focal element rises with a real shadow
-(`--shadow-lift`) and a small translate. No outline, no ring, no color swap.
-
-**3. …except the keyboard, which gets the one ring in the app.** "Focus lifts" answers
-*selection* — this is the thing you picked, and it is true whether you picked it with a
-mouse or a key. It does not answer **"where is my cursor right now"**, and a keyboard
-user has nothing else to answer it with: no pointer, and a shadow that reads as depth
-under a mouse reads as nothing when it is the only mark on the screen. WCAG 2.4.7 asks
-for that answer, so there is exactly one ring and it is spent here:
-
-```css
-:where(button, a[href], [tabindex]:not([tabindex="-1"]), [role="button"], …):focus-visible {
-  outline: 2px solid var(--ring);   /* --ring = --accent */
-  outline-offset: 2px;
-}
-```
-
-The rule that keeps it from becoming the old flat outline is **`:focus-visible`, never
-`:focus`** — the browser only matches it for keyboard interaction, so a *clicked* button
-still gets the quiet lift and nothing else. `outline` rather than `box-shadow` so it
-neither touches layout nor overwrites `--shadow-lift`: a focused glass card keeps its
-lift *and* gains the ring. Text inputs are excluded — a caret plus the `--accent-soft`
-ring already says "you are here", and a third mark reads as an error state.
-
-Two supporting rules live with it, both in `src/index.css`: hover-revealed row actions
-(`opacity-0 group-hover:opacity-100`) come back on `:focus-within`, because otherwise
-they stay focusable and *invisible*; and `.fc-event` re-earns the ring on
-`:focus-visible` at a 1px offset, having suppressed it on `:focus`. The gate that keeps
-all of this honest is `tests/keyboard-operability.test.ts`.
-
-### The token vocabulary (all in `src/index.css`)
-
-| Token | Is | Used on |
-|-------|----|---------|
-| `--shadow-lift` | the deep, warm focal shadow (per-theme) | every lift |
-| `.glass-card` | resting glass: translucent + blur + sheen, **no** border/shadow | board cards, Today hero cards (the "right now" block, open-time offer, focus/done moment) |
-| `.glass-lift` | selected / active / open: glass + `--shadow-lift` + `translateY(-3px) scale(1.015)` + inset top highlight. **No accent ring.** | board cards & calendar chips when selected (via `itemSelectClass`) |
-| `.glass-lift-row` | the row variant: same glass + shadow, `translateY(-2px)`, **no horizontal scale** (so a wide row can't overflow) | selected table rows & timeline name-column rows (via `itemSelectRowClass`) |
-| `.glass-grab` | the "picked up" variant: more blur, `scale(1.04) rotate(-0.5deg)` | drag ghosts (board, timeline tray, reorderable lists — Week's Plan priorities) |
-| drop indicator | a 2px `--accent` bar (`h-0.5 rounded-full`) at the landing gap | reorder lists; the "where it lands" half of the drag contract |
-| `.lift-anim` | springs the lift in/out (`transform` on `--ease-spring`) | board cards, table/timeline rows |
-| `.is-dragging` | the vacated slot left behind: `opacity .4` + dashed border | the source card while its ghost is dragged |
+- `.atmosphere` still marks the one continuous ground, painted once; it is flat `--bg` now.
+- The app is edge-to-edge. The DOM keeps its three planes (ground · shell · sheet) for the chat
+  reveal; none of them is painted.
+- `.glass`, `.glass-card`, `.glass-tint` render as an opaque `--surface`. `.glass-lift` /
+  `.glass-lift-row` are the **selection fill** (accent wash + accent edge, no rise).
+  `.glass-grab` is the drag ghost: solid, `--shadow-lift`, still picked up.
+- `backdrop-filter` is off globally (`index.css`, one `!important` rule). A full-bleed overlay
+  that relied on a blur for opacity is painted `--bg` instead.
 
 ### Drag-and-hold — the contract (universal, no exceptions)
 

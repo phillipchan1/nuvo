@@ -361,7 +361,7 @@ export default function TaskActionsMenu({
       role="menu"
       aria-label={task.title}
       data-nested-surface=""
-      className="rise elev-3 fixed z-[70] w-[224px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+      className="pop-in [--pop-origin:top_left] elev-3 fixed z-[70] w-[224px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
       // Client px measured, CSS px placed — under UI zoom the two differ, and the
       // calendar's block menu (which now IS this menu) had always corrected it.
       style={{ top: fixedCssPx(pos.top), left: fixedCssPx(pos.left), maxHeight: "calc(100vh - 16px)" }}

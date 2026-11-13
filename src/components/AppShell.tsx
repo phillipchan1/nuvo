@@ -36,7 +36,6 @@ const RecordModal = lazy(() => import("./record/RecordModal"));
 const CreateRecord = lazy(() => import("./floors/CreateRecord"));
 const CapacityRun = lazy(() => import("./capacity/CapacityRun"));
 const Orientation = lazy(() => import("./orientation/Orientation"));
-import StatusBar from "./terminal/StatusBar";
 import KeepAlive from "./KeepAlive";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
@@ -546,7 +545,6 @@ const AppShellInner = memo(function AppShellInner() {
       </div>
 
       {/* The terminal skin's status bar — renders null on every other material. */}
-      <StatusBar />
       </div>
 
       {/* Nuvo is NOT on the sheet — it is the shell the sheet rests on. No card,

@@ -95,7 +95,7 @@ describe("Settings → About · Download for Mac", () => {
     // The phone starts on the section list even when seeded at About.
     expect(screen.queryByText("Download for Mac")).toBeNull();
     await user.click(screen.getByRole("button", { name: /About/ }));
-    expect(screen.getByText(/held in one calm place/)).toBeTruthy();
+    expect(screen.getByText(/^v\d/)).toBeTruthy();
     expect(screen.queryByText("Download for Mac")).toBeNull();
     expect(screen.queryByRole("link", { name: "Download" })).toBeNull();
   });

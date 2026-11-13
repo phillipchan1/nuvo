@@ -87,7 +87,6 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
         }
       >
         <h1 className="text-display masthead">Table</h1>
-        <p className="mt-1 text-body text-muted">Every initiative at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">I</kbd> to create.</p>
       </FloorHeader>
 
       {/* The Standing — the floor's readiness echo of the spine gauge (Defined ·
@@ -114,6 +113,7 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
             ],
             onNew: () => openFloorModal("new-initiative"),
             newLabel: "+ new initiative",
+            newKey: "I",
             storageKey: "initiatives",
             selectable: true,
             onBulkDelete: deleteInitiatives,

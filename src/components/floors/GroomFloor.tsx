@@ -35,8 +35,7 @@ export default function GroomFloor() {
     <div className="flex min-h-0 flex-col">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-lead masthead leading-none">Groom</h1>
-          <p className="mt-1.5 text-caption text-muted">Shape the work — define it, break it down, route it. Thinnest first.</p>
+          <h1 className="text-display masthead leading-none">Groom</h1>
         </div>
         {groomable.length > 0 && (
           <div className="flex shrink-0 items-center gap-3 text-caption">
@@ -55,22 +54,6 @@ export default function GroomFloor() {
           </div>
         )}
       </div>
-
-      {groomable.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {[
-            { k: "⏎", label: "add a step" },
-            { k: "30m", label: "sets its length" },
-            { k: "j k", label: "move in a card" },
-            { k: "⇥", label: "next project" },
-          ].map((h) => (
-            <span key={h.label} className="flex items-center gap-1.5 text-micro text-muted">
-              <kbd className="mono rounded border border-line bg-surface-2 px-1.5 py-0.5 text-meta text-ink" style={{ borderBottomWidth: 2 }}>{h.k}</kbd>
-              {h.label}
-            </span>
-          ))}
-        </div>
-      )}
 
       <GroomWall lanes={board.lanes} onOpen={(id) => openRecord("project", id)} />
     </div>

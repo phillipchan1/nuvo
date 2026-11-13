@@ -57,6 +57,9 @@ export interface CollectionConfig {
   extraColumns?: { key: string; label: string }[];
   onNew?: () => void;
   newLabel?: string;
+  /** The key that creates one from anywhere on the floor — shown as a keycap on
+   *  the button, the one place it is discoverable (D-189 cut the hint sentence). */
+  newKey?: string;
   /** persist the chosen view per collection */
   storageKey: string;
   /** Desktop-grade selection in every view */
@@ -113,7 +116,16 @@ export default function Collection({ config }: { config: CollectionConfig }) {
             </div>
           )}
         </div>
-        {config.onNew && <Btn kind="primary" onClick={config.onNew}>{config.newLabel ?? "+ new"}</Btn>}
+        {config.onNew && (
+          <Btn kind="primary" onClick={config.onNew} title={config.newKey ? `Create (${config.newKey})` : undefined}>
+            {config.newLabel ?? "+ new"}
+            {config.newKey && (
+              <kbd className="mono ml-2 rounded px-1 text-meta opacity-70" style={{ border: "1px solid color-mix(in srgb, var(--on-accent) 35%, transparent)" }}>
+                {config.newKey}
+              </kbd>
+            )}
+          </Btn>
+        )}
       </div>
 
       <MarqueeOverlay style={selection.marqueeStyle} />

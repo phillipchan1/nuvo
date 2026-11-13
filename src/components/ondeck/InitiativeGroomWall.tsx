@@ -368,7 +368,7 @@ function InitiativeGroomCard({
 
         {i.keyResults.length === 0 && proposedKRs.length === 0 && (
           <div className="rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-micro text-muted">
-            No key results yet — the number this initiative moves. Type one below, or draft with Nuvo.
+            No key results yet
           </div>
         )}
 
@@ -452,7 +452,7 @@ export default function InitiativeGroomWall({ lanes, onOpen }: { lanes: Initiati
   if (ordered.length === 0) {
     return (
       <div className="mt-4 rounded-xl border border-line px-4 py-10 text-center text-caption text-muted">
-        No initiatives to groom — every initiative is shaped, or make a new one from the On Deck rail.
+        Nothing to groom
       </div>
     );
   }

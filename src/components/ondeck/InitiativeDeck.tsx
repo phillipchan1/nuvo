@@ -408,7 +408,7 @@ export default function InitiativeDeck() {
       >
         {board.inbox.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
-            Every initiative has a quarter. Drag one here to shelve it.
+            Nothing waiting
           </p>
         ) : (
           <div className="mt-1.5 flex flex-col gap-2">
@@ -601,8 +601,7 @@ export default function InitiativeDeck() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-micro text-muted">Drag onto a quarter to commit a finish line · drag to the rail to shelve · click to open</span>
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
             <ShippedStrip rung="initiative" />
           </div>
       </div>

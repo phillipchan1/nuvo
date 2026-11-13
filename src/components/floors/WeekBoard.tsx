@@ -514,7 +514,7 @@ export default function WeekBoard({
             ))}
           </div>
           <span className="shrink-0 whitespace-nowrap pl-2 pt-1 text-meta text-muted">
-            {drag ? "drop here to keep it this week, no day" : "drag onto a day →"}
+            {drag ? "drop here to keep it this week, no day" : null}
           </span>
         </div>
       )}

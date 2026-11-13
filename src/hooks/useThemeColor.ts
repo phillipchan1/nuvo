@@ -1,11 +1,9 @@
 import { useEffect } from "react";
 
 // Keep <meta name="theme-color"> — the browser chrome / iOS status-bar ground —
-// in step with the RESOLVED --bg, whatever combination of data-theme /
-// data-skin / data-palette produced it. The two static media-attributed tags in
-// index.html only know the default Warm Paper pair; a dark-in-light-OS user (or
-// any skin) got a mismatched bar. Watches the <html> attributes and re-reads
-// the computed token.
+// in step with the RESOLVED --bg for the current data-theme. The two static
+// media-attributed tags in index.html only follow the OS; a dark-in-light-OS
+// user got a mismatched bar. Watches <html data-theme> and re-reads the token.
 export function useThemeColor() {
   useEffect(() => {
     const apply = () => {
@@ -28,7 +26,7 @@ export function useThemeColor() {
     const observer = new MutationObserver(apply);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme", "data-skin", "data-palette"],
+      attributeFilter: ["data-theme"],
     });
     return () => observer.disconnect();
   }, []);

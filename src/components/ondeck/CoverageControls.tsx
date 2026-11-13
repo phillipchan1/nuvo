@@ -129,11 +129,6 @@ export default function CoverageControls({
                   </button>
                 );
               })}
-              {byDomain && (
-                <p className="px-1.5 pb-0.5 pt-1.5 text-micro leading-snug text-muted">
-                  A hidden domain still gets a row while it has a project placed — hiding never hides work.
-                </p>
-              )}
             </div>
           </>
         )}

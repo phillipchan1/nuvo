@@ -993,7 +993,7 @@ function LeftRail({
                 />
               ) : (
                 <>
-                  <EmptyState text="Inbox zero. Capture with A or ⌘K." />
+                  <EmptyState text="Inbox zero" />
                   <InboxAddressHint />
                 </>
               )
@@ -1074,7 +1074,7 @@ function LeftRail({
               <div className="px-3 py-6 text-center text-caption text-muted">
                 {filtering
                   ? "Nothing today matches the filter."
-                  : "Nothing for today yet — capture below, or drag from the calendar."}
+                  : "Nothing today"}
               </div>
             )}
             {/* Done — the quiet tail, folded to a single line (Loose-ends pattern). */}
@@ -1482,7 +1482,7 @@ function Popover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="rise elev-3 absolute bottom-12 left-2 z-30 w-[330px] rounded-lg border border-line bg-surface p-2.5">
+    <div className="pop-in [--pop-origin:bottom_left] elev-3 absolute bottom-12 left-2 z-30 w-[330px] rounded-lg border border-line bg-surface p-2.5">
       <div className="mb-1 flex items-center justify-between">
         <div className="truncate pr-2 text-label font-medium text-muted">{title}</div>
         <button onClick={onClose} className="text-label text-muted hover:text-ink">esc</button>

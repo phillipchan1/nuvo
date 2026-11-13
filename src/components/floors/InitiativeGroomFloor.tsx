@@ -41,8 +41,7 @@ export default function InitiativeGroomFloor() {
     <div className="flex min-h-0 flex-col">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-lead masthead leading-none">Grooming</h1>
-          <p className="mt-1.5 text-caption text-muted">Shape the initiatives — define the objective, set the measures. Thinnest first.</p>
+          <h1 className="text-display masthead leading-none">Groom</h1>
         </div>
         {active > 0 && (
           <div className="flex shrink-0 items-center gap-3 text-caption">

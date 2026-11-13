@@ -53,37 +53,30 @@ ledger row if it moved.
 a default. `/anchor` runs check 1–4 properly; `/product-audit` holds the running app
 against all of it.
 
-## Design language — "Warm Paper"
+## Design language — "Instrument" (D-189)
 
-The app is converging on one design language; the full grammar + token vocabulary is in
-**`docs/design-language.md`** — read it before building any new surface. The reference
-screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain** wall + open domain.
-The rules that prevent regressions:
+Exact chrome, heroes that mean it. Full grammar: **`docs/design-language.md`** — read it before
+building any new surface. Tokens in `index.css` (Light and Dark, nothing else); chrome and motion
+in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain** wall.
 
-- **Never paint an opaque `bg-*` over the `.atmosphere` canvas.** Full-bleed structural
-  containers (floor wrappers, the calendar pane, the agent rail) stay **transparent** and
-  separate with a `border-l/-r` hairline — the one warm-paper gradient must read
-  continuously across spine · rail · calendar · floors. An opaque `bg-surface`/`bg-bg`
-  there is the "frost seam."
-- **Floor / record / day heroes are Fraunces** (`text-display masthead`) — never
-  `font-semibold`.
-- **Dissolve, don't frame.** Default to hairline-separated rows on the paper; a bordered
-  `bg-surface` card is only for things that genuinely *float* (records, modals, board /
-  Today cards). Progress tracks use `--line`, never `bg-bg`.
-- **Color is semantic and low-saturation** — always a token (`--accent` = intent,
-  `--signal` = now, domain color = identity, `--slot` = open/unclaimed). Never a raw hex.
-- **Planner surfaces share one grammar.** The Schedule, the project deck and the
-  initiative deck are the same act at three clock speeds (pool left → grid of time
-  right). Pool = `PlannerRail` (transparent, full-height, crown carries readiness in
-  the execution voice, ＋ pill at the foot); grid fills the pane. `--signal` = now,
-  `--accent` = intent, `--slot` = open/claimable. Altitude reads through card weight
-  and voice, never a different frame. Full law in `docs/design-language.md`.
-- **Focus lifts, it doesn't outline.** Floating things rest as glass (`.glass-card` —
-  translucent + frost), and the focal element (selected/active/dragged/open) *lifts* from
-  it with `--shadow-lift` + a small rise, **no flat ring**: `.glass-lift` (cards/chips),
-  `.glass-lift-row` (table/timeline rows), `.glass-grab` (drag ghosts). Colored items
-  (calendar events) keep their fill and apply the shadow/transform inline; on the Schedule
-  the lift is instant (no transition).
+- **Two themes, one material.** Never add a theme, material, scheme or second typeface (N-21).
+- **Inter for everything; no serif, no italic.** The hero of a surface is `text-display
+  masthead` (700, tight) — exactly one per surface, never `font-semibold` and never a bespoke size.
+- **Say it once.** No eyebrow restating a heading, no helper sentence explaining the UI, no
+  keyboard-hint rows (a shortcut rides its control as a keycap), empty states in a few words.
+- **Flat ground, solid floats.** Full-bleed structure stays transparent on `--bg` with a
+  hairline; only things that float get `--surface` + a shadow. Nothing blurs (a global rule
+  enforces it).
+- **Color is semantic, always a token.** `--accent` intent · `--signal` now · domain hue
+  identity · `--slot` open. Never a raw hex.
+- **Planner surfaces share one grammar.** Schedule, project deck and initiative deck are the
+  same act at three clock speeds (pool left → grid of time right). Pool = `PlannerRail`; grid
+  fills the pane. Altitude reads through card weight and voice, never a different frame.
+- **Selection fills, focus rings, drag lifts.** `.glass-lift` / `.glass-lift-row` are the
+  selection fill; `.glass-grab` is the picked-up ghost; keyboard focus is a 2px accent ring.
+- **Motion answers the hand.** 110/180/260/380ms; menus and popovers use `.pop-in` with a
+  `--pop-origin`; modals `.moment`; what you did lands on `--ease-land`. Transform and opacity
+  only, only on the user's own act.
 
 ## Native feel — the browser stays out of the way ([`docs/native-feel/`](docs/native-feel/00-summary.md))
 
@@ -412,7 +405,7 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
   `--line-strong`, `--surface`, `--surface-2`, `--muted`, `--ink`, `--signal`, etc.
 - Semantic type scale: `text-display`, `text-lead`, `text-head`, `text-body`,
   `text-caption`, `text-meta`, `text-micro`, `section-label`; `.mono` lever for numerics.
-- Native system font for UI; Jakarta wordmark; Fraunces for ceremony. Respect light/dark
+- Inter for all UI (no serif, no italic); Jakarta for the wordmark only. Respect light/dark
   (`data-theme` on `<html>`).
 
 ## Tauri specifics

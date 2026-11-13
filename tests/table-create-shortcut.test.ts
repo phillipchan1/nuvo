@@ -4,7 +4,9 @@
 // will not patch the string. Projects → Table still said "Press N to create."
 // N has no create handler (N is "plan for next week" on Inbox). Create is P
 // (project) and I (initiative), plus the + new buttons. This file locks the
-// blurbs to those keys so a future copy pass cannot re-invent N.
+// blurbs to those keys so a future copy pass cannot re-invent N. Since D-189
+// the key rides the "+ new" button as a keycap (`newKey`) rather than a
+// sentence under the hero; the lock moved with it.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -26,16 +28,12 @@ const TABLE_FLOORS = [
 describe("Table create-shortcut copy", () => {
   it("Projects Table tells the user to press P", () => {
     const table = read("components/floors/PortfolioFloor.tsx");
-    expect(table, `${rel("components/floors/PortfolioFloor.tsx")} must name P`).toMatch(
-      /Press <kbd[^>]*>P<\/kbd> to create/,
-    );
+    expect(table, `${rel("components/floors/PortfolioFloor.tsx")} must name P`).toMatch(/newKey: "P"/);
   });
 
   it("Initiatives Table tells the user to press I — the twin of the same lie", () => {
     const table = read("components/floors/InitiativesFloor.tsx");
-    expect(table, `${rel("components/floors/InitiativesFloor.tsx")} must name I`).toMatch(
-      /Press <kbd[^>]*>I<\/kbd> to create/,
-    );
+    expect(table, `${rel("components/floors/InitiativesFloor.tsx")} must name I`).toMatch(/newKey: "I"/);
   });
 
   it("Collection / Table floors do not advertise N as create", () => {

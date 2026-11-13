@@ -1,12 +1,10 @@
 @import "tailwindcss";
-/* Jakarta is kept for the wordmark only — the UI runs on the native system
-   font so the type recedes across every panel. */
+/* Jakarta is kept for the wordmark only. The UI runs on Inter (below). */
 @import "@fontsource/plus-jakarta-sans/600.css";
 @import "@fontsource/plus-jakarta-sans/700.css";
-/* Inter — the FLAT material's voice only (see the flat skin block). Paper keeps
-   the native system font; a workspace-register skin is judged on having the
-   neutral grotesque every app in that register wears, and the system stack is
-   the one thing that reads as "not that app" at a glance.
+/* Inter — the UI face, on every surface and every shell (D-189). The native
+   system stack was most of why the app read as stock: one face on Mac, iPhone
+   and web, with tabular figures and the alternates that tell 1 / l / I apart.
 
    Declared by hand rather than via the package's index.css, which pulls all
    SEVEN subsets (218 KiB). unicode-range means a browser only ever downloads
@@ -22,53 +20,44 @@
   src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-/* Fraunces — the editorial serif, reserved for ceremonial surfaces (the Domain   floor). Variable: optical sizing + a touch of SOFT warms the terminals. */
-@import "@fontsource-variable/fraunces/full.css";
-@import "@fontsource-variable/fraunces/full-italic.css";
+/* Fraunces is retired from the app (D-189): the hero voice is Inter. The
+   marketing site still loads its own copy. */
 
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
 /* ════════════════════════════════════════════════════════════════════════
-   TWILIGHT — Nuvo's design language.
-   The metaphor is the arc of a day: dawn → daylight → dusk. Warm-neutral
-   surfaces, a twilight-indigo accent, a warm ember signal. Work surfaces stay
-   dense and hairline; ceremonial surfaces (flows, rituals, the assistant)
-   rise on soft light. Motion is calm by default, with a gentle spring kept
-   for the moments that matter.
+   INSTRUMENT — Nuvo's design language (D-189). Grammar: docs/design-language.md.
+
+   Exact chrome, heroes that mean it. One flat ground per theme, hairlines at
+   an exact weight, Inter for all work, one committed accent, an ember "now".
+   Two themes, Light and Dark, set on <html data-theme> — and nothing else.
+   The five materials and 27 schemes this replaced are gone (N-list, D-189).
+
+   The ramp, both themes: --bg is the GROUND (chrome, pools and the grid ride
+   it), --surface is the SHEET (cards, sheets, modals, the things that float),
+   --surface-2 sits between. Light: bg < surface-2 < surface. Dark: bg <
+   surface < surface-2. Neutrals carry a few degrees of the accent's hue so the
+   greys read chosen, not default.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* ════════════════════════════════════════════════════════════════════════
-   PALETTES — three moods on a warmth axis (Daybreak · Dusk · Fog) set on
-   <html data-palette>, crossed with light/dark on <html data-theme>. Each mood
-   declares a COMPLETE, temperature-matched palette — not just neutrals but the
-   accent, slot, and default-event colours too — so the app is beautiful in any
-   theme, whatever's on the calendar. Only the ember "signal" (now / overdue /
-   urgent) stays constant: urgency should read warm everywhere.
-   Base (no data-palette) = Daybreak.
-   ════════════════════════════════════════════════════════════════════════ */
-
-/* ── Signal — the one constant: warm ember in light, coral in dark ───────── */
+/* ── Signal — NOW, and only now: today, the now-line, the pace tick ───────
+   Darkened in-hue in light to clear 4.5:1 on --bg, --surface and --surface-2
+   (it is read as text: overdue, at-risk). `--on-signal` is the ink on a signal
+   fill (today's date disc). Both gated in tests/token-contrast.test.ts. */
 :root,
 [data-theme="light"] {
-  /* #e0620f measured 3.1–3.5:1 on the light grounds — under AA for the text
-     roles signal plays (overdue, at-risk). Darkened in-hue to clear 4.5 on
-     --bg, --surface and --surface-2 alike (tests/token-contrast.test.ts). */
-  --signal: #b54808;
-  --signal-soft: rgba(224, 98, 15, 0.11);
-  /* The ink on a signal fill (today's date disc). Raw #fff passed on light
-     ember and failed on dark-mode coral (~2.3:1) — same two-way contract as
-     --on-accent / --on-danger, gated in tests/token-contrast.test.ts. */
-  --on-signal: #fff8f5;
+  --signal: #c2410c;
+  --signal-soft: rgba(232, 80, 26, 0.10);
+  --on-signal: #ffffff;
 }
 [data-theme="dark"] {
-  --signal: #ff8a4c;
-  --signal-soft: rgba(255, 138, 76, 0.14);
-  --on-signal: #1f130c;
+  --signal: #ff6a33;
+  --signal-soft: rgba(255, 106, 51, 0.14);
+  --on-signal: #1f0d05;
   color-scheme: dark;
 }
 
-/* Planner columns — "you are here" reads as orientation, not alarm.
-   Signal stays for at-risk / overdue / the calendar now-line. */
+/* Planner columns — "you are here" reads as orientation, not alarm. */
 :root,
 [data-theme="light"],
 [data-theme="dark"] {
@@ -76,18 +65,7 @@
   --now-mark: color-mix(in srgb, var(--ink) 68%, var(--muted));
 }
 
-/* ── Danger — "this is wrong", which is not the same as "this is now" ──────
-   `--signal` was carrying four meanings at once: now (the calendar's time
-   line), overdue, overcommitted (the Year's `over` band) and *error* (the
-   sonner toast borrowed it). Semantic colour only works if a hue maps to one
-   meaning, so failure gets its own red and `--signal` keeps the temporal
-   roles it is named for. Hue ~3° against signal's ~22° is a real separation,
-   not a shade of the same orange.
-
-   `--on-danger` is the ink that survives a danger fill, the same contract
-   `--on-accent` has: light theme puts near-white on a dark red, dark theme
-   puts near-black on a light red. Both directions are gated in
-   tests/token-contrast.test.ts. */
+/* ── Danger — "this is wrong", which is not the same as "this is now". ──── */
 :root,
 [data-theme="light"] {
   --danger: #b3261e;
@@ -100,25 +78,9 @@
   --on-danger: #1f1310;
 }
 
-/* ── Verdict — ripe vs. stalled ───────────────────────────────────────────
-   `--ok` is the readiness meter's ripe fill and "shipped"; `--warn` is
-   "waiting on something". They used to be raw hexes inside
-   PROJECT_STATUS_COLORS, which meant they were the two colours on screen no
-   skin could answer for — full-saturation amber and teal survived even into
-   e-ink, which is supposed to have no colour at all. As tokens they follow the
-   material, like everything else.
-
-   The light values are darker than the hues they started from (#0d9488 /
-   #d97706) for the same reason `--signal` is: they measured 2.8–3.7:1 on the
-   light grounds and they are read as *text* — "no outcome", "no steps",
-   "N to ready", "shipped", "at risk". The strings that say something needs
-   attention were the least legible strings in the app. Darkened in-hue to
-   clear AA on --bg / --surface / --surface-2 across all three paper moods.
-
-   `--warn` sits at hue ~36° rather than the ~29° a straight darkening lands
-   on, because at AA weight an amber and `--signal`'s ember collapse into the
-   same brown otherwise. 36° against signal's 22° holds them apart, and it is
-   the same separation the dark theme already had (#e9960f vs #ff8a4c). */
+/* ── Verdict — ripe (`--ok`, also "shipped") vs. waiting (`--warn`). Read as
+   text, so both clear AA on the light grounds; --warn sits at hue ~36° so it
+   never collapses into --signal's ember. */
 :root,
 [data-theme="light"] {
   --ok: #0b6b62;
@@ -129,131 +91,63 @@
   --warn: #e9960f;
 }
 
-/* ── Daybreak — warm paper (the default mood) ────────────────────────────────
-   Accent is a warm mulberry (not blue), the slot a dusty teal, and uncoloured
-   events default to warm stone — so the whole surface reads warm, not cold. */
+/* ── Light ─────────────────────────────────────────────────────────────── */
 :root,
-[data-theme="light"],
-[data-palette="daybreak"][data-theme="light"] {
-  --bg: #f4f1ea;
-  --surface: #fffdf8;
-  --surface-2: #faf6ee;
-  --line: #e7e0d2;
-  --line-strong: #d8cfbc;
-  --text: #1f1a16;
-  --muted: #6f6656;
-  --accent: #92568a;
-  --accent-2: #b07fa8;
-  --accent-soft: rgba(146, 86, 138, 0.11);
-  --accent-glow: rgba(146, 86, 138, 0.20);
-  /* Ink that sits ON an accent fill (buttons, pills, the FAB). Every block that
-     redefines --accent must pick its own --on-accent so filled controls clear
-     4.5:1 — dark accents carry white, light accents carry a near-bg ink.
-     Checked by tests/token-contrast.test.ts. */
-  --on-accent: #ffffff;
-  --slot: #25706b;
-  --event-default: #a98a6f;
-  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
-  --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
-  --shadow-lift: 0 30px 60px -18px rgba(74, 52, 24, 0.36), 0 10px 24px -10px rgba(60, 42, 20, 0.22);
-}
-[data-theme="dark"],
-[data-palette="daybreak"][data-theme="dark"] {
-  --bg: #17130e;
-  --surface: #201b14;
-  --surface-2: #29231a;
-  --line: #332c20;
-  --line-strong: #443b2c;
-  --text: #f1ece2;
-  --muted: #a99c87;
-  --accent: #c692bf;
-  --accent-2: #d6abce;
-  --accent-soft: rgba(198, 146, 191, 0.14);
-  --accent-glow: rgba(198, 146, 191, 0.30);
-  --on-accent: #1a1420;
-  --slot: #37b1a4;
-  --event-default: #b89a7e;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
-  --shadow-lift: 0 32px 68px -16px rgba(0, 0, 0, 0.75), 0 10px 26px -10px rgba(0, 0, 0, 0.58);
-}
-
-/* ── Fog — cool morning grey. Crisp indigo, teal slot, cool events. ───────── */
-[data-palette="fog"][data-theme="light"] {
-  --bg: #eef0f5;
+[data-theme="light"] {
+  --bg: #f8f8fa;
   --surface: #ffffff;
-  --surface-2: #f7f8fc;
-  --line: #e4e6ef;
-  --line-strong: #d3d7e3;
-  --text: #1b1c24;
-  --muted: #5f636f;
-  --accent: #5a4be2;
-  --accent-2: #8a6cf0;
-  --accent-soft: rgba(90, 75, 226, 0.11);
-  --accent-glow: rgba(90, 75, 226, 0.18);
+  --surface-2: #fcfcfd;
+  --line: #e6e5eb;
+  --line-strong: #cfcdd6;
+  --text: #121116;
+  --muted: #64626d;
+  /* Nuvo's mulberry, turned up from #92568a until it reads as a decision.
+     Intent, and the moment intent lands — and almost nowhere else. */
+  --accent: #8e2fa3;
+  --accent-2: #a855bb;
+  --accent-soft: rgba(142, 47, 163, 0.08);
+  --accent-glow: rgba(142, 47, 163, 0.18);
+  /* Ink that sits ON an accent fill. Checked by tests/token-contrast.test.ts. */
   --on-accent: #ffffff;
   --slot: #0b747e;
-  --event-default: #6b7bb0;
-  --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
-  --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
-  --shadow-lift: 0 30px 60px -18px rgba(46, 40, 80, 0.32), 0 10px 24px -10px rgba(40, 38, 70, 0.2);
-}
-[data-palette="fog"][data-theme="dark"] {
-  --bg: #141320;
-  --surface: #1c1a28;
-  --surface-2: #232133;
-  --line: #2d2b3d;
-  --line-strong: #3b3850;
-  --text: #ecebf3;
-  --muted: #95909f;
-  --accent: #8b80ff;
-  --accent-2: #a892ff;
-  --accent-soft: rgba(139, 128, 255, 0.13);
-  --accent-glow: rgba(139, 128, 255, 0.28);
-  --on-accent: #141320;
-  --slot: #2bb6c4;
-  --event-default: #7986cb;
+  --event-default: #9aa0ac;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow-1: 0 1px 2px rgba(20, 16, 30, 0.05);
+  --shadow-2: 0 2px 8px -2px rgba(20, 16, 30, 0.10), 0 0 0 1px var(--line);
+  --shadow-3: 0 8px 24px -8px rgba(20, 16, 30, 0.16);
+  --shadow-lift: 0 1px 1px rgba(20, 16, 30, 0.04), 0 10px 26px -10px rgba(20, 16, 30, 0.22);
 }
 
-/* ── Dusk — balanced, between warm and cool ──────────────────────────────── */
-[data-palette="dusk"][data-theme="light"] {
-  --bg: #f1f0f3;
-  --surface: #ffffff;
-  --surface-2: #f8f7fb;
-  --line: #e6e4ec;
-  --line-strong: #d6d3df;
-  --text: #1c1b22;
-  --muted: #63606f;
-  --accent: #6d54c0;
-  --accent-2: #8a72e6;
-  --accent-soft: rgba(109, 84, 192, 0.10);
-  --accent-glow: rgba(109, 84, 192, 0.17);
-  --on-accent: #ffffff;
-  --slot: #16747c;
-  --event-default: #8a8499;
-  --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
-  --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
-  --shadow-lift: 0 30px 60px -18px rgba(50, 42, 78, 0.32), 0 10px 24px -10px rgba(45, 40, 60, 0.2);
-}
-[data-palette="dusk"][data-theme="dark"] {
-  --bg: #16151c;
-  --surface: #1e1d26;
-  --surface-2: #262430;
-  --line: #302e3b;
-  --line-strong: #3e3b4c;
-  --text: #edecf2;
-  --muted: #9893a3;
-  --accent: #9a86f0;
-  --accent-2: #b3a3f5;
-  --accent-soft: rgba(154, 134, 240, 0.14);
-  --accent-glow: rgba(154, 134, 240, 0.28);
-  --on-accent: #16151c;
-  --slot: #2bb6c4;
-  --event-default: #8088a8;
+/* ── Dark — designed, not inverted: a near-black ground, ink held off pure
+   white, shadows that read as depth on black (a 1px light edge + a deep drop). */
+[data-theme="dark"] {
+  --bg: #0c0c0e;
+  --surface: #16161a;
+  --surface-2: #1c1c21;
+  --line: #26252c;
+  --line-strong: #3a3942;
+  --text: #ededf0;
+  --muted: #95929f;
+  --accent: #d58ae4;
+  --accent-2: #e2a8ee;
+  --accent-soft: rgba(213, 138, 228, 0.13);
+  --accent-glow: rgba(213, 138, 228, 0.26);
+  --on-accent: #1a0b1e;
+  --slot: #37b1a4;
+  --event-default: #7a7f8c;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
+  --shadow-3: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 32px -10px rgba(0, 0, 0, 0.7);
 }
 
 /* `--ink` is the documented name for the foreground colour (root CLAUDE.md's
@@ -265,12 +159,10 @@
    week-shape bars were all painting nothing at all, and raising the percentage
    to fix them changed nothing because the whole expression was dead.
 
-   Aliased here on the same element the palettes set `--text` on, so it tracks
-   theme, palette and skin without another switch to maintain. */
+   Aliased here on the same element the themes set `--text` on, so it tracks
+   the theme without another switch to maintain. */
 :root,
-[data-theme],
-[data-palette],
-[data-skin] {
+[data-theme] {
   --ink: var(--text);
 }
 
@@ -291,18 +183,17 @@
   --color-signal: var(--signal);
   --color-accent-soft: var(--accent-soft);
   --color-signal-soft: var(--signal-soft);
-  /* The UI runs on the native system font so it recedes across every panel —
-     SF Pro on macOS, the calm/invisible workhorse (this is Spark's register). */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* The UI runs on Inter (D-189); the theme blocks above set the same value. */
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
   /* The brand voice — Plus Jakarta, the wordmark only, so Nuvo keeps a distinct
      logotype without lending its flair to the dense panels. */
   --font-brand: "Plus Jakarta Sans", system-ui, sans-serif;
   /* Mono is reserved for genuine code (keycaps, code blocks) — never for the
      numerals/labels the user reads. Those use the sans with tabular figures. */
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  /* The editorial serif voice — ceremonial surfaces only. Degrades to the
-     warm macOS book serifs if Fraunces ever fails to load. */
-  --font-serif: "Fraunces Variable", "Iowan Old Style", Palatino, Georgia, serif;
+  /* Kept as a role so `.serif` / `.masthead` callers need no edits — under
+     Instrument the ceremonial voice IS the sans, set heavier (D-189). */
+  --font-serif: var(--font-sans);
 
   /* radius scale: hairline controls → cards → moments */
   --radius-sm: 4px;
@@ -445,35 +336,18 @@ html.spotlight-window .glass-card {
   backdrop-filter: blur(28px) saturate(1.6);
 }
 
-/* The atmosphere: a whisper of dawn (top-left) and dusk (bottom-right) light,
-   laid over the base surface. Used on the big full-bleed surfaces — the panels
-   that sit on top stay clean. Subtle on purpose; it should be felt, not seen. */
-/* --atmosphere-base is the paper the two lights are laid over. It stays --bg
-   everywhere except Aurora's raised sheet, which makes it translucent so the
-   shell diffuses through — same gradient, thinner ground. */
+/* The atmosphere: the one ground every full-bleed surface shares. Under
+   Instrument it is flat (D-189) — the warm-paper gradient is retired. The hook
+   stays so the "paint it once, continuously" rule still has a name. */
 .atmosphere {
-  background:
-    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 42%),
-    radial-gradient(130% 100% at 100% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 46%),
-    var(--atmosphere-base, var(--bg));
+  background: var(--atmosphere-base, var(--bg));
 }
 
-/* ── The three planes — AURORA ONLY ────────────────────────────────────────
-   Aurora (`paper`, the skin that sets no data-skin attribute) is the glass
-   material. There the app is three real planes:
-
-     ground  — the deep paper the whole thing rests on
-     shell   — a frosted pane; THE CHAT LIVES HERE, it is not a panel on top
-     sheet   — the app itself (spine · rail · calendar), raised off the shell
-
-   Opening Nuvo slides the SHEET left to uncover a chat that was underneath the
-   whole time. That is the point: the app sits ON the conversation.
-
-   Deliberately not shared with the other materials. Flat, Terminal, Blueprint
-   and E-ink kill `backdrop-filter` wholesale and Eink zeroes every shadow, so
-   "a floating glass sheet" there degrades into three flat rectangles pretending
-   to be layered — worse than the honest edge-to-edge they already had. They get
-   the plain full-bleed canvas and nothing else.
+/* ── The planes — structure only ───────────────────────────────────────────
+   (Historical: Aurora painted these as three glass planes. Instrument is flat,
+   so they are structure only; the description below is the DOM's meaning.)
+   The DOM is three planes — ground, shell (the chat lives here), sheet (the
+   app). Opening Nuvo widens the chat slot and the sheet reflows beside it.
 
    The cardinal rule holds: `.atmosphere` lives on the SHEET, still painted
    exactly once, still continuous across spine · rail · calendar. */
@@ -512,142 +386,6 @@ html.spotlight-window .glass-card {
   display: none;
 }
 
-/* ── Aurora's glass ─────────────────────────────────────────────────────── */
-html:not([data-skin]) .app-ground {
-  background: var(--ground);
-  padding: 10px;
-}
-
-html:not([data-skin]) .app-shell {
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, white 30%, var(--line));
-  box-shadow: var(--shadow-3);
-  /* Frosted, and thin enough that the ground genuinely reads through it —
-     this is the plane the chat is printed on. */
-  background:
-    linear-gradient(155deg, color-mix(in srgb, white 22%, transparent), transparent 62%),
-    color-mix(in srgb, var(--shell) 72%, transparent);
-  /* NO backdrop-filter here, deliberately. This used to be
-     `blur(26px) saturate(1.35)` across the whole window, and it rendered
-     *nothing*: the only thing behind .app-shell is .app-ground, which is a flat
-     colour (and `background: none` over the flat body in Tauri). Blurring a
-     constant field returns the same constant, so the filter was a full-window
-     blur per frame that could not change a pixel — verified by screenshotting
-     with and without at 1440x900: identical. WebKit pays for it far more dearly
-     than Chromium, which is why the desktop app felt it worst. The <1280px
-     branch below already sets both this and .app-canvas to `none`, so the
-     treatment was never load-bearing. Translucency here comes from the
-     `color-mix` alpha above, not from a filter. */
-}
-/* Same dark-theme correction as .app-canvas below — a --line-relative white
-   mix tuned for the light theme's near-white line reads as a lit edge once
-   --line itself goes dark. */
-html[data-theme="dark"]:not([data-skin]) .app-shell {
-  border-color: color-mix(in srgb, white 7%, var(--line));
-}
-
-/* The sheet is glass too — airy, not a solid slab. --atmosphere-base lets the
-   warm-paper gradient stay exactly as it is while its base goes translucent, so
-   the shell diffuses through the app instead of being hidden by it. */
-/* The chat shares the sheet's top and bottom line — it runs to the shell's
-   right edge (it IS the shell), but a chat starting 7px above the app it sits
-   beside reads as a misalignment, not as a second plane. */
-html:not([data-skin]) .app-chat-slot {
-  margin-block: 7px;
-}
-/* --atmosphere-base INHERITS, and the floor overlay (Projects · Initiatives ·
-   Domains) is a nested .atmosphere inside the sheet whose whole job is to hide
-   the Schedule underneath it. Left to inherit the sheet's translucency it goes
-   82% opaque and the calendar reads straight through the deck. Only the SHEET
-   is glass; every atmosphere inside it is solid. */
-.app-canvas .atmosphere {
-  --atmosphere-base: var(--bg);
-}
-html:not([data-skin]) .app-canvas {
-  --atmosphere-base: color-mix(in srgb, var(--bg) 82%, transparent);
-  margin: 7px;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, white 46%, var(--line));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 40%, transparent),
-    var(--shadow-2);
-  overflow: hidden;
-  /* Also deliberately filter-free — same reason as .app-shell above. What sits
-     behind this is .app-shell's 155deg linear gradient, and a blur is a
-     symmetric convolution, so blurring a linear ramp returns the same ramp
-     everywhere but the edges. Screenshot-verified as a no-op. */
-}
-/* The 46%/40% white mixes above are tuned for Aurora's LIGHT --line, which is
-   already near-white — mixed with white it stays a whisper. In dark mode
-   --line is dark, so the same mix jumps several times further toward white
-   and reads as a lit ring around the whole canvas instead of a glass edge.
-   Pull both back to the same felt weight the light theme has. */
-html[data-theme="dark"]:not([data-skin]) .app-canvas {
-  border-color: color-mix(in srgb, white 10%, var(--line));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
-    var(--shadow-2);
-}
-
-/* Aurora's chat furniture is glass too. The chat is printed on the shell, so a
-   filled `--surface-2` field and a 3px accent ring read as UI bolted onto the
-   pane — the reference is a hairline on frost, and focus that warms rather than
-   rings. Scoped to the rail: the phone sheet and the ⌘K panel keep solid fields,
-   because neither of them sits on a frosted shell. */
-html:not([data-skin]) .agent-rail .agent-compose-box {
-  background: color-mix(in srgb, var(--surface) 40%, transparent);
-  border-color: color-mix(in srgb, white 42%, var(--line));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 32%, transparent);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  backdrop-filter: blur(12px) saturate(1.2);
-}
-/* Focus lifts, it doesn't outline — no ring, no accent edge, just a touch more
-   glass and a shadow. The hairline stays exactly where it was. */
-html:not([data-skin]) .agent-rail .agent-compose-box:focus-within {
-  border-color: color-mix(in srgb, white 52%, var(--line));
-  background: color-mix(in srgb, var(--surface) 56%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
-    var(--shadow-2);
-}
-html:not([data-skin]) .agent-rail .agent-suggestion-chip {
-  background: color-mix(in srgb, var(--surface) 38%, transparent);
-  border-color: color-mix(in srgb, white 38%, var(--line));
-  -webkit-backdrop-filter: blur(10px) saturate(1.15);
-  backdrop-filter: blur(10px) saturate(1.15);
-}
-@media (hover: hover) {
-html:not([data-skin]) .agent-rail .agent-suggestion-chip:hover {
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-}
-}
-
-/* Below Nuvo's own collapse threshold there is no width to spend on a gutter —
-   everything goes flush and the app fills the window. */
-@media (max-width: 1279px) {
-  html:not([data-skin]) .app-ground {
-    padding: 0;
-    background: none;
-  }
-  html:not([data-skin]) .app-shell,
-  html:not([data-skin]) .app-canvas {
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    background: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  html:not([data-skin]) .app-canvas {
-    --atmosphere-base: var(--bg);
-    background:
-      radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 42%),
-      radial-gradient(130% 100% at 100% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 46%),
-      var(--bg);
-  }
-}
-
 /* macOS overlay titlebar — room for traffic lights (set in main.tsx) */
 html.tauri-macos {
   --titlebar-inset-left: 78px;
@@ -675,16 +413,6 @@ html.tauri-macos {
    apart — which reads on screen as "two app shells". In Tauri the shell fills
    the window edge to edge and only the SHEET is inset, leaving exactly two
    planes inside the window, same as the web gets with the ground. */
-html.tauri:not([data-skin]) .app-ground {
-  padding: 0;
-  background: none;
-}
-html.tauri:not([data-skin]) .app-shell {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
 /* macOS: the lights live INSIDE the sheet, in the spine, above the wordmark.
    A full-width titlebar band across the top reads as a stripe of dead chrome
    and makes the top inset look nothing like the other three; the sheet keeps
@@ -697,10 +425,6 @@ html.tauri:not([data-skin]) .app-shell {
    alone re-declares the real value, which .spine-top and .spine-separator pick
    up by inheritance. .spine-top already carries data-tauri-drag-region, so the
    band above the wordmark is what drags the window. */
-html.tauri-macos:not([data-skin]) .app-shell {
-  --titlebar-inset-top: 0px;
-  --titlebar-inset-left: 0px;
-}
 /* The lights are laid out by macOS in WINDOW POINTS, and there is no runtime
    setter in Tauri 2.11 (set_traffic_light_position exists only in the mock
    runtime), so their position is fixed and cannot follow anything we do. The
@@ -712,29 +436,15 @@ html.tauri-macos:not([data-skin]) .app-shell {
    the buttons; the -7px removes the sheet's own top inset, which is already
    part of the distance from the window edge. max() guards the far end of the
    zoom range, where the formula would otherwise go to nothing. */
-html.tauri-macos:not([data-skin]) .spine {
-  --titlebar-inset-top: max(12px, calc(32px / var(--ui-scale, 1) - 7px));
-}
-
-/* Square just this corner. The lights sit over the sheet's top-left, and a
-   14px arc there means they straddle the edge — part on the sheet, part on the
-   shell — which is what read as "wedged into the corner". Square, they always
-   land cleanly on the spine no matter where macOS puts them or how the app is
-   zoomed. */
-html.tauri-macos:not([data-skin]) .app-canvas {
-  border-top-left-radius: 0;
-}
-
-/* Skinned materials are edge-to-edge (no 7px Aurora sheet inset), but the
-   same law holds: lights live over the spine, so a full-width titlebar band
-   is a stripe of dead chrome. Zero the insets on the shell; the spine alone
-   re-declares them. The -7px in paper's formula is the sheet inset these
-   materials don't have. */
-html.tauri-macos[data-skin] .app-shell {
+/* The app is edge-to-edge, and lights live over the spine, so a full-width
+   titlebar band is a stripe of dead chrome. Zero the insets on the shell; the
+   spine alone re-declares them, sized in POINTS (the lights are fixed in window
+   points and the app CSS-zooms by --ui-scale): css = points / scale. */
+html.tauri-macos .app-shell {
   --titlebar-inset-top: 0px;
   --titlebar-inset-left: 0px;
 }
-html.tauri-macos[data-skin] .spine {
+html.tauri-macos .spine {
   --titlebar-inset-top: max(12px, calc(32px / var(--ui-scale, 1)));
 }
 
@@ -924,7 +634,7 @@ html.tauri-macos .spine[data-rail] .spine-separator {
 .inline-edit:empty::before {
   content: attr(data-placeholder);
   color: var(--muted);
-  font-style: italic;
+  font-style: normal;
   opacity: 0.7;
   pointer-events: none;
 }
@@ -1349,7 +1059,7 @@ body.odp-dragging [data-resize] {
 .marquee-pill-spark { color: var(--signal); font-size: 12px; }
 .marquee-pill-text { white-space: nowrap; color: var(--muted); }
 .marquee-pill-text strong { color: var(--ink); font-weight: 600; }
-.marquee-pill-caption { color: var(--muted); font-style: italic; }
+.marquee-pill-caption { color: var(--muted); }
 .marquee-pill-back {
   white-space: nowrap;
   padding: 5px 12px;
@@ -3144,7 +2854,7 @@ body.drag-cancelled .fc-event-resizing {
   font-weight: 600;
 }
 .agent-markdown em {
-  font-style: italic;
+  font-style: normal;
 }
 .agent-markdown code {
   font-family: var(--font-mono);
@@ -3515,169 +3225,44 @@ html[data-orientation="on"] [data-sonner-toaster] {
 }
 /* Blueprint's ground is set with the rest of its chrome — see BLUEPRINT CHROME. */
 
-/* NO FROST outside paper. The .glass-* hooks below cover the shared material
-   classes, but frost also arrives as one-off inline `backdropFilter` (the Spine
-   chapter pill, the ritual scrims, the domain crest) and as Tailwind
-   `backdrop-blur-*` utilities in a dozen components — neither of which a class
-   override can reach. One universal !important rule retires all of it for every
-   skinned material at once; paper carries no data-skin attribute, so its glass
-   is untouched. (Inline styles lose to !important, which is the point here.) */
-html[data-skin] *,
-html[data-skin] *::before,
-html[data-skin] *::after {
+/* NO FROST, anywhere (D-189). Frost arrives as the .glass-* classes, as
+   one-off inline `backdropFilter` (the Spine chapter pill, the ritual scrims,
+   the domain crest) and as Tailwind `backdrop-blur-*` utilities — a class
+   override can't reach the last two. One universal !important rule retires all
+   of it. (Inline styles lose to !important, which is the point here.) It is
+   also the perf law's simplest form: no blurred surface exists to multiply. */
+html *,
+html *::before,
+html *::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
 
-/* …and the debt that rule creates. Killing the blur is only half the job: an
-   element that outsourced its OPACITY to the blur is left translucent with
-   nothing behind it doing the hiding.
-
-   The full-bleed ritual overlays (the week's plan, the week's story, Your
-   Reviews, and their three phone equivalents) are all `fixed inset-0` painted
-   `color-mix(var(--bg) 96%, transparent)` + `blur(20px)` INLINE. At 96% over a
-   heavy blur that reads as solid paper; at 96% over nothing, the floor
-   underneath ghosts straight through the archive — which is exactly what it
-   did. `.glass`/`.glass-card` already get an opaque fallback below, but those
-   are classes, and a class rule cannot reach an inline background.
-
-   Keyed on the inline backdrop-filter itself, because that IS the signal that
-   the element delegated its opacity to a filter this material has removed.
-   (The same `[style*="backdrop-filter"]` hook is used for the spine's active
-   chapter further down.) Deliberately scoped to full-bleed overlays: the
-   decorative tints — a crest, a coverage chip — are bounded and keep theirs. */
-html[data-skin] [style*="backdrop-filter"].fixed.inset-0 {
+/* …and the debt that rule creates: an element that outsourced its OPACITY to
+   the blur is left translucent with nothing behind it doing the hiding. The
+   full-bleed ritual overlays are `fixed inset-0` painted `color-mix(var(--bg)
+   96%, transparent)` + a blur INLINE; without the blur the floor underneath
+   ghosts through. Keyed on the inline backdrop-filter itself, because that IS
+   the signal the element delegated its opacity to a filter. Bounded tints (a
+   crest, a coverage chip) keep theirs. */
+html [style*="backdrop-filter"].fixed.inset-0 {
   background: var(--bg) !important;
 }
 
-/* Resting glass → opaque token surface, no blur (all flat skins share this). */
-html[data-skin="flat"] .glass,
-html[data-skin="terminal"] .glass,
-html[data-skin="blueprint"] .glass,
-html[data-skin="eink"] .glass,
-html[data-skin="flat"] .glass-card,
-html[data-skin="flat"] .glass-tint,
-html[data-skin="flat"] .glass-lift-row,
-html[data-skin="terminal"] .glass-card,
-html[data-skin="terminal"] .glass-tint,
-html[data-skin="terminal"] .glass-lift-row,
-html[data-skin="blueprint"] .glass-card,
-html[data-skin="blueprint"] .glass-tint,
-html[data-skin="blueprint"] .glass-lift-row,
-html[data-skin="eink"] .glass-card,
-html[data-skin="eink"] .glass-tint,
-html[data-skin="eink"] .glass-lift-row {
+/* Resting glass → opaque token surface. */
+html .glass,
+html .glass-card,
+html .glass-tint,
+html .glass-lift-row {
   background: var(--surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
-/* Focal lift + drag ghost → solid surface, no blur, no inset highlight. The
-      base .glass-lift/.glass-grab force a transparent border !important and an
-      inset-white top edge; we replace both. Border/shadow are per-skin so each
-      keeps its own selection language (a glow in terminal, a rule in eink). */
-html[data-skin="flat"] .glass-lift,
-html[data-skin="flat"] .glass-grab,
-html[data-skin="terminal"] .glass-lift,
-html[data-skin="terminal"] .glass-grab,
-html[data-skin="blueprint"] .glass-lift,
-html[data-skin="blueprint"] .glass-grab,
-html[data-skin="eink"] .glass-lift,
-html[data-skin="eink"] .glass-grab {
+/* Focal lift + drag ghost → solid surface. The base .glass-lift/.glass-grab
+   force a transparent border !important and an inset-white top edge; the
+   selection language itself is in styles/instrument.css. */
+html .glass-lift,
+html .glass-grab {
   background: var(--surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   TERMINAL CHROME — the IDE furniture.
-
-   The tokens and the ramp above make the console *beautiful*; none of them make
-   it read as an EDITOR. That recognition comes almost entirely from furniture —
-   a status bar, tabs with an active edge, a line-number gutter, a disclosure
-   tree, a current-line highlight. You can identify VS Code in a 200px thumbnail
-   with every glyph illegible, and never from its colours.
-
-   All of it is terminal-scoped and, wherever possible, driven off hooks that
-   already exist (.section-label, the view segmented control, FullCalendar's own
-   class names) so no other material pays for any of it.
-   ════════════════════════════════════════════════════════════════════════ */
-
-/* ── STATUS BAR (src/components/terminal/StatusBar.tsx) ─────────────────── */
-.term-status {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex-shrink: 0;
-  height: 22px;
-  padding: 0 8px;
-  border-top: 1px solid var(--line);
-  background: var(--surface);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1;
-  color: var(--muted);
-  user-select: none;
-}
-.term-status-gap { flex: 1; }
-.term-status-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  white-space: nowrap;
-}
-/* The branch segment is the bar's one loud note — same as an editor's. */
-.term-status-branch {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  padding: 0 9px;
-  color: var(--bg);
-  background: var(--accent);
-  font-weight: 600;
-}
-.term-status-key {
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
-}
-
-/* ── BREADCRUMB — the toolbar's centre stacks a sprint label over the date.
-      An editor lays its path out horizontally with separators, so the column
-      becomes a row and the sprint gets a › after it. Pure CSS over the existing
-      markup: no component fork, no second layout to keep in sync.
-
-      The toolbar's three columns already crowd below ~1200px (the right column
-   shrinks and its shrink-0 children spill left over the centre — measurable on
-   paper too, ~41px at 1100px). Laying the stack out horizontally roughly
-   doubles its width and would turn that graze into a real collision, so the
-   breadcrumb only unfolds where there is genuinely room; narrower windows keep
-   the stacked masthead. */
-@media (min-width: 1500px) {
-  html[data-skin="terminal"] [data-breadcrumb] {
-    flex-direction: row !important;
-    align-items: baseline !important;
-    gap: 6px;
-    max-width: 340px !important;
-    min-width: 0;
-  }
-  html[data-skin="terminal"] [data-breadcrumb] > :first-child {
-    margin-bottom: 0 !important;
-    text-transform: lowercase;
-    flex-shrink: 0;
-  }
-  html[data-skin="terminal"] [data-breadcrumb] > :first-child::after {
-    content: " ›";
-    color: var(--line-strong);
-  }
-  html[data-skin="terminal"] [data-breadcrumb] .masthead {
-    font-size: 12px;
-    font-weight: 500;
-  }
-}
-@keyframes term-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
 }
 
 /* ── Universal lean-ins (token-driven, so they follow every scheme) ──────── */
@@ -3685,34 +3270,6 @@ html[data-skin="eink"] .glass-grab {
 ::selection {
   background: color-mix(in srgb, var(--accent) 26%, transparent);
 }
-/* Sharp materials get a sharp scrollbar too. */
-html[data-skin="terminal"] ::-webkit-scrollbar-thumb,
-html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
-  border-radius: 0;
-}
-
-/* NOTE: a fixed halftone "tooth" (a 3px dot screen multiplied over the app) was
-   tried here to give the panel its matte surface, and cut — REJECTED by eye. A
-   dot screen over live UI reads as a pattern laid on top of the interface, not
-   as the material the interface is printed on, and it fights every hairline in
-   a dense planner. The pigment duotone above already carries the device; the
-   grain in `.atmosphere` is as much texture as this material wants. */
-
-/* — THE REFRESH. An e-ink panel cannot repaint a region without driving every
-     particle, so changing pages flashes. It is the single most recognisable
-     thing the device does, and Nuvo already has the exact hook: `.floor-enter`,
-     which fires when you move between altitudes. Held to ~110ms so it reads as
-     the panel settling, not as a fault. */
-@media (prefers-reduced-motion: no-preference) {
-  html[data-skin="eink"] .floor-enter {
-    animation: eink-refresh 110ms steps(2, end) both;
-  }
-}
-@keyframes eink-refresh {
-  0% { filter: invert(1) contrast(1.4); }
-  100% { filter: none; }
-}
-
 /* ── Task composer: the one add box (components/tasks/TaskComposer) ─────────
    A plain input over a mirror that draws what the grammar understood. The two
    must share every metric that places a glyph — font, size, line-height,

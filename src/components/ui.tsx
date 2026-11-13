@@ -158,7 +158,7 @@ export function Btn({
 }) {
   const styles =
     kind === "primary"
-      ? "bg-accent text-on-accent border-accent shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
+      ? "bg-accent text-on-accent border-accent shadow-sm hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
       : kind === "signal"
         ? "text-signal border-line hover:border-signal hover:bg-signal-soft disabled:opacity-40"
         : "text-ink border-line hover:border-line-strong hover:bg-surface-2 disabled:opacity-40";
@@ -167,7 +167,7 @@ export function Btn({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`fast whitespace-nowrap rounded-md border px-4 py-2.5 text-body font-medium active:translate-y-px ${styles} ${className}`}
+      className={`fast press whitespace-nowrap rounded-md border px-4 py-2.5 text-body font-medium ${styles} ${className}`}
     >
       {children}
     </button>

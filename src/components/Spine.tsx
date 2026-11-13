@@ -452,9 +452,8 @@ const SpineBody = memo(function SpineBody({
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} />
             </div>
           ) : (
-            <div className="rise mt-3 flex items-center gap-1.5 px-2.5">
+            <div className="rise mt-3 flex items-center gap-1.5 px-2.5" title="All at rest">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: READY }} />
-              <span className="section-label" style={{ color: READY }}>all at rest</span>
             </div>
           ))}
       </nav>

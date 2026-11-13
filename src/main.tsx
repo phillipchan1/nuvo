@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+// Instrument's chrome — after index.css, where the skin sheet used to load (D-189).
+import "./styles/instrument.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

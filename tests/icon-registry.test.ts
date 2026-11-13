@@ -1,9 +1,7 @@
-// The Icon wrapper (src/components/Icon.tsx) serves a different drawing per
-// MATERIAL: the hand-drawn set on paper/terminal/blueprint/eink, Lucide on flat.
-// Two maps keyed by the same union is the whole design, and its one real failure
-// mode is drift — a name added to FLAT but not PAPER renders `undefined` and
-// throws, and it throws only in the skin the author wasn't looking at. That is
-// exactly the class of bug nobody catches by eye, so it is asserted here.
+// The Icon wrapper (src/components/Icon.tsx) maps every IconName to one Lucide
+// glyph (D-189 retired the per-material hand-drawn set). The one real failure
+// mode is drift — a name added to the union but not the map renders
+// `undefined` and throws at runtime — so it is asserted here.
 //
 // Kept DOM-free on purpose: this suite runs in milliseconds on every push, and
 // pulling in jsdom to render two <svg>s would cost more than it proves.
@@ -12,22 +10,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const src = readFileSync(join(__dirname, "..", "src", "components", "Icon.tsx"), "utf8");
-
-/** The source text between the braces of `const NAME: … = { … }`. */
-function mapBody(mapName: string): string {
-  const start = src.indexOf(`const ${mapName}:`);
-  expect(start, `${mapName} map not found in Icon.tsx`).toBeGreaterThan(-1);
-  const open = src.indexOf("{", src.indexOf("=", start));
-  let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === "{") depth++;
-    else if (src[i] === "}") {
-      depth--;
-      if (depth === 0) return src.slice(open + 1, i);
-    }
-  }
-  throw new Error(`unbalanced braces in ${mapName}`);
-}
 
 /** Pull the keys out of one `const NAME: Record<IconName, …> = { … }` block. */
 function mapKeys(mapName: string): string[] {
@@ -71,34 +53,13 @@ function unionNames(): string[] {
 
 describe("Icon registry", () => {
   const names = unionNames();
-  const paper = mapKeys("PAPER");
-  const flat = mapKeys("FLAT");
+  const glyphs = mapKeys("GLYPHS");
 
   it("declares at least one icon", () => {
     expect(names.length).toBeGreaterThan(0);
   });
 
-  it("PAPER covers every IconName", () => {
-    expect([...paper].sort()).toEqual([...names].sort());
-  });
-
-  it("FLAT covers every IconName", () => {
-    expect([...flat].sort()).toEqual([...names].sort());
-  });
-
-  it("the two materials draw the same vocabulary", () => {
-    // The point of the wrapper: switching skin can never change which icons
-    // exist, only how they are drawn.
-    expect([...paper].sort()).toEqual([...flat].sort());
-  });
-
-  it("every paper glyph declares its own viewBox", () => {
-    // Paper glyphs are drawn on per-icon grids (8, 10, 12, 14, 19…) and scale
-    // via width/height. A missing vb silently renders at the wrong scale.
-    const glyphBlocks = mapBody("PAPER").split(/\n  "?[a-z-]+"?:\s/).slice(1);
-    expect(glyphBlocks.length).toBe(paper.length);
-    for (const [i, block] of glyphBlocks.entries()) {
-      expect(block, `paper glyph "${paper[i]}" is missing a vb`).toContain("vb:");
-    }
+  it("GLYPHS covers every IconName, and nothing else", () => {
+    expect([...glyphs].sort()).toEqual([...names].sort());
   });
 });

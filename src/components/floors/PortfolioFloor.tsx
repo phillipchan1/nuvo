@@ -8,7 +8,6 @@ import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeById,
-  isProjectInFlight,
   projectProgress,
   projectSprintCount,
   tasksOf,
@@ -70,11 +69,9 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader
-        eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}
         actions={<ShippedStrip rung="project" />}
       >
         <h1 className="text-display masthead">Table</h1>
-        <p className="mt-1 text-body text-muted">Every project at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">P</kbd> to create.</p>
       </FloorHeader>
 
       {/* The Standing — the floor's readiness echo of the spine gauge (Defined ·
@@ -101,6 +98,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
             ],
             onNew: () => openFloorModal("new-project"),
             newLabel: "+ new project",
+            newKey: "P",
             storageKey: "projects",
             selectable: true,
             onBulkDelete: deleteProjects,

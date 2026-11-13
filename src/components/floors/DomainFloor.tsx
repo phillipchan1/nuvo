@@ -118,7 +118,6 @@ export default function DomainFloor({
   return (
     <div className="mx-auto max-w-[1180px]">
       <FloorHeader
-        eyebrow="The anchor · areas that persist for years"
         actions={
           <>
             {atRest && <RefinedSeal noun="domains" celebrate={celebrate} />}
@@ -131,10 +130,7 @@ export default function DomainFloor({
           </>
         }
       >
-        <h1 className="serif text-[26px]" style={{ fontWeight: 500 }}>The fixtures of your life</h1>
-        <p className="mt-1 max-w-[560px] text-body text-muted">
-          Measured over a long arc by whether you keep showing up — not by throughput.
-        </p>
+        <h1 className="text-display masthead">Domains</h1>
       </FloorHeader>
 
       {totalWeek > 0 && (
@@ -180,7 +176,7 @@ function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: b
       <div className="flex items-start gap-3.5">
         <DomainMark spec={mark} size={64} className="shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="serif text-lead" style={{ fontWeight: 500, color: lit ? "var(--text)" : "color-mix(in srgb, var(--text) 68%, var(--muted))" }}>
+          <div className="serif text-lead" style={{ color: lit ? "var(--text)" : "color-mix(in srgb, var(--text) 68%, var(--muted))" }}>
             {domain.name}
           </div>
           <div className="mt-0.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
@@ -283,7 +279,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
       {/* ── the hero: mark · name · mandate · showing up voice ── */}
       <div className="relative mx-auto flex max-w-[560px] flex-col items-center px-6 pb-8 pt-14 text-center">
         <DomainMark spec={mark} size={120} />
-        <div className="serif mt-3 text-[42px]" style={{ fontWeight: 500 }}>
+        <div className="serif mt-3 text-[42px]">
           <InlineText value={domain.name} onChange={(v) => updateDomain(domain.id, { name: v })} inputClassName="serif text-[42px] text-center" />
         </div>
         <div className="mt-1.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
@@ -300,7 +296,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
 
       {/* ── the last quarter — the pulse ── */}
       <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
-        {panelHead("The last quarter", "are you still showing up?")}
+        {panelHead("The last quarter")}
         <div style={{ maxWidth: 320 }}>
           <PresencePulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} />
         </div>
@@ -313,7 +309,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
       {/* ── the Gain · what you've built (two-up) ── */}
       <div className="relative grid border-t md:grid-cols-2" style={{ borderColor: "var(--line)" }}>
         <div className="px-7 py-6">
-          {panelHead("The Gain", "what you've actually put in")}
+          {panelHead("The Gain")}
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <GainNum n={`${domain.quarterHours}`} unit="h" label="this quarter" />
             <div>
@@ -341,7 +337,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         </div>
 
         <div className="border-t px-7 py-6 md:border-l md:border-t-0" style={{ borderColor: "var(--line)" }}>
-          {panelHead("What you've built", "milestones crossed here")}
+          {panelHead("What you've built")}
           {shipped.length > 0 ? (
             <div className="flex flex-col">
               {shipped.map((it) => (
@@ -355,8 +351,8 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
           ) : (
             <div className="serif text-body italic text-muted">
               {doneCount > 0
-                ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept this quarter — no finished milestones yet, but the hours are landing.`
-                : "Nothing finished here yet. What's the first thing you'll ship?"}
+                ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept this quarter`
+                : "Nothing shipped yet"}
             </div>
           )}
         </div>
@@ -364,7 +360,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
 
       {/* ── the portfolio — outcome vs effort ── */}
       <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
-        {panelHead("What you're building toward", "is the work moving the needle?", (
+        {panelHead("What you're building toward", undefined, (
           <div className="flex items-center gap-2.5">
             <button onClick={() => void addProject(domain.id, null).then((p) => onOpenProject(p.id))} className="fast text-meta text-muted hover:text-ink">+ project</button>
             <button onClick={() => void addInitiative(domain.id).then((i) => onOpenInitiative(i.id))} className="fast text-meta text-muted hover:text-ink">+ initiative</button>
@@ -374,8 +370,8 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         {openInits.length === 0 && looseProjects.length === 0 ? (
           <div className="serif text-body italic text-muted">
             {shipped.length > 0
-              ? "Nothing in flight — everything here has shipped. What's next?"
-              : "No initiatives yet — this domain simply asks to be groomed."}
+              ? "Nothing in flight"
+              : "No initiatives yet"}
           </div>
         ) : (
           <div className="flex flex-col">

@@ -318,7 +318,7 @@ export default function GroomWall({ lanes, onOpen }: { lanes: OnDeckLane[]; onOp
   if (ordered.length === 0) {
     return (
       <div className="mt-4 rounded-xl border border-line px-4 py-10 text-center text-caption text-muted">
-        Nothing on deck to groom — place a project on the timeline first, then flip back here to shape it.
+        Nothing to groom
       </div>
     );
   }

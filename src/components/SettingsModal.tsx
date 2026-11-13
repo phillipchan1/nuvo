@@ -42,7 +42,6 @@ import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useOrientation } from "../hooks/useOrientation";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
 import { useNotifyPermission, usePushRegistration } from "../hooks/useReminders";
@@ -148,8 +147,8 @@ const Row = Field;
 
 // ── Appearance: live theme preview tiles ──────────────────────────────────
 const PALETTES = {
-  light: { bg: "#f3f2f7", surface: "#ffffff", line: "#e5e3ee", accent: "#5a4be2", text: "#1a1822", muted: "#6c6880" },
-  dark: { bg: "#141320", surface: "#1c1a28", line: "#2d2b3d", accent: "#8b80ff", text: "#ecebf3", muted: "#95909f" },
+  light: { bg: "#f8f8fa", surface: "#ffffff", line: "#e6e5eb", accent: "#8e2fa3", text: "#121116", muted: "#64626d" },
+  dark: { bg: "#0c0c0e", surface: "#16161a", line: "#26252c", accent: "#d58ae4", text: "#ededf0", muted: "#95929f" },
 } as const;
 type Palette = (typeof PALETTES)[keyof typeof PALETTES];
 
@@ -225,129 +224,6 @@ function ThemeCard({
   );
 }
 
-// ── Appearance: a scheme swatch (one per colour scheme within a material) ──
-// Rendered from the SCHEMES registry, so it works for every material's own set
-// — warmth moods under Paper, editor themes under Terminal, and so on. `sharp`
-// mirrors the material's corner language so the preview reads as the material.
-function SchemeCard({
-  scheme,
-  active,
-  dark,
-  sharp,
-  onSelect,
-}: {
-  scheme: Scheme;
-  active: boolean;
-  dark: boolean;
-  sharp: boolean;
-  onSelect: () => void;
-}) {
-  const sw = dark ? scheme.dark : scheme.light;
-  const barR = sharp ? "0" : "9999px";
-  return (
-    <button
-      onClick={onSelect}
-      aria-pressed={active}
-      className={`fast group overflow-hidden rounded-lg border text-left ${
-        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
-      }`}
-    >
-      <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
-        <div
-          className="flex flex-1 flex-col gap-1 border p-1.5"
-          style={{ background: sw.surface, borderColor: sw.line, borderRadius: sharp ? "1px" : "4px" }}
-        >
-          <div className="h-1 w-3/5" style={{ background: sw.accent, borderRadius: barR }} />
-          <div className="h-1 w-full" style={{ background: sw.line, borderRadius: barR }} />
-        </div>
-      </div>
-      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
-        <span className="flex flex-col leading-tight">
-          <span className="text-caption font-medium text-ink">{scheme.name}</span>
-          <span className="mono text-micro text-muted">{scheme.hint}</span>
-        </span>
-        <span
-          // Decorative: the card itself is the control, and its selected state
-          // now rides `aria-pressed` on the button. Leaving this in the a11y
-          // tree exposed a second, ~10px "target" that was never one.
-          aria-hidden
-          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
-          }`}
-        >
-          {active && (
-            <Icon name="check" size={9} />
-          )}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-// ── Appearance: the material axis (a swatch per skin) ─────────────────────
-// The material preview reuses the skin's DEFAULT scheme (SCHEMES[skin][0]) as
-// its swatch, so there's one source of truth for colours. `sharp` mirrors the
-// skin's corner language so the preview reads as the material, not the palette.
-const SKIN_SHARP: Record<Skin, boolean> = {
-  paper: false, flat: false, terminal: true, blueprint: true, eink: false,
-};
-
-function SkinCard({
-  skin,
-  active,
-  dark,
-  onSelect,
-}: {
-  skin: Skin;
-  active: boolean;
-  dark: boolean;
-  onSelect: () => void;
-}) {
-  const sharp = SKIN_SHARP[skin];
-  const def = SCHEMES[skin][0];
-  const sw = dark ? def.dark : def.light;
-  const meta = SKIN_LABELS[skin];
-  const barR = sharp ? "0" : "9999px";
-  return (
-    <button
-      onClick={onSelect}
-      aria-pressed={active}
-      className={`fast group overflow-hidden rounded-lg border text-left ${
-        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
-      }`}
-    >
-      <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
-        <div
-          className="flex flex-1 flex-col gap-1 border p-1.5"
-          style={{ background: sw.surface, borderColor: sw.line, borderRadius: sharp ? "1px" : "4px" }}
-        >
-          <div className="h-1 w-3/5" style={{ background: sw.accent, borderRadius: barR }} />
-          <div className="h-1 w-full" style={{ background: sw.line, borderRadius: barR }} />
-        </div>
-      </div>
-      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
-        <span className="flex flex-col leading-tight">
-          <span className="text-caption font-medium text-ink">{meta.name}</span>
-          <span className="mono text-micro text-muted">{meta.hint}</span>
-        </span>
-        <span
-          // Decorative: the card itself is the control, and its selected state
-          // now rides `aria-pressed` on the button. Leaving this in the a11y
-          // tree exposed a second, ~10px "target" that was never one.
-          aria-hidden
-          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
-          }`}
-        >
-          {active && (
-            <Icon name="check" size={9} />
-          )}
-        </span>
-      </div>
-    </button>
-  );
-}
-
 // ── Section panes ─────────────────────────────────────────────────────────
 function AppearancePane({
   settings,
@@ -357,73 +233,24 @@ function AppearancePane({
   updateSettings: (patch: Partial<UserSettings>) => void;
 }) {
   const theme = settings?.theme ?? "system";
-  const [skin, setSkin] = useSkin();
-  const { scheme, schemes, setScheme } = useScheme();
-  const group = SCHEME_GROUP[skin];
   const { scale, zoomIn, zoomOut, zoomReset } = useUiScale();
-
-  const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const themeIsDark = theme === "dark" || (theme === "system" && sysDark);
-  // A scheme that only comes in one mode forces it; a "both" scheme follows the
-  // theme toggle. `effDark` gives the right swatch/preview for any scheme.
-  const effDark = (m: SchemeModes) => (m === "dark" ? true : m === "light" ? false : themeIsDark);
-
-  const activeScheme = schemes.find((s) => s.id === scheme);
-  const forced = schemeModes(skin, scheme) === "both" ? null : schemeModes(skin, scheme);
 
   return (
     <div className="max-w-4xl">
-      <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
+      <PaneHeader title="Appearance" />
       <div className="grid grid-cols-3 gap-2.5">
         {(["system", "light", "dark"] as const).map((t) => (
           <ThemeCard
             key={t}
             theme={t}
-            // When the scheme forces a mode, only that card is live + active, so
-            // a dead "Light" toggle can't quietly do nothing.
-            active={forced ? t === forced : theme === t}
-            disabled={forced ? t !== forced : false}
+            active={theme === t}
             onSelect={() => updateSettings({ theme: t })}
-          />
-        ))}
-      </div>
-      {forced && (
-        <p className="text-caption mt-2 text-muted">
-          {activeScheme?.name} is a {forced} {group.label.toLowerCase()} — it sets its own light &amp; dark.
-        </p>
-      )}
-
-      <div className="section-label mb-2 mt-6">Material</div>
-      <p className="text-caption mb-2.5 text-muted">The feel of the surface. Each material brings its own look — and its own set of {group.label.toLowerCase()}s below.</p>
-      <div className="grid grid-cols-3 gap-2.5">
-        {(Object.keys(SKIN_LABELS) as Skin[]).map((s) => (
-          <SkinCard
-            key={s}
-            skin={s}
-            active={skin === s}
-            dark={effDark(SCHEMES[s][0].modes ?? "both")}
-            onSelect={() => setSkin(s)}
-          />
-        ))}
-      </div>
-
-      <div className="section-label mb-2 mt-6">{group.label}</div>
-      <p className="text-caption mb-2.5 text-muted">{group.hint}</p>
-      <div className="grid grid-cols-3 gap-2.5">
-        {schemes.map((sc) => (
-          <SchemeCard
-            key={sc.id}
-            scheme={sc}
-            active={scheme === sc.id}
-            dark={effDark(sc.modes ?? "both")}
-            sharp={SKIN_SHARP[skin]}
-            onSelect={() => setScheme(sc.id)}
           />
         ))}
       </div>
 
       <div className="section-label mb-2 mt-6">Zoom</div>
-      <p className="text-caption mb-2.5 text-muted">Scale the whole interface — text, icons, and spacing together. Also ⌘+ / ⌘− / ⌘0.</p>
+      <p className="text-caption mb-2.5 text-muted">⌘+ · ⌘− · ⌘0</p>
       <div className="flex items-center gap-2.5">
         <Btn onClick={zoomOut} disabled={scale <= UI_SCALE_MIN} title="Zoom out">−</Btn>
         <button
@@ -530,7 +357,7 @@ function SchedulePane({
 
   return (
     <div>
-      <PaneHeader title="Schedule" sub="The shape of your day — what the calendar shows and when Nuvo plans for you." />
+      <PaneHeader title="Schedule" />
       {/* A form grid: stacked cells (label over control) tile into two columns on
           a wide modal and fall back to one column on a phone. */}
       <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
@@ -542,7 +369,7 @@ function SchedulePane({
           <TimeZonePicker />
         </Row>
 
-        <Row layout="stack" title="Day view window" desc="The span of hours shown in your calendar.">
+        <Row layout="stack" title="Day view window">
           <div className="flex items-center gap-2.5">
             <Select
               value={settings?.day_start_hour ?? 6}
@@ -622,7 +449,7 @@ function SchedulePane({
           />
         </Row>
 
-        <Row layout="stack" title="Week starts on" desc="The first column of the week and month views.">
+        <Row layout="stack" title="Week starts on">
           <Segmented
             value={String(firstDayOfWeek(settings))}
             onChange={(v) => updateSettings({ week_start: Number(v) })}
@@ -944,7 +771,7 @@ function ConnectionsPane({
       {/* The walkthrough opens Settings here and lights this pane's header, so the
           last step lands on the thing it's asking for instead of the whole modal. */}
       <div data-teach="calendars">
-        <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
+        <PaneHeader title="Calendars" />
       </div>
       <div className="space-y-5">
         {defaultFlat.length > 1 && (
@@ -1409,10 +1236,7 @@ function RemindersPane({
 
   return (
     <div>
-      <PaneHeader
-        title="Reminders"
-        sub="The only time Nuvo speaks first — and only about a named commitment."
-      />
+      <PaneHeader title="Reminders" />
       <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
         <Row
           title="Remind me"
@@ -1458,7 +1282,7 @@ function RemindersPane({
           </Row>
         )}
 
-        <Row layout="stack" title="Before a meeting" desc="Timed events from your connected calendars.">
+        <Row layout="stack" title="Before a meeting">
           {leadList("event_leads")}
         </Row>
 
@@ -1466,7 +1290,7 @@ function RemindersPane({
           {leadList("all_day_leads")}
         </Row>
 
-        <Row layout="stack" title="Before a block you scheduled" desc="Your own time blocks and slots.">
+        <Row layout="stack" title="Before a block you scheduled">
           {leadList("block_leads")}
         </Row>
 
@@ -1495,7 +1319,7 @@ function LabelsPane() {
 
   return (
     <div className="max-w-2xl">
-      <PaneHeader title="Labels" sub="Color-coded tags you can attach to any task across the board." />
+      <PaneHeader title="Labels" />
       <div className="space-y-1">
         {labels.map((l) => (
           <div key={l.id} className="group flex items-center gap-2.5 rounded-[var(--radius)] border border-transparent px-1.5 py-1 hover:border-line hover:bg-surface-2">
@@ -1604,13 +1428,12 @@ function AccountPane() {
 
   return (
     <div className="max-w-2xl">
-      <PaneHeader title="Account" sub="You're signed in to Nuvo." />
+      <PaneHeader title="Account" />
       <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-head font-semibold uppercase text-accent">
           {email ? email[0] : "?"}
         </span>
         <div className="min-w-0">
-          <div className="text-label uppercase tracking-wider text-muted">Signed in as</div>
           <div className="mono truncate text-body text-ink">{email || "…"}</div>
         </div>
         <div className="flex-1" />
@@ -1788,13 +1611,10 @@ function AboutPane({ onClose }: { onClose: () => void }) {
   const showMacDownload = offerMacDownload({ desktopTauri: desktop, mobile });
   return (
     <div className="max-w-2xl">
-      <PaneHeader title="About" sub="Your version, what's new, and how to get reacquainted." />
+      <PaneHeader title="About" />
 
       <div className="mb-2 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
         <div className="wordmark text-lead text-ink">Nuvo</div>
-        <p className="max-w-xs text-caption leading-snug text-muted">
-          Your whole life — work, family, health, finances — held in one calm place.
-        </p>
         <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
       </div>
 

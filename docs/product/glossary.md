@@ -133,7 +133,7 @@ been used to argue against things it doesn't forbid.
 | **Agenda · Day · Week · Month · Year** (mobile Calendar horizons) | The phone Calendar's five faces, one chrome. **Agenda** = the 14-day availability list with Free chips (was called *List*); **Day** = one day as a proportional time grid — blocks to scale, open windows as `--slot` brackets, now as the `--signal` line; **Week** = seven columns on one shared time axis; **Month** = the grid of load dots, with the tapped day's plan underneath; **Year** = twelve months of day numerals (see **Year**). Agenda through Month render one `buildDayPlan` (`dayPlan.ts`), so they cannot disagree about a Tuesday; Year draws no calendar data. Swipe to travel at whatever horizon you're on; the ladder changes horizon. D-044, D-122, D-128. |
 | **By domain** (On Deck · projects and initiatives) | A way of reading either planner deck (weeks or quarters): one lane per domain, in the domains' order, with a soft empty **socket** wherever a domain has nothing in a week. While it's on, the lanes *are* the Coverage read, so the strip steps aside. A toggle, not a place; its off state has no name. Dragging between lanes never re-homes a project (D-179). |
 | **Floor** | An altitude's screen (Domain / Initiative / Project floors). |
-| **Wall · Open domain** | The Domain floor's two halves — the wall of all domains, and one domain entered — the reference screens for Warm Paper alongside the Schedule. |
+| **Wall · Open domain** | The Domain floor's two halves — the wall of all domains, and one domain entered — the reference screens for the design language alongside the Schedule. |
 | **This week's shape** | The strip at the head of the domain **wall**: seven day columns, each a stack of the domains that got those hours, on an absolute scale (an 8h day is the floor) — so a light week reads light and *when* is visible, not just the split. Today is `--signal`; days still ahead are open `--slot` track. Replaced the 100%-stacked share bar, which could not tell a 40-hour week from a 4-hour one (D-085). |
 | **the Vertical** | Spine + floors: *what matters and why.* |
 | **the Planner** | Day · Week · Schedule: *what am I doing.* |
@@ -158,7 +158,7 @@ been used to argue against things it doesn't forbid.
 
 | Term | Meaning |
 |---|---|
-| **Warm Paper** | The design language: one continuous sheet, editorial hand, glass that lifts. [`design-language.md`](../design-language.md) |
+| **Instrument** | The design language (D-189): flat ground, Inter, one committed accent, a bold hero per surface, Light and Dark only. Replaced **Warm Paper**. [`design-language.md`](../design-language.md) |
 | **`.atmosphere`** | The canvas gradient. **Never paint an opaque `bg-*` over it** — that's the "frost seam." |
 | **glass-card / glass-lift** | Floating things rest as translucent glass; the focal element *lifts* with `--shadow-lift` and a small rise — **no flat ring.** |
 | **Masthead** | Fraunces display type for heroes (floors, records, days). Never `font-semibold`. |

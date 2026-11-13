@@ -309,36 +309,6 @@ export function CaptureVisual() {
   );
 }
 
-// 8 — Appearance: a few looks to pick from. Raw hexes are the deliberate exception
-// to this file's "never a raw hex" rule — these swatches show OTHER themes, not the
-// one currently active, so they can't be app tokens by definition. Names/hints match
-// SKIN_LABELS in useSkin.ts.
-export function AppearanceVisual() {
-  const skins = [
-    { name: "Aurora", bg: "#F7F1E8", ink: "#3A342C", accent: "#B5804F" },
-    { name: "Flat", bg: "#FFFFFF", ink: "#1A1A1A", accent: "#2563EB" },
-    { name: "Terminal", bg: "#0B0F0E", ink: "#D7F5DE", accent: "#5FD97A" },
-    { name: "Blueprint", bg: "#0E2A4A", ink: "#DCEFFF", accent: "#8FD1FF" },
-  ];
-  return (
-    <Plate>
-      <div className="grid w-full max-w-[260px] grid-cols-2 gap-2">
-        {skins.map((s, i) => (
-          <div
-            key={s.name}
-            className="orient-stagger flex flex-col gap-2 rounded-lg border border-line p-2.5"
-            style={{ ...at(i), background: s.bg }}
-          >
-            <span className="h-2 w-8 rounded-full" style={{ background: s.accent }} />
-            <span className="h-1.5 w-full rounded-full opacity-60" style={{ background: s.ink }} />
-            <span className="text-micro" style={{ color: s.ink }}>{s.name}</span>
-          </div>
-        ))}
-      </div>
-    </Plate>
-  );
-}
-
 // 9 — Ready: the week, at rest.
 export function ReadyVisual() {
   return (

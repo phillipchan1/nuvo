@@ -17,7 +17,6 @@ import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
 import { isEntitled, readWasEntitled, resolveEntitlementView } from "./lib/subscription";
-import { useSkin, useScheme } from "./hooks/useSkin";
 import { useThemeColor } from "./hooks/useThemeColor";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
@@ -250,8 +249,6 @@ function Shell() {
   useSubscriptionLiveSync();
   const checkoutPending = useCheckoutReturn(isEntitled(subscription));
   useApplyTheme(settings?.theme);
-  useSkin(); // keep <html data-skin> applied (the material axis)
-  useScheme(); // keep <html data-palette> applied (the material's colour scheme)
   useThemeColor(); // keep the browser/status-bar chrome on the resolved --bg
   const showAuthWordmark = useDelayedTrue(loading, SPLASH_DELAY_MS);
   const wasEntitled = readWasEntitled();

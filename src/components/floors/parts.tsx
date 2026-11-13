@@ -111,7 +111,7 @@ export function FloatingMenu({
       <div
         ref={menuRef}
         data-nested-surface=""
-        className="rise elev-2 fixed z-[83] rounded-md border border-line bg-surface py-1"
+        className="pop-in [--pop-origin:top_left] elev-2 fixed z-[83] rounded-md border border-line bg-surface py-1"
         style={{
           top: pos?.top ?? -9999,
           left: pos?.left ?? -9999,

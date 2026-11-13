@@ -285,9 +285,7 @@ export function RecordLog({
       {loadError && (
         <p className="mb-2 text-caption text-signal">Comments couldn't load — try refreshing.</p>
       )}
-      {comments.length === 0 && !loadError ? (
-        <p className="mb-2 text-caption text-muted italic">No comments yet.</p>
-      ) : (
+      {comments.length === 0 && !loadError ? null : (
         <div className="flex flex-col">
           {comments.map((c) => (
             <CommentRow

@@ -30,8 +30,6 @@ export default function ShippedWall({ rung }: { rung: "project" | "initiative" }
   const { openRecord } = useAppNavigation();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readShipped(data, rung, now), [data, rung, now]);
-  const noun = rung === "initiative" ? "initiative" : "project";
-  const nounPl = rung === "initiative" ? "initiatives" : "projects";
 
   // For each finished item with no area, an instant, offline domain suggestion —
   // the same token matcher the initiative deck routes on. Keyed by item id.
@@ -57,12 +55,8 @@ export default function ShippedWall({ rung }: { rung: "project" | "initiative" }
 
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
-      <FloorHeader eyebrow={`${board.total} shipped · ${board.thisPeriodCount} ${board.periodNoun}`}>
+      <FloorHeader>
         <h1 className="text-display masthead">Shipped</h1>
-        <p className="mt-1 text-body text-muted">
-          Every finish line you've crossed. The {nounPl} you closed out, newest first — a
-          growing record of what you actually built.
-        </p>
       </FloorHeader>
 
       {board.total === 0 ? (
@@ -71,7 +65,7 @@ export default function ShippedWall({ rung }: { rung: "project" | "initiative" }
             <Seal color="var(--muted)" />
           </div>
           <p className="mt-3 text-body text-muted">
-            Nothing shipped yet. Finish a {noun} on the deck and it lands here.
+            Nothing shipped yet
           </p>
         </div>
       ) : (

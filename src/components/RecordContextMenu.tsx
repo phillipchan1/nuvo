@@ -132,7 +132,7 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
         // Lists behind the menu stand down while it owns the keys (useTaskListKeys).
         data-nested-surface=""
         aria-label={state.kind === "project" ? "Project actions" : "Initiative actions"}
-        className="rise elev-3 fixed z-50 overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1 outline-none"
+        className="pop-in [--pop-origin:top_left] elev-3 fixed z-50 overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1 outline-none"
         style={{ top: pos?.top ?? state.y, left: pos?.left ?? state.x, width: POP_W, opacity: pos ? undefined : 0 }}
         onContextMenu={(e) => e.preventDefault()}
       >

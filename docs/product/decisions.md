@@ -2280,6 +2280,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-18** | A **Download for Mac** CTA in the phone Settings | A DMG is not a phone act. Settings → About on the phone was offering a Mac installer because the About pane treated "not the Tauri Mac app" as "web", and the iOS PWA / TestFlight shell is web. The marketing site already is the download door (D-018, D-124). Same smell as D-123's upkeep-in-the-chrome: a desktop-rank act living on a phone surface because it was easy to put there | Someone on a phone is regularly the person who installs the Mac app for themselves — evidence, not a guess. Even then the door stays on nuvo.day, not in Settings |
 | **N-19** | **Search, commands or a chat inside the capture door** (⌘K / ⌥Space) | Every one of them cost the one job. Search moved Enter onto any record your words *resembled*, so "call mom" opened an old task called "call mom about…" instead of adding yours; a leading space flipped the line into a chat; the command list made the empty state a menu. The door now does one thing — Task · Event · Slot — and reports "added" only once the write is queued (D-149). Navigation keeps its own keys and the spine; Nuvo keeps ⌘J; the phone keeps its Search screen | Desktop search comes back as **its own** door with its own key — never by re-sharing the capture line. A single line cannot both *add what I typed* and *find what I typed* without guessing which one you meant |
 | **N-20** | **Pulling a task into the week because its domain has gone quiet** — the app picking the shortest open task in a quiet domain and offering it in Plan the week | It is the one pick with **no owner**: you never slated it, owed it (it didn't slip) or dated it. It chose by *length* and ignored *age*, so an old, small, loose backlog task — *"review metrics WR expectancy"* — arrived in the week from nowhere, and the person's first question was "where did that come from?" That is the app deciding (P4) and the week carrying something the operator can't account for (W1, A4). A quiet domain is already *named* by the Week's Plan conscience read (W5, D-061), which is the honest hand-off; D-062 already decided that naming needs no auto-pulled work behind it | A quiet domain becomes something you can **act on from the read itself** ("slot something here" — you pick the task), with a reader for it (D-062's trigger). Even then: you choose the task; the app never does |
+| **N-21** | **Themes, materials and colour schemes** (Aurora, Flat, Terminal, Blueprint, E-Ink and their 27 schemes) | A planner with five faces has none. They were added for variety, multiplied every visual change by ~30 combinations, and kept glass and serif idioms alive that the product no longer wants (D-189) | Never as a picker. Light and Dark are the themes |
 
 ---
 
@@ -6805,6 +6806,44 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-189 · 2026-11-12 · Instrument replaces Warm Paper. One material, Light and Dark, Inter,
+a bold hero, fewer words, faster motion.** *(Decided by the operator after the D-186 site: "the
+perfectionism of Linear app, but with our ambitious boldness"; voice chosen from a mockup:
+Engineered, i.e. the hero in Inter, not Fraunces.)*
+
+**Why.** The app read as generic: warm cream paper with a serif hero is a stock look, and five
+materials × 27 schemes meant Nuvo had no single face. The site now sells ambition (D-186); the
+app has to look like a precise tool, not a calm notebook.
+
+**What.** The old Flat material (already the Linear-register one) is promoted to the base and
+re-tokened; everything else goes. `src/skins/*`, `useSkin`, the material and scheme pickers,
+Terminal's status bar, the hand-drawn icon set (Lucide only), Fraunces in the app, the atmosphere
+gradient, every backdrop blur, and italics (only Inter's upright axis ships). Tokens:
+`index.css` (Light/Dark); chrome and motion: `styles/instrument.css`. Accent = saturated mulberry
+(intent, landed); `--signal` = ember, now only. Motion: 110/180/260/380ms ladder, quint-out for
+arrivals, a settle spring for moments, a ~9% land spring for what you did; popovers scale from
+their origin; hover instant-in / fade-out; a pointer press on every control. ~25 explanatory
+lines cut from floors, decks, the rail and Settings (subtitles, keyboard-hint rows, long empty
+states); the Table's create key moved onto the "+ new" button as a keycap.
+
+**Anchor.** Visual; closes no ledger row. **Strains P14**, which is rewritten to Instrument.
+**Strains P9** (quiet by default) at the springs, held the D-187 way: motion only on the user's
+own act. Four no's: no pool; one internal name (glossary); degrades on an empty account; nothing
+account-specific. Device-local skin choices simply stop applying; nobody loses data.
+
+**Rejected on the way:** keeping a theme picker "for fun" (no single face); keeping Fraunces as
+the hero (offered as the Editorial voice, not chosen); glass on floating surfaces (a blur per
+popover is the perf law's multiplier, and it reads as web).
+
+**Open.** The marketing site is still Warm Paper turned up; app and site now look like two
+brands until it follows. The deeper label cuts (the Groom readiness strip vs its legend, the
+Spine's second line, the ShippedStrip pills) are structural and wait for a decision.
+
+*Status: built 2026-11-12 on branch `claude/instrument-design-language`, not merged. Verified:
+typecheck, build, the suite (bar 18 maintenance/CI-guard failures that fail on master too), the
+`?rail` `?build` `?year` `?weekcrown` `?sheets` harnesses in Light and Dark at 1440 and 375. Not
+verified: the live Schedule with real data (no Supabase env in this checkout), `npm run perf`.*
 
 **D-188 · 2026-11-12 · An empty slot does not stand in the Today list.** *(Amends D-178 part 2.)*
 D-178 listed a slot with nothing in it ("held time with nothing in it is a fact the list should be
