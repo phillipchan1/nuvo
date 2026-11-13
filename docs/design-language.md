@@ -79,6 +79,28 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
+## The six layouts and six popovers (D-190)
+
+Every page is one of six layouts, every floating surface one of six kinds — all built on the kit.
+
+| Layout | Pages | Where it lives |
+|---|---|---|
+| **Planner** | Schedule (Day · Week · Month · Year · Spread), On Deck, the initiative deck | `CalendarPane` + `.evt-shell` blocks, `LeftRail`/`WeekPanel`/`TaskRow` (`styles/rail.css`), `ondeck/*` (`styles/decks.css`) |
+| **List** | Table (projects, initiatives), Inbox, Today, week archive | `floors/Collection` — 38px rows, a sticky filter row, groups on `--sunk` (`styles/floors.css`) |
+| **Board** | Groom ×2, Domains wall, Shipped wall | kit Cards in columns with a 32px head; the hero states a fact ("N to shape", "N shipped") |
+| **Document** | Record (project, initiative, task, domain), open domain, create | main column + 288px property panel (`record/recordFrame`, `styles/documents.css`) |
+| **Dialog** | Settings, Shortcuts, billing, confirms | kit Dialog (a Sheet on the phone); Settings is two panes |
+| **Flow** | Plan the week, Summit, Week's Plan/Review, capacity, orientation, login | `rituals/FlowShell` — stepper bar, one hero per step, keycapped primary (`styles/flows.css`) |
+
+Popovers (`PopoverParts`, `styles/popovers.css`): **Menu** · **Picker** · **Date** (typed line
+over `MiniMonth`) · **Inspector** (352px, flush: head · strip · 36px rows · ghost footer) ·
+**Tooltip/Toast** · **Command** (⌘K / ⌥Space: 54px line, parsed chips, Task·Event·Slot). The
+phone (`styles/phone.css`) is the same kit at touch size. Verify: `?rail=frame`, `?gather`,
+`?docs`, `?build`, `?domains`, `?horizon`, `?sheets`, `?planweek`, `?login`, `?kit`.
+
+*Sections below this point predate D-190; where they describe glass, lifts or Fraunces, the
+grammar at the top of this file wins.*
+
 ## Momentum — the ambition axis (D-187)
 
 **Status:** built 2026-11-13 on branch `claude/ambition-design-language` (not merged).
