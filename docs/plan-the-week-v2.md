@@ -168,7 +168,7 @@ Held blocks and events refuse the move (the block shakes; the rail says what's i
 ### Needs you — exceptions, not a review
 
 The composer lists only what it could not settle: a block that didn't fit (*Split into 2 ×
-1h* · *Next week*), a project with no next step (*Add a step*), a block sitting on an
+1h* · *Next week*), a project with no next step (*Add a step*) — built 2026-11-13 as the **thin path** row: time held this week, too little work in it, and its act is ✦ Draft the path (D-196), a block sitting on an
 event you've marked optional. Everything else is presumed right. **An empty Needs you is
 the 60-second week.**
 

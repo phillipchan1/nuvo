@@ -288,6 +288,7 @@ html:root .deck-compose input:focus-visible { outline: none; box-shadow: none; }
 
 /* ── The grid ───────────────────────────────────────────────────────────── */
 .dk {
+  position: relative; /* Draft the projects opens over the whole deck (D-196) */
   display: flex;
   height: 100%;
   min-height: 0;
@@ -609,4 +610,292 @@ html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srg
 @media (prefers-reduced-motion: reduce) {
   .k-card.deck-card[aria-selected="true"],
   .k-card.deck-card[data-lifted] { transform: none; }
+}
+
+/* ── Draft the projects (D-196) ─────────────────────────────────────────────
+   The initiative's quarter, opened over the deck's pane into its weeks. Flat on
+   the ground like the deck it zooms (no float, no blur); the bars are the deck's
+   own card idiom, a drafted one dashed and accent-washed like a drafted step
+   (D-193). Only the rail's foot floats nothing — it's part of the rail. */
+.pdq {
+  position: absolute;
+  inset: 0;
+  z-index: 20; /* over the deck's sticky head (15) */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  background: var(--panel);
+}
+.pdq:focus { outline: none; }
+.pdq-grid {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line-1);
+}
+.pdq-head,
+.pdq-load,
+.pdq-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+}
+.pdq-head {
+  border-bottom: 1px solid var(--line-1);
+}
+.pdq-head > div {
+  display: grid;
+  padding: 8px 6px 6px;
+  border-left: 1px solid var(--line-1);
+  font: 600 12px/1.2 var(--font-sans);
+  min-width: 0;
+  overflow: hidden;
+}
+.pdq-head > div:first-child,
+.pdq-load > div:first-child,
+.pdq-cols > span:first-child { border-left: 0; }
+.pdq-head span { font-weight: 450; font-size: 11px; color: var(--muted); }
+.pdq-load {
+  height: 22px;
+  border-bottom: 1px solid var(--line-1);
+}
+.pdq-load > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--line-1);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.pdq-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.pdq-cols {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pdq-cols > span { border-left: 1px solid var(--line-1); }
+.pdq-bars { position: relative; }
+.pdq-bar {
+  position: absolute;
+  height: 52px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: var(--r-card);
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  transition:
+    left var(--d-fast, 110ms) var(--ease-out),
+    width var(--d-fast, 110ms) var(--ease-out),
+    top var(--d-fast, 110ms) var(--ease-out),
+    opacity var(--d-fast, 110ms) var(--ease-out);
+}
+.pdq-bar[data-own] {
+  background: var(--raised);
+  box-shadow: inset 3px 0 0 var(--h), 0 0 0 1px var(--line-2), var(--sh-1);
+  padding-left: 13px;
+}
+.pdq-bar[data-ghost] {
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  outline: 1.5px dashed var(--accent-ring);
+  outline-offset: -1.5px;
+  animation: pdq-in 260ms var(--ease-out) both;
+}
+.pdq-bar[data-ghost][data-on] {
+  background: color-mix(in srgb, var(--accent) 10%, var(--raised));
+  outline-style: solid;
+  outline-color: var(--accent);
+  box-shadow: var(--sh-pop);
+  z-index: 2;
+}
+.pdq-bar[data-quiet] { opacity: 0.62; }
+.pdq-bar[data-lifted] { transition: none; z-index: 3; box-shadow: var(--sh-pop); }
+.pdq-bar-name {
+  font: 600 12.5px/1.25 var(--font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 26px;
+}
+.pdq-bar[data-ghost] .pdq-bar-name { color: var(--ink-2); }
+.pdq-bar-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pdq-bar-ver {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  font-size: 10px;
+  color: var(--accent-ink);
+}
+.pdq-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.pdq-edge[data-side="start"] { left: 0; }
+.pdq-edge[data-side="end"] { right: 0; }
+@keyframes pdq-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.pdq-walk {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.pdq-walk-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+.pdq-walk-top > :first-child { flex: 1; }
+.pdq-pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+.pdq-pip {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent-ring);
+}
+.pdq-pip[data-on] { box-shadow: inset 0 0 0 5px var(--accent); }
+.pdq-walk-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px 14px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.pdq-name input { font-weight: 600; }
+.pdq-facts {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.pdq-facts dt { color: var(--muted); }
+.pdq-facts dd { margin: 0; color: var(--ink); }
+.pdq-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.pdq-nudge .text-caption:not(:first-child) { margin-left: 8px; }
+.pdq-version {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  text-align: left;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+.pdq-version[data-on] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+@media (hover: hover) {
+  .pdq-version:not([data-on]):hover { box-shadow: inset 0 0 0 1px var(--accent-ring); }
+}
+.pdq-version-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 600 12.5px/1.3 var(--font-sans);
+}
+.pdq-version-out { font-size: 11.5px; color: var(--muted); }
+.pdq-walk-foot {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdq-bar,
+  .pdq-bar[data-ghost] { transition: none; animation: none; }
+}
+
+/* Draft the projects on the phone — the quarter as a strip, the draft as cards. */
+.pdm-strip {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: 2px;
+  margin: 4px 0 14px;
+}
+.pdm-strip > span {
+  height: 6px;
+  border-radius: 2px;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+.pdm-strip > span[data-load="1"] { background: color-mix(in srgb, var(--accent) 16%, var(--sunk)); }
+.pdm-strip > span[data-load="2"] { background: color-mix(in srgb, var(--accent) 32%, var(--sunk)); }
+.pdm-strip > span[data-load="3"] { background: color-mix(in srgb, var(--accent) 50%, var(--sunk)); }
+.pdm-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+}
+.pdm-card[data-own] {
+  background: var(--raised);
+  box-shadow: inset 3px 0 0 var(--h), 0 0 0 1px var(--line-2);
+  padding-left: 15px;
+}
+.pdm-card[data-ghost] {
+  background: color-mix(in srgb, var(--accent) 5%, var(--raised));
+  outline: 1.5px dashed var(--accent-ring);
+  outline-offset: -1.5px;
+  animation: pdq-in 260ms var(--ease-out) both;
+}
+.pdm-card[data-ghost][data-on] {
+  background: color-mix(in srgb, var(--accent) 9%, var(--raised));
+  outline-style: solid;
+  outline-color: var(--accent);
+}
+.pdm-card-hit {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  min-height: 44px;
+}
+.pdm-name { font: 600 14px/1.3 var(--font-sans); color: var(--ink); }
+.pdm-card[data-ghost] .pdm-name { color: var(--ink-2); }
+.pdm-out { font-size: 12.5px; color: var(--muted); }
+.pdm-span { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  .pdm-card[data-ghost] { animation: none; }
 }

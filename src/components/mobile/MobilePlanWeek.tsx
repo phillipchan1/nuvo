@@ -45,6 +45,8 @@ import DurationSelect from "../DurationSelect";
 import { Button, Card, Dot, IconButton } from "../kit";
 import { PhEmpty, TouchButton } from "./touch";
 import MemoryNoticed from "../memory/MemoryNoticed";
+import { THIN_MARKS_MAX, thinChip, thinPaths, type ThinPath } from "../../lib/thinPath";
+import { requestPathDraft } from "../../lib/draftIntent";
 
 /** The forward beat — named after the ACT, not the destination. "Leftovers →"
  *  said where you'd land and nothing about what pressing it does; each press
@@ -63,7 +65,14 @@ const atMin = (m: number) => {
   return at(d);
 };
 
-export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
+export default function MobilePlanWeek({
+  onClose,
+  onOpenProject,
+}: {
+  onClose: () => void;
+  /** opens a project's sheet over the plan — the thin-path mark's door (D-196) */
+  onOpenProject?: (projectId: string) => void;
+}) {
   const draft = useWeekDraft();
   const { updateProject, updateTask } = useVertical();
   const [step, setStep] = useState<WeekStep>("open");
@@ -198,6 +207,11 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
           workStart={workStart}
           workEnd={workEnd}
           onDrop={dropBlock}
+          thin={onOpenProject ? thinPaths(data, draft.weekSlots).slice(0, THIN_MARKS_MAX) : []}
+          onDraftPath={(id) => {
+            requestPathDraft(id);
+            onOpenProject?.(id);
+          }}
         />
       )}
     </PlanWeekFrame>
@@ -850,7 +864,12 @@ export function WeekStep({
   workStart,
   workEnd,
   onDrop,
+  thin = [],
+  onDraftPath,
 }: {
+  /** projects with time held this week and too little work in it (D-196) */
+  thin?: ThinPath[];
+  onDraftPath?: (projectId: string) => void;
   data: VerticalData;
   days: { iso: string; past: boolean }[];
   placements: Placement[];
@@ -951,6 +970,32 @@ export function WeekStep({
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" aria-hidden />
                 <span className="ph-row-title !text-muted">{task.title}</span>
                 <span className="ph-row-meta">{reason}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* A block with too little in it — the one just-in-time mark (D-196). The
+          facts, then the act; the row leaves by itself once the block is full. */}
+      {thin.length > 0 && onDraftPath && (
+        <section className="mt-6">
+          <StepSection count={thin.length}>Thin paths</StepSection>
+          <div className="border-t border-[var(--line-1)]">
+            {thin.map((t) => (
+              <div key={t.projectId} className="grid gap-2 border-b border-[var(--line-1)] py-3">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 text-body" style={{ color: "var(--accent-ink)" }} aria-hidden>
+                    ◔
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-body font-medium">{t.name}</span>
+                  <span className="shrink-0 text-caption tabular-nums text-muted">{thinChip(t)}</span>
+                </div>
+                <div className="pl-5">
+                  <TouchButton kind="primary" icon={<Icon name="sparkles" size={14} />} onClick={() => onDraftPath(t.projectId)}>
+                    Draft the path
+                  </TouchButton>
+                </div>
               </div>
             ))}
           </div>

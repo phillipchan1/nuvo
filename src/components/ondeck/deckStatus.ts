@@ -11,6 +11,14 @@
 import type { DeckTone } from "./DeckCard";
 import type { OnDeckLane, ReadyTier } from "../../lib/onDeck";
 import type { InitiativeLane, InitiativeLaneState } from "../../lib/initiativeDeck";
+import type { ThinPath } from "../../lib/thinPath";
+import { fmtMins } from "../../../supabase/functions/_shared/dayShape.ts";
+
+/** How far ahead a card's caution word speaks, in weeks (0 = this week). A gap in
+ *  a project that starts next month isn't news yet; the deck saying "no steps" on
+ *  every far-out card was the groom-everything wall in miniature (D-196). The
+ *  Groom face still lists every gap — that's where you go to look on purpose. */
+export const NEAR_WEEKS = 2;
 
 export type DeckStatus = { label: string; tone: DeckTone } | null;
 
@@ -43,11 +51,15 @@ export const INITIATIVE_STATE_LABEL: Record<InitiativeLaneState, string> = {
  *  dresses *absence of history* up as bad news, which is the exact thing Principle
  *  6's corollary forbids. Drift belongs where it can be explained (the record,
  *  Groom), not as a permanent orange word on a planning card. */
-export function projectCardStatus(l: OnDeckLane): DeckStatus {
+export function projectCardStatus(l: OnDeckLane, thin?: ThinPath | null): DeckStatus {
   if (l.readyTier === "done") return { label: "shipped", tone: "landed" };
   if (l.readyTier === "parked") return { label: "parked", tone: "muted" };
   const over = l.pace.read === "overdue" ? l.pace.driftDays : null;
   if (over != null && over > 0) return { label: `${over}d overdue`, tone: "danger" };
+  // Time held in the next two weeks, too little work in it (D-196) — the two
+  // facts, short enough for the meta line; the card's footer carries the act.
+  if (thin) return { label: thinWord(thin), tone: "caution" };
+  if (l.startWeekIdx >= NEAR_WEEKS) return l.axes.fits === false ? { label: "won't fit", tone: "caution" } : null;
   // The FIRST gap only. "no outcome · no steps" is two sentences in a slot that
   // holds one, and the pips already say how many checks are open — the word only
   // has to name where to start.
@@ -75,4 +87,9 @@ export function initiativeWeight(lane: InitiativeLane): string | null {
   if (lane.krCount === 0) return null;
   const krs = `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"}`;
   return lane.attainment == null ? krs : `${krs} · ${Math.round(lane.attainment * 100)}%`;
+}
+
+/** A thin path, as a deck card says it: `20m of 3h held` · `no steps · 3h held`. */
+export function thinWord(t: Pick<ThinPath, "heldMins" | "workMins">): string {
+  return t.workMins === 0 ? `no steps · ${fmtMins(t.heldMins)} held` : `${fmtMins(t.workMins)} of ${fmtMins(t.heldMins)} held`;
 }

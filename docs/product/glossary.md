@@ -88,7 +88,7 @@ been used to argue against things it doesn't forbid.
 | **Sunrise** | daily, morning | The day's plan; pulls from the Week pool, surfaces prepared tasks. |
 | **Sundown** | daily, evening | Leads with the day's gain; "back to week" for leftovers. |
 | **Summit** | quarterly | Quarter's Gain → Mandates → Portfolio → Months. |
-| **Blueprint** | on demand | State a bet → proposed KRs + projects + ordered tasks → accept creates the subtree. |
+| ~~**Blueprint**~~ | — | *Retired as a name (D-196).* Its screen went in the Warm Paper rework; its proposer now serves **Draft the projects**. |
 | **On Deck** | continuous | The project timeline you open *first* — coarse calls about which weeks hold what. [`on-deck.md`](../on-deck.md) |
 | **the Refine run** | on demand, phone-first | Grooming as a winnable game — a short card run that moves readiness. [`refine-run.md`](../refine-run.md) |
 | **Grooming lenses** | *(spec)* | Four views: **When** (On Deck, built) · **What** · **How** · **In the way**. [`grooming-lenses.md`](../grooming-lenses.md) |
@@ -121,10 +121,13 @@ been used to argue against things it doesn't forbid.
 
 | Term | Meaning |
 |---|---|
-| **Nuvo** (the assistant) | ⌘J. Say **"ask Nuvo"** for the assistant, **"in Nuvo"** for the app. Endpoints on the `agent` edge function: `scaffold` · `blueprint` · `prepare` · `narrate`. |
+| **Nuvo** (the assistant) | ⌘J. Say **"ask Nuvo"** for the assistant, **"in Nuvo"** for the app. Endpoints on the `agent` edge function: `scaffold` · `blueprint` · `draftProjects` · `prepare` · `narrate`. |
 | **Draft the path** | ✦ on a project's Tasks (the record's header; the phone's project screen). Nuvo drafts the steps the project is missing **among yours**, one at a time; nothing is added until you keep it (D-193). Not *Groom the steps*, which only rewords and re-homes. |
 | **Drafted step** | A step Nuvo proposed that you haven't kept: the same task row with a faint wash and a dashed check. Keep ↵ · Drop ⌫ · Version ⇥ · Edit E; a kept one becomes a backlog task on the project. Its size is from your finished work, or says "An estimate". |
 | **Steer** | One free-text line that reshapes the drafted steps you haven't kept ("smaller steps", "skip the research"). Never touches what you kept. |
+| **Thin path** | A project with time held for it (its slots) and open steps that come to under half of it, at least 45m short (D-196). Marked only where you plan — Plan the week's stack, the phone's week step ("Thin paths"), a deck card in the next two weeks ("20m of 3h held") — and its one act is **Draft the path**, already running. Never a count. |
+| **Draft the projects** | ✦ on an initiative card this quarter or next with an outcome and no open project (D-196). The quarter opens into its weeks (a sheet on the phone) and Nuvo drafts the missing projects as **ghost bars**; **Hold** ↵ writes one as a project with that span, Drop ⌫, versions ⇥ / 1–3, move ←/→, length [ ], steer. *Hold* means what it means in Plan the week's walk: you accept it where it stands. |
+| **Ghost bar** | A project Nuvo drafted that you haven't held: a dashed, accent-washed bar on the quarter's weeks. Your own projects are solid bars beside it. |
 | **Prepare** | Pre-work written onto a task (approach, drafts, pitfalls). Carries the **✦** badge; surfaced at Sunrise, boosted in Now. |
 | **Marquee** | Nuvo *shows* an answer alongside telling it — brings a surface forward and holds a warm **limelight** orb on the thing it means. A held session, not a flash; a **return pill** makes it reversible. Vocabulary lives in `src/lib/marqueeRegistry.ts`. [`marquee.md`](../marquee.md) |
 | **Walk me through it** | The first-run walkthrough, and the only door on the welcome (D-065 retired the visual-tour alternative). A panel docks beside the **real** app, names one act per step, lights the real element, and ticks from real data — nothing is simulated, every row it creates is the user's own. Skippable at every step; Esc leaves. It closes on **the law** (D-064): *a task earns a day · a project earns a week · an initiative earns a quarter.* [`orientation.md`](../orientation.md). |

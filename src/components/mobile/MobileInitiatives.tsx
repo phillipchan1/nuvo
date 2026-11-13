@@ -45,7 +45,10 @@ import DomainSymbol from "../domain/DomainSymbol";
 import { ChipButton } from "../kit";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { BuildFaces, type BuildFace } from "./MobileProjects";
-import { PhEmpty } from "./touch";
+import { PhEmpty, TouchButton } from "./touch";
+import { Icon } from "../Icon";
+import MobileProjectDraft from "./MobileProjectDraft";
+import { canDraftProjects, quarterWeeks } from "../../lib/projectDraft";
 
 const HORIZON_QUARTERS = 4;
 
@@ -65,6 +68,13 @@ export default function MobileInitiatives({
   const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS, true), [d, now]);
+  // Draft the projects (D-196): the initiative whose quarter is open in a sheet.
+  const [drafting, setDrafting] = useState<InitiativeLane | null>(null);
+  const draftQuarter = drafting ? board.quarters.find((q) => q.idx === drafting.quarterIdx) ?? null : null;
+  const draftWeeks = useMemo(
+    () => (draftQuarter ? quarterWeeks({ start: draftQuarter.start, end: draftQuarter.end }, now) : []),
+    [draftQuarter, now],
+  );
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
@@ -163,6 +173,7 @@ export default function MobileInitiatives({
           d={d}
           onOpen={() => onOpenItem("initiative", l.initiative.id)}
           onSetDomain={setDomain}
+          onDraftProjects={() => setDrafting(l)}
         />
       ),
     })),
@@ -211,6 +222,16 @@ export default function MobileInitiatives({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {drafting && draftQuarter && draftWeeks.length > 0 && (
+        <MobileProjectDraft
+          initiative={drafting.initiative}
+          quarterLabel={draftQuarter.shortLabel}
+          domainName={domainById(d, drafting.initiative.domainId)?.name ?? null}
+          color={domainById(d, drafting.initiative.domainId)?.color ?? "var(--accent)"}
+          weeks={draftWeeks}
+          onClose={() => setDrafting(null)}
+        />
+      )}
       <BuildFaces value={seg} onChange={setSeg} />
 
       {!ready ? (
@@ -270,11 +291,14 @@ function InitiativeCard({
   d,
   onOpen,
   onSetDomain,
+  onDraftProjects,
 }: {
   lane: InitiativeLane;
   d: VerticalData;
   onOpen: () => void;
   onSetDomain: (i: Initiative, domainId: string) => void;
+  /** ✦ Draft the projects — offered only just in time (canDraftProjects, D-196) */
+  onDraftProjects?: () => void;
 }) {
   const i = lane.initiative;
   const dot = domainById(d, i.domainId)?.color ?? "var(--faint)";
@@ -320,6 +344,12 @@ function InitiativeCard({
             ) : (
               <DomainPicker domains={d.domains} value="" onChange={(id) => onSetDomain(i, id)} />
             )}
+          </div>
+        ) : onDraftProjects && canDraftProjects(d, lane) ? (
+          <div data-card-control className="relative mt-2 flex" onClick={(e) => e.stopPropagation()}>
+            <TouchButton compact icon={<Icon name="sparkles" size={14} />} onClick={onDraftProjects}>
+              Draft the projects
+            </TouchButton>
           </div>
         ) : null
       }

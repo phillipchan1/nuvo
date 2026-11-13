@@ -50,6 +50,9 @@ import { initiativeCardStatus } from "./deckStatus";
 import SlotCreateButton from "./SlotCreateButton";
 import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import { ChipButton, Dot, EmptyState } from "../kit";
+import { Icon } from "../Icon";
+import ProjectDraftQuarter from "./ProjectDraftQuarter";
+import { canDraftProjects, quarterWeeks } from "../../lib/projectDraft";
 
 const COL_PX = 216;
 // Quarters are adjacent, ruled columns (not gapped boxes) — the same demarcation
@@ -78,6 +81,14 @@ export default function InitiativeDeck() {
   const [filterOpen, setFilterOpen] = useState(false);
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(data, now, HORIZON_QUARTERS, true), [data, now]);
+  // Draft the projects (D-196): the quarter that's open over the deck, if any.
+  const [drafting, setDrafting] = useState<{ lane: InitiativeLane; from: DOMRect | null } | null>(null);
+  const draftQuarter = drafting ? board.quarters.find((q) => q.idx === drafting.lane.quarterIdx) ?? null : null;
+  const draftWeeks = useMemo(
+    () => (draftQuarter ? quarterWeeks({ start: draftQuarter.start, end: draftQuarter.end }, now) : []),
+    [draftQuarter, now],
+  );
+  const onDraftProjects = (lane: InitiativeLane, from: DOMRect | null) => setDrafting({ lane, from });
   // The domain a lane-composed initiative lands in (reassignable in the record);
   // the first domain, mirroring the full composer's default.
   const domainsSorted = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
@@ -270,7 +281,7 @@ export default function InitiativeDeck() {
             >
               {cells[q.idx].map((l) => (
                 <div key={l.initiative.id} className="pointer-events-auto">
-                  <InitiativeCard lane={l} data={data} onSetDomain={setDomain} inLane />
+                  <InitiativeCard lane={l} data={data} onSetDomain={setDomain} onDraftProjects={onDraftProjects} inLane />
                 </div>
               ))}
               {composing && composeCol === q.idx && (
@@ -375,6 +386,18 @@ export default function InitiativeDeck() {
 
   return (
     <div className="dk">
+      {/* Draft the projects (D-196): the quarter opens over the whole deck — the
+          pool beside it has nothing to say while you walk a draft. */}
+      {drafting && draftQuarter && draftWeeks.length > 0 && (
+        <ProjectDraftQuarter
+          initiative={drafting.lane.initiative}
+          quarterLabel={draftQuarter.shortLabel}
+          weeks={draftWeeks}
+          color={domainById(data, drafting.lane.initiative.domainId)?.color ?? "var(--accent)"}
+          from={drafting.from}
+          onClose={() => setDrafting(null)}
+        />
+      )}
       {/* ── the pool — the same rail as the Schedule and the project deck, one
           clock speed up again: a bet needs a QUARTER. ────────────────────────── */}
       <PlannerRail
@@ -501,7 +524,7 @@ export default function InitiativeDeck() {
                   return (
                     <div key={q.key} data-quarter={q.idx} className="dk-qcol" {...colState(q.idx)}>
                       {lanes.map((l) => (
-                        <InitiativeCard key={l.initiative.id} lane={l} data={data} onSetDomain={setDomain} />
+                        <InitiativeCard key={l.initiative.id} lane={l} data={data} onSetDomain={setDomain} onDraftProjects={onDraftProjects} />
                       ))}
                       {composing ? (
                         // the draft, right under the cards — the next slot, not pinned
@@ -590,11 +613,14 @@ function InitiativeCard({
   lane,
   data,
   onSetDomain,
+  onDraftProjects,
   inLane = false,
 }: {
   lane: InitiativeLane;
   data: VerticalData;
   onSetDomain: (i: Initiative, domainId: string) => void;
+  /** ✦ Draft the projects — offered only just in time (canDraftProjects, D-196) */
+  onDraftProjects?: (lane: InitiativeLane, from: DOMRect | null) => void;
   /** By domain: the lane names the area, so the card stops saying it (D-122). */
   inLane?: boolean;
 }) {
@@ -655,6 +681,21 @@ function InitiativeCard({
             ) : (
               <DomainPicker domains={data.domains} value="" onChange={(id) => onSetDomain(i, id)} />
             )}
+          </div>
+        ) : onDraftProjects && canDraftProjects(data, lane) ? (
+          // just in time: this quarter or next, an outcome to read, no open
+          // project under it — the one moment the bet is missing its projects
+          <div data-card-control className="flex pt-1" onPointerDown={(e) => e.stopPropagation()}>
+            <ChipButton
+              icon={<Icon name="sparkles" size={12} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDraftProjects(lane, (e.currentTarget.closest(".deck-card") as HTMLElement | null)?.getBoundingClientRect() ?? null);
+              }}
+              title="Nuvo drafts the projects this outcome is missing, across the quarter. Nothing is added until you hold it."
+            >
+              Draft the projects
+            </ChipButton>
           </div>
         ) : null
       }

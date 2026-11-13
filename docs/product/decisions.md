@@ -6807,6 +6807,86 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-196 · 2026-11-13 · Draft, then correct, at the moment it matters: a thin path is marked where
+you're about to plan, and an initiative's missing projects are drafted across its quarter.**
+*(Asked by the operator: intelligence across the app "in non-annoying, genuinely helpful ways", and
+something that recommends when projects and initiatives need refining — every earlier try asked him
+to groom everything, in a separate place. Anchored and prototyped first: the "Draft, then correct"
+artifact; Phil chose "Build #1 and #2".)*
+
+→ **The thin path (idea 1).** One rule, `lib/thinPath`: a project with time *held* for it (its
+slots — sittings, standing or one-off) and open steps that come to under half of that time, at least
+45m short, on an hour or more held. Two facts, no score. It speaks in three places, and only where
+you are already planning: a row in Plan the week's stack (◔ · "Tue 1–4pm is held for it, and its
+steps come to 20m" · **✦ Draft the path** / Leave it), a section of the phone's week step, and the
+status word on a deck card whose time is held in the next two weeks ("20m of 3h held", with the act
+in the card's foot). At most two marks at once; never a count, never a notification. The act opens
+the project's record (desktop) or sheet (phone) with **Draft the path already running** — the mark
+owns no copy of the draft (`lib/draftIntent`: a note the list reads on mount and clears only once a
+draft lands, because the record's list can remount while it settles). The row leaves by itself once
+the block holds enough work.
+
+→ **The far-out caution word goes quiet.** A project card more than two weeks out no longer says "no
+steps" / "no outcome" on the deck (`NEAR_WEEKS`, `projectCardStatus`) — "won't fit" still shows, as
+a fact about time. Groom still lists every gap; that's where you go to look on purpose. This is what
+the thin path *replaces*: the groom-everything wall, in miniature, on every card.
+
+→ **Draft the projects (idea 2).** On an initiative card in this quarter or next, with an outcome
+and no open project, the card's foot offers **✦ Draft the projects** (`canDraftProjects`). On the
+desktop the quarter opens over the whole initiative deck into its weeks: your projects as bars,
+Nuvo's 2–5 drafted ones as dashed ghost bars, walked like Plan the week's draft (D-183) — ↵ hold, ⌫
+drop, ⇥ / 1–3 versions, ←/→ move a week, [ ] length, drag a bar or its edge, ⇧↵ hold all, esc put
+the rest away, a free-text steer ("fewer projects", "start later"). A row counts how many run each
+week. On the phone it is a sheet: a strip of the quarter's weeks, then the drafted projects as cards
+whose acts are 44px buttons. Holding writes one project under the initiative, `backlog`, with the
+span it stood on through the kernel's `weekSpanFor` — so it lands on the project deck exactly where
+it stood, with an Undo. No steps are drafted with it: Draft the path does that when the project is
+about to land.
+
+→ **Blueprint's proposer gets a home; the word goes.** The Blueprint flow (KRs + projects + tasks
+from a bet) lost its screen in the Warm Paper rework with no decision logged; its `blueprint`
+endpoint stayed deployed with nothing calling it. `draftProjects` is a second entry beside it in
+`agent/blueprint.ts` — projects only, with spans and alternatives, shaped by one pure module both
+runtimes import (`_shared/projectDraft.ts`). Key results stay out: a different act. "Blueprint"
+leaves the glossary as a user-facing name.
+
+→ **Ideas 3–5, decided not now.** *This keeps slipping* (split a task rolled 3+ times) waits: its
+signal is wrong — `roll_count` counts days carried (D-147, migration 85), so one skipped weekend reads
+3 — and its copy is a debt word (N-04); when built it is one act in the task's sheet, gated on weeks
+crossed. *On ship, draft what's next* is **folded into this entry**: shipping is Momentum's moment
+(D-187) and an offer there turns a reward into a prompt; when an initiative's last project ships its
+card reads as having no open project and the ✦ door returns. *Memory's Projects and Initiatives
+chapters* wait for evidence: nothing records draft keeps and drops yet, and "you finish two of
+three" needs Q-12 (`initiatives.shipped_at`).
+
+**Anchor.** Closes toward **Q4** at both altitudes (what are the actual steps / projects?) and touches
+**A4** (a 3h block with 20m in it is a week that looks carried and isn't). Strains **P3** — held by
+ghosts that write nothing until held/kept, one key per act, and steering that only reshapes the
+unheld. Strains **P9** — one mark, only on planning surfaces you opened, never a count; the stream-in
+and the quarter's zoom are motion that answers your press (transform/opacity, off under reduced
+motion). Strains **P10** — the quarter is a zoom over the initiative deck, not a page. Strains **P2**
+knowingly: holding a bar two months out commits those weeks' spans, exactly as placing it on the
+project deck does; that's why each is held by you, one at a time. Already decided in part:
+plan-the-week-v2 §4 specced "a project with no next step" under Needs you and it was never built;
+this is that row, with the act behind it. Clear of N-07 (no notification), N-14 (a mark, not a
+gate), N-20 (it drafts inside a project or bet you chose; it never picks which). Four no's: no pool;
+one new act name (*Draft the projects*) and one mark name (*thin path*), both in the glossary — the
+mark's act is *Draft the path*, not a new verb; works on a fresh account (no slots → no mark; an
+outcome is all Draft the projects needs); nothing in it is one operator's life (P16 — the harness
+fixtures are a ceramicist's studio).
+
+*Status: built 2026-11-13 on `claude/draft-then-correct` (off master + D-193), uncommitted to
+master. typecheck clean, `npm run build` green, vitest: only the 18 known failures (17 `maintenance`,
+1 `guard-public-ci`); new `tests/thin-path.test.ts`, `tests/project-draft.test.ts`, and a thin-row
+case in `tests/plan-walk.test.tsx`. Driven at `?drafts` (new harness: a stranger's fixtures, the
+agent stubbed in the page) on desktop, light and dark, and at 375px: the door, the zoom, the
+stream-in, hold / version / move / drag / steer / hold all / esc, the deck's thin mark opening the
+record with Draft the path running, the phone's sheet (no sideways scroll, every act 44px). **Not
+driven against a real account**: no `.env.local` here. **Not deployed**: the `agent` function's
+`draftProjects` entry needs `supabase functions deploy agent` (Phil). Plan the week's rail row is
+covered by the test, not seen in a browser. `npm run perf` not run (the deck reads one more slots
+query; `perf-budget` in `npm test` passes).*
+
 **D-195 · 2026-11-13 · The site follows Instrument, keeps Fraunces for its headlines, and sells
 Memory.** *(Asked by the operator: "make those same updates to the marketing website… I do really
 like the font in the web marketing website… include the learning engine.")*

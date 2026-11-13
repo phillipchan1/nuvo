@@ -36,6 +36,9 @@ import { PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
 import PlannerCard from "../ondeck/DeckCard";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
+import ThinDoor from "../ondeck/ThinDoor";
+import { useThinPaths } from "../../hooks/useThinPaths";
+import type { ThinPath } from "../../lib/thinPath";
 import { pressable } from "../../lib/a11y";
 import { Card, Dot } from "../kit";
 import { PhEmpty, TouchSegmented } from "./touch";
@@ -75,6 +78,8 @@ export default function MobileProjects({
     () => readOnDeck(d, byWeek, weeklyAvgMins, now, HORIZON_SPRINTS, true),
     [d, byWeek, weeklyAvgMins, now],
   );
+  // projects with time held in the next two weeks and too little work in it (D-196)
+  const thin = useThinPaths();
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
@@ -142,6 +147,7 @@ export default function MobileProjects({
       dot={domainById(d, l.project.domainId)?.color ?? "var(--accent)"}
       domainName={domainById(d, l.project.domainId)?.name ?? "no area"}
       onOpen={() => onOpenItem("project", l.project.id)}
+      thin={thin.get(l.project.id) ?? null}
     />
   );
 
@@ -288,11 +294,14 @@ function ProjectCard({
   dot,
   domainName,
   onOpen,
+  thin,
 }: {
   lane: OnDeckLane;
   dot: string;
   domainName: string;
   onOpen: () => void;
+  /** time held in the next two weeks, too little work in it (D-196) */
+  thin?: ThinPath | null;
 }) {
   const done = lane.readyTier === "done";
   return (
@@ -303,11 +312,12 @@ function ProjectCard({
       eyebrow={domainName}
       title={lane.project.name}
       weight={done ? null : deckWeight(lane.pace.remainingMins)}
-      status={projectCardStatus(lane)}
+      status={projectCardStatus(lane, thin)}
       pips={done ? undefined : [lane.axes.defined, lane.axes.planned, lane.axes.fits === true]}
       pipTone={PIP_TONE[lane.readyTier]}
       dim={lane.readyTier === "parked"}
       shipped={done}
+      footer={thin ? <ThinDoor size="phone" projectId={lane.project.id} onOpen={() => onOpen()} /> : undefined}
     />
   );
 }

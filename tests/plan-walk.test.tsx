@@ -15,7 +15,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { PlanOverlay } from "../src/components/plan/planOverlay";
 
 vi.mock("../src/lib/calendarReveal", () => ({ revealOnCalendar: vi.fn() }));
-vi.mock("../src/hooks/useAppNavigation", () => ({ useAppNavigation: () => ({ navigate: vi.fn() }) }));
+const openRecord = vi.fn();
+vi.mock("../src/hooks/useAppNavigation", () => ({ useAppNavigation: () => ({ navigate: vi.fn(), openRecord, nav: { overlay: "none" } }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 
 const DAY = "2026-11-10";
@@ -47,6 +48,8 @@ const S = {
   ],
   setBlockLength: vi.fn(),
   placeInGap: vi.fn(),
+  // the week's slots — a project sitting here is what the thin-path mark reads
+  weekSlots: [] as { project_id: string | null; do_date: string; start_time: string; duration_minutes: number }[],
 };
 vi.mock("../src/hooks/useWeekDraft", () => ({
   placementKey: (p: { task: { id: string } }) => p.task.id,
@@ -59,7 +62,7 @@ vi.mock("../src/hooks/useWeekDraft", () => ({
       unpinPlacement: () => {}, remember: () => {}, undo: () => false, moveLocally: () => {},
       setBlockLength: S.setBlockLength, placeInGap: S.placeInGap, openGaps: () => S.gaps,
       loosePool: S.empty, kept: S.kept, setKept: () => {}, result: S.result, suggestions: S.empty,
-      clearRegions: S.empty, planDays: S.planDays, workingDays: S.workingDays, dayContexts: S.ctx, applying: false,
+      clearRegions: S.empty, weekSlots: S.weekSlots, planDays: S.planDays, workingDays: S.workingDays, dayContexts: S.ctx, applying: false,
     };
   },
 }));
@@ -141,3 +144,28 @@ describe("Plan the week — open time and length", () => {
     expect(n).toBeLessThan(10);
   });
 });
+
+describe("Plan the week — a thin path needs you (D-196)", () => {
+  it("names a project whose held time has too little work, and opens it with the draft running", async () => {
+    const saved = { data: S.data, slots: S.weekSlots };
+    S.data = {
+      ...S.data,
+      projects: [{ id: "p9", name: "Launch site", domainId: "d1", status: "in_progress" }],
+      tasks: [{ id: "x", projectId: "p9", status: "ready", durationMins: 20 }],
+    } as never;
+    S.weekSlots = [{ project_id: "p9", do_date: DAY, start_time: `${DAY}T13:00:00`, duration_minutes: 180 }];
+    const { takePathDraft } = await import("../src/lib/draftIntent");
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      expect(screen.getByText("Launch site")).toBeTruthy();
+      expect(screen.getByText(/is held for it, and its steps come to 20m/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /Draft the path/ }));
+      expect(openRecord).toHaveBeenCalledWith("project", "p9");
+      expect(takePathDraft("p9")).toBe(true);
+    } finally {
+      S.data = saved.data;
+      S.weekSlots = saved.slots;
+    }
+  });
+});
+

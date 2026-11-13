@@ -20,6 +20,8 @@ import { revealOnCalendar } from "../../lib/calendarReveal";
 import { fmtMins } from "../../lib/now";
 import type { PlanOverlay } from "./planOverlay";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { THIN_MARKS_MAX, thinChip, thinPaths } from "../../lib/thinPath";
+import { requestPathDraft } from "../../lib/draftIntent";
 import {
   describeRules,
   forget,
@@ -90,6 +92,8 @@ type StackItem = {
   yesLabel: string;
   /** what ✕ does */
   noLabel: string;
+  /** the yes is Nuvo drafting something — it wears the assistant's mark */
+  yesDrafts?: boolean;
   /** shown under the label without a click: the reason this needs you */
   sub?: string;
   /** a third act, when there is one (Pick a time · Shorten to fit) */
@@ -175,7 +179,8 @@ function PlanRailWeek({
   const [paint, setPaint] = useState<{ dayISO: string; startMin: number; endMin: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<string | null>(null);
   const [showKept, setShowKept] = useState(false);
-  const { navigate } = useAppNavigation();
+  const { navigate, openRecord, nav } = useAppNavigation();
+  const recordOpen = nav.overlay === "project-record" || nav.overlay === "initiative-record";
   const { data, placements, slotById } = d;
 
   const [sel, setSel] = useState<string | null>(null);
@@ -326,6 +331,7 @@ function PlanRailWeek({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mem?.items, noticed.length],
   );
+  const thin = useMemo(() => thinPaths(data, d.weekSlots).slice(0, THIN_MARKS_MAX), [data, d.weekSlots]);
   const stack = useMemo<StackItem[]>(() => {
     const out: StackItem[] = [];
     // what Nuvo noticed — at most three, each kept or forgotten
@@ -424,6 +430,33 @@ function PlanRailWeek({
           : undefined,
       });
     }
+    // A project with time held this week and too little work in it (D-196): the
+    // one just-in-time mark. Its yes opens the project with Draft the path
+    // running; the row goes away by itself once the block holds enough work.
+    for (const t of thin) {
+      const start = new Date(t.first.startISO);
+      const when = `${dayName(t.first.dateISO)} ${span(start, new Date(start.getTime() + t.first.durationMins * 60_000))}`;
+      out.push({
+        id: `thin:${t.projectId}`,
+        glyph: "◔",
+        cause: "thin",
+        label: t.name,
+        chip: thinChip(t),
+        why: "Time is held for this project this week, and its open steps don't fill it.",
+        sub:
+          t.workMins === 0
+            ? `${when} is held for it, and it has no steps yet.`
+            : `${when} is held for it, and its steps come to ${fmtMins(t.workMins)}.`,
+        yesLabel: "Draft the path",
+        yesDrafts: true,
+        noLabel: "Leave it",
+        yes: () => {
+          requestPathDraft(t.projectId);
+          openRecord("project", t.projectId);
+          return `Drafting the path for ${t.name}`;
+        },
+      });
+    }
     if (inboxIds.length) {
       out.push({
         id: "inbox",
@@ -443,7 +476,7 @@ function PlanRailWeek({
       });
     }
     return out.filter((s) => !dismissed.has(s.id));
-  }, [d, slotById, inboxIds, dismissed, noticed, memNoticed, mem, setMemory, today, record, weekStartISO]);
+  }, [d, slotById, inboxIds, thin, dismissed, noticed, memNoticed, mem, setMemory, today, record, weekStartISO, openRecord]);
 
   const decide = useCallback(
     (id: string, yes: boolean) => {
@@ -779,14 +812,16 @@ function PlanRailWeek({
   };
 
   // ── keys ───────────────────────────────────────────────────────────────
-  const keyState = useRef({ sel, focus, stack, order, altIx });
-  keyState.current = { sel, focus, stack, order, altIx };
+  const keyState = useRef({ sel, focus, stack, order, altIx, recordOpen });
+  keyState.current = { sel, focus, stack, order, altIx, recordOpen };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target instanceof HTMLElement ? e.target : null;
       if (t && (t.closest("input, textarea, [contenteditable=true]") || t.isContentEditable)) return;
       // a menu over the rail (a day's acts) owns its own arrows and ↵
       if (t && t.closest("[data-nested-surface]")) return;
+      // a record opened over the plan (a thin path's draft, D-196) owns every key
+      if (keyState.current.recordOpen) return;
       const k = e.key;
       const mod = e.metaKey || e.ctrlKey;
       const s = keyState.current;
@@ -1222,7 +1257,12 @@ function PlanRailWeek({
                     </div>
                     {it.sub && <p className="pl-6 text-caption leading-snug text-muted">{it.sub}</p>}
                     <div className="flex flex-wrap gap-1 pl-6">
-                      <Button size="xs" kind="primary" onClick={() => decide(it.id, true)}>
+                      <Button
+                        size="xs"
+                        kind="primary"
+                        icon={it.yesDrafts ? <Icon name="sparkles" size={12} /> : undefined}
+                        onClick={() => decide(it.id, true)}
+                      >
                         {it.yesLabel}
                       </Button>
                       <Button size="xs" onClick={() => decide(it.id, false)}>

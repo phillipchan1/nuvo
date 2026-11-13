@@ -36,6 +36,8 @@ import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
+import ThinDoor from "./ThinDoor";
+import { useThinPaths } from "../../hooks/useThinPaths";
 import { SlotCreateHint } from "./SlotCreateButton";
 import { pressable } from "../../lib/a11y";
 import { Dot, EmptyState } from "../kit";
@@ -87,6 +89,8 @@ export default function OnDeckPlanner() {
   const [byDomain, setByDomain] = useDeckByDomain();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, HORIZON_WEEKS, true), [data, byWeek, weeklyAvgMins, now]);
+  // projects with time held in the next two weeks and too little work in it (D-196)
+  const thin = useThinPaths();
   // The domain a lane-composed project lands in (reassignable in the record); the
   // first domain, mirroring the full composer's default.
   const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
@@ -312,11 +316,12 @@ export default function OnDeckPlanner() {
         // the weight the pinch math actually runs on — a column of
         // hours explains an over-committed sprint; a count doesn't.
         weight={byDomain ? null : weight}
-        status={projectCardStatus(l)}
+        status={projectCardStatus(l, thin.get(l.project.id))}
         pips={done ? undefined : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
         pipTone={PIP_TONE[l.readyTier]}
         dim={l.readyTier === "parked"}
         shipped={done}
+        footer={thin.has(l.project.id) ? <ThinDoor projectId={l.project.id} onOpen={(id) => openRecord("project", id)} /> : undefined}
       >
         <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
         <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />

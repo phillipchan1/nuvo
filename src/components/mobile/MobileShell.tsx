@@ -817,7 +817,7 @@ export default function MobileShell() {
       )}
 
       {/* Plan the week — the ritual, full-screen over the shell */}
-      {planOpen && <MobilePlanWeek onClose={() => setPlanOpen(false)} />}
+      {planOpen && <MobilePlanWeek onClose={() => setPlanOpen(false)} onOpenProject={(id) => openDetail("project", id)} />}
 
       {/* Sheets */}
       {detailTarget && (

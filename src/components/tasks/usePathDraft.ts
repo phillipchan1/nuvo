@@ -20,6 +20,7 @@ import type { useTaskMutations } from "../../hooks/useTasks";
 import { useAllTasks } from "../../hooks/useTasks";
 import { isTypingIn } from "../../lib/a11y";
 import { announce } from "../../lib/announce";
+import { pathDraftPending, settlePathDraft } from "../../lib/draftIntent";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import {
   cleanSteer,
@@ -186,6 +187,28 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
       toast.error(`${ASSISTANT_NAME} couldn't draft the path. Your list is unchanged — try again in a moment.`);
     }
   }, [home, phase, realIds, byId, ask, finished, reveal]);
+
+  // Opened from a thin-path mark (D-196): the mark asked for this draft before
+  // the list existed, so the list starts it once, on arrival — the mark never
+  // owns a second copy of the draft.
+  const homeId = home?.projectId ?? null;
+  // A tick late, so a mount that's torn straight down again (StrictMode, a
+  // remount while the record settles) never takes the note it can't keep.
+  const startRef = useRef(start);
+  startRef.current = start;
+  useEffect(() => {
+    if (!homeId) return;
+    const t = window.setTimeout(() => {
+      if (pathDraftPending(homeId)) void startRef.current();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [homeId]);
+  // the note is spent once this list's draft has landed, or given up
+  useEffect(() => {
+    if (homeId && (phase === "streaming" || phase === "review" || phase === "idle")) {
+      if (phase !== "idle" || run.current > 0) settlePathDraft(homeId);
+    }
+  }, [homeId, phase]);
 
   const nextAfter = (key: string, l: string[]) => {
     const ghosts = ghostKeys(l);

@@ -94,6 +94,7 @@ const showMeetHarness = import.meta.env.DEV && params.has("meet");
 const showInviteHarness = import.meta.env.DEV && params.has("invite");
 const showDomainHarness = import.meta.env.DEV && params.has("domains");
 const showBuildHarness = import.meta.env.DEV && params.has("build");
+const showDraftsHarness = import.meta.env.DEV && params.has("drafts");
 const showWeekCrownHarness = import.meta.env.DEV && params.has("weekcrown");
 const showPickHarness = import.meta.env.DEV && params.has("chat");
 const showSittingHarness = import.meta.env.DEV && params.has("sitting");
@@ -209,6 +210,14 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <DomainHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showDraftsHarness) {
+  void import("./components/ondeck/DraftsHarness").then(({ default: DraftsHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <DraftsHarness />
       </React.StrictMode>,
     );
   });

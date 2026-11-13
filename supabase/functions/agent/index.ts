@@ -4,7 +4,7 @@ import type { NavFocus } from "./prompt.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { assessRecord } from "./assess.ts";
 import { refineProject } from "./refine.ts";
-import { blueprintInitiative } from "./blueprint.ts";
+import { blueprintInitiative, draftInitiativeProjects } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
 import { clusterInbox } from "./clusterInbox.ts";
 import { nameSlot } from "./nameSlot.ts";
@@ -106,6 +106,16 @@ Deno.serve(async (req) => {
         draftProjectNames: Array.isArray(body.blueprint.draftProjectNames)
           ? body.blueprint.draftProjectNames.map(String)
           : undefined,
+      }));
+    }
+    // Draft the projects (D-196): an initiative's missing projects across its
+    // quarter's weeks. Proposal only; the client writes what you hold.
+    if (body.draftProjects?.initiativeId) {
+      return json(await draftInitiativeProjects(user.id, {
+        initiativeId: String(body.draftProjects.initiativeId),
+        weekStarts: Array.isArray(body.draftProjects.weekStarts) ? body.draftProjects.weekStarts.map(String) : [],
+        guidance: body.draftProjects.guidance ? String(body.draftProjects.guidance) : undefined,
+        redraft: Array.isArray(body.draftProjects.redraft) ? body.draftProjects.redraft.map(String) : undefined,
       }));
     }
     // Free-text → the week's priorities (outcomes), inferring each win + the bet
