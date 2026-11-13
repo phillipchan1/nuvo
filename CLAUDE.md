@@ -59,6 +59,9 @@ Exact chrome, heroes that mean it. Full grammar: **`docs/design-language.md`** �
 building any new surface. Tokens in `index.css` (Light and Dark, nothing else); chrome and motion
 in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain** wall.
 
+- **Build from the kit** (`src/components/kit/`, D-190). A button, field, choice, chip, row,
+  menu, picker, popover or dialog is a kit part — never hand-rolled, never re-styled at the call
+  site. Need something it lacks? Add it to the kit (and to `?kit`) first. Verify at `?kit`.
 - **Two themes, one material.** Never add a theme, material, scheme or second typeface (N-21).
 - **Inter for everything; no serif, no italic.** The hero of a surface is `text-display
   masthead` (700, tight) — exactly one per surface, never `font-semibold` and never a bespoke size.

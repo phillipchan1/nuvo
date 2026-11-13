@@ -43,6 +43,31 @@ class names that now render as solid surfaces; the rules in this header win.*
 
 ---
 
+## The kit (D-190)
+
+Every page is built from [`src/components/kit/`](../src/components/kit/) and drawn by
+[`src/styles/kit.css`](../src/styles/kit.css). Every part in every state, Light and Dark side by
+side: **`?kit`** (`KitHarness`, dev server).
+
+| Group | Parts |
+|---|---|
+| Controls | `Button` (primary · secondary · ghost · danger · danger-solid; xs 24 · sm 28 · md 32; `icon`, `shortcut` keycaps) · `IconButton` (label required: it is the name and the tooltip) · `Kbd` |
+| Fields | `Input` · `Textarea` · `SearchField` · `FormField` (label, hint, error in the hint's slot) · `Select` |
+| Choice | `TaskCheck` (round, lands on `--ease-land`) · `Checkbox` (square, mixed) · `Switch` · `Segmented` (radio group, ←/→) · `Tabs` (underline, ←/→) |
+| Marks | `Chip` / `ChipButton` (tones: accent · signal · danger · ok) · `Dot` (identity) · `Readiness` (raw → 1 → 2 → ready pie) · `Avatar` / `AvatarStack` · `PaceTrack` |
+| Structure | `SectionHeader` (disclosure) · `Row` (32 or 38px; `onActivate` makes it focusable + ↵) · `EmptyState` · `Property` (label / value-that-opens-a-picker) · `Card` |
+| Floating | `Popover` (anchor = element, rect or cursor point; flips; grows from `--pop-origin`) · `Menu` + `MenuItem` / `MenuSeparator` / `MenuLabel` / `MenuSearch` (`useMenuFocus`, `data-nested-surface`) · `Picker` (search past 7) · `MiniMonth` · `Dialog` (a Sheet on the phone) |
+
+**Geometry is not a choice a part makes.** Radii `--r-chip 4 · --r-ctl 6 · --r-card 8 ·
+--r-dialog 12` (nested corners step down by their inset: a 5px item in an 8px menu). Heights
+`--h-xs 24 · --h-sm 28 · --h-md 32 · --h-row 38 · --h-bar 48`. Surfaces by role: `--ground`
+(window) · `--panel` (work) · `--raised` (floats) · `--sunk` (wells). Hairlines `--line-1/2` are
+alpha. Shadows `--sh-1 · --sh-pop · --sh-modal`.
+
+**States.** Hover is instant in and fades out; press gives 2% on a pointer; focus is a 2px
+accent ring outside a 2px panel gap; selected is an accent wash (rows) or an accent ring + lift
+(cards); disabled is 45%. Popovers are desktop only: a phone overlay is the Sheet.
+
 ## Momentum — the ambition axis (D-187)
 
 **Status:** built 2026-11-13 on branch `claude/ambition-design-language` (not merged).

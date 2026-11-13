@@ -6807,6 +6807,29 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-190 · 2026-11-12 · The kit: every page is built from one set of parts.** *(Follows D-189.
+Decided by the operator after the reskin: "When I said full redesign, I meant every single
+element… every layout every page every popover.")*
+
+**Why.** D-189 changed the colours and type over the same 181 components — 631 hand-rolled
+buttons, seven radii, 867 inline styles — so the app still felt the same. A full redesign that
+holds has to replace the parts, not repaint them, and it has to be impossible to drift back.
+
+**What.** `src/components/kit/` (controls, fields, choices, marks, structure, popover / menu /
+picker / select, date grid, dialog) drawn by `styles/kit.css` on new kit tokens (four radii, five
+heights, surfaces by role, alpha hairlines, three shadows). `?kit` shows every part in every
+state in both themes. The rest of the redesign (the frame, the six popover kinds, the six page
+layouts, the phone) is built on these parts, in that order; the spec is the "Nuvo Instrument"
+artifact.
+
+**Anchor.** Visual; closes no ledger row. Strains nothing beyond D-189's P14 rewrite. Four
+no's: no pool, no user-facing name, nothing data-dependent, nothing account-specific.
+
+*Status: kit built 2026-11-12 on `claude/instrument-design-language`; no page uses it yet. Verified:
+typecheck, build, `tests/kit.test.tsx` (placement, month grid, keycaps, keyboard, menu dismissal,
+CSS guards), `?kit` at 1440 and 375 in Light and Dark, the live menu (↑/↓, Esc returns focus),
+the dialog (scrim, focus).*
+
 **D-189 · 2026-11-12 · Instrument replaces Warm Paper. One material, Light and Dark, Inter,
 a bold hero, fewer words, faster motion.** *(Decided by the operator after the D-186 site: "the
 perfectionism of Linear app, but with our ambitious boldness"; voice chosen from a mockup:

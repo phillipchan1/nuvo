@@ -150,6 +150,67 @@
   --shadow-lift: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 32px -10px rgba(0, 0, 0, 0.7);
 }
 
+/* ── KIT TOKENS (D-190) ────────────────────────────────────────────────────
+   The vocabulary src/components/kit/ is built on. Surfaces by role, not by
+   paint: the window GROUND behind the sidebar, the work PANEL, things RAISED
+   above it (cards, menus, dialogs), and SUNK wells (inputs at rest, troughs,
+   table heads). Lines are alpha so a hairline reads the same on any of them.
+   Geometry is four radii and five heights — nothing in the kit picks its own. */
+:root,
+[data-theme="light"] {
+  --ground: #f1f1f4;
+  --panel: #fcfcfd;
+  --raised: #ffffff;
+  --sunk: #f6f6f8;
+  --hover: rgba(20, 18, 30, 0.045);
+  --press: rgba(20, 18, 30, 0.08);
+  --line-1: rgba(20, 18, 30, 0.085);
+  --line-2: rgba(20, 18, 30, 0.14);
+  --ink-2: #3d3b45;
+  --faint: #8d8b96;
+  --accent-ink: #7a228e;
+  --accent-wash: rgba(142, 47, 163, 0.08);
+  --accent-ring: rgba(142, 47, 163, 0.38);
+  --sh-1: 0 1px 1px rgba(20, 18, 30, 0.04), 0 1px 2px rgba(20, 18, 30, 0.04);
+  --sh-pop: 0 0 0 1px rgba(20, 18, 30, 0.07), 0 4px 8px -2px rgba(20, 18, 30, 0.07), 0 16px 32px -8px rgba(20, 18, 30, 0.16);
+  --sh-modal: 0 0 0 1px rgba(20, 18, 30, 0.07), 0 24px 64px -12px rgba(20, 18, 30, 0.28);
+  --scrim: rgba(18, 17, 22, 0.28);
+  --tip: #1d1c22;
+  --on-tip: #f4f4f6;
+  --mix: #121116;
+  --r-chip: 4px;
+  --r-ctl: 6px;
+  --r-card: 8px;
+  --r-dialog: 12px;
+  --h-xs: 24px;
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-row: 38px;
+  --h-bar: 48px;
+}
+[data-theme="dark"] {
+  --ground: #08080a;
+  --panel: #0f0f12;
+  --raised: #17171b;
+  --sunk: #141418;
+  --hover: rgba(255, 255, 255, 0.045);
+  --press: rgba(255, 255, 255, 0.08);
+  --line-1: rgba(255, 255, 255, 0.075);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --ink-2: #c4c3ca;
+  --faint: #6f6d78;
+  --accent-ink: #e0a3ec;
+  --accent-wash: rgba(213, 138, 228, 0.12);
+  --accent-ring: rgba(213, 138, 228, 0.45);
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sh-pop: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 16px 40px -8px rgba(0, 0, 0, 0.8);
+  --sh-modal: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 32px 80px -12px rgba(0, 0, 0, 0.85);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --tip: #ededf0;
+  --on-tip: #121116;
+  --mix: #ffffff;
+}
+
 /* `--ink` is the documented name for the foreground colour (root CLAUDE.md's
    token list) and is used in inline styles across the app — but it was only ever
    wired as the Tailwind *utility* source (`--color-ink`), never as a custom
@@ -351,17 +412,6 @@ html.spotlight-window .glass-card {
 
    The cardinal rule holds: `.atmosphere` lives on the SHEET, still painted
    exactly once, still continuous across spine · rail · calendar. */
-:root {
-  --ground: color-mix(in srgb, black 5%, var(--bg));
-  /* The middle plane, derived to land between the two it separates. */
-  --shell: color-mix(in srgb, var(--ground) 55%, var(--bg));
-}
-/* A dark ground has no room left to darken — mixing black into a near-black is
-   still that near-black. Step toward --line instead. */
-[data-theme="dark"] {
-  --ground: color-mix(in srgb, var(--line) 42%, var(--bg));
-}
-
 /* Structure only, every material — no paint, so the DOM stays meaningful. */
 .app-ground {
   position: relative;
