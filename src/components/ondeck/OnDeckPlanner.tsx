@@ -674,7 +674,7 @@ export default function OnDeckPlanner() {
                   a click on empty space falls through to the column beneath. */}
               <div className="dk-body">
                 <div className="dk-cols" style={{ gridTemplateColumns: cols }}>
-                  <div aria-hidden className={byDomain ? "dk-gutter" : undefined} />
+                  <div aria-hidden className="dk-gutter" />
                   {byDomain ? board.weeks.map((w) => (
                     // By domain, each lane's cell is the create control (it knows its
                     // domain); the column underneath is the now wash, the drop wash

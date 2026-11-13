@@ -494,7 +494,7 @@ export default function InitiativeDeck() {
               </div>
             ) : (
               <div className="dk-qcols" style={{ gridTemplateColumns: cols }}>
-                <div aria-hidden />
+                <div aria-hidden className="dk-gutter" />
                 {board.quarters.map((q) => {
                   const lanes = byColumn.get(q.idx) ?? [];
                   const composing = composeCol === q.idx;
