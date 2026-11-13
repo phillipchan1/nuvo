@@ -88,7 +88,7 @@ export default function TeachPanel({
     switch (arm) {
       case "rail-inbox": d.setTab("inbox"); break;
       case "rail-today": d.setTab("today"); break;
-      case "open-agent": d.navigate({ agentOpen: true }); break;
+      case "close-agent": d.navigate({ agentOpen: false }); break;
       case "open-calendars": d.setSettingsSection("connections"); d.openOverlay("settings"); break;
       // Straight to the Projects lane — "what are you moving this week?" — rather
       // than the ritual's first step, so the act the walkthrough is naming is the
@@ -102,15 +102,12 @@ export default function TeachPanel({
   const atEnd = step >= last;
 
   // ── the milestones, derived from real data (never from a click) ─────────────
-  // Same five reads the Getting Started tracker uses, so the two can never
+  // Same reads the Getting Started tracker uses, so the two can never
   // disagree about what "done" means.
-  // Since the chat went (D-200), meeting Nuvo is opening its panel.
-  const askedNuvo = nav.agentOpen;
   const met: Record<TeachMilestone, boolean> = {
     inbox: allTasks.some((t) => t.status === "inbox"),
     timeblock: allTasks.some((t) => t.start_time != null && t.do_date != null),
     project: data.projects.length > 0,
-    nuvo: askedNuvo,
     calendar: accounts.length > 0,
   };
   const done = s.milestone ? met[s.milestone] : false;
@@ -145,8 +142,6 @@ export default function TeachPanel({
         const p = newest(data.projects, (x) => x.createdAt);
         return p ? <>“{p.name}” is a project.</> : "It's a project.";
       }
-      case "nuvo":
-        return "Asked. Nuvo has it.";
       case "calendar":
         return accounts.length > 1 ? `${accounts.length} calendars are in.` : "Your calendar is in.";
     }

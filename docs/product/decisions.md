@@ -6865,6 +6865,21 @@ name (the ladder is a drawing, not an object — "How it works" is a kicker, not
 on an empty account by construction; the receipts quote whatever the reader typed, so nothing is
 one operator's.
 
+**Revised the same day: Nuvo's step stops asking.** *(The operator: "we won't have chat
+anymore, just engine recommendations.")* Step 7 was *Ask Nuvo something*, ticking on a sent
+message. With the chat going, Nuvo is the panel's recommendations for the page beside it (D-198)
+— and a day-one account has none (no held time means no thin path; Memory isn't sure of
+anything yet). So the step is now **"Nuvo works the page beside it."**: it folds the panel shut,
+lights the ✦ door that will wear the dot, says what Nuvo drafts and that nothing is yours until
+you keep it, and asks for nothing — the Initiative step's shape. No first recommendation is
+faked (P7). The `nuvo` milestone and the walkthrough's read of the agent thread are gone;
+D-201 (which removed the chat) had already made this step *open the panel* and tick when it
+was open — but the step's own arm opened the panel, so the milestone went not-done → done the
+moment the step arrived and **the walkthrough skipped itself a second later**; it also ticked on
+a UI state, not data. This revision supersedes D-201's O6 line for the walkthrough;
+`GettingStarted`'s *Open Nuvo* item (D-201) is unchanged and still latches when the reader opens
+the panel themselves.
+
 **Replayed for everyone, once.** `ORIENTATION_VERSION` 4 → 5 *(decided by the operator)*: every
 account that finished or skipped the old tour sees the new welcome on its next launch, and Skip /
 Esc retires it again. A returning account walks it with data already in place, so most steps open

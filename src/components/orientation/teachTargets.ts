@@ -32,7 +32,7 @@ export type TeachTargetKey =
 export type TeachArm =
   | "rail-inbox"   // swing the rail to its Inbox tab
   | "rail-today"   // …and back, so the timing step shows the day
-  | "open-agent"   // open the Nuvo panel
+  | "close-agent"  // fold the Nuvo panel shut, so its ✦ door is what's lit
   | "open-calendars" // Settings, on the Calendars section
   | "open-plan";   // the weekly ritual, already on its Projects step
 
@@ -119,11 +119,15 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
     mobileSelector: '[data-teach="domain-card"], [data-teach="mtab-domains"]',
   },
 
-  // 7 · Open the chat, then light it. Describing the assistant while it's shut
-  // was the single most confusing moment in the first pass.
+  // 7 · The ✦ door, shut. Nuvo is no longer a chat to type into; it's a panel
+  // of recommendations for the page beside it (D-198), and on day one it has
+  // none (no held time → no thin path, nothing Memory is sure of). So the step
+  // lights the DOOR — the thing that wears the dot when it does have something —
+  // rather than opening an empty panel and lighting nothing. The panel is folded
+  // shut first so the door is on screen; opening it is the reader's own act.
   nuvo: {
-    selector: '[data-teach="nuvo-panel"], [data-teach="nuvo"]',
-    arm: "open-agent",
+    selector: '[data-teach="nuvo"]',
+    arm: "close-agent",
     mobileSelector: '[data-teach="nuvo"]',
   },
 

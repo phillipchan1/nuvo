@@ -26,9 +26,11 @@ export type OrientationAction = "connect-calendars";
 // exist* — every row it lands is created by the user, in their words (D-026 holds:
 // we still seed nothing).
 //
-// The acts are, deliberately, the five GettingStarted milestones in order — this
+// The acts are, deliberately, the GettingStarted milestones in order — this
 // walkthrough IS that tracker, performed live — so finishing here retires the
 // tracker through the path it already has and clears the floors' empty states.
+// (Bar one: "ask Nuvo" left the walkthrough with the chat, D-200 — Nuvo
+// recommends rather than converses, and there's nothing to ask on day one.)
 //
 // THE VOICE (D-200). The reader is someone with more ambition than hours
 // (D-186). So each step is a statement, not a coach's prompt: short, in the
@@ -39,7 +41,7 @@ export type OrientationAction = "connect-calendars";
 // last picture: the ladder, filled with what they made.
 
 /** A milestone this step is waiting on, derived from real data — never a click. */
-export type TeachMilestone = "inbox" | "timeblock" | "project" | "nuvo" | "calendar";
+export type TeachMilestone = "inbox" | "timeblock" | "project" | "calendar";
 
 export interface TeachStep {
   id: string;
@@ -115,12 +117,16 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     Visual: DomainVisual,
   },
   {
+    // Nuvo doesn't chat; it recommends, for the page beside it (D-198). On a
+    // day-one account it has nothing to say yet — a recommendation needs held
+    // time or something Memory is sure of — so, like the Initiative step, this
+    // shows where it lives and asks for nothing. Saying "it's quiet now" is the
+    // honest version (P7); a fake first recommendation would be the lie.
     id: "nuvo",
     where: { label: "Nuvo", keys: "⌘J" },
-    title: "Nuvo offers what would help",
-    teach: "On each page it suggests the next step: the steps a project is missing, a pattern in your week. It proposes; you decide.",
+    title: "Nuvo works the page beside it",
+    teach: "When a week holds time for a project with no steps, it drafts them. Nothing is yours until you keep it — and a dot on ✦ means it has something.",
     target: "nuvo",
-    milestone: "nuvo",
   },
   {
     id: "calendars",

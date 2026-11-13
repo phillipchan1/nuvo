@@ -57,7 +57,6 @@ const RECEIPTS: Record<string, ReactNode> = {
   capture: <>“Draft the pricing page” is in.</>,
   timeblock: <>“Draft the pricing page” · Thu 9am</>,
   project: <>“Launch the paid plan” is a project.</>,
-  nuvo: "Asked. Nuvo has it.",
   calendars: "Your calendar is in.",
 };
 

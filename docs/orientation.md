@@ -88,17 +88,28 @@ real create surface. Nothing to keep in sync, nothing taught twice.
 | 4 | More than one task? A Project | Projects | the floor's ＋ (empty-state teacher, or the deck's foot pill) *+ the Spine rung* | a project exists |
 | 5 | More than one project? An Initiative | Initiatives | the floor's ＋ *+ the Spine rung* | — |
 | 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** *+ the Spine rung* | — |
-| 7 | This is Nuvo. Ask it something | the **agent rail, opened** | the chat composer | a user message exists |
+| 7 | Nuvo works the page beside it | the Nuvo panel **folded shut** | the **✦ door** (the phone's ✦ launcher) | — |
 | 8 | Bring your calendars in | **Settings → Calendars** | that pane | a calendar account exists |
 | 9 | **That's the whole machine** — the ladder, filled | back to the Schedule, everything closed | — | — |
 | 10 | Now make this week count | **Plan the week**, on its Projects step | *＋ bring one in* | — |
 
-*(Titles as of D-200; the table's acts, targets and ticks are unchanged.)*
+*(Titles as of D-200. Step 7 changed with the chat: see below.)*
 
-Steps 1/3/4/7/8 are **exactly the five `GettingStarted` milestones, in order, read through
-the same derivations** — this walkthrough *is* that tracker, performed live. Finishing it
+Steps 1/3/4/8 are **the `GettingStarted` milestones, in order, read through the same
+derivations** — this walkthrough *is* that tracker, performed live. Finishing it
 retires the tracker through the path it already has, and clears the floors' empty states
 because the floors now have data.
+
+**Step 7 no longer asks Nuvo anything (D-200, revised).** Nuvo stops being a chat and becomes
+recommendations for the page beside it (the Nuvo panel, D-198). A day-one account has **none**:
+an offer needs held time with too little work in it (`thinPath`, which a new account can't have)
+or something Memory is sure of. Opening an empty panel and lighting nothing teaches less than
+the door does, and inventing a first recommendation would be the lie P7 forbids. So the step
+folds the panel shut (`close-agent`), lights the **✦ door** — the thing that will wear the dot
+when Nuvo has something — says what it will offer and when, and, like the Initiative step,
+asks for nothing. Opening it is the reader's own act. `GettingStarted` keeps *Open Nuvo* (D-201),
+which latches when the reader opens the panel themselves. (D-201's first version of this step
+opened the panel and ticked on it being open — so it ticked itself and skipped a second later.)
 
 ### The rules that keep it clear, and honest
 
@@ -123,9 +134,10 @@ because the floors now have data.
   primary target there.
 - **Light the thing you can click, never the container.** An orb around a whole wall, or the
   full-height agent rail, is a rectangle with its edges off-screen — it reads as nothing.
-  So: one domain card, not the wall; the chat composer, not the 380px rail.
-- **A step opens what it's about to talk about** (`arm`). Describing the chat while the chat
-  is shut, or the Inbox while the rail shows Today, loses the reader instantly.
+  So: one domain card, not the wall; the ✦ door, not the 380px panel.
+- **A step opens what it's about to talk about** (`arm`). Describing the Inbox while the rail
+  shows Today loses the reader instantly. (The one deliberate exception is Nuvo: on day one
+  its panel is empty, so the step shows the door instead — see step 7.)
 - **Step 5 navigates but expects nothing.** They won't create an initiative on day one — an
   initiative is several projects and a fresh account has one. But *"nothing to do here
   today"* only lands once you've been shown where it would go, so the step travels like
@@ -215,8 +227,8 @@ would be a no-op there — the step's CTA opens it instead.
 | `visible` · `mode` · `teachStep` persistence | `src/hooks/useOrientation.tsx` |
 
 Targets are tagged `data-teach="<key>"` on the real elements (rail capture form, Inbox tab,
-rail list, `FloorGuide`'s action, both planner rails' ＋, the first domain card, the agent
-composer, the Calendars pane, the phone's FAB / tabs). Adding a destination is one registry
+rail list, `FloorGuide`'s action, both planner rails' ＋, the first domain card, the ✦ door
+on the Nuvo panel, the Calendars pane, the phone's FAB / tabs). Adding a destination is one registry
 entry plus one tag — the same shape as
 [`marquee.md`](./marquee.md)'s registry, which is where the orb CSS (`.marquee-orb`) and the
 wait-for-target idea come from. **Marquee's *session* is deliberately not reused**: it is a
@@ -227,6 +239,5 @@ a multi-step tour needs.
 
 The **auto-advance transition** is reasoned and its guard is observed (a pre-satisfied
 milestone correctly does *not* skip), but the not-done → done path was never driven live:
-in the builder's account every milestone except "ask Nuvo" is already satisfied, and
-forcing that one costs agent tokens and writes to a real thread. First genuinely fresh
-account should confirm it.
+in the builder's account every milestone is already satisfied. First genuinely fresh account
+should confirm it.
