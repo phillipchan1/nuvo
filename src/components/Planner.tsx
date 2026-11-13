@@ -1,6 +1,6 @@
 import { taskFromEvent } from "../lib/eventActs";
 import { useTaskToEvent } from "../hooks/useTaskToEvent";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
 import { todayISO, toDateISO, planningWeekStartISO } from "../lib/dates";
@@ -55,6 +55,7 @@ import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
 import { useMemory } from "../hooks/useMemory";
+import { useTrackedRef } from "../hooks/useTrackedRef";
 
 export default function Planner({
   openFlow,
@@ -73,7 +74,9 @@ export default function Planner({
   // Memory (docs/memory.md): the Schedule draws its Rhythm view from it, and
   // Plan the week's What I noticed reads its sure observations.
   const learned = useMemory();
-  const railRef = useRef<HTMLDivElement | null>(null);
+  // Tracked, not a plain ref: LeftRail and PlanRail take turns holding it, and
+  // the calendar's rail drag must re-bind each time (see useTrackedRef).
+  const [railRef, railEl] = useTrackedRef<HTMLDivElement>();
   const {
     nav,
     setTab,
@@ -681,6 +684,7 @@ export default function Planner({
             onOpenSlot={openSlotAt}
             onRangeChange={syncRange}
             railRef={railRef}
+            railEl={railEl}
             onWeekWorkPlaced={commitTasksToSprint}
             resolveDropTask={resolveDropTask}
             onConvertTaskToEvent={handleConvertTaskToEvent}

@@ -20,10 +20,13 @@
 // Writes are local state and the name draft is a stub — this proves the gesture
 // and the render, not Supabase. Precedent: SittingHarness (?sitting).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import CalendarPane from "./CalendarPane";
+import LeftRail, { type RailTab } from "./LeftRail";
+import { AppNavigationProvider } from "../hooks/useAppNavigation";
+import { useTrackedRef } from "../hooks/useTrackedRef";
 import { SlotPopover } from "./SlideOver";
 import { deriveSlotTitle, slotMinutesFor } from "../lib/slots";
 import { toDateISO } from "../lib/dates";
@@ -146,8 +149,24 @@ const VERTICAL: VerticalData = {
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 0 } } });
 
+// `?gather=rail` swaps the fixture rail for the REAL `LeftRail` (Today · Inbox,
+// selection, slot headers) — the drag a person actually makes starts on its rows.
+const REAL_RAIL = new URLSearchParams(window.location.search).get("gather") === "rail";
+
 export default function GatherHarness() {
-  const railRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <AppNavigationProvider>
+      <GatherInner />
+    </AppNavigationProvider>
+  );
+}
+
+function GatherInner() {
+  const [railTab, setRailTab] = useState<RailTab>("inbox");
+  // Plan the week swaps the rail out and back (Planner: PlanRail ⇄ LeftRail on
+  // one railRef). "Swap the rail" replays that remount here.
+  const [railGen, setRailGen] = useState(0);
+  const [railRef, railEl] = useTrackedRef<HTMLDivElement>();
   const [slots, setSlots] = useState<Slot[]>(SLOTS);
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [log, setLog] = useState<string[]>([]);
@@ -169,7 +188,7 @@ export default function GatherHarness() {
   const into = (t: Task, s: Slot) => patch(t.id, { slot_id: s.id, start_time: null, do_date: s.do_date, status: "planned" });
   const patchSlot = (id: string, p: Partial<Slot>) => setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, ...p } : s)));
 
-  const mutations = {
+  const mutationsBase = {
     block: (t: Task, start: Date) => {
       say(`block · ${t.title} @ ${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
       patch(t.id, { start_time: start.toISOString(), do_date: toDateISO(start), slot_id: null, status: "planned" });
@@ -184,7 +203,11 @@ export default function GatherHarness() {
     complete: (t: Task) => patch(t.id, { status: "done" }),
     uncomplete: (t: Task) => patch(t.id, { status: "planned" }),
     removeFromSlot: (t: Task) => patch(t.id, { slot_id: null }),
-  } as unknown as ReturnType<typeof useTaskMutations>;
+  } as Record<string, unknown>;
+  // Anything the real rail calls that the fixture doesn't model is logged, not thrown.
+  const mutations = new Proxy(mutationsBase, {
+    get: (target, key: string) => target[key] ?? ((...a: unknown[]) => say(`${key}(${a.length})`)),
+  }) as unknown as ReturnType<typeof useTaskMutations>;
 
   const slotMutations = {
     createSlot: (input: Partial<Slot>) => {
@@ -247,6 +270,32 @@ export default function GatherHarness() {
     <QueryClientProvider client={qc}>
       <VerticalStoreProvider value={store}>
         <div className="atmosphere flex h-screen w-screen">
+          {REAL_RAIL ? (
+            <div className="flex shrink-0 flex-col">
+              <button type="button" data-swap-rail className="border-b border-line px-2 py-1 text-left text-micro text-muted" onClick={() => setRailGen((g) => g + 1)}>
+                Swap the rail (as Plan the week does) · {railGen}
+              </button>
+              <LeftRail
+                key={railGen}
+                tab={railTab}
+                setTab={setRailTab}
+                inbox={inbox}
+                today={tasks.filter((t) => t.do_date === ISO && t.status !== "trashed")}
+                labels={[]}
+                mutations={mutations}
+                onOpenTask={(t) => say(`open · ${t.title}`)}
+                hotkeysEnabled
+                now={at(7)}
+                railRef={railRef}
+                slots={slots}
+                slotTitle={(s, kids) => deriveSlotTitle(s, kids, VERTICAL)}
+                onOpenSlot={(s) => say(`open slot · ${s.title || s.id}`)}
+              />
+              <div className="mono flex max-h-40 flex-col gap-0.5 overflow-auto border-t border-line p-2 text-micro text-muted" data-log>
+                {log.length === 0 ? <span>—</span> : log.map((l, i) => <span key={i}>{l}</span>)}
+              </div>
+            </div>
+          ) : (
           <div ref={railRef} className="flex w-[280px] shrink-0 flex-col gap-2 border-r border-line p-3">
             <div className="section-label">inbox (fixture)</div>
             {inbox.map((t) => (
@@ -278,6 +327,7 @@ export default function GatherHarness() {
               {log.length === 0 ? <span>—</span> : log.map((l, i) => <span key={i}>{l}</span>)}
             </div>
           </div>
+          )}
           <div className="min-w-0 flex-1">
             <CalendarPane
               view="timeGridDay"
@@ -305,6 +355,7 @@ export default function GatherHarness() {
               }}
               onRangeChange={() => {}}
               railRef={railRef}
+              railEl={railEl}
               resolveDropTask={(id) => tasks.find((t) => t.id === id)}
             />
           </div>

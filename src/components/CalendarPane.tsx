@@ -323,6 +323,7 @@ function CalendarPane({
   onOpenSlot,
   onRangeChange,
   railRef,
+  railEl,
   onWeekWorkPlaced,
   resolveDropTask,
   onConvertTaskToEvent,
@@ -399,6 +400,11 @@ function CalendarPane({
   taskDomain: (t: Task) => string | null;
   onRangeChange: (startISO: string, endISO: string) => void;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
+  /** The element `railRef` holds right now (`useTrackedRef`). The rail is
+   *  swapped for PlanRail and back while Plan the week opens and closes; the
+   *  rail's drag source re-binds when this changes, or it stays on the detached
+   *  rail and Today/Inbox rows stop dragging onto the grid. */
+  railEl?: HTMLElement | null;
   /** Rows carrying `data-task-week` are this week's project work being placed by
    *  hand. Commit them to the week alongside the block, or the placement writes a
    *  `do_date` with no `sprint_id` and slips past the Week gate (P2). */
@@ -1055,7 +1061,7 @@ function CalendarPane({
       },
     });
     return () => draggable.destroy();
-  }, [railRef, view]);
+  }, [railRef, view, railEl]);
 
   // Live drop-target feedback while a task, project or slot is being dragged.
   // Classes are toggled imperatively (no React state) so a drag never
