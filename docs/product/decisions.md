@@ -6887,6 +6887,79 @@ prerender green; driven in the marketing dev server at 1440px and 375px, no hori
 overflow, no console errors. **Not run:** a real iPhone (pinned scenes under iOS Safari's
 toolbar resize).*
 
+**D-187 · 2026-11-13 · Ambition becomes an axis of the design language: Momentum. What you
+do lands, progress advances with its pace drawn beside it, the week locks in when you commit
+it, and the hero says its name with weight — in every material, in its own idiom.**
+*(Follows D-186; the grammar is [`design-language.md`](../design-language.md) § Momentum.
+Decided by the operator: "Ambition should inform the design language… It is the blood
+pulsing through the veins.")*
+
+**Why.** D-186 moved the site from *calm* to *ambition*. The app it sells still only knew how
+to be calm: a ticked task faded out in 270ms, the week's projects were 5px dots on the rail and
+a different 40px bar on the phone, committing a week ended on a sentence, and every hero was
+Fraunces 500 at 22px. Ambition was in the copy and nowhere in the grammar.
+
+**What it is.** A named motion vocabulary — **Press · Land · Let go · Advance · Commit ·
+Arrive · Now** — each with its token, its meaning and where it is forbidden; a hero step
+(`text-display` 28/25px at `--hero-weight`); one progress drawing on both shells
+(`PaceTrack`: a track of pieces with a **pace tick** where the project's span stands today);
+and one commit moment on both shells (`WeekSetMoment`). Applied to: the task tick (TaskRow —
+the box stamps, the strike draws, then the row lets go), the week crown (`WeekPanel` +
+`MobileWeekCrown` over `useWeekCrown`, which now carries `elapsed`), the Schedule (a dropped
+block lands; the now-line gets a static wake, desktop and the phone's Day canvas), Plan the
+week's close (`PlanRail` + `MobilePlanWeek`), and every `text-display masthead` hero.
+
+**Every material speaks it.** The vocabulary is roles; each skin restates every role token in
+its own `MOMENTUM` block (`tests/momentum.test.tsx` fails otherwise): Paper settles on a
+spring, Flat snaps, Blueprint drafts at plotter speed, Terminal fills cell by cell with the
+pace tick as its cursor, and E-ink does not move at all — it carries ambition as size (a 26px
+hero) and contrast (an ink track). Durations derive from each material's own ladder, so
+D-096 holds by construction.
+
+**Anchor.** Ledger: **Q1** (*is this project on pace, or quietly dying?*) was ✅ at On Deck;
+the pace tick now answers it where the week is read, on both shells, without a word. **W6**
+(*did anything move this week?*) gains a picture of motion at the moment it happens. No
+re-score. **Strains P9** (*quiet by default — violated when something animates for
+engagement*) and is held to it the D-093 way: every motion is the synchronous consequence of
+the user's own act, plays once, has no glow-burst or count-up, never plays on load, a
+refetch, or a write the assistant made, and the now-line's wake is static. **Strains P4** at
+the pace tick — "behind" becomes *visible* — and is held to it by drawing a position, never a
+verdict word or a red; the deck card's ban on printing the pace read stands. **Strains P14**
+(Warm Paper): it amends the grammar, deliberately, and keeps the atmosphere, dissolve-don't-
+frame and focus-lifts untouched. The four no's: no pool; no new user-facing name (no glossary
+change — "pace" and "landed" already exist); it degrades on an empty account (no project, no
+track; no span, no tick — P7); nothing in it is about one account (P16). N-04 (streaks,
+scores) is untouched and cited in the doc as the line.
+
+**Also changed, because the grammar required it.** The phone crown's "no time yet" light was
+`--signal` and is now `--warn`, as on the rail — signal is spent on *now*. The rail's
+`ProgressRing` lost a raw `#fff`. The slate pips were two copies (rail + phone) and are one.
+TaskRow's completion now waits `--d-task-complete` (440ms on Paper, ~2ms on E-ink), not a
+fixed 270ms.
+
+**Rejected on the way:** a pulsing / breathing now-line (ambient motion for attention — P9);
+colouring a behind track (P4); a celebration on ship or on a full week (D-092/D-093 already
+drew that line); animating progress on mount so the crown "feels alive" (data arriving is not
+progress); a new momentum *colour* (every role resolves to an existing per-scheme token, so no
+scheme can fall back to Paper's value).
+
+*Status: built on local branch `claude/ambition-design-language`, not pushed, not merged.
+typecheck clean · `npm test` green (209 files, 2769 tests, incl. the new
+`tests/momentum.test.tsx`) · `npm run build` green · `npm run e2e` desktop-chromium 8/8.
+WebKit cannot launch in this container (missing system libraries), so the iPhone specs ran
+on Chromium emulating an iPhone 13: 6 of 7 — the failure ("no tap flash…" reads a `button`
+before the harness has mounted) fails the same way on the unmodified tree. Driven in the fixture harnesses, not a
+live account (no dev login in the cloud session): `?weekcrown` (a real tick in the rail crown
+→ land, let go, the project's track advances; frames captured), `?rail` (land + let go),
+`?planweek` (the commit, phone + rail frames, with Replay), `?gather` (the now-line wake at a
+fixed 10:20; a pointer drop from the fake rail), `?build` (heroes), `?horizon` (phone). Every
+changed surface screenshotted before/after in 11 skin × scheme × mode combinations (all five
+materials, light and dark where the material has both) at desktop and 375; contrast of the
+new colour roles measured in all 42 combinations. **Not run:** `npm run perf` (no visible
+Chrome in this session; `perf-budget` in `npm test` passes), a real iPhone, WKWebView (the
+desktop app — `linear()` easing needs Safari 17.2+; older WebKit falls back to the cubic in
+`--ease-land`), and the deck drops (On Deck / initiative cards don't land yet).*
+
 **D-184 · 2026-11-09 · Microsoft 365 is removed as a calendar provider; its data stays.**
 ⓟ: *"were skipping azure let's just remove m365"*. The Azure app was the one secret the
 Cloudflare flip would have had to carry for a provider with zero connected accounts in prod.

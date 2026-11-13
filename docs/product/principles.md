@@ -80,6 +80,10 @@ claim the same question.
 notification theater, no gamified debt. Signal is reserved for **now** (`--signal`).
 **Violated when** something animates, colors, or notifies for engagement rather than
 information.
+*Since D-187 the app has a motion vocabulary for ambition (Momentum, in
+[`design-language.md`](../design-language.md)). It lives inside this principle, not beside it:
+a motion is allowed only as the synchronous consequence of the user's own act, once, and
+never on load, on a refetch, or for a write the assistant made.*
 
 ### 10 · Don't add a pool, a name, or a place without paying for it
 
@@ -122,7 +126,8 @@ cursor-anchored popover on a phone.
 **Why.** One continuous sheet of paper, written on with an editorial hand; the things you
 touch lift toward you. The full grammar is [`design-language.md`](../design-language.md).
 **Violated when** an opaque `bg-*` paints over `.atmosphere`, a hero isn't Fraunces, a flat
-focus ring replaces the lift, or a raw hex appears instead of a token.
+focus ring replaces the lift, or a raw hex appears instead of a token. *Amended by D-187: the grammar
+has a seventh move — what you do lands — and the hero is set at `--hero-weight`.*
 
 ### 15 · Protect the boring core
 

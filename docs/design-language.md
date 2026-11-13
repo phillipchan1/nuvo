@@ -1,19 +1,22 @@
-# Nuvo design language — "Warm Paper" + glass
+# Nuvo design language — "Warm Paper" + glass + momentum
 
 The look every screen is converging on. **Read this before building any new surface.**
 Tokens live in [`src/index.css`](../src/index.css); this file is the *grammar* — why the
 tokens are used the way they are, and the rules that keep new work coherent.
 
 The thesis, in one line: **one continuous sheet of warm paper, written on with an
-editorial hand — and the things you touch are panes of glass that lift toward you.**
-It is not a color theme. It is spacing, hierarchy, flatness, restraint, type, and a
-single, physical idea of "focus." Reference screens: the **Schedule** calendar
+editorial hand — the things you touch are panes of glass that lift toward you, and the
+things you do land on it with weight.** It is not a color theme. It is spacing,
+hierarchy, flatness, restraint, type, a single, physical idea of "focus" — and, since
+D-187, a single idea of **momentum**: progress you can see move, a week you can feel lock
+in, a hero that says its name like it means it. That axis is
+[**Momentum**](#momentum--the-ambition-axis-d-187) below, and every material speaks it. Reference screens: the **Schedule** calendar
 (`CalendarPane` + `LeftRail`) and the **Domain** wall + open domain (`DomainFloor`). When in
 doubt, go look at those.
 
 ---
 
-## The grammar (six moves)
+## The grammar (seven moves)
 
 1. **One continuous paper, no panels.** Surfaces dissolve into spacing, not boxes.
    Borders are hairlines (`--line`) at the edge of perception, often replaced by
@@ -26,12 +29,132 @@ doubt, go look at those.
    *means*, it shouldn't be there.
 4. **Soft tonal blocks, not cards.** When something must be set apart, prefer a
    low-saturation tinted fill with no border over a bordered container.
-5. **Calm hierarchy.** Tracked small-caps eyebrows (`section-label`), generous air, the
-   eye never jostled. Density is fine (the planner is dense); *visual noise* is not.
+5. **Calm hierarchy, confident hero.** Tracked small-caps eyebrows (`section-label`),
+   generous air, the eye never jostled. Density is fine (the planner is dense); *visual
+   noise* is not. The one hero on a surface is set with conviction (28px, `--hero-weight`)
+   — calm is in everything around it, not in a timid headline.
 6. **The thing in focus lifts.** Selection / drag / active / open is shown by a glass
    pane physically rising toward you — never a flat outline or color swap. (See **Focus**.)
    **While you drag-and-hold, the thing you're holding is glass in your hand and the
    destination is always shown** — no exceptions. (See **Drag-and-hold**.)
+7. **What you do lands.** A task ticked, a block placed, a week committed resolves
+   visibly — a short, weighted motion that is the consequence of *your* act, in the
+   moment of it, and nothing else. Progress is drawn with mass and pace, never scored.
+   (See **Momentum**.) This is the ambition axis; calm is still the default between acts.
+
+---
+
+## Momentum — the ambition axis (D-187)
+
+**Status:** built 2026-11-13 on branch `claude/ambition-design-language` (not merged).
+Tokens and keyframes: [`src/styles/momentum.css`](../src/styles/momentum.css) · WAAPI half:
+[`src/lib/motion.ts`](../src/lib/motion.ts) · each material's idiom: the `MOMENTUM (D-187)`
+block in [`src/skins/*.css`](../src/skins/) · guard: `tests/momentum.test.tsx`.
+
+Nuvo is sold as **task management for ambitious people — ambition, down to the hour**
+(D-186). Warm Paper, as written, could say where everything was and how calm it was; it had
+no way to say that anything *moved*. Completing a task faded a row out in 270ms. The week's
+projects were five-pixel dots. Committing a week ended in a sentence. The heroes were set at
+the weight of a caption. Ambition was in the copy and nowhere in the grammar.
+
+**Ambition here is momentum, weight, and things landing — never hustle.** The satisfaction
+of a block placed, a task done, a project moving on pace, a week committed. It is drawn from
+the same facts the app already measures (P6), it happens only as the consequence of
+something *you* did (P3), and it is over in well under a second. What it is not, ever: a
+streak, a score, confetti, a count-up, a red "behind", a pulse that wants your attention, an
+animation on data that merely arrived (N-04, P4, P9).
+
+### What changed, and what it replaced
+
+| Axis | Warm Paper said | Momentum says | Why |
+|---|---|---|---|
+| **Type — the hero** | `text-display` 22px, Fraunces 500, softened terminals (`SOFT 32`) | **28px desktop / 25px phone, `--hero-weight` (600), `SOFT 0`** on `.masthead.text-display` | A floor, a record, the committed week is a *name that means it*. 500 at 22px read as a caption set large. Only the one hero per surface changes — rows keep their size and weight (Hierarchy rule 11 stands). |
+| **Colour — `--signal`** | now · urgency | **now, as the leading edge**: the now-line, and the pace tick on a track | Still never success, never "behind". The phone's "no time yet" light was `--signal` and is now `--warn`, like the rail's — signal is spent on *now* only. |
+| **Colour — `--accent`** | your intent | intent **and its landing**: `--landed` (the ticked box, the commit seal, the slate meter) | The moment an intent becomes true wears the intent's own colour. |
+| **Colour — domain hue** | identity | identity **and the work it moved**: the fill of a progress track | The thing moving is that world's work. |
+| **Density** | — | unchanged | Ambition is not more on screen. |
+| **Progress** | the rail: 5px pips; the phone: a 40px bar — two drawings of one fact | **one `PaceTrack`** on both shells: a track of pieces (≤10) or a fill, `--track-h` thick (3px), plus the **pace tick** | Progress has mass — 2px read as a hairline, i.e. structure. The tick makes pace *visible* without a word. |
+| **Motion** | ad hoc: `.bloom` 180ms, `.rise`, `block-in`, a 270ms row fold, nothing on progress | **a named vocabulary** (below), every duration derived from the material's own ladder | A motion with a name has a meaning and a place it is forbidden. |
+
+### The pace tick — pace, drawn, not said
+
+A project's track is its **work done** (pieces, in the domain's hue) on a `--line` rail, and a
+2px **`--pace-tick`** where its committed span's clock stands today (`spanElapsed` in
+`lib/pace.ts`: start of its first On Deck day → end of its target day, clamped). **Fill past
+the tick is ahead; short of it is behind.** Nothing says so in words and nothing turns red —
+the reader compares two measured facts. A finished row, or one with no span, has no tick (P7:
+no clock, no guess). Known limits, stated rather than hidden: the tick is linear (it assumes
+nothing about which days the work was planned for) and the fill counts pieces, not hours. The
+On Deck card's rule stands — the pace *read* (`behind` / `stalled`) is never printed on a card.
+
+### The motion vocabulary
+
+Durations are **derived** — `calc(var(--d-base) * 1.6)` and so on — so a material that
+changes its ladder changes these with it, and D-096's rule (change the easing, change the
+durations) holds by construction. The ms below are Paper's.
+
+| Motion | Token(s) | Paper | Means | Used on | Forbidden |
+|---|---|---|---|---|---|
+| **Press** | `--d-fast`, `--ease-out` | 130ms | "I heard you" — the control gives under the finger | every `:active` (native.css) | as decoration on anything that isn't a control |
+| **Land** | `--d-land`, `--ease-land` | 352ms, a spring with ~8% overshoot | **a thing you did became true** — set down with weight | the ticked box (`.land-stamp`) + the drawn strike (`.land-strike`); a block dropped on the Schedule (`landBlock`); a project's slate pip filling (`landMark`) | on load, on a refetch or realtime echo, on a write the assistant made, on the lift (the pick-up stays instant on the Schedule) |
+| **Let go** | `--d-task-complete` | 440ms total; the fold starts at 55% | a finished row leaves the list — only *after* it has visibly landed | `.task-completing` (TaskRow) | moving rows that aren't done; the one sanctioned non-transform property here is the row's measured height (`task-fold`), as before |
+| **Advance** | `--d-advance`, `--ease-momentum` | 680ms, fast off the mark, long glide | **progress catches up** from where it was to where it is | `PaceTrack` (a piece's segment grows in; a fill scales from its old value); the slate meter past ten projects | on mount (data arriving is not progress); backwards — **an undo snaps**; counting numbers up |
+| **Commit** | `--d-commit`, `--d-stagger` | bands land 72ms apart, then the seal sweeps (≈860ms) | **the week is locked** | `WeekSetMoment` — Plan the week's last screen, both shells | anywhere but a commit; more than once per commit |
+| **Arrive** | `--d-slow`, `--ease-out` | 340ms, 6px rise, **no fade** | a hero takes its place | `WeekSetMoment`'s hero (`.arrive`); floors already rise on `floor-enter` | fading a hero in (it must be readable on frame one) |
+| **Now** | — | **static** | which way time is moving | the now-line's **wake** (a `--signal-soft` band over the minutes just gone, `--now-wake-h`) on the desktop Schedule and the phone's Day canvas | a pulse, a breathe, a glow that animates — the line moves only with the clock |
+| Travel · Zoom · Lift | existing | — | unchanged: `TimePager`, `LensZoom`, `.glass-lift` | | |
+
+Laws that hold for every row of that table:
+
+1. **Transform and opacity only**, one element per act — never per row of a list at once
+   (perf rule 2). `tests/momentum.test.tsx` fails on any other property in a momentum keyframe.
+2. **Only what you did, when you did it.** Momentum is the visible consequence of the user's
+   own act. A tap and a chat message place a project identically (one kernel), but only the
+   tap *lands* — the assistant proposes; it is never celebrated (P3).
+3. **Forward only.** Progress advances; a reversal snaps.
+4. **Reduced motion wins**, everywhere: CSS through the global rule in `index.css` and the
+   block in `momentum.css`; WAAPI through `motionOff()`, which also treats a material whose
+   ladder is under 30ms (E-ink) as reduced motion. TaskRow then writes at once.
+
+### Every material speaks it in its own idiom
+
+The vocabulary is **roles**, not a look. Each material restates every role token in its own
+`MOMENTUM (D-187)` block; the guard fails if one is missing, because a missing token silently
+inherits Paper's — a spring on a console, a glow on e-paper.
+
+| Material | Land | Advance | Commit | Now | Weight (hero · track) |
+|---|---|---|---|---|---|
+| **Paper** (Daybreak · Dusk · Fog) | a warm settle — spring, ~8% overshoot, the bloom ring in `--landed` | glides on `--ease-momentum` | bands drop in on the spring, the accent seal sweeps | 2px line, glow, 22px wake | Fraunces 600 at 28px · 3px rounded |
+| **Flat** (Snow · Chalk · Ink · Arctic · Linen) | **snaps** — crisp ease, no overshoot (a spring on a flat UI reads as a toy) | quick ease | same, crisper | line, **no wake** (Flat has no gradients) | the sans at 700 · 3px |
+| **Blueprint** (Cyanotype · Whiteprint · Sepia) | **drafted** — linear at plotter speed (≈184ms): the box is inked in, the strike ruled | a line ruled across, linear | a rule drawn under the week | line, a 12px pencil-shadow wake | Fraunces 600 · **2px square-ended rule** |
+| **Terminal** (13 themes) | **cell by cell** — `steps(3)`: a block cursor stamping in; no bloom (no light) | `steps(8)` — a TUI progress bar filling cells | bands and seal square, stepped | line, **no wake**; the pace tick is **the cursor** (`--text`) | one cell size, rank by **700** · 4px square blocks |
+| **E-ink** (Paperwhite · Sepia · Carta) | **does not move** — the panel refreshes; `motionOff()` is true, keyframes collapse to their last frame | none — the new state, drawn | the final frame | line, no wake | **size and contrast**: hero 26px (was 23) inside the 400–500 band · 4px **ink** track, ink tick, ink landed mark |
+
+Colour roles always resolve through the scheme's own tokens (`--signal`, `--accent`, `--text`,
+`--line`), never Paper's values. Measured in all 42 skin × scheme × mode combinations on
+2026-11-13 (non-text contrast, WCAG 1.4.11 asks 3:1): the pace tick is **≥4.59:1 on `--bg`
+and ≥3.28:1 on its own `--line` track** everywhere, the landed mark **≥3.33:1** (Gruvbox
+light), the phone's `--warn` light **≥3.71:1** (E-ink Sepia light). Terminal's tick is the
+cursor because its themes' `--signal` fell to 1.8–2.9:1 against `--line` in six schemes. A
+domain hue on a track is the user's own colour and is not measured.
+
+### Where it lives
+
+- `src/styles/momentum.css` — the tokens (`--d-land` · `--d-advance` · `--d-commit` ·
+  `--d-stagger` · `--d-task-complete` · `--ease-land` · `--ease-momentum` · `--hero-weight` ·
+  `--track-h` · `--pace-tick(-w)` · `--landed` · `--now-wake-h`), the hero rule, and the
+  keyframes (`land-stamp`, `land-strike`, `commit-band`, `commit-seal`, `arrive`, `.now-wake`,
+  `.pace-*`). Durations are `@property`-registered so `getComputedStyle` resolves them.
+- `src/lib/motion.ts` — `motionOff`, `motionMs`, `landBlock`, `landMark`, `advanceFill`,
+  `advanceSegment`, `markLanding` / `consumeLanding` (a drop marks the block; whichever
+  element draws it first lands it).
+- `src/components/progress/PaceTrack.tsx` — `PaceTrack` + `SlatePips`, the one drawing of the
+  week's progress on both shells (`WeekPanel`, `MobileWeekCrown`), over `useWeekCrown`
+  (which now carries `elapsed`).
+- `src/components/plan/WeekSetMoment.tsx` — the commit, on `PlanRail` and `MobilePlanWeek`.
+- Verify: `?weekcrown` (tick a piece in either crown — the harness's ticks are local state,
+  so the track advances under a real tick), `?planweek` (the commit frames, with Replay),
+  `?rail` (land + let go), `?gather` (the now-line's wake, a drop's land).
 
 ---
 
@@ -464,7 +587,7 @@ The law, so a new planner surface can't drift:
 
 | Use | Class | Notes |
 |-----|-------|-------|
-| Floor / record / day heroes | `masthead` (+ size) | Fraunces, the editorial voice. Every floor `<h1>` uses this — never `font-semibold`. |
+| Floor / record / day heroes | `text-display masthead` | Fraunces, the editorial voice. Every floor `<h1>` uses this — never `font-semibold`. **Since D-187: 28px desktop / 25px phone at `--hero-weight` (600 on Paper), `SOFT 0`** — the material decides the weight (Flat 700 sans, Terminal 700 at one cell, E-ink 500 at 26px). |
 | Ceremony (mandates, plaques) | `serif` | Fraunces, softer terminals — the Domain floor's register. |
 | Everything else (UI, lists) | system (`--font-sans`) | The default. Recedes by design. |
 | Section eyebrows | `section-label` | Tracked uppercase, `--muted`, the only "chrome." |
@@ -486,6 +609,8 @@ Use the **CSS variable tokens**. Never hardcode a hex.
 | `--signal` (warm orange) | *Now* — the live moment, the time bar, urgency | success/affirmation |
 | domain color (`domain.color`) | *Identity* — inherited domain → initiative → project → task | anything cross-domain |
 | `--slot` (dusty teal) | *Open / unclaimed* time, AI-proposed-not-yet-committed | committed work |
+| `--landed` (→ `--accent`; ink on E-ink) | *Intent made true* — the ticked box, the commit seal | progress fills (those are the domain hue) |
+| `--pace-tick` (→ `--signal`; the cursor `--text` on Terminal, ink on E-ink) | *Now, on a span* — where a project's clock stands on its track | "behind" — the tick is a position, never a verdict |
 | `--muted` | secondary text, done/quiet states | primary text |
 
 Progress bars, status dots, and chips take the **domain accent** — the blue/pink you see
@@ -561,7 +686,8 @@ Activity. An empty section is worse than an absent one (D-035). And AI is **opt-
   minmax(72px, 1fr)` (Calendar). Use `flex-1` to fill a flex parent, **not** `min-h-full`
   (a percentage min-height doesn't resolve against a flex-derived height — that was the
   "why won't it fill" bug). Bigger nav controls (≥36px targets); serif month label.
-- **Progress track**: `--line` (never `bg-bg`, which vanishes against the paper).
+- **Progress track**: `--line` (never `bg-bg`, which vanishes against the paper), `--track-h`
+  thick, and drawn by `PaceTrack` wherever it is a project's work (see **Momentum**).
 - **Buttons** (`Btn` in `ui.tsx`): comfortable tap targets — `px-4 py-2`.
 
 ## Forms & inputs — one field surface
@@ -742,6 +868,9 @@ hand-roll a fifth stack of `border-t` sections.
 - [ ] Borderless inputs on a spine carry `nuvo-inline-input` — otherwise the global
       `input:focus` ring paints the flat outline the language forbids.
 - [ ] Holds up on the warm paper *and* in dark mode, and reflows to one column ≤767px.
+- [ ] Any motion is one of the named ones in **Momentum**, plays only on the user's own act,
+      moves transform/opacity only, and reads its timing from tokens — never a hard-coded ms.
+      A new token is restated in every material's `MOMENTUM` block.
 
 ---
 
@@ -754,7 +883,16 @@ glass focal system (board, calendar, table, timeline) · Today hero cards → gl
 columns, now → `--signal`, open time → `--slot`, deck cards → glass) · **create unified with
 the record** (three create surfaces → one `CreateRecord` over the shared `recordFrame`).
 
+**Momentum (D-187)** applied: the task tick (land + let go), the week crown on both shells
+(one `PaceTrack` + pace tick, slate pips that land), the Schedule's drop (land) and now-line
+(wake, both shells), the commit (`WeekSetMoment`, both shells), the hero type step.
+
 Not yet done / open questions:
+- **Momentum, not yet carried:** the On Deck / initiative deck drop (cards don't land yet),
+  the record's section meters (still the 2px rule), the old walk's `SundayRitual` close (it
+  keeps its own `block-in` bands — trial surface), the phone's tap-to-place (no drag, so no
+  drop to land; the Day canvas could land a block placed from the sheet). Ship stamp
+  (`ShipStamp`, D-093) predates the vocabulary and keeps its own timing.
 - The **rails aren't resizable on the decks** — they read the width the Schedule
   persisted, but you can't drag their edge yet. Lift `LeftRail`'s resize handle into
   `PlannerRail` when it starts to itch.
