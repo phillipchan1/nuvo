@@ -8,6 +8,8 @@ import "./styles/instrument.css";
 import "./styles/kit.css";
 // The frame — ground, sidebar, inset panel (D-190).
 import "./styles/frame.css";
+// The Flow layout — rituals, Plan the week, onboarding, login (D-190).
+import "./styles/flows.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";
