@@ -129,6 +129,9 @@ export default function MobileTaskList({
     onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
     onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
     onUndoAutoFile: () => mutations.patchTask(t.id, undoAutoPatch(t)),
+    // The Today face already says the day — the row doesn't say "today" again
+    // (the desktop rail does the same).
+    dayShown: tab === "today",
     action,
   });
 
