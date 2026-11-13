@@ -173,36 +173,6 @@
   pointer-events: none;
 }
 
-/* ── SIGNIFICANT (components/progress/Significance.tsx, D-203) ─────────────
-   One line + one two-segment bar: the initiative share in --accent (intent,
-   landed) over the rest in quiet structure. Never --warn, never a percent. */
-.significance {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.significance-text {
-  font: 450 12px/1.45 var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-.significance-text b { color: var(--ink); font-weight: 600; }
-.significance-bar {
-  position: relative;
-  display: block;
-  height: var(--track-h);
-  border-radius: 999px;
-  background: var(--line-strong);
-  overflow: hidden;
-}
-.significance-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transform-origin: left center;
-}
-
 /* ── COMMIT · the week locks in (components/plan/WeekSetMoment.tsx) ───────── */
 @keyframes commit-band {
   from { transform: scaleY(0.2) translateY(-6px); opacity: 0; }
@@ -257,3 +227,35 @@
     animation: none;
   }
 }
+
+/* ── WEEK TRACK (components/progress/PaceTrack.tsx `WeekTrack`, D-206) ─────
+   The crown header's one drawing: a piece per slate task. Fills come from the
+   component (--landed · --faint · the placed tint); the no-time piece is the
+   one with no fill — an amber outline, the fact "N with no time" used to say
+   in words. Past the piece cap the pieces are runs on one rail. */
+html:root .week-track { --track-h: 6px; flex: 1 1 auto; min-width: 0; }
+.pace-run {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: block;
+  transform-origin: left center;
+}
+html:root .week-track [data-piece="no-time"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--warn);
+}
+.crown-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 20px;
+}
+.crown-track-num {
+  flex: none;
+  font: 450 12px/1.45 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.crown-track-num b { color: var(--ink); font-weight: 600; }

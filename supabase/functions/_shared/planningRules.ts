@@ -557,6 +557,17 @@ export interface WeekSignificance {
   otherMins: number;
 }
 
+/** THE rule, once: the projects whose work counts toward an initiative — a
+ *  project attached to an initiative that exists. Both readings below (hours
+ *  and tasks) ask it; nothing else may decide it. */
+export function ladderedProjectIds(
+  projects: readonly { id: string; initiativeId: string | null }[],
+  initiativeIds: readonly string[],
+): Set<string> {
+  const bets = new Set(initiativeIds);
+  return new Set(projects.filter((p) => p.initiativeId != null && bets.has(p.initiativeId)).map((p) => p.id));
+}
+
 export function weekSignificance(input: {
   /** the week's window, [startMs, endMs) — the caller owns which week */
   startMs: number;
@@ -567,10 +578,7 @@ export function weekSignificance(input: {
   events?: SignificanceEvent[];
 }): WeekSignificance | null {
   if (input.initiativeIds.length === 0) return null;
-  const bets = new Set(input.initiativeIds);
-  const laddered = new Set(
-    input.projects.filter((p) => p.initiativeId != null && bets.has(p.initiativeId)).map((p) => p.id),
-  );
+  const laddered = ladderedProjectIds(input.projects, input.initiativeIds);
   const counts = (projectId: string | null) => projectId != null && laddered.has(projectId);
 
   let initiativeMins = 0;
@@ -590,4 +598,29 @@ export function weekSignificance(input: {
     else otherMins += mins;
   }
   return { initiativeMins, otherMins };
+}
+
+/** Significant, counted in TASKS (D-206) — the week crown's split. Of the done
+ *  tasks handed in (the caller owns which: the crown hands its slate's pieces),
+ *  how many belong to a project that ladders to an initiative. The same rule as
+ *  `weekSignificance` (`ladderedProjectIds`), the parent rule included: a task
+ *  with no project is other. Meetings never enter it — they can't point at a
+ *  project. Hours stay `weekSignificance`'s, for the Review.
+ *
+ *  `null` when the account has no initiatives (P7, P16). */
+export function doneTaskSignificance(input: {
+  tasks: readonly { projectId: string | null; status: string }[];
+  projects: readonly { id: string; initiativeId: string | null }[];
+  initiativeIds: readonly string[];
+}): { initiativeTasks: number; otherTasks: number } | null {
+  if (input.initiativeIds.length === 0) return null;
+  const laddered = ladderedProjectIds(input.projects, input.initiativeIds);
+  let initiativeTasks = 0;
+  let otherTasks = 0;
+  for (const t of input.tasks) {
+    if (!isCompleteStatus(t.status)) continue;
+    if (t.projectId != null && laddered.has(t.projectId)) initiativeTasks++;
+    else otherTasks++;
+  }
+  return { initiativeTasks, otherTasks };
 }

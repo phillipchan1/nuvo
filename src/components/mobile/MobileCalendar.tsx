@@ -111,6 +111,7 @@ export default function MobileCalendar({
   onOpenProject,
   renderCrownTask,
   onPlanWeek,
+  onGetReady,
   initialMode,
 }: {
   now: Date;
@@ -130,6 +131,8 @@ export default function MobileCalendar({
   /** how the week crown renders a project's work — see `RenderCrownTask`. */
   renderCrownTask?: RenderCrownTask;
   onPlanWeek?: () => void;
+  /** Get ready (D-206) — the week crown's door when given. */
+  onGetReady?: () => void;
   /** Harnesses pin a lens without writing `nuvo-mobile-cal-mode`. */
   initialMode?: CalHorizon;
 }) {
@@ -249,6 +252,7 @@ export default function MobileCalendar({
       onOpenProject={onOpenProject}
       renderCrownTask={renderCrownTask}
       onPlanWeek={onPlanWeek}
+      onGetReady={onGetReady}
     />
   );
 }

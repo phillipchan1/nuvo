@@ -303,6 +303,7 @@ export default function WeekCrownHarness() {
                       onOpenProject={(id) => say(`open project ${id}`)}
                       onOpenDay={(d) => say(`jump to ${toDateISO(d)}`)}
                       onPlanWeek={() => say("plan the week")}
+                      onGetReady={() => say("get ready")}
                       renderTask={(t, { action, whenShown }) => (
                         <TaskRow
                           key={t.id}
@@ -363,6 +364,7 @@ export default function WeekCrownHarness() {
                       )}
                       offers={pathOffers}
                       onPathCandidates={setPathCands}
+                      onGetReady={() => say("get ready")}
                     />
                   </div>
                 </div>

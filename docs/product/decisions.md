@@ -6810,6 +6810,52 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-206 · 2026-11-13 · The week is one track, and Get ready turns the rail into a stack of cards
+that take this screen to ready.** *(Asked by the operator on the preview: "intelligence should
+proactively help me get everything on this screen to health", "the metrics are hard to read… 3–5
+different metrics all looking differently", "I like the idea of showing multiple cards… to help
+drive one readiness". Prototype: [Nuvo Crown Header](https://claude.ai/artifact/PLqpHWnkLkQcv5BGNSYLD6).)*
+
+→ **"Health" is Readiness** (`readiness-model.md`), given an act. No new name (P11).
+
+→ **One track for the week.** The crown header draws the week the way each project row draws a
+project: one piece per task on the slate, *done toward an initiative* (accent) · *done, other*
+(grey) · *placed* (tint) · *no time* (amber outline), with the pace tick, and **one number**
+("13/17 done"). It replaces "N of M done", "N with no time" and the Significant bar. **Amends
+D-203:** in the crown, Significant is the split of the done pieces, counted in tasks; hours stay
+for the Review. Meetings no longer enter it (they can't point at a project).
+
+→ **One door: Get ready ›** replaces the Plan the week button and the crown's line. It opens the
+**Get ready** rail mode: a stack of cards for this screen, worst first — a broken block (*Move to
+Wed 9am*), today's work with no time (*Hold 3:30pm*, or the next opening when today is full),
+the week's loose work (*Hold Tue 10am* / *Back to <project>*), inbox captures (*→ <place>*), thin
+projects (*Draft the path*), one sure Memory observation (*Keep: …*), and *Plan the whole week* as
+a card when there's more loose work than cards. Each card names its destination, writes nothing
+until pressed (P3), lands and Reaches (D-202), and leaves; the track advances under it. At most 5
+cards show; as one leaves the next arrives; never a count of what's left (P4). When nothing is
+left the rail says "Ready" once and hands itself back. Plan and Repair stay as modes the cards
+can open.
+
+→ **Also:** Hold falls back to the next open time this week when today is full; an inbox chip
+shows only its destination ("→ Frontier Church"); the Schedule's **Rhythm** button is removed
+(Memory in the sidebar is the door; it keeps a "Show on the Schedule" act).
+
+→ **Anchor.** W2 · W3 · A1 · A2 · Q4, one walk. Strains **P4** (a screen of fixes can read as a
+debt list: no total, no red, a cap of 5 with refill) and **P9** (held by Momentum's laws). The
+rest state keeps D-205's budget.
+
+*Status: built 2026-11-13 on `worktree-intelligence-readings`. The week track (`lib/weekTrack.ts`,
+`WeekTrack`; the kernel's `ladderedProjectIds` / `doneTaskSignificance`; with no initiatives done is
+one plain state), the Get ready door, the card mode (`lib/readyCards.ts`, `GetReadyRail`, kit
+`OfferCard`, phone `MobileGetReady`), Hold's fallback to later this week, the "→ <place>" chip,
+and Rhythm moved behind Memory's **Show on the Schedule** (a pressed Rhythm button shows only while
+it's on, to turn it off). **Deviations:** no repair cards on the phone (its repair card already
+owns that state); loose work with no fit goes to the *Plan the week* card, not *Back to
+<project>*; up to 2 breaks are fixed from cards, more open Repair. Typecheck and build clean;
+`npm test` 2595 pass, the 18 known failures. Driven at `?weekcrown`, `?rail=offers`,
+`?rail=ready` (desktop) and `?rail=ready-phone` (375px). **Not driven** on a signed-in account;
+`npm run perf` not run (Planner, CalendarPane and the crown changed).*
+
 **D-205 · 2026-11-13 · Nuvo's offers live on the left, on the rows they change. The right panel
 retires.** *(Resolves Q-16. The operator's call: "Left, on the rows.")*
 

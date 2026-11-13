@@ -14,6 +14,9 @@
 //               how far the project's span has run. Fill past the tick is
 //               ahead, short of it is behind; no word says so and nothing turns
 //               red (P4). A finished row has no tick.
+//   WeekTrack — the WEEK as one track (D-206): a piece per slate task, done
+//               toward an initiative · done, other · placed · no time, the
+//               week's pace tick, and one number. The crown header's drawing.
 //   SlatePips — the week: one pip per project in its domain's hue, filled when
 //               it landed. A pip filling under your hand LANDS.
 //
@@ -22,7 +25,8 @@
 // a decrease (undo, reopen) snaps.
 
 import { useLayoutEffect, useRef } from "react";
-import { advanceFill, advanceSegment, landMark, reachArrivalDelay } from "../../lib/motion";
+import { WEEK_REACH_KEY, advanceFill, advanceSegment, landMark, reachArrivalDelay } from "../../lib/motion";
+import { weekTrackPieces, type WeekPiece, type WeekTrack as WeekTrackModel } from "../../lib/weekTrack";
 import type { WeekCrownRow } from "../../hooks/useWeekCrown";
 
 /** Past this many pieces, pips stop being countable at a glance and become the
@@ -148,6 +152,111 @@ export function PaceTrack({
             data-piece="done"
             style={{ position: "relative", background: color, width: `${frac * 100}%` }}
           />
+        </span>
+      )}
+      {tick != null && <span className="pace-now" style={{ left: `${tick * 100}%` }} />}
+    </span>
+  );
+}
+
+// ── the week ────────────────────────────────────────────────────────────────
+
+/** How far along a piece is — a piece only ever ADVANCES to a higher rank. */
+const RANK: Record<WeekPiece, number> = { "no-time": 0, placed: 1, "done-other": 2, "done-initiative": 2, done: 2 };
+const RUN_KINDS: WeekPiece[] = ["done-initiative", "done-other", "done", "placed"];
+
+/** A piece's fill. Done toward an initiative is the intent's own colour
+ *  (`--landed`); done, other is quiet solid structure (never `--warn`: other
+ *  work is not a fault, P4); placed is the tint (a time is a promise, not a
+ *  result); no time has no fill — its amber outline is the CSS's. */
+function pieceFill(p: WeekPiece): string | undefined {
+  if (p === "done-initiative" || p === "done") return "var(--landed)";
+  if (p === "done-other") return "var(--faint)";
+  if (p === "placed") return placedTint("var(--landed)");
+  return undefined;
+}
+
+export function WeekTrack({ track, className = "" }: { track: WeekTrackModel; className?: string }) {
+  const pieces = weekTrackPieces(track);
+  const total = pieces.length;
+  const segmented = total > 0 && total <= PIP_CEILING;
+  const segs = useRef<(HTMLSpanElement | null)[]>([]);
+  const runs = useRef(new Map<WeekPiece, HTMLSpanElement | null>());
+  const sig = pieces.join(",");
+  const prev = usePrevious(sig);
+
+  useLayoutEffect(() => {
+    if (prev === null || prev === sig) return;
+    const was = (prev ? prev.split(",") : []) as WeekPiece[];
+    const now = (sig ? sig.split(",") : []) as WeekPiece[];
+    const wait = reachArrivalDelay(WEEK_REACH_KEY);
+    if (now.length > 0 && now.length <= PIP_CEILING) {
+      // A piece that moved up a state grows in from its left edge, in order —
+      // forward only; an undo snaps.
+      let nth = 0;
+      now.forEach((p, i) => {
+        if (RANK[p] > 0 && RANK[p] > (was[i] ? RANK[was[i]] : 0)) advanceSegment(segs.current[i], nth++, wait);
+      });
+      return;
+    }
+    // Fill mode: a run that grew advances from its old length to its new one.
+    const count = (list: readonly WeekPiece[], k: WeekPiece) => list.reduce((n, x) => n + (x === k ? 1 : 0), 0);
+    for (const k of RUN_KINDS) {
+      const a = count(was, k);
+      const b = count(now, k);
+      if (b > a) advanceFill(runs.current.get(k), a, b);
+    }
+  }, [sig, prev]);
+
+  if (total === 0) return null;
+  const tick = track.elapsed == null ? null : Math.max(0, Math.min(1, track.elapsed));
+  const runsInOrder: { k: WeekPiece; n: number; at: number }[] = [];
+  pieces.forEach((p, i) => {
+    const last = runsInOrder[runsInOrder.length - 1];
+    if (last && last.k === p) last.n++;
+    else runsInOrder.push({ k: p, n: 1, at: i });
+  });
+
+  return (
+    <span
+      className={`pace-track week-track ${className}`}
+      style={{ gap: segmented ? 2 : 0 }}
+      role="img"
+      aria-label={track.label}
+      title={track.label}
+      // The Reach's landing for an act that changes the WEEK (D-206).
+      data-crown-week=""
+      data-crown-color="var(--landed)"
+    >
+      {segmented ? (
+        pieces.map((p, i) => (
+          <span key={i} className="pace-seg" data-piece={p} style={{ flex: "1 1 0" }}>
+            <span
+              ref={(el) => {
+                segs.current[i] = el;
+              }}
+              className="pace-fill"
+              style={{ background: pieceFill(p), transform: p === "no-time" ? "scaleX(0)" : undefined }}
+            />
+          </span>
+        ))
+      ) : (
+        <span className="pace-rail" style={{ width: "100%", position: "relative" }}>
+          {runsInOrder.map((r) => (
+            <span
+              key={r.k}
+              ref={(el) => {
+                runs.current.set(r.k, el);
+              }}
+              className="pace-run"
+              data-piece={r.k}
+              style={{
+                left: `${(r.at / total) * 100}%`,
+                width: `${(r.n / total) * 100}%`,
+                background: pieceFill(r.k),
+              }}
+            />
+          ))}
         </span>
       )}
       {tick != null && <span className="pace-now" style={{ left: `${tick * 100}%` }} />}

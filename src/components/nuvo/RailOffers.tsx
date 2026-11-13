@@ -4,8 +4,9 @@
  * goes, nothing written until pressed (P3):
  *
  *   PathOffer — a crown project row with a thin path → "Draft the path"
- *   HoldOffer — a today task with no time            → "Hold 2–2:30pm"
- *   FileOffer — an inbox capture with a router guess → "File in Garage studio"
+ *   HoldOffer — a today task with no time            → "Hold 2–2:30pm", or
+ *               "Hold Mon 9–9:30am" when today is full (D-206)
+ *   FileOffer — an inbox capture with a router guess → "→ Garage studio"
  *
  * Each press goes through the path the act already takes: Draft the path is
  * `requestPathDraft` + open the record (the panel's offer, D-198, and the
@@ -21,7 +22,7 @@ import { reachToCrown } from "../../lib/motion";
 import { haptic } from "../../lib/haptics";
 import { thinChip, type ThinPath } from "../../lib/thinPath";
 import { acceptPatch, liveSuggestion } from "../../lib/grooming";
-import { parseDateISO } from "../../lib/dates";
+import { parseDateISO, todayISO } from "../../lib/dates";
 import { span } from "../mobile/dayPlan";
 import { budgetOffers, offerKey, offersByRow, type RailOfferCandidate } from "../../lib/railOffers";
 import { ROUTE_SUGGEST } from "../../../supabase/functions/_shared/domainRouting.ts";
@@ -97,8 +98,22 @@ export function holdSpan(p: Placement): string {
   return span(start, new Date(start.getTime() + p.durationMin * 60_000));
 }
 
+/** "2–2:30pm" today, "Mon 9–9:30am" on a later day (D-206) — the day word,
+ *  then the span; never a second time format. */
+export function holdWhen(p: Placement, today: string): string {
+  if (p.dayISO === today) return holdSpan(p);
+  return `${parseDateISO(p.dayISO).toLocaleDateString("en-US", { weekday: "short" })} ${holdSpan(p)}`;
+}
+
 export function holdCandidates(holds: ReadonlyMap<string, Placement>): RailOfferCandidate[] {
-  return [...holds.values()].map((p) => ({ key: offerKey("hold", p.task.id), kind: "hold" as const, rowId: p.task.id, order: p.startMin }));
+  // Soonest first: today's holds, then a later day's (minutes since the epoch
+  // keep the day in the order, not just the time of day).
+  return [...holds.values()].map((p) => ({
+    key: offerKey("hold", p.task.id),
+    kind: "hold" as const,
+    rowId: p.task.id,
+    order: Math.round(holdStart(p).getTime() / 60_000),
+  }));
 }
 
 /** Asks Find time about today's loose work — mounted only while the Today face
@@ -118,13 +133,19 @@ export function HoldsProbe({ tasks, now, onHolds }: { tasks: readonly Task[]; no
 }
 
 export function HoldOffer({ task, placement, mutations, phone = false }: { task: Task; placement: Placement; mutations: Mutations; phone?: boolean }) {
-  const when = holdSpan(placement);
+  const today = todayISO();
+  const when = holdWhen(placement, today);
+  const later = placement.dayISO !== today;
   return (
     <OfferChip
       verb="Hold"
       name={when}
       whole
-      title={`Hold ${when} today for ${task.title} — the first time that fits`}
+      title={
+        later
+          ? `Hold ${when} for ${task.title} — today is full; this is the next time that fits this week`
+          : `Hold ${when} today for ${task.title} — the first time that fits`
+      }
       onPress={(el) => {
         if (phone) haptic("light");
         // Reach first: the chip is about to leave the row it stands in.
@@ -185,8 +206,12 @@ export function FileOffer({
   if (!guess) return null;
   return (
     <OfferChip
-      verb="File in"
+      // Destination only (D-206): the arrow says "goes to", so the place gets
+      // the room; a screen reader still hears the whole act.
+      verb="→"
       name={guess.name}
+      said={`File in ${guess.name}`}
+      dest
       title={task.suggestion?.rationale || undefined}
       onPress={(el) => {
         if (phone) haptic("light");

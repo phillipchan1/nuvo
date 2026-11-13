@@ -298,6 +298,8 @@ function useOnScreen(ref: React.RefObject<HTMLElement | null>, x: number, y: num
 function CalendarPane({
   learned,
   onOpenMemory,
+  rhythm,
+  onRhythmChange,
   view,
   tasks,
   events,
@@ -367,6 +369,11 @@ function CalendarPane({
   learned?: MemoryApi | null;
   /** Opens the Memory page (the Rhythm popover's "See everything"). */
   onOpenMemory?: () => void;
+  /** The Rhythm view, owned by the host (D-206): there is no Rhythm button on
+   *  the Schedule — Memory's "Show on the Schedule" turns it on. While it is on,
+   *  the bar carries a pressed "Rhythm" that takes it off again. */
+  rhythm?: boolean;
+  onRhythmChange?: (on: boolean) => void;
   now: Date;
   /** Domain color per task — blocks carry their thread up the vertical. */
   taskAccent: (t: Task) => string | null;
@@ -540,9 +547,19 @@ function CalendarPane({
   const [visibleSpan, setVisibleSpan] = useState({ start: 0, end: 0 });
   // Rhythm (docs/memory.md §5.2): a view of this week with your hours and what
   // Memory noticed drawn underneath it. Off by default; answers in its popover.
-  const [rhythmOn, setRhythmOn] = useState(false);
+  const [rhythmLocal, setRhythmLocal] = useState(false);
+  const rhythmOn = rhythm ?? rhythmLocal;
+  const setRhythmOn = onRhythmChange ?? setRhythmLocal;
   const [rhythmOpen, setRhythmOpen] = useState(false);
   const [rhythmHot, setRhythmHot] = useState<string | null>(null);
+  // Turned on from Memory: its list opens with it, once.
+  useEffect(() => {
+    if (rhythm) setRhythmOpen(true);
+    else if (rhythm === false) {
+      setRhythmOpen(false);
+      setRhythmHot(null);
+    }
+  }, [rhythm]);
   const rhythmBtnRef = useRef<HTMLButtonElement | null>(null);
   const memory = learned ?? null;
 
@@ -4883,7 +4900,7 @@ function CalendarPane({
           <>
             {/* Only while you're away from home (the phone hides it too). */}
             <TimeZoneChip now={now} hideAtHome />
-            {memory && view !== "board" && !isYear && (
+            {memory && rhythmOn && view !== "board" && !isYear && (
               <Button
                 ref={rhythmBtnRef}
                 active={rhythmOn}
@@ -4894,7 +4911,7 @@ function CalendarPane({
                   setRhythmOpen(next);
                   if (!next) setRhythmHot(null);
                 }}
-                title="Your hours and the habits Nuvo noticed, under this week"
+                title="Take your hours and the habits Nuvo noticed off this week"
               >
                 Rhythm
               </Button>

@@ -93,6 +93,8 @@ export function OfferChip({
   name,
   title,
   whole = false,
+  dest = false,
+  said: saidAs,
   onPress,
   onDismiss,
 }: {
@@ -102,6 +104,11 @@ export function OfferChip({
   title?: string;
   /** The name must be read whole — a time. The row's other text yields instead. */
   whole?: boolean;
+  /** The name is a place that should keep most of the row's trailing width
+   *  before it truncates — "→ Garage studio" (D-206). */
+  dest?: boolean;
+  /** What a screen reader hears, when the visible verb is a glyph ("→"). */
+  said?: string;
   onPress: (el: HTMLButtonElement) => void;
   onDismiss?: () => void;
 }) {
@@ -109,12 +116,13 @@ export function OfferChip({
   const cancel = () => {
     if (hold.current) window.clearTimeout(hold.current.timer);
   };
-  const said = name ? `${verb} ${name}` : verb;
+  const said = saidAs ?? (name ? `${verb} ${name}` : verb);
   return (
     <button
       type="button"
       className="k-offer"
       data-whole={whole || undefined}
+      data-dest={dest || undefined}
       data-card-control=""
       title={title ?? said}
       aria-label={title ? `${said}. ${title}` : said}

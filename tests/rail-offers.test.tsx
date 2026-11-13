@@ -24,10 +24,11 @@ import {
   type RailOfferCandidate,
 } from "../src/lib/railOffers";
 import { onPathDraftRequest, requestPathDraft, takePathDraft } from "../src/lib/draftIntent";
-import { FileOffer, HoldOffer, fileGuess, holdSpan, useOfferBudget } from "../src/components/nuvo/RailOffers";
+import { FileOffer, HoldOffer, fileGuess, holdSpan, holdWhen, useOfferBudget } from "../src/components/nuvo/RailOffers";
 import { useTodayHolds } from "../src/hooks/useFindTime";
 import WeekPanel from "../src/components/WeekPanel";
 import MobileTaskList from "../src/components/mobile/MobileTaskList";
+import MobileWeekCrown from "../src/components/mobile/MobileWeekCrown";
 import TaskRow from "../src/components/TaskRow";
 import { VerticalStoreProvider, type VerticalStore } from "../src/hooks/useVertical";
 import { AppNavigationProvider } from "../src/hooks/useAppNavigation";
@@ -133,7 +134,7 @@ describe("a draft asked for while its list is on screen", () => {
 
 const store = { data: OFFERS_VERTICAL, ready: true, togglePushLanded: () => {} } as unknown as VerticalStore;
 
-function Crown() {
+function Crown({ onGetReady }: { onGetReady?: () => void }) {
   const [cands, setCands] = useState<RailOfferCandidate[]>([]);
   const offers = useOfferBudget(cands, RAIL_OFFERS_MAX);
   return (
@@ -141,16 +142,17 @@ function Crown() {
       renderTask={(t) => <TaskRow key={t.id} task={t} labels={[]} selected={false} onSelect={() => {}} onOpen={() => {}} onToggleDone={() => {}} />}
       offers={offers}
       onPathCandidates={setCands}
+      onGetReady={onGetReady}
     />
   );
 }
 
-function mountCrown() {
+function mountCrown(onGetReady?: () => void) {
   return render(
     <QueryClientProvider client={offersClient(offersToday())}>
       <VerticalStoreProvider value={store}>
         <AppNavigationProvider>
-          <Crown />
+          <Crown onGetReady={onGetReady} />
         </AppNavigationProvider>
       </VerticalStoreProvider>
     </QueryClientProvider>,
@@ -199,6 +201,58 @@ describe("Draft the path on the week crown's project row", () => {
     mountCrown();
     await waitFor(() => expect(screen.getByText("Projects")).toBeTruthy());
     expect(document.querySelector(".k-offer")).toBeNull();
+  });
+});
+
+// ── the week's track and the one door (D-206) ───────────────────────────────
+
+describe("the crown header: one track, one number, one door (D-206)", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("draws the week as a track with one number, and no fact line, no Significant bar", async () => {
+    const { container } = mountCrown();
+    await waitFor(() => expect(container.querySelector("[data-crown-week]")).not.toBeNull());
+    const track = container.querySelector("[data-crown-week]") as HTMLElement;
+    expect(track.getAttribute("aria-label")).toMatch(/^\d+ of \d+ done: /);
+    expect(container.querySelector(".crown-track-num")?.textContent).toMatch(/^\d+\/\d+ done$/);
+    expect(container.querySelector(".significance")).toBeNull();
+    expect(container.textContent).not.toMatch(/with no time/);
+    expect(container.textContent).not.toMatch(/Plan the week ›/);
+  });
+
+  it("the door is Get ready › only when the host gives it", async () => {
+    const go = vi.fn();
+    const a = mountCrown(go);
+    const door = await waitFor(() => screen.getByRole("button", { name: /^Get ready/ }));
+    fireEvent.click(door);
+    expect(go).toHaveBeenCalledTimes(1);
+    a.unmount();
+    mountCrown();
+    await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
+    expect(screen.queryByRole("button", { name: /^Get ready/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^(Plan the week|The plan|Review)\./ })).toBeTruthy();
+  });
+
+  it("the phone's open crown wears the same track, and Get ready only when given", async () => {
+    localStorage.setItem("nuvo-mobile-weekcrown-open", "1");
+    const go = vi.fn();
+    const mount = (onGetReady?: () => void) =>
+      render(
+        <QueryClientProvider client={offersClient(offersToday())}>
+          <VerticalStoreProvider value={store}>
+            <MobileWeekCrown now={OFFERS_NOW} renderTask={() => null} onOpenProject={() => {}} onOpenDay={() => {}} onPlanWeek={() => {}} onGetReady={onGetReady} />
+          </VerticalStoreProvider>
+        </QueryClientProvider>,
+      );
+    const a = mount(go);
+    await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /^Get ready/ }));
+    expect(go).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".significance")).toBeNull();
+    a.unmount();
+    mount();
+    await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
+    expect(screen.queryByRole("button", { name: /^Get ready/ })).toBeNull();
   });
 });
 
@@ -257,6 +311,56 @@ describe("Hold <time> on a today task with no time", () => {
   });
 });
 
+describe("Hold falls back to later this week when today is full (D-206)", () => {
+  afterEach(() => localStorage.clear());
+
+  it("says the day word, then the span — one time format", () => {
+    const t = offersToday()[0];
+    const p: Placement = { task: t, dayISO: "2026-11-16", startMin: 9 * 60, durationMin: 30, reason: "" };
+    expect(holdWhen(p, "2026-11-16")).toBe("9–9:30am");
+    expect(holdWhen(p, "2026-11-13")).toBe("Mon 9–9:30am");
+  });
+
+  it("pressing a later hold blocks it on that day, so its day moves too", () => {
+    const t = offersToday()[0];
+    const p: Placement = { task: t, dayISO: "2099-01-05", startMin: 9 * 60, durationMin: 30, reason: "" };
+    const { m, calls } = stubMutations();
+    render(<HoldOffer task={t} placement={p} mutations={m} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Hold Mon 9–9:30am/ }));
+    const [, start] = calls.block[0] as [Task, Date];
+    // `block` writes do_date from the start — the task moves to Monday
+    expect(start.getFullYear()).toBe(2099);
+    expect(start.getDate()).toBe(5);
+    expect(start.getHours()).toBe(9);
+  });
+
+  it("a full today offers a later day this week, never claiming one time twice", async () => {
+    // Every weekday a working day, and the clock past the working day's end.
+    localStorage.setItem("nuvo-working-days", JSON.stringify([0, 1, 2, 3, 4, 5, 6]));
+    const late = new Date(OFFERS_NOW);
+    late.setHours(23, 0, 0, 0);
+    const lastDay = late.getDay() === 0; // Sunday: the week has no later day
+    const qc = offersClient(offersToday());
+    const loose = offersToday().filter((t) => !t.start_time && t.status !== "done");
+    const { result } = renderHook(() => useTodayHolds(loose, late), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    if (lastDay) {
+      await new Promise((r) => setTimeout(r, 20));
+      expect(result.current.size).toBe(0);
+      return;
+    }
+    await waitFor(() => expect(result.current.size).toBeGreaterThan(0));
+    const ps = [...result.current.values()];
+    for (const p of ps) expect(p.dayISO > OFFERS_TODAY).toBe(true);
+    for (const a of ps)
+      for (const b of ps) {
+        if (a === b || a.dayISO !== b.dayISO) continue;
+        expect(a.startMin + a.durationMin <= b.startMin || b.startMin + b.durationMin <= a.startMin).toBe(true);
+      }
+  });
+});
+
 describe("Hold <time> on the phone's Today", () => {
   it("rides at most two no-time rows, and never a row on the clock", async () => {
     const { m } = stubMutations();
@@ -300,6 +404,16 @@ describe("File in <project> on an inbox capture", () => {
     const { m } = stubMutations();
     const { container } = render(<FileOffer task={without} mutations={m} homeOfProject={() => null} />);
     expect(container.querySelector(".k-offer")).toBeNull();
+  });
+
+  it("shows only the destination — '→ <place>' — and still says the act aloud", () => {
+    const [t] = offersInbox();
+    const { m } = stubMutations();
+    const { container } = render(<FileOffer task={t} mutations={m} homeOfProject={() => null} />);
+    const chip = container.querySelector(".k-offer") as HTMLElement;
+    expect(chip.textContent).toBe("→ Garage studio");
+    expect(chip.getAttribute("aria-label")).toMatch(/^File in Garage studio/);
+    expect(chip.hasAttribute("data-dest")).toBe(true);
   });
 
   it("files it on the guess, out of triage, with an undo — and grades the guess", () => {

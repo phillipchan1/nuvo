@@ -29,8 +29,8 @@ import {
   type RockWork,
 } from "../lib/priorities";
 import { projectPace, spanElapsed } from "../lib/pace";
-import { parseDateISO, planningWeekStartISO, weekRangeLabel } from "../lib/dates";
-import { weekSignificance, type WeekSignificance } from "../../supabase/functions/_shared/planningRules.ts";
+import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
+import { composeWeekTrack, weekElapsed, type WeekTrack } from "../lib/weekTrack";
 import type { ReactNode } from "react";
 import type { BigRock, Task } from "../lib/types";
 
@@ -117,16 +117,13 @@ export interface WeekCrown {
   looseCount: number;
   /** the week has been composed (the ritual ran) */
   composed: boolean;
-  /** Significant (D-203): this week's finished minutes, split by whether the
-   *  work's project belongs to an initiative. Null when the account has no
-   *  initiatives — then nothing is shown. Draw it only past
-   *  `SIGNIFICANCE_FLOOR_MINS` finished (outcome-readings §6.1). */
-  significance: WeekSignificance | null;
+  /** The week as ONE track (D-206): a piece per slate task — done toward an
+   *  initiative · done, other · placed · no time — with the week's pace tick
+   *  and one number. Significant, in the crown, is this done split, counted in
+   *  tasks (the kernel's `doneTaskSignificance`); meetings never enter it. The
+   *  hours reading (`weekSignificance`) is kept for the Review. */
+  track: WeekTrack;
 }
-
-/** Below two finished hours the reading says more about what never touched the
- *  calendar than about where the week went, so it stays unsaid (D-203 §6.1). */
-export const SIGNIFICANCE_FLOOR_MINS = 120;
 
 /** The week's crown. `null` until the vertical has loaded.
  *
@@ -200,41 +197,11 @@ export function useWeekCrown(forWeekISO?: string): WeekCrown | null {
       total: rows.length,
       looseCount: rows.reduce((n, r) => n + r.loose.length, 0),
       composed: ownWeek && Boolean(data.sprint?.reviewed_at),
-      significance: readSignificance(data, weekISO, now),
+      track: composeWeekTrack(
+        rows,
+        { projects: data.projects, initiativeIds: data.initiatives.map((i) => i.id) },
+        weekElapsed(weekISO, now),
+      ),
     };
   }, [vertical, forWeekISO, weekISO, splitFor]);
-}
-
-/** The week's finished minutes, through the kernel's one rule. The window is
- *  the planning week, local midnight to local midnight. Attended meetings come
- *  from the vertical's own ledger (each domain's `meetingHoursThisWeek`, the
- *  same actuals the Domain wall counts) — and only while the planning week IS
- *  the current week, because that ledger is always this calendar week. They
- *  are all other: *Counts toward* resolves to a domain, never a project. */
-function readSignificance(data: NonNullable<ReturnType<typeof useVertical>["data"]>, weekISO: string, now: Date) {
-  const start = parseDateISO(weekISO);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  const startMs = start.getTime();
-  const endMs = end.getTime();
-  const nowMs = now.getTime();
-  const meetingMins =
-    nowMs >= startMs && nowMs < endMs
-      ? Math.round(data.domains.reduce((n, d) => n + (d.meetingHoursThisWeek || 0), 0) * 60)
-      : 0;
-  return weekSignificance({
-    startMs,
-    endMs,
-    tasks: data.tasks.map((t) => ({
-      projectId: t.projectId,
-      status: t.status,
-      completedAt: t.completedAt,
-      // A task's `durationMins` is both its estimate and, once placed, its
-      // block's length (a scheduled task IS a time block) — one number.
-      estimateMins: t.durationMins,
-    })),
-    projects: data.projects,
-    initiativeIds: data.initiatives.map((i) => i.id),
-    events: meetingMins > 0 ? [{ mins: meetingMins, projectId: null }] : [],
-  });
 }

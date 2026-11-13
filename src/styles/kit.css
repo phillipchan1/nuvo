@@ -122,6 +122,9 @@ html:root .k-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pane
 }
 .k-offer .k-dest-name { white-space: nowrap; }
 .k-offer[data-whole] { flex: none; max-width: none; }
+/* A place (D-206): it keeps its whole width up to two thirds of the row before
+   the row's title yields — the title truncates first, then the place. */
+.k-offer[data-dest] { flex-shrink: 0; max-width: 66%; }
 html:root .k-offer:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
 @media (hover: hover) {
   .k-offer:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -503,6 +506,57 @@ button.k-chip { padding-right: 4px; }
   .k-card[data-interactive]:not([aria-selected="true"]):hover { box-shadow: 0 0 0 1px var(--line-2), var(--sh-1); transition-duration: 0ms; }
 }
 .k-card[aria-selected="true"] { box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-pop); }
+
+/* ── OfferCard — one thing Nuvo can do for you (D-206, Get ready) ─────────
+   A floating card: the thing, one muted evidence line, one act that names its
+   destination. Focus rings it in accent (the walk's focus, not a selection
+   fill). It lets go after its act and the next one arrives — transform and
+   opacity only, on the user's act alone (D-187). */
+.k-offer-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-1), var(--sh-1);
+  min-width: 0;
+}
+.k-offer-card[data-focused] { box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-wash), var(--sh-1); }
+.k-offer-card-head { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.k-offer-card-title {
+  flex: 1;
+  min-width: 0;
+  font: 500 13px/1.35 var(--font-sans);
+  color: var(--ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.k-offer-card-why {
+  margin: 0;
+  font: 400 12px/1.35 var(--font-sans);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.k-offer-card-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; padding-top: 4px; }
+.k-offer-card-act { min-width: 0; max-width: 100%; }
+.k-offer-card[data-touch] { padding: 12px 14px; gap: 6px; }
+.k-offer-card[data-touch] .k-offer-card-title { font-size: 15px; }
+.k-offer-card[data-touch] .k-offer-card-why { font-size: 13px; }
+.k-offer-card[data-leaving] { animation: k-offer-let-go var(--d-task-complete) var(--ease-out) both; pointer-events: none; }
+.k-offer-card[data-arriving] { animation: k-offer-arrive var(--d-land) var(--ease-land) both; }
+@keyframes k-offer-let-go {
+  0%, 40% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(16px); opacity: 0; }
+}
+@keyframes k-offer-arrive {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 
 /* ── Popover — the one floating shell (menus, pickers, inspectors) ──────── */
 .k-pop {

@@ -383,6 +383,8 @@ const OWNED_RULES = [
   "deferralClearRange",
   "releasedTaskPatch",
   "weekSignificance",
+  "ladderedProjectIds",
+  "doneTaskSignificance",
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

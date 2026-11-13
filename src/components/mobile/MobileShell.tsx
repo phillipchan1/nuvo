@@ -55,6 +55,7 @@ import MobileDomains from "./MobileDomains";
 import MobileReadiness from "./MobileReadiness";
 import { WeekCompanions } from "./WeekPlanCard";
 import MobilePlanWeek from "./MobilePlanWeek";
+import MobileGetReady from "./MobileGetReady";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import { revealOnCalendar } from "../../lib/calendarReveal";
 import { eventHitDateISO, type EventHit } from "../../lib/eventSearch";
@@ -206,6 +207,8 @@ export default function MobileShell() {
   } | null>(null);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
   const [planOpen, setPlanOpen] = useState(false);
+  // Get ready (D-206) — the crown's door: a sheet of cards that take the week to ready.
+  const [readyOpen, setReadyOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
   const [nuvoOpen, setNuvoOpen] = useState(false);
   // Memory (docs/memory.md §4.1): on the phone its dot rides the ✦, and it opens
@@ -231,6 +234,7 @@ export default function MobileShell() {
   useMobileOverlayHistory(nuvoOpen, () => setNuvoOpen(false), "nuvo");
   useMobileOverlayHistory(memoryOpen, () => setMemoryOpen(false), "memory");
   useMobileOverlayHistory(planOpen, () => setPlanOpen(false), "plan");
+  useMobileOverlayHistory(readyOpen, () => setReadyOpen(false), "ready");
   useMobileOverlayHistory(Boolean(capture), () => setCapture(null), "capture");
   useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
   useMobileOverlayHistory(Boolean(calendarTap), () => setCalendarTap(null), "event");
@@ -639,6 +643,7 @@ export default function MobileShell() {
             // second copy of any of them.
             onOpenProject={(id) => openDetail("project", id)}
             onPlanWeek={() => setPlanOpen(true)}
+            onGetReady={() => setReadyOpen(true)}
             // ONE task grammar (D-111). A project's work in the crown is the same
             // `TaskRow` as the Tasks screen's, so it can be ticked from here — it
             // used to be a bare button with a truncated title and no checkbox.
@@ -818,6 +823,17 @@ export default function MobileShell() {
 
       {/* Plan the week — the ritual, full-screen over the shell */}
       {planOpen && <MobilePlanWeek onClose={() => setPlanOpen(false)} onOpenProject={(id) => openDetail("project", id)} />}
+
+      {/* Get ready — the crown's door (D-206), a bottom sheet of cards */}
+      {readyOpen && (
+        <MobileGetReady
+          now={now}
+          learned={memory}
+          onClose={() => setReadyOpen(false)}
+          onPlanWeek={() => setPlanOpen(true)}
+          onOpenProject={(id) => openDetail("project", id)}
+        />
+      )}
 
       {/* Sheets */}
       {detailTarget && (

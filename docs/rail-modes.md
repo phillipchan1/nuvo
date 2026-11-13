@@ -59,6 +59,14 @@ The answer to "passive or actively shown" is: **always present, never pushed.**
 | An offer for one row | a chip on that row, naming its destination: **"Hold 2–2:30pm"** on a today task with no time; **"File in Garage studio"** on an inbox item the router has a guess for | a section of offers, a card above the list, more than one chip per row |
 | Nothing to offer | nothing | an empty state about offers |
 
+### Get ready (D-206)
+
+The crown's one door. The rail becomes a stack of at most 5 cards that take this screen to ready,
+worst first; each card names its destination, lands and Reaches when pressed, and leaves. Empty,
+it says "Ready." and hands the rail back. It replaces the crown's "N with no time · Plan the week"
+line; Plan and Repair are cards in it as well as modes. Mechanism: `lib/readyCards.ts`,
+`GetReadyRail`, phone `MobileGetReady`.
+
 ### The balance budget (D-205, the operator: "it has to be elegant and balance all that is going on in the left")
 
 The rail at rest carries the crown (its one line, Significant), Today or Inbox, and offers. It

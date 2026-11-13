@@ -16,6 +16,7 @@ import {
   Kbd,
   Dest,
   OfferChip,
+  OfferCard,
   Menu,
   MenuItem,
   MenuLabel,
@@ -297,6 +298,17 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Build staff rigor plan" weight="1.5h" pips={[true, true, true]} />
           <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Create spiritual gifts test V1" weight="2.3h" pips={[true, true, false]} status={{ label: "1d overdue", tone: "danger" }} />
           <DeckCard spine={HUES.work} eyebrow="" mark={false} title="Move church accounts to named owners" pips={[true, true, true]} shipped status={{ label: "shipped", tone: "landed" }} />
+        </div>
+      </Block>
+
+      <Block title="Offer card" part="OfferCard">
+        {/* D-206: Get ready's card — the thing, one evidence line, one act that
+            names where it goes. Focused · resting · a repair · under a finger. */}
+        <div style={{ display: "grid", gap: 8, width: 300, maxWidth: "100%", minWidth: 0 }}>
+          <OfferCard title="Draft board memo" why="Today · no time yet" verb="Hold" name="2–2:30pm" shortcut="↵" focused onPress={() => {}} onNotNow={() => {}} />
+          <OfferCard title="Call the plumber about the garage sink" why="In the inbox" verb="→" name="Garage studio and the long workbench" onPress={() => {}} onNotNow={() => {}} />
+          <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Leave it where it is", onPress: () => {} }} />
+          <OfferCard title="Launch site" why="3h held · 20m of work" verb="Draft the path" touch onPress={() => {}} onNotNow={() => {}} />
         </div>
       </Block>
 

@@ -419,8 +419,6 @@ html:root .slot-run-open:focus-visible { outline: none; box-shadow: inset 0 -2px
 .crown-fact b { color: var(--ink); font-weight: 600; }
 .crown-fact [data-warn] { color: var(--warn); }
 .crown-fact [data-warn] b { color: inherit; }
-/* Significant (D-203) — under the fact, a beat apart from it. */
-.crown-significance { margin-top: 6px; }
 .crown-door-dot {
   width: 6px;
   height: 6px;

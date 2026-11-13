@@ -40,6 +40,7 @@ import RepairLine, { repairLineText } from "./plan/RepairLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
 const RepairRail = lazy(() => import("./plan/RepairRail"));
+const GetReadyRail = lazy(() => import("./plan/GetReadyRail").then((m) => ({ default: m.LiveGetReadyRail })));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
@@ -87,6 +88,7 @@ export default function Planner({
     navigate,
     panelAnchor,
     panelAnchorEl,
+    openRecord,
   } = useAppNavigation();
   const openMemory = useCallback(() => openOverlay("memory"), [openOverlay]);
 
@@ -476,6 +478,30 @@ export default function Planner({
     setRepairMode(true);
   }, [repairDial, setRepairAsked]);
   const closeRepair = useCallback(() => setRepairMode(false), []);
+
+  // Get ready is the third rail mode (D-206): the crown's one door. A stack of
+  // cards that take this screen to ready; Plan and Repair stay their own modes
+  // that a card can open — and opening one ends this one (one mode at a time).
+  const [readyMode, setReadyMode] = useState(false);
+  const gettingReady = readyMode && !planning && !repairing;
+  useEffect(() => {
+    if (planning || repairMode) setReadyMode(false);
+  }, [planning, repairMode]);
+  const openGetReady = useCallback(() => setReadyMode(true), []);
+  const closeGetReady = useCallback(() => setReadyMode(false), []);
+  const readyToPlan = useCallback(() => {
+    setReadyMode(false);
+    openFlow("sunday");
+  }, [openFlow]);
+  const readyToRepair = useCallback(() => {
+    setReadyMode(false);
+    openRepair();
+  }, [openRepair]);
+  const readyOpenProject = useCallback((id: string) => openRecord("project", id), [openRecord]);
+
+  // Rhythm (docs/memory.md §5.2): no button on the Schedule any more (D-206) —
+  // Memory is the door, and its "Show on the Schedule" turns the view on here.
+  const [rhythmOn, setRhythmOn] = useState(false);
   // Undefined while nothing broke, so the crown keeps its own line ("N with no time").
   const repairLine = useMemo(() => {
     const s = { open: repairState.open, applied: repairState.applied, dial: repairState.dial };
@@ -644,6 +670,20 @@ export default function Planner({
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
             <RepairRail state={repairState} onOverlay={setRepairOverlay} onClose={closeRepair} railRef={railRef} />
           </Suspense>
+        ) : gettingReady ? (
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
+            <GetReadyRail
+              onClose={closeGetReady}
+              railRef={railRef}
+              now={now}
+              mutations={mutations}
+              repairState={repairState}
+              learned={learned}
+              onPlanWeek={readyToPlan}
+              onRepair={readyToRepair}
+              onOpenProject={readyOpenProject}
+            />
+          </Suspense>
         ) : (
         <LeftRail
           tab={tab}
@@ -664,6 +704,7 @@ export default function Planner({
           slotTitle={slotTitle}
           onOpenSlot={openSlotAt}
           crownLine={onSchedule ? repairLine : undefined}
+          onGetReady={openGetReady}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -681,6 +722,8 @@ export default function Planner({
           <CalendarPane
             learned={learned}
             onOpenMemory={openMemory}
+            rhythm={rhythmOn}
+            onRhythmChange={setRhythmOn}
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
@@ -850,7 +893,16 @@ export default function Planner({
       )}
       {overlay === "memory" && (
         <Suspense fallback={null}>
-          <MemoryPage memory={learned} onClose={closeOverlay} />
+          <MemoryPage
+            memory={learned}
+            onClose={closeOverlay}
+            onShowOnSchedule={() => {
+              closeOverlay();
+              if (rung !== "day") navigate({ rung: "day" }, "replace");
+              if (nav.calView !== "timeGridWeek") setCalView("timeGridWeek");
+              setRhythmOn(true);
+            }}
+          />
         </Suspense>
       )}
       {showSettings && (

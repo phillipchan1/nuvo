@@ -101,6 +101,7 @@ function LeftRail({
   slotTitle,
   onOpenSlot,
   crownLine,
+  onGetReady,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -135,8 +136,12 @@ function LeftRail({
   onOpenSlot?: (s: Slot, anchor: DOMRect) => void;
   /** The crown's one line at rest (docs/rail-modes.md §3), handed to WeekPanel's
    *  `crownLine` — today the repair line ("Tue 10am broke · Repair ›").
-   *  Undefined keeps the crown's own line. Memoize it: the rail is memo'd. */
+   *  Undefined says nothing (the track carries "no time", D-206). Memoize it:
+   *  the rail is memo'd. */
   crownLine?: ReactNode;
+  /** Get ready (D-206) — forwarded to WeekPanel, whose door becomes
+   *  "Get ready ›" when it is given. */
+  onGetReady?: () => void;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -973,9 +978,10 @@ function LeftRail({
               dragData={dragData}
             />
           )}
-          // The crown's one line at rest (D-204 §3): a repair line replaces
-          // "N with no time" while the week is broken; undefined keeps the crown's own.
+          // The line under the week's track (D-204 §3): the repair line while
+          // the week is broken; undefined says nothing (D-206).
           crownLine={crownLine}
+          onGetReady={onGetReady}
           offers={offers}
           onPathCandidates={setPathCands}
         />

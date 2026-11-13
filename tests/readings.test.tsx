@@ -15,10 +15,10 @@
 import { render } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { weekSignificance, type SignificanceTask } from "../supabase/functions/_shared/planningRules";
-import { PaceTrack } from "../src/components/progress/PaceTrack";
-import { SignificanceLine } from "../src/components/progress/Significance";
-import { crownTarget, reachMark, reachToCrown } from "../src/lib/motion";
+import { doneTaskSignificance, weekSignificance, type SignificanceTask } from "../supabase/functions/_shared/planningRules";
+import { PaceTrack, WeekTrack } from "../src/components/progress/PaceTrack";
+import { WEEK_REACH_KEY, crownTarget, reachMark, reachToCrown } from "../src/lib/motion";
+import { composeWeekTrack, weekElapsed, weekTrackPieces, type WeekTrack as WeekTrackModel } from "../src/lib/weekTrack";
 
 // ── weekSignificance ────────────────────────────────────────────────────────
 
@@ -101,17 +101,128 @@ describe("weekSignificance", () => {
   });
 });
 
-// ── SignificanceLine ────────────────────────────────────────────────────────
+// ── Significant in TASKS (D-206) ────────────────────────────────────────────
 
-describe("SignificanceLine", () => {
-  it("says hours, never a percent", () => {
-    const { container } = render(<SignificanceLine value={{ initiativeMins: 390, otherMins: 150 }} />);
-    expect(container.textContent).toBe("6.5h of 9h toward an initiative");
-    expect(container.textContent).not.toContain("%");
+describe("doneTaskSignificance — the crown's split, counted in tasks", () => {
+  const ladder = { projects: [{ id: "bet-work", initiativeId: "i1" }, { id: "plain", initiativeId: null }, { id: "orphan", initiativeId: "gone" }], initiativeIds: ["i1"] };
+  it("is unsaid with no initiatives (P7, P16)", () => {
+    expect(doneTaskSignificance({ ...ladder, initiativeIds: [], tasks: [{ projectId: "bet-work", status: "done" }] })).toBeNull();
   });
-  it("stays unsaid below two finished hours, and with no initiatives", () => {
-    expect(render(<SignificanceLine value={{ initiativeMins: 60, otherMins: 50 }} />).container.textContent).toBe("");
-    expect(render(<SignificanceLine value={null} />).container.textContent).toBe("");
+  it("counts a done task toward an initiative iff its project ladders to one that exists", () => {
+    const tasks = [
+      { projectId: "bet-work", status: "done" },
+      { projectId: "bet-work", status: "done" },
+      { projectId: "plain", status: "done" },
+      { projectId: "orphan", status: "done" }, // its initiative no longer exists → other
+      { projectId: null, status: "done" }, // loose → other
+      { projectId: "bet-work", status: "ready" }, // not done → not counted
+    ];
+    expect(doneTaskSignificance({ ...ladder, tasks })).toEqual({ initiativeTasks: 2, otherTasks: 3 });
+  });
+});
+
+// ── the week's track (D-206) ────────────────────────────────────────────────
+
+/** A crown row as far as the track reads it. */
+const trackRow = (projectId: string, done: number, open: number, placed: number, loose: number) => ({
+  work: {
+    tasks: [
+      ...Array.from({ length: done }, (_, i) => ({ id: `${projectId}-d${i}`, projectId, status: "done" })),
+      ...Array.from({ length: open }, (_, i) => ({ id: `${projectId}-o${i}`, projectId, status: "ready" })),
+    ],
+  },
+  placed: Array.from({ length: placed }, (_, i) => ({ task: { id: `${projectId}-o${i}` } })),
+  loose: Array.from({ length: loose }, (_, i) => ({ id: `${projectId}-o${placed + i}` })),
+});
+const LADDER = { projects: [{ id: "bet", initiativeId: "i1" }, { id: "upkeep", initiativeId: null }], initiativeIds: ["i1"] };
+
+describe("composeWeekTrack", () => {
+  it("one piece per slate task, ordered done-initiative · done-other · placed · no time", () => {
+    // bet: 3 done, 2 open (1 placed, 1 loose) · upkeep: 1 done, 3 open (1 placed, 2 loose)
+    const rows = [trackRow("bet", 3, 2, 1, 1), trackRow("upkeep", 1, 3, 1, 2)] as never[];
+    const t = composeWeekTrack(rows, LADDER, 0.5);
+    expect(t).toMatchObject({ doneInitiative: 3, doneOther: 1, placed: 2, noTime: 3, done: 4, total: 9, split: true, elapsed: 0.5 });
+    expect(weekTrackPieces(t)).toEqual([
+      "done-initiative", "done-initiative", "done-initiative",
+      "done-other",
+      "placed", "placed",
+      "no-time", "no-time", "no-time",
+    ]);
+    expect(t.label).toBe("4 of 9 done: 3 done toward an initiative, 1 other, 2 placed, 3 with no time");
+  });
+
+  it("never counts a task twice when two rows carry it", () => {
+    const r = trackRow("bet", 2, 1, 0, 1);
+    const t = composeWeekTrack([r, r] as never[], LADDER, null);
+    expect(t.total).toBe(3);
+  });
+
+  it("an account with no initiatives draws done as one state, not a ladder (P16)", () => {
+    const t = composeWeekTrack([trackRow("bet", 2, 1, 1, 0)] as never[], { ...LADDER, initiativeIds: [] }, null);
+    expect(t.split).toBe(false);
+    expect(weekTrackPieces(t)).toEqual(["done", "done", "placed"]);
+    expect(t.label).toBe("2 of 3 done: 2 done, 1 placed");
+  });
+
+  it("meetings never enter it — only the slate's tasks do", () => {
+    // weekSignificance (hours) takes meetings; the track has no input for them.
+    const t = composeWeekTrack([trackRow("upkeep", 1, 0, 0, 0)] as never[], LADDER, null);
+    expect(t).toMatchObject({ doneInitiative: 0, doneOther: 1, total: 1 });
+  });
+
+  it("the week's clock is linear through the planning week, null outside it", () => {
+    expect(weekElapsed("2026-11-09", new Date(2026, 10, 12, 12))).toBeCloseTo(3.5 / 7, 5);
+    expect(weekElapsed("2026-11-09", new Date(2026, 10, 20))).toBeNull();
+  });
+});
+
+describe("WeekTrack", () => {
+  const model = (o: Partial<WeekTrackModel>): WeekTrackModel => ({
+    doneInitiative: 0, doneOther: 0, placed: 0, noTime: 0, done: 0, total: 0, split: true, elapsed: null, label: "", ...o,
+  });
+  const pieces = (c: HTMLElement) => [...c.querySelectorAll(".pace-seg")].map((s) => s.getAttribute("data-piece"));
+  beforeEach(() => {
+    calls.length = 0;
+    stubMotion(false);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("draws a piece per task, says the split in words (no legend), and carries the week's Reach target", () => {
+    const m = model({ doneInitiative: 2, doneOther: 1, placed: 1, noTime: 2, done: 3, total: 6, elapsed: 0.4, label: "3 of 6 done: 2 done toward an initiative, 1 other, 1 placed, 2 with no time" });
+    const { container } = render(<WeekTrack track={m} />);
+    expect(pieces(container)).toEqual(["done-initiative", "done-initiative", "done-other", "placed", "no-time", "no-time"]);
+    const el = container.querySelector("[data-crown-week]") as HTMLElement;
+    expect(el.getAttribute("aria-label")).toBe(m.label);
+    expect(el.getAttribute("title")).toBe(m.label);
+    expect(container.textContent).toBe("");
+    expect(container.querySelector(".pace-now")).not.toBeNull();
+  });
+
+  it("past the piece cap it fills — one run per state, in order", () => {
+    const m = model({ doneInitiative: 10, doneOther: 3, placed: 2, noTime: 2, done: 13, total: 17 });
+    const { container } = render(<WeekTrack track={m} />);
+    expect(container.querySelectorAll(".pace-seg")).toHaveLength(0);
+    expect([...container.querySelectorAll(".pace-run")].map((r) => r.getAttribute("data-piece"))).toEqual(["done-initiative", "done-other", "placed", "no-time"]);
+  });
+
+  it("a piece that moves forward advances once; nothing on mount; an undo snaps", () => {
+    const a = model({ doneInitiative: 1, placed: 1, noTime: 2, done: 1, total: 4 });
+    const b = model({ doneInitiative: 1, placed: 2, noTime: 1, done: 1, total: 4 });
+    const { container, rerender } = render(<WeekTrack track={a} />);
+    expect(calls).toHaveLength(0);
+    rerender(<WeekTrack track={b} />);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].el).toBe(container.querySelectorAll(".pace-fill")[2]);
+    calls.length = 0;
+    rerender(<WeekTrack track={a} />);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a card can Reach the week", () => {
+    const { container } = render(<WeekTrack track={model({ doneInitiative: 1, done: 1, total: 1 })} />);
+    const el = container.querySelector("[data-crown-week]") as HTMLElement;
+    el.getBoundingClientRect = () => ({ left: 10, top: 10, right: 50, bottom: 16, width: 40, height: 6, x: 10, y: 10 }) as DOMRect;
+    expect(crownTarget(WEEK_REACH_KEY)).toBe(el);
   });
 });
 

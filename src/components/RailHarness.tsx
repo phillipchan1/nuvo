@@ -22,6 +22,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
+import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
 import { Icon } from "./Icon";
@@ -41,7 +42,8 @@ import { OFFERS_NOW, OFFERS_SLOTS, OFFERS_VERTICAL, offersClient, offersInbox, o
 
 /** `?rail=offers` / `?rail=offers-phone`: the busy rail (D-205) — every offer
  *  budget overflowing, to see what the rail says when Nuvo has more to say
- *  than it may. */
+ *  than it may. `?rail=ready` / `?rail=ready-phone`: Get ready (D-206) over a
+ *  busy fixture — the card stack, its refill, "Ready." (plan/ReadyHarness). */
 interface Fixture {
   seed: () => Task[];
   inbox: () => Task[];
@@ -362,7 +364,17 @@ export default function RailHarness() {
     <QueryClientProvider client={qc}>
       <VerticalStoreProvider value={store}>
         <AppNavigationProvider>
-          {phone ? <Phone fx={fx} /> : mode === "frame" ? <AgentProvider><Frame /></AgentProvider> : <Desktop fx={fx} />}
+          {mode === "ready" || mode === "ready-phone" ? (
+            <ReadyHarness phone={mode === "ready-phone"} />
+          ) : phone ? (
+            <Phone fx={fx} />
+          ) : mode === "frame" ? (
+            <AgentProvider>
+              <Frame />
+            </AgentProvider>
+          ) : (
+            <Desktop fx={fx} />
+          )}
         </AppNavigationProvider>
       </VerticalStoreProvider>
     </QueryClientProvider>

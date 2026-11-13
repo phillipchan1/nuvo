@@ -5,6 +5,7 @@ export { Input, Textarea, SearchField, FormField } from "./Field";
 export { TaskCheck, Checkbox, Switch, Segmented, Tabs, type Choice } from "./Choice";
 export { Chip, ChipButton, Dot, Readiness, Avatar, AvatarStack, type ChipTone, type ReadinessStep } from "./Marks";
 export { SectionHeader, Row, EmptyState, Property, Card } from "./Structure";
+export { OfferCard, type OfferCardProps } from "./OfferCard";
 export {
   Popover,
   Menu,

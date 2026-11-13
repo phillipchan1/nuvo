@@ -47,8 +47,7 @@ import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
-import { PaceTrack, SlatePips } from "../progress/PaceTrack";
-import { SignificanceLine } from "../progress/Significance";
+import { PaceTrack, SlatePips, WeekTrack } from "../progress/PaceTrack";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -76,6 +75,7 @@ export default function MobileWeekCrown({
   expandable = true,
   onExpandElsewhere,
   crownLine,
+  onGetReady,
 }: {
   /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
    *  which holds the mutations and the task sheet, exactly as the rail owns it
@@ -100,10 +100,13 @@ export default function MobileWeekCrown({
   expandable?: boolean;
   /** Where a tap goes when the slate can't open here. */
   onExpandElsewhere?: () => void;
-  /** Replaces the open crown's one line (D-204 §3) — a repair passes its own;
-   *  `null` says nothing. Omitted: "N with no time · Plan the week ›" while
-   *  anything has no time. */
+  /** A line under the open crown's track (D-204 §3) — a repair passes its
+   *  own. Omitted or `null`, nothing: the track's outlined pieces carry "no
+   *  time" (D-206). */
   crownLine?: ReactNode;
+  /** The one door (D-206): when given, the open header's button is
+   *  **Get ready ›** (the phone's Get ready sheet). Omitted, the old door. */
+  onGetReady?: () => void;
 }) {
   const crown = useWeekCrown();
   const [open, setOpenState] = useState(readOpen);
@@ -127,7 +130,7 @@ export default function MobileWeekCrown({
   );
 
   if (!crown) return null;
-  const { rows, landed, total, looseCount, composed, weekLabel, weekISO, significance } = crown;
+  const { rows, landed, total, looseCount, composed, weekLabel, weekISO, track } = crown;
 
   const setOpen = (v: boolean) => {
     setOpenState(v);
@@ -144,29 +147,9 @@ export default function MobileWeekCrown({
   const action = planned ? "The plan ›" : "Plan the week";
   const openDoor = () => (planned ? setPlanOpen(true) : onPlanWeek());
 
-  // The one line at rest: work with no time, and its door — Plan the week, the
-  // ritual. When the header's door already says "Plan the week" the line keeps
-  // to the fact (say it once).
-  const planLine =
-    looseCount > 0 ? (
-      <div className="flex min-h-11 items-center gap-1 text-caption tabular-nums text-muted">
-        <span>
-          <b className="font-semibold" style={{ color: "var(--warn)" }}>
-            {looseCount}
-          </b>{" "}
-          with no time
-        </span>
-        {planned && (
-          <>
-            <span aria-hidden>·</span>
-            <Button kind="ghost" size="sm" onClick={onPlanWeek} className="tap -ml-1">
-              Plan the week ›
-            </Button>
-          </>
-        )}
-      </div>
-    ) : null;
-  const line = crownLine !== undefined ? crownLine : planLine;
+  // Under the track, only a line someone hands in (a repair). "N with no time
+  // · Plan the week ›" retired into the track's outlined pieces (D-206).
+  const line = crownLine ?? null;
 
   // ── shut: a picture, not a sentence ──────────────────────────────────────
   // "2 of 6 landed · 3 loose" is still six words to read, at the top of a page
@@ -252,17 +235,41 @@ export default function MobileWeekCrown({
           <Icon name="chevron-down" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
 
-        <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
-          {action}
-        </Button>
+        {onGetReady ? (
+          <Button
+            kind="ghost"
+            size="md"
+            onClick={onGetReady}
+            className="tap-icon shrink-0"
+            aria-label={`Get ready. ${track.label}`}
+            trailing={<Icon name="chevron-right" size={14} />}
+            data-get-ready=""
+          >
+            Get ready
+          </Button>
+        ) : (
+          <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
+            {action}
+          </Button>
+        )}
       </div>
 
-      {/* The crown's one line (D-204 §3), then Significant (D-203) — the same
-          two the rail's crown carries. The shut strip stays a drawing: its
-          amber light is this line's fact, and a strip that grew a sentence
-          whenever work went homeless would resize under the thumb (D-123). */}
+      {/* The week as ONE track and one number (D-206) — the rail crown's own
+          drawing. The shut strip stays one line of pips: its amber light is
+          the outlined pieces' fact, and a strip that grew a track would resize
+          under the thumb (D-123). */}
+      {track.total > 0 && (
+        <div className="crown-track pb-1 pt-1">
+          <WeekTrack track={track} />
+          <span className="crown-track-num">
+            <b>
+              {track.done}/{track.total}
+            </b>{" "}
+            done
+          </span>
+        </div>
+      )}
       {line}
-      <SignificanceLine value={significance} className="pb-1 pt-1" />
 
       {open && total > 0 && (
         <ul className="mt-1 flex flex-col">
