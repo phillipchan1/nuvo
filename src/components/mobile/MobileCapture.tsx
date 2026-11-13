@@ -40,7 +40,7 @@ export default function MobileCapture({
 
   return (
     <Sheet onClose={onClose} title="Capture">
-      <div className="px-4 pb-4">
+      <div className="ph-body pb-5">
         <CaptureDoor
           variant="sheet"
           fieldRef={inputRef}

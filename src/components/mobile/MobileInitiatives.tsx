@@ -18,7 +18,6 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { NOW_MARK } from "../ondeck/plannerNow";
 import { useVertical } from "../../hooks/useVertical";
 import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
 import {
@@ -38,17 +37,20 @@ import SkeletonRows from "./Skeleton";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { type DeckTone } from "../ondeck/DeckCard";
 import { initiativeCardStatus, initiativeWeight } from "../ondeck/deckStatus";
-import { Hint, VerticalList } from "./detail/verticalDetail";
+import { VerticalList } from "./detail/verticalDetail";
 import MobileGroom from "./MobileGroom";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
 import DomainSymbol from "../domain/DomainSymbol";
+import { ChipButton } from "../kit";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
+import { BuildFaces, type BuildFace } from "./MobileProjects";
+import { PhEmpty } from "./touch";
 
 const HORIZON_QUARTERS = 4;
 
 const SEG_KEY = "nuvo-mobile-initiatives-seg";
-type Seg = "ondeck" | "groom" | "all" | "shipped";
+type Seg = BuildFace;
 
 export default function MobileInitiatives({
   onOpenItem,
@@ -122,7 +124,7 @@ export default function MobileInitiatives({
 
   const cards: DeckCard[] = [
     ...board.inbox.map((i) => {
-      const dot = domainById(d, i.domainId)?.color ?? "var(--line-strong)";
+      const dot = domainById(d, i.domainId)?.color ?? "var(--faint)";
       return {
         id: i.id,
         col: null,
@@ -154,7 +156,7 @@ export default function MobileInitiatives({
       id: l.initiative.id,
       col: l.quarterIdx ?? 0,
       name: l.initiative.name,
-      dot: domainById(d, l.initiative.domainId)?.color ?? "var(--line-strong)",
+      dot: domainById(d, l.initiative.domainId)?.color ?? "var(--faint)",
       node: (
         <InitiativeCard
           lane={l}
@@ -209,7 +211,7 @@ export default function MobileInitiatives({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SegHeader seg={seg} setSeg={setSeg} />
+      <BuildFaces value={seg} onChange={setSeg} />
 
       {!ready ? (
         <SkeletonRows rows={4} />
@@ -248,9 +250,7 @@ export default function MobileInitiatives({
           columns={columns}
           cards={cards}
           poolLabel="Needs a quarter"
-          poolEmpty={
-            <Hint>Nothing waiting for a quarter. Hold a bet and drop it here to shelve it, or start one below.</Hint>
-          }
+          poolEmpty={<PhEmpty>Nothing waiting</PhEmpty>}
           addNoun="initiative"
           addAccent={defaultDomain?.color}
           poolAddHint="⏎ adds it with no quarter yet"
@@ -277,7 +277,7 @@ function InitiativeCard({
   onSetDomain: (i: Initiative, domainId: string) => void;
 }) {
   const i = lane.initiative;
-  const dot = domainById(d, i.domainId)?.color ?? "var(--line-strong)";
+  const dot = domainById(d, i.domainId)?.color ?? "var(--faint)";
   const suggestion = lane.needsDomain ? suggestDomainForInitiative(d, i) : null;
   const axes = initiativeReadinessAxes(d, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
@@ -305,14 +305,18 @@ function InitiativeCard({
         lane.needsDomain ? (
           <div data-card-control className="relative mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {suggestion ? (
-              <button
+              // A kit chip at thumb reach: the suggested home, in its own hue.
+              <ChipButton
                 onClick={() => onSetDomain(i, suggestion.domain.id)}
-                className="tap fast flex items-center gap-1 rounded-full border px-2.5 py-1 text-micro font-medium"
-                style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
+                icon={
+                  <span style={{ color: suggestion.domain.color }}>
+                    <DomainSymbol value={suggestion.domain.icon} size={12} />
+                  </span>
+                }
+                className="tap-bloom"
               >
-                <DomainSymbol value={suggestion.domain.icon} size={12} />
-                <span>Link → {suggestion.domain.name}</span>
-              </button>
+                File under {suggestion.domain.name}
+              </ChipButton>
             ) : (
               <DomainPicker domains={d.domains} value="" onChange={(id) => onSetDomain(i, id)} />
             )}
@@ -328,54 +332,27 @@ function SprintRunway({ total, spent, current }: { total: number; spent: number;
   const left = current ? total - spent : total;
   return (
     <div className="mt-2 flex items-center gap-2">
-      <span className="flex flex-1 items-center gap-[3px]">
+      <span className="flex flex-1 items-center gap-[2px]">
         {Array.from({ length: total }).map((_, i) => {
           const isNow = current && i === spent - 1;
           const past = current && i < spent - 1;
           return (
             <span
               key={i}
-              className="h-1.5 flex-1 rounded-full"
+              className="h-[3px] flex-1 rounded-[1px]"
               style={{
-                background: isNow ? NOW_MARK : past ? "var(--line-strong)" : "var(--accent)",
-                opacity: isNow ? 1 : past ? 0.3 : 0.55,
+                // the week you are in is "now" (--signal); weeks spent recede;
+                // weeks left are the runway, in the intent's colour
+                background: isNow ? "var(--signal)" : past ? "var(--line-2)" : "var(--accent)",
+                opacity: isNow || past ? 1 : 0.45,
               }}
             />
           );
         })}
       </span>
-      <span className="mono shrink-0 text-micro tabular-nums text-muted">
+      <span className="shrink-0 text-caption tabular-nums text-muted">
         {left} week{left === 1 ? "" : "s"} left
       </span>
-    </div>
-  );
-}
-
-function SegHeader({ seg, setSeg }: { seg: Seg; setSeg: (s: Seg) => void }) {
-  // The desktop's four faces, in the desktop's order (FloorPane's RungTabs):
-  // when · what · everything · what landed.
-  const items: { id: Seg; label: string }[] = [
-    { id: "ondeck", label: "On Deck" },
-    { id: "groom", label: "Groom" },
-    { id: "all", label: "All" },
-    { id: "shipped", label: "Shipped" },
-  ];
-  return (
-    <div className="flex shrink-0 gap-1 border-b border-line px-3 py-2">
-      {items.map((t) => {
-        const on = seg === t.id;
-        return (
-          <button
-            key={t.id}
-            onClick={() => setSeg(t.id)}
-            className={`tap fast flex flex-1 items-center justify-center rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
-            }`}
-          >
-            {t.label}
-          </button>
-        );
-      })}
     </div>
   );
 }

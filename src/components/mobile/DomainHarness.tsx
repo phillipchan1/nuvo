@@ -31,6 +31,8 @@ function harnessSink(store: VerticalStore): TaskCaptureSink {
 }
 import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib/vertical";
 import { todayISO } from "../../lib/dates";
+import { PhoneNav, PhoneTopBar, type Place } from "./ShellChrome";
+import { Button } from "../kit";
 import MobileDomains from "./MobileDomains";
 import MobileDomainScreen from "./detail/MobileDomainScreen";
 // The open domain as the app actually mounts it — inside the bottom Sheet, whose
@@ -299,8 +301,8 @@ function useHarnessStore(): VerticalStore {
 function Frame({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ width: 375 }} className="shrink-0">
-      <div className="section-label px-3 py-2">{label}</div>
-      <div className="atmosphere overflow-y-auto border border-line" style={{ height: 780 }}>
+      <div className="px-3 py-2 text-caption font-semibold text-muted">{label}</div>
+      <div className="atmosphere overflow-y-auto border border-[var(--line-1)]" style={{ height: 780 }}>
         {children}
       </div>
     </div>
@@ -311,36 +313,57 @@ function Frame({ label, children }: { label: string; children: React.ReactNode }
 // queries simply resolve empty.
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
+const PLACES: Place<string>[] = [
+  { id: "calendar", label: "Calendar", kind: "day" },
+  { id: "tasks", label: "Tasks", kind: "task" },
+  { id: "projects", label: "Projects", kind: "project" },
+  { id: "initiatives", label: "Initiatives", kind: "initiative" },
+  { id: "domains", label: "Domains", kind: "domain" },
+];
+
+function toggleTheme() {
+  const el = document.documentElement;
+  el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
+}
+
 export default function DomainHarness() {
   const store = useHarnessStore();
   const sink = useMemo(() => harnessSink(store), [store]);
   const [openId, setOpenId] = useState<string>("d1");
   const [deskId, setDeskId] = useState<string>("");
   const [sheet, setSheet] = useState(false);
+  // `?domains=wall` frames the wall alone at the viewport's own width, inside
+  // the shell's real chrome — what a 375px or 320px phone actually gets.
+  const solo = new URLSearchParams(window.location.search).get("domains") === "wall";
 
   return (
     <QueryClientProvider client={qc}>
     <TaskCaptureSinkContext.Provider value={sink}>
     <VerticalStoreProvider value={store}>
+      {solo ? (
+        <div className="atmosphere fixed inset-0 flex flex-col">
+          <PhoneTopBar title="Domains" fact="Thursday, November 12" onSearch={() => {}} onToggleTheme={toggleTheme} onSettings={() => {}} />
+          <main className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
+            <MobileDomains
+              onOpenItem={(_k, id) => {
+                setOpenId(id);
+                setSheet(true);
+              }}
+            />
+          </main>
+          <PhoneNav places={PLACES} current="domains" onPick={() => {}} onCapture={() => {}} onAskNuvo={() => {}} />
+        </div>
+      ) : (
       <div className="atmosphere min-h-screen p-4">
         <div className="mb-3 flex items-center gap-3">
-          <h1 className="masthead text-head">Domains on the phone (fixtures)</h1>
-          <button
-            className="rounded-full border border-line px-3 py-1 text-label text-muted"
-            onClick={() => {
-              const el = document.documentElement;
-              el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
-            }}
-          >
-            theme
-          </button>
-          <span className="text-meta text-muted">open: {openId}</span>
-          <button
-            className="rounded-full border border-line px-3 py-1 text-label text-muted"
-            onClick={() => setSheet((s) => !s)}
-          >
-            {sheet ? "close sheet" : "open in Sheet"}
-          </button>
+          <h1 className="text-head font-semibold">Domains on the phone (fixtures)</h1>
+          <Button size="xs" onClick={toggleTheme}>
+            Theme
+          </Button>
+          <span className="text-caption text-muted">open: {openId} · ?domains=wall for the wall alone</span>
+          <Button size="xs" onClick={() => setSheet((s) => !s)}>
+            {sheet ? "Close sheet" : "Open in Sheet"}
+          </Button>
         </div>
         <div className="flex gap-4 overflow-x-auto">
           <Frame label="the wall">
@@ -366,8 +389,8 @@ export default function DomainHarness() {
 
           {/* the desktop floor, same fixtures — wall then open domain */}
           <div style={{ width: 1180 }} className="shrink-0">
-            <div className="section-label px-3 py-2">desktop floor</div>
-            <div className="atmosphere overflow-y-auto border border-line p-6" style={{ height: 780 }}>
+            <div className="px-3 py-2 text-caption font-semibold text-muted">desktop floor</div>
+            <div className="atmosphere overflow-y-auto border border-[var(--line-1)] p-6" style={{ height: 780 }}>
               <DomainFloor
                 focus={{ domainId: deskId, initiativeId: "", projectId: "" }}
                 onSwitchDomain={setDeskId}
@@ -379,6 +402,7 @@ export default function DomainHarness() {
           </div>
         </div>
       </div>
+      )}
 
       {/* The real mount: the shared bottom Sheet, portalled over everything. */}
       {sheet && (

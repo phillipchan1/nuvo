@@ -28,21 +28,23 @@ import { allOpenInitiativeLanes, type InitiativeLane } from "../../lib/initiativ
 import { initiativeReadinessAxes } from "../../lib/lenses";
 import { domainById, tasksOf, type VerticalData } from "../../lib/vertical";
 import { READY } from "../floors/ReadinessBanner";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
-import { AreaField, Hint, TaskComposer, type Store } from "./detail/verticalDetail";
+import { AreaField, TaskComposer, type Store } from "./detail/verticalDetail";
 import SkeletonRows from "./Skeleton";
 import { useRecordActions } from "./MobileRecordActions";
+import { Button, Card, Readiness, type ReadinessStep } from "../kit";
+import { Icon } from "../Icon";
+import { PhEmpty } from "./touch";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
 // Same horizon the desktop groom wall reads over — grooming looks further out
 // than the phone's six-week deck, because shaping runs ahead of placing.
 const HORIZON = 8;
 
-/** The colour of a "how shaped is this" mark, by how many checks are met. */
-function tierColor(met: number, total: number): string {
-  if (met >= total) return READY;
-  return met > 0 ? CAUTION : "var(--line-strong)";
+/** How shaped a record is, as the kit's readiness pie (raw → ⅓ → ⅔ → ready).
+ *  An initiative has two checks, so one of two reads as the ⅔ step's half-way. */
+function pieStep(met: number, total: number): ReadinessStep {
+  if (met >= total) return 3;
+  return Math.min(2, Math.round((met / total) * 3)) as ReadinessStep;
 }
 
 export default function MobileGroom({
@@ -110,35 +112,22 @@ export default function MobileGroom({
 
   const empty = scope === "project" ? projects.length === 0 : initiatives.length === 0;
 
+  // No hero here: the top bar already names the place, and the face switch
+  // names the face. The page opens on its one read — how shaped the open work
+  // is — and then the work itself, thinnest first.
   return (
     <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
-      <div className="px-4 pt-4">
-        <h1 className="text-display masthead leading-none">
-          {scope === "project" ? "Groom" : "Grooming"}
-        </h1>
-        <p className="mt-1.5 text-caption text-muted">
-          {scope === "project"
-            ? "Shape the work — say what done is, break it down. Thinnest first."
-            : "Shape the bets — define the objective, set the measures. Thinnest first."}
-        </p>
-        {!empty && <Rollup {...rollup} />}
-        {!empty && (
-          <div className="mt-3">
-            <GroomingSessionAction kind={scope} />
-          </div>
-        )}
-      </div>
-
       {empty ? (
-        <div className="px-4 pt-6">
-          <Hint>
-            {scope === "project"
-              ? "Nothing in flight to shape. Start a project on On Deck."
-              : "No open bets to shape. Start one on On Deck."}
-          </Hint>
-        </div>
+        <PhEmpty icon="check">Nothing to shape</PhEmpty>
       ) : (
-        <div className="flex flex-col gap-3 px-4 pt-4">
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3">
+            <Rollup {...rollup} />
+            <div className="ml-auto">
+              <GroomingSessionAction kind={scope} />
+            </div>
+          </div>
+        <div className="flex flex-col gap-3 px-4 pt-3">
           {scope === "project"
             ? projects.map((l) => (
                 <ProjectGroomCard
@@ -161,6 +150,7 @@ export default function MobileGroom({
                 />
               ))}
         </div>
+        </>
       )}
       {sheet}
     </div>
@@ -179,21 +169,21 @@ function countBy(mets: number[], total: number) {
   return { ready, grooming, raw };
 }
 
-/** The desktop header's three-count read, at phone width. */
+/** The desktop header's three-count read, at phone width — each count beside
+ *  the readiness pie it counts, so the cards below read without a legend. */
 function Rollup({ ready, grooming, raw }: { ready: number; grooming: number; raw: number }) {
-  const marks: { n: number; color: string; label: string }[] = [
-    { n: ready, color: READY, label: "ready" },
-    { n: grooming, color: CAUTION, label: "grooming" },
-    { n: raw, color: "var(--line-strong)", label: "raw" },
+  const marks: { n: number; step: ReadinessStep; label: string }[] = [
+    { n: ready, step: 3, label: "ready" },
+    { n: grooming, step: 1, label: "grooming" },
+    { n: raw, step: 0, label: "raw" },
   ];
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+    <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1">
       {marks.map((m) => (
-        <span key={m.label} className="flex items-center gap-1.5 text-caption">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
-          <span style={{ color: m.n ? "var(--ink)" : "var(--muted)" }}>
-            {m.n} {m.label}
-          </span>
+        <span key={m.label} className="flex items-center gap-1.5 text-caption tabular-nums">
+          <Readiness step={m.step} title={m.label} />
+          <span className={m.n ? "font-semibold text-ink" : "text-[var(--faint)]"}>{m.n}</span>
+          <span className="text-muted">{m.label}</span>
         </span>
       ))}
     </div>
@@ -242,7 +232,7 @@ function ProjectGroomCard({
             className="text-body"
             style={{ caretColor: accent }}
             value={p.outcome}
-            placeholder="What does done look like, in one line?"
+            placeholder="Done looks like…"
             onCommit={(v) => store.updateProject(p.id, { outcome: v })}
           />
         </label>
@@ -252,17 +242,15 @@ function ProjectGroomCard({
           structure out, a plain input so dictation works. */}
       <Field label={steps.length ? `Steps · ${steps.length}` : "Steps"} met={lane.axes.planned}>
         {steps.length > 0 && (
-          <ul className="mb-1 flex flex-col gap-1">
+          <ul className="mb-1 flex flex-col">
             {steps.slice(0, 4).map((t) => (
-              <li key={t.id} className="flex items-center gap-2 text-caption text-muted">
-                <span className="shrink-0 text-meta" style={{ color: accent }}>
-                  ◦
-                </span>
+              <li key={t.id} className="flex min-h-7 items-center gap-2.5 text-body text-[var(--ink-2)]">
+                <span className="h-1 w-1 shrink-0 rounded-full" style={{ background: accent }} aria-hidden />
                 <span className="min-w-0 truncate">{t.title}</span>
               </li>
             ))}
             {steps.length > 4 && (
-              <li className="pl-4 text-meta text-muted">+{steps.length - 4} more</li>
+              <li className="pl-3.5 text-caption tabular-nums text-muted">+{steps.length - 4} more</li>
             )}
           </ul>
         )}
@@ -313,32 +301,33 @@ function InitiativeGroomCard({
             className="text-body"
             style={{ caretColor: accent }}
             value={i.outcome}
-            placeholder="What does this bet win, in one line?"
+            placeholder="This bet wins…"
             onCommit={(v) => store.updateInitiative(i.id, { outcome: v })}
           />
         </label>
         {/* "Defined" needs a finish line as well as a sentence, so the card says
             when one is missing rather than leaving the check quietly unmet. */}
         {!i.targetDate && (
-          <button
+          <Button
+            size="sm"
+            kind="ghost"
             onClick={onOpen}
-            className="tap-h fast mt-1 text-caption text-muted underline decoration-dotted underline-offset-2 active:text-accent"
+            icon={<Icon name="calendar" size={14} />}
+            className="tap-bloom -ml-2.5 mt-1"
           >
-            No finish line yet — set a quarter
-          </button>
+            Set a finish line
+          </Button>
         )}
       </Field>
 
       <Field label={i.keyResults.length ? `Key results · ${i.keyResults.length}` : "Key results"} met={ax.planned}>
         {i.keyResults.length > 0 && (
-          <ul className="mb-1 flex flex-col gap-1">
+          <ul className="mb-1 flex flex-col">
             {i.keyResults.slice(0, 3).map((kr) => (
-              <li key={kr.id} className="flex items-center gap-2 text-caption text-muted">
-                <span className="shrink-0 text-meta" style={{ color: accent }}>
-                  ◦
-                </span>
+              <li key={kr.id} className="flex min-h-7 items-center gap-2.5 text-body text-[var(--ink-2)]">
+                <span className="h-1 w-1 shrink-0 rounded-full" style={{ background: accent }} aria-hidden />
                 <span className="min-w-0 truncate">{kr.name || "Unnamed"}</span>
-                <span className="mono ml-auto shrink-0 text-micro tabular-nums">
+                <span className="ml-auto shrink-0 text-caption tabular-nums text-muted">
                   {kr.current}/{kr.target}
                 </span>
               </li>
@@ -346,15 +335,12 @@ function InitiativeGroomCard({
           </ul>
         )}
         <button
+          type="button"
           onClick={() => void store.addKeyResult(i.id)}
-          className="tap fast mt-1 flex w-full items-center gap-3 rounded-xl border border-dashed border-line px-3 text-left"
+          className="fast mt-1 flex h-11 w-full items-center gap-2 rounded-[var(--r-card)] border border-[var(--line-2)] px-3 text-left text-body text-muted"
         >
-          <span className="shrink-0 text-body" style={{ color: accent }}>
-            ＋
-          </span>
-          <span className="flex-1 py-2.5 text-body text-muted">
-            {i.keyResults.length ? "Another number to move…" : "A number to move…"}
-          </span>
+          <Icon name="plus" size={16} className="shrink-0" style={{ color: accent }} />
+          Add a key result
         </button>
       </Field>
     </GroomCard>
@@ -362,6 +348,9 @@ function InitiativeGroomCard({
 }
 
 // ── The card frame — one shaped record ───────────────────────────────────────
+// The kit Card at thumb scale. The record's mark rides its left edge (the same
+// 3px spine the deck card wears); the head is the tap into the record and
+// carries its readiness pie; the fields below stay live inputs.
 function GroomCard({
   accent,
   name,
@@ -383,58 +372,48 @@ function GroomCard({
   onOpen: () => void;
   children: React.ReactNode;
 }) {
-  const color = tierColor(met, total);
   return (
-    <div
-      className="glass-card relative overflow-hidden rounded-xl border border-line"
-      style={dim ? { opacity: 0.6 } : undefined}
-    >
+    <Card className="ph-card relative overflow-hidden !gap-0 !p-0" style={dim ? { opacity: 0.6 } : undefined}>
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-[3px]"
+        className="pointer-events-none absolute bottom-3 left-1.5 top-3 w-[3px] rounded-[2px]"
         style={{ background: accent }}
       />
       {/* The head is the tap path INTO the record; the fields below stay live
           inputs, so tapping one must not also navigate. */}
       <button
+        type="button"
         onClick={onOpen}
         {...hold}
-        className="tap fast flex w-full items-center gap-2.5 px-4 py-3 text-left active:bg-surface-2"
+        className="row-hover fast flex min-h-14 w-full items-center gap-3 py-3 pl-5 pr-3 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-meta uppercase text-muted" style={{ letterSpacing: "0.08em" }}>
-            {eyebrow}
-          </span>
-          <span className="block truncate text-head font-medium text-ink">{name}</span>
+          <span className="block truncate text-caption text-muted">{eyebrow}</span>
+          <span className="block truncate text-head font-semibold text-ink">{name}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-1" aria-label={`${met} of ${total} checks met`}>
-          {Array.from({ length: total }, (_, i) => (
-            <span
-              key={i}
-              className="h-1.5 w-1.5 rounded-full"
-              style={i < met ? { background: color } : { border: `1px solid ${color}`, opacity: 0.5 }}
-            />
-          ))}
+        <span className="flex shrink-0">
+          <Readiness step={pieStep(met, total)} title={`${met} of ${total} checks met`} />
         </span>
-        <span aria-hidden className="shrink-0 text-muted">
-          ›
-        </span>
+        <Icon name="chevron-right" size={16} className="shrink-0 text-[var(--faint)]" />
       </button>
-      <div className="flex flex-col gap-3 border-t border-line px-4 pb-3.5 pt-3">{children}</div>
-    </div>
+      <div className="flex flex-col gap-4 border-t border-[var(--line-1)] pb-4 pl-5 pr-4 pt-3">{children}</div>
+    </Card>
   );
 }
 
-/** One shaping field, with the check it closes marked beside its label. */
+/** One shaping field, with the check it closes marked beside its name — met
+ *  is a tick in the verdict colour, missing is an empty ring. */
 function Field({ label, met, children }: { label: string; met: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={met ? { background: READY } : { border: "1px solid var(--line-strong)" }}
-        />
-        <span className="section-label !p-0">{label}</span>
+      <div className="mb-1 flex items-center gap-1.5 text-caption font-semibold text-muted">
+        {met ? (
+          <Icon name="check" size={13} strokeWidth={2.25} style={{ color: READY }} />
+        ) : (
+          <span className="mx-[3px] h-[7px] w-[7px] shrink-0 rounded-full border-[1.5px] border-[var(--line-2)]" aria-hidden />
+        )}
+        <span>{label}</span>
+        <span className="sr-only">{met ? "(met)" : "(missing)"}</span>
       </div>
       {children}
     </div>

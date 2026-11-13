@@ -30,10 +30,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
-import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
+import { NOW_BAND } from "../../ondeck/plannerNow";
 import { EDGE_GUARD_PX } from "../swipe";
 import { haptic } from "../../../lib/haptics";
 import DomainSymbol from "../../domain/DomainSymbol";
+import { Icon } from "../../Icon";
 
 // 260ms/10px picked up cards during ordinary scroll starts — a flick's first
 // frames often sit still longer than 260ms with <10px of travel. 450ms with a
@@ -391,8 +392,11 @@ export default function MobileDeck({
               : undefined
           }
         >
-          <div className="flex flex-col gap-2 px-4 fab-clear pt-3">
-            <div className="section-label !px-0 !pb-0">{poolLabel} · {poolCards.length}</div>
+          <div className="ph-section">
+            <span>{poolLabel}</span>
+            <span className="ph-section-count">{poolCards.length}</span>
+          </div>
+          <div className="flex flex-col gap-2 px-4 fab-clear pt-1">
             {poolCards.length === 0 ? (
               // an empty pool still says what it's for — the composer below is the
               // way in, so the hint stays a hint, not a dead end
@@ -421,12 +425,7 @@ export default function MobileDeck({
                 onClose={() => setCompose(null)}
               />
             ) : (
-              <button
-                onClick={() => setCompose({ col: null, domain: null })}
-                className="slot-open tap fast w-full rounded-xl border border-dashed px-3 py-3 text-center text-caption font-medium text-muted"
-              >
-                ＋ {addNoun}
-              </button>
+              <AddButton noun={addNoun} onClick={() => setCompose({ col: null, domain: null })} />
             )}
           </div>
         </section>
@@ -439,25 +438,24 @@ export default function MobileDeck({
               key={col.key}
               data-deck-col={i}
               className="mobile-scroll w-full shrink-0 snap-center overflow-y-auto"
-              style={
-                isTarget
-                  ? { background: "color-mix(in srgb, var(--slot) 12%, transparent)" }
-                  : col.now
-                    ? { background: NOW_BAND }
-                    : undefined
-              }
+              // No wash for "now" here: the strip's --signal rule and the
+              // heading's dot already say it, and a tinted page made the whole
+              // panel read as disabled. Mid-drag the page washes --slot.
+              style={isTarget ? { background: "color-mix(in srgb, var(--slot) 12%, transparent)" } : undefined}
             >
               <ColumnHead col={col} />
               <div className="flex flex-col gap-2 px-4 fab-clear pt-3">
                 {mine.length === 0 && compose?.col !== i && (
+                  // An empty column is a card-sized SOCKET — a soft, solid
+                  // hollow in --slot (open time), never a dashed box (D-179).
+                  // Its words are the act, in three: the heading above already
+                  // names the week.
                   <button
                     onClick={() => setCompose({ col: i, domain: null })}
-                    className="slot-open tap fast flex min-h-[96px] w-full items-center justify-center rounded-xl border border-dashed px-3 text-center text-caption text-muted"
+                    className="slot-open fast flex min-h-24 w-full items-center justify-center gap-1.5 rounded-[var(--r-card)] border px-3 text-body font-medium text-muted"
                   >
-                    {/* not "Nothing in {title} yet" — the titles read "In 3
-                        weeks", so that printed "Nothing in In 3 weeks". The
-                        hero directly above already names the week. */}
-                    {dragging ? "Release here to commit it" : "Nothing here yet — tap to start one"}
+                    {!dragging && <Icon name="plus" size={16} />}
+                    {dragging ? "Release to commit" : `Start a ${addNoun}`}
                   </button>
                 )}
                 {mine.map((c) => (
@@ -481,14 +479,7 @@ export default function MobileDeck({
                     onClose={() => setCompose(null)}
                   />
                 ) : (
-                  mine.length > 0 && (
-                    <button
-                      onClick={() => setCompose({ col: i, domain: null })}
-                      className="slot-open tap fast w-full rounded-xl border border-dashed px-3 py-3 text-center text-caption font-medium text-muted"
-                    >
-                      ＋ {addNoun}
-                    </button>
-                  )
+                  mine.length > 0 && <AddButton noun={addNoun} onClick={() => setCompose({ col: i, domain: null })} />
                 )}
               </div>
             </section>
@@ -512,15 +503,15 @@ export default function MobileDeck({
       {drag && (
         <div
           ref={ghostRef}
-          className="glass-grab pop-in pointer-events-none fixed left-0 top-0 z-[70] w-56 rounded-xl border border-line bg-surface px-3 py-2.5"
+          className="glass-grab pop-in pointer-events-none fixed left-0 top-0 z-[70] w-56 rounded-[var(--r-card)] bg-[var(--raised)] px-3 py-2.5"
           style={{
             transform: ghostTransform(ghostPos.current.x, ghostPos.current.y),
             willChange: "transform",
           }}
         >
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: drag.dot }} />
-            <span className="truncate text-caption text-ink">{drag.name}</span>
+            <span className="h-2 w-2 shrink-0 rounded-[2.5px]" style={{ background: drag.dot }} />
+            <span className="truncate text-body font-semibold text-ink">{drag.name}</span>
           </div>
         </div>
       )}
@@ -529,50 +520,61 @@ export default function MobileDeck({
 }
 
 // ── the crown — readiness, execution voice (PlannerRail's, at phone width) ─────
-// One line, deliberately quiet. The horizon's readiness is CONTEXT for the week
-// you're standing in, not the headline — when it wore a hero's weight (its own
-// eyebrow row, its own bar row, a bordered gap row beneath) it stacked three
-// bands above the strip and the page hero read as the fourth-most important
-// thing on a screen that was mostly chrome.
+// One line, deliberately quiet: a 12px name, a tabular count and a 3px meter.
+// The horizon's readiness is CONTEXT for the week you're standing in, not the
+// headline — the top bar already carries the screen's one hero. The gap line
+// names the first debt and is the tap into it; it vanishes when clean.
 function DeckCrownFace({ crown, groomAction }: { crown: DeckCrown; groomAction?: ReactNode }) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
   return (
-    <div className="shrink-0 border-b border-line px-4 py-2">
-      <div className="flex items-center gap-2">
-        <span className="section-label shrink-0 !px-0 !pb-0">{crown.eyebrow}</span>
+    <div className="shrink-0 border-b border-[var(--line-1)] px-4 pb-2 pt-2.5">
+      <div className="flex items-center gap-2.5">
+        <span className="shrink-0 text-caption font-semibold text-muted">{crown.eyebrow}</span>
         {crown.total === 0 ? (
-          <span className="text-caption text-muted">Nothing on the board yet</span>
+          <span className="text-caption text-[var(--faint)]">Nothing placed</span>
         ) : (
           <>
-            <span className="shrink-0 text-caption">
-              <span className="mono font-medium text-ink">{crown.done}</span>
-              <span className="text-muted">/</span>
-              <span className="mono font-medium text-ink">{crown.total}</span>
+            <span className="shrink-0 text-caption tabular-nums">
+              <span className="font-semibold text-ink">
+                {crown.done}/{crown.total}
+              </span>
               <span className="text-muted"> {crown.noun}</span>
             </span>
-            <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-              <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
+            <span className="h-[3px] min-w-0 flex-1 overflow-hidden rounded-[2px] bg-[var(--line-2)]">
+              <span className="block h-full rounded-[2px]" style={{ width: `${pct}%`, background: "var(--ok)" }} />
             </span>
           </>
         )}
       </div>
       {crown.gap && (
         <button
+          type="button"
           onClick={crown.gap.onJump}
           disabled={!crown.gap.onJump}
-          className="fast mt-0.5 flex w-full items-center gap-1.5 py-1 text-left"
+          className="tap-h fast -mb-1 flex w-full items-center gap-1.5 text-left"
         >
-          <span className="shrink-0 text-caption text-muted">{crown.gap.label}</span>
-          {crown.gap.detail && (
-            <span className="min-w-0 flex-1 truncate text-caption" style={{ color: "var(--accent)" }}>
-              — {crown.gap.detail}
-            </span>
-          )}
-          {crown.gap.onJump && <span className="ml-auto shrink-0 text-micro text-muted">›</span>}
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" aria-hidden />
+          <span className="shrink-0 text-caption text-ink">{crown.gap.label}</span>
+          {crown.gap.detail && <span className="min-w-0 flex-1 truncate text-caption text-muted">· {crown.gap.detail}</span>}
+          {crown.gap.onJump && <Icon name="chevron-right" size={14} className="ml-auto shrink-0 text-[var(--faint)]" />}
         </button>
       )}
       {groomAction && <div className="mt-0.5">{groomAction}</div>}
     </div>
+  );
+}
+
+/** The column's ＋ — a hairline socket in --slot, at thumb height. */
+function AddButton({ noun, onClick }: { noun: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="slot-open fast flex h-11 w-full items-center justify-center gap-1.5 rounded-[var(--r-card)] border text-body font-medium text-muted"
+    >
+      <Icon name="plus" size={16} />
+      {noun.charAt(0).toUpperCase() + noun.slice(1)}
+    </button>
   );
 }
 
@@ -606,7 +608,7 @@ function ColumnStrip({
     // the scroller — pinned, the way the coverage band's domain icons are. Past
     // four columns the time cells scroll under it and "shelve this" stays one
     // tap (or one drag) away no matter how far out you've walked.
-    <div role="tablist" aria-label="Deck pages" className="flex shrink-0 items-stretch border-b border-line">
+    <div role="tablist" aria-label="Deck pages" className="flex shrink-0 items-stretch border-b border-[var(--line-1)]">
       <button
         data-deck-col="pool"
         role="tab"
@@ -614,22 +616,25 @@ function ColumnStrip({
         onClick={() => goto(0)}
         title={poolLabel}
         aria-label={poolLabel}
-        style={{ width: GUTTER_PX }}
-        className={`fast relative flex shrink-0 flex-col items-center justify-center gap-0.5 border-r border-line py-2 ${
-          page === 0 ? "text-accent" : "text-muted"
+        style={{
+          width: GUTTER_PX,
+          boxShadow: page === 0 ? "inset 0 -2px 0 var(--ink)" : undefined,
+        }}
+        className={`fast relative flex min-h-12 shrink-0 flex-col items-center justify-center gap-1 border-r border-[var(--line-1)] py-2 ${
+          page === 0 ? "text-ink" : "text-muted"
         } ${flash === "pool" ? "deck-drop-flash" : ""}`}
       >
         <span
-          className="fast flex h-5 w-5 items-center justify-center rounded-md border text-micro"
+          className="fast flex h-5 w-5 items-center justify-center rounded-[var(--r-chip)] border text-micro"
           style={
             dragging && target === "pool"
               ? { borderColor: "var(--slot)", color: "var(--slot)", background: "color-mix(in srgb, var(--slot) 16%, transparent)" }
-              : { borderColor: page === 0 ? "var(--accent)" : "var(--line-strong)" }
+              : { borderColor: page === 0 ? "var(--ink)" : "var(--line-2)" }
           }
         >
           ◇
         </span>
-        <span className="mono text-micro tabular-nums">{poolCount}</span>
+        <span className="text-caption font-semibold leading-none tabular-nums">{poolCount}</span>
       </button>
 
       <div ref={scrollRef} onScroll={onScroll} className="mobile-scroll min-w-0 flex-1 overflow-x-auto">
@@ -639,6 +644,14 @@ function ColumnStrip({
         const isTarget = dragging && target === i;
         const over = c.load > c.cap;
         const fill = c.cap > 0 ? Math.min(1, c.load / c.cap) : 0;
+        // the strip's three marks: where you are (an ink underline, the kit's
+        // tab), what "now" is (a --signal rule along the top), and — mid-drag —
+        // where a release lands (--slot, open time).
+        const rules = [
+          c.now ? "inset 0 2px 0 var(--signal)" : null,
+          on ? "inset 0 -2px 0 var(--ink)" : null,
+          isTarget ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 55%, transparent)" : null,
+        ].filter(Boolean);
         return (
           <button
             key={c.key}
@@ -649,39 +662,37 @@ function ColumnStrip({
             onClick={() => goto(i + 1)}
             title={c.title}
             aria-label={`${c.title}, ${c.load} of ${c.cap}`}
-            className={`fast relative flex flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0 ${
+            className={`fast relative flex min-h-12 flex-col items-center justify-center gap-1.5 border-r border-[var(--line-1)] px-2 py-2 last:border-r-0 ${
               flash === i ? "deck-drop-flash" : ""
             }`}
             style={{
               flex: `1 0 ${COL_MIN_PX}px`,
-              background: isTarget
-                ? "color-mix(in srgb, var(--slot) 16%, transparent)"
-                : on
-                  ? "var(--surface)"
-                  : undefined,
-              borderTop: c.now ? NOW_BORDER : "1px solid transparent",
-              boxShadow: isTarget ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 55%, transparent)" : undefined,
+              background: isTarget ? "color-mix(in srgb, var(--slot) 16%, transparent)" : undefined,
+              boxShadow: rules.length ? rules.join(", ") : undefined,
             }}
           >
             <span
-              className="mono truncate text-caption font-semibold leading-none"
-              style={{ color: isTarget ? "var(--slot)" : c.now ? NOW_INK : on ? "var(--ink)" : "var(--muted)" }}
+              className="truncate text-caption font-semibold leading-none tabular-nums"
+              style={{ color: isTarget ? "var(--slot)" : on ? "var(--ink)" : "var(--muted)" }}
             >
               {c.chip}
             </span>
-            {/* load — how full this column is against your focus cap, as ink */}
-            <span className="h-1 w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+            {/* load — how full this column is against your focus cap */}
+            <span className="h-[3px] w-full overflow-hidden rounded-[2px] bg-[var(--line-2)]">
               <span
-                className="fast block h-full rounded-full"
+                className="fast block h-full rounded-[2px]"
                 style={{
                   width: `${Math.max(fill * 100, c.load > 0 ? 12 : 0)}%`,
-                  background: over ? "#D97706" : on ? "var(--accent)" : "var(--line-strong)",
+                  background: over ? "var(--warn)" : on ? "var(--ink-2)" : "var(--faint)",
                 }}
               />
             </span>
-            <span className="mono text-micro leading-none tabular-nums" style={{ color: over ? "#D97706" : "var(--muted)" }}>
+            <span
+              className="text-caption leading-none tabular-nums"
+              style={{ color: over ? "var(--warn)" : "var(--faint)" }}
+            >
               {c.load}
-              {over ? "⚠" : ""}
+              {over ? " over" : ""}
             </span>
           </button>
         );
@@ -693,30 +704,28 @@ function ColumnStrip({
 }
 
 // ── the page header — which slice of time you're standing in ──────────────────
-// This is the page's HERO, so it's set in Fraunces like every other floor / day
-// hero (design-language.md), not in the same semibold sans the crown and the
-// section labels use. The load count is dropped unless it's over cap: the strip
-// cell directly above already reads "3", and printing "3/2" here again next to
-// it was two numbers for one fact. Over cap it comes back, because that's the
-// one time the number is telling you something the bar can't.
+// A section heading, not a hero: the top bar carries the screen's one hero, so
+// the column names itself at the list's own step (15/600), with "now" as a
+// --signal dot. The load count is dropped unless it's over cap: the strip cell
+// directly above already reads "3", and printing "3/2" again was two numbers for
+// one fact. Over cap it comes back, in the verdict tone, because that's the one
+// time the number is telling you something the bar can't.
 function ColumnHead({ col }: { col: DeckColumn }) {
   const over = col.load > col.cap;
   return (
-    <div className="border-b border-line px-4 pb-2.5 pt-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-lead masthead" style={{ color: col.now ? NOW_INK : "var(--ink)" }}>
-          {col.now && (
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: NOW_MARK }} />
-          )}
-          {col.title}
+    <div className="border-b border-[var(--line-1)] px-4 pb-3 pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2 text-head font-semibold text-ink">
+          {col.now && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--signal)]" aria-hidden />}
+          <span className="truncate">{col.title}</span>
         </span>
         {over && (
-          <span className="mono shrink-0 text-caption tabular-nums" style={{ color: "#D97706" }}>
-            {col.load}/{col.cap} ⚠
+          <span className="shrink-0 text-caption font-semibold tabular-nums text-[var(--warn)]">
+            {col.load}/{col.cap} over
           </span>
         )}
       </div>
-      <div className="mono mt-0.5 text-micro text-muted">{col.when}</div>
+      <div className="mt-0.5 text-caption tabular-nums text-muted">{col.when}</div>
       {col.head}
       {col.note}
     </div>
@@ -755,18 +764,20 @@ function CardShell({
           the phone's read of a desktop bar stretched across weeks */}
       {card.contPrev && (
         <span
-          className="pointer-events-none absolute -left-1.5 top-1/2 -translate-y-1/2 text-micro"
+          className="pointer-events-none absolute -left-2 top-1/2 -translate-y-1/2"
           style={{ color: card.dot }}
+          aria-hidden
         >
-          ◀
+          <Icon name="chevron-left" size={12} strokeWidth={2.25} />
         </span>
       )}
       {card.contNext && (
         <span
-          className="pointer-events-none absolute -right-1.5 top-1/2 -translate-y-1/2 text-micro"
+          className="pointer-events-none absolute -right-2 top-1/2 -translate-y-1/2"
           style={{ color: card.dot }}
+          aria-hidden
         >
-          ▶
+          <Icon name="chevron-right" size={12} strokeWidth={2.25} />
         </span>
       )}
     </div>
@@ -826,10 +837,15 @@ function CoverageBand({
   };
 
   return (
-    <div className="shrink-0 border-b border-line">
-      <button onClick={toggle} className="tap fast flex w-full items-center gap-2 px-4 py-1.5 text-left">
-        <span className="section-label !px-0 !pb-0">Coverage</span>
-        <span className="min-w-0 flex-1 truncate text-micro text-muted">
+    <div className="shrink-0 border-b border-[var(--line-1)]">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="tap-h fast flex w-full items-center gap-2 px-4 text-left"
+      >
+        <span className="shrink-0 text-caption font-semibold text-muted">Coverage</span>
+        <span className="min-w-0 flex-1 truncate text-caption text-muted">
           {rows.slice(0, 2).map((r, i) => (
             <span key={r.domain.id}>
               {i > 0 && " · "}
@@ -837,8 +853,14 @@ function CoverageBand({
             </span>
           ))}
         </span>
-        <span className="mono ml-auto shrink-0 text-micro text-muted">
-          {covered}/{rows.length} {open ? "▾" : "▸"}
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-caption tabular-nums text-[var(--faint)]">
+          {covered}/{rows.length}
+          <Icon
+            name="chevron-down"
+            size={14}
+            className="fast"
+            style={{ transform: open ? undefined : "rotate(-90deg)" }}
+          />
         </span>
       </button>
 
@@ -850,7 +872,7 @@ function CoverageBand({
             {rows.map((r) => (
               <span
                 key={r.domain.id}
-                className="flex h-6 items-center justify-center text-caption"
+                className="flex h-7 items-center justify-center text-caption"
                 style={{ color: r.domain.color }}
                 title={r.domain.name}
               >
@@ -872,16 +894,16 @@ function CoverageBand({
                       key={c.key}
                       onClick={() => onAdd(r.domain, i)}
                       title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
-                      className="fast flex h-6 items-center justify-center gap-0.5 border-l border-line"
+                      className="fast flex h-7 items-center justify-center gap-0.5 border-l border-[var(--line-1)]"
                       style={c.now ? { background: NOW_BAND } : undefined}
                     >
                       {n === 0 ? (
-                        <span className="text-micro text-muted/35">+</span>
+                        <Icon name="plus" size={10} className="text-[var(--faint)] opacity-60" />
                       ) : (
                         Array.from({ length: Math.min(n, 4) }).map((_, k) => (
                           <span
                             key={k}
-                            className="h-2 w-2 rounded-[2px]"
+                            className="h-2 w-2 rounded-[2.5px]"
                             style={{ background: r.domain.color }}
                           />
                         ))

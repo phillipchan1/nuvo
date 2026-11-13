@@ -50,6 +50,9 @@ import {
   SwatchGrid,
 } from "../../domain/DomainParts";
 import DomainSymbol from "../../domain/DomainSymbol";
+import { Icon } from "../../Icon";
+import { Card, Chip, Dot } from "../../kit";
+import { TouchButton } from "../touch";
 import DomainMark from "../../domain/DomainMark";
 import { domainMarkSpec } from "../../../lib/domainMark";
 import { Bar, DeleteBtn, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "../../floors/parts";
@@ -84,7 +87,7 @@ export default function MobileDomainScreen({
   const dom = d.domains.find((x) => x.id === id);
   const [dressing, setDressing] = useState(false);
 
-  if (!dom) return <Empty>This domain is gone.</Empty>;
+  if (!dom) return <Empty>Gone</Empty>;
 
   const accent = dom.color;
   const st = stateOf(dom);
@@ -105,17 +108,17 @@ export default function MobileDomainScreen({
   const looseTasks = looseTasksOfDomain(d, dom.id);
 
   return (
-    // The domain's light washes the screen the way the desktop plate does — the
-    // one place a domain's colour is the ground, not an accent.
+    // The domain's light IS the accent inside its own screen — including the
+    // wash and the ring, or a chip lit inside it would wear the app's mulberry
+    // beside a rule in the domain's hue. The ground stays flat (D-189).
     <div
-      className="px-4 pt-1"
+      className="ph-body pt-1"
       style={{
-        // The domain's light IS the accent inside its own screen — including the
-        // soft pair, or the "showing up" card tints with the app accent while
-        // its rule tints with the domain's.
         ["--accent" as string]: accent,
+        ["--accent-ink" as string]: accent,
         ["--accent-soft" as string]: `color-mix(in srgb, ${accent} 12%, transparent)`,
-        background: `radial-gradient(120% 40% at 50% -2%, color-mix(in srgb, ${accent} 12%, transparent) 0%, transparent 60%)`,
+        ["--accent-wash" as string]: `color-mix(in srgb, ${accent} 12%, transparent)`,
+        ["--accent-ring" as string]: `color-mix(in srgb, ${accent} 40%, transparent)`,
       }}
     >
       {/* ── the hero: mark · name · mandate · presence voice ── */}
@@ -128,7 +131,7 @@ export default function MobileDomainScreen({
             onName={(v) => store.updateDomain(dom.id, { name: v })}
             outcome={dom.intention}
             onOutcome={(v) => store.updateDomain(dom.id, { intention: v })}
-            outcomePlaceholder="State the standing mandate for this domain…"
+            outcomePlaceholder="Mandate"
             center
             flourish={<Flourish color={accent} width={96} />}
             stateTag={st.short}
@@ -142,20 +145,20 @@ export default function MobileDomainScreen({
 
       {/* ── one door for the domain mark — chrome, so it hides ── */}
       <div className="mt-4 flex items-center justify-center gap-2">
-        <button
-          onClick={() => setDressing((v) => !v)}
+        <TouchButton
+          compact
           aria-expanded={dressing}
-          className="tap fast flex items-center gap-2 rounded-full border border-line px-3 py-2 text-micro text-muted active:text-ink"
+          onClick={() => setDressing((v) => !v)}
+          icon={<DomainSymbol value={dom.icon} size={16} />}
+          trailing={<Icon name="chevron-down" size={14} className={`fast text-[var(--faint)] ${dressing ? "rotate-180" : ""}`} />}
         >
-          <DomainSymbol value={dom.icon} size={15} />
-          <span className="h-3 w-3 rounded-full ring-1 ring-line" style={{ background: accent }} />
-          <span>Edit mark</span>
-          <span className="mono">{dressing ? "–" : "+"}</span>
-        </button>
+          <Dot color={accent} shape="round" />
+          Edit mark
+        </TouchButton>
       </div>
       {dressing && (
-        <div className="mt-3 rounded-xl border border-line bg-surface-2 p-3">
-          <div className="section-label !p-0">Symbol</div>
+        <Card className="ph-card mt-3">
+          <div className="text-caption font-semibold text-muted">Symbol</div>
           <div className="mt-2">
             <DomainSymbolPicker
               value={dom.icon}
@@ -165,26 +168,22 @@ export default function MobileDomainScreen({
               phone
             />
           </div>
-          <div className="section-label mt-4 !p-0">Color</div>
-          <div className="mt-2">
+          <div className="mt-2 text-caption font-semibold text-muted">Color</div>
+          <div>
             <SwatchGrid value={accent} onPick={(c) => store.updateDomain(dom.id, { color: c })} phone />
           </div>
-        </div>
+        </Card>
       )}
 
       {/* ── the last quarter — the pulse ── */}
       <Section label="The last quarter">
-        <div className="rounded-xl border border-line bg-surface-2 p-3">
+        <div>
           <PresencePulse weeks={dom.weeks} color={accent} target={dom.weeklyTargetHours} height={48} />
-          <div className="mono mt-2 text-meta text-muted">
-            <span style={{ color: accent }}>Showed up {kept} of the last 13 weeks.</span>
-            {longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}
+          <div className="mt-2 text-caption tabular-nums text-muted">
+            <span className="font-semibold text-ink">{kept} of 13</span> weeks showed up
+            {longestQuiet > 1 ? ` · longest quiet ${longestQuiet} wk` : ""}
+            {dom.weeklyTargetHours > 0 ? ` · dashed ${fmtH(dom.weeklyTargetHours)}/wk` : ""}
           </div>
-          {dom.weeklyTargetHours > 0 && (
-            <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>
-              dashed line · your {fmtH(dom.weeklyTargetHours)}/wk intent
-            </div>
-          )}
         </div>
       </Section>
 
@@ -194,9 +193,7 @@ export default function MobileDomainScreen({
           <GainNum n={`${dom.quarterHours}`} unit="h" label="this quarter" />
           <div>
             <div className="flex items-baseline gap-1.5">
-              <span className="mono text-lead" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
-                {fmtH(dom.investedThisWeek)}
-              </span>
+              <span className="ph-stat">{fmtH(dom.investedThisWeek)}</span>
               <span className="text-caption text-muted">/</span>
               <NumberField
                 value={dom.weeklyTargetHours}
@@ -205,29 +202,27 @@ export default function MobileDomainScreen({
               />
               <span className="text-caption text-muted">h</span>
             </div>
-            <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>
-              this week · your intent
-            </div>
+            <div className="text-caption text-muted">this week · intent</div>
           </div>
           <GainNum n={`${streak}`} unit="wk" label="current streak" />
           <GainNum n={`${doneCount}`} unit="" label="blocks done" />
         </div>
         {dom.investedThisWeek > 0 && (
           <>
-            <div className="mt-3 flex h-2 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+            <div className="mt-3 flex h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line-1)" }}>
               {deep > 0 && <span style={{ width: `${(deep / dom.investedThisWeek) * 100}%`, background: accent }} />}
               {meet > 0 && (
-                <span style={{ width: `${(meet / dom.investedThisWeek) * 100}%`, background: `color-mix(in srgb, ${accent} 38%, var(--surface))` }} />
+                <span style={{ width: `${(meet / dom.investedThisWeek) * 100}%`, background: `color-mix(in srgb, ${accent} 38%, var(--raised))` }} />
               )}
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted">
-              <span>
-                <i className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-middle" style={{ background: accent }} />
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption tabular-nums text-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <Dot color={accent} size="sm" />
                 Deep work · {fmtH(deep)}
               </span>
               {meet > 0 && (
-                <span>
-                  <i className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-middle" style={{ background: `color-mix(in srgb, ${accent} 38%, var(--surface))` }} />
+                <span className="inline-flex items-center gap-1.5">
+                  <Dot color={`color-mix(in srgb, ${accent} 38%, var(--raised))`} size="sm" />
                   Meetings · {fmtH(meet)}
                 </span>
               )}
@@ -241,18 +236,20 @@ export default function MobileDomainScreen({
         {shipped.length > 0 ? (
           <CardList>
             {shipped.map((it) => (
-              <div key={it.id} className="flex items-baseline gap-2.5 px-3 py-2.5 text-body">
-                <span style={{ color: "var(--slot)" }}>✓</span>
-                <span className="min-w-0 flex-1 truncate">{it.name}</span>
-                {it.at && <span className="mono shrink-0 text-meta text-muted">{shipWhen(it.at)}</span>}
+              <div key={it.id} className="ph-row">
+                <span className="ph-row-lead" style={{ color: "var(--ok)" }}>
+                  <Icon name="check" size={18} />
+                </span>
+                <span className="ph-row-label" data-grow="">
+                  {it.name}
+                </span>
+                {it.at && <span className="ph-row-meta">{shipWhen(it.at)}</span>}
               </div>
             ))}
           </CardList>
         ) : (
           <Hint>
-            {doneCount > 0
-              ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept this quarter — no finished milestones yet, but the hours are landing.`
-              : "Nothing finished here yet. What's the first thing you'll ship?"}
+            {doneCount > 0 ? `${doneCount} block${doneCount === 1 ? "" : "s"} kept · nothing shipped` : "Nothing shipped yet"}
           </Hint>
         )}
       </Section>
@@ -264,9 +261,7 @@ export default function MobileDomainScreen({
       >
         {openInits.length === 0 && looseProjects.length === 0 ? (
           <Hint>
-            {shipped.length > 0
-              ? "Nothing in flight — everything here has shipped. What's next?"
-              : "No initiatives yet — this domain simply asks to be groomed."}
+            {shipped.length > 0 ? "Nothing in flight" : "No initiatives yet"}
           </Hint>
         ) : (
           <CardList>
@@ -278,96 +273,84 @@ export default function MobileDomainScreen({
               return (
                 <button
                   key={i.id}
+                  type="button"
                   onClick={() => onOpenInitiative(i.id)}
-                  className="tap fast flex w-full items-start gap-2.5 px-3 py-2.5 text-left active:bg-surface"
+                  className="ph-row row-hover !items-start py-3"
                 >
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accent }} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="mono shrink-0 text-micro" style={{ color: accent }}>{mom(i.momentum)}</span>
-                      <span className="serif min-w-0 flex-1 truncate text-head">{i.name}</span>
+                      <span className="shrink-0 text-caption" style={{ color: accent }} aria-hidden>
+                        {mom(i.momentum)}
+                      </span>
+                      <span className="ph-row-title">{i.name}</span>
                     </div>
                     {risk.atRisk && (
-                      <span
-                        className="mt-1 inline-block rounded-full px-2 py-0.5 text-micro font-medium"
-                        style={{ background: "var(--signal-soft)", color: "var(--signal)" }}
-                      >
-                        {risk.reasons[0]}
-                      </span>
+                      <div className="mt-1.5">
+                        <Chip dot="var(--warn)">{risk.reasons[0]}</Chip>
+                      </div>
                     )}
                     {/* outcome over build — the two axes the desktop stacks in a
                         148px column, here full width under the name */}
-                    <div className="mt-1.5">
-                      <div className="flex justify-between text-micro uppercase text-muted">
-                        <span>outcome</span>
-                        <span className="mono">{attain != null ? `${outcome}%` : "—"}</span>
+                    <div className="mt-2 grid gap-1">
+                      <div className="flex justify-between text-caption tabular-nums text-muted">
+                        <span>Outcome</span>
+                        <span>{attain != null ? `${outcome}%` : "—"}</span>
                       </div>
                       <Bar pct={outcome} color={accent} h={1} />
-                      <div className="mt-0.5 flex justify-between text-micro uppercase text-muted">
-                        <span>build</span>
-                        <span className="mono">{exec}%</span>
+                      <div className="mt-1 flex justify-between text-caption tabular-nums text-muted">
+                        <span>Build</span>
+                        <span>{exec}%</span>
                       </div>
-                      <Bar pct={exec} color={`color-mix(in srgb, ${accent} 45%, var(--surface))`} h={1} />
+                      <Bar pct={exec} color={`color-mix(in srgb, ${accent} 45%, var(--raised))`} h={1} />
                     </div>
                   </div>
-                  <span className="shrink-0 text-muted">›</span>
+                  <Icon name="chevron-right" size={16} className="ph-row-chev mt-0.5" />
                 </button>
               );
             })}
 
             {looseProjects.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => onOpenProject(p.id)}
-                className="tap fast flex w-full items-center gap-2.5 px-3 py-2.5 text-left active:bg-surface"
-              >
-                <span style={{ color: PROJECT_STATUS_COLORS[p.status], fontSize: 7, lineHeight: 1 }}>●</span>
-                <span className="min-w-0 flex-1 truncate text-body">{p.name}</span>
-                <span className="shrink-0 text-meta" style={{ color: PROJECT_STATUS_COLORS[p.status] }}>
-                  {PROJECT_STATUS_LABEL[p.status]}
+              <button key={p.id} type="button" onClick={() => onOpenProject(p.id)} className="ph-row row-hover">
+                <span className="ph-row-lead">
+                  <Dot color={PROJECT_STATUS_COLORS[p.status]} shape="round" />
                 </span>
-                <span className="shrink-0 text-muted">›</span>
+                <span className="ph-row-title">{p.name}</span>
+                <span className="ph-row-meta">{PROJECT_STATUS_LABEL[p.status]}</span>
+                <Icon name="chevron-right" size={16} className="ph-row-chev" />
               </button>
             ))}
           </CardList>
         )}
-        <div className="mt-2 flex gap-2">
-          <button
+        <div className="mt-3 flex gap-2">
+          <TouchButton
+            className="flex-1"
+            icon={<Icon name="plus" size={16} />}
             onClick={() => void store.addProject(dom.id, null).then((p) => onOpenProject(p.id))}
-            className="tap fast flex-1 rounded-xl border border-dashed border-line py-2.5 text-center text-body text-muted active:text-ink"
           >
-            ＋ project
-          </button>
-          <button
+            Project
+          </TouchButton>
+          <TouchButton
+            className="flex-1"
+            icon={<Icon name="plus" size={16} />}
             onClick={() => void store.addInitiative(dom.id).then((i) => onOpenInitiative(i.id))}
-            className="tap fast flex-1 rounded-xl border border-dashed border-line py-2.5 text-center text-body text-muted active:text-ink"
           >
-            ＋ initiative
-          </button>
+            Initiative
+          </TouchButton>
         </div>
       </Section>
 
       {/* ── Nuvo's read — derived interpretation, no AI call ── */}
       <Section label="Nuvo's read">
-        <div className="flex flex-col gap-2">
+        {/* Read, not decorated: a mark in the read's tone, then the words. */}
+        <div className="flex flex-col gap-2.5">
           {reads.map((r, idx) => {
-            const c = r.tone === "warn" ? "var(--signal)" : r.tone === "good" ? accent : "var(--muted)";
-            const bg =
-              r.tone === "warn"
-                ? "var(--signal-soft)"
-                : r.tone === "good"
-                  ? "var(--accent-soft)"
-                  : "color-mix(in srgb, var(--surface) 55%, transparent)";
+            const c = r.tone === "warn" ? "var(--warn)" : r.tone === "good" ? accent : "var(--faint)";
             return (
-              <div
-                key={idx}
-                className="flex items-start gap-2.5 rounded-xl px-3 py-2.5"
-                style={{ background: bg, border: `1px solid color-mix(in srgb, ${c} 20%, var(--line))` }}
-              >
-                <span style={{ color: c, fontSize: 13, lineHeight: 1.4 }}>
-                  {r.tone === "warn" ? "◈" : r.tone === "good" ? "✦" : "·"}
+              <div key={idx} className="flex items-start gap-3">
+                <span className="mt-[7px] flex shrink-0">
+                  <Dot color={c} shape="round" size="sm" />
                 </span>
-                <p className="text-caption" style={{ margin: 0, lineHeight: 1.5 }}>{r.text}</p>
+                <p className="m-0 text-body leading-relaxed text-[var(--ink-2)]">{r.text}</p>
               </div>
             );
           })}
@@ -376,7 +359,7 @@ export default function MobileDomainScreen({
 
       {/* ── parked here — the desktop prints the count; a phone can act on it ── */}
       <Section label="Parked here" meter={looseTasks.length ? String(looseTasks.length) : null}>
-        <DetailTaskList tasks={looseTasks} parent={{ domainId: dom.id }} placeholder="A task parked in this area…" reorderable />
+        <DetailTaskList tasks={looseTasks} parent={{ domainId: dom.id }} placeholder="Add a task" reorderable />
       </Section>
 
       {/* ── how Nuvo files things here — the routing workbench, shared ── */}
@@ -384,7 +367,7 @@ export default function MobileDomainScreen({
         <DomainGroom domain={dom} phone />
       </Section>
 
-      <div className="mt-6 flex justify-end border-t border-line pt-4">
+      <div className="mt-6 flex justify-start border-t border-[var(--line-1)] pt-3">
         <DeleteBtn
           what="domain"
           phone
@@ -401,11 +384,11 @@ export default function MobileDomainScreen({
 function GainNum({ n, unit, label }: { n: string; unit: string; label: string }) {
   return (
     <div>
-      <div className="mono text-lead" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
+      <div className="ph-stat">
         {n}
-        {unit && <span className="text-caption text-muted" style={{ fontWeight: 500 }}>{unit}</span>}
+        {unit && <span className="text-caption font-medium text-muted">{unit}</span>}
       </div>
-      <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>{label}</div>
+      <div className="text-caption text-muted">{label}</div>
     </div>
   );
 }

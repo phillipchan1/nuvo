@@ -42,15 +42,17 @@ import { toBusyBlocks, type BusyBlock } from "../../lib/now";
 import { at } from "./dayPlan";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
+import { Button, Card, Dot, IconButton } from "../kit";
+import { PhEmpty, TouchButton } from "./touch";
 
 /** The forward beat — named after the ACT, not the destination. "Leftovers →"
  *  said where you'd land and nothing about what pressing it does; each press
  *  pours one more source into the week. */
 // The same verbs as the desktop's walk button (STEP_DONE) — one act, one voice.
 const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
-  open: { to: "projects", label: `${STEP_DONE.open} →` },
-  projects: { to: "rest", label: `${STEP_DONE.projects} →` },
-  rest: { to: "week", label: `${STEP_DONE.rest} →` },
+  open: { to: "projects", label: STEP_DONE.open },
+  projects: { to: "rest", label: STEP_DONE.projects },
+  rest: { to: "week", label: STEP_DONE.rest },
 };
 
 // the app's one clock spelling (D-122), fed minutes-from-midnight
@@ -128,124 +130,153 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
           />
         </div>
         <Footer>
-          <PrimaryButton onClick={onClose}>Done</PrimaryButton>
+          <TouchButton kind="primary" full onClick={onClose}>
+            Done
+          </TouchButton>
         </Footer>
       </Overlay>
     );
   }
 
-  const next = NEXT[step];
+  return (
+    <PlanWeekFrame
+      weekStartISO={weekStartISO}
+      step={step}
+      onStep={setStep}
+      onClose={onClose}
+      meter={
+        <CapacityMeter
+          intake={intake}
+          fit={{ placed: placements.length, unplaced: result.unplaced.length }}
+          revealed={step === "week" ? undefined : REVEALED_BY_LANE[step]}
+          compact
+          dense
+        />
+      }
+      onCommit={() => void commit()}
+      applying={applying}
+    >
+      {step === "projects" && (
+        <ProjectsStep
+          data={data}
+          weekStartISO={weekStartISO}
+          pushes={pushes}
+          suggestions={byLane.projects}
+          kept={kept}
+          setKept={setKept}
+          onDuration={setDuration}
+          onBringIn={bringIn}
+          onTakeOff={takeOff}
+        />
+      )}
+      {step === "open" && <OpenStep blockedMins={intake.blockedMins} />}
+      {step === "rest" && (
+        <CarriedStep
+          data={data}
+          carried={byLane.loose}
+          captures={byLane.inbox}
+          runs={runs}
+          kept={kept}
+          setKept={setKept}
+          onDuration={setDuration}
+          inboxCount={inboxCount}
+          onSlot={() => void slotLooseWork()}
+          slotting={theming}
+          slotErr={themeErr}
+        />
+      )}
+      {step === "week" && (
+        <WeekStep
+          data={data}
+          days={gridDays}
+          placements={placements}
+          slotNameById={slotById}
+          unplaced={result.unplaced}
+          routedCount={routedCount}
+          busy={busy}
+          workStart={workStart}
+          workEnd={workEnd}
+          onDrop={dropBlock}
+        />
+      )}
+    </PlanWeekFrame>
+  );
+}
 
+/**
+ * The ritual's frame — shared with the `?planweek` harness so the steps are
+ * checked inside the chrome they actually wear. The bar names the week once,
+ * quietly, beside the way out; then the walk, drawn as a stepper, and the
+ * week's one honest read under it (the phone's stand-in for the desktop's
+ * always-visible grid — it reveals by source the same way the desktop grid
+ * does). The step's question, inside the body, is the screen's one hero. The
+ * foot has one way forward, named after what pressing it does, and the way
+ * back beside it.
+ */
+export function PlanWeekFrame({
+  weekStartISO,
+  step,
+  onStep,
+  onClose,
+  meter,
+  onCommit,
+  applying = false,
+  children,
+}: {
+  weekStartISO: string;
+  step: WeekStep;
+  onStep: (s: WeekStep) => void;
+  onClose: () => void;
+  meter: React.ReactNode;
+  onCommit: () => void;
+  applying?: boolean;
+  children: React.ReactNode;
+}) {
+  const next = NEXT[step];
+  const prev = WEEK_STEPS[WEEK_STEPS.indexOf(step) - 1];
   return (
     <Overlay>
-      {/* Header — transparent over the atmosphere, hairline only */}
-      <header className="shrink-0 border-b border-line px-4 pb-2 pt-safe">
-        <div className="flex items-start gap-2 pt-2">
-          {/* The week, named once, as an eyebrow — the step's question below is
-              the screen's one hero. "Week of October 26" in serif above it was a
-              second headline saying what the eyebrow already said. */}
-          <div className="min-w-0 flex-1 self-center">
-            <div className="section-label !p-0">
-              Plan the week · <span className="text-ink">{weekName(weekStartISO)}</span> · {weekSpan(weekStartISO)}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
-          >
-            ✕
-          </button>
+      <header className="shrink-0 border-b border-[var(--line-1)] pt-safe">
+        <div className="flex min-h-12 items-center gap-2 pl-4 pr-2">
+          <span className="min-w-0 flex-1 truncate text-caption font-semibold text-muted">
+            Plan the week · <span className="text-ink">{weekName(weekStartISO)}</span> · {weekSpan(weekStartISO)}
+          </span>
+          <IconButton label="Close" size="md" icon={<Icon name="close" size={18} />} onClick={onClose} className="tap-icon shrink-0" />
         </div>
-        <div className="mt-2.5">
-          <SourceSwitch
-            step={step}
-            onStep={setStep}
-            steps={WEEK_STEPS}
-            dense
-          />
-        </div>
-        {/* the week's one honest read, on every step — the phone's stand-in for
-            the desktop's always-visible grid. It reveals by source the same way
-            the desktop grid does: sources you haven't reached yet ghost, so the
-            meter fills in as you go without ever misstating the total. */}
-        <div className="mt-2.5">
-          <CapacityMeter
-            intake={intake}
-            fit={{ placed: placements.length, unplaced: result.unplaced.length }}
-            revealed={step === "week" ? undefined : REVEALED_BY_LANE[step]}
-            compact
-            dense
-          />
+        <div className="px-4 pb-3">
+          <SourceSwitch step={step} onStep={onStep} steps={WEEK_STEPS} dense />
+          <div className="mt-2.5">{meter}</div>
         </div>
       </header>
 
-      <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
-        {step === "projects" && (
-          <ProjectsStep
-            data={data}
-            weekStartISO={weekStartISO}
-            pushes={pushes}
-            suggestions={byLane.projects}
-            kept={kept}
-            setKept={setKept}
-            onDuration={setDuration}
-            onBringIn={bringIn}
-            onTakeOff={takeOff}
-          />
-        )}
-        {step === "open" && (
-          <>
-            <StepHead question={STEP_QUESTION.open} />
-            <p className="text-body text-muted">
-              <span className="mono text-ink">{hrs(intake.blockedMins)}h</span> already on the calendar.
-            </p>
-          </>
-        )}
-        {step === "rest" && (
-          <CarriedStep
-            data={data}
-            carried={byLane.loose}
-            captures={byLane.inbox}
-            runs={runs}
-            kept={kept}
-            setKept={setKept}
-            onDuration={setDuration}
-            inboxCount={inboxCount}
-            onSlot={() => void slotLooseWork()}
-            slotting={theming}
-            slotErr={themeErr}
-          />
-        )}
-        {step === "week" && (
-          <WeekStep
-            data={data}
-            days={gridDays}
-            placements={placements}
-            slotNameById={slotById}
-            unplaced={result.unplaced}
-            routedCount={routedCount}
-            busy={busy}
-            workStart={workStart}
-            workEnd={workEnd}
-            onDrop={dropBlock}
-          />
-        )}
-      </div>
+      <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-5">{children}</div>
 
       <Footer>
-        <div className="flex items-center gap-3">
-          {/* The capacity read lives once, in the header meter — a second one down
-              here quoted different arithmetic for the same week. */}
-          <div className="mono min-w-0 flex-1 text-meta text-muted">
-            {keptTasks.length} in the week
-          </div>
+        <div className="flex items-center gap-2">
+          {prev && (
+            // A 44px ghost square: the forward act keeps the row's width for
+            // its words, which name what pressing it does.
+            <IconButton
+              label="Back"
+              kind="ghost"
+              icon={<Icon name="chevron-left" size={20} />}
+              onClick={() => onStep(prev)}
+              className="ph-btn shrink-0"
+            />
+          )}
           {next ? (
-            <PrimaryButton onClick={() => setStep(next.to)} compact>{next.label}</PrimaryButton>
+            <TouchButton
+              kind="primary"
+              onClick={() => onStep(next.to)}
+              trailing={<Icon name="arrow-right" size={16} />}
+              className="min-w-0 flex-1"
+            >
+              <span className="truncate">{next.label}</span>
+            </TouchButton>
           ) : (
-            <PrimaryButton onClick={() => void commit()} disabled={applying} compact>
-              {applying ? "committing…" : "Commit the week"}
-            </PrimaryButton>
+            <TouchButton kind="primary" onClick={onCommit} disabled={applying} className="min-w-0 flex-1">
+              {applying ? "Committing…" : STEP_DONE.week}
+            </TouchButton>
           )}
         </div>
       </Footer>
@@ -272,118 +303,90 @@ export function PlanWeekCard({
 
   if (variant === "link") {
     return (
-      <button
-        onClick={onOpen}
-        className="tap fast -my-1 px-1 text-left text-caption font-medium text-accent underline-offset-2 active:underline"
-      >
-        Adjust the week's plan ›
-      </button>
+      <Button kind="ghost" size="sm" onClick={onOpen} trailing={<Icon name="chevron-right" size={14} />} className="tap-bloom -ml-2.5 self-start">
+        Adjust the week's plan
+      </Button>
     );
   }
 
   return (
-    <button
-      onClick={onOpen}
-      className="tap fast flex w-full items-center gap-3 rounded-xl border border-line bg-surface-2 px-3 py-3 text-left active:bg-surface"
-    >
-      <span
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border text-lead"
-        style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
-        aria-hidden
-      >
-        ◴
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="section-label !p-0">{weekName(weekStartISO)}</div>
-        <div className="masthead truncate text-head text-ink">Plan the week</div>
-        <div className="truncate text-caption text-muted">
-          {pushes.length === 0
-            ? "No projects yet — pick what moves"
-            : `${pushes.length} project${pushes.length === 1 ? "" : "s"} · ${ready} ready to schedule`}
+    <Card className="ph-card">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-head font-semibold text-ink">Plan the week</div>
+          <div className="mt-0.5 truncate text-caption tabular-nums text-muted">
+            {weekName(weekStartISO)}
+            {pushes.length > 0 && ` · ${pushes.length} project${pushes.length === 1 ? "" : "s"} · ${ready} ready`}
+          </div>
         </div>
+        <TouchButton kind="primary" compact onClick={onOpen} className="shrink-0">
+          Plan
+        </TouchButton>
       </div>
-      <span className="shrink-0 text-muted">›</span>
-    </button>
+    </Card>
   );
 }
 
 // ── chrome ───────────────────────────────────────────────────────────────────
 
+/** The ritual's layer: the panel, opaque, over the whole shell. */
 function Overlay({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex flex-col"
-      style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="ph-overlay !pt-0">{children}</div>;
 }
 
-function Footer({ children, progress }: { children: React.ReactNode; progress?: number }) {
+function Footer({ children }: { children: React.ReactNode }) {
   return (
-    <footer className="relative shrink-0 border-t border-line px-4 py-3 pb-safe">
-      {/* the walk, drawn — same hairline the desktop wears over its stepper, so
-          "how far through am I" reads the same on both shells */}
-      {progress != null && (
-        <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden" aria-hidden>
-          <div
-            className="h-full"
-            style={{ width: `${progress * 100}%`, background: "var(--accent)", transition: "width .42s var(--ease-out)" }}
-          />
-        </div>
-      )}
+    <footer
+      className="shrink-0 border-t border-[var(--line-1)] bg-[var(--panel)] px-4 pt-3"
+      style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))" }}
+    >
       {children}
     </footer>
   );
 }
 
-function PrimaryButton({
-  children,
-  onClick,
-  disabled,
-  compact,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  compact?: boolean;
-}) {
+function Empty({ children }: { children: React.ReactNode }) {
+  return <PhEmpty>{children}</PhEmpty>;
+}
+
+/** Every step opens with the question it answers — the screen's one hero — and
+ *  nothing else. Instructions ("tap to drop anything…", "keep what should
+ *  move…") are not drawn: they teach a mechanic you learn once and then re-read
+ *  fifty-one times a year. What survives is state, and state gets a number or a
+ *  shape, not a sentence. (`ask` stays in the signature for the desktop's copy.) */
+function StepHead({ question, count }: { question: string; ask?: string; count?: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`tap fast flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-5 text-body font-medium text-on-accent active:scale-[0.98] disabled:bg-surface-2 disabled:text-muted disabled:shadow-none ${
-        compact ? "shrink-0" : "w-full"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="mb-4">
+      <h2 className="text-display masthead m-0 text-ink">{question}</h2>
+      {count && <div className="mt-1.5 text-caption tabular-nums text-muted">{count}</div>}
+    </div>
   );
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-3 text-caption text-muted">{children}</p>;
-}
-
-/** Every step opens with the question it answers and nothing else. Instructions
- *  ("tap to drop anything…", "Nuvo can group like with like…") were the first thing
- *  cut: they teach a mechanic you learn once and then re-read fifty-one times a
- *  year. What survives is state, and state gets a number or a shape, not a
- *  sentence. */
-function StepHead({ question, ask, count }: { question: string; ask?: string; count?: React.ReactNode }) {
+/** A group's name and count inside a step — the phone's section voice. */
+function StepSection({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
-    <div className="mb-3">
-      <div className="flex items-baseline gap-2">
-        <h2 className="masthead min-w-0 flex-1 text-head text-ink">{question}</h2>
-        {count && <span className="mono shrink-0 text-meta text-muted">{count}</span>}
-      </div>
-      {ask && <p className="mt-1 text-caption text-muted">{ask}</p>}
+    <div className="mb-1 flex items-baseline gap-1.5 text-caption font-semibold text-muted">
+      <span>{children}</span>
+      {count != null && <span className="font-medium tabular-nums text-[var(--faint)]">{count}</span>}
     </div>
   );
 }
 
 type Suggestion = ReturnType<typeof useWeekDraft>["suggestions"][number];
+
+// ── 0 · open time — what the week already owes ───────────────────────────────
+
+export function OpenStep({ blockedMins }: { blockedMins: number }) {
+  return (
+    <>
+      <StepHead question={STEP_QUESTION.open} />
+      <p className="text-body tabular-nums text-muted">
+        <span className="font-semibold text-ink">{hrs(blockedMins)}h</span> already on the calendar
+      </p>
+    </>
+  );
+}
 
 // ── 1 · projects — what you're moving, and the work that moves it ─────────────
 
@@ -434,7 +437,7 @@ export function ProjectsStep({
       <StepHead question={STEP_QUESTION.projects} ask={STEP_ASK.projects} />
 
       {pushes.length > 0 ? (
-        <div className="mt-3 border-t border-line">
+        <div className="border-t border-[var(--line-1)]">
           {pushes.map(({ project, shipped, carried }) => {
             const color = domainById(data, project.domainId)?.color ?? "var(--accent)";
             const gaps = lensGaps(data, "project", project, new Date());
@@ -442,21 +445,21 @@ export function ProjectsStep({
             const work = byProject.get(project.id) ?? [];
             const on = work.filter((s) => kept.has(s.task.id)).length;
             return (
-              <div key={project.id} className="border-b border-line py-3">
+              <div key={project.id} className="border-b border-[var(--line-1)] py-2">
                 <div className="flex items-start gap-3">
                   <span
-                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                    style={ready ? { background: color } : { border: "1.5px solid var(--line-strong)" }}
+                    className="mt-[13px] h-2 w-2 shrink-0 rounded-[2.5px]"
+                    style={ready ? { background: color } : { boxShadow: "inset 0 0 0 1.5px var(--line-2)" }}
                     aria-hidden
                   />
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 pt-2">
                     <div className="flex items-baseline gap-2">
-                      <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-head font-semibold text-ink">{project.name}</span>
                       {/* It's here because its week passed, not because you just
                           chose it — say so, or the slate reads as five fresh
                           decisions when two of them are debt. */}
                       {carried > 0 && (
-                        <span className="mono shrink-0 text-micro text-muted" title={carryMark(carried).title}>
+                        <span className="shrink-0 text-caption tabular-nums text-muted" title={carryMark(carried).title}>
                           {carryMark(carried).text}
                         </span>
                       )}
@@ -464,36 +467,36 @@ export function ProjectsStep({
                           and a fraction, where a clause used to be */}
                       {work.length > 0 && (
                         <span className="flex shrink-0 items-center gap-1.5">
-                          <span className="h-1 w-8 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                          <span className="h-[3px] w-8 overflow-hidden rounded-[2px] bg-[var(--line-2)]">
                             <span
-                              className="block h-full rounded-full transition-[width] duration-300"
+                              className="block h-full rounded-[2px] transition-[width] duration-300"
                               style={{ width: `${(on / work.length) * 100}%`, background: color }}
                             />
                           </span>
-                          <span className="mono text-micro text-muted">{on}/{work.length}</span>
+                          <span className="text-caption tabular-nums text-muted">{on}/{work.length}</span>
                         </span>
                       )}
                     </div>
                     {/* a missing outcome is already reported by the gap line below —
                         saying it twice made the row look broken */}
                     {project.outcome?.trim() && (
-                      <div className="truncate text-caption text-muted">{project.outcome.trim()}</div>
+                      <div className="mt-0.5 truncate text-caption text-muted">{project.outcome.trim()}</div>
                     )}
                     {/* "ready to schedule" said nothing the filled dot didn't. Only
                         the gaps — the actionable half — still earn a line. */}
                     {shipped ? (
-                      <div className="mono mt-0.5 text-micro" style={{ color }}>shipped</div>
+                      <div className="mt-0.5 text-caption font-medium text-[var(--ok)]">Shipped</div>
                     ) : !ready ? (
-                      <div className="mono mt-0.5 text-micro text-muted">{gaps.map((g) => g.label).join(" · ")}</div>
+                      <div className="mt-0.5 text-caption text-[var(--warn)]">{gaps.map((g) => g.label).join(" · ")}</div>
                     ) : null}
                   </div>
-                  <button
+                  <IconButton
+                    label={`Take ${project.name} off this week`}
+                    size="md"
+                    icon={<Icon name="close" size={16} />}
                     onClick={() => onTakeOff(project)}
-                    aria-label={`Take ${project.name} off this week`}
-                    className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
-                  >
-                    ✕
-                  </button>
+                    className="tap-icon -mr-1.5 mt-1.5 shrink-0"
+                  />
                 </div>
                 {work.length > 0 && (
                   <div className="mt-1 pl-5">
@@ -515,13 +518,13 @@ export function ProjectsStep({
           })}
         </div>
       ) : (
-        <Empty>Nothing on this week yet.</Empty>
+        <Empty>Nothing on this week</Empty>
       )}
 
       {(byProject.get("loose")?.length ?? 0) > 0 && (
-        <section className="mt-5">
-          <div className="section-label mb-1 !p-0">Project work, no week set</div>
-          <div className="border-t border-line">
+        <section className="mt-6">
+          <StepSection count={byProject.get("loose")!.length}>Project work, no week set</StepSection>
+          <div className="border-t border-[var(--line-1)]">
             {byProject.get("loose")!.map((s) => (
               <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
                         onDuration={onDuration} />
@@ -531,9 +534,9 @@ export function ProjectsStep({
       )}
 
       {(needsWeek.length > 0 || elsewhere.length > 0) && (
-        <div className="mt-5">
-          <div className="section-label mb-2 !p-0">Add a project</div>
-          <div className="flex flex-wrap gap-2">
+        <div className="mt-6">
+          <StepSection>Add a project</StepSection>
+          <div className="border-t border-[var(--line-1)]">
             {needsWeek.map((p) => (
               <ProjectChip key={p.id} data={data} p={p} onTap={() => onBringIn(p)} />
             ))}
@@ -549,10 +552,16 @@ export function ProjectsStep({
               ))}
             {elsewhere.length > 0 && (
               <button
+                type="button"
                 onClick={() => setShowElsewhere((s) => !s)}
-                className="tap fast min-h-[44px] rounded-full px-3 text-label text-muted active:bg-surface-2"
+                aria-expanded={showElsewhere}
+                className="ph-row row-hover text-muted"
+                data-flush=""
               >
-                {showElsewhere ? "less" : "＋ from another week"}
+                <span className="ph-row-lead">
+                  <Icon name={showElsewhere ? "chevron-down" : "chevron-right"} size={16} />
+                </span>
+                <span className="text-body font-medium">{showElsewhere ? "Fewer" : "From another week"}</span>
               </button>
             )}
           </div>
@@ -582,13 +591,13 @@ function ProjectChip({
 }) {
   const color = domainById(data, p.domainId)?.color ?? "var(--accent)";
   return (
-    <button
-      onClick={onTap}
-      className="tap fast flex min-h-[44px] items-center gap-2 rounded-full border border-line px-3 text-label active:bg-surface-2"
-    >
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
-      <span className="text-ink">{p.name}</span>
-      {reason && <span className="mono text-micro text-muted">{reason}</span>}
+    <button type="button" onClick={onTap} className="ph-row row-hover" data-flush="">
+      <span className="ph-row-lead">
+        <Dot color={color} />
+      </span>
+      <span className="ph-row-title">{p.name}</span>
+      {reason && <span className="ph-row-meta">{reason}</span>}
+      <Icon name="plus" size={16} className="shrink-0 text-muted" />
     </button>
   );
 }
@@ -633,11 +642,9 @@ export function CarriedStep({
 
   const group = (label: string, rows: Suggestion[]) =>
     rows.length === 0 ? null : (
-      <section className="mt-4">
-        <div className="section-label mb-1 !p-0">
-          {label} · {rows.length}
-        </div>
-        <div className="border-t border-line">
+      <section className="mt-6">
+        <StepSection count={rows.length}>{label}</StepSection>
+        <div className="border-t border-[var(--line-1)]">
           {rows.map((s) => (
             <WorkRow
               key={s.task.id}
@@ -658,29 +665,34 @@ export function CarriedStep({
 
       {/* the slots first — they're the proposal you're here to agree with */}
       {slotting && runs.length === 0 ? (
-        <p className="text-caption text-muted">Slotting…</p>
+        <p className="text-body text-muted">Slotting…</p>
       ) : runs.length > 0 ? (
         <section>
-          <div className="section-label mb-1 !p-0">Slots · {runs.length}</div>
-          <div className="border-t border-line">
+          <StepSection count={runs.length}>Slots</StepSection>
+          <div className="border-t border-[var(--line-1)]">
             {runs.map((r) => (
-              <div key={r.id} className="flex items-baseline gap-2 border-b border-line py-2">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
-                <span className="mono shrink-0 text-meta text-muted">{r.taskIds.length} · {r.durationMins}m</span>
+              <div key={r.id} className="ph-row" data-flush="">
+                <span className="ph-idbar !mx-[8.5px]" style={{ ["--h" as string]: r.color ?? "var(--accent)" }} aria-hidden />
+                <span className="ph-row-title">{r.name}</span>
+                <span className="ph-row-meta">
+                  {r.taskIds.length} · {r.durationMins}m
+                </span>
               </div>
             ))}
           </div>
-          <button
+          <Button
+            kind="ghost"
+            size="sm"
             onClick={onSlot}
             disabled={slotting}
-            className="tap fast mt-2 min-h-[44px] text-meta text-muted disabled:opacity-50"
+            icon={<Icon name="refresh" size={14} />}
+            className="tap-bloom -ml-2.5 mt-2"
           >
-            ↻ slot again
-          </button>
+            Slot again
+          </Button>
         </section>
       ) : null}
-      {slotErr && <p className="mt-1 text-meta text-signal">{slotErr}</p>}
+      {slotErr && <p className="mt-1 text-caption text-[var(--danger)]">{slotErr}</p>}
 
       {group("Carried over", rolled)}
       {group("Due this week", rest)}
@@ -688,7 +700,7 @@ export function CarriedStep({
 
       {carried.length === 0 && captures.length === 0 && (
         <Empty>
-          {inboxCount > 0 ? `${inboxCount} in the inbox — none of it needs this week.` : "Nothing owed, nothing new."}
+          {inboxCount > 0 ? `${inboxCount} in the inbox, none due` : "Nothing owed"}
         </Empty>
       )}
     </div>
@@ -696,14 +708,14 @@ export function CarriedStep({
 }
 
 function WorkRow({
-  data,
   s,
   on,
   onToggle,
   onDuration,
   hideReason,
 }: {
-  data: VerticalData;
+  /** kept in the signature: callers pass the vertical, the row no longer reads it */
+  data?: VerticalData;
   s: Suggestion;
   on: boolean;
   onToggle: () => void;
@@ -711,33 +723,35 @@ function WorkRow({
   /** Under a heading that already names the project, the reason is repetition. */
   hideReason?: boolean;
 }) {
-  const color = domainById(data, s.task.domainId)?.color ?? "var(--accent)";
   const badge = workBadge(s.kind, s.task);
   return (
     <button
+      type="button"
       onClick={onToggle}
       title={s.reason}
-      // one line, one height (design-language: hierarchy 5) — the 44px duration
-      // target sets the row; padding on top of it made each task ~70px and
-      // dropped its length onto a second visual line
-      className="tap fast flex w-full items-center gap-2.5 border-b border-line text-left active:bg-surface-2"
+      aria-pressed={on}
+      // one line, one height (design-language: hierarchy 5) — the 48px row
+      // holds the duration's target; nothing wraps to a second line
+      className="ph-row row-hover"
+      data-flush=""
     >
+      {/* Kept is intent, so it wears the landing colour — the same round mark
+          as the kit's TaskCheck, drawn (it sits inside the row's button). */}
       <span
-        className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
-        style={on ? { background: color, borderColor: color } : { borderColor: "var(--line-strong)" }}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+        style={on ? { background: "var(--landed, var(--accent))" } : { boxShadow: "inset 0 0 0 1.5px var(--line-2)" }}
+        aria-hidden
       >
-        <Icon name="check" size={11} className={on ? "opacity-100" : "opacity-0"} style={{ color: "var(--on-accent)" }} />
+        {on && <Icon name="check" size={12} strokeWidth={2.5} style={{ color: "var(--on-accent)" }} />}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>
-      </span>
+      <span className={`ph-row-title ${on ? "" : "!text-muted"}`}>{s.task.title}</span>
       {!hideReason && badge && (
         <span
-          className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro"
+          className="k-chip shrink-0 tabular-nums"
           style={
             badge.urgent
-              ? { color: "var(--signal)", background: "var(--signal-soft)" }
-              : { color: "var(--muted)", border: "1px solid var(--line)" }
+              ? { color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", borderColor: "transparent" }
+              : undefined
           }
         >
           {badge.text}
@@ -746,7 +760,7 @@ function WorkRow({
       <DurationSelect
         value={s.task.durationMins}
         onChange={(m) => onDuration(s.task.id, m)}
-        className="tap shrink-0 rounded px-1.5 hover:bg-surface-2"
+        className="tap shrink-0 justify-end rounded-[var(--r-ctl)] px-1"
         title="Sitting length"
       />
     </button>
@@ -790,7 +804,7 @@ function DayStrip({
   const wide = (m: number) => `${Math.max(1.5, (m / span) * 100)}%`;
 
   return (
-    <div className="relative h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+    <div className="relative h-2 w-full overflow-hidden rounded-[3px] bg-[var(--line-1)]">
       {busy.map((b, i) => {
         const s = b.start.getHours() * 60 + b.start.getMinutes();
         const e = b.end.getHours() * 60 + b.end.getMinutes();
@@ -800,7 +814,7 @@ function DayStrip({
             className="absolute inset-y-0"
             // a translucent ink wash vanished against the warm track — immovable time
             // has to be unmistakable, or a day full of meetings reads as free
-            style={{ left: at(s), width: wide(e - s), background: "var(--line-strong)" }}
+            style={{ left: at(s), width: wide(e - s), background: "color-mix(in srgb, var(--ink) 22%, transparent)" }}
             title={b.title}
           />
         );
@@ -811,7 +825,7 @@ function DayStrip({
         return (
           <div
             key={`${p.task.id}#${p.part ?? 1}`}
-            className="absolute inset-y-0 rounded-[2px]"
+            className="absolute inset-y-0 rounded-[1px]"
             style={{ left: at(p.startMin), width: wide(p.durationMin), background: color }}
             title={slot ? slot.name : p.task.title}
           />
@@ -870,14 +884,14 @@ export function WeekStep({
       />
 
       {days.length === 0 && (
-        <Empty>No working days set — choose them in Settings.</Empty>
+        <Empty>No working days set</Empty>
       )}
 
       {days.map(({ iso, past }) => {
         const list = byDay.get(iso) ?? [];
         return (
-          <section key={iso} className={`mt-4 ${past ? "opacity-50" : ""}`}>
-            <div className="section-label mb-1 !p-0">{format(parseDateISO(iso), "EEEE, MMM d")}</div>
+          <section key={iso} className={`mt-6 ${past ? "opacity-50" : ""}`}>
+            <StepSection>{format(parseDateISO(iso), "EEEE, MMM d")}</StepSection>
             <DayStrip
               data={data}
               list={list}
@@ -887,37 +901,36 @@ export function WeekStep({
               endMin={workEnd}
             />
             {list.length > 0 && (
-              <div className="mt-1.5 border-t border-line">
+              <div className="mt-2 border-t border-[var(--line-1)]">
                 {list.map((p) => {
                   const slot = slotNameById.get(p.task.id);
                   const color = slot?.color ?? taskDomainColor(data, p.task) ?? "var(--accent)";
                   const title = slot ? slot.name : p.task.title;
                   return (
-                    <div key={`${p.task.id}#${p.part ?? 1}`} className="flex items-start gap-3 border-b border-line py-2.5">
-                      <span className="mono w-[58px] shrink-0 pt-0.5 text-micro text-muted">{atMin(p.startMin)}</span>
-                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-body text-ink">
-                          {title}
-                          {p.parts && p.parts > 1 && (
-                            <span className="mono text-micro text-muted"> ({p.part}/{p.parts})</span>
-                          )}
-                        </div>
-                        {/* the reason Nuvo chose this time lives in the title, not
-                            on the row: you want it when something looks wrong, which
-                            is not most weeks */}
-                        <div className="mono truncate text-micro text-muted" title={p.reason}>
-                          {p.durationMin}m
-                          {slot && slot.taskIds.length > 1 && ` · ${slot.taskIds.length} steps`}
-                        </div>
-                      </div>
-                      <button
+                    // the phone's row: time in its gutter, the identity bar, the
+                    // name, its length — and the way out of the week
+                    <div key={`${p.task.id}#${p.part ?? 1}`} className="ph-row !pr-0" data-flush="">
+                      <span className="ph-row-time">{atMin(p.startMin)}</span>
+                      <span className="ph-idbar !mx-0" style={{ ["--h" as string]: color }} aria-hidden />
+                      {/* the reason Nuvo chose this time lives in the title, not
+                          on the row: you want it when something looks wrong,
+                          which is not most weeks */}
+                      <span className="ph-row-title" title={p.reason}>
+                        {title}
+                        {p.parts && p.parts > 1 && (
+                          <span className="font-normal tabular-nums text-muted"> {p.part}/{p.parts}</span>
+                        )}
+                      </span>
+                      <span className="ph-row-meta">
+                        {p.durationMin}m{slot && slot.taskIds.length > 1 && ` · ${slot.taskIds.length}`}
+                      </span>
+                      <IconButton
+                        label={`Take ${title} out of the week`}
+                        size="md"
+                        icon={<Icon name="close" size={16} />}
                         onClick={() => onDrop(p.task.id)}
-                        aria-label={`Take ${title} out of the week`}
-                        className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
-                      >
-                        ✕
-                      </button>
+                        className="tap-icon shrink-0"
+                      />
                     </div>
                   );
                 })}
@@ -928,14 +941,17 @@ export function WeekStep({
       })}
 
       {unplaced.length > 0 && (
-        <section className="mt-5 border-t border-line pt-3">
-          <div className="section-label mb-1 !p-0">No time yet · {unplaced.length}</div>
-          {unplaced.map(({ task, reason }) => (
-            <div key={task.id} className="flex items-baseline gap-2 py-1">
-              <span className="min-w-0 flex-1 truncate text-caption text-muted">{task.title}</span>
-              <span className="mono shrink-0 text-micro text-muted">{reason}</span>
-            </div>
-          ))}
+        <section className="mt-6">
+          <StepSection count={unplaced.length}>No time yet</StepSection>
+          <div className="border-t border-[var(--line-1)]">
+            {unplaced.map(({ task, reason }) => (
+              <div key={task.id} className="ph-row" data-flush="">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" aria-hidden />
+                <span className="ph-row-title !text-muted">{task.title}</span>
+                <span className="ph-row-meta">{reason}</span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

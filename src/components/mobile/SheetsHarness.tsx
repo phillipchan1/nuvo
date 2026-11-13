@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 import MobileTaskSheet from "./MobileTaskSheet";
+import { Button } from "../kit";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
 import { HARNESS_CALENDAR_ACCOUNTS, HARNESS_SETTINGS } from "../calendar/calendarFixtures";
 import type { AttendeeStatus, ExternalEvent, GoogleRawEvent, Label, Slot, Task } from "../../lib/types";
@@ -382,17 +383,16 @@ export default function SheetsHarness() {
       <VerticalStoreProvider value={store}>
         <div className="atmosphere min-h-screen p-4 pb-24">
           <div className="mb-2 flex items-center gap-3">
-            <h1 className="masthead text-head">Phone sheets (fixtures)</h1>
-            <button
-              type="button"
-              className="rounded-full border border-line px-3 py-1 text-label text-muted"
+            <h1 className="text-head font-semibold">Phone sheets (fixtures)</h1>
+            <Button
+              size="xs"
               onClick={() => {
                 const el = document.documentElement;
                 el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
               }}
             >
-              theme
-            </button>
+              Theme
+            </Button>
           </div>
           <p className="mb-3 text-caption text-muted">
             Resize the preview to 320 · 375 · 430 to check the width; the sheets portal at the viewport&rsquo;s.
@@ -402,7 +402,7 @@ export default function SheetsHarness() {
           </div>
           {groups.map((g) => (
             <div key={g} className="mb-3">
-              <div className="section-label mb-1">{g}</div>
+              <div className="mb-1.5 text-caption font-semibold text-muted">{g}</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(all)
                   .filter(([, s]) => s.group === g)
@@ -410,20 +410,22 @@ export default function SheetsHarness() {
                     <a
                       key={k}
                       href={`?sheets=${k}`}
-                      className={`rounded-full border px-3 py-1.5 text-label ${
-                        k === key ? "border-accent bg-accent-soft text-accent" : "border-line text-muted"
+                      className={`inline-flex min-h-7 items-center rounded-[var(--r-ctl)] border px-2.5 py-1 text-caption ${
+                        k === key
+                          ? "border-transparent bg-[var(--accent-wash)] text-[var(--accent-ink)]"
+                          : "border-[var(--line-2)] text-[var(--ink-2)]"
                       }`}
                     >
-                      {k.replace(/^[a-z]+-/, "")} <span className="opacity-60">· {s.label}</span>
+                      {k.replace(/^[a-z]+-/, "")} <span className="ml-1 text-muted">· {s.label}</span>
                     </a>
                   ))}
               </div>
             </div>
           ))}
           {sc && !open && (
-            <button type="button" className="mt-2 rounded-full border border-accent px-4 py-2 text-label text-accent" onClick={() => setOpen(true)}>
-              reopen {key}
-            </button>
+            <Button kind="primary" size="md" className="mt-2" onClick={() => setOpen(true)}>
+              Reopen {key}
+            </Button>
           )}
         </div>
 

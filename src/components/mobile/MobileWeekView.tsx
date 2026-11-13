@@ -141,7 +141,7 @@ export default function MobileWeekView({
   const ghostDur = draft?.durationMinutes ?? defaultDurationMins;
 
   if (loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0)) {
-    return <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>;
+    return <div className="ph-empty">Reading your calendar…</div>;
   }
 
   return (
@@ -160,13 +160,10 @@ export default function MobileWeekView({
               the same words as the Day lens. */}
           {hours.map((h) => (
             <div key={h} className="absolute inset-x-0" style={{ top: y(h * 60) }}>
-              <span
-                className="mono absolute -top-[0.55em] left-0 pr-1.5 text-right text-micro text-muted"
-                style={{ width: CAL_GUTTER - 4 }}
-              >
+              <span className="ph-hour" style={{ width: CAL_GUTTER - 6 }}>
                 {hourLabel(h)}
               </span>
-              <div className="absolute right-0 border-t border-line" style={{ left: CAL_GUTTER }} />
+              <div className="ph-hour-rule" style={{ left: CAL_GUTTER }} />
             </div>
           ))}
 
@@ -175,7 +172,7 @@ export default function MobileWeekView({
             i === 0 ? null : (
               <div
                 key={`sep-${i}`}
-                className="absolute top-0 border-l border-line"
+                className="absolute top-0 border-l border-[var(--line-1)]"
                 style={{
                   left: `calc(${CAL_GUTTER}px + (100% - ${CAL_GUTTER}px) * ${i / 7})`,
                   height: y(winEnd),
@@ -187,8 +184,8 @@ export default function MobileWeekView({
           {/* Now — the one --signal mark on the surface. */}
           {showsToday && nowMin >= winStart && nowMin <= winEnd && (
             <div
-              className="pointer-events-none absolute right-0 z-10 border-t"
-              style={{ top: y(nowMin), left: CAL_GUTTER, borderColor: "var(--signal)" }}
+              className="pointer-events-none absolute right-0 z-10 h-[2px] rounded-full"
+              style={{ top: y(nowMin) - 1, left: CAL_GUTTER, background: "var(--signal)" }}
             />
           )}
 
@@ -197,8 +194,6 @@ export default function MobileWeekView({
           {days.map((d, di) =>
             laidByDay[di].map((l, i) => {
               const b = l.item;
-              const isSlot = b.kind === "slot";
-              const isBlock = b.kind === "block";
               const height = Math.max(y(l.endMin) - y(l.startMin), MIN_ITEM_PX);
               const colLeft = `calc(${CAL_GUTTER}px + (100% - ${CAL_GUTTER}px) * ${
                 (di + l.col / l.cols) / 7
@@ -208,36 +203,19 @@ export default function MobileWeekView({
                 <button
                   key={`${di}-${i}`}
                   data-cal-item
+                  data-kind={b.kind}
+                  data-done={b.done || undefined}
                   onClick={() => onTapEvent?.(tapFor(b) as CalendarTap)}
-                  className="fast absolute overflow-hidden rounded-[3px] border px-0.5 text-left active:opacity-80"
+                  className="ph-blk ph-blk-week"
                   style={{
                     top: y(l.startMin),
                     height,
                     left: colLeft,
                     width: colWidth,
                     opacity: d.isBygone ? 0.6 : 1,
-                    background: isSlot
-                      ? "color-mix(in srgb, var(--slot) 28%, var(--surface))"
-                      : isBlock
-                        ? b.done
-                          ? "color-mix(in srgb, var(--accent) 5%, transparent)"
-                          : "var(--accent-soft)"
-                        : "color-mix(in srgb, var(--ink) 7%, transparent)",
-                    borderColor: isSlot
-                      ? "color-mix(in srgb, var(--slot) 65%, var(--line))"
-                      : isBlock
-                        ? "color-mix(in srgb, var(--accent) 30%, transparent)"
-                        : "var(--line)",
-                    borderStyle: isSlot ? "dashed" : "solid",
                   }}
                 >
-                  <span
-                    className={`block truncate text-micro leading-[1.15] ${
-                      b.done ? "text-muted line-through" : "text-ink"
-                    }`}
-                  >
-                    {b.title || "Untitled"}
-                  </span>
+                  <span className="ph-blk-title">{b.title || "Untitled"}</span>
                 </button>
               );
             }),
@@ -249,14 +227,12 @@ export default function MobileWeekView({
             <div
               data-week-draft
               aria-hidden
-              className="pointer-events-none absolute rounded-[3px] border border-dashed"
+              className="ph-draft ph-blk-week pointer-events-none absolute"
               style={{
                 top: y(ghost.startMin),
                 height: Math.max((ghostDur * HOUR_PX) / 60, MIN_ITEM_PX),
                 left: `calc(${CAL_GUTTER}px + (100% - ${CAL_GUTTER}px) * ${ghost.col / 7} + 1px)`,
                 width: `calc((100% - ${CAL_GUTTER}px) / 7 - 2px)`,
-                background: "color-mix(in srgb, var(--accent) 12%, transparent)",
-                borderColor: "color-mix(in srgb, var(--accent) 45%, var(--line))",
               }}
             />
           )}

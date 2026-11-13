@@ -17,9 +17,11 @@ import { fmtMins } from "../../lib/now";
 import type { indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
 import { Icon } from "../Icon";
+import { Button } from "../kit";
 import type { CalendarTap } from "./MobileEventSheet";
-import { at, buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
-import { ColumnBand, DayCell, TIME_RAIL } from "./CalendarChrome";
+import { buildDayPlan, dayKey, dayReadout, type DayCtx, type DayPlan } from "./dayPlan";
+import { ColumnBand, DayCell } from "./CalendarChrome";
+import { PlanRow, TimedRow, allDayTap, type ToggleTask } from "./planRows";
 import { clampDayToMonth } from "./monthTap";
 import TimePager from "./TimePager";
 
@@ -39,6 +41,7 @@ export default function MobileMonthView({
   onFlickUp,
   onTapEvent,
   onTapTask,
+  onToggleTask,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -56,6 +59,7 @@ export default function MobileMonthView({
   onFlickUp: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  onToggleTask?: ToggleTask;
 }) {
   // The peeking months are inert: a cell that is half off-screen under a moving
   // finger is a mis-tap, not a choice. They also carry the selection *clamped*
@@ -98,6 +102,7 @@ export default function MobileMonthView({
           onOpen={() => onOpenDay(selected)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
+          onToggleTask={onToggleTask}
         />
       )}
     </div>
@@ -153,12 +158,12 @@ function MonthSheet({
                 onClick={() => onOpenWeek?.(week[0].date)}
                 disabled={!onOpenWeek}
                 aria-label={`Open the week of ${format(week[0].date, "MMMM d")}`}
-                className="tap fast flex h-full w-full items-center justify-center rounded-l-xl active:bg-surface-2"
+                className="tap fast flex h-full w-full items-center justify-center rounded-[var(--r-card)]"
               >
                 <Icon
                   name="chevron-right"
-                  size={12}
-                  className={holdsSelected ? "text-accent" : "text-muted opacity-40"}
+                  size={14}
+                  style={{ color: holdsSelected ? "var(--ink-2)" : "var(--faint)", opacity: holdsSelected ? 1 : 0.6 }}
                 />
               </button>
             }
@@ -187,19 +192,19 @@ function MonthSheet({
       {/* What the marks mean — colour alone is not a legend, and a legend that
           names only some of what's on screen is worse than none: it reads as a
           complete key. So the weather row appears exactly when weather does. */}
-      <div aria-hidden className="flex items-center justify-center gap-3 px-4 pt-1.5">
-        <span className="flex items-center gap-1 text-micro text-muted">
-          <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
-          tasks
+      <div aria-hidden className="ph-legend">
+        <span>
+          <span className="ph-legend-dot" style={{ background: "var(--accent)" }} />
+          Tasks
         </span>
-        <span className="flex items-center gap-1 text-micro text-muted">
-          <span className="h-1 w-1 rounded-full" style={{ background: "var(--line-strong)" }} />
-          events
+        <span>
+          <span className="ph-legend-dot" style={{ background: "var(--line-2)" }} />
+          Events
         </span>
         {weatherIndex && weatherIndex.size > 0 && (
-          <span className="flex items-center gap-1 text-micro text-muted">
+          <span>
             <WeatherIcon wmo={2} size={11} className="opacity-80" />
-            forecast
+            Forecast
           </span>
         )}
       </div>
@@ -218,18 +223,20 @@ function MonthDayPreview({
   onOpen,
   onTapEvent,
   onTapTask,
+  onToggleTask,
 }: {
   day: DayPlan;
   onOpen: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
+  onToggleTask?: ToggleTask;
 }) {
   // A drag that starts on a row is a scroll. Without this, WebKit still fires
   // click on the button the finger began on, and you fall into the event
   // instead of seeing the rest of the list.
   const dragged = useRef(false);
   const origin = useRef({ x: 0, y: 0 });
-  const { date, timed, allDay, anytime, openMins, isPast, isBygone } = day;
+  const { date, timed, allDay, anytime, openMins, isPast, isBygone, isToday } = day;
   const busy = timed.length + allDay.length + anytime.length;
   const { text: readout, accent } = dayReadout(day);
   const rest = Math.max(0, busy - PREVIEW_CAP);
@@ -240,7 +247,7 @@ function MonthDayPreview({
 
   return (
     <div
-      className="mt-2 border-t border-line"
+      className="mt-2"
       data-time-pager-ignore
       onPointerDown={(e) => {
         dragged.current = false;
@@ -258,114 +265,63 @@ function MonthDayPreview({
         dragged.current = false;
       }}
     >
-      <button
-        onClick={onOpen}
-        className="tap fast flex w-full items-center gap-2 px-3 py-3 text-left active:bg-surface-2"
-      >
-        <span className="text-body font-medium text-ink">
-          {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+      {/* The header leans in on the day — a second way to the Day lens. */}
+      <button type="button" onClick={onOpen} className="ph-dayhead row-hover" style={{ borderTop: "1px solid var(--line-1)" }}>
+        <span className="ph-dayhead-label" data-today={isToday || undefined} data-past={isBygone || undefined}>
+          {date.toLocaleDateString([], { weekday: "long" })}
         </span>
+        <span className="ph-dayhead-date">{date.toLocaleDateString([], { month: "short", day: "numeric" })}</span>
         {readout && (
-          <span className="mono text-label" style={{ color: accent ? "var(--accent)" : "var(--muted)" }}>
+          <span className="ph-dayhead-read" data-accent={accent || undefined}>
             {readout}
           </span>
         )}
-        <span className="ml-auto text-muted">→</span>
+        <Icon name="chevron-right" size={16} className={readout ? "shrink-0 self-center" : "ml-auto shrink-0 self-center"} style={{ color: "var(--faint)" }} />
       </button>
 
       {busy === 0 ? (
-        <p className="px-3 pb-3 text-body text-muted">
-          {isBygone ? "Nothing scheduled." : isPast ? "Done for today." : "No commitments — wide open."}
-        </p>
+        <div className="ph-dayempty">{isBygone ? "Nothing scheduled" : isPast ? "Done for today" : "Wide open"}</div>
       ) : (
-        <div className="flex flex-col gap-0.5 px-3 pb-3">
+        <>
           {shownAllDay.map((e) => (
-            <button
+            <PlanRow
               key={e.id}
-              onClick={() =>
-                onTapEvent?.({
-                  kind: "event",
-                  id: e.id,
-                  providerEventId: e.provider_event_id,
-                  title: e.title || "Busy",
-                  start: new Date(e.start_at),
-                  end: new Date(e.end_at),
-                  allDay: true,
-                  location: e.location,
-                  self_rsvp: e.self_rsvp ?? null,
-                  accountId: e.account_id,
-                  calendarId: e.calendar_id,
-                })
-              }
-              className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
-            >
-              <span className="mono w-[68px] shrink-0 text-right text-meta text-muted">all day</span>
-              <span className="min-w-0 truncate text-body text-ink">{e.title || "Busy"}</span>
-            </button>
+              time="all day"
+              mark={{ kind: "bar", color: "var(--event-default)" }}
+              title={e.title || "Busy"}
+              onOpen={() => onTapEvent?.(allDayTap(e))}
+            />
           ))}
           {shownAnytime.map((t) => (
-            <button
+            <PlanRow
               key={t.id}
-              type="button"
-              onClick={() => onTapTask?.(t.id)}
-              className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
-            >
-              <span className="mono w-[68px] shrink-0 text-right text-meta text-accent">anytime</span>
-              <span className="min-w-0 truncate text-body text-accent">{t.title}</span>
-            </button>
+              time="anytime"
+              mark={{
+                kind: "check",
+                checked: false,
+                label: `Complete ${t.title}`,
+                onToggle: onToggleTask ? (next) => onToggleTask(t.id, next) : undefined,
+              }}
+              title={t.title}
+              onOpen={() => onTapTask?.(t.id)}
+            />
           ))}
-          {shownTimed.map((b, i) => {
-            const isSlot = b.kind === "slot";
-            const tap: CalendarTap =
-              b.kind === "event"
-                ? {
-                    kind: "event",
-                    id: b.eventId!,
-                    providerEventId: b.providerEventId,
-                    title: b.title || "Untitled",
-                    start: b.start,
-                    end: b.end,
-                    location: b.location ?? null,
-                    self_rsvp: b.self_rsvp,
-                    accountId: b.accountId,
-                    calendarId: b.calendarId,
-                  }
-                : isSlot
-                  ? {
-                      kind: "slot",
-                      slot: b.slot!,
-                      title: b.title || "Untitled",
-                      start: b.start,
-                      end: b.end,
-                      childCount: b.childCount ?? 0,
-                      doneCount: b.doneCount ?? 0,
-                    }
-                  : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
-            const mark = isSlot ? "var(--slot)" : b.kind === "block" ? "var(--accent)" : "var(--line-strong)";
-            return (
-              <button
-                key={i}
-                onClick={() => onTapEvent?.(tap)}
-                className="tap fast -mx-1 flex items-baseline gap-2.5 rounded-lg px-1 py-1.5 text-left active:bg-surface-2"
-              >
-                <span className="mono shrink-0 text-right text-meta" style={{ color: mark, width: TIME_RAIL }}>
-                  {at(b.start)}
-                </span>
-                <span className={`min-w-0 truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>
-                  {b.title || "Untitled"}
-                </span>
-              </button>
-            );
-          })}
-          {rest > 0 && (
-            <button onClick={onOpen} className="tap fast py-1.5 text-left text-label text-muted active:opacity-70">
-              +{rest} more
-            </button>
+          {shownTimed.map((b, i) => (
+            <TimedRow key={i} item={b} onTapEvent={onTapEvent} onToggleTask={onToggleTask} />
+          ))}
+          {(rest > 0 || (!isPast && !isBygone && openMins > 0)) && (
+            <div className="flex items-center gap-2 px-4 pt-1">
+              {rest > 0 && (
+                <Button kind="ghost" size="md" className="tap-h -ml-3" onClick={onOpen}>
+                  {rest} more
+                </Button>
+              )}
+              {!isPast && !isBygone && openMins > 0 && (
+                <span className="ml-auto text-caption tabular-nums text-muted">{fmtMins(openMins)} still open</span>
+              )}
+            </div>
           )}
-          {!isPast && !isBygone && openMins > 0 && busy > 0 && (
-            <p className="pt-1 text-label text-muted">{fmtMins(openMins)} still open</p>
-          )}
-        </div>
+        </>
       )}
     </div>
   );

@@ -19,6 +19,8 @@ import { ProjectShipAssess } from "../record/ShipAssess";
 import { useRecordWeekActs } from "../../hooks/useProjectTime";
 import { buildRecordActions, type RecordAction, type RecordKind } from "../../lib/recordActions";
 import Sheet from "./Sheet";
+import { RowList } from "./sheetKit";
+import { TouchButton } from "./touch";
 import { haptic } from "../../lib/haptics";
 
 /** Matches the deck's pick-up hold (MobileDeck) — one "held" feel across the app. */
@@ -139,47 +141,52 @@ function RecordActionSheet({
     item.action();
   };
 
+  // The separators become gaps between groups of hairline rows — the sheet
+  // says "these belong together" with space, not with another line.
+  const groups: Extract<RecordAction, { kind: "action" }>[][] = [[]];
+  for (const item of items) {
+    if (item.kind === "sep") groups.push([]);
+    else groups[groups.length - 1].push(item);
+  }
+
   return (
     <Sheet title={record?.name ?? "Record"} onClose={onClose}>
       {confirm ? (
-        <div className="px-5 pb-6 pt-1">
-          <p className="text-head text-ink">{confirm.confirm}</p>
+        <div className="ph-body pb-8 pt-1">
+          <p className="text-head font-semibold text-ink">{confirm.confirm}</p>
           <p className="mt-1 text-caption text-muted">
             {confirm.undoable ? "The work stays in the project. You can undo this." : "This can't be undone."}
           </p>
-          <div className="mt-4 flex flex-col gap-2">
-            <button
-              onClick={confirm.action}
-              className="tap fast w-full rounded-xl px-4 py-3 text-center text-body font-semibold text-white"
-              style={{ background: confirm.danger ? "var(--signal)" : "var(--accent)" }}
-            >
+          <div className="mt-5 flex flex-col gap-2">
+            <TouchButton kind={confirm.danger ? "danger-solid" : "primary"} full onClick={confirm.action}>
               {confirm.confirmLabel ?? "Delete"}
-            </button>
-            <button
-              onClick={() => setConfirm(null)}
-              className="tap fast w-full rounded-xl border border-line px-4 py-3 text-center text-body font-medium text-muted active:bg-surface-2"
-            >
+            </TouchButton>
+            <TouchButton full onClick={() => setConfirm(null)}>
               Cancel
-            </button>
+            </TouchButton>
           </div>
         </div>
       ) : (
-        <div className="px-3 pb-6 pt-1">
-          {items.map((item, i) =>
-            item.kind === "sep" ? (
-              <div key={i} className="my-1.5 border-t border-line" />
-            ) : (
-              <button
-                key={i}
-                onClick={() => run(item)}
-                className={`tap fast flex w-full items-center rounded-xl px-3 py-3 text-left text-body font-medium active:bg-surface-2 ${
-                  item.danger ? "text-signal" : "text-ink"
-                }`}
-              >
-                {item.label}
-              </button>
-            ),
-          )}
+        <div className="ph-body pb-8">
+          {groups
+            .filter((g) => g.length > 0)
+            .map((g, gi) => (
+              <RowList key={gi} className={gi > 0 ? "mt-4" : ""}>
+                {g.map((item, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => run(item)}
+                    className="ph-row row-hover"
+                    style={item.danger ? { color: "var(--danger)" } : undefined}
+                  >
+                    <span className="ph-row-label" data-grow="" style={item.danger ? { color: "inherit" } : undefined}>
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </RowList>
+            ))}
         </div>
       )}
     </Sheet>

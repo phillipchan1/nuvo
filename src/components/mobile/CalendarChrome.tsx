@@ -50,6 +50,8 @@ import {
 } from "react";
 import { addDays, format, startOfWeek } from "date-fns";
 import { Icon, type IconName } from "../Icon";
+import { Button, IconButton } from "../kit";
+import { TouchSegmented } from "./touch";
 import TimeZoneChip from "../TimeZoneChip";
 import WeatherIcon from "../WeatherIcon";
 import type { indexWeather } from "../../hooks/useWeather";
@@ -136,6 +138,9 @@ export function zoomDir(from: CalHorizon, to: CalHorizon): ZoomDir | null {
   return d === 0 ? "lateral" : d < 0 ? "in" : "out";
 }
 
+/** The ladder is the kit's Segmented at touch size — one radio group, ←/→
+ *  between rungs, each face a 44px target. Each face's accessible name is the
+ *  word the letter stands for. */
 function HorizonLadder({
   horizon,
   onHorizon,
@@ -144,37 +149,22 @@ function HorizonLadder({
   onHorizon: (h: CalHorizon) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label="Time horizon"
-      className="flex shrink-0 items-center rounded-full bg-surface-2 p-0.5"
-    >
-      {FACES.map((f, i) => {
-        const on = horizon === f.id;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => !on && onHorizon(f.id)}
-            aria-pressed={on}
-            aria-label={f.word}
-            title={f.word}
-            // `tap-icon` grows the hit area to 44×44 from the centre without
-            // growing the drawn face — five 36px faces still fit beside a hero
-            // at 375px, and every one of them is a thumb target.
-            className={`tap-icon fast flex h-8 min-w-[34px] items-center justify-center rounded-full text-label font-semibold ${
-              on ? "bg-surface text-accent" : "text-muted"
-            } ${
-              // A hairline after the agenda: it is a projection, not a rung.
-              i === 0 ? "mr-0.5 border-r border-line pr-1" : ""
-            }`}
-            style={on ? { boxShadow: "var(--shadow-1)" } : undefined}
-          >
-            {f.glyph ? <Icon name={f.glyph} size={14} /> : f.label}
-          </button>
-        );
-      })}
-    </div>
+    <TouchSegmented<CalHorizon>
+      label="Time horizon"
+      value={horizon}
+      // Tapping the rung you're on does nothing — not even a zoom to itself.
+      onChange={(h) => h !== horizon && onHorizon(h)}
+      options={FACES.map((f) => ({
+        value: f.id,
+        title: f.word,
+        label: (
+          <>
+            {f.glyph ? <Icon name={f.glyph} size={15} /> : <span aria-hidden>{f.label}</span>}
+            <span className="sr-only">{f.word}</span>
+          </>
+        ),
+      }))}
+    />
   );
 }
 
@@ -234,12 +224,11 @@ export function CalendarHeader({
   onCurrentSpan,
 }: CalendarHeaderProps) {
   return (
-    <div className="flex items-center gap-1 py-1.5" style={{ paddingLeft: CAL_EDGE, paddingRight: CAL_EDGE }}>
+    <div className="ph-cal-row" style={{ paddingLeft: CAL_EDGE, paddingRight: CAL_EDGE - 4 }}>
       <HorizonLadder horizon={horizon} onHorizon={onHorizon} />
       <div className="flex-1" />
       {/* The clock these times are in — a glyph only while you're away from
-          home (see TimeZoneChip). It used to sit on four of the five lenses
-          saying nothing at all, and it lives in the slack between the two
+          home (see TimeZoneChip). It lives in the slack between the two
           clusters so that appearing costs neither of them a pixel. */}
       <TimeZoneChip now={now} hideAtHome />
       {/* Travel, as one object: the two directions with "now" between them, so
@@ -249,40 +238,36 @@ export function CalendarHeader({
           Today is always mounted. It used to render only while you were away
           from today, so the instant a swipe crossed today's edge this button
           appeared — shoving the arrows sideways under a thumb that was still
-          moving — and vanished again on the way back. A control that
-          materialises mid-gesture is worse than one that is sometimes quiet.
-          It is also never dead, which is what the old show/hide was avoiding:
+          moving — and vanished again on the way back. It is also never dead:
           on the current span it re-centres on now, so a day canvas you have
-          scrolled to 9pm comes back to the signal line — which is what people
-          reach for it to do anyway. Both states wear a border (one of them
-          transparent) so the box is pixel-identical either way (D-123). */}
-      <div className="flex shrink-0 items-center">
-        <button
-          type="button"
+          scrolled to 9pm comes back to the signal line. The two states are the
+          same kit Button in two kinds, and every kind carries the same 1px
+          border (transparent on the ghost), so the box is pixel-identical
+          either way (D-123). */}
+      <div className="ph-travel">
+        <IconButton
+          label={`Previous ${travelUnit}`}
+          size="md"
+          icon={<Icon name="chevron-left" size={18} />}
           onClick={onPrev}
-          aria-label={`Previous ${travelUnit}`}
-          className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2"
-        >
-          <Icon name="chevron-left" size={15} />
-        </button>
-        <button
-          type="button"
+          className="tap-icon"
+        />
+        <Button
+          kind={onCurrentSpan ? "ghost" : "secondary"}
+          size="md"
           onClick={onToday}
           aria-label={onCurrentSpan ? "Back to now" : "Back to today"}
-          className={`tap-h fast rounded-full border px-2.5 py-1 text-label font-medium active:bg-surface-2 ${
-            onCurrentSpan ? "border-transparent text-muted opacity-60" : "border-line text-ink"
-          }`}
+          className="tap-icon border"
         >
           Today
-        </button>
-        <button
-          type="button"
+        </Button>
+        <IconButton
+          label={`Next ${travelUnit}`}
+          size="md"
+          icon={<Icon name="chevron-right" size={18} />}
           onClick={onNext}
-          aria-label={`Next ${travelUnit}`}
-          className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2"
-        >
-          <Icon name="chevron-right" size={15} />
-        </button>
+          className="tap-icon"
+        />
       </div>
     </div>
   );
@@ -344,8 +329,8 @@ export function WeekdayLetters({ weekStartsOn }: { weekStartsOn: 0 | 1 }) {
   return (
     <ColumnBand>
       {Array.from({ length: 7 }, (_, i) => (
-        <div key={i} className="py-1 text-center text-micro font-medium uppercase text-muted" aria-hidden>
-          {addDays(start, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)}
+        <div key={i} className="ph-dow-letter" aria-hidden>
+          {addDays(start, i).toLocaleDateString([], { weekday: "narrow" })}
         </div>
       ))}
     </ColumnBand>
@@ -355,7 +340,8 @@ export function WeekdayLetters({ weekStartsOn }: { weekStartsOn: 0 | 1 }) {
 /** One day, drawn as a cell — the numeral, its load dots, and the forecast in
  *  the corner. Shared by the month grid and the week row so a Tuesday is the
  *  SAME PICTURE at both horizons; that sameness is what carries the zoom.
- *  Focus lifts (`glass-lift`) rather than outlining, per the design language. */
+ *  Selection fills (an accent wash with an accent edge); today's numeral sits
+ *  on --signal, because today is now. */
 export const DayCell = memo(function DayCell({
   day,
   selected,
@@ -396,30 +382,14 @@ export const DayCell = memo(function DayCell({
       }`}
       aria-current={isToday ? "date" : undefined}
       aria-pressed={selected}
-      className={`tap fast relative flex flex-col items-center justify-start gap-0.5 rounded-xl py-1 ${
-        square ? "aspect-square" : ""
-      } ${selected ? "glass-lift" : "active:bg-surface-2"}`}
+      data-square={square ? "" : undefined}
+      data-dim={dim ? "" : undefined}
+      className="ph-day"
     >
       {showWeekday && (
-        <span
-          className={`text-micro font-medium uppercase leading-none ${
-            isToday ? "text-accent" : "text-muted"
-          }`}
-        >
-          {date.toLocaleDateString([], { weekday: "short" }).slice(0, 2)}
-        </span>
+        <span className="ph-day-dow">{date.toLocaleDateString([], { weekday: "narrow" })}</span>
       )}
-      <span
-        className={`flex h-7 w-7 items-center justify-center rounded-full text-body leading-none ${
-          isToday
-            ? "bg-accent font-semibold text-on-accent"
-            : selected
-              ? "font-semibold text-ink"
-              : ""
-        } ${dim ? "text-muted/50" : isToday ? "" : "text-ink"}`}
-      >
-        {date.getDate()}
-      </span>
+      <span className="ph-day-num">{date.getDate()}</span>
       {/* Weather rides the corner; the load dots keep the slot under the
           numeral. Load is the planner's data and weather is the garnish, so
           load is the one that never gives up its place. */}
@@ -430,13 +400,9 @@ export const DayCell = memo(function DayCell({
           className="pointer-events-none absolute right-0.5 top-0.5 opacity-80"
         />
       )}
-      <span className="flex h-1.5 items-center gap-0.5">
+      <span className="ph-day-dots">
         {dots.map((k, i) => (
-          <span
-            key={i}
-            className="h-1 w-1 rounded-full"
-            style={{ background: k === "block" ? "var(--accent)" : "var(--line-strong)" }}
-          />
+          <span key={i} data-block={k === "block" ? "" : undefined} />
         ))}
       </span>
     </button>
@@ -469,7 +435,7 @@ export function WeekRow({
       // they are in. The numerals roll 30 · 31 · 1 · 2 across a week's end and
       // used to leave you to infer it from a hero two rows up.
       gutter={
-        <span className="mono text-micro leading-none text-muted">{format(selected, "MMM")}</span>
+        <span className="ph-axis-label">{format(selected, "MMM")}</span>
       }
     >
       {Array.from({ length: 7 }, (_, i) => {

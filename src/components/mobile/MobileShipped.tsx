@@ -8,8 +8,9 @@
 //
 // Translation, not a port. The desktop is a two-column wall (cards left, the
 // celebratory rail right); a phone holds one column, so the rail's headline
-// figure ("N this month") rides the masthead and the wall becomes grouped rows —
-// projects by month, initiatives by quarter, exactly the desktop's grain.
+// figure ("N this month") rides one quiet fact line over the list — the top
+// bar already carries the screen's hero — and the wall becomes grouped 48px
+// rows: projects by month, initiatives by quarter, exactly the desktop's grain.
 //
 // The wall's one *action* comes with it: a finished record with no area shows
 // Nuvo's suggested home, one tap to attach, so a win still joins the picture.
@@ -24,9 +25,10 @@ import { format, parseISO } from "date-fns";
 import type { Domain } from "../../lib/vertical";
 import { DomainPicker } from "../floors/parts";
 import { ShipStamp } from "../ShipStamp";
-import { Hint } from "./detail/verticalDetail";
 import SkeletonRows from "./Skeleton";
 import { useRecordActions } from "./MobileRecordActions";
+import { ChipButton, Dot } from "../kit";
+import { PhEmpty } from "./touch";
 
 export default function MobileShipped({
   scope,
@@ -39,7 +41,6 @@ export default function MobileShipped({
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readShipped(d, scope, now), [d, scope, now]);
   const { actionProps, sheet } = useRecordActions(onOpenItem);
-  const nounPl = scope === "initiative" ? "initiatives" : "projects";
 
   // The same instant, offline suggestion the desktop wall offers for a win with
   // no area — one matcher, both shells.
@@ -64,32 +65,24 @@ export default function MobileShipped({
 
   return (
     <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
-      <div className="px-4 pt-4">
-        <div className="section-label !p-0">
-          {board.total} shipped · {board.thisPeriodCount} {board.periodNoun}
-        </div>
-        <h1 className="mt-1 text-display masthead leading-none">Shipped</h1>
-        <p className="mt-1.5 text-caption text-muted">
-          Every finish line you've crossed — the {nounPl} you closed out, newest first.
-        </p>
-      </div>
-
       {board.total === 0 ? (
-        <div className="px-4 pt-6">
-          <Hint>
-            Nothing shipped yet. Finish a {scope === "initiative" ? "bet" : "project"} and it lands
-            here.
-          </Hint>
-        </div>
+        <PhEmpty icon="package">Nothing shipped yet</PhEmpty>
       ) : (
-        <div className="pt-4">
+        <>
+        {/* The wall's headline figure, as the one fact over the list. */}
+        <div className="px-4 pb-1 pt-3 text-caption tabular-nums text-muted">
+          <span className="font-semibold text-ink">{board.total}</span> shipped ·{" "}
+          <span className="font-semibold text-ink">{board.thisPeriodCount}</span> {board.periodNoun}
+        </div>
+        <div>
           {board.groups.map((g) => (
             <section key={g.key}>
               {/* Sticky, like every other grouped list on the phone — you always
-                  know which month you're scrolling through. */}
-              <h2 className="sticky top-0 z-10 flex items-baseline gap-2 border-y border-line bg-surface/90 px-4 py-1.5 backdrop-blur">
-                <span className="text-caption font-medium text-ink">{g.label}</span>
-                <span className="mono text-meta text-muted">{g.items.length}</span>
+                  know which month you're scrolling through. Solid --panel: the
+                  rows slide under it, never through it. */}
+              <h2 className="ph-section sticky top-0 z-10 m-0 border-b border-[var(--line-1)] bg-[var(--panel)] !pb-2">
+                <span>{g.label}</span>
+                <span className="ph-section-count">{g.items.length}</span>
               </h2>
               {g.items.map((it) => (
                 <ShippedRow
@@ -107,6 +100,7 @@ export default function MobileShipped({
             </section>
           ))}
         </div>
+        </>
       )}
       {sheet}
     </div>
@@ -136,50 +130,40 @@ function ShippedRow({
   // only has to survive the beat before that lands.
   const [attached, setAttached] = useState(false);
   const sorted = useMemo(() => [...domains].sort((a, b) => a.sort - b.sort), [domains]);
-  const accent = domain?.color ?? "var(--muted)";
 
   return (
-    <div className="border-b border-line last:border-b-0">
-      <button
-        onClick={onOpen}
-        {...hold}
-        className="tap fast flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2"
-      >
+    <div className="border-b border-[var(--line-1)]">
+      <button type="button" onClick={onOpen} {...hold} className="ph-row row-hover !border-b-0">
         <ShipStamp shipped size={20} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-body text-ink">{name}</span>
+        <span className="min-w-0 flex-1 py-2">
+          <span className="ph-row-title block">{name}</span>
           {domain && (
-            <span className="flex items-center gap-1.5 text-caption text-muted">
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
+            <span className="mt-0.5 flex items-center gap-1.5 text-caption text-muted">
+              <Dot color={domain.color} size="sm" />
               <span className="min-w-0 truncate">{domain.name}</span>
             </span>
           )}
         </span>
-        {at && (
-          <span className="mono shrink-0 text-micro text-muted">{format(parseISO(at), "MMM d")}</span>
-        )}
+        {at && <span className="ph-row-meta">{format(parseISO(at), "MMM d")}</span>}
       </button>
 
       {/* Attribution — the wall's one act. A win with no area can't join the
           picture, so it asks here rather than only at a desk. */}
       {!domain && !attached && (
-        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pl-12">
           {suggestion ? (
-            <button
+            <ChipButton
+              dot={suggestion.domain.color}
               onClick={() => {
                 setAttached(true);
                 onAttach(suggestion.domain.id);
               }}
-              className="tap fast flex items-center gap-1.5 rounded-full border border-line px-3 py-2 text-caption text-ink active:border-accent"
+              className="tap-bloom"
             >
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: suggestion.domain.color }}
-              />
               File under {suggestion.domain.name}
-            </button>
+            </ChipButton>
           ) : (
-            <span className="text-caption text-muted">No area —</span>
+            <span className="text-caption text-muted">No area</span>
           )}
           <DomainPicker
             domains={sorted}

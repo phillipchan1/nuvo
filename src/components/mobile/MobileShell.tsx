@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
+import { IconButton } from "../kit";
+import { TouchSegmented, SegCount } from "./touch";
+import { PhoneNav, PhoneTopBar } from "./ShellChrome";
 import { format } from "date-fns";
 import { todayISO, toDateISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
@@ -32,7 +35,7 @@ import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
-import { AltitudeIcon, type AltitudeKind } from "../icons";
+import type { AltitudeKind } from "../icons";
 import { TrialBanner } from "../billing/TrialBanner";
 import Orientation from "../orientation/Orientation";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
@@ -134,80 +137,13 @@ function readSub(): MobileTab {
   return "today";
 }
 
-/**
- * The Calendar's hero, in the top bar.
- *
- * It had a row of its own inside the Calendar's chrome — 40px on the phone's
- * most contested screen — and on the Week lens it spent them saying "This week"
- * directly above a crown strip already saying "This week". Up here it costs
- * nothing: this slot exists on every other tab to print today's date.
- *
- * Still Fraunces, because it is still the hero, and still the jump-anywhere
- * door: tapping it opens the OS date picker, which is the only way to reach a
- * date that is more than a few swipes away.
- */
-function CalendarTitle({ hero }: { hero: CalHero }) {
-  const jumpRef = useRef<HTMLInputElement>(null);
-  const canJump = Boolean(hero.date);
-
-  const inner = (
-    <>
-      {/* The hero is bounded by this surface's own vocabulary — "Today",
-          "This week", "September 30" — so it takes the room it needs and the
-          FACT is what gives way. The other way round truncated "Agenda" to
-          "Age…" beside a full-width span, which is the wrong half to lose. */}
-      <span className="masthead shrink-0 text-head text-ink">{hero.hero}</span>
-      {hero.fact && (
-        <span
-          className="mono min-w-0 truncate text-label"
-          style={{ color: hero.factAccent ? "var(--accent)" : "var(--muted)" }}
-        >
-          {hero.fact}
-        </span>
-      )}
-    </>
-  );
-
-  if (!canJump) return <div className="flex min-w-0 items-baseline gap-1.5">{inner}</div>;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          const el = jumpRef.current;
-          if (!el) return;
-          // `showPicker` where it exists (iOS 16+, every engine we ship on);
-          // focus is the honest fallback rather than a dead hero.
-          try {
-            el.showPicker();
-          } catch {
-            el.focus();
-          }
-        }}
-        aria-label={`${hero.hero} — jump to another date`}
-        className="tap-h fast flex min-w-0 items-baseline gap-1.5 rounded-lg px-1 text-left active:bg-surface-2"
-      >
-        {inner}
-      </button>
-      {/* `sr-only` and opened by the button above: iOS paints a date input's own
-          value at the control's intrinsic width while its picker is open, which
-          used to smear "Aug 17," across the header. */}
-      <input
-        ref={jumpRef}
-        type="date"
-        value={hero.date!.toLocaleDateString("en-CA")}
-        onChange={(e) => {
-          const [y, m, d] = e.target.value.split("-").map(Number);
-          if (y && m && d) hero.onJump(new Date(y, m - 1, d));
-        }}
-        aria-label="Jump to date"
-        className="sr-only"
-        tabIndex={-1}
-      />
-    </>
-  );
-}
+const TAB_HERO: Record<Tab, string> = {
+  calendar: "Calendar",
+  tasks: "Tasks",
+  projects: "Projects",
+  initiatives: "Initiatives",
+  domains: "Domains",
+};
 
 export default function MobileShell() {
   const [tab, setTabState] = useState<Tab>(readTab);
@@ -637,56 +573,25 @@ export default function MobileShell() {
     // fixed positioning fills) is the true full-screen box, so the nav sits flush.
     <MobileOpenTaskContext.Provider value={setTaskId}>
     <div className="atmosphere fixed inset-0 flex flex-col">
-      {/* Top bar */}
-      <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
-        {/* The wordmark yields to the Calendar's span, and only there. Three
-            things competing in one bar — name, span, read — meant the span had
-            to truncate ("Age…" over a full-width "Aug 28 – Sep 10"), and a
-            calendar's title bar says the date on every phone ever made. Four of
-            the five tabs still wear the name; the bottom bar always says which
-            screen you're on. */}
-        {tab !== "calendar" && <span className="wordmark wordmark-grad text-lead">Nuvo</span>}
-        {/* One date slot, two tenants. Everywhere but the Calendar it is today,
-            plainly. On the Calendar it is the SPAN YOU ARE LOOKING AT — which
-            is what a calendar's title bar says on every phone ever made, and
-            what lets the surface below stop spending a whole row on it.
-
-            D-123 banned a second date up here because the top bar's "today"
-            didn't describe the screen the moment you paged to September. This
-            is the resolution of that, not a relapse: the bar now says exactly
-            what is on screen, and the calendar says it exactly once (D-125). */}
-        {tab === "calendar" ? (
-          calHero && <CalendarTitle hero={calHero} />
-        ) : (
-          <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
-        )}
-        <div className="flex-1" />
-        <button
-          onClick={() => setSearchOpen(true)}
-          aria-label="Search"
-          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-muted active:scale-95"
-        >
-          <Icon name="search" size={16} />
-        </button>
-        <button
-          onClick={() =>
-            updateSettings({
-              theme: document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-            })
-          }
-          aria-label="Toggle theme"
-          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
-        >
-          <Icon name="moon" size={16} />
-        </button>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Settings"
-          className="tap-icon fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
-        >
-          <Icon name="settings" size={16} />
-        </button>
-      </header>
+      {/* The top bar — every tab's one hero (30px), then one line of fact.
+          On the Calendar the hero is the SPAN you are looking at, handed up by
+          the Calendar (`onHero`, D-125) — what a calendar's title bar says on
+          every phone ever made — and the fact is its read. Everywhere else it is
+          the place you are, over today's date. The fact row is always mounted
+          (an empty one holds its height), so changing tab or lens never moves
+          the content under the bar (D-123). */}
+      <PhoneTopBar
+        hero={tab === "calendar" ? calHero : null}
+        title={TAB_HERO[tab]}
+        fact={format(now, "EEEE, MMMM d")}
+        onSearch={() => setSearchOpen(true)}
+        onToggleTheme={() =>
+          updateSettings({
+            theme: document.documentElement.dataset.theme === "dark" ? "light" : "dark",
+          })
+        }
+        onSettings={() => setSettingsOpen(true)}
+      />
 
       <TrialBanner />
 
@@ -706,6 +611,13 @@ export default function MobileShell() {
             now={now}
             onTapEvent={openTap}
             onTapTask={(id) => setTaskId(id)}
+            // Ticking a task from a list row is the same act as anywhere else.
+            onToggleTask={(id, done) => {
+              const t = taskById.get(id);
+              if (!t) return;
+              if (done) mutations.complete(t);
+              else mutations.uncomplete(t);
+            }}
             onTapEmpty={(start) =>
               setCapture({
                 kind: "task",
@@ -788,7 +700,7 @@ export default function MobileShell() {
                 they sit at the top of the Week segment rather than on an
                 execution screen. */}
             {sub === "week" && verticalReady && (
-              <div className="flex flex-col gap-4 px-4 pt-4">
+              <div className="flex flex-col gap-3 px-4 pt-4">
                 <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
                 {/* One primary card per state (plan vs review), the other a
                     quiet link — see WeekCompanions. */}
@@ -862,53 +774,25 @@ export default function MobileShell() {
       {/* Bottom bar — the five navigation destinations, equal width. Capture (＋) and Nuvo
           (✦) float above the bar as the two primary *actions* (bottom-right thumb
           arc), so the row stays even and the bold accent belongs to capture. */}
-      <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
-        {/* Capture and Nuvo stand down while a bulk selection is live, for the
-            same reason they do for the chat: they float over the bottom-right,
-            which is exactly where the bulk bar's last actions sit. A ＋ covering
-            "Move" is worse than a ＋ that waits. */}
-        {!chatOpen && pickedIds.size === 0 && (
-          <>
-            {/* Nuvo — the floating chat launcher, beside capture. Screen-aware:
-                its starters match wherever you are. */}
-            <button
-              onClick={() => openChat()}
-              aria-label="Ask Nuvo"
-              data-teach="nuvo"
-              className="elev-2 fast absolute right-[calc(1rem_+_3.5rem_+_0.75rem)] bottom-[calc(100%_+_0.75rem_+_4px)] flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-display leading-none text-accent active:scale-95"
-            >
-              ✦
-            </button>
-            {/* Capture — the one primary action. */}
-            <button
-              onClick={() => setCapture({ kind: "task" })}
-              aria-label="Capture"
-              data-teach="capture"
-              className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-on-accent active:scale-95"
-            >
-              ＋
-            </button>
-          </>
-        )}
-
-        {NAV.map((t) => (
-          <NavTab
-            key={t.id}
-            tab={t}
-            active={tab === t.id}
-            onClick={() => (tab === t.id ? scrollToTop() : setTab(t.id))}
-            badge={t.id === "tasks" ? inbox.length : 0}
-          />
-        ))}
-      </nav>
+      {/* Bottom bar — the five places, equal width. Capture (＋) and Nuvo (✦)
+          float above its right end as the two primary *actions* (the thumb's
+          arc), so the row stays even and the accent belongs to capture. They
+          stand down while a bulk selection is live, for the same reason they do
+          for the chat: they float over the bottom-right, which is exactly where
+          the bulk bar's last actions sit. */}
+      <PhoneNav
+        places={NAV}
+        current={tab}
+        onPick={(id) => (tab === id ? scrollToTop() : setTab(id))}
+        badge={(id) => (id === "tasks" ? inbox.length : 0)}
+        onCapture={!chatOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
+        onAskNuvo={!chatOpen && pickedIds.size === 0 ? () => openChat() : undefined}
+      />
 
       {/* The Nuvo chat — a full-screen overlay over the shell (its own scroll +
           pinned composer sit better here than in a swipe-to-dismiss sheet). */}
       {chatOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex flex-col pt-safe"
-          style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}
-        >
+        <div className="ph-overlay">
           <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} />
         </div>
       )}
@@ -1065,55 +949,6 @@ function liveHintFor(
   }
 }
 
-// A bottom-bar destination tab with optional count badge.
-function NavTab({
-  tab,
-  active,
-  onClick,
-  badge = 0,
-}: {
-  tab: { id: Tab; label: string; kind: AltitudeKind };
-  active: boolean;
-  onClick: () => void;
-  badge?: number;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      data-teach={`mtab-${tab.id}`}
-      aria-current={active ? "page" : undefined}
-      className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
-        active ? "text-accent" : "text-muted"
-      }`}
-    >
-      {/* Non-colour active cue (WCAG 1.4.1) — a 2px indicator bar. */}
-      {active && (
-        <span aria-hidden className="absolute inset-x-[22%] top-0 h-0.5 rounded-full bg-accent" />
-      )}
-      <span className="flex h-7 items-center leading-none">
-        <AltitudeIcon kind={tab.kind} size={22} />
-      </span>
-      <span className="text-meta font-medium leading-none">{tab.label}</span>
-      {badge > 0 && (
-        // Inactive counts sit as inked pills on a real surface — the old
-        // line-strong fill left the number at ~1.5:1 in both themes.
-        <span
-          className="mono absolute right-[24%] top-1 rounded-full px-1 text-micro font-semibold leading-[13px]"
-          style={{
-            minWidth: 15,
-            height: 15,
-            background: active ? "var(--accent)" : "var(--surface-2)",
-            color: active ? "var(--on-accent)" : "var(--ink)",
-            border: active ? "1px solid var(--accent)" : "1px solid var(--line-strong)",
-          }}
-        >
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
 // The Today / Week / Inbox lens switch inside the Tasks screen.
 function TaskSubtabs({
   sub,
@@ -1132,55 +967,41 @@ function TaskSubtabs({
 }) {
   const trashOn = sub === "trash";
   const trashCount = count("trash");
+  // On Trash no segment is lit — the trough still shows where the three faces
+  // are, and tapping one goes back.
+  const face = (trashOn ? "" : sub) as MobileTab;
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-      {SUBTABS.map((t) => {
-        const on = sub === t.id;
-        const c = count(t.id);
-        return (
-          <button
-            key={t.id}
-            onClick={() => setSub(t.id)}
-            className={`tap fast flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
-            }`}
-          >
-            {t.label}
-            {c > 0 && (
-              // Active: an inverted pill (on-accent ground, accent numeral) —
-              // the translucent white fill hid the count. Inactive: an inked
-              // pill on surface-2, same as the nav badge.
-              <span
-                className="mono rounded-full px-1 text-micro font-semibold leading-[13px]"
-                style={{
-                  minWidth: 15,
-                  height: 15,
-                  background: on ? "var(--on-accent)" : "var(--surface-2)",
-                  color: on ? "var(--accent)" : "var(--ink)",
-                  border: on ? "none" : "1px solid var(--line-strong)",
-                }}
-              >
-                {c}
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-[var(--line-1)] bg-[var(--panel)] py-2 pl-4 pr-2">
+      <div className="min-w-0 flex-1">
+        <TouchSegmented<MobileTab>
+          full
+          label="Tasks"
+          value={face}
+          onChange={setSub}
+          options={SUBTABS.map((t) => ({
+            value: t.id,
+            label: (
+              <>
+                {t.label}
+                <SegCount n={count(t.id)} />
+              </>
+            ),
+          }))}
+        />
+      </div>
       {showTrash && (
-        // Recovery, not a fourth peer of Today · Week · Inbox (D-136). Same
-        // 44px floor as the segments; the count lives in the name, not the
-        // chrome — "Trash 52" was a retention log wearing a navigation face.
-        <button
-          type="button"
-          onClick={() => setSub("trash")}
-          aria-label={`Trash · ${trashCount >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashCount}`}
+        // Recovery, not a fourth peer of Today · Week · Inbox (D-136). The
+        // count lives in the name, not the chrome — "Trash 52" was a retention
+        // log wearing a navigation face.
+        <IconButton
+          label={`Trash · ${trashCount >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashCount}`}
           aria-pressed={trashOn}
-          className={`tap fast flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
-            trashOn ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
-          }`}
-        >
-          <Icon name="trash" size={16} />
-        </button>
+          active={trashOn}
+          size="md"
+          icon={<Icon name="trash" size={18} />}
+          onClick={() => setSub("trash")}
+          className="tap-icon shrink-0"
+        />
       )}
       {filter}
     </div>

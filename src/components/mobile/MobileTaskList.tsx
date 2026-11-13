@@ -15,8 +15,10 @@ import {
 import TaskRow, { type TaskMeta } from "../TaskRow";
 import { acceptPatch, dismissPatch, undoAutoPatch } from "../../lib/grooming";
 import { InboxAddressHint } from "../InboxAddress";
-import { SectionLabel } from "../ui";
 import SkeletonRows from "./Skeleton";
+import { Button } from "../kit";
+import { Icon } from "../Icon";
+import { PhEmpty, TouchButton } from "./touch";
 import SlotRunHeader, { slotRunFace } from "../tasks/SlotRunHeader";
 import { clockEntries, type ClockEntry, type SlotRun } from "../../lib/slotRuns";
 import { coverage } from "../../lib/selection";
@@ -193,10 +195,10 @@ export default function MobileTaskList({
       <div>
         {inbox.length === 0 && (
           filterNote ? (
-            <Empty text={`Nothing in the inbox matches ${filterNote}.`} />
+            <PhEmpty>Nothing matches {filterNote}</PhEmpty>
           ) : (
             <>
-              <Empty text="Inbox zero. Tap ＋ to capture." />
+              <PhEmpty icon="check">Inbox zero</PhEmpty>
               <InboxAddressHint />
             </>
           )
@@ -217,10 +219,10 @@ export default function MobileTaskList({
     if (pending && nothing) return <SkeletonRows />;
     return (
       <div>
-        {nothing && <Empty text={filterNote ? `Nothing today matches ${filterNote}.` : "Nothing planned for today. Pull from Week or tap ＋."} />}
+        {nothing && (filterNote ? <PhEmpty>Nothing matches {filterNote}</PhEmpty> : <PhEmpty icon="check">Nothing planned</PhEmpty>)}
         {todaySections.pinned.length > 0 && (
           <>
-            <SectionLabel count={todaySections.pinned.length}>Overdue</SectionLabel>
+            <ListSection count={todaySections.pinned.length}>Overdue</ListSection>
             {todaySections.pinned.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
@@ -228,13 +230,13 @@ export default function MobileTaskList({
         )}
         {todaySections.unblocked.length > 0 && (
           <>
-            <SectionLabel
+            <ListSection
               open={todayOpen.planned}
               onToggle={() => toggleToday("planned")}
               count={todaySections.unblocked.length}
             >
               No time yet
-            </SectionLabel>
+            </ListSection>
             {todayOpen.planned &&
               todaySections.unblocked.map((t) => (
                 <TaskRow key={t.id} {...rowProps(t)} />
@@ -243,13 +245,13 @@ export default function MobileTaskList({
         )}
         {clock.length > 0 && (
           <>
-            <SectionLabel
+            <ListSection
               open={todayOpen.scheduled}
               onToggle={() => toggleToday("scheduled")}
               count={todaySections.scheduled.length}
             >
               On the clock
-            </SectionLabel>
+            </ListSection>
             {todayOpen.scheduled &&
               clock.map((entry) =>
                 entry.kind === "task" ? (
@@ -262,13 +264,13 @@ export default function MobileTaskList({
         )}
         {todaySections.done.length > 0 && (
           <>
-            <SectionLabel
+            <ListSection
               open={todayOpen.done}
               onToggle={() => toggleToday("done")}
               count={todaySections.done.length}
             >
               Done
-            </SectionLabel>
+            </ListSection>
             {todayOpen.done &&
               todaySections.done.map((t) => (
                 <TaskRow key={t.id} {...rowProps(t)} />
@@ -285,30 +287,36 @@ export default function MobileTaskList({
   return (
     <div>
       {vertical.sprintGoal && (
-        <div className="border-b border-line px-4 py-3">
-          <div className="section-label mb-0.5 !p-0">This week</div>
-          <div className="text-head font-medium">{vertical.sprintGoal}</div>
+        // The week's one sentence, said once: a quiet name over it, never an
+        // eyebrow restating the segment you are already on.
+        <div className="border-b border-[var(--line-1)] px-4 py-3">
+          <div className="text-caption font-semibold text-muted">Goal</div>
+          <div className="mt-0.5 text-head font-medium text-ink">{vertical.sprintGoal}</div>
         </div>
       )}
-      {empty && <Empty text={filterNote ? `Nothing this week matches ${filterNote}.` : "Nothing committed this week yet."} />}
+      {empty && (filterNote ? <PhEmpty>Nothing matches {filterNote}</PhEmpty> : <PhEmpty>Nothing committed</PhEmpty>)}
       {weekPool.unplaced.length > 0 && (
         <>
-          <SectionLabel>To place</SectionLabel>
+          <ListSection count={weekPool.unplaced.length}>To place</ListSection>
           {weekPool.unplaced.map((t) => (
             <TaskRow
               key={t.id}
               {...rowProps(
                 t,
-                <button
+                // A 28px kit button whose hit area blooms to 44px under a thumb
+                // (`.tap-bloom`) — the row stays one height.
+                <Button
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     mutations.planFor(t, todayISO(now), TRIAGE_UNDO);
                   }}
                   title="Pull onto today"
-                  className="tap fast mono shrink-0 rounded-md border border-line px-2 text-caption text-muted active:border-accent active:text-accent"
+                  icon={<Icon name="arrow-right" size={13} />}
+                  className="tap-bloom shrink-0"
                 >
-                  ▸ today
-                </button>,
+                  Today
+                </Button>,
               )}
             />
           ))}
@@ -316,7 +324,7 @@ export default function MobileTaskList({
       )}
       {weekPool.placed.length > 0 && (
         <>
-          <SectionLabel>Placed on days</SectionLabel>
+          <ListSection count={weekPool.placed.length}>Placed on days</ListSection>
           {weekPool.placed.map((t) => (
             <TaskRow key={t.id} {...rowProps(t)} />
           ))}
@@ -324,7 +332,7 @@ export default function MobileTaskList({
       )}
       {weekPool.done.length > 0 && (
         <>
-          <SectionLabel>Done</SectionLabel>
+          <ListSection count={weekPool.done.length}>Done</ListSection>
           {weekPool.done.map((t) => (
             <TaskRow key={t.id} {...rowProps(t)} />
           ))}
@@ -334,13 +342,53 @@ export default function MobileTaskList({
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="px-4 py-10 text-center text-body text-muted">{text}</div>;
+/**
+ * A group's name and its count, in the phone's section voice (12/600, sentence
+ * case — `ph-section`). With `onToggle` the whole header is a 44px disclosure;
+ * the chevron turns, the count stays so a shut group still says what it holds.
+ */
+function ListSection({
+  children,
+  count,
+  open,
+  onToggle,
+}: {
+  children: React.ReactNode;
+  count?: number;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
+  const inner = (
+    <>
+      <span>{children}</span>
+      {count != null && count > 0 && <span className="ph-section-count">{count}</span>}
+    </>
+  );
+  if (onToggle && open != null) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="ph-section tap-h w-full border-0 bg-transparent text-left"
+      >
+        {inner}
+        <span className="ph-grow" />
+        <Icon
+          name="chevron-down"
+          size={14}
+          className="fast self-center text-[var(--faint)]"
+          style={{ transform: open ? undefined : "rotate(-90deg)" }}
+        />
+      </button>
+    );
+  }
+  return <div className="ph-section">{inner}</div>;
 }
 
 /**
  * The phone's trash — the same two acts as the desktop rail's, in the thumb's
- * idiom: full-width 44px buttons rather than hover-revealed text, and the
+ * idiom: thumb-sized kit buttons rather than hover-revealed text, and the
  * destructive one asks in place (a hidden gesture must never be the only path
  * to an act, and this act has no undo at all).
  */
@@ -357,16 +405,18 @@ function MobileTrash({
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [emptyConfirm, setEmptyConfirm] = useState(false);
-  if (tasks.length === 0) return <Empty text="Nothing in the trash." />;
+  if (tasks.length === 0) return <PhEmpty icon="trash">Trash is empty</PhEmpty>;
   return (
     <div>
-      <div className="border-b border-line px-4 py-3">
-        <div className="text-caption leading-snug text-muted">
-          Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
-          can't be undone. Items older than {TRASH_RETENTION_DAYS} days are removed automatically.
-        </div>
-        <button
-          type="button"
+      {/* One fact — when they go — and the act that empties it. Restoring and
+          deleting say what they do on their own buttons. */}
+      <div className="flex items-center gap-3 border-b border-[var(--line-1)] px-4 py-3">
+        <span className="min-w-0 flex-1 text-caption text-muted">
+          Removed after {TRASH_RETENTION_DAYS} days
+        </span>
+        <TouchButton
+          compact
+          kind={emptyConfirm ? "danger-solid" : "danger"}
           onClick={() => {
             if (emptyConfirm) {
               onPurgeAll();
@@ -375,40 +425,32 @@ function MobileTrash({
               setEmptyConfirm(true);
             }
           }}
-          className={`tap-h fast mt-3 w-full rounded-lg border px-3 py-2.5 text-body font-medium ${
-            emptyConfirm ? "border-signal text-signal" : "border-line text-muted active:bg-surface-2"
-          }`}
         >
           {emptyConfirm ? "Delete all forever?" : "Empty trash"}
-        </button>
+        </TouchButton>
       </div>
       {tasks.map((t) => {
         const asking = confirming === t.id;
         return (
-          <div key={t.id} className="border-b border-line px-4 py-3">
-            <div className="truncate text-body text-muted">{t.title || "Untitled"}</div>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onRestore(t)}
-                className="tap-h fast flex-1 rounded-lg border border-line bg-surface px-3 text-body font-medium text-ink active:bg-surface-2"
-              >
+          <div key={t.id} className="border-b border-[var(--line-1)] px-4 pb-3 pt-3">
+            <div className="ph-row-title text-muted">{t.title || "Untitled"}</div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <TouchButton compact full onClick={() => onRestore(t)}>
                 Restore
-              </button>
-              <button
-                type="button"
+              </TouchButton>
+              <TouchButton
+                compact
+                full
+                kind={asking ? "danger-solid" : "danger"}
                 onClick={() => {
                   if (asking) {
                     onPurge(t);
                     setConfirming(null);
                   } else setConfirming(t.id);
                 }}
-                className={`tap-h fast flex-1 rounded-lg border px-3 text-body font-medium ${
-                  asking ? "border-signal text-signal" : "border-line text-muted active:bg-surface-2"
-                }`}
               >
                 {asking ? "Delete forever?" : "Delete forever"}
-              </button>
+              </TouchButton>
             </div>
           </div>
         );

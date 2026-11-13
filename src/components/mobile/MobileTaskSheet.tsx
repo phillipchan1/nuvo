@@ -30,6 +30,8 @@ import { at, span } from "./dayPlan";
 import { useSettings } from "../../hooks/useSettings";
 import DomainSymbol from "../domain/DomainSymbol";
 import { Icon } from "../Icon";
+import { Dot, IconButton, TaskCheck } from "../kit";
+import { TouchButton } from "./touch";
 import {
   ActionRow,
   AutoText,
@@ -45,6 +47,7 @@ import {
   SHEET_SCROLL,
   SheetMast,
   SheetSection,
+  SheetStrip,
   dayWord,
   useSheetTitle,
 } from "./sheetKit";
@@ -52,6 +55,10 @@ import {
 type Mutations = ReturnType<typeof useTaskMutations>;
 type SlotMutations = ReturnType<typeof useSlotMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
+
+/** Three lines of notes, in `ph-field`'s box: the read face and the textarea
+ *  that replaces it under your finger must be the same height. */
+const NOTES_MIN_H = "calc(3 * 1.3em + 22px)";
 
 const pickId = (p: SlotPick) => (p.kind === "slot" ? `slot:${p.slot.id}` : `task:${p.task.id}`);
 
@@ -215,7 +222,7 @@ export default function MobileTaskSheet({
     { value: "high", label: "High", color: "var(--signal)" },
     { value: "medium", label: "Medium", color: "var(--accent)" },
     { value: "low", label: "Low", color: "var(--muted)" },
-    { value: "none", label: "None", color: "var(--line-strong)" },
+    { value: "none", label: "None", color: "var(--line-2)" },
   ];
 
   // The ONE muted line under the name: when it is, and how long it is.
@@ -295,7 +302,7 @@ export default function MobileTaskSheet({
     };
   });
   const pickDayWord = dayWord(parseDateISO(pickDay));
-  const slotNote = `Blocks ${pickDayWord === "Today" || pickDayWord === "Tomorrow" ? pickDayWord.toLowerCase() : `on ${pickDayWord}`}. A slot takes this in. A task makes one slot of the two, at that task’s time.`;
+  const slotNote = `Blocks ${pickDayWord === "Today" || pickDayWord === "Tomorrow" ? pickDayWord.toLowerCase() : `on ${pickDayWord}`}. Picking a task makes one slot of the two.`;
 
   /** A repeating occurrence placed by hand keeps its new place, as the
    *  Schedule's drop does — and only AFTER the act: the outbox folds a row's
@@ -350,6 +357,20 @@ export default function MobileTaskSheet({
         <div className={SHEET_BODY}>
           <SheetMast
             color={accent ?? domain?.color}
+            // Finishing it is the first thing a thumb does, so the check stands
+            // beside the name — the same 20px TaskCheck every list draws. It
+            // closes the sheet behind it, as the big "Mark done" button did.
+            lead={
+              <TaskCheck
+                size="lg"
+                checked={done}
+                label={done ? "Reopen" : "Mark done"}
+                onChange={() => {
+                  done ? mutations.uncomplete(task) : mutations.complete(task);
+                  close();
+                }}
+              />
+            }
             crumb={
               parented ? (
                 <>
@@ -359,13 +380,13 @@ export default function MobileTaskSheet({
                   </span>
                   {initiative && (
                     <>
-                      <span aria-hidden>›</span>
+                      <Icon name="chevron-right" size={12} className="shrink-0 text-[var(--faint)]" />
                       <span className="truncate">{initiative.name}</span>
                     </>
                   )}
                   {project && (
                     <>
-                      <span aria-hidden>›</span>
+                      <Icon name="chevron-right" size={12} className="shrink-0 text-[var(--faint)]" />
                       <span className="truncate">{project.name}</span>
                     </>
                   )}
@@ -374,20 +395,17 @@ export default function MobileTaskSheet({
             }
             meta={
               <>
-                {done && (
-                  <>
-                    <span className="inline-flex items-center gap-1 text-ink">
-                      <Icon name="check" size={12} />
-                      Done
-                    </span>
-                    <MetaDot />
-                  </>
-                )}
                 <span>{when}</span>
                 {length && (
                   <>
                     <MetaDot />
                     <span>{length}</span>
+                  </>
+                )}
+                {inSlot && (
+                  <>
+                    <MetaDot />
+                    <span className="truncate">in {deriveSlotTitle(inSlot, childrenOf(inSlot.id), vertical)}</span>
                   </>
                 )}
               </>
@@ -399,28 +417,27 @@ export default function MobileTaskSheet({
               onBlur={commitTitle}
               label="Task title"
               single
-              className={`bg-transparent text-lead font-semibold leading-snug tracking-tight ${
-                done ? "text-muted line-through decoration-muted/50" : "text-ink"
-              }`}
+              className={`ph-mast-title ${done ? "!text-[var(--faint)] line-through" : ""}`}
             />
           </SheetMast>
 
-          <button
-            type="button"
-            onClick={() => {
-              done ? mutations.uncomplete(task) : mutations.complete(task);
-              close();
-            }}
-            className={`tap fast mt-4 flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
-              done ? "border-line text-muted" : "border-accent bg-accent text-on-accent"
-            }`}
-          >
-            <Icon name={done ? "refresh" : "check"} size={16} />
-            {done ? "Reopen" : "Mark done"}
-          </button>
+          {/* The strip — moving it is the other thing you opened it for. Put in
+              a slot only when there is something to put it with: a door that
+              opens an empty list is a dead end. */}
+          <SheetStrip>
+            <TouchButton icon={<Icon name="calendar" size={16} />} active={showDatePick} onClick={() => setShowDatePick((v) => !v)}>
+              Reschedule
+            </TouchButton>
+            {slotRows.length > 0 && (
+              <TouchButton icon={<Icon name="clock" size={16} />} onClick={() => setPicker("slot")}>
+                Put in a slot
+              </TouchButton>
+            )}
+          </SheetStrip>
+          {showDatePick && <DateTimePicker task={task} mutations={mutations} onDone={close} />}
 
           <SheetSection label="Plan">
-            <ChipGrid cols={3}>
+            <ChipGrid cols={2}>
               {planChips.map((c) => (
                 <Chip key={c.label} on={c.active} onClick={() => { c.run(); close(); }}>
                   {c.label}
@@ -429,11 +446,7 @@ export default function MobileTaskSheet({
               <Chip on={task.status === "inbox"} onClick={() => { mutations.backToInbox(task, TRIAGE_UNDO); close(); }}>
                 Inbox
               </Chip>
-              <Chip span={2} onClick={() => setShowDatePick((v) => !v)} on={showDatePick}>
-                Pick date…
-              </Chip>
             </ChipGrid>
-            {showDatePick && <DateTimePicker task={task} mutations={mutations} onDone={close} />}
           </SheetSection>
 
           <SheetSection label="Duration">
@@ -458,10 +471,10 @@ export default function MobileTaskSheet({
             <TaskNotes
               value={notes}
               onBlur={commitNotes}
-              // The read face wears the textarea's box exactly — `.field`, three
+              // The read face wears the textarea's box exactly — `ph-field`, three
               // rows tall — so a number turning tappable never moves the sheet.
-              readClassName="field leading-relaxed"
-              readStyle={{ minHeight: "calc(3 * 1.3em + 1rem + 2px)" }}
+              readClassName="ph-field"
+              readStyle={{ minHeight: NOTES_MIN_H }}
               renderEditor={({ inputRef, onFocus, onBlur }) => (
                 <AutoText
                   value={notes}
@@ -472,7 +485,7 @@ export default function MobileTaskSheet({
                   label="Notes"
                   placeholder="Add notes"
                   minRows={3}
-                  className="field leading-relaxed"
+                  className="ph-field"
                 />
               )}
             />
@@ -492,20 +505,18 @@ export default function MobileTaskSheet({
                 <FactRow
                   lead={
                     <span style={{ color: domain?.color }}>
-                      <DomainSymbol value={domain?.icon} size={16} />
+                      <DomainSymbol value={domain?.icon} size={18} />
                     </span>
                   }
                   label="Domain"
                   value={domain?.name ?? "None"}
-                  valueColor={domain ? domain.color : null}
+                  valueColor={domain ? "var(--ink)" : null}
                   onClick={() => setPicker("domain")}
                 />
               )}
               <RepeatControl anchorISO={anchorISO} value={repeatRule} onChange={(r) => void onRepeatChange(r)} variant="row" />
-              {/* Deadline — the one date that isn't a plan. The phone could only
-                  READ one (its reminder row appeared once a deadline existed);
-                  setting one needed the desktop. A native date input is iOS's
-                  own wheel: no cursor popover, no form. */}
+              {/* Deadline — the one date that isn't a plan. A native date input
+                  is iOS's own wheel: no cursor popover, no form. */}
               <DeadlineRow
                 value={task.deadline}
                 onChange={(d) => mutations.patchTask(task.id, { deadline: d })}
@@ -529,13 +540,11 @@ export default function MobileTaskSheet({
           </SheetSection>
 
           <SheetSection label="Priority">
-            <ChipGrid cols={4}>
+            <ChipGrid cols={4} narrowCols={2}>
               {priorities.map((p) => (
                 <Chip key={p.value} on={task.priority === p.value} onClick={() => mutations.patchTask(task.id, { priority: p.value })}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: task.priority === p.value ? "currentColor" : p.color }} />
-                    {p.label}
-                  </span>
+                  <Dot color={p.color} shape="round" size="sm" />
+                  {p.label}
                 </Chip>
               ))}
             </ChipGrid>
@@ -556,13 +565,9 @@ export default function MobileTaskSheet({
                         on ? next.delete(l.id) : next.add(l.id);
                         mutations.setLabels(task.id, [...next]);
                       }}
-                      className="tap fast rounded-full border px-3.5 text-body font-medium"
-                      style={{
-                        borderColor: on ? l.color : "var(--line)",
-                        background: on ? `color-mix(in srgb, ${l.color} 15%, var(--surface))` : "transparent",
-                        color: on ? l.color : "var(--muted)",
-                      }}
+                      className="ph-chip"
                     >
+                      <Dot color={l.color} shape="round" size="sm" />
                       {l.name}
                     </button>
                   );
@@ -571,67 +576,52 @@ export default function MobileTaskSheet({
             </SheetSection>
           )}
 
-          {(task.start_time || onAskNuvo || slotRows.length > 0 || onToggleWeek || !done) && (
-            <SheetSection>
-              <RowList>
-                {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={askNuvo} />}
-                {onToggleWeek && !done && (
-                  <ActionRow
-                    icon="agenda"
-                    label={inWeek ? "Take off this week" : "Commit to this week"}
-                    onClick={() => {
-                      onToggleWeek(task);
-                      close();
-                    }}
-                  />
-                )}
-                <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />
-                {/* Who else needs to see it (D-149's line between Task and
-                    Event): the block becomes a meeting on your default calendar. */}
-                {task.start_time && !done && <ActionRow icon="users" label="Make it an event" onClick={toEvent} />}
-                {/* Only when there is something to put it with — a row that
-                    opens an empty list is a dead end. It names the slot the
-                    task is in now, which nothing else on this sheet says. */}
-                {slotRows.length > 0 && (
-                  <FactRow
-                    icon="clock"
-                    label="Put in a slot"
-                    value={inSlot ? deriveSlotTitle(inSlot, childrenOf(inSlot.id), vertical) : undefined}
-                    onClick={() => setPicker("slot")}
-                  />
-                )}
-                {task.start_time && (
-                  <ActionRow
-                    quiet
-                    icon="calendar"
-                    label="Remove from calendar"
-                    onClick={() => {
-                      mutations.unblock(task);
-                      close();
-                    }}
-                  />
-                )}
-              </RowList>
-            </SheetSection>
-          )}
+          <SheetSection>
+            <RowList>
+              {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={askNuvo} />}
+              {onToggleWeek && !done && (
+                <ActionRow
+                  icon="agenda"
+                  label={inWeek ? "Take off this week" : "Commit to this week"}
+                  onClick={() => {
+                    onToggleWeek(task);
+                    close();
+                  }}
+                />
+              )}
+              <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />
+              {/* Who else needs to see it (D-149's line between Task and
+                  Event): the block becomes a meeting on your default calendar. */}
+              {task.start_time && !done && <ActionRow icon="users" label="Make it an event" onClick={toEvent} />}
+              {task.start_time && (
+                <ActionRow
+                  quiet
+                  icon="calendar"
+                  label="Remove from calendar"
+                  onClick={() => {
+                    mutations.unblock(task);
+                    close();
+                  }}
+                />
+              )}
+            </RowList>
+          </SheetSection>
 
-          <div className="mt-6">
-            <DestructiveRow
-              label={recurrence ? "Trash…" : "Trash"}
-              confirm={false}
-              onConfirm={() => {
-                // A repeating task asks which occurrences — the desktop's menu
-                // question. Plain trash on an occurrence let the series stamp it
-                // straight back, and there was no way to end the series here.
-                if (recurrence) {
-                  setPicker("trash");
-                  return;
-                }
-                mutations.trash(task);
-                onClose();
-              }}
-            />
-          </div>
+          <DestructiveRow
+            label={recurrence ? "Trash…" : "Trash"}
+            confirm={false}
+            onConfirm={() => {
+              // A repeating task asks which occurrences — the desktop's menu
+              // question. Plain trash on an occurrence let the series stamp it
+              // straight back, and there was no way to end the series here.
+              if (recurrence) {
+                setPicker("trash");
+                return;
+              }
+              mutations.trash(task);
+              onClose();
+            }}
+          />
         </div>
       </Sheet>
 
@@ -651,7 +641,6 @@ export default function MobileTaskSheet({
       {picker === "domain" && (
         <PickSheet
           title="Domain"
-          note="Where this task’s time counts, when it isn’t part of a project."
           rows={vertical.domains.map((d) => ({
             id: d.id,
             name: d.name,
@@ -668,9 +657,9 @@ export default function MobileTaskSheet({
         <PickSheet
           title="Trash a repeating task"
           rows={[
-            { id: "THIS", name: "This occurrence", lead: <Icon name="trash" size={16} className="text-muted" /> },
-            { id: "FOLLOWING", name: "This and following", lead: <Icon name="repeat" size={16} className="text-muted" /> },
-            { id: "ALL", name: "The whole series", lead: <Icon name="repeat" size={16} className="text-muted" /> },
+            { id: "THIS", name: "This occurrence", lead: <Icon name="trash" size={18} className="text-muted" /> },
+            { id: "FOLLOWING", name: "This and following", lead: <Icon name="repeat" size={18} className="text-muted" /> },
+            { id: "ALL", name: "The whole series", lead: <Icon name="repeat" size={18} className="text-muted" /> },
           ]}
           value={null}
           onPick={trashScoped}
@@ -716,10 +705,10 @@ function useVisibilityFlush(flush: () => void) {
 function RemindRow({ children, caption }: { children: React.ReactNode; caption?: string }) {
   return (
     <div>
-      {caption && <div className="pt-2.5 text-micro font-medium text-muted" style={{ paddingLeft: 32 }}>{caption}</div>}
+      {caption && <div className="pt-2.5 text-caption text-muted" style={{ paddingLeft: 32 }}>{caption}</div>}
       <div className="flex items-start gap-3">
-        <span className="flex h-11 w-5 shrink-0 items-center justify-center text-muted">
-          <Icon name="bell" size={16} />
+        <span className="ph-row-lead h-12">
+          <Icon name="bell" size={18} />
         </span>
         <div className="min-w-0 flex-1">{children}</div>
       </div>
@@ -754,20 +743,16 @@ function DateTimePicker({
   // covers the lower half of this bottom sheet, so a trailing button could
   // never be reached while a wheel was open.
   return (
-    <div className="mt-2 grid grid-cols-2 gap-2">
-      <button
-        type="button"
-        onClick={apply}
-        className="tap fast col-span-2 rounded-xl border border-accent bg-accent text-head font-semibold text-on-accent active:translate-y-px"
-      >
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <TouchButton kind="primary" full className="col-span-2" onClick={apply}>
         Set date{time ? " & time" : ""}
-      </button>
+      </TouchButton>
       <input
         type="date"
         value={date}
         aria-label="Date"
         onChange={(e) => setDate(e.target.value)}
-        className="field mono w-full min-w-0"
+        className="ph-field tabular-nums"
       />
       <input
         type="time"
@@ -775,7 +760,7 @@ function DateTimePicker({
         step={900}
         aria-label="Time"
         onChange={(e) => setTime(e.target.value)}
-        className="field mono w-full min-w-0"
+        className="ph-field tabular-nums"
       />
     </div>
   );
@@ -786,16 +771,16 @@ function DateTimePicker({
 function DeadlineRow({ value, onChange }: { value: string | null; onChange: (d: string | null) => void }) {
   const shown = value ? dayWord(parseDateISO(value)) : "None";
   return (
-    <div className="relative flex min-h-[44px] items-center gap-3">
-      <span className="flex w-5 shrink-0 items-center justify-center text-muted">
-        <Icon name="clock" size={16} />
+    <div className="ph-row relative">
+      <span className="ph-row-lead">
+        <Icon name="clock" size={18} />
       </span>
-      <span className="shrink-0 text-body text-ink">Deadline</span>
-      <label className="relative ml-auto flex min-w-0 items-center gap-1">
-        <span className="min-w-0 truncate text-body" style={{ color: value ? "var(--signal)" : "var(--muted)" }}>
+      <span className="ph-row-label">Deadline</span>
+      <label className="relative ml-auto flex min-w-0 items-center gap-1 self-stretch">
+        <span className="ph-row-value" style={value ? { color: "var(--ink)" } : undefined}>
           {shown}
         </span>
-        <Icon name="chevron-right" size={14} className="shrink-0 text-muted/70" />
+        <Icon name="chevron-right" size={16} className="ph-row-chev" />
         <input
           type="date"
           value={value ?? ""}
@@ -805,14 +790,13 @@ function DeadlineRow({ value, onChange }: { value: string | null; onChange: (d: 
         />
       </label>
       {value && (
-        <button
-          type="button"
+        <IconButton
+          label="Clear deadline"
+          size="md"
+          icon={<Icon name="close" size={16} />}
           onClick={() => onChange(null)}
-          aria-label="Clear deadline"
-          className="fast flex h-11 w-9 shrink-0 items-center justify-center text-muted active:text-ink"
-        >
-          <Icon name="close" size={14} />
-        </button>
+          className="-mr-2 shrink-0"
+        />
       )}
     </div>
   );

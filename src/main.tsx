@@ -19,6 +19,8 @@ import "./styles/documents.css";
 // The Flow layout — rituals, Plan the week, onboarding, login (D-190).
 import "./styles/flows.css";
 import "./styles/popovers.css";
+// The phone — the kit at touch size (src/components/mobile/).
+import "./styles/phone.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

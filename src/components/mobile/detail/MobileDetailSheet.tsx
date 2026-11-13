@@ -9,6 +9,8 @@ import { haptic } from "../../../lib/haptics";
 import { useVertical } from "../../../hooks/useVertical";
 import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
 import Sheet from "../Sheet";
+import { Icon } from "../../Icon";
+import { IconButton } from "../../kit";
 import { useRecordActions } from "../MobileRecordActions";
 import MobileDomainScreen from "./MobileDomainScreen";
 import {
@@ -182,15 +184,14 @@ export default function MobileDetailSheet({
   const titleNode = (
     <div className="flex min-w-0 items-center gap-1">
       {!atRoot && (
-        <button
+        <IconButton
+          label="Back"
+          size="md"
+          icon={<Icon name="chevron-left" size={20} />}
           onClick={back}
           onPointerDown={(e) => e.stopPropagation()}
-          aria-label="Back"
-          className="tap-icon fast -ml-1 flex items-center justify-center rounded-lg px-1 text-lead text-muted active:bg-surface-2"
-          style={{ cursor: "default" }}
-        >
-          ‹
-        </button>
+          className="tap-icon -ml-2.5 shrink-0"
+        />
       )}
       {/* one row, two states, cross-faded in place: where this record lives
           (and the control that moves it) at rest, its name once you've scrolled
@@ -222,14 +223,13 @@ export default function MobileDetailSheet({
       title={titleNode}
       action={
         recordFrame && (
-          <button
+          <IconButton
+            label={`Actions for this ${recordFrame.level}`}
+            size="md"
+            icon={<Icon name="more" size={18} />}
             onClick={() => openActions(recordFrame.level, recordFrame.id)}
-            aria-label={`Actions for this ${recordFrame.level}`}
-            className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
-            style={{ cursor: "default" }}
-          >
-            ⋯
-          </button>
+            className="tap-icon"
+          />
         )
       }
       onClose={onClose}

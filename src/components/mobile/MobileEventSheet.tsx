@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { SlotDeferPanel } from "../floors/DeferPanel";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../Icon";
+import { Button, Dot } from "../kit";
+import { TouchButton } from "./touch";
 import TaskRow from "../TaskRow";
 import type { AttendeeStatus, ExternalEvent, Label, RecurrenceScope, Slot, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
@@ -58,6 +60,8 @@ import {
   SHEET_SCROLL,
   SheetMast,
   SheetSection,
+  SheetStrip,
+  TouchLink,
   dayWord,
   fmtDay,
   useSheetTitle,
@@ -576,7 +580,7 @@ export default function MobileEventSheet({
                   <>
                     <MetaDot />
                     <span className="inline-flex items-center gap-1">
-                      <Icon name="repeat" size={11} />
+                      <Icon name="repeat" size={12} />
                       {repeatLine}
                     </span>
                   </>
@@ -591,10 +595,10 @@ export default function MobileEventSheet({
                 onBlur={commitTitle}
                 label="Event title"
                 single
-                className="bg-transparent text-lead font-semibold leading-snug tracking-tight text-ink"
+                className="ph-mast-title"
               />
             ) : (
-              <div className="text-lead font-semibold leading-snug tracking-tight text-ink">{tap.title}</div>
+              <div className="ph-mast-title">{tap.title}</div>
             )}
           </SheetMast>
 
@@ -604,7 +608,7 @@ export default function MobileEventSheet({
               given two. */}
           {offlineOnly && (
             <p className="mt-3 flex items-start gap-2 text-caption text-muted">
-              <Icon name="info" size={14} className="mt-0.5 shrink-0" />
+              <Icon name="info" size={14} className="mt-px shrink-0" />
               {CALENDAR_OFFLINE_NOTE}
             </p>
           )}
@@ -613,53 +617,40 @@ export default function MobileEventSheet({
               accounts have loaded so it never flashes on an editable event. */}
           {!writableEvent && accounts.length > 0 && (
             <p className="mt-3 flex items-start gap-2 text-caption text-muted">
-              <Icon name="info" size={14} className="mt-0.5 shrink-0" />
-              This calendar is read-only, so the event can’t be edited here.
+              <Icon name="info" size={14} className="mt-px shrink-0" />
+              Read-only calendar
             </p>
           )}
 
           {/* The strip — the reason you opened it, at most two acts. Join is the
               one thing you open a meeting for on a phone, so it leads; "Going?"
               is the answer to the question the invite asks. */}
-          {(meetLink || showRsvp || canAddMeet) && (
-            <div className="mt-4 space-y-3">
+          {(meetLink || canAddMeet) && (
+            <SheetStrip>
               {meetLink && (
-                <a
-                  href={meetLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={onClose}
-                  className="tap fast flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-head font-semibold text-on-accent active:translate-y-px"
-                >
-                  <Icon name="video" size={16} className="shrink-0" />
+                <TouchLink href={meetLink} kind="primary" onClick={onClose} icon={<Icon name="video" size={16} />}>
                   Join {conferenceName(raw, tap.location)}
-                </a>
+                </TouchLink>
               )}
               {canAddMeet && (
-                <button
-                  type="button"
-                  onClick={addMeet}
-                  disabled={addingMeet}
-                  className="tap fast flex w-full items-center justify-center gap-2 rounded-xl border border-line-strong px-4 text-body font-medium text-ink active:bg-accent-soft disabled:opacity-50"
-                >
-                  <Icon name="video" size={16} className="shrink-0 text-muted" />
+                <TouchButton icon={<Icon name="video" size={16} />} onClick={addMeet} disabled={addingMeet}>
                   {addingMeet ? "Adding…" : "Add Google Meet"}
-                </button>
+                </TouchButton>
               )}
-              {showRsvp && (
-                <div className="flex items-center gap-3">
-                  <span className="section-label shrink-0 !p-0">Going?</span>
-                  <div className="min-w-0 flex-1">
-                    <ResponseSegmented
-                      options={RSVP_OPTIONS}
-                      value={self_rsvp === "needsAction" ? null : self_rsvp}
-                      onPick={(v) => void handleRsvp(v)}
-                      disabled={rsvping}
-                      ariaLabel="Your response"
-                    />
-                  </div>
-                </div>
-              )}
+            </SheetStrip>
+          )}
+          {showRsvp && (
+            <div className={`${meetLink || canAddMeet ? "mt-3" : "mt-4"} flex items-center gap-3`}>
+              <span className="shrink-0 text-caption font-semibold text-muted">Going?</span>
+              <div className="min-w-0 flex-1">
+                <ResponseSegmented
+                  options={RSVP_OPTIONS}
+                  value={self_rsvp === "needsAction" ? null : self_rsvp}
+                  onPick={(v) => void handleRsvp(v)}
+                  disabled={rsvping}
+                  ariaLabel="Your response"
+                />
+              </div>
             </div>
           )}
 
@@ -672,7 +663,7 @@ export default function MobileEventSheet({
                   value={toDateInput(startAt)}
                   onChange={(e) => commitDate(e.target.value)}
                   aria-label="Date"
-                  className="field mono w-full min-w-0"
+                  className="ph-field"
                 />
                 <Chip on={allDay} onClick={() => toggleAllDay(!allDay)}>
                   All day
@@ -689,12 +680,11 @@ export default function MobileEventSheet({
                       if (next !== startAt) commitSchedule({ start_at: next, end_at: endAt, all_day: false });
                     }}
                     aria-label="Start time"
-                    className="field mono w-full min-w-0"
-                    // Inline: `.field`'s padding is unlayered and beats utilities.
-                    // Its default left 12px of empty room that "PM" needed at 320.
+                    className="ph-field"
+                    // Tight on purpose: the default 12px left no room for "PM" at 320.
                     style={{ paddingLeft: 10, paddingRight: 6 }}
                   />
-                  <Icon name="arrow-right" size={14} className="text-muted" />
+                  <Icon name="arrow-right" size={14} className="text-[var(--faint)]" />
                   <input
                     type="time"
                     step={900}
@@ -704,16 +694,15 @@ export default function MobileEventSheet({
                       if (next !== endAt) commitSchedule({ start_at: startAt, end_at: next, all_day: false });
                     }}
                     aria-label="End time"
-                    className="field mono w-full min-w-0"
-                    // Inline: `.field`'s padding is unlayered and beats utilities.
-                    // Its default left 12px of empty room that "PM" needed at 320.
+                    className="ph-field"
+                    // Tight on purpose: the default 12px left no room for "PM" at 320.
                     style={{ paddingLeft: 10, paddingRight: 6 }}
                   />
                 </div>
               )}
               <div className="relative">
                 {/* Pinned to the first line, not centred: a long place wraps. */}
-                <Icon name="pin" size={16} className="pointer-events-none absolute left-3.5 top-[14px] text-muted" />
+                <Icon name="pin" size={18} className="pointer-events-none absolute left-3 top-[13px] text-muted" />
                 {/* Wraps instead of clipping. A one-line input hid all but the
                     first ~25 characters of an address, at exactly the moment you
                     open an event to find out where you're going. */}
@@ -724,9 +713,8 @@ export default function MobileEventSheet({
                   placeholder="Add location"
                   label="Location"
                   single
-                  className="field leading-snug"
-                  // Inline, not utilities: `.field`'s own padding is unlayered CSS
-                  // and outranks any padding class. Right pad clears the Maps arrow.
+                  className="ph-field"
+                  // Left pad clears the pin; right pad clears the Maps arrow.
                   style={{ paddingLeft: 40, paddingRight: location.trim() ? 44 : undefined, marginBlock: 0 }}
                 />
                 {location.trim() && (
@@ -738,9 +726,9 @@ export default function MobileEventSheet({
                     target="_blank"
                     rel="noreferrer"
                     aria-label="Open in Maps"
-                    className="fast absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-r-[var(--radius)] text-muted active:bg-accent-soft"
+                    className="fast absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-r-[var(--r-card)] text-muted"
                   >
-                    <Icon name="arrow-right" size={14} className="-rotate-45" />
+                    <Icon name="arrow-right" size={16} className="-rotate-45" />
                   </a>
                 )}
               </div>
@@ -764,8 +752,8 @@ export default function MobileEventSheet({
                     no cursor-anchored popover. */}
                 {cachedEvent && (
                   <div className="flex items-start gap-3">
-                    <span className="flex h-11 w-5 shrink-0 items-center justify-center text-muted">
-                      <Icon name="bell" size={16} />
+                    <span className="ph-row-lead h-12">
+                      <Icon name="bell" size={18} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <ReminderSelect block chevron target={{ targetKind: "event", eventKey: eventKey(cachedEvent) }} />
@@ -778,7 +766,7 @@ export default function MobileEventSheet({
 
           {guests.length > 0 || raw?.organizer ? (
             <SheetSection label="Guests" aside={guestSummary}>
-              <div className="divide-y divide-line border-y border-line">
+              <RowList>
                 {raw?.organizer && (
                   <GuestRow
                     name={raw.organizer.displayName ?? raw.organizer.email}
@@ -796,15 +784,11 @@ export default function MobileEventSheet({
                       note={a.optional ? "optional" : undefined}
                     />
                   ))}
-              </div>
+              </RowList>
               {guests.length > GUESTS_FOLD && !showAllGuests && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllGuests(true)}
-                  className="tap fast mt-1 text-caption font-medium text-muted active:text-ink"
-                >
+                <TouchButton kind="ghost" className="-ml-4 mt-1" onClick={() => setShowAllGuests(true)}>
                   Show {guests.length - GUESTS_FOLD} more
-                </button>
+                </TouchButton>
               )}
             </SheetSection>
           ) : null}
@@ -826,7 +810,7 @@ export default function MobileEventSheet({
                 label="Notes"
                 placeholder="Add notes"
                 minRows={3}
-                className="field leading-relaxed"
+                className="ph-field"
               />
             </SheetSection>
           ) : (
@@ -835,13 +819,9 @@ export default function MobileEventSheet({
                 label="Notes"
                 aside={
                   editable ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditingNotes(true)}
-                      className="tap-h fast -my-2 px-1 text-caption font-medium text-accent"
-                    >
+                    <Button kind="ghost" size="xs" className="tap-icon -my-2" onClick={() => setEditingNotes(true)}>
                       Edit
-                    </button>
+                    </Button>
                   ) : undefined
                 }
               >
@@ -882,7 +862,6 @@ export default function MobileEventSheet({
 
           {/* Destructive, and alone: text at rest, red only once it asks. */}
           {editable && (
-            <div className="mt-6">
               <DestructiveRow
                 label={guestsTold ? "Cancel event" : "Delete event"}
                 confirmLabel={guestsTold ? "Cancel & notify guests" : "Delete event"}
@@ -895,7 +874,6 @@ export default function MobileEventSheet({
                 alt={guestsTold && !recurring ? { label: "Cancel without emailing", onConfirm: deleteQuietly } : undefined}
                 onConfirm={handleDelete}
               />
-            </div>
           )}
         </div>
       </Sheet>
@@ -909,10 +887,10 @@ export default function MobileEventSheet({
       {pick === "hide" && (
         <PickSheet
           title="Hide from calendar"
-          note="Hidden events stay on your calendar account — Nuvo just stops drawing them and counting them as busy."
+          note="It stays in your calendar account."
           rows={[
-            { id: "THIS", name: "This event", lead: <Icon name="eye-off" size={16} className="text-muted" /> },
-            { id: "ALL", name: "All events in the series", lead: <Icon name="repeat" size={16} className="text-muted" /> },
+            { id: "THIS", name: "This event", lead: <Icon name="eye-off" size={18} className="text-muted" /> },
+            { id: "ALL", name: "All events in the series", lead: <Icon name="repeat" size={18} className="text-muted" /> },
           ]}
           value={null}
           onPick={(id) => hideAs(id as RecurrenceScope)}
@@ -963,9 +941,9 @@ export default function MobileEventSheet({
 /** A tappable line that leaves the app: the place, in Maps. */
 function ActionRowLink({ href, label }: { href: string; label: string }) {
   return (
-    <div className="border-y border-line">
-      <ActionRow icon="pin" label={<span className="text-accent">{label}</span>} href={href} />
-    </div>
+    <RowList>
+      <ActionRow icon="pin" label={label} href={href} />
+    </RowList>
   );
 }
 
@@ -973,18 +951,18 @@ function ActionRowLink({ href, label }: { href: string; label: string }) {
  *  and the word beside it says it, so colour is never the only channel. */
 function GuestRow({ name, status, note }: { name: string; status: AttendeeStatus | null; note?: string }) {
   const tone =
-    status === "accepted" ? "var(--ok)" : status === "tentative" ? "var(--warn)" : status === "declined" ? "var(--signal)" : "var(--line-strong)";
+    status === "accepted" ? "var(--ok)" : status === "tentative" ? "var(--warn)" : status === "declined" ? "var(--signal)" : "var(--line-2)";
   const word = status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : status === "declined" ? "No" : status === "needsAction" ? "Awaiting" : null;
   return (
-    <div className="flex min-h-[44px] items-center gap-3 py-1.5">
-      <span className="flex w-5 shrink-0 items-center justify-center">
-        <span className="h-2 w-2 rounded-full" style={{ background: tone }} aria-hidden />
+    <div className="ph-row">
+      <span className="ph-row-lead">
+        <Dot color={tone} shape="round" />
       </span>
-      <span className="min-w-0 flex-1 truncate text-body text-ink">
+      <span className="ph-row-label" data-grow="">
         {name}
-        {note && <span className="ml-1.5 text-meta text-muted">{note}</span>}
+        {note && <span className="ml-1.5 text-caption text-muted">{note}</span>}
       </span>
-      {word && <span className="shrink-0 text-meta text-muted">{word}</span>}
+      {word && <span className="ph-row-meta">{word}</span>}
     </div>
   );
 }
@@ -1012,20 +990,16 @@ function SlotReschedulePicker({
   // Set above the pickers for the same reason as the task sheet's: the iOS wheel
   // covers the lower half of a bottom sheet.
   return (
-    <div className="mt-2 grid grid-cols-2 gap-2">
-      <button
-        type="button"
-        onClick={apply}
-        className="tap fast col-span-2 rounded-xl border border-accent bg-accent text-head font-semibold text-on-accent active:translate-y-px"
-      >
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <TouchButton kind="primary" full className="col-span-2" onClick={apply}>
         Set time
-      </button>
+      </TouchButton>
       <input
         type="date"
         value={date}
         aria-label="Date"
         onChange={(e) => setDate(e.target.value)}
-        className="field mono w-full min-w-0"
+        className="ph-field"
       />
       <input
         type="time"
@@ -1033,7 +1007,7 @@ function SlotReschedulePicker({
         step={900}
         aria-label="Time"
         onChange={(e) => setTime(e.target.value)}
-        className="field mono w-full min-w-0"
+        className="ph-field"
       />
     </div>
   );
@@ -1188,18 +1162,18 @@ function MobileSlotSheet({
             onBlur={commitTitle}
             label="Block title"
             single
-            className="bg-transparent text-lead font-semibold leading-snug tracking-tight text-ink"
+            className="ph-mast-title"
           />
         </SheetMast>
 
         <SheetSection label="Tasks" aside={children.length ? `${doneCount}/${children.length} done` : undefined}>
           {children.length === 0 ? (
-            <p className="text-body text-muted">Nothing in this block yet.</p>
+            <p className="py-2 text-body text-[var(--faint)]">Nothing here yet</p>
           ) : (
             // The same TaskRow as every other list (D-111) — this used to draw a
             // reduced one (a ○ glyph and a title), so a slot's work couldn't show
             // its length, its project or its state the way it does anywhere else.
-            <div className="-mx-1">
+            <div>
               {children.map((c) => (
                 <TaskRow
                   key={c.id}
@@ -1271,8 +1245,8 @@ function MobileSlotSheet({
               variant="row"
             />
             <div className="flex items-start gap-3">
-              <span className="flex h-11 w-5 shrink-0 items-center justify-center text-muted">
-                <Icon name="bell" size={16} />
+              <span className="ph-row-lead h-12">
+                <Icon name="bell" size={18} />
               </span>
               <div className="min-w-0 flex-1">
                 <ReminderSelect block chevron target={{ targetKind: "slot", targetId: slot.id }} />
@@ -1298,21 +1272,19 @@ function MobileSlotSheet({
           </RowList>
         </SheetSection>
 
-        <div className="mt-6">
-          <DestructiveRow
-            label={recurring || children.length > 0 ? "Delete block…" : "Delete block"}
-            confirmLabel="Delete block"
-            confirm={!(recurring || children.length > 0)}
-            onConfirm={handleDelete}
-          />
-        </div>
+        <DestructiveRow
+          label={recurring || children.length > 0 ? "Delete block…" : "Delete block"}
+          confirmLabel="Delete block"
+          confirm={!(recurring || children.length > 0)}
+          onConfirm={handleDelete}
+        />
       </div>
       {deleting && (
         <PickSheet
           title={recurring ? "Delete a repeating block" : "Delete block"}
           rows={deleteRows.map((r) => ({
             ...r,
-            lead: <Icon name={r.id.includes("tasks") ? "trash" : r.id === "this" || r.id === "simple" ? "calendar" : "repeat"} size={16} className="text-muted" />,
+            lead: <Icon name={r.id.includes("tasks") ? "trash" : r.id === "this" || r.id === "simple" ? "calendar" : "repeat"} size={18} className="text-muted" />,
           }))}
           value={null}
           onPick={deleteAs}
