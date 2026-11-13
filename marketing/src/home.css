@@ -1955,3 +1955,89 @@ html.lenis body {
     text-overflow: ellipsis;
   }
 }
+
+/* ── phones, while a scene is pinned: the scene IS one screen ───────────────
+   Copy takes what it needs; the visual takes exactly what's left, sized off
+   the space it has (container units), never off a viewport guess. An iPhone SE
+   pushed both visuals below the fold before this. */
+@media (max-width: 899px) {
+  .hm-motion .sys-pin,
+  .hm-motion .wkp-pin {
+    height: 100svh;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+    gap: 16px;
+    padding-top: 76px;
+    padding-bottom: 16px;
+  }
+  .hm-motion .sys-h2,
+  .hm-motion .wkp-head .h2 {
+    font-size: clamp(1.6rem, 7.4vw, 2.3rem);
+  }
+  .hm-motion .sys-steps {
+    margin-top: 12px;
+  }
+  .hm-motion .sys-steps li,
+  .hm-motion .wkp-steps li {
+    padding: 10px 0 0;
+  }
+  .hm-motion .sys-title {
+    font-size: 1.05rem;
+  }
+  .hm-motion .sys-stage {
+    min-height: 0;
+    height: 100%;
+    container-type: size;
+    align-items: center;
+  }
+  .hm-motion .cas {
+    width: min(100cqw, 100cqh * 100 / 110);
+  }
+  .hm-motion .wkp-pin {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .hm-motion .wkp-grid {
+    min-height: 0;
+    height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+  }
+  .hm-motion .wkp-steps p {
+    font-size: 0.9rem;
+  }
+  .hm-motion .pw {
+    height: 100%;
+    min-height: 0;
+  }
+}
+@media (max-width: 899px) and (max-height: 640px) {
+  .hm-motion .sys-body {
+    display: none;
+  }
+}
+
+/* every link a finger can reach is ≥44px tall */
+.hm-foot a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.hero-note a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.hm-foot div {
+  row-gap: 0;
+}
+@media (max-width: 899px) and (max-height: 640px) {
+  .hm-motion .pw-meter .note,
+  .hm-motion .pw-rail > .k-label {
+    display: none;
+  }
+  .hm-motion .pw-meter-row {
+    margin-bottom: 4px;
+  }
+}
