@@ -54,8 +54,8 @@ const pwa = VitePWA({
     // is useIsMobile's pointer/orientation query, NOT this — see D-075 in
     // docs/product/decisions.md.
     orientation: "portrait",
-    theme_color: "#f4f1ea",
-    background_color: "#f4f1ea",
+    theme_color: "#fcfcfd",
+    background_color: "#fcfcfd",
     icons: [
       { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
       { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },

@@ -23,4 +23,5 @@ export {
 export { MiniMonth, monthGrid } from "./MiniMonth";
 export { Dialog } from "./Dialog";
 export { PageBar } from "./PageBar";
+export { NuvoMark } from "./Mark";
 export { PaceTrack } from "../progress/PaceTrack";

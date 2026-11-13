@@ -19,24 +19,11 @@ sips -z 256 256 "$ICON" --out "${PUB}/favicon.png" >/dev/null
 sips -z 192 192 "$ICON" --out "${PUB}/pwa-192x192.png" >/dev/null
 cp -f "$ICON" "${PUB}/pwa-512x512.png"
 
-# Maskable: 80% safe zone on Warm Paper (#fdf6ec), same ground as iOS icons.
-python3 - "$ICON" "$MASKABLE" <<'PY'
-import sys
-from PIL import Image
-
-src_path, out_path = sys.argv[1:3]
-size = 512
-safe = int(size * 0.8)
-ground = (253, 246, 236, 255)
-
-src = Image.open(src_path).convert("RGBA")
-src.thumbnail((safe, safe), Image.Resampling.LANCZOS)
-canvas = Image.new("RGBA", (size, size), ground)
-ox = (size - src.width) // 2
-oy = (size - src.height) // 2
-canvas.paste(src, (ox, oy), src)
-canvas.save(out_path, "PNG")
-PY
+# Maskable: the full-bleed iOS master already keeps the mark inside the 80%
+# safe circle (app-icon-ios.svg), so it IS the maskable icon — the platform
+# crops the field, never the N.
+IOS1024="${ROOT}/src-tauri/icons/ios/AppIcon-512@2x.png"
+sips -z 512 512 "$IOS1024" --out "$MASKABLE" >/dev/null
 
 if [ -d "${ROOT}/marketing/public" ]; then
   cp -f "${PUB}/favicon.png" "${ROOT}/marketing/public/favicon.png"

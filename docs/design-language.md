@@ -79,6 +79,16 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
+## The mark (D-191)
+
+**Statement**: a geometric N with an ember full stop on the mulberry field — the way every hero
+ends ("Ship onboarding."). Mulberry is the accent (intent), the full stop is the signal (now). One
+in-app drawing, `NuvoMark` (`src/components/kit/Mark.tsx`), with two optical sizes (≤32px thickens
+the stems and grows the dot). The icon masters are `src-tauri/app-icon.svg` (macOS, rounded) and
+`src-tauri/app-icon-ios.svg` (full-bleed, for every OS-masked icon); `public/favicon.svg` is the
+small size. `npm run tauri:icon` regenerates every icon, the PWA set and the launch screens from
+them (needs Pillow). Never draw the mark by hand anywhere else.
+
 ## The six layouts and six popovers (D-190)
 
 Every page is one of six layouts, every floating surface one of six kinds — all built on the kit.

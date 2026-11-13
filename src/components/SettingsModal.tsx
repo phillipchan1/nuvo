@@ -31,7 +31,7 @@ import { useVertical } from "../hooks/useVertical";
 import { Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
 import { Field, PaneHeader, TextInput, TimeInput, Select, Toggle, Stepper, Segmented } from "./form";
-import { Avatar, Button, Chip, IconButton, SectionHeader } from "./kit";
+import { Avatar, Button, Chip, IconButton, NuvoMark, SectionHeader } from "./kit";
 import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
@@ -1423,7 +1423,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
     <div>
       <PaneHeader title="About" />
       <div className="set-row">
-        <span className="sb-mark" aria-hidden />
+        <NuvoMark size={20} />
         <span className="flex-1 text-body font-semibold text-ink">Nuvo</span>
         <span className="text-caption tabular-nums text-muted">v{__APP_VERSION__}</span>
       </div>

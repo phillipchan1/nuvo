@@ -6,7 +6,7 @@ import { readSpine, type SpineState } from "../lib/readiness";
 import { toneColor } from "./floors/ReadinessBanner";
 import { useWeekCrown } from "../hooks/useWeekCrown";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { Dot, Kbd } from "./kit";
+import { Dot, Kbd, NuvoMark } from "./kit";
 import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
 import GettingStarted from "./orientation/GettingStarted";
 
@@ -262,7 +262,7 @@ const SpineBody = memo(function SpineBody({
         {/* The workspace: the mark and the name. A tap goes home to the Schedule,
             the surface the day actually runs on. */}
         <button ref={wordmarkRef} onClick={() => setRung("day")} title="Schedule (⌘1)" className="sb-ws">
-          <span className="sb-mark" aria-hidden />
+          <NuvoMark size={20} />
           {!railed && <span className="truncate">Nuvo</span>}
         </button>
 

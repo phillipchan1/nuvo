@@ -14,7 +14,7 @@
 // you move, so back/next is spatial movement and a station keeps its state.
 
 import { Fragment, useEffect, type ReactNode } from "react";
-import { Button, IconButton } from "../kit";
+import { Button, IconButton, NuvoMark } from "../kit";
 import { Icon } from "../Icon";
 
 // ── the parts ────────────────────────────────────────────────────────────────
@@ -228,17 +228,10 @@ export function FlowMeter({
 
 /** The Nuvo mark — the app icon's N on the accent field (same path as
  *  `src-tauri/app-icon.svg`). Flat: one accent, no gradient (D-189). */
+/** The app's mark on a flow (login, first run, orientation) — the one
+ *  NuvoMark, so a flow can never drift from the icon (D-191). */
 export function FlowMark({ size = 28 }: { size?: number }) {
-  return (
-    <span className="f-mark" style={{ width: size, height: size }} aria-hidden="true">
-      <svg viewBox="0 0 1024 1024" width={size} height={size}>
-        <path
-          fill="currentColor"
-          d="M418.40 758.48Q418.40 770.57 410.40 777.59Q402.41 784.61 385.25 785L263.96 785Q246.80 784.61 238.61 777.59Q230.42 770.57 230.42 758.48Q230.42 738.20 253.04 728.45L261.62 724.55Q279.17 716.36 286.38 705.83Q293.60 695.30 293.60 672.68L293.60 381.74Q293.60 366.92 290.87 358.93Q288.14 350.93 278 337.67L247.97 297.50Q239.39 285.41 236.07 278.58Q232.76 271.76 232.76 264.35Q232.76 252.26 240.95 245.63Q249.14 239 262.40 239L393.83 239Q409.43 239 419.38 244.26Q429.32 249.53 439.46 263.96L691.79 618.47L668.39 687.50L668.39 351.32Q668.39 329.48 662.15 318.95Q655.91 308.42 636.41 299.45L628.22 295.55Q605.60 284.63 605.60 265.52Q605.60 253.04 613.79 246.02Q621.98 239 638.75 239L760.04 239Q777.20 239 785.39 246.02Q793.58 253.04 793.58 265.52Q793.58 285.41 770.96 295.55L762.38 299.45Q744.83 307.25 737.62 317.78Q730.40 328.31 730.40 351.32L730.40 641.48Q730.40 657.08 732.93 669.17Q735.47 681.26 742.49 691.01L766.67 724.16Q776.81 737.42 778.76 744.25Q780.71 751.07 780.71 758.48Q780.71 770.57 772.52 777.78Q764.33 785 750.68 785L598.58 785Q572.84 785 572.84 764.33Q572.84 757.31 569.91 750.49Q566.99 743.66 553.73 725.33L300.23 370.04L355.61 335.33L355.61 673.07Q355.61 694.13 362.04 704.66Q368.48 715.19 387.59 724.55L395.78 728.45Q418.40 738.59 418.40 758.48"
-        />
-      </svg>
-    </span>
-  );
+  return <NuvoMark size={size} />;
 }
 
 /** Is this key event aimed at something that already answers it? (A focused

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 1024 1024">
+  <!-- Nuvo favicon: the "Statement" mark (D-191) drawn for 16–32px. Heavier
+       stems (+28%), a bigger full stop and a tighter field margin than the
+       app icon, so the N and the ember dot both survive at 16px instead of
+       blurring into a smudge. Same drawing as Mark.tsx's small optical size. -->
+  <rect width="1024" height="1024" rx="230" fill="#8e2fa3"/>
+  <g fill="#ffffff">
+    <rect x="160" y="252" width="168" height="520" rx="14"/>
+    <rect x="496" y="252" width="168" height="520" rx="14"/>
+    <polygon points="160,252 328,252 664,772 496,772"/>
+  </g>
+  <circle cx="788" cy="684" r="88" fill="#ff6a33"/>
+</svg>

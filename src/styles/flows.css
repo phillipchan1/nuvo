@@ -282,17 +282,6 @@ html:root .f-receipt:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--
   padding: 12px 16px 12px 28px;
   border-top: 1px solid var(--line-1);
 }
-.f-mark {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-ctl);
-  background: var(--accent);
-  color: var(--on-accent);
-  overflow: hidden;
-}
 .f-brand { display: flex; align-items: center; gap: 8px; font: 700 15px/1 var(--font-brand); letter-spacing: -0.03em; color: var(--ink); }
 .f-note {
   padding: 8px 10px;

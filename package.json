@@ -31,7 +31,7 @@
     "db:neon:seed": "node scripts/seed-neon.mjs",
     "cf:dev": "npm run build:web && wrangler dev",
     "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
-    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons --ios-color '#fdf6ec' && bash scripts/gen-ios-icons.sh && bash scripts/sync-pwa-icons.sh",
+    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons --ios-color '#8e2fa3' && bash scripts/gen-ios-icons.sh && bash scripts/sync-pwa-icons.sh && bash scripts/gen-splash.sh",
     "app:install": "npm run tauri build && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
     "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5717\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
     "check:sql": "node scripts/check-apply-patch.mjs",

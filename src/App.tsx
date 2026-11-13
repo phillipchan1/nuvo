@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { NuvoMark } from "./components/kit/Mark";
 import { MutationCache, QueryCache, QueryClient, notifyManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
@@ -106,7 +107,9 @@ function useDelayedTrue(active: boolean, delayMs: number) {
 function LoadingCanvas({ showWordmark }: { showWordmark: boolean }) {
   return (
     <div className="atmosphere flex h-full items-center justify-center">
-      {showWordmark && <span className="wordmark shimmer text-head">nuvo</span>}
+      {/* The mark, the same one the launch screen and the Dock show (D-191),
+          so a slow cold start reads as one continuous arrival. */}
+      {showWordmark && <span className="rise"><NuvoMark size={44} title="Nuvo" /></span>}
     </div>
   );
 }

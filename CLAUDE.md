@@ -64,6 +64,8 @@ in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain
 - **Six layouts, six popovers** (D-190): every page is Planner · List · Board · Document ·
   Dialog · Flow and every floating thing is Menu · Picker · Date · Inspector · Tooltip/Toast ·
   Command — see `docs/design-language.md`. A new page picks a layout; it doesn't invent one.
+- **The mark** (D-191) is `NuvoMark` (`kit/Mark.tsx`); icons come from `src-tauri/app-icon*.svg`
+  via `npm run tauri:icon`. Never draw the mark by hand.
 - **Build from the kit** (`src/components/kit/`, D-190). A button, field, choice, chip, row,
   menu, picker, popover or dialog is a kit part — never hand-rolled, never re-styled at the call
   site. Need something it lacks? Add it to the kit (and to `?kit`) first. Verify at `?kit`.

@@ -6807,6 +6807,30 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-191 · 2026-11-13 · The mark is "Statement": an N with an ember full stop.** *(Chosen by the
+operator from four directions — Statement, Blocks, Now-line, Week — drawn in the "Nuvo Marks"
+artifact.)*
+
+**Why.** The icon was a Fraunces N on a mulberry-to-ember gradient: the two things D-189 retired.
+The app had three marks at once (that icon, a flattened copy on the login, a placeholder square in
+the sidebar).
+
+**What.** A geometric N with an ember full stop on flat mulberry — every hero in the app ends on a
+full stop, and the dot is the signal colour, *now*. One component (`NuvoMark`) for the sidebar,
+login, first run, orientation, Settings → About and the cold-start loading screen; masters
+`app-icon.svg` / `app-icon-ios.svg` / `public/favicon.svg` (a heavier small optical size). The icon
+pipeline now rasterizes with the Tauri CLI instead of cairosvg (no system Cairo), the maskable icon
+is the full-bleed master, and a new `scripts/gen-splash.sh` regenerates the iOS launch screens on
+the new ground. Manifest and browser-chrome colours follow the D-190 panel.
+
+**Rejected:** *Blocks* (the most ownable, but busier at 16px), *Now-line* (on ink, the least
+mulberry), *Week* (reads as a chart small).
+
+**Open.** The App Store listing's icon is uploaded by hand in App Store Connect. The marketing
+site's nav still sets "Nuvo" as a wordmark without the mark, and its social image is unchanged.
+
+*Status: built 2026-11-13 on `claude/statement-mark`.*
+
 **D-190 · 2026-11-12 · The kit: every page is built from one set of parts.** *(Follows D-189.
 Decided by the operator after the reskin: "When I said full redesign, I meant every single
 element… every layout every page every popover.")*
