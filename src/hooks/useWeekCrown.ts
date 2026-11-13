@@ -28,7 +28,7 @@ import {
   type PushState,
   type RockWork,
 } from "../lib/priorities";
-import { projectPace } from "../lib/pace";
+import { projectPace, spanElapsed } from "../lib/pace";
 import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
 import type { ReactNode } from "react";
 import type { BigRock, Task } from "../lib/types";
@@ -75,6 +75,10 @@ export interface WeekCrownRow {
   work: RockWork;
   /** 0–100, derived from the project's own tasks */
   pct: number;
+  /** 0–1: how far the project's committed span has run (`spanElapsed`) — the
+   *  pace tick both crowns draw beside the fill. Null when the project has no
+   *  span, or the week already has its verdict (a finished row has no pace). */
+  elapsed: number | null;
   /** Remaining effort in minutes — the project's WEIGHT, the currency the pinch
    *  math runs on. Taken from `projectPace` rather than re-summed here, so the
    *  rail row and the On Deck card can never quote different hours for the same
@@ -125,6 +129,8 @@ export function useWeekCrown(): WeekCrown | null {
 
     // `projectPace` wants a clock for its trailing-throughput read; the only
     // field this hook takes from it — `remainingMins` — doesn't depend on one.
+    // The pace tick does: it is read as of the last time the vertical changed,
+    // which is close enough for a mark that moves a few pixels a day.
     const now = new Date();
 
     const rows = weekPushes(data, weekISO).map<WeekCrownRow>((push) => {
@@ -148,6 +154,7 @@ export function useWeekCrown(): WeekCrown | null {
         state,
         work,
         pct: work.total > 0 ? Math.round((work.done / work.total) * 100) : 0,
+        elapsed: done ? null : spanElapsed(push.project, now),
         weightMins: projectPace(data, push.project, now).remainingMins,
         rolls: rock.roll_count ?? 0,
         placed,

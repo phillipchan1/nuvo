@@ -424,7 +424,9 @@ export default function MobileDayView({
                   className="pointer-events-none absolute z-10"
                   style={{ top: y(nowMin) - 1, left: CAL_GUTTER - 5, right: 0 }}
                 >
-                  <div className="relative h-[2px] rounded-full" style={{ background: "var(--signal)" }}>
+                  {/* `now-wake`: the same static wake the desktop's now-line
+                      draws (D-187) — which way time is moving, not a pulse. */}
+                  <div className="now-wake relative h-[2px] rounded-full" style={{ background: "var(--signal)" }}>
                     <span
                       className="absolute -left-0.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full"
                       style={{ background: "var(--signal)" }}

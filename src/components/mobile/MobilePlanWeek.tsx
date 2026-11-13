@@ -22,6 +22,7 @@
 // hook the desktop uses. This file only lays it out and offers taps: no drag,
 // every move has a tap path (mobile golden rule #4), 44px targets, safe areas.
 
+import WeekSetMoment from "../plan/WeekSetMoment";
 import { useMemo, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
@@ -30,7 +31,7 @@ import { useDeferProject } from "../../hooks/useProjectTime";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
-import { domainById, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
+import { domainById, sprintMinsByDomain, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { weekName, weekSpan } from "../../lib/week";
@@ -112,14 +113,19 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   if (committed) {
     return (
       <Overlay>
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center">
-          <div className="section-label">{weekName(weekStartISO)}</div>
-          <h1 className="mt-2 text-display masthead leading-tight">The week is set</h1>
-          <p className="mono mt-3 text-body text-muted">
-            {placements.length} scheduled · {keptTasks.length} committed
-            {routedCount > 0 && ` · ${routedCount} standing`}
-          </p>
-          {goal.trim() && <p className="mt-2 text-body text-ink">“{goal.trim()}”</p>}
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8">
+          {/* COMMIT (D-187) — the desktop rail ends on the same moment. */}
+          <WeekSetMoment
+            eyebrow={weekName(weekStartISO)}
+            bands={sprintMinsByDomain(data).map((x) => ({ key: x.domain.id, label: x.domain.name, color: x.domain.color, mins: x.mins }))}
+            facts={
+              <>
+                {placements.length} scheduled · {keptTasks.length} committed
+                {routedCount > 0 && ` · ${routedCount} standing`}
+              </>
+            }
+            goal={goal}
+          />
         </div>
         <Footer>
           <PrimaryButton onClick={onClose}>Done</PrimaryButton>

@@ -65,6 +65,7 @@ import { createGestureCancel, type GestureCancel } from "./calendar/gestureCance
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
 import { useStableHandler } from "../hooks/useStableHandler";
+import { consumeLanding, landBlock, markLanding } from "../lib/motion";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 import { gridSyncPlan } from "../lib/calendarGridSync";
 // One spelling for what a block IS — shared with Plan the week's grid.
@@ -2128,6 +2129,10 @@ function CalendarPane({
     // The plan's draft and its ghosts belong to the plan, not the selection,
     // the context menus or the drag-to-rail watch.
     if (kind === "plan" || kind === "planghost") return;
+    // LAND (D-187): a block you just placed may be redrawn as a fresh element
+    // once the optimistic write lands — whichever element draws it first takes
+    // the mark and settles. Only a drop marks; a refetch never lands anything.
+    if (!arg.isMirror && consumeLanding(refId)) landBlock(arg.el);
     // The selection's handle (D-158): which element(s) draw this block — a
     // multi-day chip is several. Never on a drag mirror, which isn't the block.
     if (!arg.isMirror) arg.el.setAttribute("data-block-id", arg.event.id);
@@ -2960,6 +2965,20 @@ function CalendarPane({
       });
   };
 
+  // LAND (D-187) — the one motion a drop earns: the block settles where it was
+  // let go, on the material's land easing. Transform only, one element, once —
+  // the lift itself stays instant (design-language.md: "on the Schedule the
+  // lift is instant"); this is the set-down, not the pick-up. The mark is
+  // consumed by whichever draws the block first: this frame's element, or the
+  // fresh one FullCalendar mounts when the optimistic write reconciles.
+  const landPlaced = (eventId: string, key: string) => {
+    markLanding(key);
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`.fc [data-block-id="${CSS.escape(eventId)}"]`);
+      if (el && consumeLanding(key)) landBlock(el);
+    });
+  };
+
   const onReceive = useStableHandler((info: EventReceiveArg) => {
     const el = info.draggedEl;
     const start = info.event.start;
@@ -3093,8 +3112,9 @@ function CalendarPane({
         });
       return;
     }
-    // A single task is its own block.
+    // A single task is its own block — and it LANDS where you let go of it.
     tasks.forEach((t) => mutations.block(t, start));
+    if (tasks.length === 1) landPlaced(`task:${tasks[0].id}`, tasks[0].id);
   });
 
   const onDrop = useStableHandler((info: EventDropArg) => {
@@ -3154,6 +3174,7 @@ function CalendarPane({
             info.event.remove();
           } else {
             mutations.block(task, info.event.start);
+            landPlaced(info.event.id, refId);
           }
         }
         if (task.recurrence_id && !task.recurrence_overridden)

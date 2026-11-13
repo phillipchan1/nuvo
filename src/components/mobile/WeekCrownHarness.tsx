@@ -196,19 +196,22 @@ const BIG_ROCKS: BigRock[] = [
 
 const SPRINT = { id: "sp1", week_start: WEEK_ISO, reviewed_at: new Date().toISOString(), big_rocks: BIG_ROCKS } as unknown as Sprint;
 
-function useHarnessStore(): VerticalStore {
+/** Ticks are LOCAL state, so ticking a piece in either crown advances that
+ *  project's track on both — the ADVANCE motion (D-187) is driven by a real
+ *  tick here, not described. Nothing is written anywhere. */
+function useHarnessStore(doneIds: Set<string>): VerticalStore {
   const data: VerticalData = useMemo(
     () => ({
       domains: DOMAINS,
       initiatives: [],
       projects: PROJECTS,
-      tasks: VTASKS,
+      tasks: VTASKS.map((t) => (doneIds.has(t.id) ? ({ ...t, status: "done" } as VTask) : t)),
       sprint: SPRINT,
       focusInitiativeIds: [],
       bigRocks: BIG_ROCKS,
       lastActivityByProject: {},
     }),
-    [],
+    [doneIds],
   );
   return {
     data,
@@ -233,9 +236,19 @@ function seededClient(): QueryClient {
 
 export default function WeekCrownHarness() {
   const [client] = useState(seededClient);
-  const store = useHarnessStore();
+  const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const store = useHarnessStore(doneIds);
   const [log, setLog] = useState<string[]>([]);
   const say = (s: string) => setLog((l) => [s, ...l].slice(0, 6));
+  const tick = (t: Task) => {
+    say(`toggle ${t.title}`);
+    setDoneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(t.id)) next.delete(t.id);
+      else next.add(t.id);
+      return next;
+    });
+  };
 
   return (
     <QueryClientProvider client={client}>
@@ -274,7 +287,7 @@ export default function WeekCrownHarness() {
                           whenShown={whenShown}
                           onSelect={() => say(`select ${t.title}`)}
                           onOpen={() => say(`open ${t.title}`)}
-                          onToggleDone={() => say(`toggle ${t.title}`)}
+                          onToggleDone={() => tick(t)}
                         />
                       )}
                     />
@@ -318,7 +331,7 @@ export default function WeekCrownHarness() {
                           dragData={dragData}
                           onSelect={() => say(`select ${t.title}`)}
                           onOpen={() => say(`open ${t.title}`)}
-                          onToggleDone={() => say(`toggle ${t.title}`)}
+                          onToggleDone={() => tick(t)}
                         />
                       )}
                     />

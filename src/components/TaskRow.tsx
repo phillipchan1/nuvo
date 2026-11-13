@@ -8,9 +8,14 @@ import { autoFiled, liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { carriedTitle, RecurMark } from "./ui";
 import { pressable } from "../lib/a11y";
+import { motionMs, motionOff } from "../lib/motion";
 
-/** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
-const COMPLETE_MS = 270;
+/** The whole completion — LAND (the check stamps, the strike draws), then LET
+ *  GO (the row folds away) — read from the material's `--d-task-complete`
+ *  (styles/momentum.css), so the write waits exactly as long as this skin's
+ *  row takes to leave. 440ms is Paper's value, used only when no stylesheet
+ *  answers (a test). D-187. */
+const COMPLETE_FALLBACK_MS = 440;
 
 export interface TaskMeta {
   project?: string | null;
@@ -305,10 +310,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const toggle = () => {
     if (completing) return;
     if (!done) {
-      const instant =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (instant) {
+      // Reduced motion, or a material that doesn't move (E-ink): the write is
+      // the whole act — no land, no wait.
+      if (motionOff()) {
         onToggleDone();
         return;
       }
@@ -325,7 +329,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
       completeTimer.current = window.setTimeout(() => {
         completeTimer.current = null;
         onToggleDone();
-      }, COMPLETE_MS);
+      }, motionMs("--d-task-complete") || COMPLETE_FALLBACK_MS);
     } else {
       onToggleDone();
     }
@@ -720,8 +724,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
           // tap-bloom gives the phone 44px; tap-desk-bloom gives the mouse its
           // own 24px floor. Both are invisible ::before area — the drawn 15px
           // box is untouched, so the row's density reads exactly as before.
+          // LAND: the box stamps in on the material's land easing (a spring on
+          // Paper, a click on Terminal) with the bloom ring around it, once.
           className={`tap-bloom tap-desk-bloom relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border transition-none ${
-            completing ? "bloom" : ""
+            completing ? "bloom land-stamp" : ""
           } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >
           {(done || completing) && (
@@ -735,9 +741,12 @@ const TaskRow = forwardRef<TaskRowHandle, {
               <RenameField title={task.title} onDone={(t) => onRename?.(t)} />
             ) : (
               <span
-                className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
+                className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done ? "text-muted line-through" : completing ? "text-muted" : ""}`}
               >
-                {task.title}
+                {/* While it lands, the strike is DRAWN across the words (an
+                    inline span, so it is exactly as long as the title) rather
+                    than switched on — the one beat that says "that's done". */}
+                {completing ? <span className="land-strike">{task.title}</span> : task.title}
               </span>
             )}
 

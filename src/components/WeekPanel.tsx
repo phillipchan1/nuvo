@@ -48,6 +48,7 @@ import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
+import { PaceTrack, SlatePips } from "./progress/PaceTrack";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -60,10 +61,6 @@ export interface WeekDoor {
   onOpen: () => void;
 }
 
-
-/** Past this many pieces, pips stop being countable at a glance and become the
- *  meter they stood in for — the same ceiling the phone's crown uses (D-110). */
-const PIP_CEILING = 10;
 
 export default function WeekPanel({
   door,
@@ -215,67 +212,6 @@ export default function WeekPanel({
 
 // ── the marks ────────────────────────────────────────────────────────────────
 
-/** The week itself: one pip per project in its domain's hue, filled when it
- *  landed. Count, progress and which domains are carrying the week, in one line
- *  and no words — the phone's crown language (D-110), brought to the desk. */
-function SlatePips({ rows }: { rows: WeekCrownRow[] }) {
-  if (rows.length > PIP_CEILING) {
-    const pct = Math.round((rows.filter((r) => r.state === "landed" || r.state === "shipped").length / rows.length) * 100);
-    return (
-      <span className="block h-1 w-16 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-1">
-      {rows.map((r) => {
-        const on = r.state === "landed" || r.state === "shipped";
-        return (
-          <span
-            key={r.rock.id}
-            className="block h-[7px] w-[7px] shrink-0 rounded-full"
-            style={{
-              background: on ? r.color : "transparent",
-              boxShadow: on ? undefined : `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 55%, transparent)`,
-            }}
-          />
-        );
-      })}
-    </span>
-  );
-}
-
-/** One pip per piece of a project's work, filled when it's done. Past the
- *  ceiling it becomes the meter it stood in for. */
-function WorkPips({ done, total, color }: { done: number; total: number; color: string }) {
-  if (total === 0) return null;
-  if (total > PIP_CEILING) {
-    return (
-      <span className="flex items-center gap-1.5">
-        <span className="block h-1 w-12 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-          <span className="block h-full rounded-full" style={{ width: `${(done / total) * 100}%`, background: color }} />
-        </span>
-        <span className="mono text-micro text-muted">{done}/{total}</span>
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-[3px]">
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className="block h-[5px] w-[5px] shrink-0 rounded-full"
-          style={{
-            background: i < done ? color : "transparent",
-            boxShadow: i < done ? undefined : `inset 0 0 0 1.25px color-mix(in srgb, ${color} 50%, transparent)`,
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
 /** The one thing that must never be missable: work with no time. Amber only
  *  when something is actually homeless — a fully-placed project is not a
  *  warning (P9), it is silence.
@@ -303,7 +239,7 @@ function ProgressRing({ pct, color, filled }: { pct: number; color: string; fill
     return (
       <span
         className="flex h-[17px] w-[17px] items-center justify-center rounded-full text-micro"
-        style={{ background: color, color: "#fff" }}
+        style={{ background: color, color: "var(--on-accent)" }}
       >
         <span style={{ lineHeight: 1 }}>✓</span>
       </span>
@@ -483,7 +419,10 @@ function ProjectStackRow({
         {/* ONE marks line — pips · weight · what's wrong. Every number here is a
             picture unless the picture can't say it (P9, D-110). */}
         <div className="mt-1.5 flex min-w-0 items-center gap-2.5 pr-4" aria-label={marksLabel}>
-          <WorkPips done={work.done} total={work.total} color={color} />
+          {/* The work as a TRACK of its pieces, with the pace tick where the
+              project's span stands today — the same mark the phone draws
+              (progress/PaceTrack, D-187). A piece ticked below lands here. */}
+          <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} />
           {weight && <span className="mono shrink-0 text-micro text-muted">{weight} left</span>}
           {!done && loose.length > 0 && <AmberMark count={loose.length} words />}
 

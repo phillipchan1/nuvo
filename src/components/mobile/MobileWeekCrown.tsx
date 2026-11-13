@@ -42,6 +42,7 @@ import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
+import { PaceTrack, SlatePips } from "../progress/PaceTrack";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -165,7 +166,7 @@ export default function MobileWeekCrown({
           {total === 0 ? (
             <span className="truncate text-body text-muted">nothing on it yet</span>
           ) : (
-            <SlatePips rows={rows} landed={landed} />
+            <SlatePips rows={rows} />
           )}
           <span className="flex-1" />
           {/* The one light on the strip. Not a count — a state: something in
@@ -173,7 +174,7 @@ export default function MobileWeekCrown({
           {looseCount > 0 && (
             <span
               className="h-[7px] w-[7px] shrink-0 rounded-full"
-              style={{ background: "var(--signal)" }}
+              style={{ background: "var(--warn)" }}
               aria-hidden
             />
           )}
@@ -244,46 +245,9 @@ export default function MobileWeekCrown({
 
 // ── the slate, drawn ─────────────────────────────────────────────────────────
 // One pip per project, in its domain's own hue: filled = it landed (or shipped),
-// hollow = still open. Reading it costs no words — how many, how far, and which
-// domains are carrying the week, in about 60px.
-//
-// Past ten it stops being countable at a glance, so it becomes the meter the
-// pips were standing in for. Neither form is ever a number: the count belongs to
-// the rows, which are one tap below.
-const PIP_LIMIT = 10;
-
-function SlatePips({ rows, landed }: { rows: WeekCrownRow[]; landed: number }) {
-  if (rows.length > PIP_LIMIT) {
-    return (
-      <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full" style={{ background: "var(--line)" }} aria-hidden>
-        <span
-          className="block h-full rounded-full"
-          style={{ width: `${(landed / rows.length) * 100}%`, background: "var(--accent)" }}
-        />
-      </span>
-    );
-  }
-  return (
-    <span className="flex shrink-0 items-center gap-1" aria-hidden>
-      {rows.map((r) => {
-        const done = r.state === "landed" || r.state === "shipped";
-        return (
-          <span
-            key={r.rock.id}
-            className="h-[7px] w-[7px] rounded-full"
-            style={
-              done
-                ? { background: r.color }
-                : // A ring, drawn with inset shadow so a hollow pip and a filled
-                  // one occupy exactly the same 7px — a border would nudge the row.
-                  { boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 60%, transparent)` }
-            }
-          />
-        );
-      })}
-    </span>
-  );
-}
+// hollow = still open — and a pip that fills under your hand LANDS. It is the
+// rail crown's own component (progress/PaceTrack, D-187): one drawing of the
+// week on both shells. Past ten it becomes the meter the pips stood in for.
 
 // ── one project on the week ──────────────────────────────────────────────────
 // Row = the glance (name · state · progress). Pill = the depth (which pieces
@@ -303,7 +267,7 @@ function CrownRow({
   onOpenDay: (d: Date) => void;
   renderTask: RenderCrownTask;
 }) {
-  const { color, work, placed, loose, pct, rolls, continues, canExpand, placedLabel } = row;
+  const { color, work, placed, loose, rolls, continues, canExpand, placedLabel } = row;
   const shipped = row.state === "shipped";
   const done = shipped || row.state === "landed";
 
@@ -358,12 +322,12 @@ function CrownRow({
               {/* The bar and "1/4" were one fact told twice. The bar is the
                   faster read on a phone, so the numbers go; they are on the
                   record, one tap away, and in this row's aria-label. */}
+              {/* The rail's own track (progress/PaceTrack): pieces, the
+                  fill in the domain's hue, and the pace tick where the span
+                  stands today. Ticking a piece below advances it here. */}
               {work.total > 0 && (
-                <span
-                  className="block h-1 w-10 overflow-hidden rounded-full bg-line"
-                  aria-label={`${work.done} of ${work.total} done`}
-                >
-                  <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                <span aria-label={`${work.done} of ${work.total} done`}>
+                  <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} width={48} />
                 </span>
               )}
             </span>
@@ -400,12 +364,12 @@ function CrownRow({
               style={
                 loose.length === 0
                   ? { color: "var(--muted)" }
-                  : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
+                  : { color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)" }
               }
             >
               {loose.length > 0 && (
                 <>
-                  <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--signal)" }} />
+                  <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--warn)" }} />
                   {loose.length}
                 </>
               )}
@@ -460,7 +424,7 @@ function CrownRow({
                   >
                     <span
                       className="block h-[5px] w-[5px] rounded-full"
-                      style={{ background: "var(--signal)" }}
+                      style={{ background: "var(--warn)" }}
                     />
                   </span>
                 ),

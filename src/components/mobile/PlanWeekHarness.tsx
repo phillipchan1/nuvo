@@ -3,6 +3,8 @@
 // overflow / tap targets) without a real account. Reached at ?planweek, mounted
 // in main.tsx. Not part of any real surface. Precedent: EmblemHarness (?emblem).
 
+import { useState } from "react";
+import WeekSetMoment from "../plan/WeekSetMoment";
 import { ProjectsStep, CarriedStep, WeekStep } from "./MobilePlanWeek";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep as Step } from "../rituals/WeekIntake";
 import { readIntake } from "../../lib/intake";
@@ -123,6 +125,41 @@ function Frame({ label, step, children }: { label: string; step: Step; children:
   );
 }
 
+const COMMIT_BANDS = DOMAINS.map((d, i) => ({ key: d.id, label: d.name, color: d.color, mins: [540, 240, 180][i] ?? 60 }));
+
+function CommitFrames() {
+  const [n, setN] = useState(0);
+  return (
+    <div className="mb-6 border-b border-line pb-4" data-commit-frames>
+      <div className="mb-2 flex items-center gap-3">
+        <div className="section-label !p-0">Commit · the week is set</div>
+        <button className="rounded-full bg-accent-soft px-3 py-1 text-caption text-accent" onClick={() => setN((x) => x + 1)} data-replay>
+          Replay
+        </button>
+      </div>
+      <div className="flex flex-wrap items-start gap-6" key={n}>
+        <div className="atmosphere flex items-center justify-center border border-line px-8" style={{ width: 375, height: 420 }} data-frame="commit-phone">
+          <WeekSetMoment
+            eyebrow="This week"
+            bands={COMMIT_BANDS}
+            facts="9 scheduled · 12 committed · 2 standing"
+            goal="Ship the cutover and keep Thursday evening clear"
+          />
+        </div>
+        <div className="atmosphere border border-line p-4" style={{ width: 320 }} data-frame="commit-rail">
+          <WeekSetMoment
+            align="start"
+            eyebrow="Committed"
+            bands={COMMIT_BANDS}
+            facts="12 things → 7 blocks · 1m 42s · 3 changes by you"
+            action={<button className="h-11 w-full rounded-[10px] bg-accent font-semibold text-on-accent">Done</button>}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PlanWeekHarness() {
   const days = [0, 1, 2, 3, 4].map((i) => ({ iso: dayISO(i), past: false }));
   return (
@@ -142,6 +179,12 @@ export default function PlanWeekHarness() {
           <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} />
         </div>
       </div>
+
+      {/* COMMIT (D-187) — the moment both shells end Plan the week on: the
+          phone's full-screen close at 375, and the desktop rail's at rail
+          width. "Replay" remounts both, because the motion is the point and it
+          only plays once. */}
+      <CommitFrames />
 
       <div className="flex gap-4 overflow-x-auto">
         <Frame label="1 · Projects" step="projects">

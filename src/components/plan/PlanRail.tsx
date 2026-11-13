@@ -7,12 +7,13 @@
 // it never stated). The grid explains the rest. Everything that decides WHAT the week is stays in useWeekDraft — this
 // file only lays it out and maps keys to its acts.
 
+import WeekSetMoment from "./WeekSetMoment";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWeekDraft, placementKey } from "../../hooks/useWeekDraft";
 import type { Placement } from "../../lib/compose";
 import { parseDateISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
-import { domainById, projectById } from "../../lib/vertical";
+import { domainById, projectById, sprintMinsByDomain } from "../../lib/vertical";
 import { resolveDomainId } from "../../lib/batch";
 import { at, span } from "../mobile/dayPlan";
 import { revealOnCalendar } from "../../lib/calendarReveal";
@@ -834,18 +835,25 @@ function PlanRailWeek({
       </div>
 
       {done ? (
-        <div className="flex flex-col gap-2">
-          <div className="masthead text-[24px] leading-tight">
-            {done.things} things → {done.blocks} blocks
-          </div>
-          <p className="text-caption text-muted">
-            {done.secs >= 60 ? `${Math.floor(done.secs / 60)}m ` : ""}
-            {done.secs % 60}s · {done.changes} change{done.changes === 1 ? "" : "s"} by you
-          </p>
-          <button className="mt-2 h-11 rounded-[10px] bg-accent font-semibold text-on-accent" onClick={onClose}>
-            Done
-          </button>
-        </div>
+        // COMMIT (D-187) — the same moment the phone ends on: the week by
+        // world, landing band by band, sealed by one accent line.
+        <WeekSetMoment
+          align="start"
+          eyebrow="Committed"
+          bands={sprintMinsByDomain(d.data).map((x) => ({ key: x.domain.id, label: x.domain.name, color: x.domain.color, mins: x.mins }))}
+          facts={
+            <>
+              {done.things} things → {done.blocks} blocks ·{" "}
+              {done.secs >= 60 ? `${Math.floor(done.secs / 60)}m ` : ""}
+              {done.secs % 60}s · {done.changes} change{done.changes === 1 ? "" : "s"} by you
+            </>
+          }
+          action={
+            <button className="h-11 w-full rounded-[10px] bg-accent font-semibold text-on-accent" onClick={onClose}>
+              Done
+            </button>
+          }
+        />
       ) : (
         <>
           {/* verdict + slate */}
