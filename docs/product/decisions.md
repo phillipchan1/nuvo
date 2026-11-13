@@ -6809,6 +6809,61 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-200 · 2026-11-13 · The orientation speaks Instrument and the ambitious voice: three
+statements in one sentence, the ladder drawn twice, and your own words back as each act
+lands.** *(Asked by the operator: "with the redesign… do the orientation tour. Bring it to life
+emotionally, match the ambitious nature of my user." Mechanism in
+[`orientation.md`](../orientation.md).)*
+
+**Why.** D-192 gave the welcome the statement layout but kept its old line ("Your whole life,
+actually moving" — *life* is a word the orientation spec keeps out, D-057) and its Warm Paper art
+(loose motes gathering into a calm line: a picture of *calm*). The walkthrough card was still the
+old coach dock: a small eyebrow, a 20px title, "Waiting for you…", "Done — nice.", a breathing
+glow. It cheered; it didn't say anything moved. For a reader with more ambition than hours
+(D-186) that's the wrong emotion twice over.
+
+**What.**
+- **Three statements, one sentence.** Sign-in "Ambition, down to the hour." → first run "Name what
+  you're carrying." → welcome "**Now, down to the hour.**" Door: "Take one thing all the way down."
+- **The ladder** (`orientation/Ladder.tsx`, `ladderRead.ts`) — Domain · Initiative · Project ·
+  Task · Hour, each socket centred and narrower than the one above, so the rungs draw the funnel
+  by themselves. The welcome's stage draws it with only the domains just named; the closing step
+  ("That's the whole machine.") draws it again from what the account now holds. An empty rung is
+  an open socket that says what it would earn (D-064's law) — **never a row the user didn't make
+  (P7).** The filled hour wears `--landed`, not `--signal` (ember is *now* only, D-189).
+- **The receipt.** "Your move." until the milestone ticks, then the user's words, landed:
+  *“Call the bank” is in.* · *“Call the bank” · Thu 9am* · *“Launch the paid plan” is a
+  project.* It never praises; it says what became true.
+- **The card** (`TeachCard.tsx`): a piece track along its top edge that advances forward and
+  snaps back (D-187), where-you-are with its keycap, a 22px statement ending on the ember full
+  stop, the receipt, Skip · Back · Next ("Take it from here" at the end). The pointer is a crisp
+  ember ring that lands once — the breathing glow is gone.
+- **Every title rewritten** as a statement; the act each step asks for, its target and its order
+  are unchanged.
+- **Fixed on the way:** the walkthrough's step is now the provider's persisted `teachStep` — the
+  spec said a reload resumed mid-walkthrough, but the panel kept a local index and never read it.
+
+**Anchor.** Closes no new row; serves **O1** and **O6** (the five-minute win is the same acts —
+it now ends with the reader's own line drawn). Strains **P9** (quiet by default) at the welcome's
+ladder arriving and the receipt landing — held the D-187 way: once, on the user's own act or on
+arrival, transform/opacity only, off for reduced motion. Four no's: no pool; no new user-facing
+name (the ladder is a drawing, not an object — "How it works" is a kicker, not a place); degrades
+on an empty account by construction; the receipts quote whatever the reader typed, so nothing is
+one operator's.
+
+**Replayed for everyone, once.** `ORIENTATION_VERSION` 4 → 5 *(decided by the operator)*: every
+account that finished or skipped the old tour sees the new welcome on its next launch, and Skip /
+Esc retires it again. A returning account walks it with data already in place, so most steps open
+already ticked — the receipt quotes their newest real thing and the step waits rather than
+skipping (the baseline rule), and the closing ladder is drawn from a lived-in account.
+
+*Status: shipped 2026-11-13 to `master`. Verified: typecheck, the
+suite (bar the 21 known `guard-public-ci` / `maintenance` failures), `npm run build`, and
+`?orientation` (welcome · every step waiting and landed · the empty-account ladder) in Light and
+Dark at 1440, 800 and 375 with no horizontal overflow. **Not run:** the live walkthrough against a
+real account (no `.env.local` in this checkout), so the receipts and the closing ladder have been
+seen over fixtures only; `npm run perf` (not a shared surface).*
+
 **D-199 · 2026-11-13 · Plan the week has a way out, and Friday afternoon plans next week.**
 *(Asked by the operator after opening the plan on a Friday morning.)*
 
@@ -7161,7 +7216,8 @@ the operator: "redesign the login page… every little page to highlight this am
 one layout: an always-ink stage with the mark, a statement set huge and ending on the ember full
 stop — the mark's dot, now a typographic device — and a landing week; and a door in the theme's
 panel. Statements: "Ambition, down to the hour." (sign-in, the site's line), "Name what you're
-carrying." (first run), "Your whole life, actually moving." (welcome), "Keep the momentum." /
+carrying." (first run), "Your whole life, actually moving." (welcome — now "Now, down to the
+hour.", D-200), "Keep the momentum." /
 "Pick up where you stopped." (paywall). The error screen's title takes the full stop. Every
 handler, door order (Apple first, App Store 4.8) and test hook is unchanged; sign-in gains the
 Terms / Privacy line.

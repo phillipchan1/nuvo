@@ -1,0 +1,299 @@
+/* ════════════════════════════════════════════════════════════════════════
+   ORIENTATION (D-200) — the welcome's ladder and the walkthrough card.
+
+   The walkthrough is a Momentum surface, not a coach mark: every step it
+   names is something YOU do in the real app, so every finish lands (the tick
+   stamps, your own words come back), the run advances (a piece track, the
+   pace-track register), and the end draws the ladder again, filled with what
+   you made. Transform and opacity only; nothing blurs; nothing breathes.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── The ladder ──────────────────────────────────────────────────────── */
+.ladder {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+.ladder-rung {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  animation: ladder-in var(--d-slow) var(--ease-out) both;
+  animation-delay: calc(200ms + var(--i, 0) * 90ms);
+}
+@keyframes ladder-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.ladder-alt {
+  color: var(--faint);
+  font: 600 11px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-align: right;
+}
+/* Every socket is centred in its track and narrower than the one above, so the
+   rungs draw the funnel's shape by themselves — wide at the top, one hour at the
+   point. No connector lines: the shape is the connection. */
+.ladder-track { position: relative; min-width: 0; display: flex; justify-content: center; }
+.ladder-socket {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  /* the funnel's width is a floor for the shape, never a crop of your words */
+  min-width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--r-card);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: var(--panel);
+}
+/* an open socket: a dashed edge and what it would earn */
+.ladder-socket:not([data-filled]) {
+  --dash: color-mix(in srgb, var(--ink) 26%, transparent);
+  justify-content: center;
+  box-shadow: none;
+  background:
+    linear-gradient(90deg, var(--dash) 50%, transparent 0) top / 6px 1px repeat-x,
+    linear-gradient(90deg, var(--dash) 50%, transparent 0) bottom / 6px 1px repeat-x,
+    linear-gradient(var(--dash) 50%, transparent 0) left / 1px 6px repeat-y,
+    linear-gradient(var(--dash) 50%, transparent 0) right / 1px 6px repeat-y,
+    transparent;
+}
+.ladder-socket[data-filled] { justify-content: center; }
+.ladder-earns {
+  color: var(--muted);
+  font: 500 12px/1 var(--font-sans);
+}
+.ladder-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px 0 7px;
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--h) 14%, var(--panel));
+  box-shadow: inset 2px 0 0 var(--h);
+  color: var(--ink);
+  font: 600 12.5px/1 var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.ladder-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ladder-meta {
+  flex: none;
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The bottom of the funnel — one hour. When a task sits on it, it wears
+   --landed: an intent made true (D-187). Not --signal: ember is *now* only
+   (D-189), and Thursday at 9am is not now. */
+.ladder-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36%;
+  min-width: fit-content;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-ctl);
+  color: var(--ink-2);
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.ladder-slot[data-filled] {
+  color: var(--on-accent);
+  background: var(--landed);
+  box-shadow: none;
+  animation: land-stamp var(--d-land) var(--ease-land) both;
+  animation-delay: calc(200ms + var(--i, 0) * 90ms + var(--d-slow));
+}
+
+/* On the welcome's ink stage: the same drawing, set larger. */
+.ladder[data-size="stage"] {
+  max-width: 640px;
+  gap: 12px;
+}
+.ladder[data-size="stage"] .ladder-rung { grid-template-columns: 92px minmax(0, 1fr); gap: 16px; }
+.ladder[data-size="stage"] .ladder-alt { font-size: 11.5px; }
+.ladder[data-size="stage"] .ladder-socket { min-height: 50px; padding: 9px 10px; }
+.ladder[data-size="stage"] .ladder-item { height: 30px; padding: 0 11px 0 10px; font-size: 14px; }
+.ladder[data-size="stage"] .ladder-earns { font-size: 13px; }
+.ladder[data-size="stage"] .ladder-slot { height: 42px; font-size: 13.5px; width: 30%; }
+
+/* In the card: tighter. */
+.ladder[data-size="dock"] .ladder-rung { grid-template-columns: 58px minmax(0, 1fr); gap: 10px; }
+.ladder[data-size="dock"] .ladder-alt { font-size: 10px; }
+.ladder[data-size="dock"] .ladder-socket { min-height: 32px; padding: 4px 6px; }
+
+/* ── The walkthrough card ────────────────────────────────────────────── */
+.tc {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-dialog);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+  min-width: 0;
+  overflow: hidden;
+}
+/* The run, as a piece track along the card's top edge — the pace-track register
+   (D-187): pieces you finished in --landed, the one in front of you in ink. */
+.tc-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: var(--track-h, 3px);
+}
+.tc-track > i {
+  position: relative;
+  display: block;
+  background: var(--line-1);
+  overflow: hidden;
+}
+.tc-track > i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--landed);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.tc-track > i[data-done]::after { transform: none; }
+.tc-track > i[data-on]::after { background: var(--ink); transform: scaleX(0.35); }
+/* ADVANCE — progress catches up, only forward. Back snaps (an undo never glides). */
+.tc[data-dir="fwd"] .tc-track > i::after {
+  transition: transform var(--d-advance) var(--ease-momentum);
+}
+
+.tc-body { display: grid; gap: 6px; padding: 14px 16px 14px; }
+.tc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+}
+.tc-where { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+.tc-where > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tc-count { color: var(--faint); font-variant-numeric: tabular-nums; font-weight: 500; }
+.tc-hero {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font: 750 22px/1.12 var(--font-sans);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+/* the step's statement ends on the ember full stop — the thing in front of you is now */
+.tc-hero .st-stop { animation-delay: var(--d-base); }
+.tc-line {
+  margin: 0;
+  color: var(--ink-2);
+  font: 450 13.5px/1.5 var(--font-sans);
+  text-wrap: pretty;
+}
+.tc-visual { padding: 8px 0 2px; }
+
+/* The receipt: "your move" until you've done it, then your own words, landed. */
+.tc-receipt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+  color: var(--muted);
+  font: 500 12.5px/1.3 var(--font-sans);
+}
+.tc-receipt[data-done] { color: var(--ink); background: color-mix(in srgb, var(--landed) 9%, var(--raised)); }
+.tc-receipt > b { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.tc-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  color: var(--on-accent);
+}
+.tc-receipt[data-done] .tc-check {
+  background: var(--landed);
+  box-shadow: none;
+  animation: land-stamp var(--d-land) var(--ease-land) both;
+}
+.tc-receipt[data-done] > b { animation: tc-say var(--d-base) var(--ease-out) both; }
+@keyframes tc-say {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.tc-cta { padding-top: 4px; }
+.tc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-1);
+}
+.tc-foot > .tc-skip { margin-right: auto; }
+
+/* A step's statement arrives — no fade, it's readable on frame one. */
+.tc-body[data-step] { animation: arrive var(--d-slow) var(--ease-out) both; }
+
+/* ── The pointer: a crisp ember ring, not a breathing glow ────────────────
+   Instrument overrides the old marquee glow for the walkthrough only: a 2px
+   ember edge, a hairline halo, and one land when it arrives. It never pulses —
+   a light that wants your attention is the thing D-187 forbids. */
+.marquee-orb.is-teach { animation: tc-ring-in var(--d-land) var(--ease-land) both; }
+.marquee-orb.is-teach .marquee-orb-glow {
+  animation: none;
+  opacity: 1;
+  border: 2px solid var(--signal);
+  background: none;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--signal) 16%, transparent),
+    0 12px 32px -12px color-mix(in srgb, var(--signal) 45%, transparent);
+  border-radius: 10px;
+}
+.marquee-orb.is-teach { border-radius: 10px; }
+.marquee-orb.is-teach.is-waypoint .marquee-orb-glow {
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+  box-shadow: none;
+  border-radius: 8px;
+}
+@keyframes tc-ring-in {
+  from { opacity: 0; transform: scale(1.06); }
+  to { opacity: 1; transform: none; }
+}
+.teach-dim { border-radius: 10px; }
+
+/* ── Phone ───────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .tc-hero { font-size: 21px; }
+  .ladder[data-size="dock"] .ladder-rung { grid-template-columns: 52px minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .tc .k-btn { min-height: 44px; }
+  .tc .k-kbds { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ladder-rung, .ladder-slot[data-filled], .tc-body[data-step],
+  .tc-receipt[data-done] .tc-check, .tc-receipt[data-done] > b,
+  .marquee-orb.is-teach { animation: none; }
+  .tc[data-dir="fwd"] .tc-track > i::after { transition: none; }
+}
