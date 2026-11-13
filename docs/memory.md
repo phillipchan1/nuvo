@@ -304,7 +304,7 @@ uses* tab, filtered to the planner.
 
 ## 13 · Getting better — sources, tiers, the portrait, and how we know (direction, 2026-11-13)
 
-**Status: direction, not built (D-197).** Asked by Phil the same day: should the domain's
+**Status: direction, not built (D-197).** Prototype (private, example data — a teacher's account at weeks 1, 4, 12 and 26): [Memory v2](https://claude.ai/artifact/PMjH44KT6yEiVPB1upToJy). Asked by Phil the same day: should the domain's
 context move into Memory, how much should be picked up quietly versus asked, what visual says
 "I know you" (the eight-week portrait doesn't), and — because we're outcome-based — what
 outcomes prove Nuvo is *showing* it knows you and *getting better at predicting what you need,
