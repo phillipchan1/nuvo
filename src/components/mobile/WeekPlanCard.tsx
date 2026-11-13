@@ -1,7 +1,7 @@
-// The Week's Plan / Review — the weekly narrated companion. A "This week" hero
-// (used atop the Now screen); tap to open the full surface full-screen, where
-// you can walk ‹ › back to sealed Reviews of past weeks. Lifted out of the old
-// Plan tab so it survives that tab's removal.
+// The Week's Plan / Review — the weekly narrated companion. A "This week" kit
+// Card at the top of the Week segment, with one act that opens the full
+// surface full-screen, where you can walk ‹ › back to sealed Reviews of past
+// weeks. Lifted out of the old Plan tab so it survives that tab's removal.
 
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -13,6 +13,9 @@ import { PlanWeekCard } from "./MobilePlanWeek";
 import WeekStory from "../floors/WeekStory";
 import WeekEmblem from "../floors/WeekEmblem";
 import WeekArchiveGallery from "../floors/WeekArchiveGallery";
+import { Button, Card, IconButton } from "../kit";
+import { Icon } from "../Icon";
+import { TouchButton } from "./touch";
 
 function weekLabelOf(weekISO: string): string {
   const s = new Date(weekISO + "T00:00:00");
@@ -35,13 +38,10 @@ export default function WeekPlanCard({ variant = "card" }: { variant?: "card" | 
 
   if (variant === "link") {
     return (
-      <div>
-        <button
-          onClick={openSheet}
-          className="tap fast -my-1 px-1 text-left text-caption font-medium text-accent underline-offset-2 active:underline"
-        >
-          {total > 0 ? `This week — ${report.landedCount} of ${total} landed ›` : "See the week's plan ›"}
-        </button>
+      <div className="flex">
+        <Button kind="ghost" size="sm" onClick={openSheet} trailing={<Icon name="chevron-right" size={14} />} className="tap-bloom -ml-2.5">
+          {total > 0 ? `This week · ${report.landedCount} of ${total} landed` : "The week's plan"}
+        </Button>
         {open && (
           <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} storyFirst={reviewReady} />
         )}
@@ -49,30 +49,25 @@ export default function WeekPlanCard({ variant = "card" }: { variant?: "card" | 
     );
   }
 
+  // A review waiting is an invitation — the intent's colour, never --signal
+  // (which is spent on "now"): the act turns primary and says what it opens.
   return (
     <div>
-      <button
-        onClick={openSheet}
-        className={`tap fast flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left active:bg-surface ${
-          reviewReady ? "border-[color:var(--signal)] bg-surface-2" : "border-line bg-surface-2"
-        }`}
-        style={reviewReady ? { boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
-      >
-        <WeekEmblem spec={report.emblem} state="forming" size={48} hideAmbient />
-        <div className="min-w-0 flex-1">
-          <div className="section-label !p-0">{reviewReady ? "Review ready" : "This week"}</div>
-          <div className="masthead truncate text-head text-ink">{weekLabelOf(currentWeekISO)}</div>
-          <div className="truncate text-caption text-muted">
-            {reviewReady
-              ? "Your week is ready to receive"
-              : total > 0
-                ? `${report.landedCount} of ${total} landed`
-                : "Nothing on this week yet"}
+      <Card className="ph-card">
+        <div className="flex items-center gap-3">
+          <WeekEmblem spec={report.emblem} state="forming" size={40} hideAmbient />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-head font-semibold text-ink">{reviewReady ? "Review ready" : "This week"}</div>
+            <div className="mt-0.5 truncate text-caption tabular-nums text-muted">
+              {weekLabelOf(currentWeekISO)}
+              {!reviewReady && total > 0 && ` · ${report.landedCount} of ${total} landed`}
+            </div>
           </div>
+          <TouchButton kind={reviewReady ? "primary" : "secondary"} compact onClick={openSheet} className="shrink-0">
+            {reviewReady ? "Review" : "Open"}
+          </TouchButton>
         </div>
-        {reviewReady && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--signal)" }} />}
-        <span className="shrink-0 text-muted">›</span>
-      </button>
+      </Card>
 
       {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} storyFirst={reviewReady} />}
     </div>
@@ -154,27 +149,40 @@ export function WeekPlanSheet({
   }
 
   const header = (
-    <div className="mb-5 flex items-center gap-2 pt-safe">
-      <button onClick={() => walk(-7)} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
-      <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
+    <div className="mb-5 flex items-center gap-1 pt-safe">
+      <IconButton label="Previous week" size="md" icon={<Icon name="chevron-left" size={18} />} onClick={() => walk(-7)} className="tap-icon shrink-0" />
+      <IconButton
+        label="Next week"
+        size="md"
+        icon={<Icon name="chevron-right" size={18} />}
+        onClick={isCurrent ? undefined : () => walk(7)}
+        disabled={isCurrent}
+        className="tap-icon shrink-0"
+      />
       <div className="min-w-0 flex-1 text-center">
-        <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
-        <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
+        <div className="text-caption font-semibold text-muted">{isCurrent ? "This week" : "The Review"}</div>
+        <div className="truncate text-head font-semibold tabular-nums text-ink">{weekLabelOf(viewedWeekISO)}</div>
       </div>
-      <button onClick={() => setGalleryOpen(true)} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Browse your Reviews" title="Browse your Reviews">
-        <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
-          <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-          <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-          <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-          <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-        </svg>
-      </button>
-      <button onClick={onClose} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
+      <IconButton
+        label="Browse your Reviews"
+        size="md"
+        icon={
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden>
+            <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
+        }
+        onClick={() => setGalleryOpen(true)}
+        className="tap-icon shrink-0"
+      />
+      <IconButton label="Close" size="md" icon={<Icon name="close" size={18} />} onClick={onClose} className="tap-icon shrink-0" />
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}>
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-[var(--panel)]">
       <div className="px-4 fab-clear pt-3">
         {/* `tense` was never passed, so walking back to a sealed week still read
             "Where the hours are going" over a week that had finished. No

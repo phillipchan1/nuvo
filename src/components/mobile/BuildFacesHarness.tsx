@@ -41,6 +41,14 @@ import type {
 } from "../../lib/vertical";
 import MobileGroom from "./MobileGroom";
 import MobileShipped from "./MobileShipped";
+import MobileProjects from "./MobileProjects";
+import MobileInitiatives from "./MobileInitiatives";
+import MobileReadiness from "./MobileReadiness";
+import WeekPlanCard from "./WeekPlanCard";
+import { PlanWeekCard } from "./MobilePlanWeek";
+import { useVertical } from "../../hooks/useVertical";
+import { PhoneNav, PhoneTopBar, type Place } from "./ShellChrome";
+import { Button } from "../kit";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): Domain => ({
@@ -220,13 +228,70 @@ function useHarnessStore(): VerticalStore {
 function Frame({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ width: 375 }} className="shrink-0">
-      <div className="section-label px-3 py-2">{label}</div>
+      <div className="px-3 py-2 text-caption font-semibold text-muted">{label}</div>
       {/* The real shell is a flex column that owns its own scrolling, so the
           frame has to be one too — a plain overflow box would hide the
           faces' internal scrollers and the sticky group headers with them. */}
-      <div className="atmosphere flex flex-col border border-line" style={{ height: 780 }}>
+      <div className="atmosphere flex flex-col border border-[var(--line-1)]" style={{ height: 780 }}>
         {children}
       </div>
+    </div>
+  );
+}
+
+const PLACES: Place<string>[] = [
+  { id: "calendar", label: "Calendar", kind: "day" },
+  { id: "tasks", label: "Tasks", kind: "task" },
+  { id: "projects", label: "Projects", kind: "project" },
+  { id: "initiatives", label: "Initiatives", kind: "initiative" },
+  { id: "domains", label: "Domains", kind: "domain" },
+];
+
+/** `?build=<face>` frames ONE face at the viewport's own width, inside the
+ *  shell's real chrome — what a 375px or 320px phone actually gets. The faces
+ *  side by side below would make a touch-emulated viewport zoom out. */
+/** The Tasks › Week segment's cards over the same fixtures (?build=week). */
+function WeekCards() {
+  const { data } = useVertical();
+  return (
+    <div className="flex flex-col gap-3 px-4 pt-4">
+      <MobileReadiness data={data} onAskNuvo={() => {}} onReview={() => {}} />
+      <PlanWeekCard onOpen={() => {}} />
+      <WeekPlanCard variant="link" />
+      <WeekPlanCard />
+      <PlanWeekCard onOpen={() => {}} variant="link" />
+    </div>
+  );
+}
+
+const SOLO: Record<string, { tab: "projects" | "initiatives" | "tasks"; render: () => React.ReactNode }> = {
+  week: { tab: "tasks", render: () => <WeekCards /> },
+  projects: { tab: "projects", render: () => <MobileProjects onOpenItem={() => {}} /> },
+  initiatives: { tab: "initiatives", render: () => <MobileInitiatives onOpenItem={() => {}} /> },
+  groom: { tab: "projects", render: () => <MobileGroom scope="project" onOpenItem={() => {}} /> },
+  shipped: { tab: "projects", render: () => <MobileShipped scope="project" onOpenItem={() => {}} /> },
+  igroom: { tab: "initiatives", render: () => <MobileGroom scope="initiative" onOpenItem={() => {}} /> },
+  ishipped: { tab: "initiatives", render: () => <MobileShipped scope="initiative" onOpenItem={() => {}} /> },
+};
+
+function toggleTheme() {
+  const el = document.documentElement;
+  el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
+}
+
+function Solo({ face }: { face: string }) {
+  const f = SOLO[face];
+  return (
+    <div className="atmosphere fixed inset-0 flex flex-col">
+      <PhoneTopBar
+        title={f.tab === "projects" ? "Projects" : f.tab === "tasks" ? "Tasks" : "Initiatives"}
+        fact="Thursday, November 12"
+        onSearch={() => {}}
+        onToggleTheme={toggleTheme}
+        onSettings={() => {}}
+      />
+      <main className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">{f.render()}</main>
+      <PhoneNav places={PLACES} current={f.tab} onPick={() => {}} onCapture={() => {}} onAskNuvo={() => {}} />
     </div>
   );
 }
@@ -240,15 +305,24 @@ export default function BuildFacesHarness() {
   const store = useHarnessStore();
   const sink = useMemo(() => harnessSink(store), [store]);
   const noop = () => {};
+  const solo = new URLSearchParams(window.location.search).get("build") ?? "";
 
   return (
     <QueryClientProvider client={qc}>
       <TaskCaptureSinkContext.Provider value={sink}>
       <VerticalStoreProvider value={store}>
+        {SOLO[solo] ? (
+          <Solo face={solo} />
+        ) : (
         <div className="atmosphere min-h-screen p-4">
-          <div className="mb-3 text-caption text-muted">
-            The phone's Build faces at 375px. Hold a Shipped row for its acts; type in a
-            Groom card to close its checks.
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-caption text-muted">
+              The phone's Build faces at 375px — or one at a time: ?build=projects · initiatives · groom ·
+              shipped · igroom · ishipped
+            </span>
+            <Button size="xs" onClick={toggleTheme}>
+              Theme
+            </Button>
           </div>
           <div className="flex gap-5 overflow-x-auto pb-6">
             <Frame label="Projects › Groom">
@@ -265,6 +339,7 @@ export default function BuildFacesHarness() {
             </Frame>
           </div>
         </div>
+        )}
       </VerticalStoreProvider>
       </TaskCaptureSinkContext.Provider>
     </QueryClientProvider>

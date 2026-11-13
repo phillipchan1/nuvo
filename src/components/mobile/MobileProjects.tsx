@@ -31,12 +31,14 @@ import { weekName, weekSpan, weekTick } from "../../lib/week";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
 import SkeletonRows from "./Skeleton";
-import { Hint, PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
+import { PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard from "../ondeck/DeckCard";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 import { pressable } from "../../lib/a11y";
+import { Card, Dot } from "../kit";
+import { PhEmpty, TouchSegmented } from "./touch";
 import MobileGroom from "./MobileGroom";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
@@ -51,7 +53,8 @@ const HORIZON_SPRINTS = PHONE_WEEK_HORIZON;
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
 const SEG_KEY = "nuvo-mobile-projects-seg";
-type Seg = "ondeck" | "groom" | "all" | "shipped";
+export type BuildFace = "ondeck" | "groom" | "all" | "shipped";
+type Seg = BuildFace;
 
 export default function MobileProjects({
   onOpenItem,
@@ -122,10 +125,13 @@ export default function MobileProjects({
     cap: maxPerWeek,
     now: w.idx === 0,
     head: <CapacityGauge blocks={w.blocks} demand={w.demandBlocks} over={w.over} />,
+    // The week that pinches says so once, as a fact in the verdict tone —
+    // never --signal, which is spent on "now".
     note:
       board.pinch?.weekIdx === w.idx ? (
-        <div className="mt-2 rounded-lg border border-signal/40 bg-signal-soft px-2.5 py-2 text-caption text-ink">
-          {board.pinch.line}
+        <div className="mt-2 flex items-start gap-2 text-caption text-ink">
+          <Dot color="var(--warn)" shape="round" size="sm" />
+          <span className="-mt-0.5 min-w-0">{board.pinch.line}</span>
         </div>
       ) : null,
   }));
@@ -218,7 +224,7 @@ export default function MobileProjects({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SegHeader seg={seg} setSeg={setSeg} />
+      <BuildFaces value={seg} onChange={setSeg} />
 
       {!ready ? (
         <SkeletonRows rows={4} />
@@ -257,9 +263,7 @@ export default function MobileProjects({
           columns={columns}
           cards={cards}
           poolLabel="Needs a week"
-          poolEmpty={
-            <Hint>Nothing waiting for a week. Hold a project and drop it here to shelve it, or start one below.</Hint>
-          }
+          poolEmpty={<PhEmpty>Nothing waiting</PhEmpty>}
           addNoun="project"
           addAccent={defaultDomain?.color}
           poolAddHint="⏎ adds it with no week yet"
@@ -309,20 +313,24 @@ function ProjectCard({
 }
 
 // ── a pool card — no sprint yet, so no meter noise: name and where it belongs ──
+// The kit Card at thumb scale, with the project's mark on its left edge (the
+// same 3px spine the deck card wears). The name is the card's hero; the hold
+// that places it is the deck's gesture, so the card no longer says so.
 function PoolCard({ p, dot, onOpen }: { p: Project; dot: string; onOpen: () => void }) {
   return (
-    <div
+    <Card
+      interactive
       onClick={onOpen}
       {...pressable(onOpen, { label: p.name })}
-      className="glass-card fast relative rounded-xl border border-line py-3 pl-4 pr-3"
+      className="ph-card relative min-h-12 !py-3 !pl-5"
     >
-      <span className="pointer-events-none absolute inset-y-3 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
-      <div className="flex items-center gap-2.5">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        <span className="min-w-0 flex-1 truncate text-body text-ink">{p.name}</span>
-        <span className="mono shrink-0 text-micro text-muted">hold to place</span>
-      </div>
-    </div>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute bottom-3 left-2 top-3 w-[3px] rounded-[2px]"
+        style={{ background: dot }}
+      />
+      <span className="truncate text-head font-semibold text-ink">{p.name}</span>
+    </Card>
   );
 }
 
@@ -331,44 +339,43 @@ function CapacityGauge({ blocks, demand, over }: { blocks: number; demand: numbe
   const pct = blocks > 0 ? Math.min(1, demand / blocks) : demand > 0 ? 1 : 0;
   return (
     <div className="mt-2 flex items-center gap-2">
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+      <span className="h-[3px] flex-1 overflow-hidden rounded-[2px] bg-[var(--line-2)]">
         <span
-          className="block h-full rounded-full"
-          style={{ width: `${pct * 100}%`, background: over ? "var(--signal)" : "var(--accent)" }}
+          className="block h-full rounded-[2px]"
+          style={{ width: `${pct * 100}%`, background: over ? "var(--warn)" : "var(--accent)" }}
         />
       </span>
-      <span className="mono shrink-0 text-micro tabular-nums" style={{ color: over ? "var(--signal)" : "var(--muted)" }}>
+      <span className="shrink-0 text-caption tabular-nums" style={{ color: over ? "var(--warn)" : "var(--muted)" }}>
         {demand}/{blocks} blocks
       </span>
     </div>
   );
 }
 
-function SegHeader({ seg, setSeg }: { seg: Seg; setSeg: (s: Seg) => void }) {
-  // The desktop's four faces, in the desktop's order (FloorPane's RungTabs):
-  // when · what · everything · what landed.
-  const items: { id: Seg; label: string }[] = [
-    { id: "ondeck", label: "On Deck" },
-    { id: "groom", label: "Groom" },
-    { id: "all", label: "All" },
-    { id: "shipped", label: "Shipped" },
-  ];
+const FACES: { value: BuildFace; label: string }[] = [
+  { value: "ondeck", label: "On Deck" },
+  { value: "groom", label: "Groom" },
+  { value: "all", label: "All" },
+  { value: "shipped", label: "Shipped" },
+];
+
+/** The Build altitudes' four faces — the desktop's, in the desktop's order
+ *  (FloorPane's RungTabs): when · what · everything · what landed (D-099). The
+ *  kit Segmented at thumb size, in a --panel strip under the top bar; shared by
+ *  the Projects and Initiatives tabs. */
+export function BuildFaces({ value, onChange }: { value: BuildFace; onChange: (f: BuildFace) => void }) {
   return (
-    <div className="flex shrink-0 gap-1 border-b border-line px-3 py-2">
-      {items.map((t) => {
-        const on = seg === t.id;
-        return (
-          <button
-            key={t.id}
-            onClick={() => setSeg(t.id)}
-            className={`tap fast flex flex-1 items-center justify-center rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
-            }`}
-          >
-            {t.label}
-          </button>
-        );
-      })}
+    <div className="sticky top-0 z-10 shrink-0 border-b border-[var(--line-1)] bg-[var(--panel)] px-4 pb-2.5 pt-1">
+      {/* Four faces at 320px leave ~70px each: the faces keep one line by
+          trading side padding, never by wrapping "On Deck" in two. */}
+      <TouchSegmented<BuildFace>
+        full
+        label="View"
+        value={value}
+        onChange={onChange}
+        options={FACES}
+        className="[&>button]:!px-1 [&>button]:whitespace-nowrap"
+      />
     </div>
   );
 }

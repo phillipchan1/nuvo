@@ -5,7 +5,8 @@
 
 import { useState } from "react";
 import WeekSetMoment from "../plan/WeekSetMoment";
-import { ProjectsStep, CarriedStep, WeekStep } from "./MobilePlanWeek";
+import { ProjectsStep, CarriedStep, WeekStep, OpenStep, PlanWeekFrame } from "./MobilePlanWeek";
+import { Button } from "../kit";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep as Step } from "../rituals/WeekIntake";
 import { readIntake } from "../../lib/intake";
 import type { Placement } from "../../lib/compose";
@@ -107,13 +108,13 @@ const BUSY = [busyAt(0, 11, 60, "Standup"), busyAt(1, 9, 90, "Board sync"), busy
 function Frame({ label, step, children }: { label: string; step: Step; children: React.ReactNode }) {
   return (
     <div style={{ width: 375 }} className="shrink-0">
-      <div className="section-label px-3 py-2">{label}</div>
+      <div className="px-3 py-2 text-caption font-semibold text-muted">{label}</div>
       <div
-        className="atmosphere overflow-y-auto border border-line"
+        className="atmosphere overflow-y-auto border border-[var(--line-1)]"
         style={{ height: 760 }}
         data-frame={label}
       >
-        <div className="border-b border-line px-4 pb-2 pt-2">
+        <div className="border-b border-[var(--line-1)] px-4 pb-2 pt-2">
           <SourceSwitch step={step} onStep={() => {}} steps={WEEK_STEPS} dense />
           <div className="mt-2.5">
             <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} dense />
@@ -125,20 +126,67 @@ function Frame({ label, step, children }: { label: string; step: Step; children:
   );
 }
 
-const COMMIT_BANDS = DOMAINS.map((d, i) => ({ key: d.id, label: d.name, color: d.color, mins: [540, 240, 180][i] ?? 60 }));
+const DAYS = [0, 1, 2, 3, 4].map((i) => ({ iso: dayISO(i), past: false }));
 
-function CommitFrames() {
-  const [n, setN] = useState(0);
+/** One step's body over the fixtures — what both the side-by-side frames and
+ *  the solo flow render. */
+function StepBody({ step }: { step: Step }) {
+  if (step === "open") return <OpenStep blockedMins={180} />;
+  if (step === "projects")
+    return (
+      <ProjectsStep
+        data={DATA}
+        weekStartISO={weekISO}
+        pushes={PUSHES}
+        suggestions={PROJECT_WORK}
+        kept={KEPT}
+        setKept={() => {}}
+        onDuration={() => {}}
+        onBringIn={() => {}}
+        onTakeOff={() => {}}
+      />
+    );
+  if (step === "rest")
+    return (
+      <CarriedStep
+        data={DATA}
+        carried={LEFTOVERS}
+        captures={[]}
+        runs={RUNS}
+        kept={KEPT}
+        setKept={() => {}}
+        onDuration={() => {}}
+        inboxCount={7}
+        onSlot={() => {}}
+        slotting={false}
+        slotErr={null}
+      />
+    );
   return (
-    <div className="mb-6 border-b border-line pb-4" data-commit-frames>
-      <div className="mb-2 flex items-center gap-3">
-        <div className="section-label !p-0">Commit · the week is set</div>
-        <button className="rounded-full bg-accent-soft px-3 py-1 text-caption text-accent" onClick={() => setN((x) => x + 1)} data-replay>
-          Replay
-        </button>
-      </div>
-      <div className="flex flex-wrap items-start gap-6" key={n}>
-        <div className="atmosphere flex items-center justify-center border border-line px-8" style={{ width: 375, height: 420 }} data-frame="commit-phone">
+    <WeekStep
+      data={DATA}
+      days={DAYS}
+      placements={PLACEMENTS}
+      slotNameById={SLOTS}
+      unplaced={[{ task: TASKS[3], reason: "no room" } as never]}
+      routedCount={2}
+      busy={BUSY}
+      workStart={8 * 60}
+      workEnd={17 * 60}
+      onDrop={() => {}}
+    />
+  );
+}
+
+/** `?planweek=<step>` — the whole flow, live, in its real frame at the
+ *  viewport's own width (open · projects · rest · week · commit). The frames
+ *  side by side below make a touch-emulated viewport zoom out. */
+function Solo({ initial }: { initial: Step | "commit" }) {
+  const [step, setStep] = useState<Step | "commit">(initial);
+  if (step === "commit") {
+    return (
+      <div className="ph-overlay !pt-0">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8">
           <WeekSetMoment
             eyebrow="This week"
             bands={COMMIT_BANDS}
@@ -146,13 +194,55 @@ function CommitFrames() {
             goal="Ship the cutover and keep Thursday evening clear"
           />
         </div>
-        <div className="atmosphere border border-line p-4" style={{ width: 320 }} data-frame="commit-rail">
+      </div>
+    );
+  }
+  return (
+    <PlanWeekFrame
+      weekStartISO={weekISO}
+      step={step}
+      onStep={setStep}
+      onClose={() => {}}
+      meter={<CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} compact dense />}
+      onCommit={() => setStep("commit")}
+    >
+      <StepBody step={step} />
+    </PlanWeekFrame>
+  );
+}
+
+const COMMIT_BANDS = DOMAINS.map((d, i) => ({ key: d.id, label: d.name, color: d.color, mins: [540, 240, 180][i] ?? 60 }));
+
+function CommitFrames() {
+  const [n, setN] = useState(0);
+  return (
+    <div className="mb-6 border-b border-[var(--line-1)] pb-4" data-commit-frames>
+      <div className="mb-2 flex items-center gap-3">
+        <div className="text-caption font-semibold text-muted">Commit · the week is set</div>
+        <Button size="xs" onClick={() => setN((x) => x + 1)} data-replay>
+          Replay
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-start gap-6" key={n}>
+        <div className="atmosphere flex items-center justify-center border border-[var(--line-1)] px-8" style={{ width: 375, height: 420 }} data-frame="commit-phone">
+          <WeekSetMoment
+            eyebrow="This week"
+            bands={COMMIT_BANDS}
+            facts="9 scheduled · 12 committed · 2 standing"
+            goal="Ship the cutover and keep Thursday evening clear"
+          />
+        </div>
+        <div className="atmosphere border border-[var(--line-1)] p-4" style={{ width: 320 }} data-frame="commit-rail">
           <WeekSetMoment
             align="start"
             eyebrow="Committed"
             bands={COMMIT_BANDS}
             facts="12 things → 7 blocks · 1m 42s · 3 changes by you"
-            action={<button className="h-11 w-full rounded-[10px] bg-accent font-semibold text-on-accent">Done</button>}
+            action={
+              <Button kind="primary" size="md" full>
+                Done
+              </Button>
+            }
           />
         </div>
       </div>
@@ -160,22 +250,25 @@ function CommitFrames() {
   );
 }
 
+const SOLO_STEPS = ["open", "projects", "rest", "week", "commit"] as const;
+
 export default function PlanWeekHarness() {
-  const days = [0, 1, 2, 3, 4].map((i) => ({ iso: dayISO(i), past: false }));
+  const solo = new URLSearchParams(window.location.search).get("planweek") as Step | "commit" | null;
+  if (solo && (SOLO_STEPS as readonly string[]).includes(solo)) return <Solo initial={solo} />;
   return (
     <div className="atmosphere min-h-screen p-4">
-      <h1 className="masthead mb-3 text-head">
-        Plan the week — {format(new Date(weekISO + "T00:00:00"), "MMM d")} (fixtures)
+      <h1 className="mb-3 text-head font-semibold">
+        Plan the week — {format(new Date(weekISO + "T00:00:00"), "MMM d")} (fixtures) · ?planweek=projects for the live flow
       </h1>
       {/* the two shared pieces at desktop density — the switch rides the planner
           rail, the meter rides the week grid, so both are checked in one place */}
-      <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-line pb-3">
+      <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-[var(--line-1)] pb-3">
         <div className="w-[320px] shrink-0">
-          <div className="section-label mb-1">The source switch · rail density</div>
+          <div className="mb-1 text-caption font-semibold text-muted">The source switch · rail density</div>
           <SourceSwitch step="rest" onStep={() => {}} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="section-label mb-1">The capacity meter · over the week</div>
+          <div className="mb-1 text-caption font-semibold text-muted">The capacity meter · over the week</div>
           <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} />
         </div>
       </div>
@@ -188,46 +281,13 @@ export default function PlanWeekHarness() {
 
       <div className="flex gap-4 overflow-x-auto">
         <Frame label="1 · Projects" step="projects">
-          <ProjectsStep
-            data={DATA}
-            weekStartISO={weekISO}
-            pushes={PUSHES}
-            suggestions={PROJECT_WORK}
-            kept={KEPT}
-            setKept={() => {}}
-            onDuration={() => {}}
-            onBringIn={() => {}}
-            onTakeOff={() => {}}
-          />
+          <StepBody step="projects" />
         </Frame>
         <Frame label="3 · The rest" step="rest">
-          <CarriedStep
-            data={DATA}
-            carried={LEFTOVERS}
-            captures={[]}
-            runs={RUNS}
-            kept={KEPT}
-            setKept={() => {}}
-            onDuration={() => {}}
-            inboxCount={7}
-            onSlot={() => {}}
-            slotting={false}
-            slotErr={null}
-          />
+          <StepBody step="rest" />
         </Frame>
         <Frame label="4 · The week" step="week">
-          <WeekStep
-            data={DATA}
-            days={days}
-            placements={PLACEMENTS}
-            slotNameById={SLOTS}
-            unplaced={[{ task: TASKS[3], reason: "no room" } as never]}
-            routedCount={2}
-            busy={BUSY}
-            workStart={8 * 60}
-            workEnd={17 * 60}
-            onDrop={() => {}}
-          />
+          <StepBody step="week" />
         </Frame>
       </div>
     </div>
