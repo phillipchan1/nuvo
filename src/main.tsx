@@ -8,6 +8,8 @@ import "./styles/instrument.css";
 import "./styles/kit.css";
 // The frame — ground, sidebar, inset panel (D-190).
 import "./styles/frame.css";
+// Documents, dialogs and the chat (D-190) — the record, Settings, Nuvo.
+import "./styles/documents.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

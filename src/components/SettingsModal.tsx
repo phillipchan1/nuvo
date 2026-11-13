@@ -28,9 +28,10 @@ import {
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
-import { Btn, Modal } from "./ui";
+import { Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
 import { Field, PaneHeader, TextInput, TimeInput, Select, Toggle, Stepper, Segmented } from "./form";
+import { Avatar, Button, Chip, IconButton, SectionHeader } from "./kit";
 import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
 import { BillingPane } from "./billing/BillingPane";
@@ -55,6 +56,11 @@ import { openDevTools, useDeveloperMode } from "../lib/devtools";
 import { clearErrorLog, formatErrorLog, useErrorLog } from "../lib/appError";
 import { loadChangelog, isMinor, notableNotes, type ChangelogEntry } from "../lib/changelog";
 
+// Settings — the two-pane dialog (D-190, the Dialog layout). A section list on
+// a well, and each pane a column of 52px label-left / control-right rows on
+// hairlines, built from form.tsx's kit parts. On a phone it is the bottom
+// Sheet: the section list, then the pane, drilled into.
+
 /** Stable-named universal DMG on the public releases repo. */
 const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
@@ -63,110 +69,36 @@ const DOWNLOAD_MAC_URL =
 type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
-  {
-    id: "appearance",
-    label: "Appearance",
-    icon: (
-      <Icon name="moon" size={15} />
-    ),
-  },
-  {
-    id: "schedule",
-    label: "Schedule",
-    icon: (
-      <Icon name="clock" size={15} />
-    ),
-  },
-  {
-    id: "reminders",
-    label: "Reminders",
-    icon: (
-      <Icon name="bell" size={15} />
-    ),
-  },
-  {
-    id: "connections",
-    label: "Calendars",
-    icon: (
-      <Icon name="calendar" size={15} />
-    ),
-  },
-  {
-    // Its own row rather than a block under Apps & devices: nobody looks for
-    // a forwarding address under a heading about HTTP tokens. Same reason
-    // Apps isn't under Calendars.
-    id: "inbound",
-    label: "Inbox address",
-    icon: (
-      <Icon name="mail" size={15} />
-    ),
-  },
-  {
-    // Its own row rather than a block under Calendars: nobody looks for a
-    // watch's token under a heading about calendars.
-    id: "apps",
-    label: "Apps & devices",
-    icon: (
-      <Icon name="package" size={15} />
-    ),
-  },
-  {
-    id: "labels",
-    label: "Labels",
-    icon: (
-      <Icon name="tag" size={15} />
-    ),
-  },
-  {
-    id: "account",
-    label: "Account",
-    icon: (
-      <Icon name="user" size={15} />
-    ),
-  },
-  {
-    id: "billing",
-    label: "Billing",
-    icon: (
-      <Icon name="card" size={15} />
-    ),
-  },
-  {
-    id: "about",
-    label: "About",
-    icon: (
-      <Icon name="info" size={15} />
-    ),
-  },
+  { id: "appearance", label: "Appearance", icon: <Icon name="sun" size={16} /> },
+  { id: "schedule", label: "Schedule", icon: <Icon name="clock" size={16} /> },
+  { id: "reminders", label: "Reminders", icon: <Icon name="bell" size={16} /> },
+  { id: "connections", label: "Calendars", icon: <Icon name="calendar" size={16} /> },
+  // Its own row rather than a block under Apps & devices: nobody looks for
+  // a forwarding address under a heading about HTTP tokens. Same reason
+  // Apps isn't under Calendars.
+  { id: "inbound", label: "Inbox address", icon: <Icon name="mail" size={16} /> },
+  // Its own row rather than a block under Calendars: nobody looks for a
+  // watch's token under a heading about calendars.
+  { id: "apps", label: "Apps & devices", icon: <Icon name="package" size={16} /> },
+  { id: "labels", label: "Labels", icon: <Icon name="tag" size={16} /> },
+  { id: "account", label: "Account", icon: <Icon name="user" size={16} /> },
+  { id: "billing", label: "Billing", icon: <Icon name="card" size={16} /> },
+  { id: "about", label: "About", icon: <Icon name="info" size={16} /> },
 ];
 
-// ── Shared layout atoms ───────────────────────────────────────────────────
-// `Row` is the settings field unit — Field from the form primitives (label-left
-// / control-right, stacking full-width on a phone).
+// `Row` is the settings field unit — Field from the form primitives (a 52px
+// label-left / control-right row that wraps under on a narrow pane).
 const Row = Field;
 
-// ── Appearance: live theme preview tiles ──────────────────────────────────
-const PALETTES = {
-  light: { bg: "#f8f8fa", surface: "#ffffff", line: "#e6e5eb", accent: "#8e2fa3", text: "#121116", muted: "#64626d" },
-  dark: { bg: "#0c0c0e", surface: "#16161a", line: "#26252c", accent: "#d58ae4", text: "#ededf0", muted: "#95929f" },
-} as const;
-type Palette = (typeof PALETTES)[keyof typeof PALETTES];
-
-function MiniBars({ p }: { p: Palette }) {
+// ── Appearance ────────────────────────────────────────────────────────────
+/** A theme, drawn by the theme itself: the tile sets `data-theme`, so the
+ *  ground, panel and accent inside it are that theme's own tokens. */
+function ThemeMini({ theme }: { theme: "light" | "dark" }) {
   return (
-    <div className="flex h-full gap-1 p-1.5">
-      <div className="flex w-[34%] flex-col gap-1 rounded-[3px] border p-1" style={{ background: p.surface, borderColor: p.line }}>
-        <div className="h-1 w-3/4 rounded-full" style={{ background: p.accent }} />
-        <div className="h-1 w-full rounded-full" style={{ background: p.line }} />
-        <div className="h-1 w-1/2 rounded-full" style={{ background: p.line }} />
-      </div>
-      <div className="flex flex-1 flex-col gap-1 rounded-[3px] border p-1" style={{ background: p.surface, borderColor: p.line }}>
-        <div className="h-1 w-1/2 rounded-full opacity-80" style={{ background: p.text }} />
-        <div className="h-1 w-full rounded-full opacity-50" style={{ background: p.muted }} />
-        <div className="h-1 w-2/3 rounded-full opacity-50" style={{ background: p.muted }} />
-        <div className="mt-auto h-2 w-7 rounded-[2px]" style={{ background: p.accent }} />
-      </div>
-    </div>
+    <span className="set-theme-mini" data-theme={theme}>
+      <i />
+      <span />
+    </span>
   );
 }
 
@@ -182,49 +114,22 @@ function ThemeCard({
   onSelect: () => void;
 }) {
   return (
-    <button
-      onClick={onSelect}
-      aria-pressed={active}
-      disabled={disabled}
-      className={`fast group overflow-hidden rounded-lg border text-left disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
-      }`}
-    >
-      <div className="h-[58px]" style={{ background: theme === "dark" ? PALETTES.dark.bg : PALETTES.light.bg }}>
+    <button type="button" onClick={onSelect} aria-pressed={active} disabled={disabled} className="set-theme">
+      <span className="set-theme-tile">
         {theme === "system" ? (
-          <div className="flex h-full">
-            <div className="w-1/2 overflow-hidden" style={{ background: PALETTES.light.bg }}>
-              <MiniBars p={PALETTES.light} />
-            </div>
-            <div className="w-1/2 overflow-hidden border-l border-black/20" style={{ background: PALETTES.dark.bg }}>
-              <MiniBars p={PALETTES.dark} />
-            </div>
-          </div>
+          <>
+            <ThemeMini theme="light" />
+            <ThemeMini theme="dark" />
+          </>
         ) : (
-          <MiniBars p={PALETTES[theme]} />
+          <ThemeMini theme={theme} />
         )}
-      </div>
-      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
-        <span className="text-caption font-medium capitalize text-ink">{theme}</span>
-        <span
-          // Decorative: the card itself is the control, and its selected state
-          // now rides `aria-pressed` on the button. Leaving this in the a11y
-          // tree exposed a second, ~10px "target" that was never one.
-          aria-hidden
-          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
-          }`}
-        >
-          {active && (
-            <Icon name="check" size={9} />
-          )}
-        </span>
-      </div>
+      </span>
+      <span className="capitalize">{theme}</span>
     </button>
   );
 }
 
-// ── Section panes ─────────────────────────────────────────────────────────
 function AppearancePane({
   settings,
   updateSettings,
@@ -236,32 +141,36 @@ function AppearancePane({
   const { scale, zoomIn, zoomOut, zoomReset } = useUiScale();
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PaneHeader title="Appearance" />
-      <div className="grid grid-cols-3 gap-2.5">
-        {(["system", "light", "dark"] as const).map((t) => (
-          <ThemeCard
-            key={t}
-            theme={t}
-            active={theme === t}
-            onSelect={() => updateSettings({ theme: t })}
+      <Row title="Theme">
+        <div className="set-themes">
+          {(["light", "dark", "system"] as const).map((t) => (
+            <ThemeCard key={t} theme={t} active={theme === t} onSelect={() => updateSettings({ theme: t })} />
+          ))}
+        </div>
+      </Row>
+      <Row title="Zoom" desc="⌘+ · ⌘− · ⌘0">
+        <span className="fm-stepper">
+          <IconButton
+            size="xs"
+            label="Zoom out"
+            icon={<span aria-hidden>−</span>}
+            onClick={zoomOut}
+            disabled={scale <= UI_SCALE_MIN}
           />
-        ))}
-      </div>
-
-      <div className="section-label mb-2 mt-6">Zoom</div>
-      <p className="text-caption mb-2.5 text-muted">⌘+ · ⌘− · ⌘0</p>
-      <div className="flex items-center gap-2.5">
-        <Btn onClick={zoomOut} disabled={scale <= UI_SCALE_MIN} title="Zoom out">−</Btn>
-        <button
-          type="button"
-          onClick={zoomReset}
-          className="text-caption min-w-14 rounded-md py-1.5 text-center text-muted hover:text-ink"
-        >
-          {Math.round(scale * 100)}%
-        </button>
-        <Btn onClick={zoomIn} disabled={scale >= UI_SCALE_MAX} title="Zoom in">+</Btn>
-      </div>
+          <Button kind="ghost" size="xs" onClick={zoomReset} title="Reset zoom" className="tabular-nums">
+            {Math.round(scale * 100)}%
+          </Button>
+          <IconButton
+            size="xs"
+            label="Zoom in"
+            icon={<Icon name="plus" size={12} />}
+            onClick={zoomIn}
+            disabled={scale >= UI_SCALE_MAX}
+          />
+        </span>
+      </Row>
     </div>
   );
 }
@@ -270,7 +179,7 @@ function AppearancePane({
 // Home is the stable zone travel is measured against; the device zone is set by
 // the OS and only shown. Nuvo renders schedule times in wherever you are now, so
 // this is really "what counts as home" plus a live readout of any current shift.
-function TimeZonePicker() {
+function TimeZoneRow() {
   const [homeTz, setHomeTz] = useHomeTimezone();
   const deviceTz = detectDeviceTz();
   const now = new Date();
@@ -287,12 +196,24 @@ function TimeZonePicker() {
   }, []);
 
   return (
-    <div className="flex flex-col items-stretch gap-2">
-      <Select
-        value={homeTz}
-        onChange={(e) => setHomeTz(e.target.value)}
-        className="mono w-full sm:w-[20rem]"
-      >
+    <Row
+      title="Time zone"
+      desc={
+        s.traveling ? (
+          <>
+            Now in <span className="text-ink">{tzCity(deviceTz)}</span> ({s.deviceAbbr}) · {s.deltaLabel} of home
+          </>
+        ) : (
+          `Matches where you are now (${s.deviceAbbr}).`
+        )
+      }
+    >
+      {s.traveling && (
+        <Button size="sm" onClick={() => setHomeTz(deviceTz)} title={`Make ${tzCity(deviceTz)} your home zone`}>
+          Set as home
+        </Button>
+      )}
+      <Select value={homeTz} onChange={(e) => setHomeTz(e.target.value)} className="w-full sm:w-[15rem]" aria-label="Home time zone">
         {/* Keep the current value selectable even if the runtime omits it. */}
         {!supportedTimeZones().includes(homeTz) && <option value={homeTz}>{tzCity(homeTz)}</option>}
         {groups.map(([region, zones]) => (
@@ -305,23 +226,7 @@ function TimeZonePicker() {
           </optgroup>
         ))}
       </Select>
-      {s.traveling ? (
-        <div className="flex items-center gap-2 text-meta text-muted">
-          <span>
-            Now in <span className="text-ink">{tzCity(deviceTz)}</span> ({s.deviceAbbr}) · {s.deltaLabel} of home
-          </span>
-          <button
-            onClick={() => setHomeTz(deviceTz)}
-            className="fast rounded-full border border-line px-2 py-0.5 font-medium text-muted hover:border-line-strong hover:text-ink"
-            title={`Make ${tzCity(deviceTz)} your home zone`}
-          >
-            Set as home
-          </button>
-        </div>
-      ) : (
-        <span className="text-meta text-muted">Matches where you are now ({s.deviceAbbr}).</span>
-      )}
-    </div>
+    </Row>
   );
 }
 
@@ -358,204 +263,175 @@ function SchedulePane({
   return (
     <div>
       <PaneHeader title="Schedule" />
-      {/* A form grid: stacked cells (label over control) tile into two columns on
-          a wide modal and fall back to one column on a phone. */}
-      <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
-        <Row
-          layout="stack"
-          title="Time zone"
-          desc="Your home zone. Nuvo shows schedule times wherever you are now, and flags on the schedule when that differs from home."
+      <TimeZoneRow />
+
+      <Row title="Day view">
+        <Select
+          value={settings?.day_start_hour ?? 6}
+          onChange={(e) => updateSettings({ day_start_hour: Number(e.target.value) })}
+          className="w-28"
+          aria-label="Day view starts"
         >
-          <TimeZonePicker />
-        </Row>
-
-        <Row layout="stack" title="Day view window">
-          <div className="flex items-center gap-2.5">
-            <Select
-              value={settings?.day_start_hour ?? 6}
-              onChange={(e) => updateSettings({ day_start_hour: Number(e.target.value) })}
-              className="mono w-full sm:w-32"
-            >
-              {Array.from({ length: 12 }, (_, h) => (
-                <option key={h} value={h}>
-                  {formatHourLabel(h)}
-                </option>
-              ))}
-            </Select>
-            <span className="text-caption text-muted">to</span>
-            <Select
-              value={settings?.day_end_hour ?? 24}
-              onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
-              className="mono w-full sm:w-32"
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
-                <option key={h} value={h}>
-                  {formatHourLabel(h)}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </Row>
-
-        <Row layout="stack" title="Working hours" desc="The window Nuvo proposes focus blocks inside.">
-          <div className="flex items-center gap-2.5">
-            <TimeInput
-              step={900}
-              minutes={settings?.work_start_minutes ?? 480}
-              onCommit={(m) => updateSettings({ work_start_minutes: m })}
-              className="mono w-full sm:w-36"
-            />
-            <span className="text-caption text-muted">to</span>
-            <TimeInput
-              step={900}
-              minutes={settings?.work_end_minutes ?? 990}
-              onCommit={(m) => updateSettings({ work_end_minutes: m })}
-              className="mono w-full sm:w-36"
-            />
-          </div>
-        </Row>
-
-        <Row
-          layout="stack"
-          title="Default task duration"
-          desc="How long a new task or recurring series gets when nothing says otherwise."
+          {Array.from({ length: 12 }, (_, h) => (
+            <option key={h} value={h}>
+              {formatHourLabel(h)}
+            </option>
+          ))}
+        </Select>
+        <span className="text-caption text-muted">to</span>
+        <Select
+          value={settings?.day_end_hour ?? 24}
+          onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
+          className="w-28"
+          aria-label="Day view ends"
         >
-          <Select
-            value={settings?.default_task_duration_minutes ?? 30}
-            onChange={(e) => updateSettings({ default_task_duration_minutes: Number(e.target.value) })}
-            className="mono w-full sm:w-36"
-          >
-            {DURATION_PRESETS.map((m) => (
-              <option key={m} value={m}>
-                {fmtDuration(m)}
-              </option>
+          {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
+            <option key={h} value={h}>
+              {formatHourLabel(h)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+
+      <Row title="Working hours" desc="Where Nuvo proposes focus blocks.">
+        <TimeInput
+          step={900}
+          minutes={settings?.work_start_minutes ?? 480}
+          onCommit={(m) => updateSettings({ work_start_minutes: m })}
+          className="!w-28"
+          aria-label="Working hours start"
+        />
+        <span className="text-caption text-muted">to</span>
+        <TimeInput
+          step={900}
+          minutes={settings?.work_end_minutes ?? 990}
+          onCommit={(m) => updateSettings({ work_end_minutes: m })}
+          className="!w-28"
+          aria-label="Working hours end"
+        />
+      </Row>
+
+      <Row title="Default task length" desc="For a new task or series that names none.">
+        <Select
+          value={settings?.default_task_duration_minutes ?? 30}
+          onChange={(e) => updateSettings({ default_task_duration_minutes: Number(e.target.value) })}
+          className="w-28"
+          aria-label="Default task length"
+        >
+          {DURATION_PRESETS.map((m) => (
+            <option key={m} value={m}>
+              {fmtDuration(m)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+
+      <Row title="Hours on screen" desc="Fewer hours, taller rows.">
+        <Stepper
+          value={fitClamped}
+          min={6}
+          max={windowHours}
+          onChange={(v) => updateSettings({ calendar_fit_hours: v })}
+          format={(v) => `${v}h`}
+          decHint="Fewer hours (taller rows)"
+          incHint="More hours (less scrolling)"
+        />
+      </Row>
+
+      <Row title="Week starts on">
+        <Segmented
+          value={String(firstDayOfWeek(settings))}
+          onChange={(v) => updateSettings({ week_start: Number(v) })}
+          label="Week starts on"
+          options={[
+            { value: "0", label: "Sunday" },
+            { value: "1", label: "Monday" },
+          ]}
+        />
+      </Row>
+
+      <Row title="Projects per week" desc="Past this, On Deck flags the week.">
+        <Stepper value={maxPerWeek} min={1} max={6} onChange={setMaxPerWeekPref} decHint="Fewer per week" incHint="More per week" />
+      </Row>
+
+      <Row title="Initiatives per quarter" desc="Past this, On Deck flags the quarter.">
+        <Stepper value={maxPerQuarter} min={1} max={6} onChange={setMaxPerQuarterPref} decHint="Fewer per quarter" incHint="More per quarter" />
+      </Row>
+
+      <Row title="Weekly Review" desc="When the week's Review lights up as ready.">
+        <Select
+          value={reveal.dow}
+          onChange={(e) => patchReveal({ dow: Number(e.target.value) })}
+          disabled={!reveal.enabled}
+          className="w-32"
+          aria-label="Review day"
+        >
+          {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
+            <option key={i} value={i}>
+              {d}
+            </option>
+          ))}
+        </Select>
+        <TimeInput
+          step={900}
+          minutes={reveal.minutes}
+          onCommit={(m) => patchReveal({ minutes: m })}
+          disabled={!reveal.enabled}
+          className="!w-28"
+          aria-label="Review time"
+        />
+        <Toggle checked={reveal.enabled} onChange={(v) => patchReveal({ enabled: v })} label="Weekly Review reveal" />
+      </Row>
+
+      <Row title="Weather" desc="Beside each day. Needs your location.">
+        <Toggle
+          checked={settings?.show_weather ?? false}
+          onChange={(v) => updateSettings({ show_weather: v })}
+          label="Weather"
+        />
+      </Row>
+
+      {/* The way back from Hide (D-176). A hidden event is filtered off every
+          calendar Nuvo draws, so on the phone — which has no "Show N hidden"
+          in a ⋯ — hiding one was a door that only opened inward. Listed here
+          on both shells: the desktop's toggle reveals them in place, this
+          names them. */}
+      {(settings?.hidden_events?.length ?? 0) > 0 && (
+        <Row layout="stack" title="Hidden events" desc="Hidden from Nuvo, not from your calendar.">
+          <div className="set-list">
+            {(settings?.hidden_events ?? []).map((h) => (
+              <div key={h.key} className="set-list-row">
+                <span className="set-list-main">
+                  <span className="set-list-title">{h.title || "Untitled event"}</span>
+                  {h.key.includes(":series:") && <span className="set-list-meta">Every event in the series</span>}
+                </span>
+                <Button
+                  size="sm"
+                  className="tap"
+                  onClick={() =>
+                    updateSettings({ hidden_events: (settings?.hidden_events ?? []).filter((x) => x.key !== h.key) })
+                  }
+                >
+                  Show
+                </Button>
+              </div>
             ))}
-          </Select>
-        </Row>
-
-        <Row
-          layout="stack"
-          title="Hours on screen"
-          desc="How many hours of your day view fill the screen. More hours = less scrolling; fewer = taller rows."
-        >
-          <Stepper
-            value={fitClamped}
-            min={6}
-            max={windowHours}
-            onChange={(v) => updateSettings({ calendar_fit_hours: v })}
-            format={(v) => `${v}h`}
-            decHint="Fewer hours (taller rows)"
-            incHint="More hours (less scrolling)"
-          />
-        </Row>
-
-        <Row layout="stack" title="Week starts on">
-          <Segmented
-            value={String(firstDayOfWeek(settings))}
-            onChange={(v) => updateSettings({ week_start: Number(v) })}
-            options={[
-              { value: "0", label: "Sunday" },
-              { value: "1", label: "Monday" },
-            ]}
-          />
-        </Row>
-
-        <Row layout="stack" title="Projects per week" desc="How many projects you'll commit to a single week before On Deck flags it as overloaded. Fewer = more focus.">
-          <Stepper value={maxPerWeek} min={1} max={6} onChange={setMaxPerWeekPref} decHint="Fewer per week" incHint="More per week" />
-        </Row>
-
-        <Row layout="stack" title="Initiatives per quarter" desc="How many initiatives you'll commit to a single quarter before On Deck flags it as overloaded. Fewer = more focus.">
-          <Stepper value={maxPerQuarter} min={1} max={6} onChange={setMaxPerQuarterPref} decHint="Fewer per quarter" incHint="More per quarter" />
-        </Row>
-
-        <Row layout="stack" title="Weekly Review reveal" desc="When the week's Review quietly lights up as ready — an invitation, never forced.">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Toggle checked={reveal.enabled} onChange={(v) => patchReveal({ enabled: v })} label="Weekly Review reveal" />
-            <Select
-              value={reveal.dow}
-              onChange={(e) => patchReveal({ dow: Number(e.target.value) })}
-              disabled={!reveal.enabled}
-              className="w-36"
-            >
-              {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
-                <option key={i} value={i}>
-                  {d}
-                </option>
-              ))}
-            </Select>
-            <span className="text-caption text-muted">at</span>
-            <TimeInput
-              step={900}
-              minutes={reveal.minutes}
-              onCommit={(m) => patchReveal({ minutes: m })}
-              disabled={!reveal.enabled}
-              className="mono w-32"
-            />
           </div>
         </Row>
+      )}
 
-        <Row layout="stack" title="Weather" desc="Show a weather icon and high temperature next to each day in the calendar. Requires location access.">
-          <Toggle
-            checked={settings?.show_weather ?? false}
-            onChange={(v) => updateSettings({ show_weather: v })}
-            label="Weather"
-          />
+      {/* The phone's door to recurring upkeep. On the desktop this lives in
+          the calendar's ⋯ overflow; on the phone it had been promoted to a
+          permanent icon in the Calendar's busiest row, which is a lot of
+          standing rent for something you edit a few times a year. Here it
+          costs nothing and is still a real path — not a hidden gesture. */}
+      {onOpenUpkeep && (
+        <Row title="Recurring upkeep" desc="The chores that repeat.">
+          <Button size="sm" className="tap" onClick={onOpenUpkeep}>
+            Open
+          </Button>
         </Row>
-
-        {/* The way back from Hide (D-176). A hidden event is filtered off every
-            calendar Nuvo draws, so on the phone — which has no "Show N hidden"
-            in a ⋯ — hiding one was a door that only opened inward. Listed here
-            on both shells: the desktop's toggle reveals them in place, this
-            names them. */}
-        {(settings?.hidden_events?.length ?? 0) > 0 && (
-          <Row
-            layout="stack"
-            title="Hidden events"
-            desc="Events you hid stay on your calendar account; Nuvo just doesn't draw them or count them as busy."
-          >
-            <div className="divide-y divide-line border-y border-line">
-              {(settings?.hidden_events ?? []).map((h) => (
-                <div key={h.key} className="flex min-h-[44px] items-center gap-3 py-1">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-body text-ink">{h.title || "Untitled event"}</span>
-                    {h.key.includes(":series:") && <span className="block text-meta text-muted">Every event in the series</span>}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateSettings({ hidden_events: (settings?.hidden_events ?? []).filter((x) => x.key !== h.key) })
-                    }
-                    className="tap-h fast shrink-0 rounded-full border border-line px-3 py-1 text-label font-medium text-ink hover:bg-accent-soft"
-                  >
-                    Show
-                  </button>
-                </div>
-              ))}
-            </div>
-          </Row>
-        )}
-
-        {/* The phone's door to recurring upkeep. On the desktop this lives in
-            the calendar's ⋯ overflow; on the phone it had been promoted to a
-            permanent icon in the Calendar's busiest row, which is a lot of
-            standing rent for something you edit a few times a year. Here it
-            costs nothing and is still a real path — not a hidden gesture. */}
-        {onOpenUpkeep && (
-          <Row
-            layout="stack"
-            title="Recurring upkeep"
-            desc="The chores that repeat — what they are, how often, and when they next come due."
-          >
-            <button
-              type="button"
-              onClick={onOpenUpkeep}
-              className="tap-h fast self-start rounded-full border border-line px-3 py-1.5 text-label font-medium text-ink hover:bg-accent-soft"
-            >
-              Open upkeep
-            </button>
-          </Row>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -720,41 +596,34 @@ function ConnectionsPane({
     });
   };
 
-  // One calendar's row — color dot + name, its domain attribution, and the on/off
-  // switch. Hidden calendars render the same row, just dimmed and without the
+  // One calendar's row — colour + name, its domain attribution, and the on/off
+  // switch. Hidden calendars render the same row, dimmed and without the
   // domain picker (nothing to attribute while it's off the board).
   const calRow = (a: CalendarAccount, c: NonNullable<CalendarAccount["calendars"]>[number], on: boolean) => (
-    <div
-      key={c.id}
-      className="fast flex w-full items-center gap-3 rounded-[var(--radius)] px-2.5 py-2 hover:bg-surface-2"
-    >
-      <button onClick={() => toggleCalendar(c.id)} className="tap-h flex min-w-0 flex-1 items-center gap-2.5 text-left">
-        <span
-          className="h-3 w-3 shrink-0 rounded-[4px]"
-          style={{
-            background: on ? (c.color ?? "var(--muted)") : "transparent",
-            boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)",
-          }}
-        />
-        <span className={`min-w-0 truncate text-body ${on ? "text-ink" : "text-muted"}`}>{c.summary}</span>
+    <div key={c.id} className="set-list-row" data-off={on ? undefined : ""}>
+      <span
+        className="set-cal-dot"
+        data-off={on ? undefined : ""}
+        style={on ? { ["--c" as string]: c.color ?? "var(--muted)" } : undefined}
+        aria-hidden
+      />
+      <button type="button" onClick={() => toggleCalendar(c.id)} className="tap-h set-list-main flex min-w-0 items-center gap-2 text-left">
+        <span className="set-list-title">{c.summary}</span>
         {on && isDefaultCal(a.id, c.id) && (
-          <span
-            className="mono shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent"
-            title="New events go here unless you pick another calendar"
-          >
-            default
-          </span>
+          <Chip tone="accent" title="New events go here unless you pick another calendar">
+            Default
+          </Chip>
         )}
-        <span className="flex-1" />
       </button>
       {on && (
         <Select
           value={calMap[calKey(a.id, c.id)] ?? ""}
           onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
           title="Attribute this calendar's meetings to a domain"
-          className="w-36 shrink-0 text-caption text-muted"
+          aria-label={`Domain for ${c.summary}`}
+          className="w-36 shrink-0"
         >
-          <option value="">Auto · domain</option>
+          <option value="">Auto domain</option>
           {domains.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
@@ -773,288 +642,259 @@ function ConnectionsPane({
       <div data-teach="calendars">
         <PaneHeader title="Calendars" />
       </div>
-      <div className="space-y-5">
-        {defaultFlat.length > 1 && (
-          <Row
-            layout="stack"
-            title="Default calendar for new events"
-            desc="Where an event goes when you don't choose one. Every event composer starts here, and Task → Event and Nuvo use it too."
+
+      {defaultFlat.length > 1 && (
+        <Row title="New events go to" desc="Every composer, Task → Event and Nuvo start here.">
+          <Select
+            value={defaultIndex >= 0 ? String(defaultIndex) : ""}
+            onChange={(e) => setDefaultCalendar(defaultFlat[Number(e.target.value)])}
+            aria-label="Default calendar for new events"
+            className="w-full sm:w-64"
           >
-            <Select
-              value={defaultIndex >= 0 ? String(defaultIndex) : ""}
-              onChange={(e) => setDefaultCalendar(defaultFlat[Number(e.target.value)])}
-              aria-label="Default calendar for new events"
-              className="w-full sm:w-80"
-            >
-              {defaultIndex < 0 && <option value="">Choose a calendar…</option>}
-              {(() => {
-                let i = 0;
-                return defaultChoices.map((g) => (
-                  <optgroup key={g.accountId} label={`${g.accountLabel} · ${providerLabel(g.provider)}`}>
-                    {g.calendars.map((c) => {
-                      const idx = i++;
-                      return (
-                        <option key={c.id} value={String(idx)}>
-                          {c.summary}
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                ));
-              })()}
-            </Select>
-          </Row>
-        )}
+            {defaultIndex < 0 && <option value="">Choose a calendar…</option>}
+            {(() => {
+              let i = 0;
+              return defaultChoices.map((g) => (
+                <optgroup key={g.accountId} label={`${g.accountLabel} · ${providerLabel(g.provider)}`}>
+                  {g.calendars.map((c) => {
+                    const idx = i++;
+                    return (
+                      <option key={c.id} value={String(idx)}>
+                        {c.summary}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              ));
+            })()}
+          </Select>
+        </Row>
+      )}
 
-        {/* Google's own "add video conferencing automatically" preference only
-            applies to events created in *their* web UI — it never reaches an
-            event booked through the API, so this is the only thing deciding
-            whether a meeting Nuvo makes has a way to meet digitally. */}
-        {accounts.some((a) => a.provider === "google" && a.sync_direction === "two_way") && (
-          <Row
-            layout="stack"
-            title="Add Google Meet to new events"
-            desc="Google never adds a Meet link to events created outside its own web app, so Nuvo asks for one. The composer can still override it per event."
-          >
-            <Segmented
-              value={settings?.auto_add_meet ?? "guests"}
-              onChange={(v) => updateSettings({ auto_add_meet: v as UserSettings["auto_add_meet"] })}
-              options={[
-                { value: "guests", label: "With guests" },
-                { value: "always", label: "Always" },
-                { value: "never", label: "Never" },
-              ]}
-            />
-          </Row>
-        )}
+      {/* Google's own "add video conferencing automatically" preference only
+          applies to events created in *their* web UI — it never reaches an
+          event booked through the API, so this is the only thing deciding
+          whether a meeting Nuvo makes has a way to meet digitally. */}
+      {accounts.some((a) => a.provider === "google" && a.sync_direction === "two_way") && (
+        <Row title="Add Google Meet" desc="Google only adds one in its own app. The composer can override.">
+          <Segmented
+            value={settings?.auto_add_meet ?? "guests"}
+            onChange={(v) => updateSettings({ auto_add_meet: v as UserSettings["auto_add_meet"] })}
+            label="Add Google Meet to new events"
+            options={[
+              { value: "guests", label: "With guests" },
+              { value: "always", label: "Always" },
+              { value: "never", label: "Never" },
+            ]}
+          />
+        </Row>
+      )}
 
-        {/* Account cards flow into two columns on a wide modal — a busy calendar
-            setup (several accounts) fills the space instead of a long scroll. */}
-        <div className="columns-1 gap-5 xl:columns-2 [&>*]:mb-5 [&>*]:break-inside-avoid">
-          {accounts.map((a) => {
-            const cals = a.calendars ?? [];
-            const shown = cals.filter((c) => !hidden.has(c.id));
-            const hiddenCals = cals.filter((c) => hidden.has(c.id));
-            const drawerOpen = showHiddenCals.has(a.id);
-            return (
-              <div key={a.id} className="overflow-hidden rounded-lg border border-line bg-surface">
-                <div className="flex items-center gap-2.5 border-b border-line bg-surface-2 px-4 py-3">
-                  <span
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-label font-semibold text-white"
-                    style={{ background: providerMeta(a.provider).color }}
-                  >
-                    {providerMeta(a.provider).letter}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-body font-medium leading-tight">{providerMeta(a.provider).name}</div>
-                    <div className="mono truncate text-label text-muted">{a.email}</div>
-                  </div>
-                  <span
-                    className={`mono ml-1 rounded-full px-2 py-0.5 text-meta ${
-                      a.sync_direction === "two_way" ? "bg-accent-soft text-accent" : "border border-line text-muted"
-                    }`}
-                  >
-                    {a.sync_direction === "two_way" ? "two-way" : "read-only"}
-                  </span>
-                  <div className="flex-1" />
-                  {/* Microsoft 365 is no longer offered: a leftover account can only be disconnected. */}
-                  {a.needs_reconnect && a.provider === "google" && (
-                    <Btn kind="signal" onClick={() => connect("google")}>
-                      Reconnect
-                    </Btn>
-                  )}
-                  {a.needs_reconnect && a.provider === "ics" && (
-                    <Btn
-                      kind="signal"
-                      onClick={() => {
-                        setIcsLabel(a.email);
-                        setShowIcs(true);
-                      }}
-                    >
-                      Update link
-                    </Btn>
-                  )}
-                  {a.needs_reconnect && a.provider === "icloud" && (
-                    <Btn
-                      kind="signal"
-                      onClick={() => {
-                        setAppleId(a.email);
-                        setShowIcloud(true);
-                      }}
-                    >
-                      Reconnect
-                    </Btn>
-                  )}
-                  <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
-                </div>
-                <div className="space-y-0.5 p-2">
-                  {/* The mirror, named. It is deliberately absent from the list
-                      below — Nuvo writes it, so syncing it back would count every
-                      block twice — which means this line is the only place in the
-                      app that says it exists. And mirroring is one-directional by
-                      decision (D-107 · Q-13): the app's version wins. That is
-                      allowed to be true and is not allowed to be a surprise, so
-                      it is stated here as well as on every block Nuvo writes. */}
-                  {a.mirror_calendar_id && a.sync_direction === "two_way" && (
-                    <div className="rounded-[var(--radius)] border border-line px-2.5 py-2 text-caption text-muted">
-                      <span className="font-medium text-ink">Nuvo</span> — a calendar Nuvo keeps
-                      for your time blocks, so they show up wherever you read this account. It
-                      isn't listed above because Nuvo writes it rather than reads it.{" "}
-                      <span className="text-ink">
-                        Move a block in {providerMeta(a.provider).name} and Nuvo puts it back on
-                        the next sync
-                      </span>{" "}
-                      — change it in Nuvo instead.
-                    </div>
-                  )}
-                  {shown.map((c) => calRow(a, c, true))}
-                  {shown.length === 0 && hiddenCals.length === 0 && (
-                    <div className="px-2.5 py-2 text-caption text-muted">No calendars synced yet.</div>
-                  )}
-                  {shown.length === 0 && hiddenCals.length > 0 && (
-                    <div className="px-2.5 py-2 text-caption text-muted">Every calendar here is hidden.</div>
-                  )}
-
-                  {hiddenCals.length > 0 && (
-                    <div className="pt-0.5">
-                      <button
-                        onClick={() => toggleHiddenDrawer(a.id)}
-                        className="fast tap flex w-full items-center gap-2 rounded-[var(--radius)] px-2.5 py-2 text-left text-caption text-muted hover:bg-surface-2 hover:text-ink"
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          className={`h-3.5 w-3.5 shrink-0 transition-transform ${drawerOpen ? "rotate-90" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.6"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M6 4l4 4-4 4" />
-                        </svg>
-                        <span>
-                          {hiddenCals.length} hidden calendar{hiddenCals.length > 1 ? "s" : ""}
-                        </span>
-                      </button>
-                      {drawerOpen && <div className="mt-0.5 space-y-0.5 opacity-70">{hiddenCals.map((c) => calRow(a, c, false))}</div>}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Btn kind="primary" onClick={() => connect("google")}>
-            {accounts.some((a) => a.provider === "google") ? "+ Add Google account" : "Connect Google"}
-          </Btn>
-          {!accounts.some((a) => a.provider === "icloud") && !showIcloud && (
-            <Btn onClick={() => setShowIcloud(true)}>Connect Apple Calendar</Btn>
-          )}
-          {!showIcs && (
-            <Btn onClick={() => setShowIcs(true)}>Subscribe via calendar link</Btn>
-          )}
-        </div>
-
-        {showIcloud && (
-          <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-surface-2 p-4">
-            <div className="text-caption font-medium">Connect Apple Calendar (iCloud)</div>
-            <p className="text-label text-muted">
-              Apple has no “Sign in” button for calendars — instead you generate a one-off{" "}
-              <span className="font-medium">app-specific password</span> that grants Nuvo two-way access over
-              CalDAV. It’s stored encrypted and you can revoke it anytime from your Apple account.
-            </p>
-            <ol className="ml-4 list-decimal space-y-1 text-label text-muted">
-              <li>
-                Go to{" "}
-                <a
-                  href="https://account.apple.com/account/manage"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent underline"
+      {accounts.map((a) => {
+        const cals = a.calendars ?? [];
+        const shown = cals.filter((c) => !hidden.has(c.id));
+        const hiddenCals = cals.filter((c) => hidden.has(c.id));
+        const drawerOpen = showHiddenCals.has(a.id);
+        const meta = providerMeta(a.provider);
+        return (
+          <section key={a.id} className="set-acct">
+            <div className="set-acct-head">
+              <span className="set-acct-mark" aria-hidden>
+                {meta.letter}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body font-medium text-ink">{meta.name}</span>
+                <span className="block truncate text-caption text-muted">{a.email}</span>
+              </span>
+              <Chip tone={a.sync_direction === "two_way" ? "accent" : "neutral"}>
+                {a.sync_direction === "two_way" ? "Two-way" : "Read-only"}
+              </Chip>
+              {/* Microsoft 365 is no longer offered: a leftover account can only be disconnected. */}
+              {a.needs_reconnect && a.provider === "google" && (
+                <Button size="sm" kind="danger" className="tap" onClick={() => connect("google")}>
+                  Reconnect
+                </Button>
+              )}
+              {a.needs_reconnect && a.provider === "ics" && (
+                <Button
+                  size="sm"
+                  kind="danger"
+                  className="tap"
+                  onClick={() => {
+                    setIcsLabel(a.email);
+                    setShowIcs(true);
+                  }}
                 >
-                  account.apple.com
-                </a>{" "}
-                and sign in.
-              </li>
-              <li>Under <span className="font-medium">Sign-In and Security</span>, choose <span className="font-medium">App-Specific Passwords</span>.</li>
-              <li>Select <span className="font-medium">＋ Generate an app-specific password</span>, name it “Nuvo”, and confirm.</li>
-              <li>Copy the password Apple shows (format <span className="mono">abcd-efgh-ijkl-mnop</span>) and paste it below.</li>
-            </ol>
-            <TextInput
-              value={appleId}
-              onChange={(e) => setAppleId(e.target.value)}
-              placeholder="Apple ID email — e.g. you@icloud.com"
-              autoComplete="username"
-              autoFocus
-            />
-            <TextInput
-              value={applePw}
-              onChange={(e) => setApplePw(e.target.value)}
-              placeholder="App-specific password — abcd-efgh-ijkl-mnop"
-              type="password"
-              autoComplete="off"
-              className="mono"
-              onKeyDown={(e) => e.key === "Enter" && connectIcloud()}
-            />
-            {icloudError && <div className="text-label text-signal">{icloudError}</div>}
-            <div className="flex gap-2">
-              <Btn kind="primary" disabled={icloudBusy || !appleId.trim() || !applePw.trim()} onClick={connectIcloud}>
-                {icloudBusy ? "Connecting…" : "Connect"}
-              </Btn>
-              <Btn
-                disabled={icloudBusy}
-                onClick={() => {
-                  setShowIcloud(false);
-                  setIcloudError(null);
-                }}
-              >
-                Cancel
-              </Btn>
+                  Update link
+                </Button>
+              )}
+              {a.needs_reconnect && a.provider === "icloud" && (
+                <Button
+                  size="sm"
+                  kind="danger"
+                  className="tap"
+                  onClick={() => {
+                    setAppleId(a.email);
+                    setShowIcloud(true);
+                  }}
+                >
+                  Reconnect
+                </Button>
+              )}
+              <Button size="sm" className="tap" onClick={() => disconnect(a.id)}>
+                Disconnect
+              </Button>
             </div>
-          </div>
-        )}
 
-        {showIcs && (
-          <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-surface-2 p-4">
-            <div className="text-caption font-medium">Subscribe via calendar link</div>
-            <p className="text-label text-muted">
-              Paste a published <span className="mono">.ics</span> URL (e.g. Outlook → Settings → Calendar →
-              Shared calendars → Publish). Read-only, refreshes every ~15 min. The link grants full read
-              access to that calendar, so treat it like a password — it's stored encrypted.
-            </p>
-            <TextInput
-              value={icsUrl}
-              onChange={(e) => setIcsUrl(e.target.value)}
-              placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
-              className="mono"
-              autoFocus
-            />
-            <TextInput
-              value={icsLabel}
-              onChange={(e) => setIcsLabel(e.target.value)}
-              placeholder="Label (optional) — e.g. Work calendar"
-              onKeyDown={(e) => e.key === "Enter" && subscribeIcs()}
-            />
-            {icsError && <div className="text-label text-signal">{icsError}</div>}
-            <div className="flex gap-2">
-              <Btn kind="primary" disabled={icsBusy || !icsUrl.trim()} onClick={subscribeIcs}>
-                {icsBusy ? "Subscribing…" : "Subscribe"}
-              </Btn>
-              <Btn
-                disabled={icsBusy}
-                onClick={() => {
-                  setShowIcs(false);
-                  setIcsError(null);
-                }}
-              >
-                Cancel
-              </Btn>
+            {/* The mirror, named. It is deliberately absent from the list
+                below — Nuvo writes it, so syncing it back would count every
+                block twice — which means this line is the only place in the
+                app that says it exists. And mirroring is one-directional by
+                decision (D-107 · Q-13): the app's version wins. That is
+                allowed to be true and is not allowed to be a surprise, so
+                it is stated here as well as on every block Nuvo writes. */}
+            {a.mirror_calendar_id && a.sync_direction === "two_way" && (
+              <p className="set-note mb-2">
+                <b>Nuvo</b> keeps a calendar of your time blocks here, so they show wherever you read this
+                account. <b>Move a block in {meta.name} and Nuvo puts it back</b> — change it in Nuvo.
+              </p>
+            )}
+
+            <div className="set-list">
+              {shown.map((c) => calRow(a, c, true))}
+              {shown.length === 0 && (
+                <div className="set-list-row">
+                  <span className="set-note">{hiddenCals.length > 0 ? "All hidden" : "No calendars yet"}</span>
+                </div>
+              )}
             </div>
-          </div>
+
+            {hiddenCals.length > 0 && (
+              <>
+                <SectionHeader
+                  title={`${hiddenCals.length} hidden`}
+                  collapsed={!drawerOpen}
+                  onToggle={() => toggleHiddenDrawer(a.id)}
+                  className="set-group !pt-2"
+                />
+                {drawerOpen && <div className="set-list">{hiddenCals.map((c) => calRow(a, c, false))}</div>}
+              </>
+            )}
+          </section>
+        );
+      })}
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button kind="primary" size="md" className="tap" onClick={() => connect("google")}>
+          {accounts.some((a) => a.provider === "google") ? "Add Google account" : "Connect Google"}
+        </Button>
+        {!accounts.some((a) => a.provider === "icloud") && !showIcloud && (
+          <Button size="md" className="tap" onClick={() => setShowIcloud(true)}>
+            Connect Apple Calendar
+          </Button>
+        )}
+        {!showIcs && (
+          <Button size="md" className="tap" onClick={() => setShowIcs(true)}>
+            Subscribe to a link
+          </Button>
         )}
       </div>
+
+      {showIcloud && (
+        <div className="set-well">
+          <div className="set-well-title">Apple Calendar</div>
+          <p className="set-note">
+            Apple uses an <b>app-specific password</b> for calendars. It is stored encrypted; revoke it any
+            time from your Apple account.
+          </p>
+          <ol className="set-steps">
+            <li>
+              Sign in at{" "}
+              <a href="https://account.apple.com/account/manage" target="_blank" rel="noreferrer">
+                account.apple.com
+              </a>
+              .
+            </li>
+            <li>Sign-In and Security → App-Specific Passwords.</li>
+            <li>Generate one named “Nuvo” and paste it below.</li>
+          </ol>
+          <TextInput
+            value={appleId}
+            onChange={(e) => setAppleId(e.target.value)}
+            placeholder="Apple ID email"
+            aria-label="Apple ID email"
+            autoComplete="username"
+            autoFocus
+          />
+          <TextInput
+            value={applePw}
+            onChange={(e) => setApplePw(e.target.value)}
+            placeholder="abcd-efgh-ijkl-mnop"
+            aria-label="App-specific password"
+            type="password"
+            autoComplete="off"
+            onKeyDown={(e) => e.key === "Enter" && connectIcloud()}
+          />
+          {icloudError && <div className="text-caption text-danger">{icloudError}</div>}
+          <div className="flex gap-2">
+            <Button kind="primary" className="tap" disabled={icloudBusy || !appleId.trim() || !applePw.trim()} onClick={connectIcloud}>
+              {icloudBusy ? "Connecting…" : "Connect"}
+            </Button>
+            <Button
+              kind="ghost"
+              className="tap"
+              disabled={icloudBusy}
+              onClick={() => {
+                setShowIcloud(false);
+                setIcloudError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showIcs && (
+        <div className="set-well">
+          <div className="set-well-title">A calendar link</div>
+          <p className="set-note">
+            A published <b>.ics</b> link. Read-only, refreshed every 15 minutes. The link is a password to
+            that calendar; it is stored encrypted.
+          </p>
+          <TextInput
+            value={icsUrl}
+            onChange={(e) => setIcsUrl(e.target.value)}
+            placeholder="https://…/calendar.ics"
+            aria-label="Calendar link"
+            autoFocus
+          />
+          <TextInput
+            value={icsLabel}
+            onChange={(e) => setIcsLabel(e.target.value)}
+            placeholder="Label (optional)"
+            aria-label="Label"
+            onKeyDown={(e) => e.key === "Enter" && subscribeIcs()}
+          />
+          {icsError && <div className="text-caption text-danger">{icsError}</div>}
+          <div className="flex gap-2">
+            <Button kind="primary" className="tap" disabled={icsBusy || !icsUrl.trim()} onClick={subscribeIcs}>
+              {icsBusy ? "Subscribing…" : "Subscribe"}
+            </Button>
+            <Button
+              kind="ghost"
+              className="tap"
+              disabled={icsBusy}
+              onClick={() => {
+                setShowIcs(false);
+                setIcsError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1068,49 +908,36 @@ function UpdateControls() {
   const readyNotes = state.status === "ready" ? notableNotes(state.notes) : null;
 
   const message = {
-    idle: "Checked automatically in the background.",
+    idle: "Checked in the background.",
     checking: "Checking…",
     "up-to-date": "You're on the latest version.",
     downloading: `Downloading v${state.version ?? ""}… ${state.progress}%`,
     ready: `Version ${state.version ?? ""} is ready.`,
     // A failed check is harmless — the current build keeps working — so keep it
     // gentle and never surface the raw request error / URL to the user.
-    error: "Couldn't check for updates right now. Try again later.",
+    error: "Couldn't check right now. Try again later.",
   }[state.status];
 
   return (
-    <div className="py-3.5">
-      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="min-w-0">
-          <div className="text-body font-medium text-ink">Updates</div>
-          <div className="mt-0.5 text-caption leading-snug text-muted" data-status={state.status}>
-            {message}
-          </div>
-        </div>
-        <div className="shrink-0">
-          {state.status === "ready" ? (
-            <button
-              onClick={restart}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
-            >
-              Restart to update
-            </button>
-          ) : (
-            <Btn onClick={check} disabled={busy}>
-              {busy ? "Checking…" : "Check for updates"}
-            </Btn>
-          )}
-        </div>
-      </div>
+    <>
+      <Row title="Updates" desc={<span data-status={state.status}>{message}</span>}>
+        {state.status === "ready" ? (
+          <Button kind="primary" onClick={restart}>
+            Restart to update
+          </Button>
+        ) : (
+          <Button onClick={check} disabled={busy}>
+            {busy ? "Checking…" : "Check for updates"}
+          </Button>
+        )}
+      </Row>
       {readyNotes && (
-        <details className="mt-2 text-caption text-muted">
-          <summary className="select-none hover:text-ink fast">
-            What's new in v{state.version}
-          </summary>
-          <p className="mt-1 whitespace-pre-line leading-snug">{readyNotes}</p>
+        <details className="set-note border-b border-[var(--line-1)] py-2">
+          <summary className="tap-h select-none">What's new in v{state.version}</summary>
+          <p className="mt-1 whitespace-pre-line">{readyNotes}</p>
         </details>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1144,28 +971,24 @@ function ReleaseHistory() {
   if (minorRun) rows.push({ kind: "minor", count: minorRun });
 
   return (
-    <div className="mt-6 border-t border-line pt-4">
-      <div className="section-label mb-2">What's new</div>
-      <ul className="space-y-3">
+    <div>
+      <SectionHeader title="What's new" className="set-group" />
+      <ul className="set-list">
         {rows.map((row, i) =>
           row.kind === "release" ? (
-            <li key={row.entry.version}>
+            <li key={row.entry.version} className="border-b border-[var(--line-1)] py-2.5">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-body font-medium text-ink">
                   v{row.entry.version}
-                  {row.entry.version === __APP_VERSION__ && (
-                    <span className="ml-1 text-caption font-normal text-accent">· current</span>
-                  )}
+                  {row.entry.version === __APP_VERSION__ && <span className="ml-1.5 text-caption font-normal text-accent">Current</span>}
                 </span>
-                <span className="text-meta text-muted">{formatReleaseDate(row.entry.date)}</span>
+                <span className="text-caption tabular-nums text-muted">{formatReleaseDate(row.entry.date)}</span>
               </div>
-              <p className="mt-0.5 whitespace-pre-line text-caption leading-snug text-muted">
-                {notableNotes(row.entry.notes)}
-              </p>
+              <p className="set-note mt-0.5 whitespace-pre-line">{notableNotes(row.entry.notes)}</p>
             </li>
           ) : (
-            <li key={`minor-${i}`} className="text-caption text-muted">
-              + {row.count} smaller update{row.count > 1 ? "s" : ""}
+            <li key={`minor-${i}`} className="set-note border-b border-[var(--line-1)] py-2.5">
+              {row.count} smaller update{row.count > 1 ? "s" : ""}
             </li>
           ),
         )}
@@ -1237,77 +1060,80 @@ function RemindersPane({
   return (
     <div>
       <PaneHeader title="Reminders" />
-      <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
+      <Row
+        title="Remind me"
+        desc="Off until you ask. Only about a commitment coming up — never planning, streaks or a backlog."
+      >
+        <Toggle checked={prefs.enabled} onChange={(v) => void setEnabled(v)} label="Reminders" />
+      </Row>
+
+      {prefs.enabled && permission === "denied" && (
         <Row
-          title="Remind me"
-          desc="Off until you ask. Nuvo will never nudge you about planning, streaks, or a backlog — only about a commitment that is coming up."
+          title="Notifications are blocked"
+          desc="Reminders still show while Nuvo is open. Allow notifications in your system settings to hear them when it isn't."
         >
-          <Toggle checked={prefs.enabled} onChange={(v) => void setEnabled(v)} label="Reminders" />
+          {null}
         </Row>
-
-        {prefs.enabled && permission === "denied" && (
-          <Row layout="stack" title="Notifications are blocked" desc="Your browser or OS is refusing them for Nuvo. Reminders still appear inside the app while it's open; allow notifications in your system settings to hear them when it isn't.">
-            <span className="text-caption text-muted">Nothing to change here.</span>
-          </Row>
-        )}
-        {prefs.enabled && permission === "default" && (
-          <Row layout="stack" title="Allow notifications" desc="Without permission, reminders can only appear while Nuvo is open.">
-            <Btn onClick={() => void request()}>Allow notifications</Btn>
-          </Row>
-        )}
-
-        {/* Where reminders can reach you. Deliberately states the limit rather
-            than implying background delivery works everywhere: on iOS it needs
-            the app installed to the home screen, and the desktop app has no
-            service worker by design. */}
-        {prefs.enabled && permission === "granted" && (
-          <Row
-            layout="stack"
-            title="When Nuvo is closed"
-            desc={
-              !pushConfigured()
-                ? "Background reminders aren't set up on this deployment — reminders will only appear while Nuvo is open."
-                : !pushSupported()
-                  ? isDesktopTauri()
-                    ? "The desktop app shows reminders while it's running. Install Nuvo on your phone to be told when everything is closed."
-                    : "This browser can't receive background reminders. On iPhone, add Nuvo to your Home Screen first."
-                  : pushState === "on"
-                    ? "This device will be told even when Nuvo is closed."
-                    : "Setting this device up…"
-            }
-          >
-            <span className="text-caption text-muted">
-              {pushState === "on" && pushConfigured() && pushSupported() ? "On" : "Foreground only"}
-            </span>
-          </Row>
-        )}
-
-        <Row layout="stack" title="Before a meeting">
-          {leadList("event_leads")}
+      )}
+      {prefs.enabled && permission === "default" && (
+        <Row title="Allow notifications" desc="Without it, reminders only show while Nuvo is open.">
+          <Button className="tap" onClick={() => void request()}>
+            Allow
+          </Button>
         </Row>
+      )}
 
-        <Row layout="stack" title="All-day events" desc="Birthdays, offsites, anything without a clock. Speaks at the time of day below.">
-          {leadList("all_day_leads")}
+      {/* Where reminders can reach you. Deliberately states the limit rather
+          than implying background delivery works everywhere: on iOS it needs
+          the app installed to the home screen, and the desktop app has no
+          service worker by design. */}
+      {prefs.enabled && permission === "granted" && (
+        <Row
+          title="When Nuvo is closed"
+          desc={
+            !pushConfigured()
+              ? "Not set up on this deployment — reminders show only while Nuvo is open."
+              : !pushSupported()
+                ? isDesktopTauri()
+                  ? "The desktop app reminds you while it runs. Install Nuvo on your phone to hear the rest."
+                  : "This browser can't. On iPhone, add Nuvo to your Home Screen first."
+                : pushState === "on"
+                  ? "This device hears them even when Nuvo is closed."
+                  : "Setting this device up…"
+          }
+        >
+          <span className="text-caption text-muted">
+            {pushState === "on" && pushConfigured() && pushSupported() ? "On" : "Foreground only"}
+          </span>
         </Row>
+      )}
 
-        <Row layout="stack" title="Before a block you scheduled">
-          {leadList("block_leads")}
-        </Row>
+      <Row layout="stack" title="Before a meeting">
+        {leadList("event_leads")}
+      </Row>
 
-        <Row layout="stack" title="When a deadline lands" desc="Measured from the time of day below.">
-          {leadList("deadline_leads")}
-        </Row>
+      <Row layout="stack" title="All-day events" desc="Speaks at the time of day below.">
+        {leadList("all_day_leads")}
+      </Row>
 
-        <Row layout="stack" title="On the day, at" desc="When a date-only reminder speaks — deadlines, all-day events, and a reminder you set on an untimed task.">
-          <TimeInput
-            step={900}
-            disabled={!prefs.enabled}
-            minutes={prefs.deadline_time_minutes}
-            onCommit={(m) => patch({ deadline_time_minutes: m })}
-            className="mono w-full sm:w-36"
-          />
-        </Row>
-      </div>
+      <Row layout="stack" title="Before a block you scheduled">
+        {leadList("block_leads")}
+      </Row>
+
+      <Row layout="stack" title="When a deadline lands" desc="Measured from the time of day below.">
+        {leadList("deadline_leads")}
+      </Row>
+
+      <Row title="On the day, at" desc="For deadlines, all-day events and untimed tasks.">
+        <TimeInput
+          step={900}
+          disabled={!prefs.enabled}
+          minutes={prefs.deadline_time_minutes}
+          onCommit={(m) => patch({ deadline_time_minutes: m })}
+          className="!w-28"
+          aria-label="On the day, at"
+        />
+      </Row>
     </div>
   );
 }
@@ -1318,59 +1144,65 @@ function LabelsPane() {
   const [newColor, setNewColor] = useState("#2563EB");
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <PaneHeader title="Labels" />
-      <div className="space-y-1">
+      <div className="set-list">
         {labels.map((l) => (
-          <div key={l.id} className="group flex items-center gap-2.5 rounded-[var(--radius)] border border-transparent px-1.5 py-1 hover:border-line hover:bg-surface-2">
+          <div key={l.id} className="set-list-row">
             <input
               type="color"
               value={l.color}
               onChange={(e) => updateLabel({ id: l.id, color: e.target.value })}
-              className="h-9 w-10 shrink-0 rounded-[var(--radius)] border border-line bg-surface"
+              aria-label={`Colour of ${l.name}`}
+              className="set-swatch"
             />
             <TextInput
               defaultValue={l.name}
+              aria-label="Label name"
+              className="flex-1"
               onBlur={(e) =>
                 e.target.value.trim() &&
                 e.target.value !== l.name &&
                 updateLabel({ id: l.id, name: e.target.value.trim() })
               }
             />
-            <button
+            <IconButton
+              label="Delete label"
+              kind="danger"
+              icon={<Icon name="trash" size={14} />}
+              className="tap"
               onClick={() => deleteLabel(l.id)}
-              title="Delete label"
-              className="fast tap flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] text-muted hover:bg-signal-soft hover:text-signal sm:opacity-0 sm:group-hover:opacity-100"
-            >
-              <Icon name="trash" size={15} />
-            </button>
+            />
           </div>
         ))}
-        {labels.length === 0 && <div className="px-1.5 py-2 text-caption text-muted">No labels yet — add one below.</div>}
-
-        <form
-          className="mt-3 flex items-center gap-2.5 border-t border-line pt-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!newLabel.trim()) return;
-            await createLabel({ name: newLabel.trim(), color: newColor });
-            setNewLabel("");
-          }}
-        >
-          <input
-            type="color"
-            value={newColor}
-            onChange={(e) => setNewColor(e.target.value)}
-            className="h-9 w-10 shrink-0 rounded-[var(--radius)] border border-line bg-surface"
-          />
-          <TextInput
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            placeholder="New label…"
-          />
-          <Btn kind="primary">Add</Btn>
-        </form>
+        {labels.length === 0 && (
+          <div className="set-list-row">
+            <span className="set-note">No labels</span>
+          </div>
+        )}
       </div>
+
+      <form
+        className="mt-4 flex items-center gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!newLabel.trim()) return;
+          await createLabel({ name: newLabel.trim(), color: newColor });
+          setNewLabel("");
+        }}
+      >
+        <input
+          type="color"
+          value={newColor}
+          onChange={(e) => setNewColor(e.target.value)}
+          aria-label="New label colour"
+          className="set-swatch"
+        />
+        <TextInput value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="New label" aria-label="New label" className="flex-1" />
+        <Button type="submit" kind="primary" size="md" className="tap">
+          Add
+        </Button>
+      </form>
     </div>
   );
 }
@@ -1427,64 +1259,56 @@ function AccountPane() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <PaneHeader title="Account" />
-      <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-head font-semibold uppercase text-accent">
-          {email ? email[0] : "?"}
-        </span>
-        <div className="min-w-0">
-          <div className="mono truncate text-body text-ink">{email || "…"}</div>
-        </div>
-        <div className="flex-1" />
-        <Btn kind="signal" onClick={() => void signOut()}>
+      <div className="set-row">
+        <Avatar name={email || "?"} size="lg" />
+        <span className="min-w-0 flex-1 truncate text-body text-ink">{email || "…"}</span>
+        <Button kind="danger" className="tap" onClick={() => void signOut()}>
           Sign out
-        </Btn>
+        </Button>
       </div>
 
       {methods.length > 0 && (
-        <div className="mt-5">
-          <div className="section-label mb-2">Sign-in methods</div>
-          <div className="space-y-2">
+        <>
+          <SectionHeader title="Sign-in methods" className="set-group" />
+          <div className="set-list">
             {methods.map((m) => (
-              <div key={m.provider} className="rounded-lg border border-line bg-surface-2 px-3 py-3">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-body text-ink">{m.label}</span>
-                      {m.current && (
-                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro uppercase tracking-wider text-accent">
-                          Signed in with this
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-caption text-muted">
-                      {m.linked
-                        ? m.relay
-                          ? `Linked. Apple is hiding your address behind ${m.email} — mail from Nuvo still reaches you.`
-                          : m.email
-                            ? `Linked as ${m.email}.`
-                            : "Linked to this account."
-                        : `Link ${m.label} to reach this same account — signing in with it unlinked starts a separate, empty one.`}
-                    </div>
+              <div key={m.provider} className="set-row">
+                <div className="set-row-label">
+                  <span className="set-row-title inline-flex items-center gap-2">
+                    {m.label}
+                    {m.current && <Chip tone="accent">Signed in with this</Chip>}
+                  </span>
+                  <div className="set-row-desc">
+                    {m.linked
+                      ? m.relay
+                        ? `Linked. Apple hides your address behind ${m.email}; mail still reaches you.`
+                        : m.email
+                          ? `Linked as ${m.email}.`
+                          : "Linked to this account."
+                      : `Link it to reach this account — unlinked, it starts a separate, empty one.`}
                   </div>
+                </div>
+                <div className="set-row-ctl">
                   {m.linked || !linkFor[m.provider] ? (
                     <span className="text-caption text-muted">{m.linked ? "Linked" : "—"}</span>
                   ) : (
-                    <Btn
+                    <Button
                       kind="primary"
+                      className="tap"
                       disabled={linking !== null}
                       onClick={() => void linkWith(m.provider, linkFor[m.provider])}
                     >
                       {linking === m.provider ? "Redirecting…" : `Link ${m.label}`}
-                    </Btn>
+                    </Button>
                   )}
                 </div>
               </div>
             ))}
           </div>
-          {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
-        </div>
+          {linkError && <div className="mt-2 text-caption text-danger">{linkError}</div>}
+        </>
       )}
 
       <DeleteAccount planSource={subscription?.plan_source ?? null} />
@@ -1492,7 +1316,7 @@ function AccountPane() {
   );
 }
 
-// ── About: what Nuvo is + replay the welcome tour ─────────────────────────
+// ── About ─────────────────────────────────────────────────────────────────
 // "Install Nuvo" — discoverable install from inside the app. Android/desktop
 // Chrome gets the captured beforeinstallprompt; iOS Safari (no such event) gets
 // the Share → Add to Home Screen instructions. Hidden once already installed.
@@ -1503,10 +1327,10 @@ function InstallRow() {
 
   if (canPromptInstall()) {
     return (
-      <Row title="Install Nuvo" desc="Add it to your home screen — full screen, its own icon, works offline.">
-        <Btn kind="primary" onClick={() => void promptInstall()}>
+      <Row title="Install Nuvo" desc="Full screen, its own icon, works offline.">
+        <Button kind="primary" className="tap" onClick={() => void promptInstall()}>
           Install
-        </Btn>
+        </Button>
       </Row>
     );
   }
@@ -1516,9 +1340,7 @@ function InstallRow() {
         title="Install on this iPhone"
         desc={
           <>
-            In Safari, tap <span className="text-ink">Share</span> →{" "}
-            <span className="text-ink">Add to Home Screen</span>. Nuvo opens full screen with its
-            own icon.
+            In Safari: <span className="text-ink">Share</span> → <span className="text-ink">Add to Home Screen</span>.
           </>
         }
       >
@@ -1546,61 +1368,49 @@ function DeveloperControls() {
   };
 
   return (
-    <div className="divide-y divide-line rounded-lg border border-line bg-surface-2/40 px-3.5">
+    <>
       <Row
         title="Developer mode"
-        desc={
-          desktop
-            ? "Unlock the web inspector and the recent-error log. Off by default — nothing here affects how Nuvo plans."
-            : "Keep a recent-error log on this device so a failure is copyable instead of a dead 'Something went wrong'. Off by default."
-        }
+        desc={desktop ? "The web inspector and a recent-error log." : "A recent-error log on this device, so a failure can be copied."}
       >
         <Toggle checked={on} onChange={setOn} label="Developer mode" />
       </Row>
       {on && desktop && (
-        <Row title="Web inspector" desc="Opens DevTools for this window. Shortcut: ⌘⌥I.">
-          <Btn className="tap" onClick={() => void openDevTools()}>
+        <Row title="Web inspector" desc="⌘⌥I">
+          <Button className="tap" onClick={() => void openDevTools()}>
             Open DevTools
-          </Btn>
+          </Button>
         </Row>
       )}
       {on && (
-        <div className="py-3.5">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-body font-medium text-ink">Recent errors</div>
-              <p className="text-caption leading-snug text-muted">
-                Kept on this device. Nothing here is sent anywhere.
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Btn className="tap" disabled={!notes.length} onClick={() => void copyLog()}>
-                {copied ? "Copied" : "Copy"}
-              </Btn>
-              <Btn className="tap" disabled={!notes.length} onClick={() => clearErrorLog()}>
-                Clear
-              </Btn>
-            </div>
+        <Row layout="stack" title="Recent errors" desc="Kept on this device. Nothing is sent.">
+          <div className="flex gap-2">
+            <Button size="sm" className="tap" disabled={!notes.length} onClick={() => void copyLog()}>
+              {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button size="sm" kind="ghost" className="tap" disabled={!notes.length} onClick={() => clearErrorLog()}>
+              Clear
+            </Button>
           </div>
           {notes.length === 0 ? (
-            <p className="text-caption text-muted">Nothing recorded yet.</p>
+            <p className="set-note mt-2">Nothing recorded</p>
           ) : (
-            <ul className="max-h-56 space-y-2 overflow-y-auto">
+            <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto" data-selectable>
               {notes.slice(0, 8).map((n) => (
-                <li key={n.at} className="text-left">
-                  <div className="mono text-micro text-muted">
+                <li key={n.at}>
+                  <div className="text-caption tabular-nums text-muted">
                     {new Date(n.at).toLocaleString()}
                     {n.source ? ` · ${n.source}` : ""}
                   </div>
-                  <div className="text-caption text-ink">{n.message}</div>
-                  {n.detail && <div className="text-micro text-muted">{n.detail}</div>}
+                  <div className="text-body text-ink">{n.message}</div>
+                  {n.detail && <div className="text-caption text-muted">{n.detail}</div>}
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Row>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1610,12 +1420,12 @@ function AboutPane({ onClose }: { onClose: () => void }) {
   const mobile = useIsMobile();
   const showMacDownload = offerMacDownload({ desktopTauri: desktop, mobile });
   return (
-    <div className="max-w-2xl">
+    <div>
       <PaneHeader title="About" />
-
-      <div className="mb-2 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
-        <div className="wordmark text-lead text-ink">Nuvo</div>
-        <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
+      <div className="set-row">
+        <span className="sb-mark" aria-hidden />
+        <span className="flex-1 text-body font-semibold text-ink">Nuvo</span>
+        <span className="text-caption tabular-nums text-muted">v{__APP_VERSION__}</span>
       </div>
 
       {/* Auto-update controls in the native Mac app; a download link on a
@@ -1624,21 +1434,28 @@ function AboutPane({ onClose }: { onClose: () => void }) {
       {desktop ? (
         <UpdateControls />
       ) : showMacDownload ? (
-        <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
-          <a
-            href={DOWNLOAD_MAC_URL}
-            className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
-          >
+        <Row title="Download for Mac" desc="Apple Silicon and Intel. Updates itself.">
+          <a href={DOWNLOAD_MAC_URL} className="k-btn" data-kind="primary">
             Download
           </a>
         </Row>
       ) : null}
 
-      <div className="mt-4">
-        <DeveloperControls />
-      </div>
+      <DeveloperControls />
 
       {!desktop && <InstallRow />}
+
+      <Row title="Welcome tour" desc="Calendars, domains, projects, capture, and Nuvo.">
+        <Button
+          className="tap"
+          onClick={() => {
+            onClose();
+            openOrientation();
+          }}
+        >
+          Replay
+        </Button>
+      </Row>
 
       {/* The sync queue's home. It reports nothing in the app itself — a queue
           that is draining normally is not news, and the strip that used to say
@@ -1648,17 +1465,6 @@ function AboutPane({ onClose }: { onClose: () => void }) {
       <SyncPanel />
 
       <ReleaseHistory />
-
-      <div className="section-label mb-2 mt-6">Getting started</div>
-      <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2/40 px-3.5 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-body text-ink">Welcome tour</div>
-          <p className="text-caption text-muted">
-            A quick walkthrough of calendars, domains, projects, capture, timeblocking, and Nuvo.
-          </p>
-        </div>
-        <Btn kind="primary" onClick={() => { onClose(); openOrientation(); }}>Replay</Btn>
-      </div>
     </div>
   );
 }
@@ -1719,11 +1525,7 @@ export default function SettingsModal({
       {active === "apps" && <AppsDevicesPane />}
       {active === "labels" && <LabelsPane />}
       {active === "account" && <AccountPane />}
-      {active === "billing" && (
-        <div className="max-w-2xl">
-          <BillingPane />
-        </div>
-      )}
+      {active === "billing" && <BillingPane />}
       {active === "about" && <AboutPane onClose={onClose} />}
     </>
   );
@@ -1733,15 +1535,13 @@ export default function SettingsModal({
   if (isMobile) {
     const titleNode = drilled ? (
       <div className="flex min-w-0 items-center gap-1">
-        <button
+        <IconButton
+          label="Back to settings sections"
+          icon={<Icon name="chevron-left" size={18} />}
           onClick={() => setDrilled(false)}
           onPointerDown={(e) => e.stopPropagation()}
-          aria-label="Back to settings sections"
-          className="tap fast -ml-1 flex items-center rounded-lg px-1 text-lead text-muted active:bg-surface-2"
-          style={{ cursor: "default" }}
-        >
-          ‹
-        </button>
+          className="tap -ml-2"
+        />
         <span className="min-w-0 flex-1 truncate">
           {SECTIONS.find((s) => s.id === active)?.label ?? "Settings"}
         </span>
@@ -1752,79 +1552,53 @@ export default function SettingsModal({
     return (
       <Sheet tall title={titleNode} onClose={onClose} contentClassName="mobile-scroll overflow-y-auto">
         {drilled ? (
-          <div key={active} className="floor-enter px-5 pb-8 pt-2">
+          <div key={active} className="set-main floor-enter">
             {pane}
           </div>
         ) : (
-          <div className="space-y-0.5 p-3 pb-8">
+          <nav className="set-index" aria-label="Settings sections">
             {SECTIONS.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => select(s.id)}
-                className="tap fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left text-body font-medium text-ink hover:bg-surface-2"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
-                  {s.icon}
-                </span>
-                <span className="flex-1">{s.label}</span>
-                <Icon name="chevron-right" size={16} className="text-muted" />
+              <button key={s.id} type="button" onClick={() => select(s.id)} className="set-index-item">
+                {s.icon}
+                <span>{s.label}</span>
+                <Icon name="chevron-right" size={16} />
               </button>
             ))}
-          </div>
+          </nav>
         )}
       </Sheet>
     );
   }
 
-  // ── Desktop: side-by-side nav + pane ──
-  // A generous canvas — near-full-height, wide enough for the multi-column panes
-  // (Schedule's form grid, the Calendars account columns) to breathe. Capped at
-  // ~6xl because past that a two-column layout just goes sparse. Centered so a
-  // tall sheet keeps even margins and never spills off the bottom.
+  // ── Desktop: the two-pane dialog ──
+  // Centered and bounded, so a tall pane keeps even margins and the section
+  // list never moves; each pane owns its own scroll.
   return (
-    <Modal onClose={onClose} width="max-w-6xl" align="center">
-      <div className="flex items-center justify-between border-b border-line px-6 py-3.5">
-        <div className="text-head font-semibold">Settings</div>
-        {/* Was a `.keycap` reading "esc" at 30×18 — the only visible dismissal
-            for the app's largest modal, under half the 24px floor, and styled
-            as a keyboard *hint*, so it read as a label rather than a control.
-            The shortcut moves into the title (Escape still works); the button
-            becomes the conventional ✕ at a real target size. */}
-        <button
-          onClick={onClose}
-          aria-label="Close settings"
-          title="Close (Esc)"
-          className="tap-desk fast -mr-1.5 flex items-center justify-center rounded-md px-2 py-1 text-caption text-muted hover:bg-surface-2 hover:text-ink"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Header (~52px) + this body must fit inside the modal's 92vh cap, so the
-          body tops out a touch below full height — no bottom clip. */}
-      <div className="flex h-[min(82vh,820px)]">
-        {/* Section nav */}
-        <nav className="w-[204px] shrink-0 space-y-1 overflow-y-auto border-r border-line bg-surface-2/40 p-3">
+    <Modal onClose={onClose} width="max-w-[880px]" align="center">
+      <div className="set">
+        <nav className="set-nav" aria-label="Settings sections">
+          <div className="set-nav-h">Settings</div>
           {SECTIONS.map((s) => (
             <button
               key={s.id}
+              type="button"
               onClick={() => select(s.id)}
-              className={`fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-body font-medium ${
-                active === s.id
-                  ? "bg-accent-soft text-accent"
-                  : "text-muted hover:bg-surface-2 hover:text-ink"
-              }`}
+              aria-current={active === s.id ? "page" : undefined}
+              className="set-item"
             >
-              <span className={active === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
-              {s.label}
+              {s.icon}
+              <span className="set-item-label">{s.label}</span>
             </button>
           ))}
         </nav>
 
-        {/* Active pane */}
-        <div key={active} className="floor-enter flex-1 overflow-y-auto px-8 py-7">
+        <div key={active} className="set-main floor-enter">
           {pane}
         </div>
+
+        <span className="set-close">
+          <IconButton label="Close settings" shortcut="Esc" icon={<Icon name="close" size={14} />} onClick={onClose} />
+        </span>
       </div>
     </Modal>
   );
