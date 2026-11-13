@@ -6807,6 +6807,42 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-197 · 2026-11-13 · Memory gets better by grading its own guesses: four sources, three tiers,
+a written portrait, and five outcomes.** *(Asked by the operator: "in domains we have things about
+the domain to inform intelligence… should that be consolidated into memory", "how to really build a
+system that is truly better and 'knows me more' over time", "what's a visual that denotes 'I know
+you'", "how much should be passively picked up vs actively decided", and "if we're outcome-based,
+what outcomes show we know you and we're getting better at predicting what you need in the right
+places". Spec: [`memory.md`](../memory.md) §13. D-196 is taken by Draft the projects, on its own
+branch.)*
+
+→ **Four sources, trusted differently:** Said (you wrote it) · Seen (a pattern) · Corrected (you
+changed Nuvo's output — the strongest signal) · Told (said in the chat, quoted, with an expiry).
+
+→ **The domain splits.** Charter, intention and kind are Said and stay on the domain; Memory shows
+them read-only under *You told Nuvo*. The generated `domains.context` moves into the Words chapter,
+with evidence and a way to refuse it. Domain judgments stay the Review's (D-061).
+
+→ **Three tiers.** Silent for defaults you'd see and undo in a tap (listed under *Used quietly*,
+marked *from Memory* where used); Ask once for anything standing or anything Nuvo says about you;
+Never inferred for what matters to you. Questions ride Plan the week, one or two a week at most
+(N-07, P9).
+
+→ **The hero becomes a written portrait**, with the predicted week beneath it; the heat map
+becomes evidence. Rejected: node graphs, a "brain", a completeness meter.
+
+→ **Every proposal is a prediction, graded against what you did** (`plan_signals`, widened). Five
+outcomes: *Kept as drafted*, *Would have drawn it*, *Never twice* (shown to you) · *Answered*,
+*Sure means sure* (ours). Read in pairs, by account age across accounts (P16), as counts in the
+evidence voice — they grade Nuvo, never you, so N-04 holds.
+
+→ **Open, before any of it is built:** the two "ours" outcomes need counts read across accounts,
+which Memory's "never leaves your account" line forbids today. They leave as counts only, and
+the line changes to say so, or they don't ship.
+
+*Status: direction, not built. Glossary entries (Said, Seen, Corrected, Told, Used quietly, You
+told Nuvo, the outcome names) wait until a surface shows them.*
+
 **D-195 · 2026-11-13 · The site follows Instrument, keeps Fraunces for its headlines, and sells
 Memory.** *(Asked by the operator: "make those same updates to the marketing website… I do really
 like the font in the web marketing website… include the learning engine.")*
