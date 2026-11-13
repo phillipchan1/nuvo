@@ -442,7 +442,7 @@ export function WeekHoursBreakdown({
 
   return (
     <div className="flex flex-col gap-3">
-      <div>
+      <div className="f-lens">
         <Segmented
           label="Group the week's finished work"
           value={lens}

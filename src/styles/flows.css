@@ -361,6 +361,9 @@ html:root .f-receipt:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--
   .f-dock .k-btn { min-height: 44px; }
   .f-card .k-field { min-height: 44px; }
   .f-step { min-height: 44px; }
+  /* a lens switch that also lives on the phone (the Review's breakdown) */
+  .f-lens .k-seg { display: flex; }
+  .f-lens .k-seg button { flex: 1; justify-content: center; height: 40px; }
   /* a keycap means nothing under a finger */
   .f-foot .k-kbds, .f-card .k-kbds, .f-dock .k-kbds { display: none; }
 }
