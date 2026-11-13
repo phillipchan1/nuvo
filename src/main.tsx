@@ -20,6 +20,7 @@ import "./styles/documents.css";
 import "./styles/flows.css";
 // The statement pages — sign-in, first run, welcome, paywall (D-192).
 import "./styles/statement.css";
+import "./styles/orientation.css";
 import "./styles/popovers.css";
 import "./styles/memory.css";
 import "./styles/nuvo.css";
@@ -107,6 +108,7 @@ const showKitHarness = import.meta.env.DEV && params.has("kit");
 const showMemoryHarness = import.meta.env.DEV && params.has("memory");
 const showOffersHarness = import.meta.env.DEV && params.has("offers");
 const showStatementHarness = import.meta.env.DEV && params.has("statement");
+const showOrientationHarness = import.meta.env.DEV && params.has("orientation");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 // `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
 const showDocsHarness = import.meta.env.DEV && params.has("docs");
@@ -156,6 +158,14 @@ if (showDocsHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <CalendarHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showOrientationHarness) {
+  void import("./components/orientation/OrientationHarness").then(({ default: OrientationHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <OrientationHarness />
       </React.StrictMode>,
     );
   });

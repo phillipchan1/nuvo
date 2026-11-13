@@ -1,10 +1,13 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../kit";
-import { StatementPage } from "../statement/StatementPage";
+import { DoorTitle, StatementPage } from "../statement/StatementPage";
 import { useOrientation } from "../../hooks/useOrientation";
+import { useVertical } from "../../hooks/useVertical";
+import type { Domain } from "../../lib/vertical";
 import type { OrientationAction } from "./steps";
-import { WelcomeHero } from "./Visuals";
+import { Ladder } from "./Ladder";
+import { welcomeRungs } from "./ladderRead";
 import TeachPanel from "./TeachPanel";
 
 // The first-run welcome — one screen, one promise, one door.
@@ -30,6 +33,7 @@ export default function Orientation({
   mobile?: boolean;
 }) {
   const { visible, dismiss, mode, chooseMode } = useOrientation();
+  const { data } = useVertical();
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,41 +65,71 @@ export default function Orientation({
       aria-modal="true"
       aria-labelledby="orient-title"
     >
-      <StatementPage
-        stage={
-          <div className="ws st-welcome">
-            <WelcomeHero />
-          </div>
-        }
-        hero={
-          <span id="orient-title">
-            Your whole life,
-            <br />
-            actually moving
-          </span>
-        }
-      >
-        <div ref={cardRef} tabIndex={-1} className="grid gap-5 outline-none">
-          {/* "Organized" was the first draft and it's the wrong verb: it's what
-              the tools this replaces already do. Tidiness is the failure mode,
-              not the promise. The promise is that it *moves*. Says what the
-              diagram says: loose things in, one line out — Nuvo takes the
-              complexity, and the deciding stays yours (N-01). Do NOT enumerate
-              domains here (Principle 16). */}
-          <p className="st-lead">The complexity is ours. The decisions stay yours.</p>
-          <div className="f-card-foot">
-            <span className="f-sum">Three minutes · stop anywhere</span>
-            {/* Quiet, always available — leaving costs one click and no explanation. */}
-            <Button kind="ghost" size="md" shortcut="Esc" onClick={dismiss}>
-              Skip
-            </Button>
-            <Button kind="primary" size="md" shortcut="↵" onClick={() => chooseMode("teach")}>
-              Walk me through it
-            </Button>
-          </div>
-        </div>
-      </StatementPage>
+      <WelcomePage
+        domains={data?.domains ?? []}
+        cardRef={cardRef}
+        onSkip={dismiss}
+        onStart={() => chooseMode("teach")}
+      />
     </div>,
     document.body
+  );
+}
+
+// The welcome itself, pure, so `?orientation` can show it over fixtures.
+//
+// It is the third of three statements a new account reads, and they are one
+// sentence in three beats (D-200):
+//   sign-in    — "Ambition, down to the hour."
+//   first run  — "Name what you're carrying."
+//   welcome    — "Now, down to the hour."
+// The stage draws the ladder for the first time: the domains they named a
+// moment ago at the top, in their own words and hues, and every rung below an
+// open socket narrowing to one hour. It's the path the walkthrough is about to
+// walk, and the walkthrough's last step draws it again, filled.
+export function WelcomePage({
+  domains,
+  cardRef,
+  onSkip,
+  onStart,
+}: {
+  domains: Pick<Domain, "name" | "color">[];
+  cardRef?: React.Ref<HTMLDivElement>;
+  onSkip: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <StatementPage
+      stage={<Ladder rungs={welcomeRungs(domains)} hour={{ label: "an hour", filled: false }} size="stage" />}
+      hero={
+        <span id="orient-title">
+          Now, down
+          <br />
+          to the hour
+        </span>
+      }
+    >
+      <div ref={cardRef} tabIndex={-1} className="grid gap-5 outline-none">
+        <DoorTitle>Take one thing all the way down</DoorTitle>
+        {/* The promise is the walk itself: one real thing, from your head to an
+            hour on your calendar, in the real app, with your own words. Do NOT
+            enumerate domains here (Principle 16), and never "organized" —
+            tidiness is what the tools this replaces already sell. */}
+        <p className="st-lead">
+          From something on your mind to an hour on your calendar — in the real app, with your own work. Stop
+          anywhere.
+        </p>
+        <div className="f-card-foot">
+          <span className="f-sum">Three minutes</span>
+          {/* Quiet, always available — leaving costs one click and no explanation. */}
+          <Button kind="ghost" size="md" shortcut="Esc" onClick={onSkip}>
+            Skip
+          </Button>
+          <Button kind="primary" size="md" shortcut="↵" onClick={onStart}>
+            Walk me through it
+          </Button>
+        </div>
+      </div>
+    </StatementPage>
   );
 }

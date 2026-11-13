@@ -2,7 +2,10 @@
 
 **Status:** shipped 2026-07-30 · revised twice the same day — every step highlights,
 travels and opens what it names (D-064's law card), and first-run went from a fork to a
-single welcome (D-065).
+single welcome (D-065). **Rebuilt 2026-11-13 in Instrument and the ambitious voice (D-200)**
+— shipped to `master`, seen over fixtures at `?orientation` but
+not yet walked against a live account. `ORIENTATION_VERSION` is **5**, so every existing account
+sees it once.
 Builds on [`personas.md`](./product/personas.md) §5 rows **O1/O6** and the onboarding
 layers described in [`design-language.md`](./design-language.md).
 
@@ -24,16 +27,40 @@ So the walkthrough **teaches by making the thing exist** — every row it lands 
 the user, in their words (D-026 holds: we still seed nothing) — and closes by naming the
 rule they just lived through.
 
+## The voice (D-200)
+
+The reader has more ambition than hours (D-186). So the walkthrough is a Momentum surface,
+not a coach: **it never praises, it says what became true.** Three moves carry the emotion,
+and all three are drawn from facts the account already holds:
+
+| Move | What the reader sees | Why it's the right emotion |
+|---|---|---|
+| **The statement** | Every step is a short statement ending on the ember full stop — *Give it an hour.* · *Bigger than a task? Make it a project.* · *Show it what's already booked.* | The same grammar as the sign-in, first run and welcome (D-192). The ember stop is *now* — this is the act in front of you. |
+| **The receipt** | *Your move.* until the milestone ticks; then the user's own words, landed: *“Call the bank” is in.* · *“Call the bank” · Thu 9am* · *“Launch the paid plan” is a project.* | Encouragement an ambitious reader trusts is a fact about their own work, not "nice!". The tick stamps on `--ease-land`; the words slide in once. |
+| **The ladder, twice** | The welcome draws Domain → Initiative → Project → Task → Hour with only the domains they named; the closing step draws it again, filled with what they made. | The walkthrough's story is *take one thing all the way down*. The first drawing is the promise; the second is the promise kept, in their words. |
+
+What it never does: cheer, count a streak, glow, pulse, or say *hustle* (brandscript §10).
+The run is a piece track along the card's top edge that **advances** forward and **snaps**
+back (an undo never glides, D-187).
+
 ## The welcome
 
-One screen, one promise, one button (D-065). Not a dialog-shaped card with a feature
-diagram: full warm paper, a Fraunces line, generous air, and *Walk me through it*.
+One screen, one promise, one button (D-065), in the statement layout (D-192). It is the third
+of three statements a new account reads, and they're one sentence in three beats:
 
-The promise comes from the canon rather than fresh copy — [`personas.md`](./product/personas.md)
-defines success as *"Sunday takes 20 minutes and ends with a week you believe"* and names
-the real failure as a domain going dark **silently**. The hero art is the funnel as a
-feeling: loose motes gathering into one calm line, no labels, no altitude vocabulary. (The
-word *life* stays out — D-057 keeps it to marketing.)
+> sign-in **Ambition, down to the hour.** → first run **Name what you're carrying.** →
+> welcome **Now, down to the hour.**
+
+The door: *Take one thing all the way down.* — "From something on your mind to an hour on your
+calendar — in the real app, with your own work. Stop anywhere." — then Skip (Esc) and *Walk me
+through it* (↵).
+
+The stage draws **the ladder** (`Ladder.tsx`): the domains they named a moment ago at the top,
+in their own words and hues, and every rung below an open socket narrowing to one hour. Each
+socket is centred and narrower than the one above, so the rungs draw the funnel's shape with no
+connector lines and no explanation. (On a phone the stage is a band and its visual is hidden,
+like every statement page.) The word *life* stays out — D-057 keeps it to marketing; the
+previous line said it, which D-200 corrected.
 
 There was briefly a second door — a card tour of rebuilt art. It's retired: a diagram makes
 the reader map a picture onto a screen they've never seen, which is the problem the live
@@ -63,8 +90,10 @@ real create surface. Nothing to keep in sync, nothing taught twice.
 | 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** *+ the Spine rung* | — |
 | 7 | This is Nuvo. Ask it something | the **agent rail, opened** | the chat composer | a user message exists |
 | 8 | Bring your calendars in | **Settings → Calendars** | that pane | a calendar account exists |
-| 9 | **Now — the rules that make it sing** | back to the Schedule, everything closed | — | — |
-| 10 | And this is what makes it easy | **Plan the week**, on its Projects step | *＋ bring one in* | — |
+| 9 | **That's the whole machine** — the ladder, filled | back to the Schedule, everything closed | — | — |
+| 10 | Now make this week count | **Plan the week**, on its Projects step | *＋ bring one in* | — |
+
+*(Titles as of D-200; the table's acts, targets and ticks are unchanged.)*
 
 Steps 1/3/4/7/8 are **exactly the five `GettingStarted` milestones, in order, read through
 the same derivations** — this walkthrough *is* that tracker, performed live. Finishing it
@@ -137,6 +166,14 @@ because the floors now have data.
   task is a legitimate resting state, so "every task needs a time" would be false on the
   second screen they visit.
 
+  Since D-200 the law is drawn as **the ladder, filled** (`readLadder`): the newest timed task
+  (else the newest inbox capture) with its time on the Hour rung; its project if it has one,
+  else the newest project; that project's initiative; the domain the work counts toward
+  (`taskDomainId`, never the stale copy). An empty rung stays an open socket saying what it
+  would earn — **never a row the user didn't make.** Known limit: on day one the capture and
+  the project are usually *not* linked, so the drawing is "what you've put at each altitude",
+  not a claimed lineage.
+
 ### Two bugs worth not re-introducing
 
 Both were invisible to typecheck and only showed up by walking the thing:
@@ -169,8 +206,12 @@ would be a no-op there — the step's CTA opens it instead.
 |---|---|
 | Both step registries + `ORIENTATION_VERSION` | `src/components/orientation/steps.tsx` |
 | Target → selector / floor / phone equivalent | `src/components/orientation/teachTargets.ts` |
-| The fork + the card path | `src/components/orientation/Orientation.tsx` |
-| The docked panel, orb, and step driver | `src/components/orientation/TeachPanel.tsx` |
+| The welcome (`WelcomePage`, pure) + the shell's mount | `src/components/orientation/Orientation.tsx` |
+| The step driver: navigation, orb, receipts | `src/components/orientation/TeachPanel.tsx` |
+| The card, pure (one step from props) | `src/components/orientation/TeachCard.tsx` |
+| The ladder drawing + what it reads | `src/components/orientation/Ladder.tsx` · `ladderRead.ts` |
+| Card, ladder and pointer styles | `src/styles/orientation.css` |
+| Every step, waiting and landed, Light and Dark | `?orientation` · `?orientation=steps` · `?orientation=empty` (`OrientationHarness.tsx`) |
 | `visible` · `mode` · `teachStep` persistence | `src/hooks/useOrientation.tsx` |
 
 Targets are tagged `data-teach="<key>"` on the real elements (rail capture form, Inbox tab,

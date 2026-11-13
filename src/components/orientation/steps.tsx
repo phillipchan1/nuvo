@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { InitiativeVisual, DomainVisual, RulesVisual } from "./Visuals";
+import { InitiativeVisual, DomainVisual } from "./Visuals";
 import type { TeachTargetKey } from "./teachTargets";
 
 // Bump when a launch is big enough that returning users should see the tour again.
@@ -29,13 +29,23 @@ export type OrientationAction = "connect-calendars";
 // The acts are, deliberately, the five GettingStarted milestones in order — this
 // walkthrough IS that tracker, performed live — so finishing here retires the
 // tracker through the path it already has and clears the floors' empty states.
+//
+// THE VOICE (D-200). The reader is someone with more ambition than hours
+// (D-186). So each step is a statement, not a coach's prompt: short, in the
+// imperative or the declarative, ending on a full stop (drawn as the ember
+// `Stop` — the thing in front of you is *now*). It never cheers ("nice!"),
+// never counts a streak, never says hustle (brandscript §10). The emotion comes
+// from the user's own words coming back to them as each act lands, and from the
+// last picture: the ladder, filled with what they made.
 
 /** A milestone this step is waiting on, derived from real data — never a click. */
 export type TeachMilestone = "inbox" | "timeblock" | "project" | "nuvo" | "calendar";
 
 export interface TeachStep {
   id: string;
-  eyebrow: string;
+  /** Where the step happens: the place's name and its key, as the Spine says it. */
+  where: { label: string; keys?: string };
+  /** The statement, WITHOUT its final full stop — the card draws the ember one. */
   title: string;
   /** One line naming the act. The real UI is the visual. */
   teach: string;
@@ -45,42 +55,43 @@ export interface TeachStep {
   milestone?: TeachMilestone;
   /** Only where no honest act exists on day one — the step falls back to art. */
   Visual?: FC;
+  /** The closing picture: the ladder, drawn from what this account now holds. */
+  ladder?: boolean;
   cta?: { label: string; action: OrientationAction };
 }
 
 export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
   {
-    // Start with the act, not the concept. "Everything starts in your Inbox" is a
-    // sentence about an abstraction; "add your first task" is a thing to do — and
-    // the next step gets to *show* them the Inbox with their own words in it.
+    // Start with the act, not the concept — and start small on purpose. The
+    // whole walkthrough climbs from this one line to a domain, so the first
+    // thing it asks for is the smallest true thing on their mind.
     id: "capture",
-    eyebrow: "Schedule · ⌘1",
-    title: "Let's add your first task.",
-    teach: "Type one thing you're actually carrying — plain words, no form. I'll wait.",
+    where: { label: "Schedule", keys: "⌘1" },
+    title: "Start with one thing you're carrying",
+    teach: "Type it the way you'd say it. No form, no folder.",
     target: "capture",
     milestone: "inbox",
   },
   {
     id: "inbox",
-    eyebrow: "Schedule · ⌘1",
-    title: "There it is — your Inbox.",
-    teach:
-      "Everything you capture lands here first, and nothing else has to be decided yet. This is the one place nothing gets lost.",
+    where: { label: "Inbox", keys: "⌘1" },
+    title: "It's in. Nothing gets lost now",
+    teach: "Everything you capture lands here first. What it is can be decided later — not now.",
     target: "inbox-tab",
   },
   {
     id: "timeblock",
-    eyebrow: "Schedule · ⌘1",
-    title: "Now give it a time.",
-    teach: "Drag it onto the calendar. A task with a time isn't a wish anymore — it's work.",
+    where: { label: "Schedule", keys: "⌘1" },
+    title: "Give it an hour",
+    teach: "Drag it onto the calendar. A task with a time stops being a wish.",
     target: "day-list",
     milestone: "timeblock",
   },
   {
     id: "project",
-    eyebrow: "Projects · ⌘2",
-    title: "More than one task? That's a Project.",
-    teach: "Name one you're carrying. Once it's groomed, you slot it onto a week — not a day.",
+    where: { label: "Projects", keys: "⌘2" },
+    title: "Bigger than a task? Make it a project",
+    teach: "Name something you mean to finish. Its tasks are what earn it a week.",
     target: "project-new",
     milestone: "project",
   },
@@ -89,34 +100,33 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     // account has one. But "you won't need this yet" only lands once you've been
     // shown where it would go, so this navigates like every other step.
     id: "initiative",
-    eyebrow: "Initiatives · ⌘3",
-    title: "More than one project? That's an Initiative.",
-    teach: "Same two acts, one size up — a quarter instead of a week. Nothing to do here today.",
+    where: { label: "Initiatives", keys: "⌘3" },
+    title: "Bigger than a project? That's an initiative",
+    teach: "Several projects, one outcome, a quarter to land it. This is where the big ones live — nothing to make today.",
     target: "initiative-new",
     Visual: InitiativeVisual,
   },
   {
     id: "domain",
-    eyebrow: "Domains · ⌘4",
-    title: "It all rolls up to a Domain.",
-    teach: "The ones you just named. Always on, never finished, never slotted away.",
+    where: { label: "Domains", keys: "⌘4" },
+    title: "And it all answers to a domain",
+    teach: "The ones you just named. Never finished, never put away — and you'll see when one goes quiet.",
     target: "domain-card",
     Visual: DomainVisual,
   },
   {
     id: "nuvo",
-    eyebrow: "Your co-pilot · ⌘J",
-    title: "This is Nuvo. Ask it something.",
-    teach:
-      "Plain words — it grooms your inbox, slots your projects, and plans the week. You always make the call.",
+    where: { label: "Ask Nuvo", keys: "⌘J" },
+    title: "Ask Nuvo something",
+    teach: "Plain words. It sorts the Inbox, fits projects into weeks and plans with you. It proposes; you decide.",
     target: "nuvo",
     milestone: "nuvo",
   },
   {
     id: "calendars",
-    eyebrow: "Last thing",
-    title: "Bring your calendars in.",
-    teach: "Nuvo can't tell you what fits until it knows what's already there.",
+    where: { label: "Settings · Calendars" },
+    title: "Show it what's already booked",
+    teach: "Ambition without arithmetic is a wish list. Nuvo can't say what fits until it sees your calendar.",
     target: "calendars",
     milestone: "calendar",
     cta: { label: "Connect your calendars", action: "connect-calendars" },
@@ -124,14 +134,13 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
   {
     // The rules come after the doing. Stated up front they're terms of service —
     // vocabulary with nothing to attach to. Stated here they consolidate: the
-    // reader has just done all three, so this names a pattern they've felt.
-    // Shortest screen in the flow.
+    // reader has just done it, and the picture is THEIR line — the ladder from the
+    // welcome, filled with the task, the project and the domain they just made.
     id: "rules",
-    eyebrow: "You're set",
-    title: "Now — the rules that make it sing.",
-    teach:
-      "You just did all three. Nothing moves down a floor until it's ready for the one below — that's the whole machine, and it's why the week can be trusted.",
-    Visual: RulesVisual,
+    where: { label: "How it works" },
+    title: "That's the whole machine",
+    teach: "Nothing moves down a rung until it's ready for the one below. That's why the week can be trusted.",
+    ladder: true,
   },
   {
     // …and the ritual comes after the rules, because it's what makes obeying them
@@ -144,10 +153,9 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     // calendars step sits two back — the ritual opens by asking what room the week
     // has, which is only answerable once it can see what's booked.
     id: "plan",
-    eyebrow: "Every Sunday · 20 minutes",
-    title: "And this is what makes it easy.",
-    teach:
-      "Twenty minutes here turns all of that into a real week. You're in it now — bring your project in.",
+    where: { label: "Plan the week" },
+    title: "Now make this week count",
+    teach: "Twenty minutes, once a week: pull what matters, give it room, commit. You're in it — bring your project in.",
     target: "plan-week",
   },
 ];

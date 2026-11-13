@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Icon } from "../Icon";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
 import { useAllTasks } from "../../hooks/useTasks";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { Button } from "../kit";
+import { useOrientation } from "../../hooks/useOrientation";
+import { Ladder } from "./Ladder";
+import { readLadder, whenLabel } from "./ladderRead";
+import { TeachCard } from "./TeachCard";
 import { ORIENTATION_TEACH_STEPS, type OrientationAction, type TeachMilestone } from "./steps";
 import { TEACH_TARGETS, type TeachArm } from "./teachTargets";
 
@@ -41,7 +43,14 @@ export default function TeachPanel({
   const { agent } = useAgentContext();
   const { nav, goRung, navigate, setTab, openOverlay, closeOverlay, setSettingsSection, openFlow } = useAppNavigation();
 
-  const [step, setStep] = useState(0);
+  // The step is the provider's, persisted, so a reload mid-walkthrough resumes
+  // where it was instead of starting over (it used to be local state, and the
+  // persisted index was never read). Clamped: a stored index from a longer
+  // registry must not point past the end.
+  const { teachStep, setTeachStep } = useOrientation();
+  const step = Math.min(Math.max(0, teachStep), ORIENTATION_TEACH_STEPS.length - 1);
+  // Which way the run last moved: forward advances (it glides), back snaps.
+  const [dir, setDir] = useState<"fwd" | "back">("fwd");
   const [orbSel, setOrbSel] = useState<string | null>(null);
   const [waySel, setWaySel] = useState<string | null>(null);
   const orbRef = useRef<HTMLDivElement | null>(null);
@@ -107,8 +116,42 @@ export default function TeachPanel({
   };
   const done = s.milestone ? met[s.milestone] : false;
 
-  const next = useCallback(() => setStep((i) => (i >= last ? i : i + 1)), [last]);
-  const back = useCallback(() => setStep((i) => Math.max(0, i - 1)), []);
+  const next = useCallback(() => {
+    setDir("fwd");
+    setTeachStep(Math.min(last, step + 1));
+  }, [last, step, setTeachStep]);
+  const back = useCallback(() => {
+    setDir("back");
+    setTeachStep(Math.max(0, step - 1));
+  }, [step, setTeachStep]);
+
+  // ── the receipt: what became true, in the user's own words ─────────────────
+  // The walkthrough never praises. When an act lands it says the fact back —
+  // the task they typed, the time they gave it, the project they named — which
+  // is the only kind of encouragement that holds for an ambitious reader.
+  const receipt: ReactNode = (() => {
+    if (!done || !s.milestone) return undefined;
+    const live = allTasks.filter((t) => !t.trashed_at);
+    switch (s.milestone) {
+      case "inbox": {
+        const t = newest(live.filter((x) => x.status === "inbox"), (x) => x.created_at);
+        return t ? <>“{t.title}” is in.</> : "It's in.";
+      }
+      case "timeblock": {
+        // updated_at, not created_at: the drag that timed it is the newest act.
+        const t = newest(live.filter((x) => x.do_date && x.start_time), (x) => x.updated_at);
+        return t ? <>“{t.title}” · {whenLabel(t)}</> : "It has a time.";
+      }
+      case "project": {
+        const p = newest(data.projects, (x) => x.createdAt);
+        return p ? <>“{p.name}” is a project.</> : "It's a project.";
+      }
+      case "nuvo":
+        return "Asked. Nuvo has it.";
+      case "calendar":
+        return accounts.length > 1 ? `${accounts.length} calendars are in.` : "Your calendar is in.";
+    }
+  })();
 
   // ── point at the real thing ────────────────────────────────────────────────
   // Bring the floor forward, wait for the element to mount (the floor may still
@@ -285,8 +328,19 @@ export default function TeachPanel({
   const Visual = s.Visual;
   // The real app is always the better teacher — the art only carries a step that
   // can't reach it (the Initiative step, and the floor-only steps on a phone,
-  // where those floors don't exist).
-  const showVisual = Boolean(Visual) && !reachesApp;
+  // where those floors don't exist). The closing step draws the ladder again —
+  // the one from the welcome — filled with what this account now holds.
+  let visual: ReactNode = null;
+  if (s.ladder) {
+    const l = readLadder(data, allTasks);
+    visual = <Ladder rungs={l.rungs} hour={l.hour} size="dock" />;
+  } else if (Visual && !reachesApp) {
+    visual = (
+      <div className="flex justify-center">
+        <Visual />
+      </div>
+    );
+  }
 
   return createPortal(
     <>
@@ -305,7 +359,7 @@ export default function TeachPanel({
               edge off everything else. Click-through, always — the whole premise
               is that the app stays usable while it's lit. */}
           <div ref={dimRef} className="teach-dim" aria-hidden />
-          <div ref={orbRef} className="marquee-orb is-teach" aria-hidden>
+          <div ref={orbRef} key={orbSel} className="marquee-orb is-teach" aria-hidden>
             <div className="marquee-orb-glow" />
           </div>
         </>
@@ -313,71 +367,29 @@ export default function TeachPanel({
 
       <div
         ref={panelRef}
-        className={`f-dock fixed z-[80] ${
+        className={`fixed z-[80] ${
           mobile
             // Clears the bottom bar AND the two floating actions above it (＋ and
             // ✦) — the panel must never cover the thing its own orb points at.
             ? "inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+9rem)]"
-            : `w-[340px] ${DOCK_CLASS[dock]} transition-[inset] duration-300`
+            : `w-[360px] ${DOCK_CLASS[dock]} transition-[inset] duration-300`
         }`}
         role="dialog"
         aria-label="Walkthrough"
       >
-        <div className="f-dock-body">
-          <div className="flex items-center gap-2">
-            <span className="f-kicker min-w-0 flex-1 truncate">{s.eyebrow}</span>
-            <span className="f-num shrink-0 text-caption text-[var(--faint)]">
-              {step + 1}/{ORIENTATION_TEACH_STEPS.length}
-            </span>
-            <Button kind="ghost" size="xs" onClick={onDone} aria-label="Skip the walkthrough" title="Skip the walkthrough (Esc)">
-              Skip
-            </Button>
-          </div>
-
-          {showVisual && Visual && (
-            <div className="flex justify-center">
-              <Visual />
-            </div>
-          )}
-
-          <h2 className="f-hero-sm">{s.title}</h2>
-          <p className="f-line text-muted">{s.teach}</p>
-
-          {s.milestone && (
-            <div className="flex items-center gap-2 pt-1">
-              <span className="f-tick" data-done={done || undefined} aria-hidden>
-                {done && <Icon name="check" size={10} strokeWidth={2.6} />}
-              </span>
-              <span className="text-caption" style={{ color: done ? "var(--ink)" : "var(--muted)" }}>
-                {done ? "Done — nice." : "Waiting for you…"}
-              </span>
-            </div>
-          )}
-
-          {s.cta && (
-            <div className="pt-1">
-              <Button size="sm" trailing={<Icon name="arrow-right" size={12} />} onClick={() => { onAction?.(s.cta!.action); }}>
-                {s.cta.label}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="f-dock-foot">
-          <div className="f-pips" aria-hidden>
-            {ORIENTATION_TEACH_STEPS.map((st, i) => (
-              <i key={st.id} data-on={i === step || undefined} data-done={i < step || undefined} />
-            ))}
-          </div>
-          {step > 0 && (
-            <Button kind="ghost" size="sm" onClick={back}>
-              Back
-            </Button>
-          )}
-          <Button kind="primary" size="sm" onClick={atEnd ? onDone : next}>
-            {atEnd ? "Get started" : "Next"}
-          </Button>
-        </div>
+        <TeachCard
+          step={s}
+          index={step}
+          total={ORIENTATION_TEACH_STEPS.length}
+          dir={dir}
+          done={done}
+          receipt={receipt}
+          visual={visual}
+          onSkip={onDone}
+          onBack={back}
+          onNext={atEnd ? onDone : next}
+          onCta={s.cta ? () => onAction?.(s.cta!.action) : undefined}
+        />
       </div>
     </>,
     document.body,
@@ -420,6 +432,10 @@ function pickCorner(target: DOMRect, panel: HTMLElement | null): DockCorner {
     b.t + h > target.top - gap;
   const order: DockCorner[] = ["br", "bl", "tr", "tl"];
   return order.find((c) => !hits(boxes[c])) ?? "br";
+}
+
+function newest<T>(xs: T[], key: (x: T) => string | null | undefined): T | undefined {
+  return xs.reduce<T | undefined>((best, x) => ((key(x) ?? "") > (best ? key(best) ?? "" : "") ? x : best), undefined);
 }
 
 function prefersReduced() {
