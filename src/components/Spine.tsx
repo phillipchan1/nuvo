@@ -38,6 +38,13 @@ const BUILD = RUNGS.slice(1);
 // (Focus mode is a third state above both: it slides the spine shut entirely.)
 const FULL_W = 228;
 const RAIL_W = 52;
+// The Mac app's traffic lights are drawn by AppKit at fixed window points over
+// the sidebar: close at the wordmark's left (16pt at rest), two more at 20pt
+// spacing, 14pt wide — the cluster ends near 70pt. A 52px rail is narrower
+// than that and put the green light on the panel's corner. So in the Mac app
+// the rail is as wide as the lights need, with a margin, converted to css px at
+// the current zoom; the panel keeps its full height. Everywhere else: 52.
+const MAC_LIGHTS_RAIL_PT = 84;
 
 const RAIL_KEY = "nuvo-spine-rail";
 function readRail(): boolean {
@@ -116,6 +123,9 @@ const SpineBody = memo(function SpineBody({
   // the same measurement just gets re-scaled rather than re-measured.
   const wordmarkCssLeft = useRef<number | null>(null);
   const { scale: uiScale } = useUiScale();
+  // `tauri-macos` is set on <html> in main.tsx (desktop Mac app only, never iOS).
+  const [macLights] = useState(() => document.documentElement.classList.contains("tauri-macos"));
+  const railW = macLights ? Math.max(RAIL_W, Math.ceil(MAC_LIGHTS_RAIL_PT / uiScale)) : RAIL_W;
   // `railedPref` is what the user chose and what gets persisted; `railed` is
   // what actually renders. They differ only while the workspace is squeezed.
   const [railedPref, setRailed] = useState(readRail);
@@ -143,8 +153,8 @@ const SpineBody = memo(function SpineBody({
   // popover today) reads `--spine-width`, so the width lives in the token and
   // the two states stay in sync by construction.
   useEffect(() => {
-    document.documentElement.style.setProperty("--spine-width", `${railed ? RAIL_W : FULL_W}px`);
-  }, [railed]);
+    document.documentElement.style.setProperty("--spine-width", `${railed ? railW : FULL_W}px`);
+  }, [railed, railW]);
 
   // Tell the native titlebar where the wordmark's glyphs start, so the traffic
   // lights can share its left edge. `getBoundingClientRect()` is post-zoom, and
@@ -183,7 +193,7 @@ const SpineBody = memo(function SpineBody({
     if (wordmarkCssLeft.current != null) send(wordmarkCssLeft.current);
   }, [railed, collapsed, uiScale]);
 
-  const width = railed ? RAIL_W : FULL_W;
+  const width = railed ? railW : FULL_W;
 
   // One row shape for everything in the sidebar — a rung, the week's projects,
   // the footer. Railed, the label is spent and the native tooltip (lib/tooltips)
