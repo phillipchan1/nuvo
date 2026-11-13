@@ -39,11 +39,10 @@ export async function writeContacts(
   for (let i = 0; i < rows.length; i += CHUNK) {
     for (const c of rows.slice(i, i + CHUNK)) {
       await sql`
-        INSERT INTO contacts_directory (user_id, account_id, source, email, display_name, name, updated_at)
-        VALUES (${userId}, ${accountId}, ${source}, ${c.email}, ${c.displayName}, ${c.displayName}, ${cutoff})
+        INSERT INTO contacts_directory (user_id, account_id, source, email, display_name, updated_at)
+        VALUES (${userId}, ${accountId}, ${source}, ${c.email}, ${c.displayName}, ${cutoff})
         ON CONFLICT (account_id, email) DO UPDATE SET
           display_name = EXCLUDED.display_name,
-          name = EXCLUDED.name,
           updated_at = EXCLUDED.updated_at
         WHERE contacts_directory.user_id = ${userId}
       `;

@@ -11,6 +11,7 @@ import {
   readAppleAuthConfig,
 } from "../../supabase/functions/_shared/appleIdentity.ts";
 import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { verifyPassword } from "./passwordHash.ts";
 import { parseRawKey } from "./secrets.ts";
 
 export type AuthDatabase = Pool | { db: object; type: "postgres" };
@@ -193,6 +194,7 @@ export function createAuth(env: Env, database: AuthDatabase) {
       enabled: true,
       minPasswordLength: 8,
       requireEmailVerification: true,
+      password: { verify: verifyPassword },
     },
     // Same list as the CORS echo (cors.ts), so the browser and Better Auth's
     // own origin check never disagree about a shell.
