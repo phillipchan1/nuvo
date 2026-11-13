@@ -516,6 +516,18 @@ describe("reasoning and tools cannot be sent together", () => {
     expect(sent.temperature).toBe(0);
   });
 
+  it("switches reasoning off for later generations too, not only gpt-5", async () => {
+    // The live 400 this exists for (battery, 2026-11-13): "Function tools with
+    // reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions"
+    // — the gate matched /^gpt-5/ and sent nothing, so every gpt-6 turn failed.
+    for (const model of ["gpt-6-luna", "openai/gpt-6-luna", "gpt-5.6-luna"]) {
+      const sent = await bodyFor({ model }, someTools);
+      expect(sent.reasoning_effort, model).toBe("none");
+    }
+    const old = await bodyFor({ model: "gpt-4.1", temperature: 0 }, someTools);
+    expect(old.reasoning_effort).toBeUndefined();
+  });
+
   it("leaves reasoning_effort off models that don't reason by default", async () => {
     // The constraint belongs to the gpt-5 family, so it follows that model
     // through whichever host serves it — and never gets bolted onto a Qwen

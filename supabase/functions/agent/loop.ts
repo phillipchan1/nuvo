@@ -407,11 +407,11 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
   // this transport to /v1/responses, which is a real port, not a flag.
   //
   // Gated on the model, not the base URL: this is a property of the gpt-5
-  // family (it reasons unless told not to), so it follows that model through
-  // whichever host serves it, and never gets bolted onto a Qwen turn that has
-  // no such parameter.
+  // family and everything after it (gpt-6-luna 400s exactly the same way), so
+  // it follows that model through whichever host serves it, and never gets
+  // bolted onto a Qwen turn that has no such parameter.
   const wantsReasoning = Boolean(cfg.reasoningEffort && cfg.reasoningEffort !== "none");
-  const reasonsByDefault = /^gpt-5/i.test(cfg.model);
+  const reasonsByDefault = reasonsUnlessTold(cfg.model);
   let warnedAboutReasoning = false;
 
   const body = (messages: ChatMessage[], tools: unknown[], stream: boolean) => {
@@ -466,4 +466,13 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
       return { content: choice?.content ?? null, tool_calls: choice?.tool_calls };
     },
   };
+}
+
+
+/** Does this model reason unless told not to? The gpt-5 family and every later
+ *  generation does; on /v1/chat/completions that default 400s any turn with
+ *  tools, so the chat must say reasoning_effort="none" out loud. */
+export function reasonsUnlessTold(model: string): boolean {
+  const m = /^(?:openai\/)?gpt-(\d+)/i.exec(model.trim());
+  return Boolean(m && Number(m[1]) >= 5);
 }
