@@ -1,26 +1,27 @@
 // The parts every phone detail sheet is built from — the event, the task and
-// the standing block.
+// the standing block (D-162), drawn by styles/phone.css at touch size.
 //
 // They answer the same questions in the same order (docs/design-language.md,
-// "Detail popovers — one grammar", D-101) and used to do it with three hand-
-// rolled stacks: two private copies of `Section` and `Chip`, a 39px input recipe
-// the field primitives retired, a `max-h-[78vh]` scroller that disagreed with the
-// Sheet's own `88dvh` cap, and a bottom row of three equal bordered buttons with
-// an emoji bin under them. A layout convention that lives in three files has
-// already drifted — so these are shared code, not a convention.
+// "Detail popovers — one grammar", D-101), so they are shared code, not a
+// convention — a layout convention that lives in three files has already
+// drifted.
 //
-//   mast       what is this, and when — the title IS the hero, ONE muted line
+//   mast       what is this, and when — the name IS the hero (22/700), ONE
+//              muted line under it
 //   strip      the act you opened it for (Join · Going? · Done) — at most two
-//   sections   label → content, one rhythm
-//   rows       hairline-separated, 44px, icon in a gutter — dissolve, don't frame
-//   footer     quiet acts, then the destructive one on its own, as text
+//              thumb-sized kit Buttons
+//   sections   a 12px name → content, one rhythm
+//   rows       48px, hairline-separated, glyph · label · value · chevron
+//   foot       the destructive act on its own, as --danger text
 //
 // Mobile-only on purpose: none of this is mounted on the desktop shell.
 
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type Ref, type UIEvent } from "react";
 import { Icon, type IconName } from "../Icon";
+import { Dot } from "../kit";
 import { toDateISO, todayISO, tomorrowISO } from "../../lib/dates";
 import Sheet from "./Sheet";
+import { TouchButton } from "./touch";
 
 /** Pass as `contentClassName` so the Sheet's own body IS the scroller. It fills
  *  whatever height the Sheet grants (`min-h-0 flex-1`), so the keyboard inset and
@@ -28,8 +29,9 @@ import Sheet from "./Sheet";
  *  the old `max-h-[78vh]` was a number unrelated to the Sheet's `88dvh` cap. */
 export const SHEET_SCROLL = "mobile-scroll overflow-y-auto";
 
-/** The padding wrapper every sheet body sits in. Bottom pad clears the home bar. */
-export const SHEET_BODY = "px-4 pb-6";
+/** The padding wrapper every sheet body sits in: a 20px inset (rows inside it
+ *  bleed to the sheet's edges), and a bottom pad that clears the home bar. */
+export const SHEET_BODY = "ph-body pb-8";
 
 export const fmtDay = (d: Date) => d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
@@ -58,7 +60,7 @@ export function useSheetTitle(kind: string, name: string) {
   const title = (
     <div className="relative h-8 min-w-0">
       <span
-        className="fast absolute inset-0 flex items-center text-caption font-medium tracking-normal text-muted"
+        className="fast absolute inset-0 flex items-center text-body font-medium text-muted"
         style={{ opacity: scrolled ? 0 : 1 }}
         aria-hidden={scrolled}
       >
@@ -79,37 +81,46 @@ export function useSheetTitle(kind: string, name: string) {
 // ── Mast ────────────────────────────────────────────────────────────────────
 
 /** The identity block. `color` draws the 3px spine the record wears at its left
- *  edge (domain hue — identity); `crumb` is a quiet line above the name. */
+ *  edge (domain hue — identity); `crumb` is a quiet line above the name; `lead`
+ *  stands left of the name (the task's 20px TaskCheck). The name itself should
+ *  wear `ph-mast-title` (22/700). */
 export function SheetMast({
   color,
   crumb,
+  lead,
   children,
   meta,
 }: {
   color?: string | null;
   crumb?: ReactNode;
+  lead?: ReactNode;
   children: ReactNode;
   meta?: ReactNode;
 }) {
   return (
-    <div className="relative pb-1 pt-1" style={color ? { paddingLeft: 14 } : undefined}>
-      {color && (
-        <span
-          className="absolute bottom-1 left-0 top-1 w-[3px] rounded-full"
-          style={{ background: color }}
-          aria-hidden
-        />
+    <div className="ph-mast" data-spine={color ? "" : undefined}>
+      {color && <span className="ph-mast-spine" style={{ background: color }} aria-hidden />}
+      {crumb && <div className="ph-mast-crumb">{crumb}</div>}
+      {lead ? (
+        <div className="flex items-start gap-3">
+          <span className="mt-[5px] flex shrink-0">{lead}</span>
+          <div className="min-w-0 flex-1">{children}</div>
+        </div>
+      ) : (
+        children
       )}
-      {crumb && <div className="mb-1 flex min-w-0 items-center gap-1 text-meta text-muted">{crumb}</div>}
-      {children}
-      {meta && <div className="mono mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption text-muted">{meta}</div>}
+      {meta && (
+        <div className="ph-mast-meta" style={lead ? { paddingLeft: 32 } : undefined}>
+          {meta}
+        </div>
+      )}
     </div>
   );
 }
 
 export function MetaDot() {
   return (
-    <span className="opacity-40" aria-hidden>
+    <span className="text-faint" aria-hidden>
       ·
     </span>
   );
@@ -189,10 +200,10 @@ export function AutoText({
       autoCapitalize="sentences"
       autoCorrect="on"
       spellCheck
-      // A one-line title is bare text — 21px of target. Padding buys the 44px
+      // A one-line title is bare text — 25px of target. Padding buys the 44px
       // thumb area and the matching negative margin hands the layout back.
-      className={`block w-full resize-none overflow-hidden outline-none placeholder:text-muted/60 ${
-        single ? "-my-3 py-3" : ""
+      className={`block w-full resize-none overflow-hidden outline-none placeholder:text-faint ${
+        single ? "-my-2.5 py-2.5" : ""
       } ${className}`}
       style={style}
     />
@@ -201,9 +212,8 @@ export function AutoText({
 
 // ── Sections & chips ────────────────────────────────────────────────────────
 
-/** One rhythm for every sheet: 24px between sections, 8px from label to content.
- *  (It was 16 / 6 — close enough that a label read as belonging to the section
- *  above it as much as the one below.) */
+/** One rhythm for every sheet: 24px between sections, 6px from name to content.
+ *  The name is a plain 12px label in sentence case — no eyebrow caps. */
 export function SheetSection({
   label,
   aside,
@@ -216,16 +226,22 @@ export function SheetSection({
   className?: string;
 }) {
   return (
-    <section className={`mt-6 ${className}`}>
+    <section className={`ph-sec ${className}`}>
       {(label || aside) && (
-        <div className="mb-2 flex items-baseline gap-2">
-          {label && <div className="section-label !p-0">{label}</div>}
-          {aside && <div className="mono ml-auto text-micro text-muted">{aside}</div>}
+        <div className="ph-sec-head">
+          {label && <div>{label}</div>}
+          {aside && <div className="ph-sec-aside">{aside}</div>}
         </div>
       )}
       {children}
     </section>
   );
+}
+
+/** The strip under the mast: the act you opened the sheet for — at most two,
+ *  each a thumb-sized kit Button, sharing the row equally. */
+export function SheetStrip({ children }: { children: ReactNode }) {
+  return <div className="ph-strip">{children}</div>;
 }
 
 /** Quick picks tile on a grid, never on a wrapping flow — a flow left "Pick
@@ -262,9 +278,7 @@ export function Chip({
       aria-pressed={on}
       aria-label={ariaLabel}
       style={span ? { gridColumn: `span ${span}` } : undefined}
-      className={`tap fast inline-flex items-center justify-center rounded-full border px-3 text-body font-medium disabled:opacity-40 ${
-        on ? "border-accent bg-accent text-on-accent" : "border-line text-muted active:bg-accent-soft"
-      }`}
+      className="ph-chip"
     >
       {children}
     </button>
@@ -273,9 +287,11 @@ export function Chip({
 
 // ── Rows ────────────────────────────────────────────────────────────────────
 
-/** Hairline-separated rows on the paper — no card around them. */
+/** Hairline-separated 48px rows, edge to edge of the sheet — no card around
+ *  them. Inside `SHEET_BODY` they bleed to the sheet's edges and keep their
+ *  text on the body's inset; anywhere else they sit flush. */
 export function RowList({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`divide-y divide-line border-y border-line ${className}`}>{children}</div>;
+  return <div className={`ph-rows ${className}`}>{children}</div>;
 }
 
 /** A settings-style row: glyph in the gutter, label, current value, chevron.
@@ -298,22 +314,13 @@ export function FactRow({
   onClick: (e: MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft"
-    >
-      <span className="flex w-5 shrink-0 items-center justify-center text-muted">
-        {lead ?? (icon && <Icon name={icon} size={16} />)}
-      </span>
-      <span className="shrink-0 text-body text-ink">{label}</span>
-      <span
-        className="ml-auto min-w-0 truncate text-body text-muted"
-        style={valueColor ? { color: valueColor } : undefined}
-      >
+    <button type="button" onClick={onClick} className="ph-row row-hover">
+      <span className="ph-row-lead">{lead ?? (icon && <Icon name={icon} size={18} />)}</span>
+      <span className="ph-row-label">{label}</span>
+      <span className="ph-row-value" style={valueColor ? { color: valueColor } : undefined}>
         {value}
       </span>
-      <Icon name="chevron-right" size={14} className="shrink-0 text-muted/70" />
+      <Icon name="chevron-right" size={16} className="ph-row-chev" />
     </button>
   );
 }
@@ -336,35 +343,36 @@ export function ActionRow({
   href?: string;
   quiet?: boolean;
 }) {
-  const cls = `tap fast flex w-full items-center gap-3 text-left active:bg-accent-soft ${
-    quiet ? "text-muted" : "text-ink"
-  }`;
   const lead = (
-    <span className="flex w-5 shrink-0 items-center justify-center" style={glyph ? { color: "var(--accent)" } : undefined}>
-      {glyph ? <span className="text-lead leading-none">{glyph}</span> : icon && <Icon name={icon} size={16} className={quiet ? "" : "text-muted"} />}
+    <span className="ph-row-lead" style={glyph ? { color: "var(--accent-ink)" } : undefined}>
+      {glyph ? <span className="text-lead leading-none">{glyph}</span> : icon && <Icon name={icon} size={18} />}
     </span>
   );
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noreferrer" className={cls}>
+      <a href={href} target="_blank" rel="noreferrer" className="ph-row row-hover" data-quiet={quiet || undefined}>
         {lead}
-        <span className="text-body">{label}</span>
+        <span className="ph-row-label" data-grow="">
+          {label}
+        </span>
       </a>
     );
   }
   return (
-    <button type="button" onClick={onClick} className={cls}>
+    <button type="button" onClick={onClick} className="ph-row row-hover" data-quiet={quiet || undefined}>
       {lead}
-      <span className="text-body">{label}</span>
+      <span className="ph-row-label" data-grow="">
+        {label}
+      </span>
     </button>
   );
 }
 
-/** The destructive act, on its own below everything else: text at rest, and it
- *  only turns `--signal` once it asks you to confirm (D-101). The confirm state
- *  is the SAME height as the row it replaces, so nothing under it jumps.
- *  `confirm={false}` hands straight to the caller — a repeating event asks
- *  "which occurrences?" itself, and two questions in a row is one too many. */
+/** The destructive act, alone at the foot of the sheet: `--danger` text at
+ *  rest, and the confirm it arms is the SAME height as the row it replaces, so
+ *  nothing under it jumps (D-101). `confirm={false}` hands straight to the
+ *  caller — a repeating event asks "which occurrences?" itself, and two
+ *  questions in a row is one too many. */
 export function DestructiveRow({
   label,
   confirmLabel = "Delete",
@@ -394,57 +402,40 @@ export function DestructiveRow({
   }, [armed]);
   if (armed && (alt || prompt)) {
     return (
-      <div ref={armedRef} className="space-y-2">
-        {prompt && <p className="px-1 text-caption text-ink">{prompt}</p>}
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="tap fast w-full rounded-xl border border-signal bg-signal/10 text-body font-semibold text-signal"
-        >
+      <div ref={armedRef} className="mt-6 grid gap-2">
+        {prompt && <p className="text-body text-ink">{prompt}</p>}
+        <TouchButton kind="danger-solid" full onClick={onConfirm}>
           {confirmLabel}
-        </button>
+        </TouchButton>
         {alt && (
-          <button
-            type="button"
-            onClick={alt.onConfirm}
-            className="tap fast w-full rounded-xl border border-line text-body font-medium text-ink active:bg-accent-soft"
-          >
+          <TouchButton full onClick={alt.onConfirm}>
             {alt.label}
-          </button>
+          </TouchButton>
         )}
-        <button
-          type="button"
-          onClick={() => setArmed(false)}
-          className="tap fast w-full rounded-xl text-body text-muted active:bg-accent-soft"
-        >
+        <TouchButton kind="ghost" full onClick={() => setArmed(false)}>
           Keep it
-        </button>
+        </TouchButton>
       </div>
     );
   }
   if (armed) {
     return (
-      <div className="grid grid-cols-2 items-center gap-2 py-px">
-        <button
-          type="button"
-          onClick={() => setArmed(false)}
-          className="tap fast rounded-xl border border-line text-body text-muted active:bg-accent-soft"
-        >
+      <div className="mt-6 grid min-h-12 grid-cols-2 items-center gap-2">
+        <TouchButton full onClick={() => setArmed(false)}>
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="tap fast rounded-xl border border-signal bg-signal/10 text-body font-semibold text-signal"
-        >
+        </TouchButton>
+        <TouchButton kind="danger-solid" full onClick={onConfirm}>
           {confirmLabel}
-        </button>
+        </TouchButton>
       </div>
     );
   }
   return (
-    <div className="border-y border-line">
-      <ActionRow quiet icon={icon} label={label} onClick={() => (confirm ? setArmed(true) : onConfirm())} />
+    <div className="mt-6">
+      <button type="button" className="ph-danger" onClick={() => (confirm ? setArmed(true) : onConfirm())}>
+        <Icon name={icon} size={18} />
+        {label}
+      </button>
     </div>
   );
 }
@@ -453,12 +444,10 @@ export function DestructiveRow({
 
 export type ResponseOption<T extends string> = { value: T; label: string; glyph: string; tone: "ok" | "warn" | "signal" };
 
-/** The RSVP control at thumb size. The chosen answer carries its verdict token
- *  (`--ok` / `--warn` / `--signal`) as TINT, BORDER and GLYPH while the label
- *  stays ink — the same rule the desktop's `PopSegmented` follows, because a
- *  verdict token is a legible *mark* at ~3.3:1 and an illegible *label*. It was
- *  three 60px blocks, one filled solid accent: the loudest thing on the sheet,
- *  louder than the name of the event it was asking about. */
+/** The RSVP control at thumb size — a segmented trough. The chosen answer is
+ *  lifted onto --raised and carries its verdict token (`--ok` / `--warn` /
+ *  `--signal`) as the GLYPH's ink while the label stays ink, because a verdict
+ *  token is a legible *mark* at ~3.3:1 and an illegible *label*. */
 export function ResponseSegmented<T extends string>({
   options,
   value,
@@ -476,30 +465,13 @@ export function ResponseSegmented<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="grid overflow-hidden rounded-xl border border-line-strong bg-surface"
+      className="ph-verdict"
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
-      {options.map((o, i) => {
+      {options.map((o) => {
         const on = value === o.value;
         return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={on}
-            disabled={disabled}
-            onClick={() => onPick(o.value)}
-            className={`tap fast flex items-center justify-center gap-1.5 text-body disabled:opacity-50 ${
-              i > 0 ? "border-l border-line" : ""
-            } ${on ? "font-semibold text-ink" : "font-medium text-muted active:bg-accent-soft"}`}
-            style={
-              on
-                ? {
-                    background: `color-mix(in srgb, var(--${o.tone}) 14%, transparent)`,
-                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(--${o.tone}) 45%, transparent)`,
-                  }
-                : undefined
-            }
-          >
+          <button key={o.value} type="button" aria-pressed={on} disabled={disabled} onClick={() => onPick(o.value)}>
             <span aria-hidden style={on ? { color: `var(--${o.tone})` } : undefined}>
               {o.glyph}
             </span>
@@ -536,6 +508,8 @@ export function PickSheet({
   onClose,
 }: {
   title: string;
+  /** A consequence worth knowing before you pick — never an explanation of
+   *  the list itself (the title says what it is). */
   note?: string;
   rows: PickRow[];
   value: string | null;
@@ -553,26 +527,27 @@ export function PickSheet({
       key={r.id || "none"}
       type="button"
       onClick={() => pick(r.id)}
-      className="tap fast flex w-full items-center gap-3 py-1.5 text-left active:bg-accent-soft"
+      aria-pressed={on}
+      className="ph-row row-hover"
     >
-      <span className="flex w-5 shrink-0 items-center justify-center" style={r.color ? { color: r.color } : undefined}>
-        {r.lead ?? <span className="h-2 w-2 rounded-full" style={{ background: r.color ?? "var(--line-strong)" }} />}
+      <span className="ph-row-lead" style={r.color ? { color: r.color } : undefined}>
+        {r.lead ?? <Dot color={r.color ?? "var(--faint)"} shape="round" />}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-body text-ink">{r.name}</span>
-        {r.sub && <span className="block truncate text-meta text-muted">{r.sub}</span>}
+      <span className="min-w-0 flex-1 py-2">
+        <span className={`ph-row-label block truncate ${r.id ? "" : "!text-muted"}`}>{r.name}</span>
+        {r.sub && <span className="block truncate text-caption text-muted">{r.sub}</span>}
       </span>
-      {on && <Icon name="check" size={16} className="shrink-0 text-accent" />}
+      {on && <Icon name="check" size={18} className="shrink-0 text-accent" />}
     </button>
   );
   return (
     <Sheet title={title} onClose={onClose} contentClassName={SHEET_SCROLL}>
-      <div className="px-4 pb-6">
-        {note && <p className="pb-2 text-caption text-muted">{note}</p>}
-        <div className="divide-y divide-line border-y border-line">
+      <div className={SHEET_BODY}>
+        {note && <p className="pb-3 text-caption text-muted">{note}</p>}
+        <RowList>
           {noneLabel && row({ id: "", name: noneLabel }, !value)}
           {rows.map((r) => row(r, r.id === value))}
-        </div>
+        </RowList>
       </div>
     </Sheet>
   );

@@ -28,6 +28,7 @@ describe("event domain control wiring", () => {
     expect(control).toMatch(/<PickSheet\s+title="Counts toward"/);
     expect(control).toMatch(/eventDomainAttribution/);
     expect(kit).toMatch(/<Sheet title=\{title\}/);
-    expect(kit).toMatch(/className="tap fast flex w-full/);
+    // Full-width 48px rows (styles/phone.css `.ph-row`), never a chip or a menu item.
+    expect(kit).toMatch(/className="ph-row/);
   });
 });

@@ -3,11 +3,15 @@ import { createPortal } from "react-dom";
 import { useDialogFocus } from "../../hooks/useDialogFocus";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import { rubberBand, releaseVelocity, type VelocitySample } from "../../lib/gesture";
+import { IconButton } from "../kit";
+import { Icon } from "../Icon";
 
 // A bottom sheet — the mobile equivalent of the desktop's anchored popovers and
-// modals. Rises from the bottom edge, dims the world behind it, and respects the
-// home-indicator safe area. `tall` sheets (chat, task detail) take most of the
-// screen; the default hugs its content.
+// modals, and the one overlay shell on the phone (kit `Dialog` renders it too).
+// A --raised panel with a 16px top corner and a 36×5 grab handle, over the
+// --scrim (styles/phone.css, `ph-sheet`). Rises from the bottom edge and
+// respects the home-indicator safe area. `tall` sheets (chat, task detail) take
+// most of the screen; the default hugs its content.
 //
 // Dismissal: swipe down anywhere on the panel (engages only when the inner
 // scroller is at its top and the gesture is downward), or a deliberate tap on
@@ -94,6 +98,9 @@ export default function Sheet({
     sheet.style.transform = "translateY(110%)";
 
     if (scrim) {
+      // The fade-in holds opacity with `fill: both`; an animated value beats an
+      // inline one, so it has to let go before the fade-out can show.
+      scrim.style.animation = "none";
       scrim.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 1, 1)";
       scrim.style.opacity = "0";
     }
@@ -146,7 +153,9 @@ export default function Sheet({
     // Dim the scrim proportionally as the sheet moves away.
     if (scrimRef.current) {
       const height = sheetRef.current.offsetHeight || 400;
-      const opacity = Math.max(0, 0.4 * (1 - Math.max(0, down) / height));
+      const opacity = Math.max(0, 1 - Math.max(0, down) / height);
+      scrimRef.current.style.animation = "none";
+      scrimRef.current.style.transition = "none";
       scrimRef.current.style.opacity = String(opacity);
     }
   };
@@ -172,7 +181,7 @@ export default function Sheet({
       }
       if (scrimRef.current) {
         scrimRef.current.style.transition = "opacity var(--d-native) var(--ease-native)";
-        scrimRef.current.style.opacity = "0.4";
+        scrimRef.current.style.opacity = "1";
       }
     }
   };
@@ -185,7 +194,7 @@ export default function Sheet({
     onPointerMove,
     onPointerUp,
     onPointerCancel: onPointerUp,
-    style: { touchAction: "none" as const, cursor: "grab" as const },
+    style: { touchAction: "none" as const },
   };
 
   // Scrim dismissal is a deliberate TAP: short travel, short duration. A drag
@@ -196,7 +205,7 @@ export default function Sheet({
   return createPortal(
     <div
       ref={scrimRef}
-      className="scrim fixed inset-0 z-[60] flex flex-col justify-end bg-black/40 backdrop-blur-[2px]"
+      className="ph-scrim"
       onMouseDown={(e) => {
         // Suppress the synthetic mousedown that follows a touch (touchend
         // handles those); real mouse clicks dismiss immediately.
@@ -227,57 +236,44 @@ export default function Sheet({
         // dvh, not vh: with iOS Safari's toolbars shown, 100vh is taller than
         // the visible viewport, so a vh-sized sheet ran off the bottom. The vh
         // pair stays first as the fallback for engines without dvh.
-        className={`sheet-up glass flex ${
-          tall ? "sheet-h-tall" : "sheet-h-max"
-        } flex-col rounded-t-2xl border-t border-line pb-safe outline-none`}
+        className={`ph-sheet sheet-up ${tall ? "sheet-h-tall" : "sheet-h-max"} pb-safe`}
         style={kbInset ? { paddingBottom: kbInset } : undefined}
       >
-        {/* Grab pill — primary swipe target. Even a `tall` sheet sits below
-            the notch/Dynamic-Island already: the scrim above it (justify-end
-            over the 92dvh sheet) leaves an 8dvh gap that's always ≥ the real
-            safe-area-inset-top on every supported phone, so this padding
-            only needs the fixed floor — adding env(safe-area-inset-top) on
-            top of that double-counted the inset and pushed the pill (and the
-            whole title row under it) well below the sheet's top edge. */}
-        <div
-          {...handleProps}
-          className="flex shrink-0 flex-col items-center pb-2.5"
-          style={{
-            ...handleProps.style,
-            paddingTop: "0.625rem",
-          }}
-        >
-          <span className="h-1 w-9 rounded-full bg-line-strong" />
+        {/* The grab handle — the primary swipe target, and the dialog's first
+            child (the e2e flick test holds it there). Even a `tall` sheet sits
+            below the notch already: the scrim above the 92dvh sheet leaves an
+            8dvh gap that is always ≥ the real safe-area inset, so this needs
+            only its own fixed pad. */}
+        <div {...handleProps} className="ph-grab-zone">
+          <span className="ph-grab" />
         </div>
 
         {title != null && (
-          <div
-            {...handleProps}
-            className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2"
-          >
-            {/* min-w-0 flex-1: the title owns the row's spare width, so a long
-                one truncates instead of shoving ✕ off, and a title that lays
-                its own content out absolutely (the record's crumb/name
-                cross-fade) has a width to lay it out in. */}
-            <div id={titleId} className="min-w-0 flex-1 text-head font-semibold tracking-tight select-none">{title}</div>
+          <div {...handleProps} className="ph-sheet-head">
+            {/* The title owns the row's spare width, so a long one truncates
+                instead of shoving ✕ off, and a title that lays its own content
+                out absolutely (the record's crumb/name cross-fade) has a width
+                to lay it out in. */}
+            <div id={titleId} className="ph-sheet-title">
+              {title}
+            </div>
             {action != null && (
               // Opts out of drag-to-dismiss like every other control in this
-              // row — the grab pill above still owns the gesture.
+              // row — the grab handle above still owns the gesture.
               <div onPointerDown={(e) => e.stopPropagation()} className="shrink-0">
                 {action}
               </div>
             )}
-            <button
-              // Animated like a swipe away — the ✕ used to make the sheet
-              // vanish in one frame while every other way out slid it down.
+            {/* Animated like a swipe away — the ✕ used to make the sheet
+                vanish in one frame while every other way out slid it down. */}
+            <IconButton
+              label="Close"
+              size="md"
+              icon={<Icon name="close" size={18} />}
               onClick={dismiss}
               onPointerDown={(e) => e.stopPropagation()}
-              aria-label="Close"
-              className="tap-icon fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"
-              style={{ cursor: "default" }}
-            >
-              ✕
-            </button>
+              className="tap-icon"
+            />
           </div>
         )}
 
