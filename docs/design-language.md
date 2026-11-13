@@ -79,6 +79,13 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
+On the Mac the traffic lights rest over the sidebar, on the wordmark's edge. With the sidebar
+railed or hidden they move into the **panel's top-left corner**, centred on its 48px top row,
+and whatever holds that corner starts after them — the PageBar, or on the Schedule the open
+rail's crown (or the plan's bar). That room is one token, `--lights-room` (`frame.css`), so a
+new surface that takes the corner pads by it; it is never a hand-measured inset. The rail
+stays 52px, and the panel never drops below a title-bar band.
+
 ## Statement pages (D-192)
 
 The small pages that frame the app — sign-in, first run, the welcome, the paywall — are

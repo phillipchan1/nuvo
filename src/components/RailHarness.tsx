@@ -18,7 +18,7 @@
 // Writes are stubbed (every mutation logs) — this proves the gesture and the
 // render, not Supabase. Precedent: GatherHarness (?gather), SheetsHarness.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
@@ -147,7 +147,7 @@ function PopoverStandIn({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function Desktop({ embedded = false }: { embedded?: boolean }) {
+function Desktop({ embedded = false, bar }: { embedded?: boolean; bar?: ReactNode }) {
   const [tasks, setTasks] = useState(seed);
   const [tab, setTab] = useState<RailTab>("today");
   const [lines, setLines] = useState<string[]>([]);
@@ -166,7 +166,7 @@ function Desktop({ embedded = false }: { embedded?: boolean }) {
   const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, VERTICAL), []);
 
   return (
-    <div className={embedded ? "flex min-h-0 flex-1 gap-6" : "flex h-screen gap-6 p-0"}>
+    <div className={embedded ? "flex min-h-0 flex-1" : "flex h-screen gap-6 p-0"}>
       <LeftRail
         tab={tab}
         setTab={setTab}
@@ -182,6 +182,9 @@ function Desktop({ embedded = false }: { embedded?: boolean }) {
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
       />
+      {/* As in Planner: the calendar's column carries the bar, beside the rail. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+      {bar}
       <div className="flex flex-col gap-4 p-6">
         <PopoverStandIn tasks={tasks} />
         {nav.overlay === "none" && <div className="text-caption text-muted">no popover open</div>}
@@ -192,12 +195,14 @@ function Desktop({ embedded = false }: { embedded?: boolean }) {
           ))}
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
 // `?rail=frame` — the whole desktop frame (D-190) around the real rail: the
-// sidebar on the ground, the inset panel, the one bar. The grid is a stand-in.
+// sidebar on the ground, the inset panel, the one bar — over the calendar's
+// column, beside the rail, as Planner lays it out. The grid is a stand-in.
 function Frame() {
   const [rung, setRung] = useState<"day" | "project" | "initiative" | "domain">("day");
   const [view, setView] = useState<"board" | "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "year">("timeGridWeek");
@@ -208,33 +213,35 @@ function Frame() {
           <div className="flex min-h-0 flex-1">
             <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} />
             <div className="app-panel flex min-w-0 flex-1 flex-col">
-              <PageBar
-                icon={<Icon name="calendar" size={16} />}
-                trail={["Schedule", "November 2026"]}
-                actions={
-                  <>
-                    <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
-                    <Button>Today</Button>
-                    <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
-                    <Segmented
-                      label="Calendar view"
-                      value={view}
-                      onChange={setView}
-                      options={[
-                        { value: "board", label: "Spread" },
-                        { value: "timeGridDay", label: "Day" },
-                        { value: "timeGridWeek", label: "Week" },
-                        { value: "dayGridMonth", label: "Month" },
-                        { value: "year", label: "Year" },
-                      ]}
-                    />
-                    <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
-                  </>
+              <Desktop
+                embedded
+                bar={
+                  <PageBar
+                    icon={<Icon name="calendar" size={16} />}
+                    trail={["Schedule", "November 2026"]}
+                    actions={
+                      <>
+                        <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
+                        <Button>Today</Button>
+                        <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
+                        <Segmented
+                          label="Calendar view"
+                          value={view}
+                          onChange={setView}
+                          options={[
+                            { value: "board", label: "Spread" },
+                            { value: "timeGridDay", label: "Day" },
+                            { value: "timeGridWeek", label: "Week" },
+                            { value: "dayGridMonth", label: "Month" },
+                            { value: "year", label: "Year" },
+                          ]}
+                        />
+                        <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
+                      </>
+                    }
+                  />
                 }
               />
-              <div className="flex min-h-0 flex-1">
-                <Desktop embedded />
-              </div>
             </div>
           </div>
         </div>
