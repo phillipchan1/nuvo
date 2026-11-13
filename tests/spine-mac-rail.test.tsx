@@ -3,12 +3,11 @@
  * The Mac app's collapsed sidebar and the traffic lights.
  *
  * AppKit draws the window buttons at fixed points over the sidebar; the
- * cluster ends at 76pt, which a 52px rail can't hold. Dropping the panel
- * below a title-bar band wasted the top of the window, and widening the rail
- * for them looked wrong. So the rail stays 52px everywhere, and with the
- * sidebar shut the lights move into the panel's top-left corner — 16px in,
- * centred on its 48px top row — where the page bar (or the Schedule's rail)
- * starts after them (frame.css, --lights-room).
+ * cluster ends at 76pt, which a 52px rail can't hold. A band over the panel
+ * wasted the top of the window, a wider rail looked wrong, and moving them
+ * into the panel's corner still read as odd. So the rail stays 52px and, with
+ * the sidebar railed or hidden, the buttons are hidden (⌘W / ⌘M still work).
+ * Open, they rest on the wordmark's edge.
  */
 import { render } from "@testing-library/react";
 import React from "react";
@@ -29,7 +28,7 @@ Object.defineProperty(globalThis, "localStorage", {
 
 const invoke = vi.fn(async () => undefined);
 
-async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number }) {
+async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number; collapsed?: boolean; overlaid?: boolean }) {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
   if (opts.railed ?? true) localStorage.setItem("nuvo-spine-rail", "1");
@@ -47,7 +46,7 @@ async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number 
       <VerticalStoreProvider value={store}>
         <AppNavigationProvider>
           <AgentProvider>
-            <Spine rung="day" setRung={() => {}} openSettings={() => {}} openShortcuts={() => {}} />
+            <Spine rung="day" setRung={() => {}} openSettings={() => {}} openShortcuts={() => {}} collapsed={opts.collapsed} overlaid={opts.overlaid} />
             <div className="app-panel" />
           </AgentProvider>
         </AppNavigationProvider>
@@ -57,25 +56,14 @@ async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number 
   return view.container;
 }
 
-/** jsdom has no layout: hand the rail and the panel the rects the app has —
- *  the rail at `railW` (mid-slide if it isn't 52 yet), the panel right after
- *  it, 8px down. */
-function layout(railW: number) {
-  const rect = (left: number, top: number, width: number) =>
-    ({ left, top, width, height: 800, right: left + width, bottom: top + 800, x: left, y: top, toJSON() {} }) as DOMRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    if (this.classList.contains("spine")) return rect(0, 0, railW);
-    if (this.classList.contains("app-panel")) return rect(railW, 8, 1148);
-    return rect(0, 0, 0);
-  });
-}
-
 async function settled() {
   // the call goes through a dynamic import
   await vi.waitFor(() => expect(invoke).toHaveBeenCalled());
 }
 
-describe("the collapsed sidebar and the Mac traffic lights", () => {
+// Each case re-imports the sidebar from scratch (vi.resetModules), which is slow
+// cold on a busy machine.
+describe("the collapsed sidebar and the Mac traffic lights", { timeout: 20_000 }, () => {
   beforeEach(() => {
     localStorage.clear();
     invoke.mockClear();
@@ -92,45 +80,37 @@ describe("the collapsed sidebar and the Mac traffic lights", () => {
     expect((c.querySelector(".spine") as HTMLElement).style.width).toBe("52px");
   });
 
-  it("stays 52px in the Mac app too — the lights move instead", async () => {
+  it("stays 52px in the Mac app too — the lights go instead", async () => {
     const c = await mountSpine({ mac: true });
     expect((c.querySelector(".spine") as HTMLElement).style.width).toBe("52px");
   });
 
-  it("puts the lights in the panel's corner, centred on its top row", async () => {
-    layout(52);
+  it("hides the lights while the sidebar is railed", async () => {
     await mountSpine({ mac: true });
     await settled();
-    // 16px into the panel; the 48px row's middle, 24px below its top.
-    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 68, centerY: 32 });
+    // Never measured (a cold start railed): AppKit's own 16pt, for when they return.
+    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, hidden: true });
   });
 
-  it("aims at where the panel ends up, not where it is mid-slide", async () => {
-    // The rail is still 220px wide when the toggle lands (a window behind
-    // others doesn't run the transition): the corner is still 68.
-    layout(220);
-    await mountSpine({ mac: true });
+  it("hides them while focus mode has the sidebar shut", async () => {
+    await mountSpine({ mac: true, railed: false, collapsed: true });
     await settled();
-    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 68, centerY: 32 });
+    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, hidden: true });
   });
 
-  it("converts to window points when the app is zoomed", async () => {
-    layout(52);
-    await mountSpine({ mac: true, zoom: 0.8 });
+  it("shows them, at rest, under a full-screen flow even with the sidebar railed", async () => {
+    await mountSpine({ mac: true, overlaid: true });
     await settled();
-    const [, args] = invoke.mock.lastCall as unknown as [string, { x: number; centerY: number }];
-    expect(args.x).toBeCloseTo(68 * 0.8);
-    expect(args.centerY).toBeCloseTo(32 * 0.8);
+    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, hidden: false });
   });
 
-  it("leaves them at rest, on the wordmark's line, with the sidebar open", async () => {
+  it("rests them on the wordmark's edge with the sidebar open, in window points", async () => {
     // jsdom has no layout: the wordmark's glyphs start 16px in, as in the app.
     const measure = Range.prototype.getBoundingClientRect;
     Range.prototype.getBoundingClientRect = () => ({ left: 16 }) as DOMRect;
     try {
-      await mountSpine({ mac: true, railed: false });
-      await settled();
-      expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, centerY: null });
+      await mountSpine({ mac: true, railed: false, zoom: 0.8 });
+      await vi.waitFor(() => expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 12.8, hidden: false }));
     } finally {
       Range.prototype.getBoundingClientRect = measure;
     }

@@ -485,6 +485,12 @@ html.tauri-macos .app-shell {
 html.tauri-macos .spine {
   --titlebar-inset-top: max(12px, calc(32px / var(--ui-scale, 1)));
 }
+/* Railed or hidden, the lights are gone (Spine.tsx), so the rail keeps no band
+   for them: its mark sits on the page bar's line instead — the panel's 48px top
+   row, 8px down, centres at 32px; 14 + the mark's 2px margin + half its 32px. */
+html.tauri-macos .spine[data-rail] {
+  --titlebar-inset-top: 14px;
+}
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
    in Tauri they sit under the overlay titlebar; the spine owns the left inset. */
