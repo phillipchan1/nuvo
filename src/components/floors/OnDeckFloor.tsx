@@ -15,14 +15,15 @@ export default function OnDeckFloor() {
   const { data } = useVertical();
   const { openFloorModal } = useAppNavigation();
 
-  // First visit: no projects at all → teach what this surface is for, then hand
-  // over the first-create. Self-cleans once a project exists.
+  // First visit: no projects at all → one line of what this surface is for, then
+  // the first-create. Self-cleans once a project exists. (The bar above already
+  // names the page, so the eyebrow states the fact instead of the place.)
   if (data.projects.length === 0) {
     return (
       <FloorGuide
-        eyebrow="On Deck · Projects · ⌘2"
+        eyebrow="No projects yet"
         title="Plan projects into your weeks."
-        teach="A project is a finishable piece of work. Add one, then drag it onto the week you'll actually tackle it."
+        teach="Add one, then drag it onto the week you'll tackle it."
         Visual={OnDeckVisual}
         actionLabel="Add your first project"
         onAction={() => openFloorModal("new-project")}

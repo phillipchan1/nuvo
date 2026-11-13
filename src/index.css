@@ -833,93 +833,6 @@ body.odp-dragging [data-resize] {
   background: color-mix(in srgb, var(--slot) 7%, transparent);
 }
 }
-/* The deck By domain: each lane × week cell is a create control, and a week the
-   domain has nothing in wears a SOCKET — a card-sized soft hollow in the lane's
-   first row, so a gap reads as a missing card before anything is read. The socket
-   is the cell's next sibling (the cell spans the whole lane, the socket only its
-   first row), hence `+` rather than a group selector. Solid, never dashed: a
-   lattice of dashed outlines reads as noise, not as open time. */
-.lane-cell {
-  cursor: default;
-  transition: background-color var(--d-base, 160ms) ease;
-}
-.lane-cell:focus-visible {
-  background: color-mix(in srgb, var(--slot) 6%, transparent);
-  outline: none;
-}
-@media (hover: hover) {
-.lane-cell:hover {
-  background: color-mix(in srgb, var(--slot) 6%, transparent);
-  outline: none;
-}
-}
-.lane-socket {
-  background: color-mix(in srgb, var(--line-strong) 9%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-strong) 14%, transparent);
-  transition: background-color var(--d-base, 160ms) ease, box-shadow var(--d-base, 160ms) ease;
-}
-.lane-socket-hint {
-  color: transparent;
-  transition: color var(--d-base, 160ms) ease;
-}
-.lane-cell[data-landing] {
-  background: color-mix(in srgb, var(--slot) 12%, transparent);
-}
-.lane-cell:focus-visible + .lane-socket,
-.lane-cell[data-landing] + .lane-socket {
-  background: color-mix(in srgb, var(--slot) 9%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
-}
-@media (hover: hover) {
-.lane-cell:hover + .lane-socket {
-  background: color-mix(in srgb, var(--slot) 9%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 45%, transparent);
-}
-}
-.lane-cell:focus-visible + .lane-socket .lane-socket-hint {
-  color: var(--slot);
-}
-@media (hover: hover) {
-.lane-cell:hover + .lane-socket .lane-socket-hint {
-  color: var(--slot);
-}
-}
-/* Text-only open-time cue (column footers) — quiet at rest, blooms to
-   `--slot` when the column is receptive. No box, no dash.
-
-   It rested at `--muted` 50%, which measured 1.96:1 — below the point where
-   text is reliably perceivable at all — on what is the primary "create a
-   project here" affordance. 80% clears 3:1 on every paper ground in both
-   themes while staying clearly the quietest thing in the column. */
-.slot-hint {
-  color: color-mix(in srgb, var(--muted) 80%, transparent);
-}
-/* `:focus-within` alongside `:hover`, because a keyboard can reach this column
-   (pressable() gives it a tab stop) and without this rule the label explaining
-   what Enter will do stays dissolved — focusable and invisible, the exact
-   failure docs/design-language.md names. */
-.group\/col:focus-within .slot-hint {
-  color: var(--slot);
-}
-@media (hover: hover) {
-.group\/col:hover .slot-hint {
-  color: var(--slot);
-}
-}
-/* Coverage gap — a soft solid recess matching a pip's geometry. Empty cells
-   used to be dashed pills; that lattice was the "sloppy dotted lines." */
-.coverage-gap {
-  /* An unlit cell is *absence*, and absence should be the quietest thing on a
-     surface — there are always far more empty cells than lit ones, so at any real
-     contrast the strip stops reading as marks on paper and starts reading as a
-     striped block that out-weighs the deck below it. It blooms on hover. */
-  background: color-mix(in srgb, var(--line-strong) 11%, transparent);
-}
-@media (hover: hover) {
-.group\/cell:hover .coverage-gap {
-  background: color-mix(in srgb, var(--slot) 38%, transparent);
-}
-}
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {
   transition:
@@ -928,19 +841,6 @@ body.odp-dragging [data-resize] {
     background-color var(--d-fast) var(--ease-out),
     border-color var(--d-fast) var(--ease-out),
     opacity var(--d-fast) var(--ease-out);
-}
-/* The deck card (project + initiative decks share one component) lifts on hover
-   like every other focal element does — was border-brighten only, the one place
-   `.lift-anim` cards didn't get `.glass-lift`'s shadow + rise. Fixed once here so
-   both altitudes pick it up identically. */
-@media (hover: hover) {
-.deck-card:hover {
-  border-color: transparent !important;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 34%, transparent),
-    var(--shadow-lift);
-  transform: translateY(-2px);
-}
 }
 /* The vacated slot left behind while a card is being dragged. */
 .is-dragging {

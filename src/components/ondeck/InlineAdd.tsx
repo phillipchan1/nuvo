@@ -1,22 +1,26 @@
-// Inline add — the in-place composer for On Deck lanes. Clicking a week / quarter
-// turns the slot into this: a card-shaped input, focused, that creates the entity
-// right where you clicked — no modal. ⏎ commits and stays open for the next one
-// (rapid-fire), Esc or clicking away closes (committing any text first). Deep edit
-// lives in the record; this is just the fast "name it on the spot" path.
+// Inline add — the in-place composer for the decks' columns. Clicking a week /
+// quarter turns the slot into this: the card you are about to make, already in
+// place and focused (`.deck-compose`, styles/decks.css — a deck card's surface
+// wearing the kit's focused-field ring), so naming it is the only act. ⏎ commits
+// and stays open for the next one (rapid-fire); Esc or clicking away closes,
+// committing any text first. Deep edit lives in the record.
 
 import { useEffect, useRef, useState } from "react";
+import { Dot } from "../kit";
 
 export default function InlineAdd({
   placeholder,
   accent = "var(--accent)",
-  hint = "⏎ to add · esc when done",
+  hint,
   onCreate,
   onClose,
 }: {
   placeholder: string;
-  /** Dot + border tint — usually the destination domain's color. */
+  /** The identity Dot — the destination domain's colour. */
   accent?: string;
-  /** The footer line — names the destination on the phone ("⏎ adds it to next week"). */
+  /** A line under the name that says where it lands — the phone's deck names the
+   *  column it can't show ("⏎ adds it to next week"). On the desktop the card is
+   *  already standing in its column, so there is nothing to add. */
   hint?: string;
   /** Persist one entity by name. Awaited so we can re-focus for the next add. */
   onCreate: (name: string) => Promise<void>;
@@ -28,7 +32,9 @@ export default function InlineAdd({
   // guards the blur-commit from firing after an explicit Enter/Escape already handled it
   const handled = useRef(false);
 
-  useEffect(() => { ref.current?.focus(); }, []);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
 
   // ⏎ — create, clear, keep focus so several land in a row without re-clicking.
   const commit = async () => {
@@ -45,23 +51,25 @@ export default function InlineAdd({
   };
 
   return (
-    // A floating focal card: neutral hairline + a lift (shadow), never a colored
-    // ring — focus reads from the caret and the rise, per the design language.
-    <div
-      className="fast relative flex min-h-[62px] flex-col justify-center gap-1.5 rounded-xl border border-line bg-surface px-4 py-3"
-      style={{ boxShadow: "var(--shadow-lift)" }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center gap-2">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
+    <div className="deck-compose" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <div className="deck-compose-line">
+        <Dot color={accent} />
         <input
           ref={ref}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); handled.current = true; void commit().then(() => { handled.current = false; }); }
-            else if (e.key === "Escape") { e.preventDefault(); handled.current = true; onClose(); }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handled.current = true;
+              void commit().then(() => {
+                handled.current = false;
+              });
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              handled.current = true;
+              onClose();
+            }
           }}
           onBlur={() => {
             if (handled.current) return;
@@ -70,10 +78,11 @@ export default function InlineAdd({
             onClose();
           }}
           placeholder={placeholder}
-          className="nuvo-inline-input min-w-0 flex-1 border-0 bg-transparent py-0.5 text-caption font-semibold leading-snug text-ink shadow-none outline-none placeholder:font-normal placeholder:text-muted/40"
+          aria-label={placeholder}
+          className="nuvo-inline-input"
         />
       </div>
-      <div className="mono pl-4 text-micro text-muted/70">{hint}</div>
+      {hint && <div className="deck-compose-hint">{hint}</div>}
     </div>
   );
 }

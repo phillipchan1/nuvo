@@ -1,68 +1,64 @@
-// The deck card — the one card both planner decks wear. A project on a sprint
-// column and an initiative on a quarter column are the same act at two clock
-// speeds, so they are the same object: identity · NAME · one meta line.
+// The deck card — the one card both planner decks wear, on both shells. A
+// project on a week column and an initiative on a quarter column are the same
+// act at two clock speeds, so they are the same object: a kit Card
+// (styles/decks.css) with
 //
-// The hierarchy is deliberate, and it's the fix for what the old card got wrong:
+//   [readiness]  The name — the hero, 13/600, two lines at most
+//                [mark] area · weight                     status word
 //
-//   1. THE NAME IS THE HERO. It's the only thing you actually read while scanning
-//      a wall of them, so it gets the ink (text-body) and the full width — no
-//      control, no dot, nothing to its left.
-//   2. ONE META LINE carries everything else: which world it's in, how heavy it
-//      is, and — only when there's something to say — what's wrong.
-//   3. READINESS IS SUBORDINATE (D-023: *the timeline decides, the deck does*).
-//      It rides as 4px pips at the right margin, not as full-width bars. The old
-//      bars were the loudest thing on the card and read like *progress* when
-//      they're actually a grooming checklist — a claim the data doesn't support
-//      (Principle 6), on a surface whose question is "when does this land and what
-//      collides" (Principle 8).
+//   1. THE NAME IS THE HERO. It's the only thing you actually read while
+//      scanning a wall of them, so it gets the ink and the width.
+//   2. THE READINESS PIE LEADS IT (kit Readiness: raw · 1 · 2 · ready). It is
+//      the deck's question — "is this shaped enough to be placed?" — drawn as a
+//      glyph rather than a meter, so it never reads as progress (D-023, P6).
+//   3. ONE META LINE carries the rest: which world it's in (by name — colour
+//      alone fails anyone who hasn't memorised the palette, P16), how heavy it
+//      is, and — only when there's something to say — the one thing that's
+//      wrong. Quiet by default (P9).
 //
-// Quiet by default (Principle 9): a healthy card says only its name, its area and
-// its weight. Colour appears when — and only when — something is off.
+// ── The altitude tell: ONE property ─────────────────────────────────────────
+// A project and a bet are the same object, so they differ only in weight, by as
+// little as will register (D-048):
 //
-// ── The altitude tell: ONE property, three steps ─────────────────────────────
-// A project and a bet are the *same object* — a thing you pick up and drop on a
-// column of time. Functionally they differ only in scope, so they must differ
-// only in **weight**, and by as little as will register.
+//   · PROJECT ("marked") — its domain hue is a MARK on the card: the Dot that
+//     leads the area name.
+//   · INITIATIVE ("bounded") — the same hue becomes the card's EDGE: a 2px inset
+//     down its left side. The mark becomes the boundary; scope reads as mass.
 //
-// Two earlier answers were both wrong in the same direction — they made altitude
-// a *difference in kind*:
-//   · a **serif** name — altitude as a font choice, an arbitrary signal a reader
-//     can't decode;
-//   · an **enclosed** card (tinted border + wash) — a different silhouette, so a
-//     bet read as a different species rather than a bigger sibling.
-//
-// The tell is now the **spine**, and nothing else. The card is identical in every
-// other respect — same glass, same hairline, same type ramp, same meta line:
-//
-//   · PROJECT — a 3px rounded spine, inset from the card's ends. A *mark on* the
-//     card, exactly the bar it occupies on the grid.
-//   · INITIATIVE — the same colour at 5px, square, running the card's **full
-//     height** as its actual left edge. The mark becomes the boundary: it's the
-//     thing projects sit inside, and it simply carries more weight.
-//
-// Scope reads as mass. That's all it should ever take.
+// Everything else — surface, ring, corner, type ramp, meta line — is identical.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { READY } from "../floors/ReadinessBanner";
 import { pressable } from "../../lib/a11y";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
-import { ShipStamp } from "../ShipStamp";
+import { Card, Dot, Readiness, type ReadinessStep } from "../kit";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
-
-/** The voice a status word speaks in. `signal` = now/urgent (overdue, behind),
- *  `caution` = needs shaping, `ready` = affirmation, `muted` = settled/parked. */
-export type DeckTone = "signal" | "caution" | "ready" | "muted";
+/** The voice a status word speaks in. `danger` = something is wrong (a passed
+ *  date, a bet at risk), `caution` = needs shaping, `ready` = affirmation,
+ *  `muted` = settled / parked. `signal` is the old name for `danger`: Instrument
+ *  spends --signal on NOW only (D-189), so it draws as danger. */
+export type DeckTone = "danger" | "signal" | "caution" | "ready" | "muted";
 
 export const TONE_COLOR: Record<DeckTone, string> = {
-  signal: "var(--signal)",
-  caution: CAUTION,
-  ready: READY,
+  danger: "var(--danger)",
+  signal: "var(--danger)",
+  caution: "var(--warn)",
+  ready: "var(--ok)",
   muted: "var(--muted)",
 };
 
-/** How heavy the card's domain spine is — see the altitude note above. */
+/** How heavy the card's domain identity is — see the altitude note above. */
 export type DeckVariant = "marked" | "bounded";
+
+/** Readiness axes met → the kit pie's step. Three axes map 1:1; two axes (a
+ *  bet) land on the nearer third, and the tooltip says the real count. */
+function readiness(pips: boolean[] | undefined, shipped: boolean | undefined): { step: ReadinessStep; title: string } | null {
+  if (shipped) return { step: "shipped", title: "Shipped" };
+  if (!pips || pips.length === 0) return null;
+  const met = pips.filter(Boolean).length;
+  if (met === pips.length) return { step: 3, title: "Ready" };
+  if (met === 0) return { step: 0, title: "Raw" };
+  const step = Math.min(2, Math.max(1, Math.round((met / pips.length) * 3))) as 1 | 2;
+  return { step, title: `Grooming · ${met} of ${pips.length}` };
+}
 
 export default function DeckCard({
   variant = "marked",
@@ -73,9 +69,13 @@ export default function DeckCard({
   weight,
   status,
   pips,
-  pipTone,
+  pipTone: _pipTone,
   dim,
   shipped,
+  mark = true,
+  selected,
+  lifted,
+  beyond,
   footer,
   className = "",
   style,
@@ -86,29 +86,37 @@ export default function DeckCard({
   children,
 }: {
   variant?: DeckVariant;
-  /** `phone` = the same card, sized for a thumb (bigger radius + padding). One
-   *  card serves both shells — the grammar must not fork per device. */
+  /** `phone` = the same card, sized for a thumb. One card serves both shells —
+   *  the grammar must not fork per device. */
   size?: "deck" | "phone";
-  /** domain colour — identity, never status (design-language: colour is semantic). */
+  /** domain colour — identity, never status (colour is semantic). */
   spine: string;
-  /** the area this belongs to, named. Colour alone fails for anyone who hasn't
-   *  memorised the palette — which is every account but the builder's (P16). */
+  /** the area this belongs to, named. */
   eyebrow: string;
   title: string;
   /** remaining effort / size, already formatted. null = we don't know, so we don't say. */
   weight?: string | null;
   /** the single most important thing wrong (or settled). null = the card is quiet. */
   status?: { label: string; tone: DeckTone } | null;
-  /** readiness axes, met/unmet — three for a project, two for a bet. */
+  /** readiness axes, met/unmet — three for a project, two for a bet. Drawn as
+   *  the kit's readiness pie leading the name. */
   pips?: boolean[];
+  /** @deprecated the pie's colour is the step's own (raw · grooming · ready);
+   *  kept so callers on both shells needn't change. */
   pipTone?: DeckTone;
-  /** parked / settled — the card recedes without disappearing. Never true together
-   *  with `shipped`: a finished card reads as an affirmation, not a fade. */
+  /** parked / settled — the card recedes without disappearing. */
   dim?: boolean;
-  /** finished — full ink, no fade, a quiet check beside the status word. The
-   *  Shipped wall's own restrained look, brought inline (Principle 9: no badge
-   *  register, just "this happened"). */
+  /** finished — full ink, the pie full, "shipped" in the ready voice. */
   shipped?: boolean;
+  /** draw the domain Dot before the area (a marked card). Off where the surface
+   *  already names the domain — a lane By domain (D-122: don't write what's drawn). */
+  mark?: boolean;
+  /** selected — an accent ring and a lift. */
+  selected?: boolean;
+  /** held — a placed bar following the pointer: lifted onto --sh-pop. */
+  lifted?: boolean;
+  /** a bar that runs past the deck's horizon — its right end cut square. */
+  beyond?: boolean;
   /** card-specific extras (the initiative's auto-link chip). */
   footer?: ReactNode;
   className?: string;
@@ -122,12 +130,12 @@ export default function DeckCard({
   /** absolutely-positioned siblings (the project deck's resize handles). */
   children?: ReactNode;
 }) {
-  const pipColor = TONE_COLOR[pipTone ?? "ready"];
   const bounded = variant === "bounded";
-  const phone = size === "phone";
-  const radius = phone ? "0.75rem" : "0.5rem";
+  const pie = readiness(pips, shipped);
+  const showMark = mark && !bounded;
+  const hasMeta = !!eyebrow || !!weight || !!status;
   return (
-    <div
+    <Card
       {...dragAttr}
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
@@ -136,83 +144,46 @@ export default function DeckCard({
       // gesture and absolutely-positioned resize handles. Enter/Space still has
       // to open it — only when there is something to open.
       {...(onClick ? pressable(onClick, { label: title }) : {})}
-      className={`group/card deck-card ${shipped ? "glass-tint" : "glass-card"} lift-anim fast relative flex select-none flex-col border pl-4 pr-3 ${
-        shipped ? "" : "border-line"
-      } ${phone ? "rounded-xl py-3" : "rounded-lg py-2.5"} ${className}`}
-      style={{
-        opacity: dim ? 0.55 : undefined,
-        ...(shipped
-          ? ({
-              "--tint": PROJECT_STATUS_COLORS.complete,
-              borderColor: `color-mix(in srgb, ${PROJECT_STATUS_COLORS.complete} 35%, var(--line))`,
-            } as CSSProperties)
-          : {}),
-        ...style,
-      }}
+      interactive={!!onClick || !!dragAttr}
+      selected={selected}
+      className={`group/card deck-card ${className}`}
+      data-variant={variant}
+      data-size={size === "deck" ? undefined : size}
+      data-dim={dim && !shipped ? "" : undefined}
+      data-shipped={shipped ? "" : undefined}
+      data-lifted={lifted ? "" : undefined}
+      data-beyond={beyond ? "" : undefined}
+      data-bare={pie ? undefined : ""}
+      style={{ ["--h" as string]: spine, ...style }}
     >
-      {/* The one thing that differs between the altitudes. A project wears a 3px
-          rounded spine inset from the card's ends — a mark *on* the card, the bar
-          it occupies on the grid. A bet wears the same colour at 5px, square and
-          full-height, so the mark becomes the card's left boundary: heavier, and
-          the thing projects sit inside. Everything else is identical. */}
-      <span
-        className="pointer-events-none absolute"
-        style={
-          bounded
-            ? { insetBlock: 0, left: 0, width: 5, background: spine, borderRadius: `${radius} 0 0 ${radius}` }
-            : { top: phone ? 12 : 10, bottom: phone ? 12 : 10, left: 6, width: 3, background: spine, borderRadius: 999 }
-        }
-        aria-hidden
-      />
-
-      {/* the hero — full width, nothing to its left */}
-      <div
-        className={`relative min-w-0 break-words text-body font-semibold leading-snug ${
-          dim ? "text-muted" : "text-ink"
-        }`}
-        style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-      >
-        {title}
+      <div className="deck-card-head">
+        {pie && <Readiness step={pie.step} title={pie.title} />}
+        <div className="deck-card-title">{title}</div>
       </div>
 
-      {/* the one meta line: where · how heavy — then, right-aligned, what's wrong
-          and how groomed. Right-alignment gives the wall a consistent column to
-          scan down; the pips are the quietest thing on the card on purpose. */}
-      <div className="relative mt-1.5 flex items-center gap-2">
-        {/* Both halves truncate, but the area name is floored: it's the card's
-            identity for anyone who hasn't memorised the palette, so a long status
-            must never be allowed to eat it down to "Tr…". */}
-        <span className="mono min-w-0 flex-1 truncate text-micro text-muted" style={{ minWidth: "4.25rem" }}>
-          {eyebrow}
-          {weight ? <span className="tabular-nums"> · {weight}</span> : null}
-        </span>
-        {status && (
-          <span
-            className={`mono flex min-w-0 shrink items-center gap-1 truncate ${
-              shipped ? `font-semibold ${bounded ? "text-caption" : "text-micro"}` : "text-micro"
-            }`}
-            style={{ color: TONE_COLOR[status.tone] }}
-            title={status.label}
-          >
-            {shipped && <ShipStamp shipped size={bounded ? 22 : 18} />}
-            {status.label}
+      {hasMeta && (
+        <div className="deck-card-meta">
+          <span className="deck-card-area">
+            {showMark && eyebrow && <Dot color={spine} />}
+            <span>
+              {eyebrow}
+              {weight ? <span className="deck-card-weight">{eyebrow ? " · " : ""}{weight}</span> : null}
+            </span>
           </span>
-        )}
-        {pips && pips.length > 0 && (
-          <span className="flex shrink-0 items-center gap-[3px]" aria-hidden>
-            {pips.map((met, i) => (
-              <span
-                key={i}
-                className="h-[4px] w-[4px] rounded-full"
-                style={{ background: met ? pipColor : "var(--line-strong)", opacity: met ? 1 : 0.45 }}
-              />
-            ))}
-          </span>
-        )}
-      </div>
+          {status && (
+            <span className="deck-card-status" style={{ color: TONE_COLOR[status.tone] }} title={status.label}>
+              {status.label}
+            </span>
+          )}
+        </div>
+      )}
 
-      {footer}
+      {footer && (
+        <div className="deck-card-foot">
+          {footer}
+        </div>
+      )}
       {children}
-    </div>
+    </Card>
   );
 }

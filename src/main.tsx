@@ -8,6 +8,8 @@ import "./styles/instrument.css";
 import "./styles/kit.css";
 // The frame — ground, sidebar, inset panel (D-190).
 import "./styles/frame.css";
+// The decks — the project and initiative planners on the kit (D-190).
+import "./styles/decks.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
 import { installNativeFeel } from "./lib/nativeFeel";

@@ -1,6 +1,6 @@
 // What a deck card SAYS — one place, so the desktop deck and the phone deck can
 // never disagree about whether a project is overdue or a bet needs OKRs. The card
-// itself (DeckCard.tsx) only knows how to render a word and some pips; this is the
+// itself (DeckCard.tsx) only knows how to render a word and a readiness pie; this is the
 // judgement about which word.
 //
 // The rule both altitudes follow: **one status, by precedence, and null when there
@@ -14,7 +14,8 @@ import type { InitiativeLane, InitiativeLaneState } from "../../lib/initiativeDe
 
 export type DeckStatus = { label: string; tone: DeckTone } | null;
 
-/** Readiness pip colour by tier — teal = ready, amber = mid-groom, faint = raw. */
+/** Readiness tone by tier — ready, mid-groom, raw. (The card now draws the kit
+ *  readiness pie, whose colour is the step's own; kept for callers.) */
 export const PIP_TONE: Record<ReadyTier, DeckTone> = {
   ready: "ready",
   grooming: "caution",
@@ -46,7 +47,7 @@ export function projectCardStatus(l: OnDeckLane): DeckStatus {
   if (l.readyTier === "done") return { label: "shipped", tone: "ready" };
   if (l.readyTier === "parked") return { label: "parked", tone: "muted" };
   const over = l.pace.read === "overdue" ? l.pace.driftDays : null;
-  if (over != null && over > 0) return { label: `${over}d overdue`, tone: "signal" };
+  if (over != null && over > 0) return { label: `${over}d overdue`, tone: "danger" };
   // The FIRST gap only. "no outcome · no steps" is two sentences in a slot that
   // holds one, and the pips already say how many checks are open — the word only
   // has to name where to start.
@@ -59,8 +60,8 @@ export function projectCardStatus(l: OnDeckLane): DeckStatus {
 export function initiativeCardStatus(lane: InitiativeLane): DeckStatus {
   if (lane.state === "done") return { label: "shipped", tone: "ready" };
   if (lane.state === "parked") return { label: "parked", tone: "muted" };
-  if (lane.overdue) return { label: "overdue", tone: "signal" };
-  if (lane.state === "at_risk") return { label: INITIATIVE_STATE_LABEL.at_risk, tone: "signal" };
+  if (lane.overdue) return { label: "overdue", tone: "danger" };
+  if (lane.state === "at_risk") return { label: INITIATIVE_STATE_LABEL.at_risk, tone: "danger" };
   if (lane.gaps.length) return { label: lane.gaps[0].label, tone: "caution" };
   if (lane.state === "needs_okrs" || lane.state === "idea")
     return { label: INITIATIVE_STATE_LABEL[lane.state], tone: "caution" };

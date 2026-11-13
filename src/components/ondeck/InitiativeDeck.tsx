@@ -1,15 +1,13 @@
 // Initiative On Deck — the initiatives, grouped by the quarter they land in. The
 // sibling of OnDeckPlanner (projects → weeks); here an initiative time-boxes onto a
 // QUARTER. A kanban, not a Gantt: each column is a quarter, each card an initiative,
-// and you drag a card between columns to move its finish line. An inbox rail on the
+// and you drag a card between columns to move its finish line. The pool rail on the
 // left holds initiatives with no quarter yet (mirrors the project planner's "needs a
-// week").
+// week"). Drawn by styles/decks.css, on the kit.
 //
-// Every card leads with its OKR health — attainment, KR count, coverage — because
-// that is what grooming an initiative is *for*: making the outcome measurable and
-// sound. Unlinked initiatives (no domain) surface a one-tap auto-link to the "main"
-// they belong under (suggestDomainForInitiative), so the tree stays connected
-// without a form.
+// Unlinked initiatives (no domain) surface a one-tap auto-link to the domain they
+// belong under (suggestDomainForInitiative), so the tree stays connected without a
+// form.
 //
 // Pointer-events drag (HTML5 DnD is swallowed by Tauri) — the same idiom as
 // OnDeckPlanner / WeekBoard: one document-level capture pointerdown, a 5px move
@@ -19,6 +17,7 @@ import { armDragCancel } from "../../lib/dragCancel";
 import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { writeWithUndo } from "../../lib/deckUndo";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getQuarter, getYear } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useRecordContextMenu } from "../RecordContextMenu";
@@ -41,33 +40,31 @@ import {
   suggestDomainForInitiative,
   type InitiativeLane,
 } from "../../lib/initiativeDeck";
-import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
+import { DomainPicker } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import PlannerRail from "./PlannerRail";
 import DeckCard, { type DeckTone } from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { initiativeCardStatus } from "./deckStatus";
-import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 import SlotCreateButton from "./SlotCreateButton";
-import DomainSymbol from "../domain/DomainSymbol";
-import { LANE_GUTTER, LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
+import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
+import { ChipButton, Dot, EmptyState } from "../kit";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 216;
-// Quarters are adjacent, ruled columns now (not gapped boxes) — the same
-// demarcation the project deck's weeks use, so both decks read as one grid idiom.
+// Quarters are adjacent, ruled columns (not gapped boxes) — the same demarcation
+// the project deck's weeks use, so both decks read as one grid idiom.
 const COL_GAP = 0;
 // The left label column — holds coverage domain names, empty in the deck; aligns the
 // coverage cells to the quarter columns beneath.
 const LABEL_W = 96;
-// A fixed near-term horizon — a year of quarters. Coverage now measures load per
+// A fixed near-term horizon — a year of quarters. Coverage measures load per
 // domain (the pips), so a window selector was noise; near-term is what matters.
 const HORIZON_QUARTERS = 4;
 // By domain: a card-sized socket. The kanban stacks a cell's cards, so the lane's row
 // is as tall as its fullest quarter — the socket keeps one card's height rather than
 // stretching into a tall empty box beside a stack of three.
-const SOCKET_H = 62;
+const SOCKET_H = 54;
 
 export default function InitiativeDeck() {
   const { data, updateInitiative, updateProject, addInitiative } = useVertical();
@@ -123,7 +120,7 @@ export default function InitiativeDeck() {
     return m;
   }, [board.lanes]);
 
-  // header legend — the placed bets by health, mirroring the projects deck's
+  // the crown's read — the placed bets by health, mirroring the projects deck's
   // ready/grooming/done rollup (grooming = still needs OKRs / shaping / a finish line).
   const onTrack = board.lanes.filter((l) => l.state === "on_track").length;
   const atRisk = board.lanes.filter((l) => l.state === "at_risk").length;
@@ -138,11 +135,17 @@ export default function InitiativeDeck() {
   };
 
   // ── drag state ──────────────────────────────────────────────────────────────
-  const [drag, setDrag] = useState<{ name: string; dot: string; x: number; y: number; domainId: string | null } | null>(null);
+  // The ghost's identity is React state (it changes once, at drag start); its
+  // POSITION is not — pointer coords go straight to the DOM node, as a transform,
+  // so a drag never re-renders the deck per pointermove.
+  const [drag, setDrag] = useState<{ name: string; dot: string; domainId: string | null } | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  const ghostTransform = (x: number, y: number) => `translate3d(${x + 14}px, ${y + 8}px, 0) rotate(-2deg)`;
   const [dropCol, setDropCol] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   // click into a quarter → compose an initiative inline, right there (no modal). The
-  // full composer (domain, finish line) stays a click away in the inbox rail.
+  // full composer (domain, finish line) stays a click away in the pool rail.
   // composeDomain carries an explicit domain when launched from a coverage cell.
   const [composeCol, setComposeCol] = useState<number | null>(null);
   const [composeDomain, setComposeDomain] = useState<Domain | null>(null);
@@ -164,72 +167,61 @@ export default function InitiativeDeck() {
     setComposeCol(quarterIdx);
   };
 
+  // Column state, as data attributes the stylesheet draws: the current quarter
+  // wears the faintest ember (now), the live drop target open time.
+  const colState = (i: number) => ({
+    "data-now": i === 0 ? "" : undefined,
+    "data-drop": dropCol === i ? "" : undefined,
+  });
 
-  // ── a quarter's header — label, load against the cap, at-risk count, span. One
-  // copy for both layouts (inside the column when packed, its own row By domain).
-  const quarterHeader = (q: (typeof board.quarters)[number]) => {
+  // ── a quarter's header — the Schedule's day header, two clock speeds up: the
+  // year and the quarter's numeral (the current quarter on the ember disc), and
+  // the quarter's open commitments against your cap. One copy for both layouts.
+  const quarterHead = (q: (typeof board.quarters)[number]) => {
     const lanes = byColumn.get(q.idx) ?? [];
     // The per-quarter cap counts open commitments — a finished bet doesn't
-    // still owe the quarter anything, so it shouldn't trip the "over" warning
-    // or hide the empty-quarter prompt (mirrors the project deck's pinch math,
-    // which never counts a done project's hours as still-demanded).
+    // still owe the quarter anything, so it shouldn't trip the "over" read
+    // (mirrors the project deck's pinch math, which never counts a done
+    // project's hours as still-demanded).
     const openLanes = lanes.filter((l) => l.state !== "done");
     const risky = lanes.filter((l) => l.atRisk.atRisk).length;
     const over = openLanes.length > maxPerQuarter;
-    const current = q.idx === 0;
+    const weeks = weeksBetween(q.start, q.end) + 1;
+    const into = q.idx === 0 ? Math.min(weeks, Math.max(1, weeksBetween(q.start, new Date()) + 1)) : null;
+    // The cards below already say which bets are at risk; the header carries
+    // the count only in its name and tooltip, so it is never said twice on screen.
+    const read =
+      `${openLanes.length} committed of ${maxPerQuarter}` +
+      (over ? ", over the cap" : "") +
+      (risky > 0 ? `, ${risky} at risk` : "");
     return (
-      <>
-        <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5 pt-1">
-          <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? NOW_INK : "var(--ink)" }}>
-            {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
-            {q.label}
-          </span>
-          {/* Two counts and up to two ⚠ glyphs, on the header of the
-              primary planning column. The ratio had a title; the
-              at-risk count had nothing, and a screen reader crossing
-              the row heard "3 warning sign" with no idea what was at
-              risk. The glyphs are decoration on top of numbers that
-              already carry the meaning, so they go aria-hidden and
-              the whole cluster gets one worded name. */}
-          <span
-            className="mono text-micro tabular-nums"
-            title={
-              `${openLanes.length} committed of ${maxPerQuarter} — your per-quarter focus cap` +
-              (over ? " · over the cap" : "") +
-              (risky > 0 ? ` · ${risky} at risk` : "")
-            }
-            aria-label={
-              `${openLanes.length} committed of ${maxPerQuarter}` +
-              (over ? ", over the cap" : "") +
-              (risky > 0 ? `, ${risky} at risk` : "")
-            }
-            style={{ color: over ? CAUTION : "var(--muted)" }}
-          >
-            <span aria-hidden>
-              {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}
-              {risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
-            </span>
-          </span>
-        </div>
-        {/* month span + week scale — each column reads when it starts and
-            ends, and (for the current quarter) how many weeks deep you are. */}
-        <div className="mono px-1 pb-2 text-micro text-muted">
-          {quarterRangeLabel(q.start, q.end)}
-          {current
-            ? ` · week ${Math.min(weeksBetween(q.start, q.end) + 1, Math.max(1, weeksBetween(q.start, new Date()) + 1))}/${weeksBetween(q.start, q.end) + 1}`
-            : ` · ${weeksBetween(q.start, q.end) + 1} weeks`}
-        </div>
-      </>
+      <div
+        key={q.key}
+        data-quarter={q.idx}
+        className="dk-head-cell"
+        {...colState(q.idx)}
+        title={`${q.label} · ${quarterRangeLabel(q.start, q.end)} · ${into != null ? `week ${into} of ${weeks}` : `${weeks} weeks`}`}
+      >
+        <span>{getYear(q.start)}</span>
+        <span className="dk-head-num">Q{getQuarter(q.start)}</span>
+        <span className="dk-grow" />
+        <span
+          className="dk-load"
+          data-some={openLanes.length > 0 ? "" : undefined}
+          data-over={over ? "" : undefined}
+          aria-label={read}
+          title={`${read} — your per-quarter focus cap is ${maxPerQuarter}`}
+        >
+          {openLanes.length}/{maxPerQuarter}
+        </span>
+      </div>
     );
   };
-  // Column wash: the live drop target, else the quiet "you are here" band.
-  const colBg = (i: number) =>
-    dropCol === i ? "color-mix(in srgb, var(--slot) 14%, transparent)" : i === 0 ? NOW_BAND : undefined;
 
   // ── By domain: one lane per domain (the shared rule, domainLanes), each a row of
   // quarter cells stacking that domain's bets — most urgent first, as in a column.
   const domainRows = byDomain ? domainLanes(data, domainsSorted, coverageHidden, board.lanes, (l) => l.initiative.domainId) : [];
-  const renderLane = (lane: (typeof domainRows)[number], li: number) => {
+  const renderLane = (lane: (typeof domainRows)[number]) => {
     const { domain } = lane;
     const name = laneName(domain);
     const cells = board.quarters.map((q) =>
@@ -242,13 +234,12 @@ export default function InitiativeDeck() {
         key={lane.key}
         role="group"
         aria-label={`${name} — ${lane.items.length > 0 ? `${lane.items.length} initiative${lane.items.length === 1 ? "" : "s"}` : "nothing placed"}`}
-        className="grid"
+        className="dk-lane"
         style={{
           gridTemplateColumns: cols,
           // one stacking row + a 10px tail: below a full stack, still a place to
           // start another bet for this domain in that quarter.
-          gridTemplateRows: "minmax(56px, auto) 10px",
-          borderTop: li === 0 ? undefined : "1px solid var(--line)",
+          gridTemplateRows: "minmax(62px, auto) 10px",
         }}
       >
         <LaneLabel domain={domain} count={lane.items.length} noun="initiative" gridRow={span} />
@@ -272,7 +263,11 @@ export default function InitiativeDeck() {
           cells[q.idx].length > 0 || (composing && composeCol === q.idx) ? (
             // The stack ignores the pointer so empty space under it falls through
             // to the cell (create); the cards and the composer take it back.
-            <div key={`s${q.idx}`} className="pointer-events-none relative flex min-w-0 flex-col gap-2 p-1" style={{ gridColumn: q.idx + 2, gridRow: 1 }}>
+            <div
+              key={`s${q.idx}`}
+              className="pointer-events-none relative flex min-w-0 flex-col gap-1.5 px-1.5 py-1"
+              style={{ gridColumn: q.idx + 2, gridRow: 1 }}
+            >
               {cells[q.idx].map((l) => (
                 <div key={l.initiative.id} className="pointer-events-auto">
                   <InitiativeCard lane={l} data={data} onSetDomain={setDomain} inLane />
@@ -307,7 +302,7 @@ export default function InitiativeDeck() {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const tgt = e.target as HTMLElement;
-      // a control inside the card (domain picker, momentum, auto-link) handles itself
+      // a control inside the card (domain picker, auto-link) handles itself
       if (tgt?.closest?.("[data-card-control]")) return;
       const el = tgt?.closest?.("[data-init-drag]") as HTMLElement | null;
       if (!el) return;
@@ -322,12 +317,16 @@ export default function InitiativeDeck() {
 
       const move = (ev: PointerEvent) => {
         if (!moved && Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) < 5) return;
+        ghostPos.current = { x: ev.clientX, y: ev.clientY };
         if (!moved) {
           moved = true;
           document.body.classList.add("wb-noselect");
           document.body.style.cursor = "grabbing";
           window.getSelection()?.removeAllRanges();
+          // Identity set once, here; the position rides the ref below.
+          setDrag({ name: p.name, dot, domainId: p.domainId ?? null });
         }
+        if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ev.clientX, ev.clientY);
         const hit = document.elementFromPoint(ev.clientX, ev.clientY);
         const col = hit?.closest("[data-quarter]");
         if (col) { tCol = Number(col.getAttribute("data-quarter")); tInbox = false; }
@@ -335,7 +334,6 @@ export default function InitiativeDeck() {
         else { tCol = null; tInbox = false; }
         setDropCol(tCol);
         setOverInbox(tInbox);
-        setDrag({ name: p.name, dot, x: ev.clientX, y: ev.clientY, domainId: p.domainId ?? null });
       };
       let cancelled = false;
       let disarm = () => {};
@@ -376,7 +374,7 @@ export default function InitiativeDeck() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="dk">
       {/* ── the pool — the same rail as the Schedule and the project deck, one
           clock speed up again: a bet needs a QUARTER. ────────────────────────── */}
       <PlannerRail
@@ -403,15 +401,14 @@ export default function InitiativeDeck() {
         footLabel="initiative"
         footTitle="New initiative"
         footTeach="initiative-new"
+        footShortcut="I"
         onFoot={() => openFloorModal("new-initiative")}
         groomAction={<GroomingSessionAction kind="initiative" />}
       >
         {board.inbox.length === 0 ? (
-          <p className="px-1 py-6 text-center text-caption text-muted">
-            Nothing waiting
-          </p>
+          <EmptyState>Nothing waiting</EmptyState>
         ) : (
-          <div className="mt-1.5 flex flex-col gap-2">
+          <div className="pr-list">
             {board.inbox.map((i) => (
               <InitiativeCard
                 key={i.id}
@@ -436,185 +433,128 @@ export default function InitiativeDeck() {
       </PlannerRail>
 
       {/* ── the grid ─────────────────────────────────────────────────────────
-          No hero: the crown anchors this surface (one hero per surface), and the
-          floor's top bar already names On Deck. */}
-      <div className="flex min-w-0 flex-1 flex-col px-6 pb-4 pt-2">
-          <CoverageControls
-            collapsed={coverageCollapsed}
-            setCollapsed={setCoverageCollapsed}
-            covered={coveredCount}
-            tracked={coverageRows.length}
-            domains={domainsSorted}
-            hidden={coverageHidden}
-            toggleHidden={toggleCoverageHidden}
-            open={filterOpen}
-            setOpen={setFilterOpen}
-            byDomain={byDomain}
-            setByDomain={(v) => { closeCompose(); setByDomain(v); }}
-            itemNoun="initiative"
-          />
-          {/* the grid FILLS the pane — same rule as the project deck: short column
-              stubs in a tall pane leave the coverage label gutter reading as a hole
-              in the middle of the page instead of the grid's own margin. */}
-          <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-auto pb-1">
-            <div className="flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
-              {byDomain ? (
-                <>
-                  {/* header row — the quarters, over every lane. The gutter cell
-                      wears the lane column's frost so the names read as one column. */}
-                  <div className="grid shrink-0" style={{ gridTemplateColumns: cols }}>
-                    <div aria-hidden className="sticky left-0 z-10" style={LANE_GUTTER} />
-                    {board.quarters.map((q) => (
-                      <div
-                        key={q.key}
-                        data-quarter={q.idx}
-                        className="fast border-l border-line px-2"
-                        style={{ background: colBg(q.idx), borderTop: q.idx === 0 ? NOW_BORDER : undefined }}
-                      >
-                        {quarterHeader(q)}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="h-px w-full shrink-0" style={{ background: "var(--line)" }} />
-                  {/* body — full-height quarter columns behind (the now band, the drop
-                      band, the rules, and ONE frosted gutter for every lane), lanes on
-                      top. The lanes ARE the coverage read here, so the strip steps aside. */}
-                  <div className="relative flex-1" style={{ minHeight: 320 }}>
-                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
-                      <div aria-hidden className="sticky left-0 z-10" style={LANE_GUTTER} />
-                      {board.quarters.map((q) => (
-                        <div key={q.key} data-quarter={q.idx} className="border-l border-line transition-colors" style={{ background: colBg(q.idx) }} />
-                      ))}
-                    </div>
-                    <div className="relative pb-6">
-                      {domainRows.length === 0 ? (
-                        <div className="px-4 pt-14 text-center text-caption text-muted">Every domain is hidden — choose some under Domains.</div>
-                      ) : (
-                        domainRows.map(renderLane)
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : (
-              <>
-              {!coverageCollapsed && (
-                <DomainCoverage
-                  rows={coverageRows}
-                  gridTemplate={cols}
-                  columnGap={COL_GAP}
-                  ruled={false}
-                  itemNoun="initiative"
-                  colNoun="quarter"
-                  onAdd={addForDomain}
-                />
-              )}
-              <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: cols }}>
-                <div aria-hidden />
-                {board.quarters.map((q) => {
-              const lanes = byColumn.get(q.idx) ?? [];
-              const dropping = dropCol === q.idx;
-              // "You are here" — a quiet band on the current quarter. Orientation,
-              // not alarm: `--signal` stays for at-risk; `--slot` is the drop target.
-              const current = q.idx === 0;
-              return (
-                <div
-                  key={q.key}
-                  data-quarter={q.idx}
-                  className="fast relative flex min-w-0 flex-col border-l border-line px-2 pb-2.5"
-                  style={{
-                    background: dropping
-                      ? "color-mix(in srgb, var(--slot) 14%, transparent)"
-                      : current
-                        ? NOW_BAND
-                        : undefined,
-                    borderTop: current ? NOW_BORDER : undefined,
-                    boxShadow: dropping ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 45%, transparent)" : undefined,
-                  }}
-                >
-                  {quarterHeader(q)}
+          No hero: the crown is this surface's one hero, and the bar above already
+          names the page. */}
+      <div className="dk-pane">
+        <CoverageControls
+          collapsed={coverageCollapsed}
+          setCollapsed={setCoverageCollapsed}
+          covered={coveredCount}
+          tracked={coverageRows.length}
+          domains={domainsSorted}
+          hidden={coverageHidden}
+          toggleHidden={toggleCoverageHidden}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+          byDomain={byDomain}
+          setByDomain={(v) => { closeCompose(); setByDomain(v); }}
+          itemNoun="initiative"
+        />
+        {/* the grid FILLS the pane — same rule as the project deck. */}
+        <div className="dk-scroll">
+          <div className="dk-canvas" style={{ minWidth: gridMinW }}>
+            {!byDomain && !coverageCollapsed && (
+              <DomainCoverage
+                rows={coverageRows}
+                gridTemplate={cols}
+                columnGap={COL_GAP}
+                itemNoun="initiative"
+                colNoun="quarter"
+                onAdd={addForDomain}
+              />
+            )}
 
-                  <div className="flex min-h-[60px] flex-1 flex-col gap-2">
-                    {lanes.length === 0 && composeCol !== q.idx ? (
-                      <button
-                        type="button"
-                        onClick={() => composeInCol(q.idx)}
-                        // Not flex-1: now that a column runs the full height of the
-                        // pane, a stretched drop zone becomes a huge empty framed box
-                        // — the loudest thing in an empty quarter. It stays a modest
-                        // offer at the top; the rest of the column is a click target too.
-                        className="slot-open fast w-full rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
-                        title="New initiative in this quarter"
-                      >
-                        Drop an initiative here, or tap to add
-                      </button>
-                    ) : null}
-                    {lanes.length === 0 && composeCol !== q.idx ? (
-                      <AddSlotFiller onAdd={() => composeInCol(q.idx)} label={`New initiative in ${q.label}`} />
-                    ) : (
-                      <>
-                        {lanes.map((l) => (
-                          <InitiativeCard
-                            key={l.initiative.id}
-                            lane={l}
-                            data={data}
-                            onSetDomain={setDomain}
-                          />
-                        ))}
-                        {composeCol === q.idx ? (
-                          // the draft, right under the cards — the next slot, not pinned
-                          // to the column's floor; a spacer fills whatever's left below.
-                          <>
-                            <div data-card-control onPointerDown={(e) => e.stopPropagation()}>
-                              <InlineAdd
-                                placeholder={composeDomain ? `Name a ${composeDomain.name} initiative…` : "Name an initiative…"}
-                                accent={composeDom?.color ?? "var(--accent)"}
-                                onCreate={(name) => createInCol(q.idx, name)}
-                                onClose={closeCompose}
-                              />
-                            </div>
-                            <div className="flex-1" />
-                          </>
-                        ) : (
-                          // the empty space below the cards is a click target too —
-                          // tap anywhere here to start an initiative in this quarter
-                          <AddSlotFiller onAdd={() => composeInCol(q.idx)} label={`New initiative in ${q.label}`} />
-                        )}
-                      </>
-                    )}
-                  </div>
+            {/* the quarters, over every column / lane — sticky, so a tall deck
+                keeps its dates. */}
+            <div className="dk-head" style={{ gridTemplateColumns: cols }}>
+              <div aria-hidden className="dk-gutter" />
+              {board.quarters.map(quarterHead)}
+            </div>
 
-                  {/* pinned "+ initiative" — text cue, no dashed box. Hidden while composing. */}
-                  {composeCol !== q.idx && (
-                    <SlotCreateButton
-                      noun="initiative"
-                      title="New initiative in this quarter"
-                      onCreate={() => composeInCol(q.idx)}
-                      className="mt-2"
-                    />
+            {byDomain ? (
+              // body — full-height quarter columns behind (the now wash, the drop
+              // wash, the rules, and ONE gutter for every lane), lanes on top. The
+              // lanes ARE the coverage read here, so the strip steps aside.
+              <div className="dk-body">
+                <div className="dk-cols" style={{ gridTemplateColumns: cols }}>
+                  <div aria-hidden className="dk-gutter" />
+                  {board.quarters.map((q) => (
+                    <div key={q.key} data-quarter={q.idx} className="dk-col" {...colState(q.idx)} />
+                  ))}
+                </div>
+                <div className="relative pb-6">
+                  {domainRows.length === 0 ? (
+                    <div className="dk-empty">
+                      <EmptyState>All domains hidden</EmptyState>
+                    </div>
+                  ) : (
+                    domainRows.map(renderLane)
                   )}
                 </div>
-              );
-            })}
               </div>
-              </>
-              )}
-            </div>
-          </div>
+            ) : (
+              <div className="dk-qcols" style={{ gridTemplateColumns: cols }}>
+                <div aria-hidden className="dk-gutter" />
+                {board.quarters.map((q) => {
+                  const lanes = byColumn.get(q.idx) ?? [];
+                  const composing = composeCol === q.idx;
+                  return (
+                    <div key={q.key} data-quarter={q.idx} className="dk-qcol" {...colState(q.idx)}>
+                      {lanes.map((l) => (
+                        <InitiativeCard key={l.initiative.id} lane={l} data={data} onSetDomain={setDomain} />
+                      ))}
+                      {composing ? (
+                        // the draft, right under the cards — the next slot, not pinned
+                        // to the column's floor; a spacer fills whatever's left below.
+                        <>
+                          <div data-card-control onPointerDown={(e) => e.stopPropagation()}>
+                            <InlineAdd
+                              placeholder={composeDomain ? `Name a ${composeDomain.name} initiative…` : "Name an initiative…"}
+                              accent={composeDom?.color ?? "var(--accent)"}
+                              onCreate={(name) => createInCol(q.idx, name)}
+                              onClose={closeCompose}
+                            />
+                          </div>
+                          <div className="flex-1" />
+                        </>
+                      ) : (
+                        // the rest of the quarter is a click target too — anywhere
+                        // below the cards starts an initiative in this quarter
+                        <AddSlotFiller onAdd={() => composeInCol(q.idx)} label={`New initiative in ${q.label}`} />
+                      )}
 
-          <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-            <ShippedStrip rung="initiative" />
+                      {/* "+ initiative" at the column's base — the one quiet create
+                          voice both decks share. Hidden while composing. */}
+                      {!composing && (
+                        <SlotCreateButton
+                          noun="initiative"
+                          title="New initiative in this quarter"
+                          onCreate={() => composeInCol(q.idx)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
+        </div>
+
+        <div className="dk-foot">
+          <ShippedStrip rung="initiative" />
+        </div>
       </div>
 
-      {/* drag ghost */}
+      {/* drag ghost — the bet in your hand, lifted onto --sh-pop */}
       {drag && (
         <div
-          className="glass-grab pointer-events-none fixed z-[60] w-56 rounded-lg border border-line bg-surface px-3 py-2.5"
-          style={{ left: drag.x + 14, top: drag.y + 8, transform: "rotate(-2deg)" }}
+          ref={ghostRef}
+          className="deck-ghost"
+          style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y) }}
         >
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: drag.dot }} />
-            <span className="truncate text-caption text-ink">{drag.name}</span>
+          <div className="deck-ghost-name">
+            <Dot color={drag.dot} />
+            <span>{drag.name}</span>
           </div>
         </div>
       )}
@@ -624,38 +564,28 @@ export default function InitiativeDeck() {
 
 /**
  * The rest of a quarter column: drop target for a pointer, "add here" for a
- * keyboard.
+ * keyboard. A button, so creating an initiative *in a particular quarter* is
+ * never a mouse-only act (`I` opens the composer from anywhere, but it can't say
+ * which column you meant).
  *
- * It used to be a bare `<div onClick>`, which meant creating an initiative *in
- * a particular quarter* was a mouse-only act — `I` opens the composer from
- * anywhere, but it can't say which column you meant. A button restores that.
- *
- * The label appears on focus as well as hover. An invisible tab stop is worse
- * than no tab stop: the ring lands on an empty rectangle and the user has to
- * guess what activating it would do. On focus it says so.
+ * The words appear on keyboard focus: an invisible tab stop is worse than no tab
+ * stop — the ring would land on an empty rectangle. Under a pointer the column's
+ * own "+ initiative" already says it.
  */
 function AddSlotFiller({ onAdd, label }: { onAdd: () => void; label: string }) {
   return (
-    <button
-      type="button"
-      onClick={onAdd}
-      title={label}
-      className="slot-col fast group/add flex min-h-[28px] flex-1 items-start justify-center rounded-lg pt-1.5 transition-colors"
-    >
-      <span className="text-micro text-muted opacity-0 transition-opacity group-hover/add:opacity-100 group-focus-visible/add:opacity-100">
-        ＋ {label}
-      </span>
+    <button type="button" onClick={onAdd} title={label} className="dk-filler">
+      <span>{label}</span>
     </button>
   );
 }
 
-// ── one initiative card — a sibling of the project deck card: same silhouette
-// (domain rail + dot + title, then a GROOMING METER + caption). The meter is the
-// initiative's analogue of the project's readiness bars, so "which bets need grooming"
-// scans at a glance — but with TWO segments (Defined · Measured), because a bet has two
-// readiness axes (outcome+finish line, and key results); it has no pace/Fits axis. The
-// deep OKR work (attainment, uncovered KRs, momentum) lives in Groom / the record. The
-// one deck-specific keeper is the auto-link chip, shown only when a bet has no domain.
+// ── one initiative card — the deck card, bounded: the same object as a project
+// card, its domain hue its left edge rather than a mark on it (D-048). The
+// readiness pie draws its two axes (Defined · Measured — a bet has no pace/Fits
+// axis). The deep OKR work (attainment, uncovered KRs, momentum) lives in Groom /
+// the record. The one deck-specific keeper is the auto-link chip, shown only when
+// a bet has no domain.
 function InitiativeCard({
   lane,
   data,
@@ -671,11 +601,9 @@ function InitiativeCard({
   const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
   const domain = domainById(data, i.domainId);
-  const dot = domain?.color ?? "var(--line-strong)";
+  const dot = domain?.color ?? "var(--faint)";
   const suggestion = lane.needsDomain ? suggestDomainForInitiative(data, i) : null;
 
-  // grooming meter — the two readiness axes, coloured by how many are met (teal =
-  // groomed, amber = mid, faint = raw), so a partial bar reads "needs grooming".
   const axes = initiativeReadinessAxes(data, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
   const done = lane.state === "done";
@@ -691,8 +619,7 @@ function InitiativeCard({
         ? `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"}`
         : `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"} · ${Math.round(lane.attainment * 100)}%`;
 
-  // one status word, by precedence — the shared rule the project card follows too
-  // (the phone deck already called this; the desktop one had drifted into its own copy).
+  // one status word, by precedence — the shared rule the project card follows too.
   const status = initiativeCardStatus(lane);
 
   return (
@@ -700,7 +627,7 @@ function InitiativeCard({
       dragAttr={{ "data-init-drag": i.id }}
       onContextMenu={onContextMenu("initiative", i.id)}
       className="cursor-grab active:cursor-grabbing"
-      // The one altitude tell: the same domain spine, heavier and full-height, so a
+      // The one altitude tell: the same domain hue, as the card's edge, so a
       // bet reads as a weightier sibling — not a different kind of object.
       variant="bounded"
       spine={dot}
@@ -716,17 +643,15 @@ function InitiativeCard({
         // auto-link — only when the bet has no domain yet (a placement necessity,
         // not default clutter); the deep OKR work lives in Groom / the record
         lane.needsDomain ? (
-          <div data-card-control className="mt-2 flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
+          <div data-card-control className="flex items-center gap-2 pt-1" onPointerDown={(e) => e.stopPropagation()}>
             {suggestion ? (
-              <button
+              <ChipButton
+                dot={suggestion.domain.color}
                 onClick={() => onSetDomain(i, suggestion.domain.id)}
-                className="tap fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
-                style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
                 title="Link this initiative to its domain"
               >
-                <DomainSymbol value={suggestion.domain.icon} size={12} />
-                <span>Link → {suggestion.domain.name}</span>
-              </button>
+                Link to {suggestion.domain.name}
+              </ChipButton>
             ) : (
               <DomainPicker domains={data.domains} value="" onChange={(id) => onSetDomain(i, id)} />
             )}
