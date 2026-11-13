@@ -14,6 +14,7 @@ import {
   IconButton,
   Input,
   Kbd,
+  Dest,
   Menu,
   MenuItem,
   MenuLabel,
@@ -120,6 +121,11 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           <IconButton label="Add" icon={plus} />
           <IconButton size="md" kind="secondary" label="Add" icon={plus} shortcut="A" />
           <IconButton label="More" icon={<Icon name="more" size={14} />} className="kh-hover" />
+        </Line>
+        <Line label="Destination">
+          <div style={{ display: "flex", gap: 6, width: 240, minWidth: 0 }}>
+            <Button kind="primary" shortcut="X"><Dest verb="Back to" name="Launch pricing page for the spring catalogue" /></Button>
+          </div>
         </Line>
         <Line label="Keycap">
           <Kbd keys="P" />

@@ -68,7 +68,7 @@ import { createGestureCancel, type GestureCancel } from "./calendar/gestureCance
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
 import { useStableHandler } from "../hooks/useStableHandler";
-import { consumeLanding, landBlock, markLanding } from "../lib/motion";
+import { consumeLanding, landBlock, markLanding, reachToCrown } from "../lib/motion";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 import { gridSyncPlan } from "../lib/calendarGridSync";
 // One spelling for what a block IS — shared with Plan the week's grid.
@@ -2943,8 +2943,10 @@ function CalendarPane({
     // one, and the offer below already asks about the work that sits elsewhere.
     const resolved = resolveBlockDrop(start, takeBlockDropIntent(), slotsRef.current, findTask);
 
+    const color = el.getAttribute("data-project-color");
     if (resolved?.kind === "join") {
       slotMutations.gatherIntoSlot(resolved.slot, loose, slotTasks[resolved.slot.id] ?? []);
+      if (loose.length) reachFromSlot(resolved.slot.id, projectId, color);
       offer(resolved.slot);
       return;
     }
@@ -2955,7 +2957,11 @@ function CalendarPane({
         domainId,
         label: `Sat ${name} on the week`,
       })
-      .then((made) => made && offer(made))
+      .then((made) => {
+        if (!made) return;
+        if (loose.length) reachFromSlot(made.id, projectId, color);
+        offer(made);
+      })
       .catch((e) => {
         console.warn("[nuvo] project sitting failed:", e);
         toast.error("Couldn't hold that sitting — the project is unchanged");
@@ -3011,6 +3017,23 @@ function CalendarPane({
       const el = document.querySelector(`.fc [data-block-id="${CSS.escape(eventId)}"]`);
       if (el && consumeLanding(key)) landBlock(el);
     });
+  };
+
+  // THE REACH (D-202) — loose work you just placed sends one mark from the
+  // block it landed in to its project's row in the week crown. Called from the
+  // drop handlers only (your act), once per project per drop; a no-op when the
+  // crown isn't showing that project. The block is the sitting the drop wrote —
+  // drawn a frame or two after the optimistic write, so look for it briefly and
+  // give up quietly rather than fly from nowhere.
+  const reachFromSlot = (slotId: string, projectId: string | null, color?: string | null) => {
+    if (!projectId) return;
+    let tries = 0;
+    const look = () => {
+      const block = document.querySelector(`.fc .evt-slot[data-slot-id="${CSS.escape(slotId)}"]`);
+      if (block) void reachToCrown(block, projectId, color);
+      else if (++tries < 6) requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
   };
 
   const onReceive = useStableHandler((info: EventReceiveArg) => {
@@ -3139,7 +3162,12 @@ function CalendarPane({
           taskDomain,
           fromProject ? { projectId: fromProject, label: "Sat it on the week" } : undefined,
         )
-        .then((made) => made && !fromProject && onOpenSlot(made, point, null, { focusTitle: true }))
+        .then((made) => {
+          if (!made) return;
+          // A crown piece placed by hand reaches its project's row.
+          if (fromProject) reachFromSlot(made.id, fromProject);
+          else onOpenSlot(made, point, null, { focusTitle: true });
+        })
         .catch((e) => {
           console.warn("[nuvo] block-together failed:", e);
           toast.error("Couldn't hold that block — the tasks are unchanged");

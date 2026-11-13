@@ -509,3 +509,85 @@ export function toRowPatch(patch: { startDate: string | null; targetDate: string
   if (patch.status) out.status = patch.status;
   return out;
 }
+
+// ── Significant — did the finished hours go toward an initiative? (D-203) ────
+// The fourth reading (docs/outcome-readings.md §2). A finished minute is
+// SIGNIFICANT when the work belongs to a project that is attached to an
+// initiative: work that ladders up to a bet you made, not merely work you
+// scheduled. Everything else is OTHER — loose tasks, upkeep, projects with no
+// initiative, meetings that count toward nothing.
+//
+// Here, not in `src/lib`, because it is a week rule over plain data and the
+// assistant may one day be asked "was I just busy?" — it must answer from the
+// same arithmetic the crown draws (one rule, two runtimes).
+//
+// The parent rule holds: a parented task belongs to its PARENT's initiative,
+// read off the project, never off the task's own denormalized copy (D-088). A
+// task with no project is other, whatever its own initiative copy says — the
+// settled definition is "a project attached to an initiative".
+//
+// `null` when the account has no initiatives at all (P7, P16): a stranger is
+// never scored against a ladder they haven't built.
+
+/** A task, as far as "where did its finished minutes go" cares. */
+export interface SignificanceTask {
+  projectId: string | null;
+  status: string;
+  /** ISO instant it was completed */
+  completedAt: string | null;
+  /** its estimate, in minutes */
+  estimateMins: number;
+  /** the length of the block it was placed in, when it had one — preferred */
+  blockMins?: number | null;
+}
+
+/** An attended event, already filtered to the week and to what counts as an
+ *  actual. `projectId` is the project its *Counts toward* resolves to, when it
+ *  resolves to one — today D-142 resolves to a DOMAIN, so callers pass null and
+ *  every meeting is other. */
+export interface SignificanceEvent {
+  mins: number;
+  projectId: string | null;
+}
+
+export interface WeekSignificance {
+  /** finished minutes on work whose project belongs to an initiative */
+  initiativeMins: number;
+  /** every other finished minute */
+  otherMins: number;
+}
+
+export function weekSignificance(input: {
+  /** the week's window, [startMs, endMs) — the caller owns which week */
+  startMs: number;
+  endMs: number;
+  tasks: SignificanceTask[];
+  projects: { id: string; initiativeId: string | null }[];
+  initiativeIds: string[];
+  events?: SignificanceEvent[];
+}): WeekSignificance | null {
+  if (input.initiativeIds.length === 0) return null;
+  const bets = new Set(input.initiativeIds);
+  const laddered = new Set(
+    input.projects.filter((p) => p.initiativeId != null && bets.has(p.initiativeId)).map((p) => p.id),
+  );
+  const counts = (projectId: string | null) => projectId != null && laddered.has(projectId);
+
+  let initiativeMins = 0;
+  let otherMins = 0;
+  for (const t of input.tasks) {
+    if (t.status !== "done" && !isCompleteStatus(t.status)) continue;
+    if (!t.completedAt) continue;
+    const at = Date.parse(t.completedAt);
+    if (!(at >= input.startMs && at < input.endMs)) continue;
+    const mins = Math.max(0, t.blockMins != null && t.blockMins > 0 ? t.blockMins : t.estimateMins || 0);
+    if (counts(t.projectId)) initiativeMins += mins;
+    else otherMins += mins;
+  }
+  for (const e of input.events ?? []) {
+    const mins = Math.max(0, e.mins || 0);
+    if (counts(e.projectId)) initiativeMins += mins;
+    else otherMins += mins;
+  }
+  return { initiativeMins, otherMins };
+}

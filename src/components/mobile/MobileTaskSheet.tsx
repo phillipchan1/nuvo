@@ -3,6 +3,7 @@ import { useTaskToEvent } from "../../hooks/useTaskToEvent";
 import { duplicateTaskInput } from "../../lib/taskActs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { reachToCrown } from "../../lib/motion";
 import type { Label, Task } from "../../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../../lib/types";
 import { useScheduledTasks, type useTaskMutations } from "../../hooks/useTasks";
@@ -316,6 +317,14 @@ export default function MobileTaskSheet({
   const putInSlot = (id: string) => {
     const pick = slotPicks.find((p) => pickId(p) === id);
     if (!pick) return;
+    // THE REACH (D-202): loose project work just got a time, so one mark rides
+    // from the row you picked to the project's mark in the Calendar's crown —
+    // its pip when shut, its track when open. Read off the picked row NOW,
+    // before the sheets close; a no-op when no crown is mounted (any other tab).
+    if (task.project_id && !task.start_time && !task.slot_id) {
+      const from = document.querySelector(`[data-pick-id="${CSS.escape(id)}"]`);
+      void reachToCrown(from, task.project_id, taskDomainColor(vertical, task));
+    }
     if (pick.kind === "slot") {
       slotMutations.gatherIntoSlot(pick.slot, [task], childrenOf(pick.slot.id));
       keepPlaced([task]);

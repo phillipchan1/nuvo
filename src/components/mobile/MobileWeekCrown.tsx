@@ -36,7 +36,7 @@
 // that couldn't. The row still carries no swipe here: the calendar under this
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { Button, Chip } from "../kit";
 import { fmtDayTime } from "../../lib/dates";
@@ -44,6 +44,7 @@ import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
 import { PaceTrack, SlatePips } from "../progress/PaceTrack";
+import { SignificanceLine } from "../progress/Significance";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -70,6 +71,7 @@ export default function MobileWeekCrown({
   anchored = false,
   expandable = true,
   onExpandElsewhere,
+  crownLine,
 }: {
   /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
    *  which holds the mutations and the task sheet, exactly as the rail owns it
@@ -94,6 +96,10 @@ export default function MobileWeekCrown({
   expandable?: boolean;
   /** Where a tap goes when the slate can't open here. */
   onExpandElsewhere?: () => void;
+  /** Replaces the open crown's one line (D-204 §3) — a repair passes its own;
+   *  `null` says nothing. Omitted: "N with no time · Plan the week ›" while
+   *  anything has no time. */
+  crownLine?: ReactNode;
 }) {
   const crown = useWeekCrown();
   const [open, setOpenState] = useState(readOpen);
@@ -101,7 +107,7 @@ export default function MobileWeekCrown({
   const [planOpen, setPlanOpen] = useState(false);
 
   if (!crown) return null;
-  const { rows, landed, total, looseCount, composed, weekLabel, weekISO } = crown;
+  const { rows, landed, total, looseCount, composed, weekLabel, weekISO, significance } = crown;
 
   const setOpen = (v: boolean) => {
     setOpenState(v);
@@ -117,6 +123,30 @@ export default function MobileWeekCrown({
   const planned = composed || total > 0;
   const action = planned ? "The plan ›" : "Plan the week";
   const openDoor = () => (planned ? setPlanOpen(true) : onPlanWeek());
+
+  // The one line at rest: work with no time, and its door — Plan the week, the
+  // ritual. When the header's door already says "Plan the week" the line keeps
+  // to the fact (say it once).
+  const planLine =
+    looseCount > 0 ? (
+      <div className="flex min-h-11 items-center gap-1 text-caption tabular-nums text-muted">
+        <span>
+          <b className="font-semibold" style={{ color: "var(--warn)" }}>
+            {looseCount}
+          </b>{" "}
+          with no time
+        </span>
+        {planned && (
+          <>
+            <span aria-hidden>·</span>
+            <Button kind="ghost" size="sm" onClick={onPlanWeek} className="tap -ml-1">
+              Plan the week ›
+            </Button>
+          </>
+        )}
+      </div>
+    ) : null;
+  const line = crownLine !== undefined ? crownLine : planLine;
 
   // ── shut: a picture, not a sentence ──────────────────────────────────────
   // "2 of 6 landed · 3 loose" is still six words to read, at the top of a page
@@ -207,6 +237,13 @@ export default function MobileWeekCrown({
         </Button>
       </div>
 
+      {/* The crown's one line (D-204 §3), then Significant (D-203) — the same
+          two the rail's crown carries. The shut strip stays a drawing: its
+          amber light is this line's fact, and a strip that grew a sentence
+          whenever work went homeless would resize under the thumb (D-123). */}
+      {line}
+      <SignificanceLine value={significance} className="pb-1 pt-1" />
+
       {open && total > 0 && (
         <ul className="mt-1 flex flex-col">
           {rows.map((row) => (
@@ -266,7 +303,12 @@ function CrownRow({
   const done = shipped || row.state === "landed";
 
   return (
-    <li className="border-t border-[var(--line-1)]">
+    <li
+      className="border-t border-[var(--line-1)]"
+      // Where the Reach lands when the crown is open (D-202).
+      data-crown-project={row.projectId}
+      data-crown-color={color}
+    >
       <div className="flex items-center gap-1">
         <button
           onClick={onOpen}
@@ -315,8 +357,16 @@ function CrownRow({
                   fill in the domain's hue, and the pace tick where the span
                   stands today. Ticking a piece below advances it here. */}
               {work.total > 0 && (
-                <span aria-label={`${work.done} of ${work.total} done`}>
-                  <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} width={48} />
+                <span aria-label={`${work.done} of ${work.total} done · ${placedLabel}`}>
+                  <PaceTrack
+                    done={work.done}
+                    total={work.total}
+                    placed={placed.length}
+                    color={color}
+                    elapsed={row.elapsed}
+                    width={48}
+                    reachKey={row.projectId}
+                  />
                 </span>
               )}
             </span>

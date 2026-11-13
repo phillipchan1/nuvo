@@ -173,6 +173,36 @@
   pointer-events: none;
 }
 
+/* ── SIGNIFICANT (components/progress/Significance.tsx, D-203) ─────────────
+   One line + one two-segment bar: the initiative share in --accent (intent,
+   landed) over the rest in quiet structure. Never --warn, never a percent. */
+.significance {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.significance-text {
+  font: 450 12px/1.45 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.significance-text b { color: var(--ink); font-weight: 600; }
+.significance-bar {
+  position: relative;
+  display: block;
+  height: var(--track-h);
+  border-radius: 999px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.significance-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+}
+
 /* ── COMMIT · the week locks in (components/plan/WeekSetMoment.tsx) ───────── */
 @keyframes commit-band {
   from { transform: scaleY(0.2) translateY(-6px); opacity: 0; }

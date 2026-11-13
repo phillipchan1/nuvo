@@ -19,7 +19,7 @@ import { addDays } from "date-fns";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
 import { AppNavigationProvider } from "../../hooks/useAppNavigation";
 import { parseDateISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
-import type { Domain, Project, VTask, VerticalData } from "../../lib/vertical";
+import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib/vertical";
 import type { BigRock, Slot, Sprint, Task } from "../../lib/types";
 import MobileWeekCrown from "./MobileWeekCrown";
 import MobileCalendar from "./MobileCalendar";
@@ -73,8 +73,9 @@ const proj = (o: Partial<Project> & { id: string; domainId: string; name: string
   }) as unknown as Project;
 
 const PROJECTS: Project[] = [
-  // in motion, with homeless work — the row the crown exists for
-  proj({ id: "p1", domainId: "d1", name: "Region 4 cutover" }),
+  // in motion, with homeless work — the row the crown exists for. It serves an
+  // initiative, so its finished hours read as Significant (D-203).
+  proj({ id: "p1", domainId: "d1", name: "Region 4 cutover", initiativeId: "i1" }),
   // carried from two weeks back, everything placed
   proj({ id: "p2", domainId: "d3", name: "Rebuild the morning routine" }),
   // every task done — ready to ship
@@ -89,6 +90,12 @@ const PROJECTS: Project[] = [
   // week (D-108), arriving marked `wk 3` and ordered after the chosen rows
   proj({ id: "p7", domainId: "d3", name: "Teach the kids to ride", startDate: day(-14), targetDate: day(-10) }),
 ];
+
+// One bet, so Significant has something to read: the cutover and the vendor
+// work ladder up to it; the garage, the routine and the handoff don't.
+const INITIATIVES = [
+  { id: "i1", domainId: "d1", name: "Move SCE onto the new region", status: "in_progress", keyResults: [] },
+] as unknown as Initiative[];
 
 const vt = (o: Partial<VTask> & { id: string; title: string; projectId: string }): VTask =>
   ({
@@ -109,16 +116,16 @@ const vt = (o: Partial<VTask> & { id: string; title: string; projectId: string }
 
 // The vertical's view of the work (progress lives here) …
 const VTASKS: VTask[] = [
-  vt({ id: "t1", title: "Freeze the region-4 config", projectId: "p1", status: "done" }),
+  vt({ id: "t1", title: "Freeze the region-4 config", projectId: "p1", status: "done", durationMins: 90, completedAt: at(0, 11) }),
   vt({ id: "t2", title: "Dry-run the cutover script", projectId: "p1", status: "scheduled", startTime: at(2, 9) }),
   vt({ id: "t3", title: "Brief the on-call rota", projectId: "p1" }),
   vt({ id: "t4", title: "Write the rollback note", projectId: "p1" }),
   vt({ id: "t5", title: "Lay out the evening routine", projectId: "p2", status: "scheduled", startTime: at(0, 20) }),
-  vt({ id: "t6", title: "Move the alarm 15m earlier", projectId: "p2", status: "done" }),
-  vt({ id: "t7", title: "Hire the skip", projectId: "p3", status: "done" }),
-  vt({ id: "t8", title: "Clear the shelving", projectId: "p3", status: "done" }),
+  vt({ id: "t6", title: "Move the alarm 15m earlier", projectId: "p2", status: "done", completedAt: at(0, 7) }),
+  vt({ id: "t7", title: "Hire the skip", projectId: "p3", status: "done", durationMins: 30, completedAt: at(1, 9) }),
+  vt({ id: "t8", title: "Clear the shelving", projectId: "p3", status: "done", completedAt: at(1, 15) }),
   vt({ id: "t9", title: "Collect the last two quotes", projectId: "p4" }),
-  vt({ id: "t10", title: "Send Obi the doc", projectId: "p5", status: "done" }),
+  vt({ id: "t10", title: "Send Obi the doc", projectId: "p5", status: "done", completedAt: at(1, 16) }),
   vt({ id: "t11", title: "Find the training wheels", projectId: "p7" }),
 ];
 
@@ -203,9 +210,12 @@ function useHarnessStore(doneIds: Set<string>): VerticalStore {
   const data: VerticalData = useMemo(
     () => ({
       domains: DOMAINS,
-      initiatives: [],
+      initiatives: INITIATIVES,
       projects: PROJECTS,
-      tasks: VTASKS.map((t) => (doneIds.has(t.id) ? ({ ...t, status: "done" } as VTask) : t)),
+      // A tick here finishes the piece NOW, so Significant moves with it.
+      tasks: VTASKS.map((t) =>
+        doneIds.has(t.id) ? ({ ...t, status: "done", completedAt: t.completedAt ?? new Date().toISOString() } as VTask) : t,
+      ),
       sprint: SPRINT,
       focusInitiativeIds: [],
       bigRocks: BIG_ROCKS,

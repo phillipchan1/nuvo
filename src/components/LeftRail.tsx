@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import type { Label, Slot, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
@@ -88,6 +88,7 @@ function LeftRail({
   slots = NO_SLOTS,
   slotTitle,
   onOpenSlot,
+  crownLine,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -120,6 +121,10 @@ function LeftRail({
   /** Names an untitled slot from what's inside it — lives with the vertical. */
   slotTitle?: (s: Slot, children: Task[]) => string;
   onOpenSlot?: (s: Slot, anchor: DOMRect) => void;
+  /** The crown's one line at rest (docs/rail-modes.md §3), handed to WeekPanel's
+   *  `crownLine` — today the repair line ("Tue 10am broke · Repair ›").
+   *  Undefined keeps the crown's own line. Memoize it: the rail is memo'd. */
+  crownLine?: ReactNode;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -919,6 +924,9 @@ function LeftRail({
               dragData={dragData}
             />
           )}
+          // The crown's one line at rest (D-204 §3): a repair line replaces
+          // "N with no time" while the week is broken; undefined keeps the crown's own.
+          crownLine={crownLine}
         />
         {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
             sits as an icon at the strip's end, only while it holds something

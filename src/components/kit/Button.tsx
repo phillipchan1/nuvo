@@ -69,6 +69,18 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   );
 });
 
+/** An act's label when it names a destination (D-204): the verb, then the
+ *  place. A long place truncates; the verb never does. Use it as a Button's
+ *  children — the button then shrinks inside its row instead of overflowing. */
+export function Dest({ verb, name, title }: { verb: string; name: string; title?: string }) {
+  return (
+    <span className="k-dest" title={title ?? `${verb} ${name}`}>
+      <span className="k-dest-verb">{verb}</span>{" "}
+      <span className="k-dest-name">{name}</span>
+    </span>
+  );
+}
+
 /** A keycap. Pass one key or a chord: <Kbd keys={["⌘", "K"]} />. */
 export function Kbd({ keys, className }: { keys: string | readonly string[]; className?: string }) {
   const list = typeof keys === "string" ? [keys] : keys;

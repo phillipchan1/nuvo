@@ -94,6 +94,11 @@ html:root .k-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pane
   border-color: rgba(255, 255, 255, 0.24);
   color: var(--on-accent);
 }
+/* A destination label (D-204): the verb holds, the name gives. */
+.k-btn:has(> .k-dest) { min-width: 0; max-width: 100%; }
+.k-dest { display: inline-flex; min-width: 0; gap: 0.3em; }
+.k-dest-verb { flex: none; }
+.k-dest-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .k-btn .k-kbds { margin-left: 2px; margin-right: -3px; }
 
 /* ── Field — input, textarea, search, select trigger ────────────────────── */

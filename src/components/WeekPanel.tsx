@@ -30,7 +30,7 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useRecordContextMenu } from "./RecordContextMenu";
 import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
@@ -44,6 +44,7 @@ import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { PaceTrack } from "./progress/PaceTrack";
+import { SignificanceLine } from "./progress/Significance";
 import { Button, Chip, IconButton, SectionHeader } from "./kit";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
@@ -69,9 +70,15 @@ function readOpen(): boolean {
 export default function WeekPanel({
   door,
   renderTask,
+  crownLine,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
+  /** Replaces the crown's one line at rest (D-204 §3). Omitted, the crown says
+   *  "N with no time · Plan the week ›" while anything has no time, and
+   *  nothing otherwise. A repair ("Tue 10am broke… · Repair ›") passes its
+   *  own line here; `null` says nothing. */
+  crownLine?: ReactNode;
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -145,6 +152,29 @@ export default function WeekPanel({
       : `${landed} of ${rows.length} landed` +
         (looseCount > 0 ? ` · ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time` : "");
 
+  // The crown's ONE line at rest (D-204 §3): present while true, never pushed.
+  // Work with no time is the fact it carries, and its door is Plan the week —
+  // the same flow the hero's door opens. When that door already reads "Plan
+  // the week", the line states the fact and leaves the door to it (say it
+  // once). A repair line replaces this one through `crownLine`.
+  const planLine =
+    looseCount > 0 ? (
+      <p className="crown-fact crown-line">
+        <span data-warn="">
+          <b>{looseCount}</b> with no time
+        </span>
+        {mode !== "plan" && (
+          <>
+            {" · "}
+            <button type="button" className="crown-fact-link" onClick={() => openFlow("sunday")}>
+              Plan the week ›
+            </button>
+          </>
+        )}
+      </p>
+    ) : null;
+  const line = crownLine !== undefined ? crownLine : planLine;
+
   const toggleList = () =>
     setListOpen((v) => {
       try {
@@ -179,14 +209,6 @@ export default function WeekPanel({
                 <b>{placed}</b> placed ·{" "}
               </>
             )}
-            {looseCount > 0 && (
-              <>
-                <span data-warn="">
-                  <b>{looseCount}</b> with no time
-                </span>{" "}
-                ·{" "}
-              </>
-            )}
             <b>
               {piecesDone} of {piecesTotal}
             </b>{" "}
@@ -205,6 +227,8 @@ export default function WeekPanel({
             )}
           </p>
         )}
+        {line}
+        <SignificanceLine value={crown.significance} className="crown-significance" />
       </div>
 
       {rows.length > 0 && (
@@ -350,7 +374,13 @@ function ProjectStackRow({
     (open > 0 ? ` · ${placedLabel}` : "");
 
   return (
-    <div className="crown-proj" data-done={done ? "" : undefined}>
+    <div
+      className="crown-proj"
+      data-done={done ? "" : undefined}
+      // Where the Reach lands (D-202): `reachToCrown` finds this row's track.
+      data-crown-project={row.projectId}
+      data-crown-color={color}
+    >
       <div
         {...dragProps}
         data-drag={canDrag ? "" : undefined}
@@ -428,7 +458,15 @@ function ProjectStackRow({
             A piece ticked below lands here. Then what's wrong, if anything. */}
         <div className="crown-proj-marks" aria-label={marksLabel}>
           {work.total > 0 ? (
-            <PaceTrack done={work.done} total={work.total} color={color} elapsed={row.elapsed} width={120} />
+            <PaceTrack
+              done={work.done}
+              total={work.total}
+              placed={done ? 0 : placed.length}
+              color={color}
+              elapsed={row.elapsed}
+              width={120}
+              reachKey={row.projectId}
+            />
           ) : (
             // The stranger's account, and every honest new project: nothing to
             // draw yet, so say the fact rather than an empty line (P7).

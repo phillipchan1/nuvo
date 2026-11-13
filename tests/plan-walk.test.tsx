@@ -19,6 +19,28 @@ const openRecord = vi.fn();
 vi.mock("../src/hooks/useAppNavigation", () => ({ useAppNavigation: () => ({ navigate: vi.fn(), openRecord, nav: { overlay: "none" } }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 vi.mock("../src/hooks/useSettings", () => ({ useSettings: () => ({ settings: { work_end_minutes: 990 }, isLoading: false, update: vi.fn() }) }));
+// The pinned crown (rail-modes §2) reads the week through useWeekCrown; here it
+// is one project whose two loose pieces are the Admin batch's.
+const CROWN_ROW = {
+  rock: { id: "r1" },
+  projectId: "p1",
+  title: "Launch",
+  color: "#2563EB",
+  state: "in-motion",
+  loose: [{ id: "a1" }, { id: "a2" }],
+  placed: [],
+  open: 2,
+};
+const crownWeeks: (string | undefined)[] = [];
+vi.mock("../src/hooks/useWeekCrown", () => ({
+  SIGNIFICANCE_FLOOR_MINS: 120,
+  useWeekCrown: (w?: string) => {
+    crownWeeks.push(w);
+    return { weekISO: w, weekLabel: "Nov 9 – 15", rows: [CROWN_ROW], landed: 0, total: 1, looseCount: 2, composed: false, significance: null };
+  },
+}));
+const reach = vi.fn((..._args: unknown[]) => Promise.resolve());
+vi.mock("../src/lib/motion", async (orig) => ({ ...(await orig<typeof import("../src/lib/motion")>()), reachToCrown: (...a: unknown[]) => reach(...a) }));
 
 const DAY = "2026-11-10";
 const t = (id: string, title: string, mins = 30) => ({ id, title, duration_minutes: mins });
@@ -97,16 +119,51 @@ describe("Plan the week — the walk", () => {
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
     expect(screen.getByText("Reply to Grace")).toBeTruthy();
 
-    fireEvent.click(screen.getByText(/Looks good/));
+    // the act names where the block goes (D-204): a time, not an opinion
+    fireEvent.click(screen.getByRole("button", { name: /^Hold Tue 2–2:45pm/ }));
     expect(screen.getByText("2/2 accepted")).toBeTruthy();
     expect(screen.getByText(/All 2 blocks accepted/)).toBeTruthy();
   });
 
-  it("Later moves on without accepting", () => {
+  it("Look at it last moves on without accepting", () => {
     render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getByText(/Later/));
+    fireEvent.click(screen.getByRole("button", { name: /^Look at it last/ }));
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
     expect(screen.getByText("0/2 accepted")).toBeTruthy();
+  });
+});
+
+describe("Plan the week — acts that say where things go (D-204)", () => {
+  it("labels every act of the walk with its destination, keycaps kept", () => {
+    render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole("button", { name: /^Hold Tue 9–9:45am/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Look at it last/ })).toBeTruthy();
+    // the halves' places aren't known before the split
+    expect(screen.getByRole("button", { name: /^Split in two/ })).toBeTruthy();
+    // a run of loose work has no project to go back to — it leaves the week
+    expect(screen.getByRole("button", { name: /^Out of the week/ })).toBeTruthy();
+    // D-150: what comes off the calendar, said under the act
+    expect(screen.getByText("Tue 9–9:45am comes off the calendar")).toBeTruthy();
+    for (const old of [/Looks good/, /Keep · next/, /^Later$/, /Off this week/, /^Split$/]) expect(screen.queryByText(old)).toBeNull();
+    // the dial lives in Settings → Schedule, not in the walk
+    expect(screen.queryByText("During the week")).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "How much Nuvo moves" })).toBeNull();
+  });
+
+  it("a project's block goes Back to its project — the name truncates, never the verb", () => {
+    const was = S.slotById.get("admin")!;
+    const saved = S.data;
+    S.slotById.set("admin", { ...was, projectId: "p1" });
+    S.data = { ...S.data, projects: [{ id: "p1", name: "Launch pricing page for the spring catalogue" }] } as never;
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      const btn = screen.getByRole("button", { name: /^Back to Launch pricing page for the spring catalogue/ });
+      expect(btn.querySelector(".k-dest-verb")?.textContent).toBe("Back to");
+      expect(btn.querySelector(".k-dest-name")?.textContent).toBe("Launch pricing page for the spring catalogue");
+    } finally {
+      S.slotById.set("admin", was);
+      S.data = saved;
+    }
   });
 });
 
@@ -201,5 +258,51 @@ describe("Plan the week — the way out", () => {
     expect(screen.queryByRole("button", { name: "Keep planning" })).toBeNull();
     expect(screen.getByText(/Commit/)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("Plan the week — the crown stays pinned, and Hold reaches it (D-202)", () => {
+  const withProject = (fn: () => void) => {
+    const was = S.slotById.get("admin")!;
+    S.slotById.set("admin", { ...was, projectId: "p1" });
+    try {
+      fn();
+    } finally {
+      S.slotById.set("admin", was);
+    }
+  };
+
+  it("the rail's bar carries the week's slate pips, for the week being planned", () => {
+    crownWeeks.length = 0;
+    const { container } = render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    const pip = container.querySelector('[data-pinned-crown] [data-crown-project="p1"]');
+    expect(pip).toBeTruthy();
+    expect(pip!.getAttribute("data-pip")).toBe("open");
+    // the crown is read for the plan's week, never the hook's default
+    expect(crownWeeks.every((w) => typeof w === "string" && /^\d{4}-\d{2}-\d{2}$/.test(w))).toBe(true);
+  });
+
+  it("Hold sends ONE mark to the project's pip, and its last loose piece held tints the pip", () =>
+    withProject(() => {
+      reach.mockClear();
+      const { container } = render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: /^Hold Tue 9–9:45am/ }));
+      expect(reach).toHaveBeenCalledTimes(1);
+      expect(reach.mock.calls[0][1]).toBe("p1");
+      expect(reach.mock.calls[0][0]).toBeInstanceOf(Element);
+      expect(container.querySelector('[data-crown-project="p1"]')!.getAttribute("data-pip")).toBe("placed");
+    }));
+
+  it("↵ is the same act; a block with no project reaches nothing", () => {
+    withProject(() => {
+      reach.mockClear();
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      act(() => void fireEvent.keyDown(window, { key: "Enter" }));
+      expect(reach).toHaveBeenCalledTimes(1);
+    });
+    reach.mockClear();
+    render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    act(() => void fireEvent.keyDown(window, { key: "Enter" }));
+    expect(reach).not.toHaveBeenCalled();
   });
 });

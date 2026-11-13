@@ -22,7 +22,7 @@
 // a decrease (undo, reopen) snaps.
 
 import { useLayoutEffect, useRef } from "react";
-import { advanceFill, advanceSegment, landMark } from "../../lib/motion";
+import { advanceFill, advanceSegment, landMark, reachArrivalDelay } from "../../lib/motion";
 import type { WeekCrownRow } from "../../hooks/useWeekCrown";
 
 /** Past this many pieces, pips stop being countable at a glance and become the
@@ -40,64 +40,113 @@ function usePrevious<T>(v: T): T | null {
   return prev;
 }
 
+/** The PLACED state's tint: the domain's hue, thinned over the rail. A time is
+ *  a promise, not a result — it must never read as done (D-202 §5.1). (Not
+ *  exported, for the same Fast Refresh reason as PIP_CEILING.) */
+function placedTint(color: string): string {
+  return `color-mix(in srgb, ${color} 55%, var(--line))`;
+}
+
 export function PaceTrack({
   done,
   total,
   color,
+  placed = 0,
   elapsed = null,
   width,
+  reachKey,
 }: {
   done: number;
   total: number;
   /** the domain's hue — the fill is that world's work */
   color: string;
+  /** Open pieces that HAVE a time this week (D-202): drawn tinted between the
+   *  done pieces and the loose ones. The pace tick still compares only DONE —
+   *  placing isn't progress on pace (P6). Omitted, the track draws two states
+   *  (done · not), as before. */
+  placed?: number;
   /** 0–1 through the project's span (`WeekCrownRow.elapsed`), or null */
   elapsed?: number | null;
   /** px; defaults to the piece count's natural width */
   width?: number;
+  /** the project this track stands for — a Reach in flight to it (D-202)
+   *  holds the Advance until the mark arrives */
+  reachKey?: string;
 }) {
   const segmented = total > 0 && total <= PIP_CEILING;
   const segs = useRef<(HTMLSpanElement | null)[]>([]);
   const fill = useRef<HTMLSpanElement | null>(null);
-  const prev = usePrevious(done);
+  const placedFill = useRef<HTMLSpanElement | null>(null);
+  const doneN = Math.max(0, Math.min(done, total));
+  // Never more placed than there is open work to place — the two counts come
+  // from different reads (the vertical and the week's blocks).
+  const placedN = Math.max(0, Math.min(placed, total - doneN));
+  const reached = doneN + placedN;
+  const prev = usePrevious(`${doneN}:${placedN}`);
 
   useLayoutEffect(() => {
-    if (prev === null || done <= prev) return;
+    if (prev === null) return;
+    const [pd, pp] = prev.split(":").map(Number);
+    const prevReached = pd + pp;
+    if (doneN <= pd && reached <= prevReached) return; // unchanged, or an undo — snaps
+    const wait = reachArrivalDelay(reachKey);
     if (segmented) {
-      for (let i = prev; i < done; i++) advanceSegment(segs.current[i], i - prev);
+      // Pieces that became done, then pieces that became placed: each grows in
+      // once, from its left edge, in order (forward only).
+      let nth = 0;
+      for (let i = pd; i < doneN; i++) advanceSegment(segs.current[i], nth++, wait);
+      for (let i = Math.max(doneN, prevReached); i < reached; i++) advanceSegment(segs.current[i], nth++, wait);
     } else {
-      advanceFill(fill.current, prev / total, done / total);
+      if (doneN > pd) advanceFill(fill.current, pd / total, doneN / total);
+      if (reached > prevReached) advanceFill(placedFill.current, prevReached / total, reached / total);
     }
-  }, [done, prev, segmented, total]);
+  }, [doneN, reached, prev, segmented, total, reachKey]);
 
   if (total === 0) return null;
   const w = width ?? (segmented ? Math.min(96, Math.max(32, total * 9)) : 64);
-  const frac = Math.min(1, done / total);
+  const frac = Math.min(1, doneN / total);
   const tick = elapsed == null ? null : Math.max(0, Math.min(1, elapsed));
+  const tint = placedTint(color);
   const title =
-    `${done} of ${total} done` +
+    `${doneN} of ${total} done` +
+    (placedN > 0 ? ` · ${placedN} placed` : "") +
     (tick == null ? "" : ` · ${Math.round(tick * 100)}% of its time gone`);
 
   return (
     <span className="pace-track shrink-0" style={{ width: w, gap: segmented ? 2 : 0 }} title={title} aria-hidden>
       {segmented ? (
-        Array.from({ length: total }, (_, i) => (
-          <span key={i} className="pace-seg" style={{ flex: "1 1 0" }}>
-            <span
-              ref={(el) => {
-                segs.current[i] = el;
-              }}
-              className="pace-fill"
-              style={{ background: color, transform: i < done ? undefined : "scaleX(0)" }}
-            />
-          </span>
-        ))
+        Array.from({ length: total }, (_, i) => {
+          const state = i < doneN ? "done" : i < reached ? "placed" : "loose";
+          return (
+            <span key={i} className="pace-seg" data-piece={state} style={{ flex: "1 1 0" }}>
+              <span
+                ref={(el) => {
+                  segs.current[i] = el;
+                }}
+                className="pace-fill"
+                style={{
+                  background: state === "placed" ? tint : color,
+                  transform: state === "loose" ? "scaleX(0)" : undefined,
+                }}
+              />
+            </span>
+          );
+        })
       ) : (
-        <span className="pace-rail" style={{ width: "100%" }}>
+        <span className="pace-rail" style={{ width: "100%", position: "relative" }}>
+          {placedN > 0 && (
+            <span
+              ref={placedFill}
+              className="pace-fill"
+              data-piece="placed"
+              style={{ position: "absolute", inset: "0 auto 0 0", background: tint, width: `${(reached / total) * 100}%` }}
+            />
+          )}
           <span
             ref={fill}
             className="pace-fill"
-            style={{ background: color, width: `${frac * 100}%` }}
+            data-piece="done"
+            style={{ position: "relative", background: color, width: `${frac * 100}%` }}
           />
         </span>
       )}
@@ -108,12 +157,35 @@ export function PaceTrack({
 
 const isLanded = (r: WeekCrownRow) => r.state === "landed" || r.state === "shipped";
 
-export function SlatePips({ rows }: { rows: WeekCrownRow[] }) {
+export function SlatePips({
+  rows,
+  allPlaced,
+}: {
+  rows: WeekCrownRow[];
+  /** Projects whose every open piece has a time (or is held in a plan's draft)
+   *  — drawn TINTED, the PaceTrack's placed state at pip size (D-202 §5.1.4):
+   *  hollow · all placed · landed. A pip that becomes all-placed under your
+   *  hand lands once, after any Reach in flight to it arrives. Omitted, a pip
+   *  is hollow or landed, as before. */
+  allPlaced?: ReadonlySet<string>;
+}) {
   const pips = useRef(new Map<string, HTMLSpanElement | null>());
   const meter = useRef<HTMLSpanElement | null>(null);
   const landedIds = rows.filter(isLanded).map((r) => r.rock.id);
   const key = landedIds.join(",");
   const prevKey = usePrevious(key);
+  const placedKey = allPlaced ? rows.filter((r) => !isLanded(r) && allPlaced.has(r.projectId)).map((r) => r.projectId).join(",") : "";
+  const prevPlacedKey = usePrevious(placedKey);
+
+  useLayoutEffect(() => {
+    if (prevPlacedKey === null || prevPlacedKey === placedKey || rows.length > PIP_CEILING) return;
+    const before = new Set(prevPlacedKey ? prevPlacedKey.split(",") : []);
+    for (const id of placedKey ? placedKey.split(",") : []) {
+      if (before.has(id)) continue;
+      const row = rows.find((r) => r.projectId === id);
+      if (row) landMark(pips.current.get(row.rock.id), 0.4, reachArrivalDelay(id));
+    }
+  }, [placedKey, prevPlacedKey, rows]);
 
   useLayoutEffect(() => {
     if (prevKey === null || prevKey === key) return;
@@ -143,17 +215,22 @@ export function SlatePips({ rows }: { rows: WeekCrownRow[] }) {
     <span className="flex shrink-0 items-center gap-1" aria-hidden>
       {rows.map((r) => {
         const on = isLanded(r);
+        const tinted = !on && Boolean(allPlaced?.has(r.projectId));
         return (
           <span
             key={r.rock.id}
             ref={(el) => {
               pips.current.set(r.rock.id, el);
             }}
+            // The Reach's landing when the crown is shut (D-202).
+            data-crown-project={r.projectId}
+            data-crown-color={r.color}
+            data-pip={on ? "landed" : tinted ? "placed" : "open"}
             // The kit's Dot geometry (8px, 2.5px corner): the project's
             // identity, hollow until it lands.
             className="slate-pip"
             style={{
-              background: on ? r.color : "transparent",
+              background: on ? r.color : tinted ? placedTint(r.color) : "transparent",
               // A ring drawn with an inset shadow, so a hollow pip and a filled
               // one occupy exactly the same box — a border would nudge the row.
               boxShadow: on ? undefined : `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 55%, transparent)`,

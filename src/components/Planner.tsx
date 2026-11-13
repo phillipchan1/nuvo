@@ -35,9 +35,11 @@ import type { FlowName } from "./Spine";
 const CalendarPane = lazy(() => import("./CalendarPane"));
 import type { PlanOverlay } from "./plan/planOverlay";
 import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
+import { useRepairs } from "./plan/repairActs";
+import RepairLine, { repairLineText } from "./plan/RepairLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
-const RepairBar = lazy(() => import("./plan/RepairBar"));
+const RepairRail = lazy(() => import("./plan/RepairRail"));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
@@ -457,6 +459,28 @@ export default function Planner({
     [mutations, slotMutations],
   );
   const [repairOverlay, setRepairOverlay] = useState<PlanOverlay | null>(null);
+  // Repair is a rail mode (docs/rail-modes.md §2, D-204): the rail becomes the
+  // repair walk only on your press of the crown's line, and one mode shows at
+  // a time — Plan hides it. The acts and the dial's Handle live in useRepairs,
+  // owned here so the line and the rail read one state.
+  const repairState = useRepairs(repairs, repairActs);
+  const [repairMode, setRepairMode] = useState(false);
+  const repairing = repairMode && !planning;
+  useEffect(() => {
+    if (planning) setRepairMode(false);
+  }, [planning]);
+  const { dial: repairDial, setAsked: setRepairAsked } = repairState;
+  const openRepair = useCallback(() => {
+    // under Ask, the press IS the ask (plan-the-week-v2 §7)
+    if (repairDial === "ask") setRepairAsked(true);
+    setRepairMode(true);
+  }, [repairDial, setRepairAsked]);
+  const closeRepair = useCallback(() => setRepairMode(false), []);
+  // Undefined while nothing broke, so the crown keeps its own line ("N with no time").
+  const repairLine = useMemo(() => {
+    const s = { open: repairState.open, applied: repairState.applied, dial: repairState.dial };
+    return repairLineText(s) ? <RepairLine state={s} onOpen={openRepair} /> : undefined;
+  }, [repairState.open, repairState.applied, repairState.dial, openRepair]);
 
   // Anything droppable that the render set doesn't hold. The week crown offers a
   // project's loose work for drag, and that work is deliberately outside all six
@@ -616,6 +640,10 @@ export default function Planner({
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
             <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} />
           </Suspense>
+        ) : repairing ? (
+          <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
+            <RepairRail state={repairState} onOverlay={setRepairOverlay} onClose={closeRepair} railRef={railRef} />
+          </Suspense>
         ) : (
         <LeftRail
           tab={tab}
@@ -635,6 +663,7 @@ export default function Planner({
           slots={todaySlots}
           slotTitle={slotTitle}
           onOpenSlot={openSlotAt}
+          crownLine={onSchedule ? repairLine : undefined}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -656,7 +685,7 @@ export default function Planner({
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
             live={onSchedule}
-            plan={planning ? planOverlay : repairOverlay}
+            plan={planning ? planOverlay : repairing ? repairOverlay : null}
             tasks={allTasksArray}
             events={events}
             slots={slots}
@@ -697,11 +726,6 @@ export default function Planner({
           />
           </Suspense>
 
-          {onSchedule && !planning && repairs.length > 0 && (
-            <Suspense fallback={null}>
-              <RepairBar repairs={repairs} acts={repairActs} onOverlay={setRepairOverlay} />
-            </Suspense>
-          )}
 
           {onSchedule && openTask && taskPanel && overlay !== "slot" && (
             <Suspense fallback={null}>

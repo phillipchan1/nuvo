@@ -4,6 +4,8 @@
 // in main.tsx. Not part of any real surface. Precedent: EmblemHarness (?emblem).
 
 import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
 import WeekSetMoment from "../plan/WeekSetMoment";
 import { ProjectsStep, CarriedStep, WeekStep, OpenStep, PlanWeekFrame } from "./MobilePlanWeek";
 import { Button } from "../kit";
@@ -15,6 +17,10 @@ import type { PullSuggestion } from "../../lib/pull";
 import type { Domain, Project, VerticalData, VTask } from "../../lib/vertical";
 import { addDays, format, startOfWeek } from "date-fns";
 import { toDateISO } from "../../lib/dates";
+import RepairRail from "../plan/RepairRail";
+import RepairLine from "../plan/RepairLine";
+import { useRepairs } from "../plan/repairActs";
+import type { Repair } from "../../hooks/useWeekRepair";
 
 const weekISO = toDateISO(startOfWeek(new Date(), { weekStartsOn: 1 }));
 const dayISO = (i: number) => toDateISO(addDays(new Date(weekISO + "T00:00:00"), i));
@@ -250,6 +256,47 @@ function CommitFrames() {
   );
 }
 
+// Repair as a rail mode (D-204): the crown's line at rest, and the rail it
+// opens. Fixture breaks; the acts write nothing.
+const REPAIRS: Repair[] = [
+  {
+    key: "r1", kind: "task", id: "t-pricing", title: "Pricing page copy for the spring catalogue launch", why: "landed", event: "Call with Dana",
+    from: { dayISO: dayISO(1), startMin: 10 * 60, durationMin: 60 },
+    options: [
+      { task: { id: "t-pricing" }, dayISO: dayISO(2), startMin: 9 * 60, durationMin: 60, reason: "first open hour" },
+      { task: { id: "t-pricing" }, dayISO: dayISO(3), startMin: 14 * 60, durationMin: 60, reason: "afternoon" },
+    ] as unknown as Placement[],
+  },
+  {
+    key: "r2", kind: "task", id: "t-calls", title: "Calls", why: "missed",
+    from: { dayISO: dayISO(0), startMin: 16 * 60, durationMin: 45 },
+    options: [{ task: { id: "t-calls" }, dayISO: dayISO(3), startMin: 11 * 60, durationMin: 45, reason: "morning" }] as unknown as Placement[],
+  },
+];
+
+const CROWN_CLIENT = new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } });
+const CROWN_STORE = { data: DATA, ready: true } as unknown as VerticalStore;
+
+function RepairFrames() {
+  const state = useRepairs(REPAIRS, { apply: () => () => {} });
+  const [mode, setMode] = useState(false);
+  return (
+    <div className="mb-6 border-b border-[var(--line-1)] pb-4" data-repair-frames>
+      <div className="mb-2 text-caption font-semibold text-muted">Repair · a rail mode (D-204) — the crown's line, then the rail it opens</div>
+      <div className="flex flex-wrap items-start gap-6">
+        <div className="crown border border-[var(--line-1)] p-3" style={{ width: 340 }} data-frame="repair-line">
+          <RepairLine state={state} onOpen={() => setMode(true)} />
+        </div>
+        {mode && (
+          <div className="flex border border-[var(--line-1)]" style={{ height: 560 }} data-frame="repair-rail">
+            <RepairRail state={state} onOverlay={() => {}} onClose={() => setMode(false)} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const SOLO_STEPS = ["open", "projects", "rest", "week", "commit"] as const;
 
 export default function PlanWeekHarness() {
@@ -278,6 +325,15 @@ export default function PlanWeekHarness() {
           width. "Replay" remounts both, because the motion is the point and it
           only plays once. */}
       <CommitFrames />
+
+      {/* The repair rail pins the week's crown (rail-modes §2), which reads the
+          vertical — so the frames get the fixture week, and a query cache that
+          never fetches (no account here). */}
+      <QueryClientProvider client={CROWN_CLIENT}>
+        <VerticalStoreProvider value={CROWN_STORE}>
+          <RepairFrames />
+        </VerticalStoreProvider>
+      </QueryClientProvider>
 
       <div className="flex gap-4 overflow-x-auto">
         <Frame label="1 · Projects" step="projects">
