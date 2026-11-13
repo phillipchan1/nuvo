@@ -10,6 +10,7 @@
 // one with a drifting bet in it.
 
 import { useMemo, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
 import { TaskCaptureSinkContext, type TaskCaptureSink } from "../../hooks/useTaskCapture";
 
@@ -306,6 +307,10 @@ function Frame({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// The surfaces read react-query hooks (the task cache) — no account here, so the
+// queries simply resolve empty.
+const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
 export default function DomainHarness() {
   const store = useHarnessStore();
   const sink = useMemo(() => harnessSink(store), [store]);
@@ -314,6 +319,7 @@ export default function DomainHarness() {
   const [sheet, setSheet] = useState(false);
 
   return (
+    <QueryClientProvider client={qc}>
     <TaskCaptureSinkContext.Provider value={sink}>
     <VerticalStoreProvider value={store}>
       <div className="atmosphere min-h-screen p-4">
@@ -380,5 +386,6 @@ export default function DomainHarness() {
       )}
     </VerticalStoreProvider>
     </TaskCaptureSinkContext.Provider>
+    </QueryClientProvider>
   );
 }

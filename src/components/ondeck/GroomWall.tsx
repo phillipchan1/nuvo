@@ -185,7 +185,6 @@ function GroomCard({
       selected={selected}
       tabIndex={0}
       aria-label={p.name}
-      aria-expanded={selected}
       data-parked={parked ? "" : undefined}
       data-leaving={completing ? "" : undefined}
       className="fl-card"
@@ -194,7 +193,7 @@ function GroomCard({
         if (!selected && e.currentTarget.contains(e.target as Node)) onSelect();
       }}
       onDoubleClick={(e) => {
-        if ((e.target as HTMLElement).closest("button, input, textarea, [contenteditable=true], [role=textbox]")) return;
+        if ((e.target as HTMLElement).closest("button, input, textarea, [contenteditable=true], [role=textbox], .fl-work")) return;
         onOpen(p.id);
       }}
       onKeyDown={onKeyDown}
@@ -395,6 +394,10 @@ export default function GroomWall({ lanes, onOpen }: { lanes: OnDeckLane[]; onOp
         // a click on the board itself (not a card, not a portal) lets go of the picked one
         const t = e.target as HTMLElement;
         if (e.currentTarget.contains(t) && !t.closest(".fl-card")) setPicked(null);
+      }}
+      // …and Esc is its keyboard path (the window listener catches it from anywhere else)
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !isTypingIn(e.target)) setPicked(null);
       }}
     >
       {columns.map((c) => (

@@ -517,7 +517,6 @@ html:root .fl-archive-row:focus-visible { outline: none; box-shadow: inset 0 0 0
   .fl-doc-props { border-left: 0; border-top: 1px solid var(--line-1); }
 }
 @media (max-width: 767px) {
-  .fl-list, .fl-doc { margin: -28px -16px; }
   .fl-th > [data-col]:not([data-col="keep"]),
   .fl-tr > [data-col]:not([data-col="keep"]) { display: none; }
   .fl-th, .fl-tr { grid-template-columns: var(--fl-cols-phone, minmax(0, 1fr) auto); padding: 0 16px; }
