@@ -3181,7 +3181,7 @@ html[data-orientation="on"] [data-sonner-toaster] {
      matches LONG_PRESS_MS in MobileDeck. */
   .deck-arming {
     transform: scale(1.02);
-    box-shadow: var(--shadow-2);
+    box-shadow: var(--sh-pop);
     transition: transform 450ms var(--ease-out), box-shadow 450ms var(--ease-out);
   }
 
