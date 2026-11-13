@@ -209,7 +209,9 @@ export default function WeekPanel({
 
       {rows.length > 0 && (
         <>
-          <SectionHeader title="Projects" count={`${landed}/${rows.length}`} collapsed={!listOpen} onToggle={toggleList} />
+          {/* A count, like every section — how many have landed is the
+              sidebar's to say (This week · n/m), on every page. */}
+          <SectionHeader title="Projects" count={rows.length} collapsed={!listOpen} onToggle={toggleList} />
           {listOpen && (
             <div className="crown-projects" data-tauri-drag-region="false">
               {rows.map((row) => (
