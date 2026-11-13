@@ -130,8 +130,9 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
               return (
                 <li key={k.key} style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
                   {/* The checkbox is the control (its name is the question); the
-                      whole row is its hit area. */}
-                  <div onClick={() => toggle(k)} className="f-kind flex min-h-[52px] items-start gap-3 rounded-[var(--r-ctl)] px-1 py-3">
+                      whole row is its label, so the row is its hit area and the
+                      keyboard reaches it through the checkbox itself. */}
+                  <label className="f-kind flex min-h-[52px] items-start gap-3 rounded-[var(--r-ctl)] px-1 py-3">
                     <span className="flex h-5 items-center">
                       <Checkbox checked={on} onChange={() => toggle(k)} label={k.prompt} />
                     </span>
@@ -142,7 +143,7 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
                     <span className="flex h-5 items-center">
                       <Dot color={k.color} />
                     </span>
-                  </div>
+                  </label>
 
                   {on && (
                     <div className="pb-3 pl-8 pr-1">
