@@ -32,6 +32,16 @@
   --atmosphere-base: var(--panel);
 }
 .spine[data-collapsed] + .app-panel { margin-left: 8px; }
+/* macOS: the traffic lights live over the sidebar, at fixed window points.
+   Expanded, the sidebar is wide enough to hold them. Railed (52px) the
+   cluster is wider than the rail, and in focus mode there is no sidebar at
+   all — either way the lights would sit on the panel's top-left corner. So
+   the panel drops below the title-bar band and the lights sit on the ground.
+   Sized in points (css = points / zoom), like the spine's own reserve. */
+html.tauri-macos .spine[data-rail] + .app-panel,
+html.tauri-macos .spine[data-collapsed] + .app-panel {
+  margin-top: calc(30px / var(--ui-scale, 1));
+}
 /* The chat sits on the ground beside the panel: the panel keeps its right
    gutter only when the chat rail is shut (a 64px strip of its own). */
 
