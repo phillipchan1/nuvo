@@ -121,7 +121,7 @@ been used to argue against things it doesn't forbid.
 
 | Term | Meaning |
 |---|---|
-| **Nuvo** (the assistant) | ⌘J. Say **"ask Nuvo"** for the assistant, **"in Nuvo"** for the app. Endpoints on the `agent` edge function: `scaffold` · `blueprint` · `draftProjects` · `prepare` · `narrate`. |
+| **Nuvo** (the assistant) | ⌘J. Say **"ask Nuvo"** for the assistant, **"in Nuvo"** for the app. Opened before you type, the panel **offers** what would help on the page beside it: a few cards, each with its evidence and what its act does (*Draft the path* for a thin path, *From Memory* for a sure question); **Not now** hides one for two weeks. Its door (the ✦ rail, the phone's ✦) wears one dot while there's an offer you haven't seen, never a count (D-198). Endpoints on the `agent` edge function: `scaffold` · `blueprint` · `draftProjects` · `prepare` · `narrate`. |
 | **Draft the path** | ✦ on a project's Tasks (the record's header; the phone's project screen). Nuvo drafts the steps the project is missing **among yours**, one at a time; nothing is added until you keep it (D-193). Not *Groom the steps*, which only rewords and re-homes. |
 | **Drafted step** | A step Nuvo proposed that you haven't kept: the same task row with a faint wash and a dashed check. Keep ↵ · Drop ⌫ · Version ⇥ · Edit E; a kept one becomes a backlog task on the project. Its size is from your finished work, or says "An estimate". |
 | **Steer** | One free-text line that reshapes the drafted steps you haven't kept ("smaller steps", "skip the research"). Never touches what you kept. |

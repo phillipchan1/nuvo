@@ -146,3 +146,74 @@ export function consumeLanding(key: string | null | undefined): boolean {
   pending.delete(key);
   return Date.now() - at <= LANDING_TTL_MS;
 }
+
+// ── collect — a kept offer flies to where it now lives (D-198) ──────────────
+// The one moment the Nuvo panel celebrates, and it celebrates YOUR act: you
+// pressed Keep, so the card's ghost lifts, arcs toward its home (Memory's row,
+// or the page it changes) and that home lands it with the material's spring.
+// One ghost per act, transform and opacity only, gone in about half a second,
+// never on an offer that merely appeared (P3, P9, D-187's laws 1–2).
+
+/** The visible element among several candidates (a desktop row and a phone
+ *  button can both carry the same landing name; only one is on screen). */
+export function landingTarget(name: string): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const all = Array.from(document.querySelectorAll<HTMLElement>(`[data-land="${name}"]`));
+  return all.find((el) => el.getClientRects().length > 0) ?? null;
+}
+
+/** Fly a ghost of `from` into `to`, then land `to`. Resolves when it's over
+ *  (at once when motion is off, so callers can always await it). */
+export function collectInto(from: Element | null | undefined, to: Element | null | undefined): Promise<void> {
+  if (!from || !to || typeof document === "undefined" || motionOff()) {
+    if (to && !motionOff()) landMark(to, 0.7);
+    return Promise.resolve();
+  }
+  const a = from.getBoundingClientRect();
+  const b = to.getBoundingClientRect();
+  if (!a.width || !b.width) return Promise.resolve();
+  const ghost = from.cloneNode(true) as HTMLElement;
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.removeAttribute("id");
+  Object.assign(ghost.style, {
+    position: "fixed",
+    left: `${a.left}px`,
+    top: `${a.top}px`,
+    width: `${a.width}px`,
+    height: `${a.height}px`,
+    margin: "0",
+    zIndex: "80",
+    pointerEvents: "none",
+    transformOrigin: "center center",
+  });
+  document.body.appendChild(ghost);
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  const end = Math.max(0.08, Math.min(0.4, b.height / a.height));
+  const anim = play(
+    ghost,
+    [
+      { transform: "translate(0, 0) scale(1)", opacity: 1 },
+      // a short lift first — the pick-up — then the arc home
+      { transform: "translate(0, -6px) scale(1.02)", opacity: 1, offset: 0.14 },
+      { transform: `translate(${dx * 0.55}px, ${dy * 0.55 - 28}px) scale(${(1 + end) / 2})`, opacity: 0.95, offset: 0.6 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${end})`, opacity: 0 },
+    ],
+    "--d-advance",
+    "--ease-momentum",
+  );
+  if (!anim) {
+    ghost.remove();
+    landMark(to, 0.7);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const done = () => {
+      ghost.remove();
+      landMark(to, 0.7);
+      resolve();
+    };
+    anim.onfinish = done;
+    anim.oncancel = done;
+  });
+}

@@ -14,9 +14,22 @@ let pendingPath: { projectId: string; at: number } | null = null;
 
 const FRESH_MS = 8000;
 
-/** Ask the next mount of this project's task list to start Draft the path. */
+const listeners = new Set<(projectId: string) => void>();
+
+/** Ask this project's task list to start Draft the path — the next mount of it,
+ *  or the one already on screen (the Nuvo panel offers a draft for the project
+ *  you're looking at, D-198, so there may be no mount to wait for). */
 export function requestPathDraft(projectId: string): void {
   pendingPath = { projectId, at: Date.now() };
+  listeners.forEach((fn) => fn(projectId));
+}
+
+/** A mounted list hears a request made while it is already showing. */
+export function onPathDraftRequest(fn: (projectId: string) => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 /** Is a draft waiting for this project? (A note nobody acted on goes stale, so

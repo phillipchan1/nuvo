@@ -1,0 +1,39 @@
+/* The Nuvo panel's offers (D-198) — what would help on the page beside it,
+   before you type. Cards on the panel's ground: a hairline, no shadow (they
+   don't float). The one motion is `collectInto` (lib/motion), on your act. */
+
+.nuvo-offers { display: grid; gap: 8px; width: 100%; justify-self: stretch; text-align: left; }
+.nuvo-offer {
+  display: grid; gap: 5px;
+  padding: 12px 12px 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 10px);
+}
+.nuvo-offer-kind {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 600 11.5px/1.3 var(--font-sans); color: var(--accent);
+}
+.nuvo-offer-say { margin: 0; font: 600 13.5px/1.4 var(--font-sans); color: var(--text); text-wrap: pretty; }
+.nuvo-offer-ev { margin: 0; font: 400 12.5px/1.45 var(--font-sans); color: var(--muted); font-variant-numeric: tabular-nums; }
+.nuvo-offer-does { margin: 0; font: 400 12.5px/1.45 var(--font-sans); color: var(--ink-2); }
+.nuvo-offer-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.nuvo-offer-acts > .k-btn[data-kind="ghost"]:last-child { margin-left: auto; }
+
+/* The phone: the chat's empty state, at touch size. */
+.nuvo-offers[data-phone] { gap: 10px; margin-bottom: 8px; }
+.nuvo-offers[data-phone] .nuvo-offer { padding: 14px 14px 14px 16px; border-radius: 14px; }
+.nuvo-offers[data-phone] .nuvo-offer-say { font-size: 15px; }
+.nuvo-offers[data-phone] .nuvo-offer-ev,
+.nuvo-offers[data-phone] .nuvo-offer-does { font-size: 13.5px; }
+
+/* The door: one dot while there's something you haven't seen. Never a count. */
+.chat-mark[data-dot] { position: relative; }
+.chat-mark[data-dot]::after {
+  content: ""; position: absolute; top: -2px; right: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--ground);
+}
+@media (pointer: coarse) {
+  .nuvo-offers[data-phone] .k-btn { min-height: 44px; height: auto; }
+}

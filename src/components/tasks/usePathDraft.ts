@@ -20,7 +20,7 @@ import type { useTaskMutations } from "../../hooks/useTasks";
 import { useAllTasks } from "../../hooks/useTasks";
 import { isTypingIn } from "../../lib/a11y";
 import { announce } from "../../lib/announce";
-import { pathDraftPending, settlePathDraft } from "../../lib/draftIntent";
+import { onPathDraftRequest, pathDraftPending, settlePathDraft } from "../../lib/draftIntent";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import {
   cleanSteer,
@@ -201,7 +201,14 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
     const t = window.setTimeout(() => {
       if (pathDraftPending(homeId)) void startRef.current();
     }, 0);
-    return () => window.clearTimeout(t);
+    // …or asked for while this list is already the one on screen.
+    const off = onPathDraftRequest((id) => {
+      if (id === homeId) void startRef.current();
+    });
+    return () => {
+      window.clearTimeout(t);
+      off();
+    };
   }, [homeId]);
   // the note is spent once this list's draft has landed, or given up
   useEffect(() => {

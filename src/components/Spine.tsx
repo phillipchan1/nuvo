@@ -23,7 +23,7 @@ function MemoryRow({ railed }: { railed: boolean }) {
   return (
     <>
       <button onClick={() => openOverlay("memory")} title={label} aria-label={label} className="sb-item" data-railed={railed || undefined}>
-        <span className={`sb-icon${memory.hasNew ? " sb-icon-dot" : ""}`}>
+        <span className={`sb-icon${memory.hasNew ? " sb-icon-dot" : ""}`} data-land="memory">
           <MemoryIcon />
         </span>
         <span className="sb-label">Memory</span>

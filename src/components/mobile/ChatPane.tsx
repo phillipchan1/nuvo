@@ -27,12 +27,15 @@ export default function ChatPane({
   hint,
   onClose,
   onMemory,
+  offers,
 }: {
   agent: AgentHandle;
   hint: AgentHintContext;
   onClose?: () => void;
   /** Opens Memory — on the phone it lives behind the chat (docs/memory.md §4.1). */
   onMemory?: () => void;
+  /** What would help here, before you type (D-198) — drawn above the starters. */
+  offers?: React.ReactNode;
 }) {
   const hints = useMemo(() => agentHints(hint), [hint]);
   const { messages, loading, error, sendMessage, clear } = agent;
@@ -165,6 +168,7 @@ export default function ChatPane({
           <IconButton
             label="Memory"
             size="md"
+            data-land="memory"
             icon={<MemoryIcon size={18} />}
             onClick={onMemory}
             onPointerDown={(e) => e.stopPropagation()}
@@ -186,6 +190,7 @@ export default function ChatPane({
       <div ref={scrollerRef} className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-2">
         {messages.length === 0 && !loading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 text-center">
+            {offers}
             <p className="text-head font-medium text-[var(--ink-2)]">{hints.prompt}</p>
             <div className="w-full max-w-sm">
               <AgentSuggestionChips

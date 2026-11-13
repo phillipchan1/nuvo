@@ -506,7 +506,7 @@ const AppShellInner = memo(function AppShellInner() {
 
       {/* The panel (D-190): all the work sits on one inset sheet with a 12px
           corner, on the darker ground the sidebar and the chat share. */}
-      <div className="app-panel flex min-w-0 flex-1">
+      <div className="app-panel flex min-w-0 flex-1" data-land="page">
         <div className="relative min-w-0 flex-1">
           <Planner
             openFlow={openFlow}

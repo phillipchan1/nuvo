@@ -15,6 +15,9 @@ import AgentSuggestionChips from "./AgentSuggestionChips";
 import AgentThinking from "./AgentThinking";
 import { Icon } from "./Icon";
 import { Button, IconButton } from "./kit";
+import { useMemory } from "../hooks/useMemory";
+import { useNuvoOffers } from "./nuvo/useNuvoOffers";
+import NuvoOffers from "./nuvo/NuvoOffers";
 
 const STORAGE_KEY = "nuvo-agent-open";
 
@@ -43,7 +46,7 @@ export default function AgentSidebar({
   open: boolean;
   onToggle: () => void;
 }) {
-  const { nav } = useAppNavigation();
+  const { nav, openRecord } = useAppNavigation();
   const { rung, projectView, initiativeView, tab, focus } = nav;
   // The three names the hints say, not the vertical they come from — the panel
   // sat beside the Schedule re-rendering on every write for strings that never
@@ -71,6 +74,15 @@ export default function AgentSidebar({
       }),
     [projectName, initiativeName, domainName, initiativeView, projectView, rung, tab],
   );
+
+  // What would help on this page, before you type (D-198). The door wears one
+  // dot while there's something you haven't seen; opening the panel spends it.
+  const memory = useMemory();
+  const offers = useNuvoOffers({ memory, projectId: focus.projectId || null });
+  const { markSeen: markOffersSeen } = offers;
+  useEffect(() => {
+    if (open) markOffersSeen();
+  }, [open, markOffersSeen]);
 
   const { messages, loading, error, sendMessage, clear, retry } = agent;
   const [input, setInput] = useState("");
@@ -145,13 +157,13 @@ export default function AgentSidebar({
           type="button"
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
-          aria-label={`Open ${ASSISTANT_NAME}`}
+          aria-label={offers.unseen ? `Open ${ASSISTANT_NAME} · something to show you` : `Open ${ASSISTANT_NAME}`}
           className="chat-rail-btn agent-rail-toggle"
         >
           {/* The walkthrough lights the badge, not the rail: the rail is a
               full-height sliver, and an orb around it is a bar with its ends
               off-screen. This is the thing you actually click. */}
-          <span aria-hidden data-teach="nuvo" className="chat-mark">
+          <span aria-hidden data-teach="nuvo" className="chat-mark" data-dot={offers.unseen ? "" : undefined}>
             <Icon name="sparkles" size={15} />
           </span>
           <span>{ASSISTANT_NAME}</span>
@@ -189,6 +201,12 @@ export default function AgentSidebar({
       <div className="chat-log">
         {messages.length === 0 && !loading ? (
           <div className="chat-empty">
+            <NuvoOffers
+              state={offers}
+              memory={memory}
+              projectId={focus.projectId || null}
+              onOpenProject={(id) => openRecord("project", id)}
+            />
             <p>{hints.prompt}</p>
             <AgentSuggestionChips
               suggestions={hints.starters.map((s) => ({ label: s, message: s }))}

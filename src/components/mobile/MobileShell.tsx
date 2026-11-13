@@ -68,6 +68,8 @@ import MobileTaskSheet from "./MobileTaskSheet";
 import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
+import { useNuvoOffers } from "../nuvo/useNuvoOffers";
+import NuvoOffers from "../nuvo/NuvoOffers";
 
 const MemoryPage = lazy(() => import("../memory/MemoryPage"));
 const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
@@ -212,6 +214,12 @@ export default function MobileShell() {
   // Memory (docs/memory.md §4.1): on the phone its dot rides the ✦, and it opens
   // from the chat's header.
   const memory = useMemory();
+  // What the ✦ would offer here (D-198) — its dot, and the cards above the chat.
+  const offers = useNuvoOffers({ memory });
+  const { markSeen: markOffersSeen } = offers;
+  useEffect(() => {
+    if (chatOpen) markOffersSeen();
+  }, [chatOpen, markOffersSeen]);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
@@ -796,14 +804,26 @@ export default function MobileShell() {
         badge={(id) => (id === "tasks" ? inbox.length : 0)}
         onCapture={!chatOpen && pickedIds.size === 0 ? () => setCapture({ kind: "task" }) : undefined}
         onAskNuvo={!chatOpen && pickedIds.size === 0 ? () => openChat() : undefined}
-        nuvoDot={memory.hasNew}
+        nuvoDot={memory.hasNew || offers.unseen}
       />
 
       {/* The Nuvo chat — a full-screen overlay over the shell (its own scroll +
           pinned composer sit better here than in a swipe-to-dismiss sheet). */}
       {chatOpen && (
         <div className="ph-overlay">
-          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} onMemory={() => setMemoryOpen(true)} />
+          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} onMemory={() => setMemoryOpen(true)}
+            offers={
+              <NuvoOffers
+                state={offers}
+                memory={memory}
+                phone
+                onOpenProject={(id) => {
+                  setChatOpen(false);
+                  openDetail("project", id);
+                }}
+              />
+            }
+          />
         </div>
       )}
       {memoryOpen && (
