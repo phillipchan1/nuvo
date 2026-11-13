@@ -961,35 +961,6 @@ body.odp-dragging [data-resize] {
     var(--shadow-3);
   transform: translateY(-2px);
 }
-/* Row hover — a WASH, not a surface swap. A full `--surface` row is a +11.6%
-   luminance jump off the paper, which reads as the row *lighting up* rather than
-   acknowledging the pointer. 40% of it is ~+3.9%: perceptible, not loud, and it
-   leaves room for `.glass-lift-row` to still be the louder, focal state.
-   Deliberately a FRACTION OF A TOKEN (the chip idiom) rather than `--surface-2`,
-   because the surface ramp inverts between themes — light is
-   bg < surface-2 < surface, dark is bg < surface < surface-2 — so `--surface-2`
-   would read subtle in light and loud in dark. A fraction of `--surface` is a
-   partial step toward whatever the theme's raised surface is, so it stays a
-   whisper in both. */
-@media (hover: hover) {
-.row-hover:hover {
-  background-color: color-mix(in srgb, var(--surface) 40%, transparent);
-}
-}
-/* A rail row's selection replaces `.fast` outright — not just while selected.
-   `.fast`'s eased transform/shadow/backdrop-filter/background-color caught
-   BOTH directions of a click: the newly-selected row easing in AND the
-   previously-selected row easing back out, so even with the incoming lift
-   made instant the outgoing one still read as lag. A CSS transition fires on
-   any change to the property's computed value, not just the interaction that
-   triggered it, so there's no way to keep it for "hover fade" while killing
-   it for "selection swap" on the same background-color property — the row
-   goes fully snap instead (design-language.md: "animate where it's a
-   deliberate select, snap where it's a live click"). */
-.row-lift-instant {
-  transition: none;
-}
-
 /* Entrances */
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -2668,13 +2639,6 @@ body.drag-cancelled .fc-event-resizing {
   color: inherit;
   opacity: 0.6;
 }
-/* The row left behind while its ghost follows the cursor. It recedes rather
-   than lifting — the copy under the pointer is the one in hand, and two lifted
-   rows would be two answers to "which one am I moving?". */
-.row-dragging {
-  opacity: 0.4;
-}
-
 /* Shared insertion preview while pointer-dragging a list row. */
 .reorder-insert-line {
   pointer-events: none;

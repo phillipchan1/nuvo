@@ -115,6 +115,13 @@ html:root .task-row:focus-visible {
   box-shadow: 0 1px 0 var(--accent);
 }
 
+.task-row-rename:focus { box-shadow: 0 1px 0 var(--accent); }
+/* A field whose own box (or underline) already says focus wears no second
+   ring around the bare input inside it. */
+html:root .task-row-rename:focus-visible,
+html:root .task-composer-input:focus-visible,
+html:root .step-input:focus-visible { outline: none; }
+
 /* Marks beside the title — priority and prework. Ink carries priority (never
    the signal: that is now / late, D-054). */
 .task-row-flag {
@@ -186,7 +193,6 @@ html:root .task-row:focus-visible {
     border-radius: 0;
     border-bottom: 1px solid var(--line-1);
   }
-  .task-row[data-flush] { margin: 0; }
   .task-row-title { font-weight: 500; line-height: 20px; }
   .task-row-meta { font-size: 12.5px; }
 }
@@ -590,6 +596,23 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
   display: flex;
   align-items: center;
   gap: 2px;
+}
+/* The filter's trigger (TaskFilter, via its className) at the kit's icon-button
+   geometry: ghost at rest, the accent wash while a filter is on. */
+.rail-filter {
+  min-height: var(--h-xs);
+  height: var(--h-xs);
+  min-width: var(--h-xs);
+  justify-content: center;
+  padding: 0 6px;
+  border-color: transparent;
+  border-radius: var(--r-ctl);
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.rail-filter.bg-accent-soft { background: var(--accent-wash); color: var(--accent-ink); }
+@media (hover: hover) {
+  .rail-filter:not(.bg-accent-soft):hover { border-color: transparent; background: var(--hover); color: var(--ink); }
 }
 
 /* The day's list. */

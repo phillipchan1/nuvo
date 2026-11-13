@@ -981,6 +981,8 @@ function LeftRail({
                 onApplyView={filter.applyView}
                 open={filterOpen}
                 onOpenChange={setFilterOpen}
+                // Its trigger sits in the strip as the kit's 24px icon button.
+                className="rail-filter"
               />
             )}
           </div>
