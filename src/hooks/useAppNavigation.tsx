@@ -43,10 +43,6 @@ interface AppNavigationContextValue {
   panelAnchorEl: HTMLElement | null;
   setRung: (r: Rung) => void;
   goRung: (r: Rung) => void;
-  /** Like `goRung`, but also lifts whatever modal is on top (a record, the
-   *  shortcuts sheet, a create composer) — for the ⌘1–4 / ⌘↑↓ chords, which must
-   *  work from anywhere, modal included. */
-  jumpToRung: (r: Rung) => void;
   setTab: (t: RailTab) => void;
   setCalView: (v: CalView) => void;
   openFlow: (f: FlowName, focus?: FlowFocus) => void;
@@ -248,7 +244,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const rungPatch = useCallback(
+  const setRung = useCallback(
     (r: Rung) => {
       const patch: Partial<AppNavState> = { rung: r, floorModal: null };
       if (r === "project") patch.projectView = "ondeck";
@@ -265,18 +261,9 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
         setPanelAnchor(null);
         setPanelAnchorEl(null);
       }
-      return patch;
+      navigate(patch);
     },
-    [clearCalendarOverlay],
-  );
-
-  const setRung = useCallback((r: Rung) => navigate(rungPatch(r)), [navigate, rungPatch]);
-
-  const jumpToRung = useCallback(
-    (r: Rung) => {
-      navigate({ ...rungPatch(r), overlay: "none", overlayId: null, overlaySubId: null, floorModal: null });
-    },
-    [navigate, rungPatch],
+    [clearCalendarOverlay, navigate],
   );
 
   const goRung = setRung;
@@ -493,7 +480,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       panelAnchorEl,
       setRung,
       goRung,
-      jumpToRung,
       setTab,
       setCalView,
       openFlow,
@@ -523,7 +509,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       panelAnchorEl,
       setRung,
       goRung,
-      jumpToRung,
       setTab,
       setCalView,
       openFlow,
