@@ -3773,7 +3773,7 @@ function CalendarPane({
     // A month chip is the grid's block at a smaller size: the same shell, the
     // same paint, one line. A task's ring is a mark here (the check-off lives
     // on the Day and the Week, where the block is big enough to aim at).
-    if (inMonth || (arg.event.allDay && kind !== "task")) {
+    if (inMonth || (arg.event.allDay && (kind !== "task" || isDraft))) {
       return (
         <div className="evt-shell" data-kind={shellKind} data-size="chip" data-hollow={hollow || undefined} style={hueVar(hue)}>
           {Edge}
@@ -3784,7 +3784,7 @@ function CalendarPane({
           )}
           <span data-evt-title="" className="evt-title evt-clamp">
             {rsvp === "tentative" ? "? " : ""}
-            {title || <span className="evt-untitled">(No title)</span>}
+            {title || (shellKind === "draft" ? null : <span className="evt-untitled">(No title)</span>)}
           </span>
           {!inMonth ? Recur : null}
         </div>

@@ -1227,83 +1227,50 @@ body.odp-dragging [data-resize] {
   animation: sealCheck 0.5s var(--ease-out) 0.12s both;
 }
 
-/* ── Ship stamp — a wax-seal mark for a finished project/initiative. Unlike
-   sealPop/sealHalo/sealCheck above (hardcoded seconds, one-time and one-way),
-   this references each skin's own --d-moment/--d-base/--ease-* tokens, so
-   Terminal stamps fast+mechanical, Blueprint draws linear, and e-ink collapses
-   to its "no smooth motion, the display just refreshes" identity — and it
-   animates BOTH directions: stamping down on ship, lifting away on reopen. */
-@keyframes ship-stamp-press {
-  0%   { transform: scale(1.55) rotate(-7deg); }
-  55%  { transform: scale(0.93) rotate(1.5deg); }
-  78%  { transform: scale(1.05) rotate(-0.5deg); }
-  100% { transform: scale(1) rotate(0deg); }
+/* ── Ship stamp — a finished project/initiative (ShipStamp.tsx, D-190): a
+   solid --ok disc with the check knocked out. It LANDS when work ships (the
+   land-stamp spring, momentum.css) and lets go when it's reopened. Transform
+   and opacity only; the steady classes are where the JS timer settles, so a
+   later reverse can re-trigger the animation cleanly. */
+.ship-stamp {
+  overflow: visible;
 }
-@keyframes ship-stamp-lift {
-  0%   { transform: scale(1) rotate(0deg); }
-  30%  { transform: scale(1.12) rotate(-4deg); }
-  65%  { transform: scale(0.95) rotate(2deg); }
-  100% { transform: scale(1) rotate(0deg); }
+.ship-check {
+  stroke: var(--panel);
+  transform-origin: 50px 50px;
 }
 .ship-stamp--stamping {
-  animation: ship-stamp-press var(--d-moment, 540ms) var(--ease-spring, cubic-bezier(0.34, 1.4, 0.5, 1)) both;
+  animation: land-stamp var(--d-land, 352ms) var(--ease-land, var(--ease-spring)) both;
+}
+@keyframes ship-let-go {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.88); }
+  100% { transform: scale(1); }
 }
 .ship-stamp--lifting {
-  animation: ship-stamp-lift var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation: ship-let-go var(--d-base, 180ms) var(--ease-out) both;
 }
-
-/* Ink fade — the tint disc, both rings, and the arced lettering print in
-   together on stamp-down and fade back to a hollow ghost on lift-off. Each
-   keeps its OWN resting opacity (a ring reads heavier than the wash), so they
-   interpolate independently rather than as one flat cross-fade. */
-@keyframes ship-ink-in-tint   { from { opacity: 0; }    to { opacity: 1; } }
-@keyframes ship-ink-out-tint  { from { opacity: 1; }    to { opacity: 0; } }
-@keyframes ship-ink-in-outer  { from { opacity: 0.15; } to { opacity: 0.35; } }
-@keyframes ship-ink-out-outer { from { opacity: 0.35; } to { opacity: 0.15; } }
-@keyframes ship-ink-in-inner  { from { opacity: 0.35; } to { opacity: 0.9; } }
-@keyframes ship-ink-out-inner { from { opacity: 0.9; }  to { opacity: 0.35; } }
-@keyframes ship-ink-in-text   { from { opacity: 0; }    to { opacity: 0.85; } }
-@keyframes ship-ink-out-text  { from { opacity: 0.85; } to { opacity: 0; } }
-@keyframes ship-check-in  { 0% { opacity: 0; transform: scale(0.5); } 100% { opacity: 1; transform: scale(1); } }
-@keyframes ship-check-out { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(0.6); } }
-
-.ship-check { transform-origin: 50px 50px; }
-
-.ship-stamp--stamping .ship-tint       { animation: ship-ink-in-tint  var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--stamping .ship-ring-outer { animation: ship-ink-in-outer var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--stamping .ship-ring-inner { animation: ship-ink-in-inner var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--stamping .ship-text       { animation: ship-ink-in-text  var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+@keyframes ship-ink-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ship-ink-out { from { opacity: 1; } to { opacity: 0; } }
+.ship-stamp--stamping .ship-tint,
 .ship-stamp--stamping .ship-check {
-  animation: ship-check-in calc(var(--d-moment, 540ms) * 0.65) var(--ease-spring, cubic-bezier(0.34, 1.4, 0.5, 1)) calc(var(--d-moment, 540ms) * 0.3) both;
+  animation: ship-ink-in var(--d-fast, 110ms) var(--ease-out) both;
 }
-
-.ship-stamp--lifting .ship-tint       { animation: ship-ink-out-tint  var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--lifting .ship-ring-outer { animation: ship-ink-out-outer var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--lifting .ship-ring-inner { animation: ship-ink-out-inner var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
-.ship-stamp--lifting .ship-text       { animation: ship-ink-out-text  var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--lifting .ship-tint,
 .ship-stamp--lifting .ship-check {
-  animation: ship-check-out calc(var(--d-base, 220ms) * 0.7) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation: ship-ink-out var(--d-base, 180ms) var(--ease-out) both;
 }
-
-/* Steady states — the JS timer settles here after each transition so a later
-   reverse can retrigger --stamping/--lifting cleanly (class-name changes
-   re-trigger CSS animations; leaving the same class applied does not). */
-.ship-stamp--on .ship-tint        { opacity: 1; }
-.ship-stamp--on .ship-ring-outer  { opacity: 0.35; }
-.ship-stamp--on .ship-ring-inner  { opacity: 0.9; }
-.ship-stamp--on .ship-text        { opacity: 0.85; }
-.ship-stamp--on .ship-check       { opacity: 1; }
-
-.ship-stamp--off .ship-tint       { opacity: 0; }
-.ship-stamp--off .ship-ring-outer { opacity: 0.15; }
-.ship-stamp--off .ship-ring-inner { opacity: 0.35; }
-.ship-stamp--off .ship-text       { opacity: 0; }
-.ship-stamp--off .ship-check      { opacity: 0; }
-
-/* The one interactive exception: a button wrapping an off-phase (ghost)
-   stamp reveals a faint preview of the check on hover/focus — the same
-   hover-reveal the old bespoke buttons used (`group-hover/chk:opacity-60`),
-   just moved onto the stamp's own check path. */
+.ship-stamp--on .ship-ring,
+.ship-stamp--stamping .ship-ring { opacity: 0; }
+.ship-stamp--off .ship-ring,
+.ship-stamp--lifting .ship-ring { opacity: 0.35; }
+.ship-stamp--on .ship-tint,
+.ship-stamp--on .ship-check { opacity: 1; }
+.ship-stamp--off .ship-tint,
+.ship-stamp--off .ship-check { opacity: 0; }
+/* The one interactive exception: a live toggle wrapping the hollow stamp
+   previews its check on hover / focus — drawn in the ink, not knocked out. */
+.ship-stamp--off .ship-check { stroke: currentColor; }
 .group\/chk:focus-visible .ship-stamp--off .ship-check {
   opacity: 0.5;
 }
@@ -2273,6 +2240,9 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
   outline: 1.5px dashed var(--accent);
   outline-offset: -1.5px;
 }
+.evt-shell[data-kind="draft"] > .evt-edge {
+  display: none;
+}
 
 /* Sizes — from the block's real height (CalendarPane). */
 .evt-shell[data-size="compact"],
@@ -2981,6 +2951,12 @@ body.drag-cancelled .fc-event-resizing {
 .fc .fc-daygrid-event.fc-daygrid-dot-event {
   padding: 0;
 }
+/* A timed event in Month is FullCalendar's "dot" event — its content sits
+   straight in the flex <a>, so the chip has to claim the cell's width itself. */
+.fc-daygrid-dot-event > .evt-shell {
+  flex: 1;
+  min-width: 0;
+}
 .fc .fc-daygrid-event .fc-event-main {
   padding: 0 !important;
 }
@@ -3257,6 +3233,207 @@ html:root button.yr-month-name:focus-visible { outline: none; box-shadow: 0 0 0 
   .yr-day:hover .yr-num:not([data-today]) { color: var(--ink); }
 }
 html:root .yr-day:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-ring); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   THE SPREAD — the Week Board (floors/WeekBoard.tsx), the Schedule's "which
+   day" altitude. Seven lanes ruled like the grid, the grid's day header, a
+   3px capacity track, and one card (the kit's) for every piece of work.
+   ════════════════════════════════════════════════════════════════════════ */
+.wb-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: var(--h-bar);
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line-1);
+}
+.wb-span {
+  margin-right: 6px;
+  color: var(--ink);
+  font: 650 15px/1 var(--font-sans);
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wb-pct {
+  min-width: 30px;
+  color: var(--muted);
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.wb-tray {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  transition: background-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.wb-tray[data-over] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.wb-tray-label {
+  flex-shrink: 0;
+  padding-top: 6px;
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+  white-space: nowrap;
+}
+.wb-count {
+  margin-left: 4px;
+  color: var(--faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.wb-day {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--line-1);
+}
+.wb-day:first-child { border-left: 0; }
+.wb-day[data-today] { background: color-mix(in srgb, var(--signal) 2.5%, transparent); }
+.wb-day[data-past] { opacity: 0.55; }
+.wb-day[data-over] { background: var(--accent-wash); }
+.wb-meter {
+  display: grid;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px 10px;
+}
+.wb-track {
+  display: flex;
+  height: var(--track-h, 3px);
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line-1);
+}
+.wb-track > span { background: var(--muted); }
+.wb-meter[data-over] .wb-track > span { background: var(--warn); }
+.wb-load {
+  font: 500 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--slot);
+}
+.wb-load[data-state="clear"] { color: var(--faint); }
+.wb-load[data-state="over"] { color: var(--warn); }
+.wb-lane-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--faint);
+  font: 600 11px/1 var(--font-sans);
+}
+.wb-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-1);
+}
+.wb-rule-gap { margin-top: 12px; }
+.wb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 9px;
+  border-radius: var(--r-card);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-1), var(--sh-1);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: box-shadow var(--d-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .wb-card:hover { box-shadow: 0 0 0 1px var(--line-2), var(--sh-1); transition-duration: 0ms; }
+}
+/* A slot card is hatched like the grid's slot, in its hue. */
+.wb-card[data-slot] {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--evt-hue) 9%, transparent) 6px 7px),
+    color-mix(in srgb, var(--evt-hue) 4%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--evt-hue) 40%, transparent);
+}
+.wb-card[data-slot] .wb-title {
+  color: color-mix(in srgb, var(--evt-hue) 62%, var(--mix));
+  font-weight: 600;
+}
+/* Three lines, not two: at column width half of all titles clip at two, and
+   only a fifth clip at three. The box is reserved so every card is one size. */
+.wb-title {
+  display: -webkit-box;
+  height: 45px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--ink);
+  font: 500 12px/15px var(--font-sans);
+  overflow-wrap: anywhere;
+}
+.wb-card[data-done] .wb-title {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+.wb-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--faint);
+  font: 450 11px/14px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wb-meta .k-dot { margin-right: 2px; }
+.wb-late { color: var(--signal); font-weight: 500; }
+/* An empty day you can still plan is a socket: a card-sized hollow, never
+   dashed, the accent when something is over it (D-179). */
+.wb-socket {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--sunk) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  color: var(--faint);
+  font: 450 12px/1 var(--font-sans);
+}
+.wb-socket[data-over] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent-ink);
+}
+.wb-empty-past {
+  padding: 2px;
+  color: var(--faint);
+  font: 450 12px/1.3 var(--font-sans);
+}
+/* What's in your hand: the card, picked up — the accent ring and the lift. */
+.wb-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 100;
+  max-width: 220px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  box-shadow: 0 0 0 1.5px var(--accent), var(--sh-pop);
+  color: var(--ink);
+  font: 500 12px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 /* ── Agent sidebar chat bubbles ──────────────────────────────────────── */
 .agent-bubble {

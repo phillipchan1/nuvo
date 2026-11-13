@@ -1,5 +1,6 @@
 // The Week Board — the Schedule floor's "which day" altitude. Seven day columns
-// on the warm-paper canvas; each carries a capacity meter (committed effort vs
+// on the panel, ruled like the grid (D-190, index.css `.wb-*`); each carries a
+// capacity meter (committed effort vs
 // the work window) so an over-loaded Monday next to an empty Thursday is
 // impossible to miss. You distribute work by dragging chips between days (and
 // out of the "Needs a day" tray); precise hour-blocking stays one toggle away on
@@ -12,6 +13,7 @@
 import { armDragCancel } from "../../lib/dragCancel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
+import { Button, Dot, IconButton, Input } from "../kit";
 import { createPortal } from "react-dom";
 import { addDays, format, startOfWeek } from "date-fns";
 import type { Slot, Task, UserSettings } from "../../lib/types";
@@ -437,52 +439,24 @@ export default function WeekBoard({
 
   return (
     <div ref={boardRef} className="flex min-h-0 flex-1 flex-col">
-      {/* Header — the board's own week walk; the Calendar toggle lives in the toolbar above. */}
-      <div className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-1">
-        <span className="masthead text-lead leading-none text-text">The Week</span>
-        <span className="text-caption text-muted">{weekLabel}</span>
-        <div className="ml-1 flex items-center gap-0.5">
-          <button
-            onClick={() => walk(-7)}
-            className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-            title="Previous week"
-            aria-label="Previous week"
-          >
-            <Icon name="chevron-left" size={14} />
-          </button>
-          <button
-            onClick={() => walk(7)}
-            className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-            title="Next week"
-            aria-label="Next week"
-          >
-            <Icon name="chevron-right" size={14} />
-          </button>
-        </div>
-        {weekStartISO !== thisWeekISO && (
-          <button
-            onClick={resetToThisWeek}
-            className="fast rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-          >
-            This week
-          </button>
-        )}
+      {/* The board's own week walk — the PageBar above names the page (Spread)
+          and steps aside; the span on screen is this row's one line. */}
+      <div className="wb-bar">
+        <span className="wb-span">{weekLabel}</span>
+        <IconButton label="Previous week" icon={<Icon name="chevron-left" size={14} />} onClick={() => walk(-7)} />
+        <IconButton label="Next week" icon={<Icon name="chevron-right" size={14} />} onClick={() => walk(7)} />
+        {weekStartISO !== thisWeekISO && <Button onClick={resetToThisWeek}>This week</Button>}
         {slots.length > 0 && (
-          <button
-            onClick={() => setShowSlots((s) => !s)}
+          <Button
+            active={showSlots}
             aria-pressed={showSlots}
+            onClick={() => setShowSlots((s) => !s)}
             title={showSlots ? "Show a flat day — no slot grouping" : "Group each day by its slots"}
-            className="fast rounded-full border px-2 py-0.5 text-label font-medium"
-            style={{
-              borderColor: showSlots ? "var(--accent)" : "var(--line)",
-              color: showSlots ? "var(--accent)" : "var(--muted)",
-              background: showSlots ? "var(--accent-soft)" : "transparent",
-            }}
           >
             Slots
-          </button>
+          </Button>
         )}
-        <div className="flex-1" />
+        <div className="min-w-2 flex-1" />
         {/* The week's goal + the ring that only ever fills — absorbed from the
             old Week tab, the one thing the board didn't already carry. */}
         <WeekGoal goal={vertical.sprintGoal ?? ""} onCommit={setSprintGoal} tasks={sprintTasks} />
@@ -493,38 +467,28 @@ export default function WeekBoard({
           without a day ("this week, just not yet"). Shown whenever it has items,
           and revealed during any drag so it's always a reachable target. */}
       {(tray.length > 0 || drag) && (
-        <div
-          data-tray
-          className="mx-4 mb-3 flex shrink-0 items-start gap-2 rounded-xl border border-dashed px-3 py-2 transition-colors"
-          style={{
-            borderColor: dropTarget?.kind === "tray" ? "var(--accent)" : "var(--line-strong)",
-            background: dropTarget?.kind === "tray" ? "var(--accent-soft)" : "color-mix(in srgb, var(--surface) 30%, transparent)",
-          }}
-        >
-          <span className="section-label !p-0 shrink-0 pt-1">Needs a day · {tray.length}</span>
+        <div data-tray className="wb-tray" data-over={dropTarget?.kind === "tray" || undefined}>
+          <span className="wb-tray-label">
+            Needs a day <span className="wb-count">{tray.length}</span>
+          </span>
           {/* A uniform grid, not a flow: equal cells wrap to two rows, then
-              scroll. Cells are ~2× the old truncation width, so most titles read
-              in full — and the ones that don't at least line up. */}
+              scroll, so titles read in full and the ones that don't line up. */}
           <div
-            className="grid max-h-[156px] min-w-0 flex-1 gap-2 overflow-y-auto"
+            className="grid max-h-[164px] min-w-0 flex-1 gap-2 overflow-y-auto"
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(172px, 1fr))" }}
           >
             {tray.map((t) => (
               <TrayChip key={t.id} t={t} today={today} accent={taskAccent(t)} />
             ))}
           </div>
-          <span className="shrink-0 whitespace-nowrap pl-2 pt-1 text-meta text-muted">
-            {drag ? "drop here to keep it this week, no day" : null}
-          </span>
         </div>
       )}
 
-      {/* Seven lanes, not seven cards. The column is a transparent stretch of the
-          same warm paper, separated by a hairline — so the only framed things on
-          the board are the cards, and they get to float. (A bordered column
-          holding bordered cards is boxes-in-boxes; that's what read as crowded.) */}
-      <div className="grid min-h-0 flex-1 grid-cols-7 px-2 pb-3">
-        {days.map((d, i) => {
+      {/* Seven lanes, not seven cards: each column is a stretch of the panel
+          between day rules, so the only framed things on the board are the
+          cards, and they get to float. */}
+      <div className="grid min-h-0 flex-1 grid-cols-7">
+        {days.map((d) => {
           const iso = toDateISO(d);
           const isToday = iso === today;
           const isPast = iso < today;
@@ -536,49 +500,33 @@ export default function WeekBoard({
             <div
               key={iso}
               data-day={isPast ? undefined : iso}
-              className="flex min-h-0 flex-col px-1.5 pb-1.5 pt-2"
-              style={{
-                borderRight: i < 6 ? "1px solid var(--line)" : undefined,
-                background: hovered
-                  ? "var(--accent-soft)"
-                  : isToday
-                    ? "color-mix(in srgb, var(--signal) 5%, transparent)"
-                    : undefined,
-                opacity: isPast ? 0.5 : 1,
-              }}
+              className="wb-day"
+              data-today={isToday || undefined}
+              data-past={isPast || undefined}
+              data-over={hovered || undefined}
             >
-              <div className="flex items-baseline justify-between">
-                <span
-                  className="text-body font-semibold"
-                  style={{ color: isToday ? "var(--signal)" : "var(--ink)" }}
-                >
-                  {format(d, "EEE d")}
-                </span>
-                {isToday && (
-                  <span className="text-micro uppercase tracking-wide text-signal">today</span>
-                )}
+              <div className="cal-dayhead" data-today={isToday || undefined}>
+                <span className="cal-dayhead-dow">{format(d, "EEE")}</span>
+                <span className="cal-daynum">{format(d, "d")}</span>
               </div>
 
-              <Meter load={load} isPast={isPast} isToday={isToday} />
+              <Meter load={load} isPast={isPast} />
 
-              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pb-2">
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-2">
                 {/* Anytime — dated to this day, but not to an hour. It sits ABOVE
                     the timed stream, the same place the Week grid puts its
-                    all-day lane (FullCalendar `allDaySlot`, labelled "anytime"):
-                    one concept can't be above the clock in one view and below it
-                    in another. A rule closes the lane before the day's hours. */}
+                    anytime row: one concept can't be above the clock in one view
+                    and below it in another. A rule closes the lane. */}
                 {anytime.length > 0 && (
                   <>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-micro uppercase tracking-wide text-muted">Anytime</span>
-                      <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+                    <div className="wb-lane-label">
+                      <span>Anytime</span>
+                      <span className="wb-rule" />
                     </div>
                     {anytime.map((t) => (
                       <TaskCard key={t.id} t={t} now={now} accent={taskAccent(t)} />
                     ))}
-                    {timed.length > 0 && (
-                      <div style={{ marginTop: 12, height: 1, background: "var(--line)" }} />
-                    )}
+                    {timed.length > 0 && <div className="wb-rule wb-rule-gap" />}
                   </>
                 )}
 
@@ -596,28 +544,16 @@ export default function WeekBoard({
                   ),
                 )}
 
-                {/* Empty is a state, not the absence of one. A past day used to
-                    render as a plain blank column, which reads ambiguously as
-                    "nothing was on", "nothing loaded yet" or "this is broken" —
-                    and the three are very different answers in a planning grid.
-                    The two cases also mean different things and so get
-                    different words: an empty Thursday next week is an
-                    invitation, an empty Sunday last week is a record. Past days
-                    are not drop targets (see data-day above), so that one is a
-                    line rather than a dashed well. */}
+                {/* Empty is a state, not the absence of one — and the two cases
+                    mean different things: an empty Thursday next week is an
+                    invitation (a socket you can drop into), an empty Sunday last
+                    week is a record (past days aren't drop targets). */}
                 {empty &&
                   (isPast ? (
-                    <div className="px-0.5 text-caption text-muted/60">Nothing was kept here</div>
+                    <div className="wb-empty-past">Nothing kept</div>
                   ) : (
-                    <div
-                      className="flex items-center justify-center rounded-lg border border-dashed text-caption"
-                      style={{
-                        height: CARD_H,
-                        borderColor: hovered ? "var(--accent)" : "var(--line)",
-                        color: hovered ? "var(--accent)" : "var(--muted)",
-                      }}
-                    >
-                      {hovered ? "drop here" : "Nothing planned"}
+                    <div className="wb-socket" data-over={hovered || undefined} style={{ height: CARD_H }}>
+                      {hovered ? "Drop here" : "Nothing planned"}
                     </div>
                   ))}
               </div>
@@ -630,7 +566,7 @@ export default function WeekBoard({
         createPortal(
           <div
             ref={ghostRef}
-            className="glass-grab pointer-events-none fixed left-0 top-0 z-[100] max-w-[220px] truncate rounded-md px-2 py-1.5 text-caption text-ink"
+            className="wb-ghost"
             style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y), willChange: "transform" }}
           >
             {drag.task.title}
@@ -644,25 +580,21 @@ export default function WeekBoard({
 function Meter({
   load,
   isPast,
-  isToday,
 }: {
   load: { committed: number; windowMins: number; open: number; over: boolean };
   isPast: boolean;
-  isToday: boolean;
 }) {
-  if (isPast) return <div className="mb-2.5 mt-1 px-0.5 text-caption text-muted/50">—</div>;
+  if (isPast) return <div className="wb-meter" aria-hidden />;
   const pct = Math.min(100, Math.round((load.committed / load.windowMins) * 100));
-  const fill = load.over ? "var(--signal)" : isToday ? "var(--signal)" : "var(--muted)";
   return (
-    <div className="mb-2.5 mt-2 px-0.5">
-      <div className="flex h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <span style={{ width: `${pct}%`, background: fill }} />
+    // Committed effort against the work window: a 3px track, a neutral fill,
+    // `--warn` past capacity. What's left is open time, so it reads --slot.
+    <div className="wb-meter" data-over={load.over || undefined}>
+      <div className="wb-track">
+        <span style={{ width: `${pct}%` }} />
       </div>
-      <div
-        className="mt-1.5 text-caption"
-        style={{ color: load.over ? "var(--signal)" : load.committed === 0 ? "var(--muted)" : "var(--slot)" }}
-      >
-        {load.over ? `${fmtMins(load.committed)} · over` : load.committed === 0 ? "clear" : `${fmtMins(load.open)} open`}
+      <div className="wb-load" data-state={load.over ? "over" : load.committed === 0 ? "clear" : "open"}>
+        {load.over ? `${fmtMins(load.committed)} · over` : load.committed === 0 ? "Clear" : `${fmtMins(load.open)} open`}
       </div>
     </div>
   );
@@ -671,22 +603,12 @@ function Meter({
 /**
  * ── The card, and the only card ────────────────────────────────────────────
  * One shape carries every piece of work on this board — a day's task, a slot,
- * a tray item. It floats on the paper (the lane behind it is transparent), and
- * its height never depends on its content: the title gets a reserved two-line
- * box and the meta a reserved line, so a short title and a long one occupy the
- * same rectangle. That fixed rectangle is what lets seven columns read as one
- * week instead of seven ragged lists.
+ * a tray item: the kit's card (raised, one hairline, --sh-1). Its height never
+ * depends on its content: the title gets a reserved three-line box and the
+ * meta a reserved line, so seven columns read as one week instead of seven
+ * ragged lists.
  */
 const CARD_H = 74;
-const CARD_BASE =
-  "fast relative touch-none select-none rounded-lg border border-line bg-surface px-1.5 py-1.5 hover:border-line-strong";
-// Three lines, not two: at column width half of all titles clip at two, and
-// only a fifth clip at three. Shrinking the type instead barely moves it
-// (50%→42%) — the line count is the lever. 12px costs nothing at three lines
-// and shows ~6 more characters than 13px would.
-const TITLE_BOX = "line-clamp-3 h-[45px] text-caption leading-[15px]";
-
-const META_LINE = "mono mt-0.5 h-[13px] truncate text-meta leading-[13px] text-muted";
 
 function TaskCard({
   t,
@@ -698,38 +620,26 @@ function TaskCard({
   accent: string | null;
 }) {
   const done = t.status === "done";
-  const overdueTimed = !done && isOverdue(t, now);
-  const meta = [
-    t.start_time ? clock(t.start_time) : null,
-    t.duration_minutes ? fmtDuration(t.duration_minutes) : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const late = !done && isOverdue(t, now);
   return (
-    <div
-      data-task-drag={t.id}
-      className={CARD_BASE}
-      style={{ height: CARD_H, boxShadow: accent ? `inset 3px 0 0 0 ${accent}` : undefined }}
-      title={t.title}
-    >
-      <div
-        className={TITLE_BOX}
-        style={{
-          textDecoration: done ? "line-through" : undefined,
-          color: done ? "var(--muted)" : overdueTimed ? "var(--signal)" : "var(--ink)",
-        }}
-      >
-        {t.title}
+    <div data-task-drag={t.id} className="wb-card" data-done={done || undefined} style={{ height: CARD_H }} title={t.title}>
+      <div className="wb-title">{t.title}</div>
+      <div className="wb-meta">
+        {accent && <Dot color={accent} size="sm" />}
+        {/* Late is the one --signal on a card (the rail's rule): the time it
+            was meant for, in the ember. */}
+        {t.start_time && <span className={late ? "wb-late" : undefined}>{clock(t.start_time)}</span>}
+        {t.start_time && t.duration_minutes ? <span>·</span> : null}
+        {t.duration_minutes ? <span>{fmtDuration(t.duration_minutes)}</span> : null}
       </div>
-      <div className={META_LINE}>{meta}</div>
     </div>
   );
 }
 
-/** A slot is one thing on the week, not a folder you read through: the same
- *  card, naming the container and how full it is, drawn as a small stack of
- *  paper. What's inside is a Day-view question — flip Slots off and every child
- *  comes back as its own card. */
+/** A slot is one thing on the week, not a folder you read through: the card,
+ *  hatched like the grid's slot, naming the container and how full it is.
+ *  What's inside is a Day-view question — flip Slots off and every child comes
+ *  back as its own card. */
 function SlotCard({
   slot,
   title,
@@ -742,29 +652,24 @@ function SlotCard({
   accent: string | null;
 }) {
   const done = items.filter((t) => t.status === "done").length;
-  const hue = accent ?? "var(--slot)";
   return (
     <div
-      className={`${CARD_BASE} mb-1`}
-      style={{
-        height: CARD_H,
-        // The stack tell: two offset copies peeking out below, so a container
-        // reads as "several things" before you've read a word of it.
-        boxShadow: `inset 3px 0 0 0 ${hue}, 0 3px 0 -1px var(--surface), 0 4px 0 -1px var(--line)`,
-      }}
+      className="wb-card"
+      data-slot=""
+      style={{ height: CARD_H, ["--evt-hue" as string]: accent ?? "var(--slot)" }}
       title={items.length > 0 ? `${title}\n${items.map((t) => `· ${t.title}`).join("\n")}` : title}
     >
-      <div className={`${TITLE_BOX} font-medium text-ink`}>{title}</div>
-      <div className={META_LINE}>
-        {clock(slot.start_time)}
-        {items.length > 0 && ` · ${done}/${items.length}`}
+      <div className="wb-title">{title}</div>
+      <div className="wb-meta">
+        <span>{clock(slot.start_time)}</span>
+        {items.length > 0 && <span>· {done}/{items.length}</span>}
       </div>
     </div>
   );
 }
 
 /** The same card, in a uniform grid. The tray is where you decide *which* task
- *  to place, so the title keeps both its lines — one line at this width renders
+ *  to place, so the title keeps its lines — one line at this width renders
  *  "Freedom Discipleship Curric…" for two different tasks. */
 function TrayChip({
   t,
@@ -777,23 +682,13 @@ function TrayChip({
 }) {
   const overdue = t.do_date != null && t.do_date < today;
   return (
-    <div
-      data-task-drag={t.id}
-      className={`${CARD_BASE} min-w-0`}
-      style={{
-        height: CARD_H,
-        borderColor: overdue ? "var(--signal-soft)" : undefined,
-        boxShadow: accent ? `inset 3px 0 0 0 ${accent}` : undefined,
-      }}
-      title={`${t.title}${overdue ? " — overdue" : ""}`}
-    >
-      <div className={TITLE_BOX} style={{ color: overdue ? "var(--signal)" : "var(--ink)" }}>
-        {t.title}
-      </div>
-      <div className={META_LINE}>
-        {[overdue ? "overdue" : null, t.duration_minutes ? fmtDuration(t.duration_minutes) : null]
-          .filter(Boolean)
-          .join(" · ")}
+    <div data-task-drag={t.id} className="wb-card min-w-0" style={{ height: CARD_H }} title={`${t.title}${overdue ? " — overdue" : ""}`}>
+      <div className="wb-title">{t.title}</div>
+      <div className="wb-meta">
+        {accent && <Dot color={accent} size="sm" />}
+        {overdue && <span className="wb-late">overdue</span>}
+        {overdue && t.duration_minutes ? <span>·</span> : null}
+        {t.duration_minutes ? <span>{fmtDuration(t.duration_minutes)}</span> : null}
       </div>
     </div>
   );
@@ -817,31 +712,31 @@ function WeekGoal({
     .filter((t) => t.status === "done")
     .reduce((s, t) => s + (t.duration_minutes ?? DEFAULT_DUR), 0);
   const pct = total > 0 ? done / total : 0;
-  const r = 11;
+  const r = 8;
   const c = 2 * Math.PI * r;
+  const said = `${Math.round(pct * 100)}% of committed hours done`;
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="relative h-7 w-7 shrink-0" title={`${Math.round(pct * 100)}% of committed hours done`}>
-        <svg width="28" height="28" viewBox="0 0 28 28" className="-rotate-90">
-          <circle cx="14" cy="14" r={r} fill="none" stroke="var(--line)" strokeWidth="2.5" />
-          <circle
-            cx="14" cy="14" r={r} fill="none"
-            stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"
-            strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-            style={{ transition: "stroke-dashoffset 300ms ease-out" }}
-          />
-        </svg>
-        <span className="mono absolute inset-0 flex items-center justify-center text-micro text-muted">
-          {Math.round(pct * 100)}
-        </span>
-      </div>
-      <input
+    <div className="flex items-center gap-2">
+      <svg width="20" height="20" viewBox="0 0 20 20" className="-rotate-90 shrink-0" role="img" aria-label={said}>
+        <title>{said}</title>
+        <circle cx="10" cy="10" r={r} fill="none" stroke="var(--line-2)" strokeWidth="2.5" />
+        <circle
+          cx="10" cy="10" r={r} fill="none"
+          stroke="var(--landed, var(--accent))" strokeWidth="2.5" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+          style={{ transition: "stroke-dashoffset var(--d-slow) var(--ease-out)" }}
+        />
+      </svg>
+      <span className="wb-pct">{Math.round(pct * 100)}%</span>
+      <Input
+        size="sm"
+        frameClassName="w-[260px]"
+        aria-label="This week's goal"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => draft !== goal && onCommit(draft)}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         placeholder="What does a good week look like?"
-        className="w-[260px] bg-transparent text-caption font-medium outline-none placeholder:text-muted/60"
       />
     </div>
   );

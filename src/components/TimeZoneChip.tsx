@@ -1,10 +1,11 @@
 import { memo } from "react";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
 import { Icon } from "./Icon";
+import { Chip } from "./kit";
 import { detectDeviceTz, tzCity, tzStatus } from "../lib/timezone";
 
 // The schedule's clock label. Always compact in the toolbar — glyph (at home) or
-// a short accent pill with the device abbr (while traveling). The full story
+// the kit's accent chip with the device abbr (while traveling). The full story
 // (city, delta from home) lives in the tooltip so mid-width Schedule never
 // collides. Informational (the device zone is set by the OS, not here); home
 // is configured in Settings.
@@ -42,23 +43,25 @@ export default memo(function TimeZoneChip({
     // At home: glyph only — the abbr lives in the tooltip so the toolbar stays quiet.
     return (
       <span
-        className={`inline-flex shrink-0 items-center text-muted ${className}`}
+        className={`inline-flex shrink-0 items-center ${className}`}
+        style={{ color: "var(--muted)" }}
         title={`Times shown in ${tzCity(deviceTz)} time (${s.deviceAbbr})`}
       >
-        <GlobeGlyph size={13} />
+        <GlobeGlyph size={14} />
       </span>
     );
   }
 
-  // Traveling: short accent pill (abbr only). Long "Nh ahead of home" copy used to
-  // collide with Plan + the view switcher on mid-width Schedule — keep that in title.
+  // Traveling: the kit's accent chip (abbr only). Long "Nh ahead of home" copy
+  // used to collide with the view switcher on mid-width Schedule — it's in the title.
   return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-1.5 py-0.5 text-meta font-medium text-accent ${className}`}
+    <Chip
+      tone="accent"
+      icon={<GlobeGlyph />}
+      className={`shrink-0 tabular-nums ${className}`}
       title={`You're in ${tzCity(deviceTz)} time (${s.deviceAbbr}) — ${s.deltaLabel} of home (${tzCity(homeTz)}, ${s.homeAbbr}). The schedule shows times in ${s.deviceAbbr}. Change home in Settings → Schedule.`}
     >
-      <GlobeGlyph />
-      <span className="mono leading-none">{s.deviceAbbr}</span>
-    </span>
+      {s.deviceAbbr}
+    </Chip>
   );
 });

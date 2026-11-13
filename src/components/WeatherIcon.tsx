@@ -1,9 +1,9 @@
 // SVG weather icons keyed by WMO weather code.
 // Paths derived from Lucide icon set (ISC license).
-// Colors use existing design tokens:
-//   sun rays  → --signal  (warm ember)
-//   cloud     → --muted
-//   rain/snow → --slot    (teal)
+// Monochrome, like every glyph in the kit (D-190): they draw in currentColor,
+// so the host decides the ink (the day header's --muted). The sun used to be
+// --signal and the rain --slot — an ember on every day of the week where the
+// grid spends it on now alone, and open time's colour spent on weather.
 
 interface Props {
   wmo: number;
@@ -26,9 +26,9 @@ function wmoToType(wmo: number): IconType {
   return "thunder";
 }
 
-const sun = "var(--signal)";
-const cloud = "var(--muted)";
-const precip = "var(--slot)";
+const sun = "currentColor";
+const cloud = "currentColor";
+const precip = "currentColor";
 
 // Shared cloud path (Lucide cloud-rain / cloud-snow style) — leaves room for precipitation below
 const CLOUD_PATH = "M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242";

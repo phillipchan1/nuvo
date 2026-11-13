@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { useFindTime } from "../../hooks/useFindTime";
 import { fmtHours, parseDateISO } from "../../lib/dates";
 import { RemedyPanel } from "./RemedyPanel";
+import { Button } from "../kit";
 
 const fmtStart = (startMin: number) => {
   const h = Math.floor(startMin / 60);
@@ -56,38 +57,43 @@ export function FindTimeProposal({
 
   const total = placements.reduce((s, p) => s + p.durationMin, 0);
 
+  // A proposal is intent not yet landed: the accent wash, the blocks as the
+  // grid would spell them (`Tue 9:30am`), and the one act that writes them.
+  // Both acts keep `.tap` — this panel also opens in the phone's Week's Plan.
   return (
-    <div className="mb-2 rounded-md px-2.5 py-2" style={{ background: "var(--accent-soft)" }}>
-      <div className="text-caption" style={{ color: "var(--accent)" }}>
+    <div className="mb-2 rounded-[var(--r-card)] px-3 py-2.5" style={{ background: "var(--accent-wash)" }}>
+      <div className="text-caption font-semibold leading-tight tabular-nums" style={{ color: "var(--accent-ink)" }}>
         {placements.length} block{placements.length === 1 ? "" : "s"} · {fmtHours(total)}h found
       </div>
 
-      <ul className="mt-1.5 space-y-1">
+      <ul className="mt-2 grid gap-1">
         {placements.map((p) => (
-          <li key={`${p.task.id}-${p.dayISO}-${p.startMin}`} className="flex items-baseline gap-2 text-meta">
-            <span className="mono shrink-0 text-muted">
+          <li key={`${p.task.id}-${p.dayISO}-${p.startMin}`} className="flex items-baseline gap-2 text-caption leading-snug">
+            <span className="w-[72px] shrink-0 text-label font-medium tabular-nums" style={{ color: "var(--muted)" }}>
               {format(parseDateISO(p.dayISO), "EEE")} {fmtStart(p.startMin)}
             </span>
-            <span className="min-w-0 flex-1 truncate text-ink">
+            <span className="min-w-0 flex-1 truncate" style={{ color: "var(--ink)" }}>
               {p.task.title}
               {p.parts && p.parts > 1 && (
-                <span className="mono text-muted"> · {p.part}/{p.parts}</span>
+                <span className="tabular-nums" style={{ color: "var(--muted)" }}> · {p.part}/{p.parts}</span>
               )}
             </span>
-            <span className="mono shrink-0 text-muted">{p.durationMin}m</span>
+            <span className="shrink-0 text-label tabular-nums" style={{ color: "var(--muted)" }}>{p.durationMin}m</span>
           </li>
         ))}
       </ul>
 
       {unplaced.length > 0 && (
         // Never let the accepted half imply the whole thing landed.
-        <div className="mt-1.5 text-meta text-muted">
+        <div className="mt-2 text-caption" style={{ color: "var(--muted)" }}>
           {unplaced.length} piece{unplaced.length === 1 ? "" : "s"} still won't fit — it stays loose.
         </div>
       )}
 
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
-        <button
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        <Button
+          kind="primary"
+          className="tap"
           onClick={() => {
             setPlacing(true);
             void place(placements)
@@ -96,17 +102,12 @@ export function FindTimeProposal({
           }}
           disabled={placing}
           title="Write these blocks onto the week — the work joins the week and lands on the calendar"
-          className="tap fast inline-flex min-h-[44px] items-center rounded-md border border-accent/50 px-2.5 py-1 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
         >
           {placing ? "Placing…" : `Place ${placements.length === 1 ? "it" : "them"}`}
-        </button>
-        <button
-          onClick={onClose}
-          title="Leave the week as it is"
-          className="tap fast inline-flex min-h-[44px] items-center rounded-md border border-line px-2.5 py-1 text-caption text-muted hover:border-line-strong hover:bg-surface-2"
-        >
+        </Button>
+        <Button kind="ghost" className="tap" onClick={onClose} title="Leave the week as it is">
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
