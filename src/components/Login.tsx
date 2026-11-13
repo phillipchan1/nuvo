@@ -10,7 +10,7 @@ import { isOAuthCanceled, useTapAction } from "../lib/tapAction";
 import { authReturnError, clearAuthReturnError } from "../lib/authReturn";
 import { Button, Input } from "./kit";
 import { Icon } from "./Icon";
-import { FlowMark } from "./rituals/FlowShell";
+import { DoorTitle, StatementPage } from "./statement/StatementPage";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -154,198 +154,214 @@ export default function Login({
     setCode("");
   });
 
+  const title = emailGate === "code" ? "Check your email" : emailGate ? "Sign in with email" : "Sign in";
+
   return (
-    // The window ground, one 12px raised card (D-190): the mark, one hero, the
-    // doors as kit Buttons. Apple first and the same size and weight as Google
+    // A statement page (D-192): the stage says what Nuvo is for, the door
+    // holds the sign-in. Apple first and the same size and weight as Google
     // (App Store 4.8); email is the quiet third door.
-    <div className={`login-screen h-full min-h-dvh overflow-y-auto ${nativePhone ? "pt-safe pb-safe" : ""}`} style={{ background: "var(--ground)" }}>
-      <div className="f-ground">
-        <div className="f-card">
-          <div className="grid gap-5">
-            <div className="f-brand">
-              <FlowMark />
-              <span>Nuvo</span>
+    <div className="login-screen h-full min-h-dvh overflow-y-auto">
+      <StatementPage
+        kicker="Task management for the ambitious"
+        hero={
+          <>
+            Ambition,
+            <br />
+            down to
+            <br />
+            the hour
+          </>
+        }
+        footer={
+          <>
+            By continuing you agree to the{" "}
+            <a href="https://nuvo.day/terms" target="_blank" rel="noreferrer">
+              Terms
+            </a>{" "}
+            and{" "}
+            <a href="https://nuvo.day/privacy" target="_blank" rel="noreferrer">
+              Privacy Policy
+            </a>
+            .
+          </>
+        }
+      >
+        <DoorTitle>{title}</DoorTitle>
+
+        <div className="st-actions">
+          {!supabaseConfigured && (
+            <div className="f-note" data-tone="danger">
+              Supabase is not configured. Copy <span className="mono">.env.example</span> to <span className="mono">.env</span> and restart.
             </div>
-            <h1 className="text-display masthead text-[var(--ink)]">
-              {emailGate === "code" ? "Check your email." : emailGate ? "Sign in with email." : "Sign in to Nuvo."}
-            </h1>
-          </div>
+          )}
 
-          <div className="mt-6 grid gap-2">
-            {!supabaseConfigured && (
-              <div className="f-note" data-tone="danger">
-                Supabase is not configured. Copy <span className="mono">.env.example</span> to <span className="mono">.env</span> and restart.
-              </div>
-            )}
-
-            {!emailGate ? (
-              <>
-                {previous && (
-                  <div className="f-note">
-                    Last time on this device you used <b>{providerLabel(previous)}</b>. Use the same one to land back in the same account.
-                  </div>
-                )}
-                {appleAvailable && (
-                  <Button
-                    size="md"
-                    full
-                    className="apple-signin login-action"
-                    disabled={oauthBusy || !supabaseConfigured}
-                    aria-busy={busy === "apple"}
-                    {...appleTap}
-                    icon={<AppleMark />}
-                  >
-                    {busy === "apple" ? "Opening…" : "Sign in with Apple"}
-                  </Button>
-                )}
+          {!emailGate ? (
+            <>
+              {previous && (
+                <div className="f-note">
+                  Last time on this device you used <b>{providerLabel(previous)}</b>. Use the same one to land back in the same account.
+                </div>
+              )}
+              {appleAvailable && (
                 <Button
                   size="md"
                   full
-                  className="login-action"
+                  className="apple-signin login-action"
                   disabled={oauthBusy || !supabaseConfigured}
-                  aria-busy={busy === "google"}
-                  {...googleTap}
-                  icon={<GoogleMark />}
+                  aria-busy={busy === "apple"}
+                  {...appleTap}
+                  icon={<AppleMark />}
                 >
-                  {busy === "google" ? "Opening…" : "Continue with Google"}
+                  {busy === "apple" ? "Opening…" : "Sign in with Apple"}
                 </Button>
-                {passwordLogin ? (
-                  <Button kind="ghost" size="md" full disabled={!supabaseConfigured || busy === "password"} {...passwordDoorTap} className="login-action">
-                    Sign in with email
-                  </Button>
-                ) : otpOffered ? (
-                  <Button kind="ghost" size="md" full disabled={!supabaseConfigured} {...otpDoorTap} className="login-action">
-                    Sign in with an email code instead
-                  </Button>
-                ) : null}
-              </>
-            ) : emailGate === "password" ? (
-              <>
-                <label className="k-field-label" htmlFor="login-email">
-                  Email
-                  <Input
-                    id="login-email"
-                    type="email"
-                    inputMode="email"
-                    autoComplete="username"
-                    autoCapitalize="none"
-                    enterKeyHint="next"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    disabled={busy === "password"}
-                  />
-                </label>
-                <label className="k-field-label mt-1" htmlFor="login-password">
-                  Password
-                  <Input
-                    id="login-password"
-                    type="password"
-                    autoComplete="current-password"
-                    enterKeyHint="done"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void withPassword()}
-                    placeholder="Password"
-                    disabled={busy === "password"}
-                  />
-                </label>
-                <Button
-                  kind="primary"
-                  size="md"
-                  full
-                  disabled={busy === "password" || !email.trim() || !password}
-                  {...passwordSubmitTap}
-                  shortcut="↵"
-                  className="login-action mt-2"
-                >
-                  {busy === "password" ? "Signing in…" : "Sign in"}
+              )}
+              <Button
+                size="md"
+                full
+                className="login-action"
+                disabled={oauthBusy || !supabaseConfigured}
+                aria-busy={busy === "google"}
+                {...googleTap}
+                icon={<GoogleMark />}
+              >
+                {busy === "google" ? "Opening…" : "Continue with Google"}
+              </Button>
+              {passwordLogin ? (
+                <Button kind="ghost" size="md" full disabled={!supabaseConfigured || busy === "password"} {...passwordDoorTap} className="login-action">
+                  Sign in with email
                 </Button>
-                {otpOffered && (
-                  <Button kind="ghost" size="md" full {...otpInsteadTap} className="login-action">
-                    Email me a code instead
-                  </Button>
-                )}
-                <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
-                  Back
+              ) : otpOffered ? (
+                <Button kind="ghost" size="md" full disabled={!supabaseConfigured} {...otpDoorTap} className="login-action">
+                  Sign in with an email code instead
                 </Button>
-              </>
-            ) : emailGate === "otp" ? (
-              <>
-                <label className="k-field-label" htmlFor="login-email">
-                  Your email
-                  <Input
-                    id="login-email"
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    enterKeyHint="send"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void sendCode()}
-                    placeholder="you@example.com"
-                  />
-                </label>
-                <Button
-                  kind="primary"
-                  size="md"
-                  full
-                  disabled={busy === "otp" || !email.trim()}
-                  {...sendCodeTap}
-                  shortcut="↵"
-                  className="login-action mt-2"
-                >
-                  {busy === "otp" ? "Sending…" : "Email me a code"}
-                </Button>
-                <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
-                  Back
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="f-fact">
-                  A 6-digit code went to <b>{email.trim()}</b>. It signs you in right here.
-                </p>
+              ) : null}
+            </>
+          ) : emailGate === "password" ? (
+            <>
+              <label className="k-field-label" htmlFor="login-email">
+                Email
                 <Input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  enterKeyHint="done"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
-                  placeholder="123456"
-                  aria-label="Sign-in code"
-                  frameClassName="f-code"
+                  id="login-email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  enterKeyHint="next"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  disabled={busy === "password"}
                 />
-                <Button
-                  kind="primary"
-                  size="md"
-                  full
-                  disabled={busy === "otp" || code.trim().length < 6}
-                  {...verifyCodeTap}
-                  shortcut="↵"
-                  className="login-action mt-2"
-                >
-                  {busy === "otp" ? "Checking…" : "Sign in"}
+              </label>
+              <label className="k-field-label mt-1" htmlFor="login-password">
+                Password
+                <Input
+                  id="login-password"
+                  type="password"
+                  autoComplete="current-password"
+                  enterKeyHint="done"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void withPassword()}
+                  placeholder="Password"
+                  disabled={busy === "password"}
+                />
+              </label>
+              <Button
+                kind="primary"
+                size="md"
+                full
+                disabled={busy === "password" || !email.trim() || !password}
+                {...passwordSubmitTap}
+                shortcut="↵"
+                className="login-action mt-2"
+              >
+                {busy === "password" ? "Signing in…" : "Sign in"}
+              </Button>
+              {otpOffered && (
+                <Button kind="ghost" size="md" full {...otpInsteadTap} className="login-action">
+                  Email me a code instead
                 </Button>
-                <Button kind="ghost" size="md" full {...differentEmailTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
-                  Different email
-                </Button>
-              </>
-            )}
+              )}
+              <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                Back
+              </Button>
+            </>
+          ) : emailGate === "otp" ? (
+            <>
+              <label className="k-field-label" htmlFor="login-email">
+                Your email
+                <Input
+                  id="login-email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  enterKeyHint="send"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void sendCode()}
+                  placeholder="you@example.com"
+                />
+              </label>
+              <Button
+                kind="primary"
+                size="md"
+                full
+                disabled={busy === "otp" || !email.trim()}
+                {...sendCodeTap}
+                shortcut="↵"
+                className="login-action mt-2"
+              >
+                {busy === "otp" ? "Sending…" : "Email me a code"}
+              </Button>
+              <Button kind="ghost" size="md" full {...backTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                Back
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="f-fact">
+                A 6-digit code went to <b>{email.trim()}</b>. It signs you in right here.
+              </p>
+              <Input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                enterKeyHint="done"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
+                placeholder="123456"
+                aria-label="Sign-in code"
+                frameClassName="f-code"
+              />
+              <Button
+                kind="primary"
+                size="md"
+                full
+                disabled={busy === "otp" || code.trim().length < 6}
+                {...verifyCodeTap}
+                shortcut="↵"
+                className="login-action mt-2"
+              >
+                {busy === "otp" ? "Checking…" : "Sign in"}
+              </Button>
+              <Button kind="ghost" size="md" full {...differentEmailTap} icon={<Icon name="chevron-left" size={14} />} className="login-action">
+                Different email
+              </Button>
+            </>
+          )}
 
-            {oauthBusy && (
-              <div className="f-fact mt-1" role="status" aria-live="polite">
-                Opening {busy === "apple" ? "Apple" : "Google"}…
-              </div>
-            )}
+          {oauthBusy && (
+            <div className="f-fact mt-1" role="status" aria-live="polite">
+              Opening {busy === "apple" ? "Apple" : "Google"}…
+            </div>
+          )}
 
-            {error && <div className="f-error mt-1">{error}</div>}
-          </div>
+          {error && <div className="f-error mt-1">{error}</div>}
         </div>
-      </div>
+      </StatementPage>
     </div>
   );
 }

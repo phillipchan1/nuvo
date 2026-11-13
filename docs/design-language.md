@@ -79,6 +79,17 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
+## Statement pages (D-192)
+
+The small pages that frame the app — sign-in, first run, the welcome, the paywall — are
+**statement pages** (`components/statement/StatementPage.tsx`, `styles/statement.css`). The
+**stage** (left; a top band on a phone) is always ink: the mark, one statement set huge
+(800 weight, −0.06em) and ending on the **ember full stop** (`Stop` — the mark's own dot), and a
+landing week whose blocks land one by one before the now-line glides into place, once. The
+**door** (right; a sheet on a phone) is the theme's panel and holds the one thing to do, its
+acts 44px. The door never fades in — what you came to press is there on the first frame. A door
+title wears the same full stop ("Sign in."). Check them at `?login` and `?statement=…`.
+
 ## The mark (D-191)
 
 **Statement**: a geometric N with an ember full stop on the mulberry field — the way every hero
