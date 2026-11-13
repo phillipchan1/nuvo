@@ -1,5 +1,7 @@
 import type { CalendarAccount } from "../lib/types";
 import { supabase } from "../lib/supabase";
+import { Icon } from "./Icon";
+import { Button } from "./kit";
 
 const LABEL: Record<CalendarAccount["provider"], string> = {
   google: "Google",
@@ -34,19 +36,20 @@ export default function ReconnectBanner({
     window.location.href = `${base}/functions/v1/google-oauth?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
   };
 
+  // A bar across the top of the work, in the kit's voice: what stopped, whose
+  // account, and the one act that fixes it. `--danger`, never `--signal`
+  // (which means "now").
   return (
-    <div className="flex items-center gap-3 border-b border-signal bg-signal-soft px-4 py-1.5">
-      <span className="text-caption font-medium text-signal">
-        Calendar sync paused — {broken.map((a) => `${LABEL[a.provider]} (${a.email})`).join(", ")} needs to reconnect.
+    <div className="k-banner" role="status">
+      <Icon name="refresh" size={14} />
+      <span className="k-banner-text">
+        <b>Calendar sync paused</b>{" "}
+        <span>— {broken.map((a) => `${LABEL[a.provider]} (${a.email})`).join(", ")} needs to reconnect.</span>
       </span>
       {broken.map((a) => (
-        <button
-          key={a.id}
-          onClick={() => reconnect(a)}
-          className="fast rounded-md border border-signal px-2 py-0.5 text-label font-medium text-signal hover:bg-signal hover:text-white"
-        >
+        <Button key={a.id} size="xs" onClick={() => reconnect(a)}>
           Reconnect {LABEL[a.provider]}
-        </button>
+        </Button>
       ))}
     </div>
   );

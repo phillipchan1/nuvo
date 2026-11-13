@@ -251,7 +251,7 @@ export function PopFootAct({
  * Segmented (a radio group that always holds a value) "nothing chosen yet" is
  * a state it can show, so each button is a toggle (`aria-pressed`).
  */
-export type PopSegment<T extends string> = { value: T; label: string; dot?: string };
+export type PopSegment<T extends string> = { value: T; label: string; dot?: string; disabled?: boolean; title?: string };
 
 export function PopSegmented<T extends string>({
   segments,
@@ -269,7 +269,14 @@ export function PopSegmented<T extends string>({
   return (
     <div role="group" aria-label={ariaLabel} className="k-seg">
       {segments.map((s) => (
-        <button key={s.value} type="button" aria-pressed={value === s.value} disabled={disabled} onClick={() => onPick(s.value)}>
+        <button
+          key={s.value}
+          type="button"
+          aria-pressed={value === s.value}
+          disabled={disabled || s.disabled}
+          title={s.title}
+          onClick={() => onPick(s.value)}
+        >
           {s.dot && <Dot color={s.dot} shape="round" size="sm" />}
           {s.label}
         </button>

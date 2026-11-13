@@ -27,7 +27,10 @@
 // The host decides only the frame (a Sheet, a Modal, the ⌥Space panel) and
 // what "added" looks like there. It never builds a write.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
+import { Icon } from "../Icon";
+import { Button, Chip, Dot, Input } from "../kit";
+import { PopSegmented } from "../PopoverParts";
 import { format } from "date-fns";
 import { captureTitle, parseCapture, resolveRoute } from "../../lib/nlp";
 import { fmtDayLabel, fmtDuration, parseDateISO, toDateISO, todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
@@ -318,115 +321,129 @@ export default function CaptureDoor({
   }
   const chipOn = (value: string | null) => (kind === "slot" ? slotDay === value : day === value);
 
-  const pill = (on: boolean) =>
-    `tap fast rounded-full border px-3 py-1.5 text-body font-medium ${
-      on ? "border-accent bg-accent text-on-accent" : "border-line text-muted hover:border-accent hover:text-accent"
-    }`;
-  const lockedPill =
-    "mono inline-flex rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent";
-  const clockInput =
-    "mono tap-h min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-2 text-body text-ink outline-none focus:border-accent";
+  const ctlSize = panel ? ("xs" as const) : ("sm" as const);
+
+  /** A labelled row of the face's controls. */
+  const row = (label: string, children: ReactNode) => (
+    <div className="cd-row">
+      <span className="cd-label">{label}</span>
+      <div className="cd-ctl">{children}</div>
+    </div>
+  );
+
+  /** One choice among the row's choices — a kit button that stays pressed. */
+  const choice = (label: ReactNode, on: boolean, onClick: () => void, key?: string) => (
+    <Button key={key} size={ctlSize} kind={on ? "secondary" : "ghost"} active={on} aria-pressed={on} onClick={onClick}>
+      {label}
+    </Button>
+  );
 
   /** Start – end + lengths. Shared by the Task face (optional) and the Slot face (always). */
   const clock = (from: Date, to: Date, len: number, iso: string, fallbackMins: number, anytime: boolean) => (
-    <div className="mt-2">
-      <div className="flex items-center gap-1.5">
-        <input
-          type="time"
-          step={900}
-          value={hhmmOf(from)}
-          onChange={(e) => setStartClock(e.target.value, iso, fallbackMins)}
-          aria-label="Start time"
-          className={clockInput}
-        />
-        <span className="shrink-0 text-muted">–</span>
-        <input
-          type="time"
-          step={900}
-          value={hhmmOf(to)}
-          onChange={(e) => {
-            if (!start) setStartClock(hhmmOf(from), iso, fallbackMins);
-            setEndClock(e.target.value, from);
-          }}
-          aria-label="End time"
-          className={clockInput}
-        />
-        {anytime && (
-          <button
-            type="button"
-            onClick={() => setStart(null)}
-            className="tap fast shrink-0 rounded-full border border-line px-3 py-2 text-body text-muted hover:border-accent hover:text-accent"
-          >
-            Anytime
-          </button>
-        )}
-      </div>
-      <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="Length">
-        {CAPTURE_DURATIONS.map((m) => (
-          <button key={m} type="button" onClick={() => setMins(m)} aria-pressed={len === m} className={pill(len === m)}>
-            {fmtDuration(m)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  const whenRow = (
-    <div className="mt-3.5">
-      <div className="section-label mb-1.5 !p-0">{dayLocked || timeLocked ? "From your text" : "When"}</div>
-      <div className="flex flex-wrap gap-1.5">
-        {dayLocked ? (
-          <span className={lockedPill}>{parsed?.doDate ? fmtDayLabel(parsed.doDate) : null}</span>
-        ) : (
-          <>
-            {dayChips.map((c) => (
-              <button key={c.label} type="button" onClick={() => pickDay(c.value)} aria-pressed={chipOn(c.value)} className={pill(chipOn(c.value))}>
-                {c.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPickDateOpen((v) => !v)}
-              aria-expanded={pickDateOpen}
-              className={`tap fast rounded-full border px-3 py-1.5 text-body font-medium ${
-                pickDateOpen ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-accent hover:text-accent"
-              }`}
-            >
-              Pick date…
-            </button>
-          </>
-        )}
-      </div>
-      {pickDateOpen && !dayLocked && (
-        <input
-          type="date"
-          value={day ?? todayISO()}
-          aria-label="Date"
-          onChange={(e) => {
-            if (e.target.value) pickDay(e.target.value);
-          }}
-          className={`${clockInput} mt-2 w-full`}
-        />
+    <>
+      {row(
+        "Time",
+        <>
+          <Input
+            type="time"
+            size="sm"
+            step={900}
+            value={hhmmOf(from)}
+            onChange={(e) => setStartClock(e.target.value, iso, fallbackMins)}
+            aria-label="Start time"
+          />
+          <span className="cd-dash">–</span>
+          <Input
+            type="time"
+            size="sm"
+            step={900}
+            value={hhmmOf(to)}
+            onChange={(e) => {
+              if (!start) setStartClock(hhmmOf(from), iso, fallbackMins);
+              setEndClock(e.target.value, from);
+            }}
+            aria-label="End time"
+          />
+          {anytime && (
+            <Button size={ctlSize} kind="ghost" onClick={() => setStart(null)}>
+              Anytime
+            </Button>
+          )}
+        </>,
       )}
-    </div>
+      {row(
+        "Length",
+        <div role="group" aria-label="Length" className="contents">
+          {CAPTURE_DURATIONS.map((m) => choice(fmtDuration(m), len === m, () => setMins(m), String(m)))}
+        </div>,
+      )}
+    </>
   );
 
-  const addButton = (label: string) => (
-    <button
-      type="button"
-      onClick={() => void submit()}
-      disabled={!canAdd}
-      className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-head font-semibold text-on-accent shadow-sm active:translate-y-px disabled:border disabled:border-line disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-    >
-      {saving ? "Adding…" : label}
-    </button>
+  const whenRow = row(
+    "When",
+    dayLocked ? (
+      <Chip tone="accent">{parsed?.doDate ? fmtDayLabel(parsed.doDate) : null}</Chip>
+    ) : (
+      <>
+        {dayChips.map((c) => choice(c.label, chipOn(c.value), () => pickDay(c.value), c.label))}
+        <Button
+          size={ctlSize}
+          kind="ghost"
+          active={pickDateOpen}
+          aria-expanded={pickDateOpen}
+          icon={<Icon name="calendar" size={13} />}
+          onClick={() => setPickDateOpen((v) => !v)}
+        >
+          Pick date…
+        </Button>
+        {pickDateOpen && (
+          <Input
+            type="date"
+            size="sm"
+            value={day ?? todayISO()}
+            aria-label="Date"
+            onChange={(e) => {
+              if (e.target.value) pickDay(e.target.value);
+            }}
+            frameClassName="w-full"
+          />
+        )}
+      </>
+    ),
+  );
+
+  const addLabel = kind === "slot" ? "Add slot" : claimedStart ? "Add block" : "Add task";
+  const kindSwitch = (
+    // The one question the sentence can't answer. Three faces, equal weight —
+    // not a "more options" trapdoor.
+    <PopSegmented
+      ariaLabel="What kind of thing is this"
+      value={kind}
+      onPick={setKind}
+      segments={KINDS.map((k, i) => {
+        const off = k.id === "event" && !canEvent;
+        return {
+          value: k.id,
+          label: k.label,
+          disabled: off,
+          title: off ? "Connect a calendar in Settings to add events" : panel ? `${k.label} (${MOD}${i + 1})` : undefined,
+        };
+      })}
+    />
   );
 
   return (
-    <div className={`capture-door ${panel ? "capture-door-panel" : ""}`} data-kind={kind} onKeyDown={onKeyDown}>
+    <div
+      className={`capture-door ${panel ? "capture-door-panel" : "capture-door-sheet"}`}
+      data-kind={kind}
+      data-noevent={canEvent ? undefined : ""}
+      onKeyDown={onKeyDown}
+    >
       {/* The front door: the app's one add box — a plain <input> so iOS
-          dictation works, highlighting what it understood. Enter belongs to
-          the door (it adds whichever kind is showing). */}
+          dictation works, highlighting what it understood, its parsed tokens
+          as chips under it. Enter belongs to the door (it adds whichever kind
+          is showing). */}
       <TaskComposer
         ref={composerRef}
         fieldRef={field}
@@ -448,149 +465,113 @@ export default function CaptureDoor({
         onError={setError}
       />
 
-      {/* The one question the sentence can't answer. Three faces, equal weight —
-          not a "more options" trapdoor. */}
-      <div role="group" aria-label="What kind of thing is this" className="mt-3 flex items-center gap-0.5 rounded-full bg-surface-2 p-0.5">
-        {KINDS.map((k, i) => {
-          const on = kind === k.id;
-          const off = k.id === "event" && !canEvent;
-          return (
-            <button
-              key={k.id}
-              type="button"
-              onClick={() => setKind(k.id)}
-              disabled={off}
-              aria-pressed={on}
-              title={off ? "Connect a calendar in Settings to add events" : panel ? `${k.label} (${MOD}${i + 1})` : undefined}
-              className={`tap-h fast flex-1 rounded-full py-1.5 text-body font-medium ${
-                on ? "bg-surface text-accent" : off ? "text-muted/40" : "text-muted hover:text-ink"
-              }`}
-              style={on ? { boxShadow: "var(--shadow-1)" } : undefined}
-            >
-              {k.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* On the phone the switch sits under the line, where the thumb is. */}
+      {!panel && kindSwitch}
 
-      {kind === "task" && (
-        <>
+      {kind !== "event" && (
+        <div className="cd-body">
           {whenRow}
-          {timeLocked && claimedStart && claimedEnd ? (
-            <div className="mt-2">
-              <span className={lockedPill} aria-label={`Scheduled ${span(claimedStart, claimedEnd)}`}>
-                {span(claimedStart, claimedEnd)}
-              </span>
-            </div>
-          ) : claimedStart && claimedEnd ? (
-            clock(claimedStart, claimedEnd, claimedMins, effectiveDay ?? todayISO(), defaultMins, true)
-          ) : (
-            <button
-              type="button"
-              onClick={addTime}
-              className="tap fast mt-2 rounded-full border border-line px-3 py-1.5 text-body font-medium text-muted hover:border-accent hover:text-accent"
-            >
-              Add time
-            </button>
+          {kind === "task" &&
+            (timeLocked && claimedStart && claimedEnd ? (
+              row(
+                "Time",
+                <Chip tone="accent" title={`Scheduled ${span(claimedStart, claimedEnd)}`}>
+                  <span aria-label={`Scheduled ${span(claimedStart, claimedEnd)}`}>{span(claimedStart, claimedEnd)}</span>
+                </Chip>,
+              )
+            ) : claimedStart && claimedEnd ? (
+              clock(claimedStart, claimedEnd, claimedMins, effectiveDay ?? todayISO(), defaultMins, true)
+            ) : (
+              row(
+                "Time",
+                <Button size={ctlSize} kind="ghost" icon={<Icon name="clock" size={13} />} onClick={addTime}>
+                  Add time
+                </Button>,
+              )
+            ))}
+          {kind === "slot" && (
+            <>
+              {timeLocked
+                ? row(
+                    "Time",
+                    <Chip tone="accent">
+                      <span aria-label={`Holds ${span(slotStart, slotEnd)}`}>{span(slotStart, slotEnd)}</span>
+                    </Chip>,
+                  )
+                : clock(slotStart, slotEnd, slotMins, slotDay, DEFAULT_SLOT_MINUTES, false)}
+              {domains.length > 0 &&
+                row(
+                  "For",
+                  routedHome ? (
+                    <Chip tone="accent">{routedHome.name}</Chip>
+                  ) : (
+                    <>
+                      {[{ id: null as string | null, name: "Anything", color: null as string | null }, ...domains].map((d) =>
+                        choice(
+                          <>
+                            {d.color && <Dot color={d.color} />}
+                            {d.name}
+                          </>,
+                          slotDomain === d.id,
+                          () => setSlotDomain(d.id),
+                          d.id ?? "none",
+                        ),
+                      )}
+                    </>
+                  ),
+                )}
+            </>
           )}
-        </>
-      )}
-
-      {kind === "slot" && (
-        <>
-          {whenRow}
-          {timeLocked ? (
-            <div className="mt-2">
-              <span className={lockedPill} aria-label={`Holds ${span(slotStart, slotEnd)}`}>
-                {span(slotStart, slotEnd)}
-              </span>
-            </div>
-          ) : (
-            clock(slotStart, slotEnd, slotMins, slotDay, DEFAULT_SLOT_MINUTES, false)
-          )}
-          {domains.length > 0 && (
-            <div className="mt-3.5">
-              <div className="section-label mb-1.5 !p-0">{routedHome ? "From your text" : "For"}</div>
-              {routedHome ? (
-                <span className={lockedPill}>{routedHome.name}</span>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {[{ id: null as string | null, name: "Anything", color: null as string | null }, ...domains].map((d) => {
-                    const on = slotDomain === d.id;
-                    return (
-                      <button
-                        key={d.id ?? "none"}
-                        type="button"
-                        onClick={() => setSlotDomain(d.id)}
-                        aria-pressed={on}
-                        className={`tap fast inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-body font-medium ${
-                          on ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-accent hover:text-accent"
-                        }`}
-                      >
-                        {d.color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color }} />}
-                        {d.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          {parsed?.recurrence && (
-            <p className="mt-2 text-caption text-muted">
-              Repeats {describeRule(parsed.recurrence, parsed.recurrenceAnchor ?? slotDay).toLowerCase()} — a standing slot.
-            </p>
-          )}
-        </>
+        </div>
       )}
 
       {kind === "event" && (
-        <EventComposer
-          ref={eventRef}
-          title={eventTitle}
-          seed={seed}
-          seedRepeat={parsed?.recurrence ?? null}
-          onDone={(ev) => {
-            const s = new Date(ev.start_at);
-            onAdded({
-              kind: "event",
-              title: eventTitle,
-              where: ev.allDay
-                ? `${fmtDayLabel(toDateISO(s))} · all day`
-                : whereOf(toDateISO(s), s, Math.round((new Date(ev.end_at).getTime() - s.getTime()) / 60_000), ev.repeats),
-            });
-          }}
-        />
+        <div className="cd-event">
+          <EventComposer
+            ref={eventRef}
+            title={eventTitle}
+            seed={seed}
+            seedRepeat={parsed?.recurrence ?? null}
+            onDone={(ev) => {
+              const s = new Date(ev.start_at);
+              onAdded({
+                kind: "event",
+                title: eventTitle,
+                where: ev.allDay
+                  ? `${fmtDayLabel(toDateISO(s))} · all day`
+                  : whereOf(toDateISO(s), s, Math.round((new Date(ev.end_at).getTime() - s.getTime()) / 60_000), ev.repeats),
+              });
+            }}
+          />
+        </div>
       )}
 
       {error && (
-        <div role="alert" className="mt-3 rounded-md bg-signal-soft px-3 py-2 text-caption text-signal">
+        <div role="alert" className="cd-alert">
           {error}
         </div>
       )}
 
-      {kind === "task" && addButton(claimedStart ? "Add block" : "Add task")}
-      {kind === "slot" && addButton("Add slot")}
-
-      {panel ? (
-        <p className="mono mt-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-meta text-muted">
-          <span>↵ add</span>
-          <span>{MOD}1 · 2 · 3 kind</span>
-          <span>esc close</span>
-        </p>
-      ) : kind === "event" ? (
-        <p className="mono mt-2.5 text-center text-label text-muted">Goes on your calendar — where guests can see it</p>
-      ) : kind === "slot" ? (
-        <p className="mono mt-2.5 text-center text-label text-muted">Try “deep work tomorrow 9am 2h @work”</p>
-      ) : (
-        <p className="mono mt-2.5 text-center text-label text-muted">Try “review PR tomorrow 2pm 45m #work !high”</p>
-      )}
+      <div className="cd-foot">
+        {panel && kindSwitch}
+        {panel && <span className="k-grow" />}
+        {kind !== "event" && (
+          <Button
+            kind="primary"
+            size={panel ? "sm" : "md"}
+            onClick={() => void submit()}
+            disabled={!canAdd}
+            shortcut={panel ? "↵" : undefined}
+          >
+            {saving ? "Adding…" : addLabel}
+          </Button>
+        )}
+      </div>
 
       {/* Honest about the one face that can be dead: an event needs somewhere
-          to write to, and saying so beats a control that doesn't respond (P7). */}
-      {!canEvent && kind !== "event" && (
-        <p className="mt-1.5 text-center text-label text-muted/70">Connect a calendar in Settings to capture events too.</p>
-      )}
+          to write to, and saying so beats a control that doesn't respond (P7).
+          The desktop says it in the switch's tooltip. */}
+      {!panel && !canEvent && kind !== "event" && <p className="cd-note">Connect a calendar in Settings to capture events too.</p>}
     </div>
   );
 }

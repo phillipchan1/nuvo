@@ -1,10 +1,12 @@
 import { useUpdater } from "../hooks/useUpdater";
 import { notableNotes } from "../lib/changelog";
+import { Button } from "./kit";
 
 // Quiet bottom-right auto-update prompt. Updates download silently in the
 // background (see src/lib/appUpdate.ts) — this only appears once there's
 // something the user can act on: a download in progress, or a staged build
 // waiting for a restart. It shares state with the Settings → Desktop app panel.
+// It wears the kit's toast: a raised card, one line, one act.
 export default function UpdateToast() {
   const { state, restart } = useUpdater();
   const notes = notableNotes(state.notes);
@@ -12,42 +14,31 @@ export default function UpdateToast() {
   if (state.status !== "downloading" && state.status !== "ready") return null;
 
   return (
-    <div className="rise elev-3 fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3">
+    <div className="k-toast" role="status">
       {state.status === "downloading" && (
         <>
-          <span className="text-caption font-semibold">
-            Downloading Nuvo {state.version ?? ""}…
-          </span>
-          <div className="h-1 w-full overflow-hidden rounded-full bg-line">
-            <div
-              className="h-full bg-accent fast"
-              style={{ width: `${state.progress}%` }}
-            />
+          <span className="k-toast-title">Downloading Nuvo {state.version ?? ""}…</span>
+          {/* The fill scales; it never animates a width. */}
+          <div className="k-toast-track" aria-hidden>
+            <i style={{ transform: `scaleX(${Math.max(0, Math.min(100, state.progress)) / 100})` }} />
           </div>
-          <span className="mono text-label text-muted">{state.progress}%</span>
+          <span className="k-toast-meta">{state.progress}%</span>
         </>
       )}
 
       {state.status === "ready" && (
         <>
-          <span className="text-caption font-semibold">
-            Nuvo {state.version ?? ""} is ready
-          </span>
+          <span className="k-toast-title">Nuvo {state.version ?? ""} is ready</span>
           {notes && (
-            <details className="text-label text-muted">
-              <summary className="select-none hover:text-ink fast">
-                What's new
-              </summary>
-              <p className="mt-1 whitespace-pre-line leading-snug">{notes}</p>
+            <details>
+              <summary>What's new</summary>
+              <p>{notes}</p>
             </details>
           )}
-          <div className="pt-1">
-            <button
-              onClick={restart}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1 text-label font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
-            >
+          <div className="k-toast-acts">
+            <Button kind="primary" size="xs" onClick={restart}>
               Restart to update
-            </button>
+            </Button>
           </div>
         </>
       )}

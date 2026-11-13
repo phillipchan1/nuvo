@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { Avatar, Input } from "./kit";
 import { supabase } from "../lib/supabase";
 // One vocabulary for where an address came from — the picker and the chat's
 // invite card can't disagree about what "Met before" means.
@@ -21,32 +22,6 @@ function isValidEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-// Deterministic pastel hue from an email string.
-const AVATAR_COLORS = [
-  "bg-violet-500", "bg-blue-500", "bg-sky-500", "bg-teal-500",
-  "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-pink-500",
-];
-function avatarColor(email: string) {
-  let h = 0;
-  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-function initials(name: string, email: string) {
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return email.slice(0, 2).toUpperCase();
-}
-
-function Avatar({ email, name, size = "sm" }: { email: string; name: string; size?: "sm" | "md" }) {
-  const cls = size === "md" ? "h-8 w-8 text-label" : "h-5 w-5 text-micro";
-  return (
-    <span className={`${cls} ${avatarColor(email)} flex shrink-0 items-center justify-center rounded-full font-semibold text-white`}>
-      {initials(name, email)}
-    </span>
-  );
-}
-
 /** Which address books a suggestion came from. Contacts merge across providers,
  *  so this can legitimately name more than one. Sits under the email rather
  *  than beside the name — competing for the same line as a long label like
@@ -55,9 +30,7 @@ function Avatar({ email, name, size = "sm" }: { email: string; name: string; siz
 function SourceLabel({ sources }: { sources: ContactSource[] }) {
   if (!sources?.length) return null;
   return (
-    <span className="truncate text-micro text-muted/70">
-      {sources.map(sourceLabel).join(" · ")}
-    </span>
+    <span className="gi-src">{sources.map(sourceLabel).join(" · ")}</span>
   );
 }
 
@@ -168,24 +141,22 @@ export function GuestsInput({
   const chipLabel = (email: string) => nameCache.current[email] ?? email;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="gi">
       {/* Chips */}
       {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="gi-chips">
           {value.map((email) => (
-            <span
-              key={email}
-              className="flex items-center gap-1.5 rounded-full border border-accent/20 bg-accent/8 py-0.5 pl-0.5 pr-2 text-meta text-accent"
-            >
-              <Avatar email={email} name={chipLabel(email)} size="sm" />
-              <span className="max-w-[140px] truncate">{chipLabel(email)}</span>
+            <span key={email} className="k-chip gi-chip">
+              <Avatar name={chipLabel(email)} />
+              <span>{chipLabel(email)}</span>
               <button
                 type="button"
                 onClick={() => remove(email)}
-                className="fast tap -ml-0.5 leading-none text-accent/50 hover:text-accent"
+                className="gi-x tap-bloom"
                 aria-label={`Remove ${email}`}
+                title={`Remove ${chipLabel(email)}`}
               >
-                ×
+                <Icon name="close" size={11} />
               </button>
             </span>
           ))}
@@ -194,38 +165,36 @@ export function GuestsInput({
 
       {/* Input row */}
       <div className="relative">
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 focus-within:border-accent">
-          <Icon name="users" size={12} className="shrink-0 text-muted/60" />
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onFocus={handleFocus}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); commit(); }
-              if (e.key === "," || e.key === "Tab") { e.preventDefault(); commit(); }
-              if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(Math.min(safeIdx + 1, options.length - 1)); }
-              if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(Math.max(safeIdx - 1, 0)); }
-              if (e.key === "Escape") { setOpen(false); setInput(""); }
-              if (e.key === "Backspace" && !input && value.length) { remove(value[value.length - 1]); }
-            }}
-            onBlur={() => setTimeout(() => setOpen(false), 150)}
-            placeholder={value.length === 0 ? placeholder : "Add another…"}
-            className="flex-1 bg-transparent text-body outline-none placeholder:text-muted/40"
-            // Plain text input so iOS dictation works (low-data-entry principle).
-            type="text"
-            autoComplete="off"
-            // Names/emails aren't prose — WebKit's autocorrect bubble (the Tauri
-            // shell is WKWebView) would otherwise float a suggestion chip right
-            // over this dropdown's own suggestions.
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-        </div>
+        <Input
+          ref={inputRef}
+          icon={<Icon name="users" size={14} />}
+          frameClassName="tap-h"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onFocus={handleFocus}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            if (e.key === "," || e.key === "Tab") { e.preventDefault(); commit(); }
+            if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(Math.min(safeIdx + 1, options.length - 1)); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(Math.max(safeIdx - 1, 0)); }
+            if (e.key === "Escape") { setOpen(false); setInput(""); }
+            if (e.key === "Backspace" && !input && value.length) { remove(value[value.length - 1]); }
+          }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={value.length === 0 ? placeholder : "Add another"}
+          // Plain text input so iOS dictation works (low-data-entry principle).
+          type="text"
+          autoComplete="off"
+          // Names/emails aren't prose — WebKit's autocorrect bubble (the Tauri
+          // shell is WKWebView) would otherwise float a suggestion chip right
+          // over this dropdown's own suggestions.
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
 
         {open && options.length > 0 && (
-          <ul className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border border-line bg-surface shadow-[var(--shadow-3)]">
+          <ul className="gi-menu" role="listbox" aria-label="Suggestions">
             {options.map((opt, i) => {
               const active = i === safeIdx;
               if (opt.kind === "literal") {
@@ -233,20 +202,19 @@ export function GuestsInput({
                   <li key="__literal">
                     <button
                       type="button"
+                      role="option"
+                      aria-selected={active}
                       onMouseDown={(e) => { e.preventDefault(); add(opt.email); }}
-                      className={`fast tap flex w-full items-center gap-3 px-3 py-2.5 text-left ${
-                        active ? "bg-accent/8" : "hover:bg-bg"
-                      }`}
+                      className="gi-opt tap-h"
+                      data-lit={active || undefined}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-muted/30 text-muted">
+                      <span className="gi-new" aria-hidden>
                         <Icon name="plus" size={12} />
                       </span>
-                      <div className="flex min-w-0 flex-col">
-                        <span className={`truncate text-body ${active ? "text-accent" : "text-ink"}`}>
-                          Invite <span className="font-medium">{opt.email}</span>
-                        </span>
-                        <span className="text-meta text-muted">Not in your contacts — add anyway</span>
-                      </div>
+                      <span className="gi-who">
+                        <b>Invite {opt.email}</b>
+                        <small>Not in your contacts</small>
+                      </span>
                     </button>
                   </li>
                 );
@@ -256,20 +224,17 @@ export function GuestsInput({
                 <li key={c.email}>
                   <button
                     type="button"
+                    role="option"
+                    aria-selected={active}
                     onMouseDown={(e) => { e.preventDefault(); add(c.email, c.display_name); }}
-                    className={`fast tap flex w-full items-center gap-3 px-3 py-2.5 text-left ${
-                      active ? "bg-accent/8" : "hover:bg-bg"
-                    }`}
+                    className="gi-opt tap-h"
+                    data-lit={active || undefined}
                   >
-                    <Avatar email={c.email} name={c.display_name} size="md" />
-                    <div className="flex min-w-0 flex-col">
-                      <span className={`truncate text-body font-medium leading-tight ${active ? "text-accent" : "text-ink"}`}>
-                        {c.display_name !== c.email ? c.display_name : c.email}
-                      </span>
-                      {c.display_name !== c.email && (
-                        <span className="truncate text-meta text-muted">{c.email}</span>
-                      )}
-                    </div>
+                    <Avatar name={c.display_name || c.email} size="lg" />
+                    <span className="gi-who">
+                      <b>{c.display_name !== c.email ? c.display_name : c.email}</b>
+                      {c.display_name !== c.email && <small>{c.email}</small>}
+                    </span>
                     <SourceLabel sources={c.sources} />
                   </button>
                 </li>

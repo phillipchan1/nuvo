@@ -68,46 +68,24 @@ export default function WeatherPopover({ day, city, anchor, onClose }: Props) {
       {/* Invisible backdrop to catch outside clicks */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      {/* Card */}
+      {/* The kit popover, growing down from the day it belongs to. */}
       <div
         ref={cardRef}
-        className="glass-card fixed z-50 flex flex-col items-center gap-2 rounded-2xl px-5 py-4"
-        style={{
-          top: anchor.y + 6,
-          left,
-          minWidth: cardW,
-          boxShadow: "var(--shadow-lift)",
-          animation: "rise 120ms ease-out both",
-        }}
+        role="dialog"
+        aria-label={`Weather — ${wmoLabel(day.wmo)}`}
+        className="k-pop"
+        style={{ top: anchor.y + 6, left, minWidth: cardW, padding: 0, zIndex: 50, ["--pop-origin" as string]: "top center" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Big icon */}
-        <WeatherIcon wmo={day.wmo} size={36} />
-
-        {/* Temperature — masthead Fraunces for ceremony */}
-        <div className="flex items-baseline gap-1.5 leading-none">
-          <span className="masthead" style={{ fontSize: "28px", color: "var(--text)" }}>
-            {day.tempHigh}°
-          </span>
-          <span className="text-caption" style={{ color: "var(--muted)" }}>
-            / {day.tempLow}°
-          </span>
+        <div className="k-weather">
+          <WeatherIcon wmo={day.wmo} size={32} />
+          <div className="k-weather-temp">
+            <b>{day.tempHigh}°</b>
+            <span>/ {day.tempLow}°</span>
+          </div>
+          <span className="k-weather-what">{wmoLabel(day.wmo)}</span>
+          {city && <span className="k-weather-city">{city}</span>}
         </div>
-
-        {/* Condition label */}
-        <span className="text-caption" style={{ color: "var(--muted)" }}>
-          {wmoLabel(day.wmo)}
-        </span>
-
-        {/* City */}
-        {city && (
-          <span
-            className="text-micro w-full text-center border-t pt-1.5 mt-0.5"
-            style={{ color: "var(--muted)", borderColor: "var(--line)" }}
-          >
-            {city}
-          </span>
-        )}
       </div>
     </>
   );
