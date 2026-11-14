@@ -31,10 +31,11 @@ const AUTH_CORS_ALLOW = {
  *   - the Mac and iOS apps at `tauri://localhost` (Tauri v2's WKWebView
  *     scheme on both; `http://tauri.localhost` is Windows/Android only,
  *     which Nuvo doesn't ship)
- *   - Phil's workers.dev previews: the SPA preview, the API preview (which
- *     also serves the SPA) and nuvo-app's per-version preview URLs. Every
- *     host under `nq-morning-briefing.workers.dev` belongs to this account,
- *     so trusting them is trusting our own deploys.
+ *   - Phil's workers.dev previews (PREVIEW_ORIGINS): the SPA preview, the
+ *     API preview (which also serves the SPA) and nuvo-app's per-version
+ *     preview URLs. Trusted ONLY when ENVIRONMENT is `preview` or `local`
+ *     (`previewOriginsTrusted`) — never in production, where ENVIRONMENT is
+ *     unset. A preview build must not be able to ride a production session.
  * Patterns use Better Auth's `trustedOrigins` grammar (a `*` inside a
  * single host label) so one list feeds both CORS and Better Auth's own
  * origin check — they cannot disagree.
@@ -71,6 +72,12 @@ function appUrlOrigin(env: Env): string | null {
   }
 }
 
+/** PREVIEW_ORIGINS only on `ENVIRONMENT=preview|local`. Anything else (unset included) fails closed. */
+export function previewOriginsTrusted(env: Pick<Env, "ENVIRONMENT">): boolean {
+  const mode = (env.ENVIRONMENT ?? "").trim().toLowerCase();
+  return mode === "preview" || mode === "local";
+}
+
 /** First entry is the auth origin itself (the CORS fallback echo). */
 export function trustedAuthOrigins(env: Env): string[] {
   const base = resolveAuthBaseURL(env);
@@ -79,7 +86,7 @@ export function trustedAuthOrigins(env: Env): string[] {
     base,
     ...(app ? [app] : []),
     ...APP_ORIGINS,
-    ...PREVIEW_ORIGINS,
+    ...(previewOriginsTrusted(env) ? PREVIEW_ORIGINS : []),
     ...(isLocalAuthHost(base) ? LOOPBACK_ORIGINS : []),
   ])];
 }

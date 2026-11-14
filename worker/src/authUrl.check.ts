@@ -4,7 +4,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import app from "./index.ts";
 import { otpConsoleAllowed } from "./auth.ts";
-import { authConfigErrorResponse, beginAuthCors, originMatches, trustedAuthOrigins } from "./cors.ts";
+import {
+  authConfigErrorResponse,
+  beginAuthCors,
+  originMatches,
+  previewOriginsTrusted,
+  trustedAuthOrigins,
+} from "./cors.ts";
 import { createAuth } from "./auth.ts";
 import { bearerToken, cronAuthorized, timingSafeEqualString } from "./cron.ts";
 import {
@@ -199,14 +205,59 @@ const liveEnv = { BETTER_AUTH_URL: "https://api.nuvo.day", BETTER_AUTH_SECRET: "
 for (const origin of [
   "https://app.nuvo.day",
   "tauri://localhost",
-  "https://nuvo-app-preview.nq-morning-briefing.workers.dev",
-  "https://nuvo-preview.nq-morning-briefing.workers.dev",
-  "https://3f9a1c2e-nuvo-app.nq-morning-briefing.workers.dev",
   "https://api.nuvo.day",
 ]) {
   const got = beginAuthCors(origin, liveEnv);
   ok(got.ok && got.cors["Access-Control-Allow-Origin"] === origin, `prod auth CORS echoes ${origin}`);
   ok(got.ok && got.cors["Access-Control-Allow-Credentials"] === "true", `prod auth CORS credentials for ${origin}`);
+}
+// workers.dev previews are trusted on preview/local only — never production.
+const PREVIEW_SAMPLES = [
+  "https://nuvo-app-preview.nq-morning-briefing.workers.dev",
+  "https://abc123-nuvo-app.nq-morning-briefing.workers.dev",
+];
+for (const [label, env] of [
+  ["prod (ENVIRONMENT unset)", { BETTER_AUTH_URL: "https://api.nuvo.day" }],
+  ["prod (ENVIRONMENT=production)", { BETTER_AUTH_URL: "https://api.nuvo.day", ENVIRONMENT: "production" }],
+] as const) {
+  const list = trustedAuthOrigins(env);
+  const trusted = (o: string) => list.some((p) => originMatches(o, p));
+  ok(trusted("tauri://localhost"), `${label}: tauri trusted`);
+  ok(trusted("https://app.nuvo.day"), `${label}: app.nuvo.day trusted`);
+  ok(!list.some((p) => p.includes("workers.dev")), `${label}: no workers.dev entry`);
+  ok(!list.some((p) => /localhost:|127\.0\.0\.1|\[::1\]/.test(p)), `${label}: no loopback entries`);
+  for (const origin of [...PREVIEW_SAMPLES, "https://nuvo-preview.nq-morning-briefing.workers.dev"]) {
+    ok(!trusted(origin), `${label}: ${origin} not trusted`);
+    const got = beginAuthCors(origin, env);
+    ok(got.ok && got.cors["Access-Control-Allow-Origin"] !== origin, `${label}: auth CORS does not echo ${origin}`);
+  }
+}
+{
+  const previewEnv = {
+    BETTER_AUTH_URL: "https://nuvo-preview.nq-morning-briefing.workers.dev",
+    ENVIRONMENT: "preview",
+  };
+  const list = trustedAuthOrigins(previewEnv);
+  const trusted = (o: string) => list.some((p) => originMatches(o, p));
+  for (const origin of [...PREVIEW_SAMPLES, "tauri://localhost", "https://app.nuvo.day"]) {
+    ok(trusted(origin), `preview: ${origin} trusted`);
+    const got = beginAuthCors(origin, previewEnv);
+    ok(got.ok && got.cors["Access-Control-Allow-Origin"] === origin, `preview auth CORS echoes ${origin}`);
+    ok(got.ok && got.cors["Access-Control-Allow-Credentials"] === "true", `preview auth CORS credentials for ${origin}`);
+  }
+}
+// Production is the top-level wrangler config: it must never set ENVIRONMENT,
+// or prod would trust workers.dev previews again (only env.preview sets it).
+{
+  const wr = readFileSync(join(root, "wrangler.jsonc"), "utf8");
+  const envAt = wr.indexOf('"env": {');
+  ok(envAt > 0 && !wr.slice(0, envAt).includes('"ENVIRONMENT"'), "wrangler.jsonc top-level (prod) vars do not set ENVIRONMENT");
+}
+for (const mode of ["preview", "PREVIEW", "local"]) {
+  ok(previewOriginsTrusted({ ENVIRONMENT: mode }), `previewOriginsTrusted: ${mode}`);
+}
+for (const mode of [undefined, "", "production", "prod", "dev"]) {
+  ok(!previewOriginsTrusted({ ENVIRONMENT: mode }), `previewOriginsTrusted: never ${JSON.stringify(mode)}`);
 }
 for (const origin of [
   "https://evil.example",
@@ -241,10 +292,11 @@ for (const bad of ["http://localhost:5718.evil.example", "http://localhost:", "h
 {
   const ba = createAuth(liveEnv as never, { db: {}, type: "postgres" } as never);
   const ctx = await ba.$context;
-  ok(Array.isArray(ctx.trustedOrigins) && ctx.trustedOrigins.length >= 5, "Better Auth exposes its trustedOrigins");
+  ok(Array.isArray(ctx.trustedOrigins) && ctx.trustedOrigins.length >= 3, "Better Auth exposes its trustedOrigins");
   for (const o of trustedAuthOrigins(liveEnv)) {
     ok(ctx.trustedOrigins.includes(o), `Better Auth trustedOrigins includes ${o}`);
   }
+  ok(!ctx.trustedOrigins.some((o: string) => o.includes("workers.dev")), "prod Better Auth trustedOrigins has no workers.dev preview");
 }
 for (const origin of ["https://app.nuvo.day", "tauri://localhost"]) {
   const res = await app.request("http://localhost/api/auth/ok", { method: "OPTIONS", headers: { Origin: origin } }, liveEnv);
