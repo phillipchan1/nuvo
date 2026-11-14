@@ -30,14 +30,14 @@ import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
-import PlannerRail, { sharedRailWidth } from "./PlannerRail";
+import PlannerRail from "./PlannerRail";
+import { RAIL_WIDTH_CSS } from "../../lib/railWidth";
 import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { useFloorBar } from "../floors/floorBar";
 import { deckLine, projectDeckCards, type OutcomeDraft } from "../../lib/deckReady";
 import { fetchOutcomeDraft } from "../../lib/outcomeDraft";
 import { DECK_REACH_KEY, reachToCrown } from "../../lib/motion";
@@ -559,7 +559,6 @@ export default function OnDeckPlanner() {
   // lanes already know; the crown's line is the first one, said as a fact.
   const [readyMode, setReadyMode] = useState(false);
   // The page bar, drawn over the grid so the rail owns its corner (D-207 §7).
-  const floorBar = useFloorBar();
   // ✦ outcome drafts for the nearest projects with none — asked for when the
   // stack opens (your press), never on load; at most three, one each.
   const [drafts, setDrafts] = useState<Record<string, OutcomeDraft>>({});
@@ -656,7 +655,7 @@ export default function OnDeckPlanner() {
       {readyMode ? (
         <GetReadyRail
           cards={deckCards}
-          width={sharedRailWidth()}
+          width={RAIL_WIDTH_CSS()}
           onClose={() => setReadyMode(false)}
           crown={
             // The crown, pinned (rail-modes §2): the deck's track and number —
@@ -728,7 +727,6 @@ export default function OnDeckPlanner() {
           already names the page — the same reason the Schedule has no header
           over its calendar. */}
       <div className="dk-pane">
-        {floorBar}
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}

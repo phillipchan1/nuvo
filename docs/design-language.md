@@ -77,6 +77,9 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 (⌘\\, a 52px icon rail). All the work sits in one **inset panel** (`.app-panel`, 12px corner,
 `--panel`); every `.atmosphere` inside it paints the panel. Every page wears one **PageBar**:
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
+bar spans the whole panel on every page — the rail starts under it — and the breadcrumb holds the
+rail's width (`--rail-w`), so a page's views stand at one x everywhere, 16px into the grid, and
+answer **⌥⌘1–N**, one chord below the sidebar's ⌘1–4 (`kit/pageTabKeys`, D-208). The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
 The bar is a size container and **sheds by its own width, never by clipping** — the same page is

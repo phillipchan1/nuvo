@@ -43,12 +43,12 @@ import {
 import { DomainPicker } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
-import PlannerRail, { sharedRailWidth } from "./PlannerRail";
+import PlannerRail from "./PlannerRail";
+import { RAIL_WIDTH_CSS } from "../../lib/railWidth";
 import DeckCard, { type DeckTone } from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { initiativeCardStatus, INITIATIVE_STATE_LABEL } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { useFloorBar } from "../floors/floorBar";
 import { deckLine, initiativeDeckCards } from "../../lib/deckReady";
 import { PaceTrack } from "../progress/PaceTrack";
 import SlotCreateButton from "./SlotCreateButton";
@@ -392,7 +392,6 @@ export default function InitiativeDeck() {
   // At risk first (the quarter's Repair), then what still needs OKRs or shaping.
   const [readyMode, setReadyMode] = useState(false);
   // The page bar, drawn over the grid so the rail owns its corner (D-207 §7).
-  const floorBar = useFloorBar();
   const deckCards = useMemo(
     () =>
       initiativeDeckCards(
@@ -445,7 +444,7 @@ export default function InitiativeDeck() {
       {readyMode ? (
         <GetReadyRail
           cards={deckCards}
-          width={sharedRailWidth()}
+          width={RAIL_WIDTH_CSS()}
           onClose={() => setReadyMode(false)}
           crown={
             <span className="shrink-0 text-caption tabular-nums text-muted">
@@ -514,7 +513,6 @@ export default function InitiativeDeck() {
           No hero: the crown is this surface's one hero, and the bar above already
           names the page. */}
       <div className="dk-pane">
-        {floorBar}
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}

@@ -26,7 +26,7 @@ import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
 import { Icon } from "./Icon";
-import { Button, IconButton, PageBar, Segmented } from "./kit";
+import { Button, IconButton, PageBar, Segmented, Tabs } from "./kit";
 import MobileTaskList from "./mobile/MobileTaskList";
 import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
@@ -202,7 +202,9 @@ function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
       />
-      {/* As in Planner: the calendar's column carries the bar, beside the rail. */}
+      {/* The bar is NOT here: as in Planner, it spans the rail and the grid
+          (D-208) — the Frame draws it above this row. `bar` is for a caller
+          that wants it over the grid alone. */}
       <div className="flex min-w-0 flex-1 flex-col">
       {bar}
       <div className="flex flex-col gap-4 p-6">
@@ -226,6 +228,8 @@ function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar
 function Frame() {
   const [rung, setRung] = useState<"day" | "project" | "initiative" | "domain">("day");
   const [view, setView] = useState<"board" | "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "year">("timeGridWeek");
+  const [face, setFace] = useState<"ondeck" | "groom" | "all" | "shipped">("groom");
+  const label = { day: "Schedule", project: "Projects", initiative: "Initiatives", domain: "Domains" }[rung];
   return (
     <div className="app-ground h-screen">
       <div className="app-shell flex h-full">
@@ -233,40 +237,66 @@ function Frame() {
           <div className="flex min-h-0 flex-1">
             <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} />
             <div className="app-panel flex min-w-0 flex-1 flex-col">
-              <Desktop
-                embedded
-                bar={
-                  <PageBar
-                    icon={<Icon name="calendar" size={16} />}
-                    trail={["Schedule", "November 2026"]}
-                    actions={
-                      <>
-                        {/* the real bar's two optional acts, so the frame sheds what the app sheds */}
-                        <Button>Rhythm</Button>
-                        <Button collapsible icon={<Icon name="calendar" size={14} />}>
-                          Plan the week
-                        </Button>
-                        <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
-                        <Button shed>Today</Button>
-                        <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
-                        <Segmented
-                          label="Calendar view"
-                          value={view}
-                          onChange={setView}
-                          options={[
-                            { value: "board", label: "Spread", short: "S" },
-                            { value: "timeGridDay", label: "Day", short: "D" },
-                            { value: "timeGridWeek", label: "Week", short: "W" },
-                            { value: "dayGridMonth", label: "Month", short: "M" },
-                            { value: "year", label: "Year", short: "Y" },
-                          ]}
-                        />
-                        <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
-                      </>
-                    }
-                  />
-                }
-              />
+              {/* The one bar, across the whole panel on every page; its crumb
+                  holds the rail's width, so the tabs stand still (D-208). */}
+              {rung === "day" ? (
+                <PageBar
+                  icon={<Icon name="calendar" size={16} />}
+                  trail={["Schedule", "November 2026"]}
+                  tabs={
+                    <Tabs
+                      label="Calendar view"
+                      value={view}
+                      onChange={setView}
+                      tabs={[
+                        { value: "board", label: "Spread", short: "S" },
+                        { value: "timeGridDay", label: "Day", short: "D" },
+                        { value: "timeGridWeek", label: "Week", short: "W" },
+                        { value: "dayGridMonth", label: "Month", short: "M" },
+                        { value: "year", label: "Year", short: "Y" },
+                      ]}
+                    />
+                  }
+                  actions={
+                    <>
+                      {/* the real bar's two optional acts, so the frame sheds what the app sheds */}
+                      <Button>Rhythm</Button>
+                      <Button collapsible icon={<Icon name="calendar" size={14} />}>
+                        Plan the week
+                      </Button>
+                      <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
+                      <Button shed>Today</Button>
+                      <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
+                      <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
+                    </>
+                  }
+                />
+              ) : (
+                <PageBar
+                  icon={<Icon name="calendar" size={16} />}
+                  trail={[label]}
+                  tabs={
+                    rung === "domain" ? undefined : (
+                      <Tabs
+                        label="Views"
+                        value={face}
+                        onChange={setFace}
+                        tabs={[
+                          { value: "ondeck", label: "On Deck" },
+                          { value: "groom", label: "Groom" },
+                          { value: "all", label: "Table" },
+                          { value: "shipped", label: "Shipped" },
+                        ]}
+                      />
+                    )
+                  }
+                />
+              )}
+              {rung === "day" ? (
+                <Desktop embedded />
+              ) : (
+                <div className="p-8 text-caption text-muted">A document face — no rail. The tabs above stand where the Schedule's do.</div>
+              )}
             </div>
           </div>
         </div>

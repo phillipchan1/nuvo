@@ -100,7 +100,7 @@ export type Choice<T extends string> = {
   icon?: ReactNode;
   count?: number;
   title?: string;
-  /** what a Segmented in a tight PageBar says instead — the phone ladder's
+  /** what a Segmented or Tabs in a tight PageBar says instead — the phone ladder's
    *  letters ("D", "W"). The bar decides when (styles/kit.css, `k-bar`). */
   short?: string;
 };
@@ -202,11 +202,21 @@ export function Tabs<T extends string>({
             aria-selected={on}
             tabIndex={on ? 0 : -1}
             data-value={t.value}
-            title={t.title}
+            title={t.title ?? (t.short && typeof t.label === "string" ? t.label : undefined)}
+            aria-label={t.short && typeof t.label === "string" ? t.label : undefined}
             onClick={() => onChange(t.value)}
           >
             {t.icon}
-            {t.label}
+            {t.short ? (
+              <>
+                <span className="k-seg-long">{t.label}</span>
+                <span className="k-seg-short" aria-hidden="true">
+                  {t.short}
+                </span>
+              </>
+            ) : (
+              t.label
+            )}
             {t.count != null && <span className="k-count">{t.count}</span>}
           </button>
         );

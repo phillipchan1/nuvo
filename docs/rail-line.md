@@ -170,6 +170,10 @@ Undo snaps back; one mark per project for a batch; reduced motion swaps at once;
 
 ## 7 · The frame: the rail owns its corner
 
+> **Amended by D-208 (2026-11-14):** the bar now spans the panel on every page, the rail starting
+> under it, and its breadcrumb holds the rail's width — so the tabs stand at one x on every page.
+> The paragraph below is the D-207 frame it replaced.
+
 On the Schedule the rail runs to the top of the panel and the page bar starts at the grid. On the
 decks the page bar (`Projects · On Deck Groom Table Shipped`) spans over the rail, so the crown starts
 lower and the faces' tabs sit in the rail's territory. **Every planner page does what the Schedule

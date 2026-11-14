@@ -95,6 +95,8 @@ export default function Planner({
     panelAnchorEl,
     openRecord,
   } = useAppNavigation();
+  // The page bar's slot, over the rail and the grid (D-208) — CalendarPane portals its PageBar here.
+  const [barSlot, setBarSlot] = useState<HTMLDivElement | null>(null);
   const openMemory = useCallback(() => openOverlay("memory"), [openOverlay]);
 
   const { tab, calView: view, overlay, overlayId, overlaySubId, settingsSection, rung } = nav;
@@ -665,12 +667,18 @@ export default function Planner({
 
   return (
     <div className="flex h-full flex-col">
-      {/* The Planner layout (D-190): the pool left (the rail, or Plan the week's
-          rail while planning), the grid right, both on the one panel. The page's
-          bar is the grid's own PageBar (CalendarPane) — the Planner draws none.
+      {/* The Planner layout (D-190): the page bar across the whole panel, then
+          the pool left (the rail, or Plan the week's rail while planning) and
+          the grid right. The bar is the grid's own PageBar (CalendarPane), drawn
+          into this slot so it spans the rail too — every page's bar does, and
+          its breadcrumb holds the rail's width, so the tabs never move (D-208).
           Plan/Shutdown → ⌘K + the morning prompt; Nuvo → the rows it offers on (D-205); settings → ⌘,. */}
 
       <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
+
+      {/* Hidden (inherited through `contents`) while a floor covers the Schedule,
+          as the KeepAlive below is — its controls must not take focus behind it. */}
+      <div ref={setBarSlot} className="contents" style={onSchedule ? undefined : { visibility: "hidden" }} />
 
       {/* Priorities moved off Schedule — too much for the workspace. They live on
           Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
@@ -739,6 +747,7 @@ export default function Planner({
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
+            barSlot={barSlot}
             live={onSchedule}
             plan={planning ? planOverlay : repairing ? repairOverlay : null}
             tasks={allTasksArray}

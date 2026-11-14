@@ -131,7 +131,7 @@ export default function GetReadyRail({
   crown?: ReactNode;
   /** px — a deck passes the width its own rail wears, so the edge doesn't jump
    *  when the stack takes the rail over. Defaults to the Schedule's 340. */
-  width?: number;
+  width?: number | string;
 }) {
   const s = useReadyStack(cards);
   const cardEls = useRef(new Map<string, HTMLDivElement>());

@@ -2,10 +2,11 @@ import { duplicateEventInput } from "../lib/eventActs";
 import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Popover, Segmented } from "./kit";
+import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Popover, Tabs, usePageTabKeys, withPageTabKeys } from "./kit";
 import type { MemoryApi } from "./memory/MemoryPage";
 import { RhythmList } from "./memory/RhythmList";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -92,14 +93,16 @@ const FC_PLUGINS = [timeGridPlugin, dayGridPlugin, interactionPlugin];
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
-// The view switch's five faces, in the bar's Segmented (D-190).
-const CAL_VIEWS = [
+// The view switch's five faces — the bar's tabs, in the same slot as every
+// page's views (D-190, D-208), on ⌥⌘1–5 like every page's views (kit/pageTabKeys).
+// A tight bar says the phone ladder's letters instead.
+const CAL_VIEWS = withPageTabKeys([
   { value: "board", label: "Spread", short: "S" },
   { value: "timeGridDay", label: "Day", short: "D" },
   { value: "timeGridWeek", label: "Week", short: "W" },
   { value: "dayGridMonth", label: "Month", short: "M" },
   { value: "year", label: "Year", short: "Y" },
-] as const satisfies readonly { value: CalView; label: string; short: string }[];
+] as const satisfies readonly { value: CalView; label: string; short: string }[]);
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
  *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
@@ -332,6 +335,7 @@ function CalendarPane({
   onConvertEventToTask,
   onViewChange,
   hotkeysEnabled = true,
+  barSlot,
   weekGlyph,
   onOpenWeekPlan,
   weekButtonLabel,
@@ -347,6 +351,10 @@ function CalendarPane({
   onViewChange?: (v: CalView) => void;
   /** Schedule hotkeys (view switch + paging) stand down while a modal owns the screen. */
   hotkeysEnabled?: boolean;
+  /** Where the page bar goes: the Planner's slot over the rail AND the grid, so
+   *  the bar spans the panel like every page's (D-208). Omitted (harnesses): the
+   *  bar draws in place, over the grid. */
+  barSlot?: HTMLElement | null;
   /** False while a floor covers the Schedule — skip reconciling the grid. */
   live?: boolean;
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
@@ -908,6 +916,9 @@ function CalendarPane({
     if (view === "year") setYearCursor(now.getFullYear());
     else calRef.current?.getApi()?.today();
   };
+
+  // ⌥⌘1–5 — the views in the bar's order, the chord every page's views take.
+  usePageTabKeys(CAL_VIEWS, onViewChange, hotkeysEnabled);
 
   // Schedule hotkeys. Views always win on bare s / w / d / m / y (the rail's
   // triage letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T
@@ -4366,6 +4377,9 @@ function CalendarPane({
     ],
   );
 
+  // The bar lives in the Planner's slot when there is one (D-208).
+  const inBar = (node: ReactNode) => (barSlot ? createPortal(node, barSlot) : node);
+
   return (
     // Transparent so the single .atmosphere canvas (laid down by AppShellInner)
     // reads continuously across the spine, the rail, and the calendar grid —
@@ -4892,6 +4906,7 @@ function CalendarPane({
       {/* ── The one bar (D-190) — breadcrumb (the span on screen) · travel ·
             the view · tools. The span is the crumb's last word for every view,
             so the pane never repeats it (the Year's numeral too, D-129). */}
+      {inBar(
       <PageBar
         leading={
           onToggleFocus && focusMode ? (
@@ -4902,6 +4917,7 @@ function CalendarPane({
         }
         icon={<Icon name="calendar" size={16} />}
         trail={["Schedule", view === "board" ? "Spread" : isYear ? String(yearCursor) : monthTitle]}
+        tabs={onViewChange && <Tabs label="Calendar view" value={view as CalView} onChange={onViewChange} tabs={CAL_VIEWS} />}
         actions={
           <>
             {/* Only while you're away from home (the phone hides it too). */}
@@ -4942,7 +4958,6 @@ function CalendarPane({
                 <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} onClick={() => pageBy(1)} />
               </>
             )}
-            {onViewChange && <Segmented label="Calendar view" value={view as CalView} onChange={onViewChange} options={CAL_VIEWS} />}
             <IconButton
               ref={utilsBtn}
               label="More calendar tools"
@@ -4978,7 +4993,8 @@ function CalendarPane({
             </Menu>
           </>
         }
-      />
+      />,
+      )}
 
       {/* ── The Week Board — "which day" altitude, a toggle away from the grid ── */}
       {view === "board" && (

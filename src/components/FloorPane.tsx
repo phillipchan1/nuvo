@@ -8,8 +8,7 @@ import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
 import { AltitudeIcon } from "./icons";
-import { PageBar, Tabs } from "./kit";
-import { FloorBarContext } from "./floors/floorBar";
+import { PageBar, Tabs, usePageTabKeys, withPageTabKeys } from "./kit";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
@@ -22,13 +21,14 @@ import ProjectReadinessStrip from "./floors/ProjectReadinessStrip";
 import InitiativeReadinessStrip from "./floors/InitiativeReadinessStrip";
 
 const RUNG_LABEL: Record<Rung, string> = { day: "Schedule", project: "Projects", initiative: "Initiatives", domain: "Domains" };
-// The four faces of a build altitude (D-099), numbered 1–4 in their tooltips.
-const FACES = [
-  { value: "ondeck", label: "On Deck", title: "On Deck (1)" },
-  { value: "groom", label: "Groom", title: "Groom (2)" },
-  { value: "all", label: "Table", title: "Table (3)" },
-  { value: "shipped", label: "Shipped", title: "Shipped (4)" },
-] as const;
+// The four faces of a build altitude (D-099). ⌥⌘1–4 everywhere (the page's
+// views, one chord below the sidebar's ⌘1–4); plain 1–4 too, on these rungs.
+const FACES = withPageTabKeys([
+  { value: "ondeck", label: "On Deck" },
+  { value: "groom", label: "Groom" },
+  { value: "all", label: "Table" },
+  { value: "shipped", label: "Shipped" },
+] as const);
 
 // The faces of the project altitude: "ondeck" answers WHEN (time-box projects
 // across weeks, with the needs-a-week inbox); "groom" answers WHAT (shape each
@@ -89,6 +89,9 @@ function FloorPane({
     (rung === "project" && projectView === "ondeck") ||
     (rung === "initiative" && initiativeView === "ondeck");
 
+  // ⌥⌘1–4 — the same chord every page's views answer to (kit/pageTabKeys).
+  usePageTabKeys(FACES, rung === "project" ? setProjectView : rung === "initiative" ? setInitiativeView : undefined, active);
+
   // Plain 1 · 2 · 3 · 4 switch the Build faces (On Deck · Groom · Table · Shipped)
   // — like the Schedule view's number keys. Scoped to the project & initiative
   // rungs, and never while typing (composer / brief / step edits). ⌘1–5 stays the
@@ -140,17 +143,15 @@ function FloorPane({
     // one continuous warm-paper canvas. Painting an opaque bg here covered it and
     // made each floor read as a flat panel instead of the same paper as Schedule.
     <div className="flex h-full flex-col">
-      {/* The one bar (D-190): breadcrumb · the altitude's four faces as tabs.
-          On a PLANNER face (On Deck) the rail owns its corner, as on the
-          Schedule (D-207 §7): the bar is handed to the face, which draws it over
-          its grid, so the crown starts at the top of the panel. Every other face
-          is a document and wears it across the top. */}
-      {!workspace && bar}
+      {/* The one bar (D-190), across the whole panel on EVERY face — planner or
+          document — with the rail starting under it (D-208, amends D-207 §7).
+          Its breadcrumb holds the rail's width, so the tabs stand at the same x
+          on every page and never jump as a face gains or loses its rail. */}
+      {bar}
 
       {/* The On Deck faces are PLANNER surfaces, not documents: rail + grid filling
           the pane, scrolling inside themselves, exactly like the Schedule. Every
           other face stays a padded, scrolling floor. */}
-      <FloorBarContext.Provider value={workspace ? bar : null}>
       <div
         key={`${rung}-${viewKey}`}
         className={`floor-enter min-h-0 flex-1 ${workspace ? "overflow-hidden" : "overflow-y-auto px-8 py-7"}`}
@@ -176,7 +177,6 @@ function FloorPane({
           <DomainFloor focus={focus} onSwitchDomain={focusDomain} onExitDomain={exitDomain} onOpenInitiative={openInitiativeRecord} onOpenProject={openProjectRecord} />
         )}
       </div>
-      </FloorBarContext.Provider>
     </div>
   );
 }

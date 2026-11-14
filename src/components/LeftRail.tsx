@@ -57,32 +57,11 @@ type Mutations = ReturnType<typeof useTaskMutations>;
 
 /** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
  *  these plan/return acts take the toast channel (complete/trash already do). */
+import { MAX_RAIL_WIDTH, MIN_RAIL_WIDTH, paintRailWidth, readRailWidth, writeRailWidth } from "../lib/railWidth";
+
 const TRIAGE_UNDO = { undo: "toast" as const };
 
 const NO_SLOTS: readonly Slot[] = [];
-
-const RAIL_WIDTH_KEY = "nuvo-rail-width";
-const DEFAULT_RAIL_WIDTH = 360;
-const MIN_RAIL_WIDTH = 240;
-const MAX_RAIL_WIDTH = 560;
-
-function readRailWidth(): number {
-  try {
-    const v = Number(localStorage.getItem(RAIL_WIDTH_KEY));
-    if (Number.isFinite(v) && v >= MIN_RAIL_WIDTH && v <= MAX_RAIL_WIDTH) return v;
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_RAIL_WIDTH;
-}
-
-function writeRailWidth(width: number) {
-  try {
-    localStorage.setItem(RAIL_WIDTH_KEY, String(width));
-  } catch {
-    /* ignore */
-  }
-}
 
 function LeftRail({
   tab,
@@ -189,6 +168,9 @@ function LeftRail({
   const [railWidthPref, setRailWidth] = useState(readRailWidth);
   // What renders. Differs from the preference only while squeezed.
   const railWidth = squeezed ? Math.min(railWidthPref, MIN_RAIL_WIDTH) : railWidthPref;
+  // Every page bar's breadcrumb slot (and the decks' rails) wear this width, so
+  // the tabs stand where the grid starts on every page (D-208).
+  useEffect(() => paintRailWidth(railWidth), [railWidth]);
   const [captureError, setCaptureError] = useState<string | null>(null);
   // Every section of the day is a disclosure (the kit's SectionHeader); Done
   // starts shut — it's the quiet tail, a single line until you want it.
@@ -866,6 +848,7 @@ function LeftRail({
     const paintWidth = (w: number) => {
       if (outer) outer.style.width = `${w}px`;
       if (inner) inner.style.width = `${w}px`;
+      paintRailWidth(w);
     };
 
     const onMove = (ev: PointerEvent) => {

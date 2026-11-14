@@ -20,26 +20,11 @@ import { useMemo, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { Button, Crown, IconButton, SectionHeader } from "../kit";
 import type { CrownLineData } from "../../lib/crownLine";
+import { RAIL_WIDTH_CSS } from "../../lib/railWidth";
 
 // The rail is the SAME rail at every altitude, so it wears the width you set on
-// the Schedule (LeftRail persists it here) — switching rungs must not move the
-// edge between the pool and the grid. Read once at mount; the decks and the
-// Schedule are never on screen together, so there's nothing to keep in sync.
-const RAIL_WIDTH_KEY = "nuvo-rail-width";
-const DEFAULT_RAIL_WIDTH = 360;
-const MIN_RAIL_WIDTH = 240;
-const MAX_RAIL_WIDTH = 560;
-
-export function sharedRailWidth(): number {
-  try {
-    const v = Number(localStorage.getItem(RAIL_WIDTH_KEY));
-    if (Number.isFinite(v) && v >= MIN_RAIL_WIDTH && v <= MAX_RAIL_WIDTH) return v;
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_RAIL_WIDTH;
-}
-
+// the Schedule — `--rail-w` (lib/railWidth), which every page bar's breadcrumb
+// slot wears too. Switching rungs moves neither the pool's edge nor the tabs.
 /** The readiness crown: "5 of 9 ready" + the one gap that's still open. */
 export interface RailCrown {
   /** the horizon this rail plans ("Next 4 weeks"). */
@@ -95,7 +80,7 @@ export default function PlannerRail({
   groomAction?: ReactNode;
   children: ReactNode;
 }) {
-  const width = useMemo(sharedRailWidth, []);
+  const width = useMemo(RAIL_WIDTH_CSS, []);
 
   return (
     <aside {...{ [dropAttr]: "" }} className="pr" data-over={over || undefined} style={{ width }}>

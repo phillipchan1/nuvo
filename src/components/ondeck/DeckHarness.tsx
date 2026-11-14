@@ -11,7 +11,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
 import { AppNavigationProvider } from "../../hooks/useAppNavigation";
 import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib/vertical";
-import { FloorBarContext } from "../floors/floorBar";
 import { PageBar, Tabs } from "../kit";
 import OnDeckPlanner from "./OnDeckPlanner";
 import InitiativeDeck from "./InitiativeDeck";
@@ -95,9 +94,8 @@ function Frame({ label, bar, children }: { label: string; bar: ReactNode; childr
     <section style={{ display: "grid", gap: 6 }}>
       <div className="text-caption text-muted">{label}</div>
       <div className="app-panel" style={{ height: 620, display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--line-1)", borderRadius: 10 }}>
-        <FloorBarContext.Provider value={bar}>
-          <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-        </FloorBarContext.Provider>
+        {bar}
+        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </div>
     </section>
   );

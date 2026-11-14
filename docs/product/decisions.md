@@ -6810,6 +6810,49 @@ real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
 
+**D-208 · 2026-11-14 · One bar across the panel, and the tabs stand still: a page's views sit at
+one x on every page, on ⌥⌘1–N.** *(Asked by the operator: "instead of right-aligning day, month,
+and week… on the other pages the subnav is left-aligned", "restore keyboard shortcuts for the
+subpages", then "the awkward part of left aligning… when i go through them the sidebar/lack of
+left sidebar suddenly moves the navigation… what is the best ux for consistency between ALL the
+pages", and, after the prototype, "yes build it".)*
+
+The tabs jumped because the bar's left edge did: on a planner face (the Schedule, On Deck) the
+rail owned the top corner and the bar started at the grid; on a document face (Groom, Table,
+Shipped) the bar started at the panel's edge. Right-aligning moves the jump to the other side
+(the acts differ per page, and the chat moves the right edge); centring halves it.
+
+→ **The bar spans the whole panel on every page**, rail or none; the rail starts under it.
+**Amends D-207's frame bullet** ("the decks' PageBar starts at the grid… the rail owns its
+corner") — the crown now starts one bar lower, on the Schedule and both decks.
+
+→ **The breadcrumb holds the rail's width** (`--rail-w`, `lib/railWidth`, painted by the
+Schedule's rail and worn by the decks' rails), so a page's views start 16px into the grid — as
+the crumb sits 16px into the rail — at the same x on every page, and they don't move as you page
+(the Schedule's span changes length; the slot doesn't). A bar too tight for it (≤760px of bar)
+sheds the slot as before.
+
+→ **The Schedule's views are the bar's tabs** (Spread · Day · Week · Month · Year), in the same
+slot as On Deck · Groom · Table · Shipped, not a Segmented among the acts; a tight bar says the
+phone ladder's letters.
+
+→ **⌥⌘1–N switch the page's views on every page** — one chord below the sidebar's ⌘1–4
+(`kit/pageTabKeys`). Not plain digits: on the Schedule 1–4 set a selected block's priority. Plain
+1–4 stay on the Build rungs; the Schedule's letters stay.
+
+→ **Anchor.** No ledger row: this is the frame, not a feature — navigation that moves under the
+hand. Strengthens **P14** (exact chrome). Strains **D-207**'s "the crown starts at the top of the
+panel", held by: the crown is still the rail's first thing, one bar lower on every page alike.
+Four no's: no pool, no name, works on an empty account, nothing one account's.
+
+*Status: decided by Phil 2026-11-14, after the prototype; built the same day on
+`claude/page-bar-frame`. The Schedule's bar is CalendarPane's, portalled into Planner's slot over
+the rail and the grid; `FloorBarContext` is gone. Driven at `?rail=frame` (tabs at the same x on
+Schedule · Projects · Initiatives · Domains, following a rail resize) and `?decks` (both decks: the
+bar spans, tabs 16px past the rail). **Not driven:** the signed-in app (no dev login on this
+machine) and `npm run perf` (needs it). The Schedule's mode rails (Plan the week, Repair, Get
+ready) stay 340px, so while one is open the tabs keep their x but sit 20px off the grid's edge.*
+
 **D-207 · 2026-11-13 · One crown, one line: the door to Get ready is a sentence, on every
 planner page.** *(Asked by the operator: "a system that proactively tells me when something is
 not aligned… a task scheduled earlier for today that I didn't finish… I think we built it

@@ -802,6 +802,15 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 .k-crumb-here { flex: 0 1 auto; min-width: 3ch; }
 .k-crumb-up { flex: 0 4 auto; min-width: 2.5em; } /* never shrinks to nothing and orphans its slash */
 .k-seg-short { display: none; }
+/* The breadcrumb slot (D-208). In the frame, the crumb holds the rail's width
+   (--rail-w, lib/railWidth), so on EVERY page — rail or none — the tabs stand at
+   one x: 16px into the grid, as the crumb sits 16px into the rail. A page's
+   views never jump as you move between pages, and they never move as you page
+   (the Schedule's span can grow; the slot doesn't). */
+@media (min-width: 768px) {
+  .app-panel .k-bar > .k-crumb { flex: none; width: calc(var(--rail-w, 360px) - 24px); max-width: none; }
+  .app-panel .k-bar > .k-bar-tabs { margin-left: 16px; }
+}
 @media (max-width: 767px) {
   .k-bar { padding: 0 8px 0 12px; }
   .k-bar-tabs { margin-left: 8px; }
@@ -888,7 +897,8 @@ html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2
 @container k-bar (max-width: 760px) {
   .k-crumb-up,
   .k-crumb-sep { display: none; }
-  .k-crumb { max-width: 40%; }
+  .k-crumb,
+  .app-panel .k-bar > .k-crumb { width: auto; flex: 0 1 auto; max-width: 40%; }
   .k-btn[data-collapsible] { width: var(--h-sm); padding: 0; }
   .k-btn[data-collapsible] > .k-btn-label { display: none; }
 }
@@ -896,6 +906,9 @@ html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2
   .k-bar-actions .k-seg button { padding: 0 8px; }
   .k-bar-actions .k-seg-long { display: none; }
   .k-bar-actions .k-seg-short { display: inline; }
+  .k-bar-tabs .k-tabs { gap: 12px; }
+  .k-bar-tabs .k-seg-long { display: none; }
+  .k-bar-tabs .k-seg-short { display: inline; }
 }
 @container k-bar (max-width: 480px) {
   .k-crumb { display: none; }
