@@ -797,3 +797,78 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
   .k-bar { padding: 0 8px 0 12px; }
   .k-bar-tabs { margin-left: 8px; }
 }
+
+/* ── Crown — the head of every planner page's rail (D-207) ─────────────────
+   Eyebrow · one number · the page's track · the line. The Schedule and both
+   decks wear it; the line is the door to Get ready. Flat on the rail's ground
+   (structure, not a float), one hairline under it. */
+.k-crown {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line-1);
+  flex: none;
+  min-width: 0;
+}
+.k-crown-k {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--h-xs);
+  min-width: 0;
+  color: var(--muted);
+  font: 600 12px/1 var(--font-sans);
+}
+.k-crown-eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k-crown-grow { flex: 1; }
+.k-crown-k .k-btn { margin-right: -6px; color: var(--faint); }
+.k-crown-hero {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-crown-hero > .k-crown-of { color: var(--faint); }
+.k-crown-hero[data-empty] { color: var(--muted); }
+.k-crown-track { min-width: 0; }
+
+/* The line — a fact and where it goes. --warn when something broke or is at
+   risk, --accent for intent, --muted for a read; never --signal (that's now). */
+.k-crown-line-wrap { display: grid; gap: 2px; margin: 2px -8px 0; min-width: 0; }
+.k-crown-line {
+  --line-tone: var(--accent-ink);
+  --line-wash: var(--accent-wash);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--h-md);
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--line-wash);
+  color: var(--ink-2);
+  font: 450 12.5px/1.3 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  transition: background-color var(--d-base) var(--ease-out);
+}
+.k-crown-line[data-tone="warn"] { --line-tone: var(--warn); --line-wash: color-mix(in srgb, var(--warn) 10%, transparent); }
+.k-crown-line[data-tone="muted"] { --line-tone: var(--ink-2); --line-wash: var(--sunk); }
+.k-crown-line-glyph { flex: none; width: 12px; text-align: center; color: var(--line-tone); align-self: flex-start; }
+/* Two lines before it truncates: the end of the fact ("didn't happen (2pm)") is
+   the part that matters, and a 320px rail cut it off at one. The act never wraps. */
+.k-crown-line-text { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.k-crown-line-act { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--line-tone); font-weight: 600; white-space: nowrap; }
+.k-crown-line-then { margin: 0; padding: 0 8px; color: var(--faint); font: 400 11.5px/1.3 var(--font-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) {
+  button.k-crown-line:hover { background: color-mix(in srgb, var(--line-tone) 14%, transparent); transition-duration: 0ms; }
+}
+html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+@media (pointer: coarse) {
+  .k-crown-line { min-height: 44px; font-size: 14px; }
+}

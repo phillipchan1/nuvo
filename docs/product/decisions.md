@@ -6861,9 +6861,18 @@ no's: no pool, no new noun (*Get ready*, *Repair*, *Groom*, *Nuvo's read* exist)
 empty account, nothing one account's. The objection, led with: a Domains rail is a new place, left
 open.
 
-*Status: decided by Phil 2026-11-13, after the prototype. Nothing built. **Amends D-206**: its
-door, not its stack. **Amends D-204**: the repair line folds into the line. Open: a Domains rail,
-the grace, the Spine's cues, and which deck cards ship first.*
+*Status: decided by Phil 2026-11-13, after the prototype; **built the same day** ("build
+everything"). **Amends D-206**: its door, not its stack. **Amends D-204**: the repair line folds
+into the line (Handle's "Nuvo moved N · Review" stays as a line of its own). Built: kit `Crown` /
+`CrownLine` on the Schedule, both decks and the phone's open crown; `scheduleLine` over the same
+compose as the stack (`useReady`), so the line is always the first card; deck stacks
+(`lib/deckReady`: overdue · thin · gap · won't fit; at risk → Draft the projects · OKRs); `isMissed`
+in the kernel, read by Repair and Overdue (Overdue's grace drops from 1h to 15m); the decks' page
+bar over the grid; a Read line on the domain wall, both shells; a success haptic on writing acts.
+**Not built:** per-account "Leave it" (needs a migration), the native iOS haptic, *Set as outcome* /
+*Move to <week>* deck acts, a Domains rail (the lighter line was built instead), the Spine's cue
+words. Tests: `missed-rule`, `crown-line`, `deck-ready`; `rail-offers` and `get-ready-rail` updated.
+**Not driven on a signed-in account**; `npm run perf` not run (no dev login in the build checkout).*
 
 **D-206 · 2026-11-13 · The week is one track, and Get ready turns the rail into a stack of cards
 that take this screen to ready.** *(Asked by the operator on the preview: "intelligence should

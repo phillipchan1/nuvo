@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import type { Label, Slot, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
@@ -24,6 +24,7 @@ import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId,
 import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
+import type { CrownLineData } from "../lib/crownLine";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import {
   FileOffer,
@@ -101,7 +102,7 @@ function LeftRail({
   slotTitle,
   onOpenSlot,
   crownLine,
-  onGetReady,
+  onCrownLine,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -134,14 +135,11 @@ function LeftRail({
   /** Names an untitled slot from what's inside it — lives with the vertical. */
   slotTitle?: (s: Slot, children: Task[]) => string;
   onOpenSlot?: (s: Slot, anchor: DOMRect) => void;
-  /** The crown's one line at rest (docs/rail-modes.md §3), handed to WeekPanel's
-   *  `crownLine` — today the repair line ("Tue 10am broke · Repair ›").
-   *  Undefined says nothing (the track carries "no time", D-206). Memoize it:
-   *  the rail is memo'd. */
-  crownLine?: ReactNode;
-  /** Get ready (D-206) — forwarded to WeekPanel, whose door becomes
-   *  "Get ready ›" when it is given. */
-  onGetReady?: () => void;
+  /** The crown's line (D-207): the Get ready stack's first card, in words —
+   *  handed to WeekPanel. `null` says nothing. Memoize it: the rail is memo'd. */
+  crownLine?: CrownLineData | null;
+  /** Pressing the line opens Get ready (D-207). */
+  onCrownLine?: () => void;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -978,10 +976,9 @@ function LeftRail({
               dragData={dragData}
             />
           )}
-          // The line under the week's track (D-204 §3): the repair line while
-          // the week is broken; undefined says nothing (D-206).
-          crownLine={crownLine}
-          onGetReady={onGetReady}
+          // The crown's line (D-207): the door to Get ready, said as a fact.
+          line={crownLine}
+          onLine={onCrownLine}
           offers={offers}
           onPathCandidates={setPathCands}
         />

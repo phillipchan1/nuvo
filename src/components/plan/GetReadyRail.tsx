@@ -122,12 +122,16 @@ export default function GetReadyRail({
   onClose,
   railRef,
   crown,
+  width,
 }: {
   cards: readonly ReadyCard[];
   onClose: () => void;
   railRef?: React.MutableRefObject<HTMLDivElement | null>;
   /** the crown, pinned (rail-modes §2) — defaults to the live PinnedCrown */
   crown?: ReactNode;
+  /** px — a deck passes the width its own rail wears, so the edge doesn't jump
+   *  when the stack takes the rail over. Defaults to the Schedule's 340. */
+  width?: number;
 }) {
   const s = useReadyStack(cards);
   const cardEls = useRef(new Map<string, HTMLDivElement>());
@@ -175,8 +179,8 @@ export default function GetReadyRail({
     <div
       ref={railRef}
       data-ready-rail
-      className="titlebar-pad relative z-40 flex h-full w-[340px] shrink-0 flex-col"
-      style={{ borderRight: "1px solid var(--line-1)", ["--titlebar-pad-y" as string]: "0px" }}
+      className="titlebar-pad relative z-40 flex h-full shrink-0 flex-col"
+      style={{ width: width ?? 340, borderRight: "1px solid var(--line-1)", ["--titlebar-pad-y" as string]: "0px" }}
     >
       <div className="flex h-12 shrink-0 items-center gap-1.5 pl-4 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
         <span className="f-title min-w-0 flex-1 truncate">Get ready</span>

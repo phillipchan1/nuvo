@@ -18,7 +18,8 @@
 
 import { useMemo, type ReactNode } from "react";
 import { Icon } from "../Icon";
-import { Button, IconButton, SectionHeader } from "../kit";
+import { Button, Crown, IconButton, SectionHeader } from "../kit";
+import type { CrownLineData } from "../../lib/crownLine";
 
 // The rail is the SAME rail at every altitude, so it wears the width you set on
 // the Schedule (LeftRail persists it here) — switching rungs must not move the
@@ -29,7 +30,7 @@ const DEFAULT_RAIL_WIDTH = 360;
 const MIN_RAIL_WIDTH = 240;
 const MAX_RAIL_WIDTH = 560;
 
-function sharedRailWidth(): number {
+export function sharedRailWidth(): number {
   try {
     const v = Number(localStorage.getItem(RAIL_WIDTH_KEY));
     if (Number.isFinite(v) && v >= MIN_RAIL_WIDTH && v <= MAX_RAIL_WIDTH) return v;
@@ -47,8 +48,13 @@ export interface RailCrown {
   done: number;
   total: number;
   noun: string;
-  /** the one debt owed to the floor below — hidden entirely when clean. */
-  gap?: { label: string; detail?: string; onJump: () => void } | null;
+  /** the deck as a track (D-207) — one piece per item, ready · mid-groom · raw */
+  track?: ReactNode;
+  /** the crown's line (D-207): the deck's Get ready stack, first card in words.
+   *  `null` when the deck is clean — no line, nothing to press. */
+  line?: CrownLineData | null;
+  /** pressing the line opens the deck's Get ready stack */
+  onLine?: () => void;
   /** the crown is also the doorway to the play that moves the count (Groom). */
   onOpen?: () => void;
   openTitle?: string;
@@ -94,39 +100,28 @@ export default function PlannerRail({
   return (
     <aside {...{ [dropAttr]: "" }} className="pr" data-over={over || undefined} style={{ width }}>
       {/* ── the crown — the readiness, as the surface's one hero ─────────────── */}
-      <div className="pr-crown">
-        <div className="pr-k">
-          <span>{crown.eyebrow}</span>
-          <span className="pr-grow" />
-          {crown.onOpen && (
+      <Crown
+        eyebrow={crown.eyebrow}
+        eyebrowAction={
+          crown.onOpen && (
             <IconButton
               size="xs"
               label={crown.openTitle ?? "Open Groom"}
               icon={<Icon name="arrow-right" size={14} />}
               onClick={crown.onOpen}
             />
-          )}
-        </div>
-        {crown.total === 0 ? (
-          <h2 className="pr-hero text-display masthead" data-empty="">
-            Nothing placed
-          </h2>
-        ) : (
-          <h2 className="pr-hero text-display masthead" aria-label={`${crown.done} of ${crown.total} ${crown.noun}`}>
-            {crown.done}
-            <span className="pr-of"> of {crown.total}</span> {crown.noun}
-          </h2>
-        )}
-        {crown.gap && (
-          <button type="button" className="pr-gap" onClick={crown.gap.onJump}>
-            <span className="pr-gap-mark" aria-hidden />
-            <GapLabel label={crown.gap.label} />
-            {crown.gap.detail && <span className="pr-gap-detail">· {crown.gap.detail}</span>}
-            <Icon name="chevron-right" size={12} />
-          </button>
-        )}
+          )
+        }
+        done={crown.done}
+        total={crown.total}
+        noun={crown.noun}
+        empty="Nothing placed"
+        track={crown.track}
+        line={crown.line}
+        onLine={crown.onLine}
+      >
         {groomAction && <div className="pr-groom">{groomAction}</div>}
-      </div>
+      </Crown>
 
       {/* ── the pool ─────────────────────────────────────────────────────────────
           An EMPTY pool centres its two words in the space it owns rather than
@@ -151,17 +146,5 @@ export default function PlannerRail({
         </Button>
       </div>
     </aside>
-  );
-}
-
-/** "3 need shaping" → the count in ink, the words quiet. */
-function GapLabel({ label }: { label: string }) {
-  const m = /^(\d+)(\s.*)$/.exec(label);
-  if (!m) return <span>{label}</span>;
-  return (
-    <span>
-      <b>{m[1]}</b>
-      {m[2]}
-    </span>
   );
 }

@@ -1267,7 +1267,7 @@ const RAW_TOOL_DEFINITIONS = [
             type: "string",
             enum: ["overdue", "today", "tomorrow", "this_week", "next_week", "undated"],
             description:
-              "Relative window on do_date (or deadline). 'overdue' is the app's overdue: a date that has passed OR a block that ran more than an hour past its end. This is NOT when they finished — use `completed` for that.",
+              "Relative window on do_date (or deadline). 'overdue' is the app's overdue: a date that has passed OR a block whose end passed 15 minutes ago and still isn't done (the kernel's missed rule). This is NOT when they finished — use `completed` for that.",
           },
           date_field: {
             type: "string",

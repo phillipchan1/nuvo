@@ -25,6 +25,7 @@
 // Everything downstream reads one `DayCtx` through `buildDayPlan` (dayPlan.ts),
 // so "what counts as busy" lives in exactly one place across all five lenses.
 
+import type { CrownLineData } from "../../lib/crownLine";
 import { useMemo, useState } from "react";
 import { addDays, addMonths, endOfMonth, endOfWeek, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
@@ -112,6 +113,7 @@ export default function MobileCalendar({
   renderCrownTask,
   onPlanWeek,
   onGetReady,
+  readyLine,
   initialMode,
 }: {
   now: Date;
@@ -133,6 +135,8 @@ export default function MobileCalendar({
   onPlanWeek?: () => void;
   /** Get ready (D-206) — the week crown's door when given. */
   onGetReady?: () => void;
+  /** The crown's line (D-207) — the Get ready stack's first card, in words. */
+  readyLine?: CrownLineData | null;
   /** Harnesses pin a lens without writing `nuvo-mobile-cal-mode`. */
   initialMode?: CalHorizon;
 }) {
@@ -253,6 +257,7 @@ export default function MobileCalendar({
       renderCrownTask={renderCrownTask}
       onPlanWeek={onPlanWeek}
       onGetReady={onGetReady}
+      readyLine={readyLine}
     />
   );
 }

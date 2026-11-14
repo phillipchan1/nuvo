@@ -9,6 +9,7 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
 import { AltitudeIcon } from "./icons";
 import { PageBar, Tabs } from "./kit";
+import { FloorBarContext } from "./floors/floorBar";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
@@ -110,43 +111,46 @@ function FloorPane({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, rung, setProjectView, setInitiativeView]);
 
+  const bar = (
+    <PageBar
+      icon={<AltitudeIcon kind={rung} size={16} />}
+      trail={[RUNG_LABEL[rung]]}
+      tabs={
+        rung === "project" ? (
+          <Tabs
+            label="Project views"
+            value={projectView}
+            onChange={(v) => (v === "ondeck" ? backToProjects() : setProjectView(v))}
+            tabs={FACES}
+          />
+        ) : rung === "initiative" ? (
+          <Tabs
+            label="Initiative views"
+            value={initiativeView}
+            onChange={(v) => (v === "ondeck" ? backToInitiatives() : setInitiativeView(v))}
+            tabs={FACES}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   return (
     // Transparent: the floor overlay (AppShell) already paints .atmosphere, the
     // one continuous warm-paper canvas. Painting an opaque bg here covered it and
     // made each floor read as a flat panel instead of the same paper as Schedule.
     <div className="flex h-full flex-col">
-      {/* The band's LEFT is deliberately empty — it's the window-drag zone, and the
-          rail's crown below it already names what you're looking at (the Schedule
-          works the same way: no chrome header, drag on the toolbar's empty spacer).
-          The face switcher rides the RIGHT cluster in the calendar toolbar's own
-          idiom, so "which shape of this altitude" reads identically everywhere. */}
       {/* The one bar (D-190): breadcrumb · the altitude's four faces as tabs.
-          The sidebar already carries the Schedule, so the bar doesn't. */}
-      <PageBar
-        icon={<AltitudeIcon kind={rung} size={16} />}
-        trail={[RUNG_LABEL[rung]]}
-        tabs={
-          rung === "project" ? (
-            <Tabs
-              label="Project views"
-              value={projectView}
-              onChange={(v) => (v === "ondeck" ? backToProjects() : setProjectView(v))}
-              tabs={FACES}
-            />
-          ) : rung === "initiative" ? (
-            <Tabs
-              label="Initiative views"
-              value={initiativeView}
-              onChange={(v) => (v === "ondeck" ? backToInitiatives() : setInitiativeView(v))}
-              tabs={FACES}
-            />
-          ) : undefined
-        }
-      />
+          On a PLANNER face (On Deck) the rail owns its corner, as on the
+          Schedule (D-207 §7): the bar is handed to the face, which draws it over
+          its grid, so the crown starts at the top of the panel. Every other face
+          is a document and wears it across the top. */}
+      {!workspace && bar}
 
       {/* The On Deck faces are PLANNER surfaces, not documents: rail + grid filling
           the pane, scrolling inside themselves, exactly like the Schedule. Every
           other face stays a padded, scrolling floor. */}
+      <FloorBarContext.Provider value={workspace ? bar : null}>
       <div
         key={`${rung}-${viewKey}`}
         className={`floor-enter min-h-0 flex-1 ${workspace ? "overflow-hidden" : "overflow-y-auto px-8 py-7"}`}
@@ -172,6 +176,7 @@ function FloorPane({
           <DomainFloor focus={focus} onSwitchDomain={focusDomain} onExitDomain={exitDomain} onOpenInitiative={openInitiativeRecord} onOpenProject={openProjectRecord} />
         )}
       </div>
+      </FloorBarContext.Provider>
     </div>
   );
 }

@@ -164,15 +164,16 @@ describe("reading a query back", () => {
 describe("overdue is the app's overdue, not a date comparison", () => {
   // The bug this pins: a filter chip labelled "Overdue" sitting three lines
   // under a rail section labelled "Overdue", meaning something different. The
-  // rail counts a block that ran an hour past its end; a naive filter counts a
+  // rail counts a block whose end passed the missed grace; a naive filter counts a
   // stale date. Both are late, so the rule is the union — defined once, here.
   const at = (h: number) => Date.UTC(2026, 7, 12, h + 7, 0); // h, Pacific
 
-  it("counts a block that ran more than an hour past its end", () => {
+  it("counts a block once the kernel's missed grace has passed (D-207)", () => {
     const block = { start_time: "2026-08-12T16:00:00.000Z", duration_minutes: 60, status: "planned" };
+    const min = 60_000;
     expect(isOverdue(block, at(10))).toBe(false); // 10am — it just ended
-    expect(isOverdue(block, at(11))).toBe(false); // inside the hour of grace
-    expect(isOverdue(block, at(12))).toBe(true); // past it
+    expect(isOverdue(block, at(10) + 14 * min)).toBe(false); // inside the grace
+    expect(isOverdue(block, at(10) + 15 * min)).toBe(true); // the same minute Repair calls it missed
   });
 
   it("counts a date that has already passed, timed or not", () => {

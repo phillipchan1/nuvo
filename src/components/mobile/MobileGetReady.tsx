@@ -29,7 +29,9 @@ export function ReadyStackSheet({ cards, onClose }: { cards: readonly ReadyCard[
   }, [s.empty, onClose]);
 
   const press = (c: ReadyCard, which: "primary" | "secondary", el: HTMLElement | null) => {
-    haptic(which === "primary" ? "light" : "selection");
+    // An act that changes your week lands with a success tap (D-207 §6); one
+    // that only opens a mode or a record is a light tap; Not now is a tick.
+    haptic(which === "primary" ? (c.opensMode || c.kind === "path" ? "light" : "success") : "selection");
     s.act(c, which, el, el?.closest<HTMLElement>(".k-offer-card") ?? null);
   };
 

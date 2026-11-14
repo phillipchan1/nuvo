@@ -19,6 +19,7 @@
 // only thing that moves is the body, scaling through the column of the day you
 // are standing on — the same column the week row above it occupies.
 
+import type { CrownLineData } from "../../lib/crownLine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
@@ -145,6 +146,7 @@ export default function CalendarSurface({
   renderCrownTask,
   onPlanWeek,
   onGetReady,
+  readyLine,
 }: {
   now: Date;
   ctx: DayCtx;
@@ -173,6 +175,7 @@ export default function CalendarSurface({
   onPlanWeek?: () => void;
   /** Get ready (D-206) — the week crown's door when given. */
   onGetReady?: () => void;
+  readyLine?: CrownLineData | null;
 }) {
   const persistMode = initialMode == null;
   const [win, setWin] = useState<CalWindow>(() => initialCalendarWindow(now, initialMode));
@@ -598,6 +601,7 @@ export default function CalendarSurface({
           onOpenDay={(d) => openDay(d, "day")}
           onPlanWeek={onPlanWeek!}
           onGetReady={onGetReady}
+          readyLine={readyLine}
           anchored
           // Month and Year answer a different question (D-119), so the slate
           // cannot open over them; the strip stays, because it is the one line

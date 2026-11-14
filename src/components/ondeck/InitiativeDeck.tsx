@@ -43,10 +43,14 @@ import {
 import { DomainPicker } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
-import PlannerRail from "./PlannerRail";
+import PlannerRail, { sharedRailWidth } from "./PlannerRail";
 import DeckCard, { type DeckTone } from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
-import { initiativeCardStatus } from "./deckStatus";
+import { initiativeCardStatus, INITIATIVE_STATE_LABEL } from "./deckStatus";
+import GetReadyRail from "../plan/GetReadyRail";
+import { useFloorBar } from "../floors/floorBar";
+import { deckLine, initiativeDeckCards } from "../../lib/deckReady";
+import { PaceTrack } from "../progress/PaceTrack";
 import SlotCreateButton from "./SlotCreateButton";
 import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import { ChipButton, Dot, EmptyState } from "../kit";
@@ -134,7 +138,6 @@ export default function InitiativeDeck() {
   // the crown's read — the placed bets by health, mirroring the projects deck's
   // ready/grooming/done rollup (grooming = still needs OKRs / shaping / a finish line).
   const onTrack = board.lanes.filter((l) => l.state === "on_track").length;
-  const atRisk = board.lanes.filter((l) => l.state === "at_risk").length;
   const grooming = board.lanes.filter((l) => l.state === "needs_okrs" || l.state === "needs_shaping" || l.state === "idea").length;
 
   // ── domain re-home cascade (same rule as InitiativesFloor) ──────────────────
@@ -384,6 +387,45 @@ export default function InitiativeDeck() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
+
+  // ── Get ready on the bet deck (D-207) ──────────────────────────────────────
+  // At risk first (the quarter's Repair), then what still needs OKRs or shaping.
+  const [readyMode, setReadyMode] = useState(false);
+  // The page bar, drawn over the grid so the rail owns its corner (D-207 §7).
+  const floorBar = useFloorBar();
+  const deckCards = useMemo(
+    () =>
+      initiativeDeckCards(
+        board.lanes
+          .filter((l) => l.state !== "done" && l.state !== "parked")
+          .map((l) => {
+            const idx = l.quarterIdx ?? 0;
+            return {
+              id: l.initiative.id,
+              name: l.initiative.name,
+              quarterIdx: idx,
+              quarterLabel: board.quarters[idx]?.label ?? "",
+              risk: l.state === "at_risk" ? (l.atRisk.reasons[0] ?? "behind its pace") : null,
+              overdue: l.overdue,
+              gap: l.gaps[0]?.label ?? null,
+              stateWord: l.state === "needs_okrs" || l.state === "idea" || l.state === "needs_shaping" ? INITIATIVE_STATE_LABEL[l.state] : null,
+              canDraft: canDraftProjects(data, l),
+            };
+          }),
+        {
+          open: (id) => openRecord("initiative", id),
+          draftPath: () => {},
+          draftProjects: (id, el) => {
+            const lane = board.lanes.find((x) => x.initiative.id === id);
+            if (lane) onDraftProjects(lane, el?.getBoundingClientRect() ?? null);
+          },
+        },
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [board, data],
+  );
+  const line = useMemo(() => deckLine(deckCards, "initiative"), [deckCards]);
+
   return (
     <div className="dk">
       {/* Draft the projects (D-196): the quarter opens over the whole deck — the
@@ -400,6 +442,18 @@ export default function InitiativeDeck() {
       )}
       {/* ── the pool — the same rail as the Schedule and the project deck, one
           clock speed up again: a bet needs a QUARTER. ────────────────────────── */}
+      {readyMode ? (
+        <GetReadyRail
+          cards={deckCards}
+          width={sharedRailWidth()}
+          onClose={() => setReadyMode(false)}
+          crown={
+            <span className="shrink-0 text-caption tabular-nums text-muted">
+              {onTrack} of {board.lanes.length} on track
+            </span>
+          }
+        />
+      ) : (
       <PlannerRail
         dropAttr="data-inbox-drop"
         over={overInbox}
@@ -410,14 +464,14 @@ export default function InitiativeDeck() {
           noun: "on track",
           onOpen: board.lanes.length > 0 ? () => setInitiativeView("groom") : undefined,
           openTitle: "Shape the bets that need it",
-          gap:
-            grooming + atRisk > 0
-              ? {
-                  label: `${grooming + atRisk} need${grooming + atRisk === 1 ? "s" : ""} you`,
-                  detail: atRisk > 0 ? `${atRisk} at risk` : "needs OKRs or shaping",
-                  onJump: () => setInitiativeView("groom"),
-                }
-              : null,
+          // On track solid, still being shaped tinted, at risk open.
+          track:
+            board.lanes.length > 0 ? (
+              <PaceTrack done={onTrack} placed={grooming} total={board.lanes.length} color="var(--accent)" width={160} />
+            ) : undefined,
+          // The line (D-207): at risk first, then what needs shaping.
+          line,
+          onLine: () => setReadyMode(true),
         }}
         poolLabel="Needs a quarter"
         poolCount={board.inbox.length}
@@ -454,11 +508,13 @@ export default function InitiativeDeck() {
           </div>
         )}
       </PlannerRail>
+      )}
 
       {/* ── the grid ─────────────────────────────────────────────────────────
           No hero: the crown is this surface's one hero, and the bar above already
           names the page. */}
       <div className="dk-pane">
+        {floorBar}
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}

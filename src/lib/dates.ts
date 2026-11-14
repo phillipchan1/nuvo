@@ -139,7 +139,8 @@ export function toFcInstant(iso: string): string {
 }
 
 /**
- * A scheduled task turns overdue 1 hour after its end time — and a task whose
+ * A scheduled task turns overdue once the kernel calls it missed (15 minutes after
+ * its end, D-207) — and a task whose
  * `do_date` has already passed is overdue too.
  *
  * The rule itself lives in the shared kernel (`_shared/taskQuery.ts`), not

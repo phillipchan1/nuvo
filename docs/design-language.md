@@ -483,6 +483,12 @@ The law, so a new planner surface can't drift:
    decks lost their `masthead` + pip legend and why `ProjectReadinessStrip` /
    `InitiativeReadinessStrip` now ride only the *document* faces — Groom keeps the
    strip, Table has `FloorStanding`.)
+   **Since D-207 it is one kit part, `Crown`** (eyebrow · the number · the page's track ·
+   **the line**), worn by the Schedule (`WeekPanel`) and both decks (`PlannerRail`). The gap
+   line became *the line*: the Get ready stack's first card in words, `--warn` for a break
+   or a bet at risk, accent otherwise, and the door to Get ready — there is no other button
+   for it. On a planner face the rail runs to the top of the panel and the page bar is drawn
+   over the grid (`floors/floorBar`). See [`rail-line.md`](./rail-line.md).
 3. **Gesture is fixed** — press-hold → `.glass-grab` ghost following the pointer, and
    the destination always shown (column wash / drop bar / vacated slot).
    **"Which shape am I looking at" has one control and one home:** the calendar's

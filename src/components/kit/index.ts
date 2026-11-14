@@ -6,6 +6,7 @@ export { TaskCheck, Checkbox, Switch, Segmented, Tabs, type Choice } from "./Cho
 export { Chip, ChipButton, Dot, Readiness, Avatar, AvatarStack, type ChipTone, type ReadinessStep } from "./Marks";
 export { SectionHeader, Row, EmptyState, Property, Card } from "./Structure";
 export { OfferCard, type OfferCardProps } from "./OfferCard";
+export { Crown, CrownLine, type CrownProps } from "./Crown";
 export {
   Popover,
   Menu,

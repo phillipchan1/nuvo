@@ -24,6 +24,27 @@
 //       only guarantees that path; Vite can import from anywhere in the repo.
 //       Read it as "shared kernel", not as "server code".
 
+// ── when a block didn't happen (D-207) ─────────────────────────────────────
+
+/** Grace after a block's END before it counts as missed. Short, because the
+ *  point is to say it while it can still be put back today; long enough that a
+ *  block you're finishing late isn't flagged mid-act. (Was an hour for Overdue
+ *  and zero for Repair — two clocks for one fact, docs/rail-line.md §4.3.) */
+export const MISSED_GRACE_MS = 15 * 60_000;
+
+/** The moment a block that ended undone counts as missed: its end plus the
+ *  grace — or, sooner, the start of your next block that day, because once
+ *  you've moved on, the block is behind you. */
+export function missedAtMs(endMs: number, nextStartMs?: number | null): number {
+  const grace = endMs + MISSED_GRACE_MS;
+  return nextStartMs != null && nextStartMs >= endMs && nextStartMs < grace ? nextStartMs : grace;
+}
+
+/** **The** missed rule — Repair, Overdue and the crown's line all read it. */
+export function isMissed(endMs: number, nowMs: number, nextStartMs?: number | null): boolean {
+  return nowMs >= missedAtMs(endMs, nextStartMs);
+}
+
 // ── the vocabulary ───────────────────────────────────────────────────────────
 
 /** Everything a week rule needs to know about a project. Both runtimes map into

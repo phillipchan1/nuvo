@@ -27,9 +27,11 @@
 
 import { isSnoozed } from "./railOffers";
 import { instantAt, whereSpan } from "../components/plan/destinations";
-import { span } from "../components/mobile/dayPlan";
+import { at, span } from "../components/mobile/dayPlan";
+import { parseDateISO } from "./dates";
+import { blocks, lineFrom, type CrownLineData, type LineCard } from "./crownLine";
 
-export type ReadyKind = "repair" | "repairAll" | "hold" | "loose" | "plan" | "file" | "path" | "memory";
+export type ReadyKind = "repair" | "repairAll" | "hold" | "loose" | "plan" | "file" | "path" | "memory" | "risk" | "shape";
 
 /** At most this many cards show at once (D-206). */
 export const READY_MAX = 5;
@@ -257,4 +259,72 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
   }
 
   return out;
+}
+
+// ── the crown's line (D-207) ────────────────────────────────────────────────
+
+const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "2pm" today, "Tue 2pm" any other day. */
+function whenShort(p: Where, todayISO: string): string {
+  const t = at(instantAt(p.dayISO, p.startMin));
+  return p.dayISO === todayISO ? t : `${DAY[parseDateISO(p.dayISO).getDay()]} ${t}`;
+}
+
+/** The Schedule's line: the stack's first card, said as a fact (docs/rail-line.md
+ *  §4.1). `afterHours` folds today's misses into one line once the working day
+ *  is over, so nothing reads as an alarm overnight. */
+export function scheduleLine(
+  input: Pick<ReadyInput, "todayISO" | "repairs" | "holds" | "loose">,
+  cards: readonly ReadyCard[],
+  opts: { afterHours?: boolean } = {},
+): CrownLineData | null {
+  const { todayISO } = input;
+  const repairs = input.repairs ?? [];
+  const holdIds = new Set((input.holds ?? []).map((h) => h.taskId));
+  const noTime = holdIds.size + (input.loose ?? []).filter((l) => !holdIds.has(l.taskId)).length;
+
+  const allMissed = repairs.length > 0 && repairs.every((r) => r.why === "missed");
+  const allMeeting = repairs.length > 0 && repairs.every((r) => r.why === "meeting");
+  const repairFact = (): string => {
+    if (repairs.length === 1) {
+      const r = repairs[0];
+      return r.why === "missed"
+        ? `${r.title} didn't happen (${whenShort(r.from, todayISO)})`
+        : `${r.event || "A meeting"} landed on ${r.title}`;
+    }
+    const n = repairs.length;
+    if (allMissed && opts.afterHours && repairs.every((r) => r.from.dayISO === todayISO)) return `${n} from today didn't happen`;
+    if (allMissed) return `${blocks(n)} didn't happen`;
+    return `${blocks(n)} need a new time`;
+  };
+
+  const lineCards: LineCard[] = cards.map((c): LineCard => {
+    switch (c.kind) {
+      case "repair":
+      case "repairAll":
+        return {
+          part: "repair",
+          fact: repairFact(),
+          then: `${blocks(repairs.length)} to put back`,
+          tone: "warn",
+          glyph: allMeeting ? "↯" : "◌",
+        };
+      case "hold":
+      case "loose":
+      case "plan":
+        return { part: "time", fact: `${noTime} with no time`, then: `${noTime} with no time`, tone: "accent" };
+      case "file":
+        return { part: "file", fact: `${c.title} · in the inbox`, then: "the inbox", tone: "accent" };
+      case "path":
+        return { part: "shape", fact: `${c.title}: ${c.why}`, then: `${c.title}'s path`, tone: "accent" };
+      case "memory":
+        return { part: "memory", fact: `Nuvo noticed: ${c.title}`, then: "something Nuvo noticed", tone: "accent" };
+      case "risk":
+      case "shape":
+        // the decks' kinds (lib/deckReady) — they never reach the Schedule's stack
+        return { part: "shape", fact: `${c.title}: ${c.why}`, then: c.title, tone: "accent" };
+    }
+  });
+  return lineFrom(lineCards);
 }

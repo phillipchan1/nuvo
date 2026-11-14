@@ -109,8 +109,18 @@ const showOrientationHarness = import.meta.env.DEV && params.has("orientation");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 // `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
 const showDocsHarness = import.meta.env.DEV && params.has("docs");
+// `?decks` — both planner decks: the crown, the line and Get ready (D-207).
+const showDeckHarness = import.meta.env.DEV && params.has("decks");
 
-if (showDocsHarness) {
+if (showDeckHarness) {
+  void import("./components/ondeck/DeckHarness").then(({ default: DeckHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <DeckHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showDocsHarness) {
   void import("./components/record/DocumentHarness").then(({ default: DocumentHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>

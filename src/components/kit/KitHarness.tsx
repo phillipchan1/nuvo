@@ -17,6 +17,8 @@ import {
   Dest,
   OfferChip,
   OfferCard,
+  Crown,
+  CrownLine,
   Menu,
   MenuItem,
   MenuLabel,
@@ -309,6 +311,34 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           <OfferCard title="Call the plumber about the garage sink" why="In the inbox" verb="→" name="Garage studio and the long workbench" onPress={() => {}} onNotNow={() => {}} />
           <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Leave it where it is", onPress: () => {} }} />
           <OfferCard title="Launch site" why="3h held · 20m of work" verb="Draft the path" touch onPress={() => {}} onNotNow={() => {}} />
+        </div>
+      </Block>
+
+      <Block title="Crown" part="Crown · CrownLine">
+        {/* D-207: the head of every planner page's rail. Eyebrow · one number ·
+            the page's track · the line (the door to Get ready). A break (warn),
+            intent (accent), a read (muted), and a clean page (no line). */}
+        <div style={{ display: "grid", gap: 12, width: 340, maxWidth: "100%", minWidth: 0 }}>
+          <Crown
+            eyebrow="Nov 9 – 15"
+            done={13}
+            total={17}
+            noun="done"
+            track={<PaceTrack done={13} placed={2} total={17} color={HUES.work} width={200} />}
+            line={{ tone: "warn", glyph: "◌", text: "Talk about Test Cases for C&I didn't happen (2pm)", act: "Get ready", then: "3 with no time" }}
+            onLine={() => {}}
+          />
+          <Crown
+            eyebrow="Next 4 weeks"
+            done={5}
+            total={8}
+            noun="ready"
+            track={<PaceTrack done={5} placed={1} total={8} color="var(--accent)" width={160} />}
+            line={{ tone: "accent", glyph: null, text: "Rebuild Families Newsletter: no outcome", act: "Get ready", then: null }}
+            onLine={() => {}}
+          />
+          <Crown eyebrow="Next 4 quarters" done={2} total={2} noun="on track" track={<PaceTrack done={2} total={2} color="var(--accent)" width={160} />} line={null} />
+          <CrownLine line={{ tone: "muted", glyph: null, text: "Trading: no hours for 3 weeks", act: "Open Trading", then: null }} onPress={() => {}} />
         </div>
       </Block>
 

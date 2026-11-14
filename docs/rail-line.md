@@ -1,6 +1,19 @@
 # One crown, one line — where Nuvo speaks, on every planner page
 
-**Status: decided (2026-11-13, D-207). Nothing built.** Anchor pass run the same day (Ledger
+**Status: built 2026-11-13 (D-207), with the deviations below.** The kit `Crown` (+ `CrownLine`)
+heads the Schedule (`WeekPanel`), both decks (`PlannerRail`) and the phone's open crown; the line is
+`scheduleLine` / `deckLine` over the same compose as the stack (`useReady`, `lib/deckReady`); the
+decks have their own Get ready stacks; the kernel owns `isMissed`; the decks' page bar is drawn over
+the grid (`floors/floorBar`); the domain wall (both shells) carries a Read line (`wallLine`).
+**Deviations:** (1) "Leave it where it is" is still per device: per-account needs a column and a
+migration, not shipped blind. (2) No native iOS haptic: the phone's acts call `haptic("success")`,
+which works on Android; iOS needs a Tauri plugin that couldn't be compiled here. (3) Deck cards open
+the record or Draft the path / Draft the projects; *Set as outcome* (a ✦ outcome draft) and *Move to
+Nov 23* aren't built. (4) Domains got the lighter §8.1 alternative: a line in the wall's head, no
+rail. (5) The phone's SHUT strip keeps its pips (D-123); the line shows when the crown is open.
+(6) The Spine's cue words (§8.3) are untouched. **Not driven on a signed-in account** (no dev login
+in this checkout): verified at `?kit`, `?weekcrown`, `?domains` and the new `?decks`; `npm run perf`
+not run. Anchor pass run the same day (Ledger
 A2 · D4 · W2 · W3 · Q3 · Q4; strains P9 and P8; four no's clear except a Domains rail, which is
 left open). Prototype (private, example data):
 [Nuvo Rail Line](https://claude.ai/artifact/XKuFVzAVHiAjc1QDkC14nN). It shows Schedule, Projects

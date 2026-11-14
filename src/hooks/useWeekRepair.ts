@@ -18,6 +18,7 @@ import { startOfWeek } from "date-fns";
 import { alternativesFor, asBusyBlock, type ComposeInput, type Placement } from "../lib/compose";
 import { isEventHidden } from "../lib/now";
 import { toDateISO } from "../lib/dates";
+import { isMissed } from "../../supabase/functions/_shared/planningRules";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 
 export type RepairWhy = "landed" | "missed";
@@ -89,6 +90,20 @@ export function useWeekRepair({
     const meetingOn = (s: Date, e: Date) =>
       meetings.find((m) => new Date(m.start_at) < e && new Date(m.end_at) > s);
 
+    // The start of the next block after `endMs` on the same day — once you've
+    // moved on to it, the one before is behind you (the kernel's missed rule).
+    const starts: number[] = [];
+    for (const t of tasks) if (t.start_time && t.status !== "trashed") starts.push(new Date(t.start_time).getTime());
+    for (const m of meetings) starts.push(new Date(m.start_at).getTime());
+    for (const sl of slots) if (sl.start_time) starts.push(new Date(sl.start_time).getTime());
+    starts.sort((a, b) => a - b);
+    const nextStartAfter = (endMs: number): number | null => {
+      const dayEnd = new Date(endMs);
+      dayEnd.setHours(24, 0, 0, 0);
+      for (const st of starts) if (st >= endMs && st < dayEnd.getTime()) return st;
+      return null;
+    };
+
     type Broken = Omit<Repair, "options">;
     const broken: Broken[] = [];
     for (const t of tasks) {
@@ -99,7 +114,10 @@ export function useWeekRepair({
       const e = new Date(s.getTime() + dur * 60_000);
       const from = { dayISO: toDateISO(s), startMin: minsOf(s), durationMin: dur };
       if (e <= at) {
-        broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "missed", from, task: t });
+        // Ended undone. It counts as missed once the kernel says so (D-207) —
+        // a block you're finishing late isn't flagged mid-act.
+        if (isMissed(e.getTime(), at.getTime(), nextStartAfter(e.getTime())))
+          broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "missed", from, task: t });
         continue;
       }
       const m = meetingOn(s, e);

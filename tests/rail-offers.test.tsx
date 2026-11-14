@@ -142,10 +142,14 @@ function Crown({ onGetReady }: { onGetReady?: () => void }) {
       renderTask={(t) => <TaskRow key={t.id} task={t} labels={[]} selected={false} onSelect={() => {}} onOpen={() => {}} onToggleDone={() => {}} />}
       offers={offers}
       onPathCandidates={setCands}
-      onGetReady={onGetReady}
+      line={onGetReady ? LINE : null}
+      onLine={onGetReady}
     />
   );
 }
+
+// The crown's line (D-207) — what a host hands in: the stack's first card, in words.
+const LINE = { tone: "warn" as const, glyph: "◌", text: "Draft board memo didn't happen (2pm)", act: "Get ready", then: "3 with no time" };
 
 function mountCrown(onGetReady?: () => void) {
   return render(
@@ -204,32 +208,37 @@ describe("Draft the path on the week crown's project row", () => {
   });
 });
 
-// ── the week's track and the one door (D-206) ───────────────────────────────
+// ── the week's track and the one door (D-206, D-207) ────────────────────────
 
-describe("the crown header: one track, one number, one door (D-206)", () => {
+describe("the crown header: one track, one number, and the line as the door (D-206, D-207)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("draws the week as a track with one number, and no fact line, no Significant bar", async () => {
+  it("draws the week as a track under one number — the shared crown — and no Significant bar", async () => {
     const { container } = mountCrown();
     await waitFor(() => expect(container.querySelector("[data-crown-week]")).not.toBeNull());
     const track = container.querySelector("[data-crown-week]") as HTMLElement;
     expect(track.getAttribute("aria-label")).toMatch(/^\d+ of \d+ done: /);
-    expect(container.querySelector(".crown-track-num")?.textContent).toMatch(/^\d+\/\d+ done$/);
+    // The hero is the number (D-207): "N of M done", in the kit's Crown.
+    expect(container.querySelector(".k-crown .k-crown-hero")?.textContent).toMatch(/^\d+ of \d+ done$/);
     expect(container.querySelector(".significance")).toBeNull();
     expect(container.textContent).not.toMatch(/with no time/);
     expect(container.textContent).not.toMatch(/Plan the week ›/);
   });
 
-  it("the door is Get ready › only when the host gives it", async () => {
+  it("the door is the line — a fact and Get ready › — only when the host gives it", async () => {
     const go = vi.fn();
     const a = mountCrown(go);
-    const door = await waitFor(() => screen.getByRole("button", { name: /^Get ready/ }));
+    const door = await waitFor(() => screen.getByRole("button", { name: /didn't happen \(2pm\)\. Get ready\.$/ }));
+    expect(door.getAttribute("data-tone")).toBe("warn");
+    // No second door: the line IS the way into Get ready (D-207).
+    expect(screen.getAllByRole("button", { name: /Get ready/ })).toHaveLength(1);
     fireEvent.click(door);
     expect(go).toHaveBeenCalledTimes(1);
     a.unmount();
     mountCrown();
     await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
-    expect(screen.queryByRole("button", { name: /^Get ready/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Get ready/ })).toBeNull();
+    expect(document.querySelector("[data-crown-line]")).toBeNull();
     expect(screen.getByRole("button", { name: /^(Plan the week|The plan|Review)\./ })).toBeTruthy();
   });
 
@@ -240,19 +249,19 @@ describe("the crown header: one track, one number, one door (D-206)", () => {
       render(
         <QueryClientProvider client={offersClient(offersToday())}>
           <VerticalStoreProvider value={store}>
-            <MobileWeekCrown now={OFFERS_NOW} renderTask={() => null} onOpenProject={() => {}} onOpenDay={() => {}} onPlanWeek={() => {}} onGetReady={onGetReady} />
+            <MobileWeekCrown now={OFFERS_NOW} renderTask={() => null} onOpenProject={() => {}} onOpenDay={() => {}} onPlanWeek={() => {}} onGetReady={onGetReady} readyLine={onGetReady ? LINE : null} />
           </VerticalStoreProvider>
         </QueryClientProvider>,
       );
     const a = mount(go);
     await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /^Get ready/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Get ready\.$/ }));
     expect(go).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".significance")).toBeNull();
     a.unmount();
     mount();
     await waitFor(() => expect(document.querySelector("[data-crown-week]")).not.toBeNull());
-    expect(screen.queryByRole("button", { name: /^Get ready/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Get ready/ })).toBeNull();
   });
 });
 

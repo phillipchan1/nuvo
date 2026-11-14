@@ -124,7 +124,10 @@ describe("Get ready — the Planner's third mode, and Rhythm's new door", () => 
   it("mounts GetReadyRail in the ready mode, in place of the rest rail, and only then", () => {
     expect(planner).toMatch(/gettingReady \? \([\s\S]{0,240}?<GetReadyRail/);
     expect(planner).toMatch(/const gettingReady = readyMode && !planning && !repairing/);
-    expect(planner).toMatch(/onGetReady=\{openGetReady\}/);
+    // The door is the crown's line (D-207): the stack and the line are one compose.
+    expect(planner).toMatch(/const ready = useReady\(/);
+    expect(planner).toMatch(/<GetReadyRail cards=\{ready\.cards\}/);
+    expect(planner).toMatch(/onCrownLine=\{onCrownLine\}/);
   });
 
   it("the Schedule has no Rhythm button at rest — it shows only while the view is on, to take it off", () => {

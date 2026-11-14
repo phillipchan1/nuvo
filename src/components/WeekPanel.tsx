@@ -32,7 +32,7 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useThinPaths } from "../hooks/useThinPaths";
 import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
 import type { RailOfferCandidate } from "../lib/railOffers";
@@ -50,7 +50,8 @@ import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { PaceTrack, WeekTrack } from "./progress/PaceTrack";
-import { Button, Chip, IconButton, SectionHeader } from "./kit";
+import { Button, Chip, Crown, IconButton, SectionHeader } from "./kit";
+import type { CrownLineData } from "../lib/crownLine";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -75,20 +76,19 @@ function readOpen(): boolean {
 export default function WeekPanel({
   door,
   renderTask,
-  crownLine,
+  line,
+  onLine,
   offers,
   onPathCandidates,
-  onGetReady,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
-  /** A line under the week's track (D-204 §3) — a repair ("Tue 10am broke… ·
-   *  Repair ›") passes its own. Omitted or `null`, nothing: the track's
-   *  outlined pieces already say what has no time (D-206). */
-  crownLine?: ReactNode;
-  /** The one door (D-206): when given, the header's button is **Get ready ›**
-   *  and opens the Get ready rail mode. Omitted, the old week door stays. */
-  onGetReady?: () => void;
+  /** The crown's line (D-207): the Get ready stack's first card, in words.
+   *  `null` — nothing to say, so no line and nothing to press. */
+  line?: CrownLineData | null;
+  /** Pressing the line opens Get ready. Omitted (a harness), the old week door
+   *  rides the eyebrow instead. */
+  onLine?: () => void;
   /** The rail's offer budget (D-205): a project row whose id is here carries
    *  Draft the path. The host decides the budget; this only draws it. */
   offers?: ReadonlyMap<string, RailOfferCandidate>;
@@ -173,9 +173,6 @@ export default function WeekPanel({
   const slateSentence =
     rows.length === 0 ? "No projects on this week yet" : `${landed} of ${rows.length} landed · ${crown.track.label}`;
 
-  // Under the track, only a line someone hands in (the repair) — the "N with no
-  // time · Plan the week ›" line retired into the track's outlined pieces.
-  const line = crownLine ?? null;
 
   const toggleList = () =>
     setListOpen((v) => {
@@ -189,25 +186,15 @@ export default function WeekPanel({
 
   return (
     <div className="crown">
-      <div className="crown-hero">
-        <div className="crown-hero-line">
-          <h2 className="crown-title text-display masthead">{hero}</h2>
-          {onGetReady ? (
-            // The one door (D-206): Get ready opens the rail's card stack for
-            // this screen. Plan and Repair stay modes its cards can open.
-            <Button
-              size="xs"
-              kind="ghost"
-              onClick={onGetReady}
-              title={`Get this week ready — ${slateSentence}`}
-              aria-label={`Get ready. ${slateSentence}.`}
-              icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
-              trailing={<Icon name="chevron-right" size={12} />}
-              data-get-ready=""
-            >
-              Get ready
-            </Button>
-          ) : (
+      {/* The crown (D-207): the same part both decks wear. The eyebrow names
+          the week it measures; the hero is the one number; the track is the
+          week (D-206); the line is the door to Get ready. A host with no Get
+          ready mode (a harness) keeps the old week door at the eyebrow's end. */}
+      <Crown
+        className="crown-head"
+        eyebrow={hero}
+        eyebrowAction={
+          onLine ? undefined : (
             <Button
               size="xs"
               kind={mode === "view" ? "ghost" : "secondary"}
@@ -219,35 +206,16 @@ export default function WeekPanel({
             >
               {action}
             </Button>
-          )}
-        </div>
-        {rows.length > 0 && crown.track.total > 0 ? (
-          // The week as ONE track (D-206) and one number — the drawing each
-          // project row makes of its project, made of the week.
-          <div className="crown-track">
-            <WeekTrack track={crown.track} />
-            <span className="crown-track-num">
-              <b>
-                {crown.track.done}/{crown.track.total}
-              </b>{" "}
-              done
-            </span>
-          </div>
-        ) : (
-          <p className="crown-fact">
-            {rows.length > 0 ? "Nothing shaped yet" : "No projects yet"}
-            {rows.length === 0 && mode !== "plan" && !onGetReady && (
-              <>
-                {" · "}
-                <button type="button" className="crown-fact-link" onClick={() => openFlow("sunday")}>
-                  Add
-                </button>
-              </>
-            )}
-          </p>
-        )}
-        {line}
-      </div>
+          )
+        }
+        done={crown.track.done}
+        total={rows.length > 0 ? crown.track.total : 0}
+        noun="done"
+        empty={rows.length > 0 ? "Nothing shaped yet" : "No projects yet"}
+        track={rows.length > 0 && crown.track.total > 0 ? <WeekTrack track={crown.track} /> : undefined}
+        line={line}
+        onLine={onLine}
+      />
 
       {rows.length > 0 && (
         <>

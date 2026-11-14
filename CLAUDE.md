@@ -68,6 +68,12 @@ in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain
   stage + statement ending on the ember `Stop`, a door in the panel). A new page of that kind uses it.
 - **The mark** (D-191) is `NuvoMark` (`kit/Mark.tsx`); icons come from `src-tauri/app-icon*.svg`
   via `npm run tauri:icon`. Never draw the mark by hand.
+- **Every planner page opens its rail with ONE crown** (D-207, `kit/Crown`): eyebrow · one
+  number · the page's track · **the line** — the Get ready stack's first card in words, and the
+  only door to Get ready. The Schedule's line and stack come from one compose (`useReady`); a
+  deck's from `lib/deckReady`. Never add a second door, a second gap line, or a line that ranks
+  on its own. "Missed" is the kernel's `isMissed` — Repair and Overdue both read it. Verify at
+  `?kit`, `?weekcrown`, `?decks`. Spec: [`docs/rail-line.md`](docs/rail-line.md).
 - **Build from the kit** (`src/components/kit/`, D-190). A button, field, choice, chip, row,
   menu, picker, popover or dialog is a kit part — never hand-rolled, never re-styled at the call
   site. Need something it lacks? Add it to the kit (and to `?kit`) first. Verify at `?kit`.

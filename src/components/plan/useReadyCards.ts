@@ -30,7 +30,9 @@ import { projectById } from "../../lib/vertical";
 import { thinChip } from "../../lib/thinPath";
 import { requestPathDraft } from "../../lib/draftIntent";
 import { reachToCrown, WEEK_REACH_KEY } from "../../lib/motion";
-import { composeReadyCards, whenLabel, type ReadyCard, type ReadyInput } from "../../lib/readyCards";
+import { composeReadyCards, scheduleLine, whenLabel, type ReadyCard, type ReadyInput } from "../../lib/readyCards";
+import type { CrownLineData } from "../../lib/crownLine";
+import { useSettings } from "../../hooks/useSettings";
 import { fileGuess, filePatch, holdable } from "../nuvo/RailOffers";
 import { notNow, useSnoozed } from "../nuvo/offerSnooze";
 import { fitOf, type RepairState } from "./repairActs";
@@ -49,7 +51,19 @@ export function reachFromCard(from: HTMLElement | null, projectId: string | null
   void reachToCrown(from, projectId ?? WEEK_REACH_KEY);
 }
 
-export function useReadyCards({
+/** The stack and the crown's line over it (D-207) — one compose, so the line is
+ *  always the stack's first card. */
+export interface ReadyRead {
+  cards: ReadyCard[];
+  line: CrownLineData | null;
+}
+
+/** Just the stack — what a rail or sheet mounted over the live models needs. */
+export function useReadyCards(args: Parameters<typeof useReady>[0]): ReadyCard[] {
+  return useReady(args).cards;
+}
+
+export function useReady({
   now,
   mutations,
   repairState,
@@ -67,7 +81,7 @@ export function useReadyCards({
   onPlanWeek: () => void;
   onRepair?: () => void;
   onOpenProject: (projectId: string) => void;
-}): ReadyCard[] {
+}): ReadyRead {
   const today = todayISO(now);
   const crown = useWeekCrown();
   const { data: vertical, commitTasksToSprint } = useVertical();
@@ -75,6 +89,9 @@ export function useReadyCards({
   const { data: inbox = [] } = useInboxTasks();
   const thin = useThinPaths();
   const snoozed = useSnoozed();
+  const { settings } = useSettings();
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const afterHours = now.getHours() * 60 + now.getMinutes() >= workEnd;
 
   const holdPool = useMemo(() => holdable(dayTasks, today), [dayTasks, today]);
   const loosePool = useMemo(() => {
@@ -206,8 +223,9 @@ export function useReadyCards({
         notNow: (key) => notNow(key),
       },
     };
-    return composeReadyCards(input);
+    const cards = composeReadyCards(input);
+    return { cards, line: scheduleLine(input, cards, { afterHours }) };
     // `now` is read for the snooze clock only; the cards change when the facts do.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [today, crown, snoozed, repairState?.open, repairState?.ix, holdPool, loosePool, holds, inbox, thin, memoryItem]);
+  }, [today, crown, snoozed, repairState?.open, repairState?.ix, holdPool, loosePool, holds, inbox, thin, memoryItem, afterHours]);
 }

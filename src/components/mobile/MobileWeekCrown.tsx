@@ -42,7 +42,8 @@ import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
 import type { ThinPath } from "../../lib/thinPath";
 import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
-import { Button, Chip } from "../kit";
+import { Button, Chip, CrownLine } from "../kit";
+import type { CrownLineData } from "../../lib/crownLine";
 import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
@@ -76,6 +77,7 @@ export default function MobileWeekCrown({
   onExpandElsewhere,
   crownLine,
   onGetReady,
+  readyLine,
 }: {
   /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
    *  which holds the mutations and the task sheet, exactly as the rail owns it
@@ -104,9 +106,12 @@ export default function MobileWeekCrown({
    *  own. Omitted or `null`, nothing: the track's outlined pieces carry "no
    *  time" (D-206). */
   crownLine?: ReactNode;
-  /** The one door (D-206): when given, the open header's button is
-   *  **Get ready ›** (the phone's Get ready sheet). Omitted, the old door. */
+  /** Get ready (D-206): when given, the open crown's door is **the line**
+   *  (D-207), not a button — pressing it opens the phone's Get ready sheet.
+   *  Omitted, the old door. */
   onGetReady?: () => void;
+  /** The crown's line (D-207): the stack's first card, in words. */
+  readyLine?: CrownLineData | null;
 }) {
   const crown = useWeekCrown();
   const [open, setOpenState] = useState(readOpen);
@@ -235,19 +240,7 @@ export default function MobileWeekCrown({
           <Icon name="chevron-down" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
 
-        {onGetReady ? (
-          <Button
-            kind="ghost"
-            size="md"
-            onClick={onGetReady}
-            className="tap-icon shrink-0"
-            aria-label={`Get ready. ${track.label}`}
-            trailing={<Icon name="chevron-right" size={14} />}
-            data-get-ready=""
-          >
-            Get ready
-          </Button>
-        ) : (
+        {!onGetReady && (
           <Button kind="secondary" size="md" onClick={openDoor} className="tap-icon shrink-0">
             {action}
           </Button>
@@ -270,6 +263,14 @@ export default function MobileWeekCrown({
         </div>
       )}
       {line}
+      {/* The line (D-207): the door to Get ready, said as a fact. The SHUT strip
+          keeps its one line of pips and its amber light — a strip that grew a
+          sentence would resize under the thumb (D-123). */}
+      {onGetReady && readyLine && (
+        <div className="pb-1">
+          <CrownLine line={readyLine} onPress={onGetReady} />
+        </div>
+      )}
 
       {open && total > 0 && (
         <ul className="mt-1 flex flex-col">

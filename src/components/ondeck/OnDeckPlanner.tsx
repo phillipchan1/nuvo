@@ -30,12 +30,17 @@ import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
-import PlannerRail from "./PlannerRail";
+import PlannerRail, { sharedRailWidth } from "./PlannerRail";
 import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
 import DeckCard from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
-import { PIP_TONE, projectCardStatus } from "./deckStatus";
+import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
+import GetReadyRail from "../plan/GetReadyRail";
+import { useFloorBar } from "../floors/floorBar";
+import { deckLine, projectDeckCards } from "../../lib/deckReady";
+import { requestPathDraft } from "../../lib/draftIntent";
+import { PaceTrack } from "../progress/PaceTrack";
 import ThinDoor from "./ThinDoor";
 import { useThinPaths } from "../../hooks/useThinPaths";
 import { SlotCreateHint } from "./SlotCreateButton";
@@ -119,7 +124,6 @@ export default function OnDeckPlanner() {
   // (it's settled by choice, not a grooming deficit).
   const readyN = placed.filter((l) => l.readyTier === "ready").length;
   const groomN = placed.filter((l) => l.readyTier === "grooming").length;
-  const rawN = placed.filter((l) => l.readyTier === "raw").length;
   const doneN = placed.filter((l) => l.readyTier === "done").length;
 
   // ── drag state (in React so the bar + counts preview live) ───────────────────
@@ -547,11 +551,63 @@ export default function OnDeckPlanner() {
     "data-drop": dropWeek === i ? "" : undefined,
   });
 
+
+  // ── Get ready on the deck (D-207) ─────────────────────────────────────────
+  // The cards that take this deck to ready, worst first, built from what the
+  // lanes already know; the crown's line is the first one, said as a fact.
+  const [readyMode, setReadyMode] = useState(false);
+  // The page bar, drawn over the grid so the rail owns its corner (D-207 §7).
+  const floorBar = useFloorBar();
+  const deckCards = useMemo(
+    () =>
+      projectDeckCards(
+        placed
+          .filter((l) => l.readyTier !== "done" && l.readyTier !== "parked")
+          .map((l) => {
+            // the week the card sits in on the grid — the bar's own start
+            const idx = geom.find((g) => g.l.project.id === l.project.id)?.start ?? 0;
+            const t = thin.get(l.project.id);
+            return {
+              id: l.project.id,
+              name: l.project.name,
+              weekIdx: idx,
+              weekLabel: board.weeks[idx] ? weekName(board.weeks[idx].weekStart) : "",
+              overdueDays: l.pace.read === "overdue" ? l.pace.driftDays : null,
+              thin: t ? thinWord(t) : null,
+              gap: l.gaps[0]?.label ?? null,
+              wontFit: l.axes.fits === false,
+            };
+          }),
+        {
+          open: (id) => openRecord("project", id),
+          draftPath: (id) => {
+            requestPathDraft(id);
+            openRecord("project", id);
+          },
+        },
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [board, thin, H],
+  );
+  const line = useMemo(() => deckLine(deckCards, "project"), [deckCards]);
+
   return (
     <div className="dk">
       {menu}
       {/* ── the pool — the same rail the Schedule wears, one clock speed up:
           "needs a week" instead of "needs a time". Structure, not a panel. ──── */}
+      {readyMode ? (
+        <GetReadyRail
+          cards={deckCards}
+          width={sharedRailWidth()}
+          onClose={() => setReadyMode(false)}
+          crown={
+            <span className="shrink-0 text-caption tabular-nums text-muted">
+              {readyN + doneN} of {placed.length} ready
+            </span>
+          }
+        />
+      ) : (
       <PlannerRail
         dropAttr="data-pool-drop"
         over={overInbox}
@@ -564,14 +620,15 @@ export default function OnDeckPlanner() {
           noun: "ready",
           onOpen: placed.length > 0 ? () => setProjectView("groom") : undefined,
           openTitle: "Shape the projects that need it",
-          gap:
-            groomN + rawN > 0
-              ? {
-                  label: `${groomN + rawN} need shaping`,
-                  detail: rawN > 0 ? `${rawN} raw` : "mid-groom",
-                  onJump: () => setProjectView("groom"),
-                }
-              : null,
+          // The deck as a track: ready (and shipped) solid, mid-groom tinted,
+          // raw open — the same three states the cards' rings draw.
+          track:
+            placed.length > 0 ? (
+              <PaceTrack done={readyN + doneN} placed={groomN} total={placed.length} color="var(--accent)" width={160} />
+            ) : undefined,
+          // The line (D-207): the deck's Get ready stack, first card in words.
+          line,
+          onLine: () => setReadyMode(true),
         }}
         poolLabel="Needs a week"
         poolCount={inbox.length}
@@ -604,12 +661,14 @@ export default function OnDeckPlanner() {
           </div>
         )}
       </PlannerRail>
+      )}
 
       {/* ── the grid ──────────────────────────────────────────────────────────
           No hero here: the crown is this surface's one hero, and the bar above
           already names the page — the same reason the Schedule has no header
           over its calendar. */}
       <div className="dk-pane">
+        {floorBar}
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}

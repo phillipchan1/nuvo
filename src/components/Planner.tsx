@@ -36,11 +36,13 @@ const CalendarPane = lazy(() => import("./CalendarPane"));
 import type { PlanOverlay } from "./plan/planOverlay";
 import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
 import { useRepairs } from "./plan/repairActs";
-import RepairLine, { repairLineText } from "./plan/RepairLine";
+import { repairLineText } from "./plan/RepairLine";
+import { useReady } from "./plan/useReadyCards";
+import type { CrownLineData } from "../lib/crownLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
 const RepairRail = lazy(() => import("./plan/RepairRail"));
-const GetReadyRail = lazy(() => import("./plan/GetReadyRail").then((m) => ({ default: m.LiveGetReadyRail })));
+const GetReadyRail = lazy(() => import("./plan/GetReadyRail"));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
@@ -505,11 +507,28 @@ export default function Planner({
   // Rhythm (docs/memory.md §5.2): no button on the Schedule any more (D-206) —
   // Memory is the door, and its "Show on the Schedule" turns the view on here.
   const [rhythmOn, setRhythmOn] = useState(false);
-  // Undefined while nothing broke, so the crown keeps its own line ("N with no time").
-  const repairLine = useMemo(() => {
-    const s = { open: repairState.open, applied: repairState.applied, dial: repairState.dial };
-    return repairLineText(s) ? <RepairLine state={s} onOpen={openRepair} /> : undefined;
-  }, [repairState.open, repairState.applied, repairState.dial, openRepair]);
+  // The stack and the crown's line over it (D-207) — ONE compose, so the line
+  // is always the stack's first card, and the rail's Get ready mode shows the
+  // same cards the line announced.
+  const ready = useReady({
+    now,
+    mutations,
+    repairState,
+    learned,
+    onPlanWeek: readyToPlan,
+    onRepair: readyToRepair,
+    onOpenProject: readyOpenProject,
+  });
+  // The line is the stack's first card. One exception it can't carry: under
+  // Handle, Nuvo moved blocks on its own, and the line is where you review
+  // (and undo) them — that opens Repair, not the stack.
+  const handled = useMemo(() => {
+    if (ready.line) return null;
+    const t = repairLineText({ open: repairState.open, applied: repairState.applied, dial: repairState.dial });
+    return t && t.act === "Review" ? ({ tone: "accent", glyph: null, text: t.text, act: t.act, then: null } satisfies CrownLineData) : null;
+  }, [ready.line, repairState.open, repairState.applied, repairState.dial]);
+  const crownLine = ready.line ?? handled;
+  const onCrownLine = handled ? openRepair : openGetReady;
 
   // Anything droppable that the render set doesn't hold. The week crown offers a
   // project's loose work for drag, and that work is deliberately outside all six
@@ -675,17 +694,7 @@ export default function Planner({
           </Suspense>
         ) : gettingReady ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
-            <GetReadyRail
-              onClose={closeGetReady}
-              railRef={railRef}
-              now={now}
-              mutations={mutations}
-              repairState={repairState}
-              learned={learned}
-              onPlanWeek={readyToPlan}
-              onRepair={readyToRepair}
-              onOpenProject={readyOpenProject}
-            />
+            <GetReadyRail cards={ready.cards} onClose={closeGetReady} railRef={railRef} />
           </Suspense>
         ) : (
         <LeftRail
@@ -706,8 +715,8 @@ export default function Planner({
           slots={todaySlots}
           slotTitle={slotTitle}
           onOpenSlot={openSlotAt}
-          crownLine={onSchedule ? repairLine : undefined}
-          onGetReady={openGetReady}
+          crownLine={onSchedule ? crownLine : null}
+          onCrownLine={onCrownLine}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at

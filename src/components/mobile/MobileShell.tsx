@@ -56,6 +56,7 @@ import MobileReadiness from "./MobileReadiness";
 import { WeekCompanions } from "./WeekPlanCard";
 import MobilePlanWeek from "./MobilePlanWeek";
 import MobileGetReady from "./MobileGetReady";
+import { useReady } from "../plan/useReadyCards";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import { revealOnCalendar } from "../../lib/calendarReveal";
 import { eventHitDateISO, type EventHit } from "../../lib/eventSearch";
@@ -533,6 +534,17 @@ export default function MobileShell() {
   const openDetail = (kind: DetailTarget["kind"], id: string) => {
     setDetailTarget({ kind, id, n: Date.now() });
   };
+
+  // The crown's line (D-207): the Get ready stack's first card, in words. The
+  // phone's repair card owns broken blocks (D-206), so the stack here starts at
+  // what has no time — the same compose the sheet runs when it opens.
+  const readyLine = useReady({
+    now,
+    mutations,
+    learned: memory,
+    onPlanWeek: () => setPlanOpen(true),
+    onOpenProject: (id) => openDetail("project", id),
+  }).line;
   const closeDetail = () => {
     setDetailTarget(null);
     setDetailFrame(null);
@@ -644,6 +656,7 @@ export default function MobileShell() {
             onOpenProject={(id) => openDetail("project", id)}
             onPlanWeek={() => setPlanOpen(true)}
             onGetReady={() => setReadyOpen(true)}
+            readyLine={readyLine}
             // ONE task grammar (D-111). A project's work in the crown is the same
             // `TaskRow` as the Tasks screen's, so it can be ticked from here — it
             // used to be a bare button with a truncated title and no checkbox.

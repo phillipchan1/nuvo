@@ -16,7 +16,7 @@
 import { useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { readSpine } from "../../lib/readiness";
-import { fmtH, stateOf } from "../../lib/domainRead";
+import { fmtH, stateOf, wallLine } from "../../lib/domainRead";
 import { domainMarkSpec } from "../../lib/domainMark";
 import type { Domain } from "../../lib/vertical";
 import DomainMark from "../domain/DomainMark";
@@ -25,7 +25,7 @@ import { RefinedSeal, useRefinedCelebration } from "../floors/parts";
 import { FloorGuide } from "../orientation/FloorGuide";
 import { WelcomeVisual } from "../orientation/Visuals";
 import SkeletonRows from "./Skeleton";
-import { Card } from "../kit";
+import { Card, CrownLine } from "../kit";
 import { pressable } from "../../lib/a11y";
 import { Icon } from "../Icon";
 import { TouchButton } from "./touch";
@@ -42,6 +42,7 @@ export default function MobileDomains({
   const [adding, setAdding] = useState(false);
 
   const totalWeek = domains.reduce((s, d) => s + d.investedThisWeek, 0);
+  const quiet = wallLine(domains);
 
   const create = () => {
     if (adding) return;
@@ -84,6 +85,15 @@ export default function MobileDomains({
         </TouchButton>
       </div>
 
+      {/* The wall's line (D-207) — the same read the desktop wall says. */}
+      {quiet && (
+        <div className="mb-3">
+          <CrownLine
+            line={{ tone: "muted", glyph: null, text: quiet.text, act: `Open ${quiet.name}`, then: null }}
+            onPress={() => onOpenItem("domain", quiet.domainId)}
+          />
+        </div>
+      )}
       {totalWeek > 0 && (
         <div className="mb-4">
           {/* Shorter columns and no legend: at 375px the seven day totals under

@@ -272,3 +272,20 @@ export function readWeekShape(domains: Domain[], now: Date = new Date()): WeekSh
     total: active.reduce((s, d) => s + d.investedThisWeek, 0),
   };
 }
+
+// ── The wall's line (D-207) ─────────────────────────────────────────────────
+// The Domain wall's one sentence, in the same place every planner page keeps
+// its line: the domain that has gone quietest, said as a fact. A READ, not an
+// offer: it never pulls a task in from the quiet domain (N-20) and never
+// suggests parking it (D-197). Its only act opens the domain. A domain that
+// shipped and is resting, or that never started, says nothing here — quiet
+// after finishing is not drift, and an empty account has nothing to read (P7).
+
+export function wallLine(domains: readonly Domain[]): { domainId: string; name: string; text: string } | null {
+  const drifting = domains
+    .filter((d) => d.lastTouchedDays != null && d.lastTouchedDays >= QUIET_SPEAKS_DAYS && stateOf(d).because === "drifting")
+    .sort((a, b) => (b.lastTouchedDays ?? 0) - (a.lastTouchedDays ?? 0));
+  const d = drifting[0];
+  if (!d) return null;
+  return { domainId: d.id, name: d.name, text: `${d.name}: no hours ${quietFor(d.lastTouchedDays!)}` };
+}

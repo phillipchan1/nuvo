@@ -43,6 +43,7 @@ import {
   shipWhen,
   stateOf,
   weekSplit,
+  wallLine,
 } from "../../lib/domainRead";
 import {
   ClarityMark,
@@ -70,7 +71,7 @@ import {
 import { readSpine } from "../../lib/readiness";
 import { pressable } from "../../lib/a11y";
 import { Icon } from "../Icon";
-import { Button, Card, Chip, Dot, IconButton, Popover, Row, SectionHeader } from "../kit";
+import { Button, Card, Chip, CrownLine, Dot, IconButton, Popover, Row, SectionHeader } from "../kit";
 
 // ══ The wall ═════════════════════════════════════════════════════════════════
 export default function DomainFloor({
@@ -98,6 +99,7 @@ export default function DomainFloor({
   const open = openIdx >= 0 ? domains[openIdx] : (openId && freshDomain?.id === openId ? freshDomain : null);
 
   const totalWeek = domains.reduce((s, d) => s + d.investedThisWeek, 0);
+  const quiet = wallLine(domains);
   const create = () => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); });
 
   if (open) {
@@ -138,6 +140,16 @@ export default function DomainFloor({
         <h1 className="text-display masthead">{totalWeek > 0 ? `${fmtH(totalWeek)} kept this week` : "Nothing kept this week"}</h1>
       </FloorHeader>
 
+      {/* The wall's line (D-207): Nuvo's read of the quietest domain, in the
+          place every planner page keeps its one sentence. Facts only. */}
+      {quiet && (
+        <div className="mb-4 max-w-[560px]">
+          <CrownLine
+            line={{ tone: "muted", glyph: null, text: quiet.text, act: `Open ${quiet.name}`, then: null }}
+            onPress={() => enter(quiet.domainId)}
+          />
+        </div>
+      )}
       {totalWeek > 0 && (
         <div className="mb-5">
           <WeekShape domains={domains} head={false} />

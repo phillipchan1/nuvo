@@ -9,7 +9,8 @@
 // lives here, once, and every surface calls it.
 //
 // The same constraints as `planningRules.ts` apply and must not be broken:
-//   1 · ZERO imports. Deno resolves no bare specifiers here.
+//   1 · No bare-specifier imports (Deno resolves none here). The one import is
+//       the planning kernel beside it, for the missed rule (D-207).
 //   2 · Pure. No I/O, no clock — "today" is passed IN, never read. A predicate
 //       that reads the wall clock cannot be tested at a date boundary, and a
 //       saved view that means something different on the server than in the
@@ -28,6 +29,8 @@
 // `user_settings`, not a table.
 
 // ── the vocabulary ───────────────────────────────────────────────────────────
+
+import { isMissed, MISSED_GRACE_MS } from "./planningRules.ts";
 
 export type QueryStatus = "open" | "done" | "any";
 
@@ -137,16 +140,17 @@ export interface QueryClock {
 
 // ── the predicate ────────────────────────────────────────────────────────────
 
-/** Grace after a block's END before it counts as late. An hour, because a
- *  meeting that ran long is not a slipped commitment. */
-export const OVERDUE_GRACE_MS = 60 * 60_000;
+/** Grace after a block's END before it counts as late — the kernel's missed
+ *  grace (D-207), so Overdue and Repair flag the same block at the same minute.
+ *  It was an hour here and zero in Repair: two clocks for one fact. */
+export const OVERDUE_GRACE_MS = MISSED_GRACE_MS;
 
 /**
  * **The** overdue rule, for every surface and both runtimes.
  *
  * It moved here from `src/lib/dates.ts` because the filter needed it and a
  * second definition would have put two meanings of one word in the same panel
- * (P11): the rail's "Overdue" section counts a block that ran an hour past its
+ * (P11): the rail's "Overdue" section counts a block the kernel calls missed (D-207) after its
  * end, while a naive filter would have counted a past `do_date`. Both are real
  * — a task dated last Tuesday IS late, and so is the 9am block it's now 2pm on
  * — so overdue is the union, defined once.
@@ -162,7 +166,7 @@ export function isOverdue(
   if (task.status === "done" || task.status === "trashed") return false;
   if (task.start_time) {
     const end = new Date(task.start_time).getTime() + (task.duration_minutes ?? 30) * 60_000;
-    if (nowMs > end + OVERDUE_GRACE_MS) return true;
+    if (isMissed(end, nowMs)) return true;
   }
   // A date that has passed is late whether or not it was ever given a time.
   return !!(today && task.do_date && task.do_date < today);
