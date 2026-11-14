@@ -1,4 +1,4 @@
-import type { Sql } from "../db.ts";
+import { jsonParam, type Sql } from "../db.ts";
 import type { Store } from "../store.ts";
 import { deleteEvent, getEvent, putEvent } from "../lib/caldav.ts";
 import { parseRowAt } from "../lib/eventWriteback.ts";
@@ -16,6 +16,7 @@ import {
   withoutOverrides,
 } from "../lib/icalwrite.ts";
 import { isUsableTimeZone } from "../lib/icalTz.ts";
+import { asJsonValue } from "../lib/jsonbShape.ts";
 import { materializeIcloudResource } from "../lib/icloudExpand.ts";
 import { countRuleOccurrencesBefore } from "../lib/ics.ts";
 import {
@@ -224,7 +225,7 @@ export async function handleIcloudEvents(
         ${userId}, ${account.id}, ${uid}, ${calendarUrl}, ${title},
         ${new Date(start_at).toISOString()}, ${new Date(end_at).toISOString()},
         ${all_day}, ${location}, true,
-        ${JSON.stringify({ caldav_href: href, caldav_etag: etag })}::jsonb,
+        ${jsonParam(sql, { caldav_href: href, caldav_etag: etag })},
         ${new Date().toISOString()}
       )
       ON CONFLICT (account_id, calendar_id, provider_event_id) DO UPDATE SET
@@ -258,7 +259,7 @@ export async function handleIcloudEvents(
   const password = await openAccountSecret(account, env);
   if (!password) return { status: 400, body: { error: "iCloud credential missing" } };
 
-  const raw = (evt.raw ?? {}) as Record<string, unknown>;
+  const raw = (asJsonValue(evt.raw) ?? {}) as Record<string, unknown>;
   const href = raw.caldav_href as string | undefined;
   if (!href) return { status: 400, body: { error: "event has no CalDAV resource on file — resync and retry" } };
 
@@ -370,7 +371,7 @@ export async function handleIcloudEvents(
     `;
     await sql`
       UPDATE external_events
-      SET raw = ${JSON.stringify({ ...raw, caldav_href: newHref, caldav_etag: newEtag })}::jsonb
+      SET raw = ${jsonParam(sql, { ...raw, caldav_href: newHref, caldav_etag: newEtag })}
       WHERE id = ${eventId} AND user_id = ${userId}
     `;
     await logSync(sql, "icloud", "event-move", "ok", undefined, userId);

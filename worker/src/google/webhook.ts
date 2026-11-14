@@ -1,5 +1,6 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
+import { asJsonArray } from "../lib/jsonbShape.ts";
 import { logSync } from "./owned.ts";
 import { runGoogleSync } from "./sync.ts";
 import type { CalendarEntry } from "./types.ts";
@@ -30,15 +31,7 @@ export async function handleGoogleWebhook(
     LIMIT 1
   `;
   const account = rows[0] as { id?: string; user_id?: string; calendars?: unknown } | undefined;
-  let calendarsRaw = account?.calendars;
-  if (typeof calendarsRaw === "string") {
-    try {
-      calendarsRaw = JSON.parse(calendarsRaw) as unknown;
-    } catch {
-      calendarsRaw = [];
-    }
-  }
-  const calendars = Array.isArray(calendarsRaw) ? (calendarsRaw as CalendarEntry[]) : [];
+  const calendars = asJsonArray(account?.calendars) as CalendarEntry[];
   const cal = calendars.find((c) => c.id === calendarId && c.channel_id === channelId);
   if (!account || !cal) {
     return new Response(JSON.stringify({ error: "unknown channel" }), {

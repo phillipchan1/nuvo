@@ -1,6 +1,7 @@
 import type { Env } from "../env.ts";
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
+import { asJsonValue } from "../lib/jsonbShape.ts";
 import { redactSecrets } from "../lib/redact.ts";
 import {
   googleStartEnd,
@@ -35,7 +36,7 @@ function seriesMasterId(evt: {
   raw?: unknown;
 }): string | undefined {
   if (evt.recurring_event_id) return evt.recurring_event_id;
-  const raw = (evt.raw ?? {}) as Record<string, unknown>;
+  const raw = (asJsonValue(evt.raw) ?? {}) as Record<string, unknown>;
   if (typeof raw.recurringEventId === "string" && raw.recurringEventId) return raw.recurringEventId;
   const m = String(evt.provider_event_id).match(/^(.+)_\d{8}T\d{6}Z?$/);
   return m?.[1];
@@ -355,7 +356,7 @@ export async function handleGoogleEvents(
     end_at: new Date(found.end_at as string | Date).toISOString(),
     all_day: Boolean(found.all_day),
     recurring_event_id: (found.recurring_event_id as string | null) ?? null,
-    raw: found.raw,
+    raw: asJsonValue(found.raw),
   };
 
   if (action === "invite") {
@@ -541,7 +542,7 @@ export async function handleGoogleEvents(
         data: { error: `Only ${who} can change this and following events — change just this one, or all of them.` },
       };
     }
-    const instance = (evt.raw ?? {}) as Record<string, unknown>;
+    const instance = (asJsonValue(evt.raw) ?? {}) as Record<string, unknown>;
     const current = { start_at: evt.start_at, end_at: evt.end_at };
     const probe = planGoogleSplit(master, instance, current, null, { timeZone });
     if (probe) {
@@ -604,7 +605,7 @@ export async function handleGoogleEvents(
   }
 
   if (action === "delete") {
-    const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
+    const rawEvent = (asJsonValue(evt.raw) ?? {}) as Record<string, unknown>;
     const guests = ((rawEvent.attendees as { self?: boolean }[]) ?? []).filter((a) => a?.self !== true);
     const isOrganizer = (rawEvent.organizer as { self?: boolean } | undefined)?.self === true;
     const notifyByDefault = guests.length > 0 && isOrganizer;
@@ -663,7 +664,7 @@ export async function handleGoogleEvents(
   }
 
   if (action === "series_rule") {
-    const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
+    const rawEvent = (asJsonValue(evt.raw) ?? {}) as Record<string, unknown>;
     const stored = Array.isArray(rawEvent.recurrence) ? (rawEvent.recurrence as string[]) : null;
     if (stored?.length) return { status: 200, data: { ok: true, recurrence: stored } };
     const recurringEventId = rawEvent.recurringEventId as string | undefined;

@@ -28,6 +28,7 @@
  */
 import type { Context } from "hono";
 import type { Sql } from "./db.ts";
+import { asJsonArray, asJsonValue } from "./lib/jsonbShape.ts";
 import { isDatabaseUnavailable } from "./http.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { SessionLookupError } from "./auth.ts";
@@ -880,7 +881,41 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     );
     total = Number(rows[0]?.n ?? 0);
   }
-  return finish(req, result, 200, { offset: offset ?? 0, total });
+  return finish(req, { ...result, body: healJsonbBody(target.table, result.body) }, 200, { offset: offset ?? 0, total });
+}
+
+/**
+ * jsonb columns that were once written double-encoded (a jsonb string scalar
+ * holding "[…]"), healed on the way out so the SPA reads the real shape.
+ */
+const JSONB_HEALS: Record<string, Record<string, (v: unknown) => unknown>> = {
+  calendar_accounts: { calendars: asJsonArray },
+  external_events: { raw: asJsonValue },
+};
+
+/** Re-serializes only when a row actually needed healing; otherwise the body is Postgres's own. */
+function healJsonbBody(table: string, body: string | null): string | null {
+  const heals = JSONB_HEALS[table];
+  if (!heals || body == null) return body;
+  const cols = Object.keys(heals).filter((c) => body.includes(`"${c}"`));
+  if (!cols.length) return body;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body; // not a JSON body (e.g. csv / HEAD) — leave untouched
+  }
+  let changed = false;
+  for (const row of Array.isArray(parsed) ? parsed : [parsed]) {
+    if (!row || typeof row !== "object") continue;
+    const rec = row as Record<string, unknown>;
+    for (const c of cols) {
+      if (!(c in rec) || typeof rec[c] !== "string") continue;
+      rec[c] = heals[c](rec[c]);
+      changed = true;
+    }
+  }
+  return changed ? JSON.stringify(parsed) : body;
 }
 
 async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {

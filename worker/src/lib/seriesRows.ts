@@ -1,4 +1,4 @@
-import type { Sql } from "../db.ts";
+import { jsonParam, type Sql } from "../db.ts";
 import { contentHash, type EventRow } from "./eventSync.ts";
 
 export function pickAnchorRow<T extends { start_at: string }>(rows: T[], anchorMs: number): T | null {
@@ -23,7 +23,7 @@ async function upsertEvent(sql: Sql, userId: string, row: EventRow): Promise<voi
     VALUES (
       ${userId}, ${row.account_id}, ${row.provider_event_id}, ${row.calendar_id},
       ${row.title}, ${row.start_at}, ${row.end_at}, ${row.all_day}, ${row.location},
-      ${row.busy}, ${JSON.stringify(row.raw ?? null)}::jsonb, ${row.last_synced_at}, ${row.content_hash ?? null}
+      ${row.busy}, ${row.raw == null ? null : jsonParam(sql, row.raw)}, ${row.last_synced_at}, ${row.content_hash ?? null}
     )
     ON CONFLICT (account_id, calendar_id, provider_event_id) DO UPDATE SET
       title = EXCLUDED.title,
@@ -77,7 +77,7 @@ export async function writeSeriesRows(
           all_day = ${anchor.all_day},
           location = ${anchor.location},
           busy = ${anchor.busy},
-          raw = ${JSON.stringify(anchor.raw ?? null)}::jsonb,
+          raw = ${anchor.raw == null ? null : jsonParam(sql, anchor.raw)},
           last_synced_at = ${anchor.last_synced_at},
           content_hash = ${anchor.content_hash ?? null}
         WHERE id = ${rowId} AND user_id = ${scope.userId}
